@@ -11,11 +11,12 @@ import { RocketOutlined } from '@ant-design/icons';
 import { getCurrentUserInfo } from '@/utils/permissionUtil';
 import { FormModal } from '@/components/FormModal';
 import { BUILTIN_CLI_SKILL_REPO } from '@/constants/builtinRepository';
-import ToolConfigPanel, { ToolConfigState, EnvVarOption } from './ToolConfigPanel';
+import ToolConfigPanel, { ToolConfigState } from './ToolConfigPanel';
+import type { EnvVarOption } from './EnvParamTable';
 import McpConfigPanel, { McpConfigState } from './McpConfigPanel';
 import { findConfigIssue, describeConfigIssue } from './configValidation';
 import SkillConfigPanel, { SkillConfigState } from './SkillConfigPanel';
-import CliConfigPanel from './CliConfigPanel';
+import CliConfigPanel, { cliConfigRows, cliEnvPayload, CliEnvBindings } from './CliConfigPanel';
 
 const { TextArea } = Input;
 const { Step } = Steps;
@@ -46,6 +47,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
   const [toolConfigs, setToolConfigs] = useState<ToolConfigState[]>([{}]);
   const [clis, setClis] = useState<API.CliItem[]>([]);
   const [selectedCliIds, setSelectedCliIds] = useState<number[]>([]);
+  const [cliEnvBindings, setCliEnvBindings] = useState<CliEnvBindings>({});
   const [envVarOptions, setEnvVarOptions] = useState<EnvVarOption[]>([]);
   const [toolEnvCollapsed, setToolEnvCollapsed] = useState<Set<number>>(new Set());
   const [mcpEnvCollapsed, setMcpEnvCollapsed] = useState<Set<number>>(new Set());
@@ -128,9 +130,11 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
   };
 
 
-  // 三类的规则抽在 configValidation.ts，与 UpdateForm 共用同一份
+  // 四类的规则抽在 configValidation.ts，与 UpdateForm 共用同一份
+  const cliRows = cliConfigRows(selectedCliIds, clis, cliEnvBindings);
+
   const validateConfigStep = (step: number | 'all' = currentStep): boolean => {
-    const issue = findConfigIssue(step, { toolConfigs, mcpConfigs, skillConfigs });
+    const issue = findConfigIssue(step, { toolConfigs, mcpConfigs, skillConfigs, cliConfigs: cliRows });
     if (issue) {
       message.error(describeConfigIssue(issue, intl.formatMessage));
       return false;
@@ -144,7 +148,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
         await form.validateFields(['name', 'description', 'systemPrompt', 'modelId']);
       } else if (currentStep === 4) {
         if (submitting) return;
-        // 三类配置一起提交，只挡住「下一步」时校验过的那一步等于把另两类的报错留给后端
+        // 四类配置一起提交，只挡住「下一步」时校验过的那一步等于把其余类的报错留给后端
         if (!validateConfigStep('all')) return;
         const { name, description, systemPrompt, modelId } = await form.validateFields([
           'name', 'description', 'systemPrompt', 'modelId',
@@ -170,7 +174,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
               ...(customInput || !b.envVarId ? { customValue: b.envValue } : { envVarId: b.envVarId }),
             })),
           })),
-          cliList: selectedCliIds.map(id => ({ id })),
+          cliList: cliRows.map((c) => ({ id: c.cliId, envBindings: cliEnvPayload(c.envBindings) })),
         };
         setSubmitting(true);
         try {
@@ -184,6 +188,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
         setSkillConfigs([{}]);
         setToolConfigs([{}]);
         setSelectedCliIds([]);
+        setCliEnvBindings({});
         return;
       }
       if (currentStep >= 1 && currentStep <= 3 && !validateConfigStep()) {
@@ -203,6 +208,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
     setSkillConfigs([{}]);
     setToolConfigs([{}]);
     setSelectedCliIds([]);
+    setCliEnvBindings({});
     onCancel();
   };
 
@@ -320,6 +326,9 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
             selectedCliIds={selectedCliIds}
             setSelectedCliIds={setSelectedCliIds}
             clis={clis}
+            envVarOptions={envVarOptions}
+            bindings={cliEnvBindings}
+            setBindings={setCliEnvBindings}
           />
         )}
       </Form>

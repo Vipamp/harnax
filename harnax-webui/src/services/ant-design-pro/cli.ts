@@ -21,42 +21,6 @@ export async function getCliPage(
   });
 }
 
-/** 获取 CLI 详情 GET /api/admin/clis/${id} */
-export async function getCliById(id: number, options?: { [key: string]: any }) {
-  return request(`/api/admin/clis/${id}`, {
-    method: 'GET',
-    ...(options || {}),
-  });
-}
-
-/** 创建 CLI POST /api/admin/clis */
-export async function createCli(data: API.CliCreateRequest, options?: { [key: string]: any }) {
-  return request('/api/admin/clis', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    data: data,
-    ...(options || {}),
-  });
-}
-
-/** 更新 CLI PUT /api/admin/clis/update/${id} */
-export async function updateCli(
-  id: number,
-  data: API.CliUpdateRequest,
-  options?: { [key: string]: any },
-) {
-  return request(`/api/admin/clis/update/${id}`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    data: data,
-    ...(options || {}),
-  });
-}
-
 /** 切换 CLI 状态 PUT /api/admin/clis/toggle/${id} */
 export async function toggleCliStatus(
   id: number,
@@ -68,14 +32,6 @@ export async function toggleCliStatus(
     params: {
       status,
     },
-    ...(options || {}),
-  });
-}
-
-/** 删除 CLI DELETE /api/admin/clis/${id} */
-export async function deleteCli(id: number, options?: { [key: string]: any }) {
-  return request(`/api/admin/clis/${id}`, {
-    method: 'DELETE',
     ...(options || {}),
   });
 }

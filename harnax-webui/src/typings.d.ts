@@ -176,11 +176,13 @@ message?: string;
   };
 
   /**
-   * @zh-CN 工具/MCP 环境参数条目
+   * @zh-CN 工具 / MCP / CLI 的环境参数声明
    */
   export type ToolEnvParamEntry = {
     id?: number;
     envParamName: string;
+    /** 声明方写的填写说明；CLI 包来自 plugin.yaml 的 envParams[].description */
+    description?: string;
     required?: boolean;
     secret?: boolean;
     defaultValue?: string;
@@ -617,75 +619,37 @@ message?: string;
     cliName?: string;
     cliDescription?: string;
     version?: string;
+    /** 本智能体为该 CLI 显式填的参数值，未填的键由包声明的默认值兜底 */
+    envBindings?: EnvBinding[];
     skillList?: AgentSkillConfig[];
   };
 
   /**
-   * @zh-CN 内置 CLI（平台插件登记）对象
-   */
-  export type CliPluginItem = {
-    id: number;
-    name: string;
-    displayName?: string;
-    displayNameZh?: string;
-    description?: string;
-    version?: string;
-    type?: string;
-    binaryPath?: string;
-    initScript?: string;
-    skillDocPath?: string;
-    healthCheck?: string;
-    status?: number;
-    creator?: string;
-    createTime?: string;
-  };
-
-  /**
-   * @zh-CN CLI 工具对象
+   * @zh-CN CLI 插件包登记对象（admin 启动时登记，页面只读）
    */
   export type CliItem = {
     id?: number;
     name: string;
     description?: string;
     version?: string;
-    installScript?: string;
     checkCommand?: string;
+    /** sha256 of the registered package archive — the package identity */
+    packageDigest?: string;
     envParams?: ToolEnvParamEntry[];
-    skillList?: { skillId?: number; skillName?: string; skillDescription?: string }[];
+    /** The skill shipped inside the package; a CLI has no other skills */
+    skill?: { skillId?: number; skillName?: string; skillDescription?: string };
     status?: number;
-    isPublic?: number;
-    creator?: string;
     createTime?: string;
     updateTime?: string;
   };
 
   /**
-   * @zh-CN CLI 创建请求
+   * @zh-CN 绑定了某 CLI 的智能体（启停前展示影响范围）
    */
-  export type CliCreateRequest = {
-    name: string;
-    description?: string;
-    version?: string;
-    installScript: string;
-    checkCommand?: string;
-    envParams?: ToolEnvParamEntry[];
-    skillIds?: number[];
-    status?: number;
-    isPublic?: number;
-  };
-
-  /**
-   * @zh-CN CLI 更新请求
-   */
-  export type CliUpdateRequest = {
-    name?: string;
-    description?: string;
-    version?: string;
-    installScript?: string;
-    checkCommand?: string;
-    envParams?: ToolEnvParamEntry[];
-    skillIds?: number[];
-    isPublic?: number;
+  export type CliRelatedAgent = {
+    agentId: number;
+    agentName: string;
+    status: number;
   };
 
   /**
@@ -699,7 +663,7 @@ message?: string;
     mcpList?: AgentMcpConfig[];
     toolList?: { id?: number; needConfirm?: boolean; envBindings?: EnvBinding[] }[];
     skillList?: string;
-    cliList?: { id?: number }[];
+    cliList?: { id?: number; envBindings?: EnvBinding[] }[];
     owner?: string;
     status?: number;
     isPublic?: number;
@@ -717,7 +681,7 @@ message?: string;
     mcpList?: AgentMcpConfig[];
     toolList?: { id?: number; needConfirm?: boolean; envBindings?: EnvBinding[] }[];
     skillList?: string; // 逗号分隔的字符串 "1,2,3"
-    cliList?: { id?: number }[];
+    cliList?: { id?: number; envBindings?: EnvBinding[] }[];
     owner?: string;
     status?: number;
     isPublic?: number;

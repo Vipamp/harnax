@@ -1,20 +1,14 @@
 import { useIntl } from '@umijs/max';
-import { Button, Input, Select, Space, Tag } from 'antd';
+import { Button, Select, Space } from 'antd';
 import React from 'react';
-import { PlusOutlined, MinusOutlined, LockOutlined, DownOutlined, RightOutlined, EnvironmentOutlined } from '@ant-design/icons';
+import { MinusOutlined, PlusOutlined } from '@ant-design/icons';
+import EnvParamTable, { EnvBindingRow, EnvVarOption } from './EnvParamTable';
 
 export type McpConfigState = {
   mcpId?: number;
   mcpName?: string;
   envEntries?: API.ToolEnvParamEntry[];
-  envBindings?: { envKey: string; envValue: string; envVarId?: number; customInput?: boolean }[];
-};
-
-export type EnvVarOption = {
-  id: number;
-  envKey: string;
-  displayValue: string;
-  sensitive: boolean;
+  envBindings?: EnvBindingRow[];
 };
 
 interface McpConfigPanelProps {
@@ -39,28 +33,30 @@ const McpConfigPanel: React.FC<McpConfigPanelProps> = ({
   const handleMcpConfigChange = (index: number, field: string, value: any) => {
     const newConfigs = [...mcpConfigs];
     newConfigs[index] = { ...newConfigs[index], [field]: value };
-    setMcpConfigs(newConfigs);
 
     if (field === 'mcpId' && value) {
-      const selectedMcp = mcpServers.find(mcp => mcp.id === value);
+      const selectedMcp = mcpServers.find((mcp) => mcp.id === value);
       if (selectedMcp) {
         newConfigs[index].mcpName = selectedMcp.name;
         const envEntries = selectedMcp.envParams || [];
         newConfigs[index].envEntries = envEntries;
-        if (envEntries.length > 0) {
-          newConfigs[index].envBindings = envEntries.map(e => ({
-            envKey: e.envParamName,
-            // 敏感项的 defaultValue 后端只给掩码（McpServerResponse.maskValue），照抄进来存的就是
-            // `abc****wxyz` 这串字面量，还会随 spec 下发进 ToolEnvContext。留空才是诚实的默认值：
-            // 要覆盖就选一个全局变量，或者自己填。
-            envValue: e.secret ? '' : e.defaultValue || '',
-          }));
-        } else {
-          newConfigs[index].envBindings = [];
-        }
-        setMcpConfigs(newConfigs);
+        // 只建行不带值：MCP 的声明默认值会随 spec 整份下发，留空就是「用它」。把默认值抄进
+        // binding 反而把它冻在建 agent 那一刻的副本上，服务方日后改了默认值也追不过来。
+        newConfigs[index].envBindings = envEntries.map((e) => ({
+          envKey: e.envParamName,
+          envValue: '',
+        }));
       }
     }
+    setMcpConfigs(newConfigs);
+  };
+
+  const writeRow = (index: number, envIndex: number, next: EnvBindingRow) => {
+    const newConfigs = [...mcpConfigs];
+    const bindings = [...(newConfigs[index].envBindings || [])];
+    bindings[envIndex] = next;
+    newConfigs[index] = { ...newConfigs[index], envBindings: bindings };
+    setMcpConfigs(newConfigs);
   };
 
   const addMcpConfig = () => setMcpConfigs([...mcpConfigs, {}]);
@@ -72,28 +68,10 @@ const McpConfigPanel: React.FC<McpConfigPanelProps> = ({
     setMcpConfigs(mcpConfigs.filter((_, i) => i !== index));
   };
 
-  const handleEnvBindingSelect = (index: number, envIdx: number, envVarId: number) => {
-    const newConfigs = [...mcpConfigs];
-    const bindings = [...(newConfigs[index].envBindings || [])];
-    if (envVarId === -1) {
-      bindings[envIdx] = { ...bindings[envIdx], envVarId: undefined, envValue: '', customInput: true };
-    } else {
-      const selected = envVarOptions.find(opt => opt.id === envVarId);
-      if (!selected) return;
-      // 引用只落 envVarId，值由运行时按 id 现取：敏感项的 displayValue 是掩码，
-      // 顺手存成 envValue 就等于把 `******` 写进快照，环境变量一旦被删，工具拿到的就是星号。
-      bindings[envIdx] = { ...bindings[envIdx], envVarId: selected.id, envValue: '', customInput: undefined };
-    }
-    newConfigs[index].envBindings = bindings;
-    setMcpConfigs(newConfigs);
-  };
-
-  const handleCustomInputChange = (index: number, envIdx: number, value: string) => {
-    const newConfigs = [...mcpConfigs];
-    const bindings = [...(newConfigs[index].envBindings || [])];
-    bindings[envIdx] = { ...bindings[envIdx], envValue: value };
-    newConfigs[index].envBindings = bindings;
-    setMcpConfigs(newConfigs);
+  const toggleCollapsed = (index: number) => {
+    const next = new Set(collapsed);
+    next.has(index) ? next.delete(index) : next.add(index);
+    setCollapsed(next);
   };
 
   return (
@@ -108,7 +86,11 @@ const McpConfigPanel: React.FC<McpConfigPanelProps> = ({
       </div>
 
       {mcpConfigs.map((config, index) => (
-        <Space key={index} style={{ width: '100%', marginBottom: 16, padding: 16, border: '1px solid var(--vip-border)', borderRadius: '8px', background: 'var(--vip-bg-layout)' }} direction="vertical">
+        <Space
+          key={index}
+          style={{ width: '100%', marginBottom: 16, padding: 16, border: '1px solid var(--vip-border)', borderRadius: '8px', background: 'var(--vip-bg-layout)' }}
+          direction="vertical"
+        >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <span style={{ fontWeight: 500, color: 'var(--vip-text-primary)', fontSize: '14px' }}>
               {intl.formatMessage({ id: 'pages.agent.mcp', defaultMessage: 'MCP' })} #{index + 1}
@@ -127,107 +109,20 @@ const McpConfigPanel: React.FC<McpConfigPanelProps> = ({
             options={mcpServers
               // 同一个服务选两次没有意义：后端 `distinctBy { it.mcpId }` 只保留第一条，
               // 第二行填的环境变量覆盖值会静默丢掉。
-              .filter(mcp => !mcpConfigs.some((other, otherIndex) => otherIndex !== index && other.mcpId === mcp.id))
-              .map(mcp => ({ label: mcp.name, value: mcp.id }))}
+              .filter((mcp) => !mcpConfigs.some((other, otherIndex) => otherIndex !== index && other.mcpId === mcp.id))
+              .map((mcp) => ({ label: mcp.name, value: mcp.id }))}
           />
 
-          {/* MCP Env Bindings */}
           {config.envEntries && config.envEntries.length > 0 && (
-            <div style={{ paddingLeft: 12, borderLeft: '2px solid var(--vip-primary)' }}>
-              <div
-                style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 4, padding: '4px 0', color: 'var(--vip-text-secondary)', fontSize: 13 }}
-                onClick={() => {
-                  const next = new Set(collapsed);
-                  next.has(index) ? next.delete(index) : next.add(index);
-                  setCollapsed(next);
-                }}
-              >
-                {collapsed.has(index) ? <RightOutlined style={{ fontSize: 10 }} /> : <DownOutlined style={{ fontSize: 10 }} />}
-                <EnvironmentOutlined style={{ fontSize: 12, color: 'var(--vip-primary)' }} />
-                <span style={{ fontWeight: 500 }}>{intl.formatMessage({ id: 'pages.agent.tool.envParamsCount', defaultMessage: 'Env Params' })} ({config.envEntries.length})</span>
-              </div>
-              {!collapsed.has(index) && (
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 4 }}>
-                  <thead>
-                    <tr style={{ background: 'var(--vip-bg-layout)', borderBottom: '1px solid var(--vip-border)' }}>
-                      <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 500, color: 'var(--vip-text-secondary)', width: '30%' }}>
-                        {intl.formatMessage({ id: 'pages.agent.tool.envParamName', defaultMessage: 'Param Name' })}
-                      </th>
-                      <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 500, color: 'var(--vip-text-secondary)', width: '35%' }}>
-                        {intl.formatMessage({ id: 'pages.agent.tool.envVarName', defaultMessage: 'Env Variable' })}
-                      </th>
-                      <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 500, color: 'var(--vip-text-secondary)', width: '35%' }}>
-                        {intl.formatMessage({ id: 'pages.agent.tool.envVarValue', defaultMessage: 'Value' })}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(config.envBindings || []).map((binding, envIdx) => {
-                      const envEntry = config.envEntries?.[envIdx];
-                      const selectedEnvVar = binding.envVarId ? envVarOptions.find(opt => opt.id === binding.envVarId) : null;
-                      return (
-                        <tr key={envIdx} style={{ borderBottom: '1px solid var(--vip-border)' }}>
-                          <td style={{ padding: '6px 8px', fontFamily: 'monospace', color: 'var(--vip-text-primary)' }}>
-                            {binding.envKey}
-                            {envEntry?.required && <Tag color="red" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', marginLeft: 4 }}>{intl.formatMessage({ id: 'pages.mcp.config.required', defaultMessage: '必填' })}</Tag>}
-                            {envEntry?.secret && <Tag color="orange" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', marginLeft: 4 }}>{intl.formatMessage({ id: 'pages.mcp.config.secret', defaultMessage: '敏感' })}</Tag>}
-                          </td>
-                          <td style={{ padding: '6px 8px' }}>
-                            <Select
-                              size="small"
-                              style={{ width: '100%' }}
-                              value={binding.customInput ? -1 : binding.envVarId}
-                              onChange={(val) => handleEnvBindingSelect(index, envIdx, val)}
-                              placeholder={intl.formatMessage({ id: 'pages.agent.tool.selectEnvVar', defaultMessage: 'Select env variable' })}
-                              allowClear
-                              onClear={() => {
-                                const newConfigs = [...mcpConfigs];
-                                const bindings = [...(newConfigs[index].envBindings || [])];
-                                bindings[envIdx] = { ...bindings[envIdx], envVarId: undefined, envValue: '', customInput: undefined };
-                                newConfigs[index].envBindings = bindings;
-                                setMcpConfigs(newConfigs);
-                              }}
-                              showSearch
-                              filterOption={(input, option) =>
-                                (option?.label as string)?.toLowerCase().includes(input.toLowerCase()) ?? false
-                              }
-                              options={[
-                                ...envVarOptions.map(opt => ({ label: opt.envKey, value: opt.id })),
-                                { label: `✏️ ${intl.formatMessage({ id: 'pages.agent.tool.customInput', defaultMessage: 'Custom' })}`, value: -1 },
-                              ]}
-                            />
-                          </td>
-                          <td style={{ padding: '6px 8px' }}>
-                            {binding.customInput ? (
-                              <Input
-                                size="small"
-                                value={binding.envValue}
-                                onChange={(e) => handleCustomInputChange(index, envIdx, e.target.value)}
-                                placeholder={intl.formatMessage({ id: 'pages.agent.tool.inputValue', defaultMessage: 'Enter value' })}
-                                style={{ fontFamily: 'monospace' }}
-                              />
-                            ) : selectedEnvVar ? (
-                              <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--vip-text-secondary)' }}>
-                                {selectedEnvVar.sensitive ? (
-                                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--vip-text-quaternary)' }}>
-                                    <LockOutlined />
-                                    {selectedEnvVar.displayValue}
-                                  </span>
-                                ) : (
-                                  <span style={{ wordBreak: 'break-all' }}>{selectedEnvVar.displayValue}</span>
-                                )}
-                              </span>
-                            ) : (
-                              <span style={{ color: 'var(--vip-text-quaternary)' }}>-</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </div>
+            <EnvParamTable
+              entries={config.envEntries}
+              bindings={config.envBindings || []}
+              envVarOptions={envVarOptions}
+              collapsed={collapsed.has(index)}
+              onToggleCollapsed={() => toggleCollapsed(index)}
+              onRowChange={(envIndex, next) => writeRow(index, envIndex, next)}
+              showDefaultHint
+            />
           )}
         </Space>
       ))}

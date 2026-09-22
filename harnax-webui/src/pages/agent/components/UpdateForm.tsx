@@ -11,11 +11,12 @@ import { RocketOutlined } from '@ant-design/icons';
 import { FormModal } from '@/components/FormModal';
 import { BUILTIN_CLI_SKILL_REPO } from '@/constants/builtinRepository';
 import { getCurrentUserInfo, isPublicSwitchDisabled } from '@/utils/permissionUtil';
-import ToolConfigPanel, { ToolConfigState, EnvVarOption } from './ToolConfigPanel';
+import ToolConfigPanel, { ToolConfigState } from './ToolConfigPanel';
+import type { EnvVarOption } from './EnvParamTable';
 import McpConfigPanel, { McpConfigState } from './McpConfigPanel';
 import { findConfigIssue, describeConfigIssue } from './configValidation';
 import SkillConfigPanel, { SkillConfigState } from './SkillConfigPanel';
-import CliConfigPanel from './CliConfigPanel';
+import CliConfigPanel, { cliConfigRows, cliEnvPayload, CliEnvBindings } from './CliConfigPanel';
 
 const { TextArea } = Input;
 const { Step } = Steps;
@@ -47,6 +48,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
   const [toolConfigs, setToolConfigs] = useState<ToolConfigState[]>([{}]);
   const [clis, setClis] = useState<API.CliItem[]>([]);
   const [selectedCliIds, setSelectedCliIds] = useState<number[]>([]);
+  const [cliEnvBindings, setCliEnvBindings] = useState<CliEnvBindings>({});
   const [envVarOptions, setEnvVarOptions] = useState<EnvVarOption[]>([]);
   const [toolEnvCollapsed, setToolEnvCollapsed] = useState<Set<number>>(new Set());
   const [mcpEnvCollapsed, setMcpEnvCollapsed] = useState<Set<number>>(new Set());
@@ -126,6 +128,18 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
 
       // Initialize CLI selection
       setSelectedCliIds((values.cliList || []).map(item => item.cliId!).filter(Boolean));
+      const initialCliEnv: CliEnvBindings = {};
+      for (const item of values.cliList || []) {
+        if (!item.cliId) continue;
+        initialCliEnv[item.cliId] = (item.envBindings || []).map((b) => ({
+          envKey: b.envKey,
+          // 有 envVarId 的行，后端回的 envValue 只是给人看的（敏感项还是 `******`），不能再存一遍
+          envValue: b.envVarId ? '' : (b.customValue || b.envValue || ''),
+          envVarId: b.envVarId,
+          customInput: !!b.customValue || (!b.envVarId && !!b.envValue),
+        }));
+      }
+      setCliEnvBindings(initialCliEnv);
 
       loadMcpServers();
       loadRepositories();
@@ -218,9 +232,11 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
   };
 
 
-  // 三类的规则抽在 configValidation.ts，与 CreateForm 共用同一份
+  // 四类的规则抽在 configValidation.ts，与 CreateForm 共用同一份
+  const cliRows = cliConfigRows(selectedCliIds, clis, cliEnvBindings);
+
   const validateConfigStep = (step: number | 'all' = currentStep): boolean => {
-    const issue = findConfigIssue(step, { toolConfigs, mcpConfigs, skillConfigs });
+    const issue = findConfigIssue(step, { toolConfigs, mcpConfigs, skillConfigs, cliConfigs: cliRows });
     if (issue) {
       message.error(describeConfigIssue(issue, intl.formatMessage));
       return false;
@@ -234,7 +250,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         await form.validateFields(['name', 'description', 'systemPrompt', 'modelId']);
       } else if (currentStep === 4) {
         if (submitting) return;
-        // 三类配置一起提交，只挡住「下一步」时校验过的那一步等于把另两类的报错留给后端
+        // 四类配置一起提交，只挡住「下一步」时校验过的那一步等于把其余类的报错留给后端
         if (!validateConfigStep('all')) return;
         const formValues = await form.validateFields(['name', 'description', 'systemPrompt', 'modelId']);
 
@@ -261,7 +277,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
               ...(customInput || !b.envVarId ? { customValue: b.envValue } : { envVarId: b.envVarId }),
             })),
           })),
-          cliList: selectedCliIds.map(id => ({ id })),
+          cliList: cliRows.map((c) => ({ id: c.cliId, envBindings: cliEnvPayload(c.envBindings) })),
         };
         setSubmitting(true);
         try {
@@ -275,6 +291,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         setSkillConfigs([{}]);
         setToolConfigs([{}]);
         setSelectedCliIds([]);
+        setCliEnvBindings({});
         return;
       }
       if (currentStep >= 1 && currentStep <= 3 && !validateConfigStep()) {
@@ -294,6 +311,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
     setSkillConfigs([{}]);
     setToolConfigs([{}]);
     setSelectedCliIds([]);
+    setCliEnvBindings({});
     onCancel();
   };
 
@@ -411,6 +429,9 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
             selectedCliIds={selectedCliIds}
             setSelectedCliIds={setSelectedCliIds}
             clis={clis}
+            envVarOptions={envVarOptions}
+            bindings={cliEnvBindings}
+            setBindings={setCliEnvBindings}
           />
         )}
       </Form>

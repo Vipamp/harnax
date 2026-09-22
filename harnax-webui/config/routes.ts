@@ -104,10 +104,10 @@ export default [
         component: './cli',
       },
       {
-        name: 'channel',
-        icon: 'api',
+        // 菜单已迁至系统管理，旧地址保活
         path: '/context/channel',
-        component: './channel',
+        redirect: '/system/channel',
+        hideInMenu: true,
       },
     ],
   },
@@ -121,12 +121,14 @@ export default [
         path: '/system/user',
         component: './user/management',
         access: 'canAccessUserManagement',
+        hideInMenu: true,
       },
       {
         name: 'tenant.management',
         path: '/system/tenant',
         component: './tenant/management',
         access: 'canAccessUserManagement',
+        hideInMenu: true,
       },
       {
         name: 'token.monitor',
@@ -143,6 +145,12 @@ export default [
         name: 'env.management',
         path: '/system/env-variable',
         component: './env-variable',
+      },
+      {
+        name: 'channel',
+        icon: 'api',
+        path: '/system/channel',
+        component: './channel',
       },
     ],
   },

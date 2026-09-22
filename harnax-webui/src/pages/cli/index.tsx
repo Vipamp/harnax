@@ -1,55 +1,32 @@
 import { PageContainer } from '@ant-design/pro-components';
-import {
-  Button,
-  Empty,
-  message,
-  Modal,
-  Space,
-  Table,
-  Tabs,
-  Tag,
-  Tooltip,
-  Typography,
-} from 'antd';
+import { Empty, message, Modal, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import React, { useEffect, useRef, useState } from 'react';
-import { useIntl } from '@umijs/max';
-import {
-  CodeOutlined,
-  PlusOutlined,
-  DeleteOutlined,
-  EditOutlined,
-  SyncOutlined,
-  BuildOutlined,
-} from '@ant-design/icons';
-import SearchFilterBar, { SearchInput, ActionButton } from '@/components/SearchFilterBar';
-import {
-  getCliPage,
-  createCli,
-  updateCli,
-  deleteCli,
-  toggleCliStatus,
-} from '@/services/ant-design-pro/cli';
+import { history, useIntl } from '@umijs/max';
+import { CodeOutlined } from '@ant-design/icons';
+import SearchFilterBar, { SearchInput } from '@/components/SearchFilterBar';
+import { getCliPage, getCliRelatedAgents, toggleCliStatus } from '@/services/ant-design-pro/cli';
 import StatusSwitch from '@/components/StatusSwitch';
-import CliForm from './components/CliForm';
-import BuiltinCliTable from './components/BuiltinCliTable';
+import EnvParamsPopover from '@/components/EnvParamsPopover';
 import AgentRefreshModal from '@/pages/agent/components/AgentRefreshModal';
 
 const { Text } = Typography;
 
+/**
+ * The CLI plugin packages admin registered at startup. Nothing here creates or edits a row: a CLI is
+ * published by dropping its package into admin's package directory (design D2), so the only operator
+ * action the page offers is the kill switch (design D9).
+ */
 const CliManagement: React.FC = () => {
   const intl = useIntl();
 
-  const [formVisible, setFormVisible] = useState<boolean>(false);
-  const [currentRow, setCurrentRow] = useState<API.CliItem | undefined>();
-  const [refreshTarget, setRefreshTarget] = useState<API.CliItem | undefined>();
   const [loading, setLoading] = useState<boolean>(false);
   const [data, setData] = useState<API.CliItem[]>([]);
   const [total, setTotal] = useState<number>(0);
   const [pageNum, setPageNum] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(10);
   const [keyword, setKeyword] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<string>('builtin');
+  const [refreshTarget, setRefreshTarget] = useState<API.CliItem | undefined>();
 
   const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
   const filtersRef = useRef({ keyword: '' });
@@ -66,8 +43,8 @@ const CliManagement: React.FC = () => {
       });
       setData(res.data?.records || []);
       setTotal(res.data?.total || 0);
-    } catch (error) {
-      messageApi.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
+    } catch {
+      messageApi.error(intl.formatMessage({ id: 'pages.message.loadFailed', defaultMessage: 'Failed to load data' }));
     } finally {
       setLoading(false);
     }
@@ -100,9 +77,9 @@ const CliManagement: React.FC = () => {
     loadData(1);
   };
 
-  const handleToggle = async (id: number, newStatus: number) => {
+  const applyToggle = async (record: API.CliItem, newStatus: number) => {
     try {
-      const response = await toggleCliStatus(id, newStatus);
+      const response = await toggleCliStatus(record.id!, newStatus);
       if (response.code === 200) {
         messageApi.success(
           newStatus === 1
@@ -111,7 +88,6 @@ const CliManagement: React.FC = () => {
         );
         loadData(pageNum, pageSize);
       } else {
-        // 禁用被关联 agent 阻塞时错误信息较长，用弹窗展示完整内容
         Modal.error({
           title: intl.formatMessage({ id: 'pages.cli.toggleBlocked', defaultMessage: 'Cannot change CLI status' }),
           content: response.message || intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed' }),
@@ -129,62 +105,49 @@ const CliManagement: React.FC = () => {
     }
   };
 
-  const handleDelete = (id: number) => {
+  /** Agents still binding this CLI, or an empty list when admin cannot be asked — a warning, not a guard. */
+  const relatedAgents = async (id: number) => {
+    try {
+      const res = await getCliRelatedAgents(id);
+      return res.code === 200 ? res.data || [] : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const handleToggle = async (record: API.CliItem, newStatus: number) => {
+    const agents: API.CliRelatedAgent[] = await relatedAgents(record.id!);
+    if (agents.length === 0) {
+      await applyToggle(record, newStatus);
+      return;
+    }
+    // Bound agents are the reason to offer a session refresh either way; only taking a CLI out of
+    // circulation is worth a confirmation, because that is the direction that removes a capability.
+    const applyAndOfferRefresh = async () => {
+      await applyToggle(record, newStatus);
+      setRefreshTarget(record);
+    };
+    if (newStatus === 1) {
+      await applyAndOfferRefresh();
+      return;
+    }
+    // Disabling is deliberately not refused while agents still bind the CLI (design D9), so the
+    // blast radius has to be shown here rather than returned as an error by admin.
     Modal.confirm({
-      title: intl.formatMessage({ id: 'pages.cli.deleteConfirm', defaultMessage: 'Are you sure to delete this CLI tool?' }),
-      content: intl.formatMessage({ id: 'pages.message.irreversibleOperation', defaultMessage: 'This operation cannot be undone, please proceed with caution' }),
+      title: intl.formatMessage({ id: 'pages.cli.disableConfirmTitle', defaultMessage: 'Disable this CLI' }),
+      content: intl.formatMessage(
+        {
+          id: 'pages.cli.disableConfirmContent',
+          defaultMessage:
+            '{count} agent(s) bind this CLI ({names}). Their sandboxes lose the command and its skill stops loading.',
+        },
+        { count: agents.length, names: agents.slice(0, 5).map((a) => a.agentName).join('、') },
+      ),
       okText: intl.formatMessage({ id: 'pages.common.confirm', defaultMessage: 'Confirm' }),
       cancelText: intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' }),
       okButtonProps: { danger: true },
-      onOk: async () => {
-        try {
-          const response = await deleteCli(id);
-          if (response.code === 200) {
-            messageApi.success(intl.formatMessage({ id: 'pages.message.deleteSuccess', defaultMessage: 'Deleted successfully' }));
-            loadData(pageNum, pageSize);
-          } else {
-            Modal.error({
-              title: intl.formatMessage({ id: 'pages.cli.deleteBlocked', defaultMessage: 'Cannot delete CLI' }),
-              content: response.message || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed' }),
-              okText: intl.formatMessage({ id: 'pages.common.confirm', defaultMessage: 'Confirm' }),
-            });
-          }
-        } catch (error: any) {
-          Modal.error({
-            title: intl.formatMessage({ id: 'pages.cli.deleteBlocked', defaultMessage: 'Cannot delete CLI' }),
-            content: error?.message || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed' }),
-            okText: intl.formatMessage({ id: 'pages.common.confirm', defaultMessage: 'Confirm' }),
-          });
-        }
-      },
+      onOk: applyAndOfferRefresh,
     });
-  };
-
-  const handleSubmit = async (values: API.CliCreateRequest | API.CliUpdateRequest) => {
-    try {
-      const editing = currentRow;
-      const response = editing?.id
-        ? await updateCli(editing.id, values)
-        : await createCli(values as API.CliCreateRequest);
-      if (response.code === 200) {
-        messageApi.success(
-          editing?.id
-            ? intl.formatMessage({ id: 'pages.message.updateSuccess', defaultMessage: 'Updated successfully' })
-            : intl.formatMessage({ id: 'pages.message.createSuccess', defaultMessage: 'Created successfully' }),
-        );
-        setFormVisible(false);
-        setCurrentRow(undefined);
-        loadData(pageNum, pageSize);
-        // 编辑已有 CLI 会影响绑定它的 agent，提示刷新受影响会话
-        if (editing?.id) {
-          setRefreshTarget(editing);
-        }
-      } else {
-        messageApi.error(response.message || intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed' }));
-      }
-    } catch (error: any) {
-      messageApi.error(error?.message || intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed' }));
-    }
   };
 
   const columns: ColumnsType<API.CliItem> = [
@@ -192,20 +155,14 @@ const CliManagement: React.FC = () => {
       title: intl.formatMessage({ id: 'pages.cli.name', defaultMessage: 'Name' }),
       dataIndex: 'name',
       key: 'name',
-      width: 160,
+      width: 200,
       ellipsis: true,
       render: (text: string) => (
         <Text strong style={{ fontFamily: 'monospace' }}>
+          <CodeOutlined style={{ marginRight: 6, color: 'var(--vip-primary)' }} />
           {text}
         </Text>
       ),
-    },
-    {
-      title: intl.formatMessage({ id: 'pages.cli.version', defaultMessage: 'Version' }),
-      dataIndex: 'version',
-      key: 'version',
-      width: 100,
-      render: (text: string) => text || <Text type="secondary">-</Text>,
     },
     {
       title: intl.formatMessage({ id: 'pages.common.description', defaultMessage: 'Description' }),
@@ -215,38 +172,65 @@ const CliManagement: React.FC = () => {
       render: (text: string) => text || <Text type="secondary">-</Text>,
     },
     {
-      title: intl.formatMessage({ id: 'pages.cli.envParams', defaultMessage: 'Environment Params' }),
-      dataIndex: 'envParams',
-      key: 'envParams',
-      width: 140,
-      render: (envParams: API.CliItem['envParams']) =>
-        envParams && envParams.length > 0 ? (
-          <Space size={[0, 4]} wrap>
-            <Tag>{`${envParams.length}`}</Tag>
-            {envParams.some((e) => e.secret) && (
-              <Tag color="orange">
-                {intl.formatMessage({ id: 'pages.cli.envSecret', defaultMessage: 'Secret' })}
-              </Tag>
-            )}
-          </Space>
-        ) : (
-          <Text type="secondary">-</Text>
-        ),
+      title: intl.formatMessage({ id: 'pages.cli.version', defaultMessage: 'Version' }),
+      dataIndex: 'version',
+      key: 'version',
+      width: 100,
+      render: (text: string) => text || <Text type="secondary">-</Text>,
     },
     {
-      title: intl.formatMessage({ id: 'pages.cli.skills', defaultMessage: 'Skills' }),
-      dataIndex: 'skillList',
-      key: 'skillList',
-      width: 220,
-      render: (skillList: API.CliItem['skillList']) =>
-        skillList && skillList.length > 0 ? (
-          <Space size={[0, 4]} wrap>
-            {skillList.map((s) => (
-              <Tag key={s.skillId} color="blue">
-                {s.skillName}
-              </Tag>
-            ))}
-          </Space>
+      title: intl.formatMessage({ id: 'pages.cli.skill', defaultMessage: 'Shipped Skill' }),
+      dataIndex: 'skill',
+      key: 'skill',
+      width: 180,
+      render: (skill: API.CliItem['skill']) => {
+        const { skillName, skillDescription, skillId } = skill || {};
+        if (!skillName) return <Text type="secondary">-</Text>;
+        const tooltip = [
+          skillDescription,
+          intl.formatMessage({ id: 'pages.cli.skillOpen', defaultMessage: 'Click to open the skill' }),
+        ]
+          .filter(Boolean)
+          .join(' — ');
+        return (
+          <Tooltip title={tooltip}>
+            <Tag
+              color="blue"
+              style={{ cursor: 'pointer' }}
+              onClick={() => history.push(`/context/skill/detail/${skillId}`)}
+            >
+              {skillName}
+            </Tag>
+          </Tooltip>
+        );
+      },
+    },
+    {
+      title: intl.formatMessage({ id: 'pages.cli.envParams', defaultMessage: 'Env Params' }),
+      dataIndex: 'envParams',
+      key: 'envParams',
+      width: 120,
+      align: 'center',
+      render: (entries: API.CliItem['envParams']) => <EnvParamsPopover entries={entries} />,
+    },
+    {
+      title: intl.formatMessage({ id: 'pages.cli.healthCheck', defaultMessage: 'Health Check' }),
+      dataIndex: 'checkCommand',
+      key: 'checkCommand',
+      width: 200,
+      ellipsis: true,
+      render: (text: string) => (text ? <Text code>{text}</Text> : <Text type="secondary">-</Text>),
+    },
+    {
+      title: intl.formatMessage({ id: 'pages.cli.packageDigest', defaultMessage: 'Package Digest' }),
+      dataIndex: 'packageDigest',
+      key: 'packageDigest',
+      width: 140,
+      render: (digest: string) =>
+        digest ? (
+          <Tooltip title={digest}>
+            <Text code>{digest.substring(0, 12)}</Text>
+          </Tooltip>
         ) : (
           <Text type="secondary">-</Text>
         ),
@@ -258,124 +242,10 @@ const CliManagement: React.FC = () => {
       width: 100,
       align: 'center',
       render: (val: number, record) => (
-        <StatusSwitch
-          status={val ?? 1}
-          onChange={(newStatus) => handleToggle(record.id!, newStatus)}
-        />
-      ),
-    },
-    {
-      title: intl.formatMessage({ id: 'pages.common.creator', defaultMessage: 'Creator' }),
-      dataIndex: 'creator',
-      key: 'creator',
-      width: 100,
-    },
-    {
-      title: intl.formatMessage({ id: 'pages.common.createTime', defaultMessage: 'Created At' }),
-      dataIndex: 'createTime',
-      key: 'createTime',
-      width: 170,
-      render: (text: string) => text?.replace('T', ' ')?.substring(0, 19),
-    },
-    {
-      title: intl.formatMessage({ id: 'pages.common.actions', defaultMessage: 'Actions' }),
-      key: 'actions',
-      width: 150,
-      align: 'center',
-      render: (_: any, record) => (
-        <Space>
-          <Tooltip title={intl.formatMessage({ id: 'pages.cli.refreshSessions', defaultMessage: 'Refresh affected sessions' })}>
-            <Button
-              type="text"
-              size="small"
-              icon={<SyncOutlined />}
-              onClick={() => setRefreshTarget(record)}
-            />
-          </Tooltip>
-          <Tooltip title={intl.formatMessage({ id: 'pages.common.edit', defaultMessage: 'Edit' })}>
-            <Button
-              type="text"
-              size="small"
-              icon={<EditOutlined />}
-              onClick={() => {
-                setCurrentRow(record);
-                setFormVisible(true);
-              }}
-            />
-          </Tooltip>
-          <Tooltip title={intl.formatMessage({ id: 'pages.common.delete', defaultMessage: 'Delete' })}>
-            <Button
-              type="text"
-              size="small"
-              danger
-              icon={<DeleteOutlined />}
-              onClick={() => handleDelete(record.id!)}
-            />
-          </Tooltip>
-        </Space>
+        <StatusSwitch status={val ?? 1} onChange={(newStatus) => handleToggle(record, newStatus)} />
       ),
     },
   ];
-
-  const customPane = (
-    <Space direction="vertical" size={16} style={{ display: 'flex' }}>
-      <SearchFilterBar
-        onSearch={() => {}}
-        onReset={handleReset}
-        showSearchButton={false}
-        searchText={intl.formatMessage({ id: 'pages.common.search', defaultMessage: 'Search' })}
-        resetText={intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
-        extra={
-          <ActionButton
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => {
-              setCurrentRow(undefined);
-              setFormVisible(true);
-            }}
-          >
-            {intl.formatMessage({ id: 'pages.cli.create', defaultMessage: 'Create CLI Tool' })}
-          </ActionButton>
-        }
-      >
-        <SearchInput
-          value={keyword}
-          onChange={handleKeywordChange}
-          placeholder={intl.formatMessage({ id: 'pages.cli.searchPlaceholder', defaultMessage: 'Search CLI name' })}
-          width="auto"
-        />
-      </SearchFilterBar>
-
-      <Table
-        columns={columns}
-        dataSource={data}
-        rowKey="id"
-        loading={loading}
-        scroll={{ x: 'max-content' }}
-        pagination={{
-          current: pageNum,
-          pageSize: pageSize,
-          total: total,
-          showSizeChanger: true,
-          showQuickJumper: true,
-          pageSizeOptions: ['10', '20', '50'],
-          onChange: (page, size) => {
-            setPageNum(page);
-            setPageSize(size);
-            loadData(page, size);
-          },
-        }}
-        locale={{
-          emptyText: (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={intl.formatMessage({ id: 'pages.cli.noData', defaultMessage: 'No CLI tools' })}
-            />
-          ),
-        }}
-      />
-    </Space>
-  );
 
   return (
     <PageContainer
@@ -390,42 +260,51 @@ const CliManagement: React.FC = () => {
     >
       {contextHolder}
 
-      <Tabs
-        activeKey={activeTab}
-        onChange={setActiveTab}
-        items={[
-          {
-            key: 'builtin',
-            label: (
-              <span>
-                <BuildOutlined style={{ marginRight: 6 }} />
-                {intl.formatMessage({ id: 'pages.cli.systemTab', defaultMessage: 'System Integrated' })}
-              </span>
-            ),
-            children: <BuiltinCliTable />,
-          },
-          {
-            key: 'custom',
-            label: (
-              <span>
-                <CodeOutlined style={{ marginRight: 6 }} />
-                {intl.formatMessage({ id: 'pages.cli.customTab', defaultMessage: 'Custom' })}
-              </span>
-            ),
-            children: customPane,
-          },
-        ]}
-      />
+      <Space direction="vertical" size={16} style={{ display: 'flex' }}>
+        <SearchFilterBar
+          onSearch={() => {}}
+          onReset={handleReset}
+          showSearchButton={false}
+          searchText={intl.formatMessage({ id: 'pages.common.search', defaultMessage: 'Search' })}
+          resetText={intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
+        >
+          <SearchInput
+            value={keyword}
+            onChange={handleKeywordChange}
+            placeholder={intl.formatMessage({ id: 'pages.cli.searchPlaceholder', defaultMessage: 'Search CLI name' })}
+            width="auto"
+          />
+        </SearchFilterBar>
 
-      <CliForm
-        visible={formVisible}
-        values={currentRow}
-        onCancel={() => {
-          setFormVisible(false);
-          setCurrentRow(undefined);
-        }}
-        onSubmit={handleSubmit}
-      />
+        <Table
+          columns={columns}
+          dataSource={data}
+          rowKey="id"
+          loading={loading}
+          scroll={{ x: 'max-content' }}
+          pagination={{
+            current: pageNum,
+            pageSize: pageSize,
+            total: total,
+            showSizeChanger: true,
+            showQuickJumper: true,
+            pageSizeOptions: ['10', '20', '50'],
+            onChange: (page, size) => {
+              setPageNum(page);
+              setPageSize(size);
+              loadData(page, size);
+            },
+          }}
+          locale={{
+            emptyText: (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={intl.formatMessage({ id: 'pages.cli.noData', defaultMessage: 'No CLI tools' })}
+              />
+            ),
+          }}
+        />
+      </Space>
 
       <AgentRefreshModal
         visible={!!refreshTarget}

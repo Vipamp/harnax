@@ -1,21 +1,15 @@
 import { useIntl } from '@umijs/max';
-import { Button, Input, Select, Space, Switch, Tag } from 'antd';
+import { Button, Select, Space, Switch } from 'antd';
 import React from 'react';
-import { PlusOutlined, LockOutlined, DownOutlined, RightOutlined, EnvironmentOutlined } from '@ant-design/icons';
+import { PlusOutlined } from '@ant-design/icons';
+import EnvParamTable, { EnvBindingRow, EnvVarOption } from './EnvParamTable';
 
 export type ToolConfigState = {
   toolId?: number;
   toolName?: string;
   needConfirm?: boolean;
   envEntries?: API.ToolEnvParamEntry[];
-  envBindings?: { envKey: string; envValue: string; envVarId?: number; customInput?: boolean }[];
-};
-
-export type EnvVarOption = {
-  id: number;
-  envKey: string;
-  displayValue: string;
-  sensitive: boolean;
+  envBindings?: EnvBindingRow[];
 };
 
 interface ToolConfigPanelProps {
@@ -76,32 +70,22 @@ const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
     setToolConfigs(newConfigs);
   };
 
-  const handleEnvBindingSelect = (index: number, envIndex: number, envVarId: number) => {
+  const writeRow = (index: number, envIndex: number, next: EnvBindingRow) => {
     const newConfigs = [...toolConfigs];
     const bindings = [...(newConfigs[index].envBindings || [])];
-    if (envVarId === -1) {
-      bindings[envIndex] = { ...bindings[envIndex], envVarId: undefined, envValue: '', customInput: true };
-    } else {
-      const selected = envVarOptions.find(opt => opt.id === envVarId);
-      if (!selected) return;
-      // 引用只落 envVarId，值由运行时按 id 现取：敏感项的 displayValue 是掩码，
-      // 顺手存成 envValue 就等于把 `******` 写进快照，环境变量一旦被删，工具拿到的就是星号。
-      bindings[envIndex] = { ...bindings[envIndex], envVarId: selected.id, envValue: '', customInput: undefined };
-    }
-    newConfigs[index].envBindings = bindings;
-    setToolConfigs(newConfigs);
-  };
-
-  const handleCustomInputChange = (index: number, envIndex: number, value: string) => {
-    const newConfigs = [...toolConfigs];
-    const bindings = [...(newConfigs[index].envBindings || [])];
-    bindings[envIndex] = { ...bindings[envIndex], envValue: value };
-    newConfigs[index].envBindings = bindings;
+    bindings[envIndex] = next;
+    newConfigs[index] = { ...newConfigs[index], envBindings: bindings };
     setToolConfigs(newConfigs);
   };
 
   const addToolConfig = () => setToolConfigs([...toolConfigs, {}]);
   const removeToolConfig = (index: number) => setToolConfigs(toolConfigs.filter((_, i) => i !== index));
+
+  const toggleCollapsed = (index: number) => {
+    const next = new Set(collapsed);
+    next.has(index) ? next.delete(index) : next.add(index);
+    setCollapsed(next);
+  };
 
   return (
     <div>
@@ -134,101 +118,14 @@ const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
           </Space>
 
           {config.envEntries && config.envEntries.length > 0 && (
-            <div style={{ marginTop: 8, paddingLeft: 12, borderLeft: '2px solid var(--vip-primary)' }}>
-              <div
-                style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 4, padding: '4px 0', color: 'var(--vip-text-secondary)', fontSize: 13 }}
-                onClick={() => {
-                  const next = new Set(collapsed);
-                  next.has(index) ? next.delete(index) : next.add(index);
-                  setCollapsed(next);
-                }}
-              >
-                {collapsed.has(index) ? <RightOutlined style={{ fontSize: 10 }} /> : <DownOutlined style={{ fontSize: 10 }} />}
-                <EnvironmentOutlined style={{ fontSize: 12, color: 'var(--vip-primary)' }} />
-                <span style={{ fontWeight: 500 }}>{intl.formatMessage({ id: 'pages.agent.tool.envParamsCount', defaultMessage: 'Env Params' })} ({config.envEntries.length})</span>
-              </div>
-              {!collapsed.has(index) && (
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 4 }}>
-                  <thead>
-                    <tr style={{ background: 'var(--vip-bg-layout)', borderBottom: '1px solid var(--vip-border)' }}>
-                      <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 500, color: 'var(--vip-text-secondary)', width: '30%' }}>
-                        {intl.formatMessage({ id: 'pages.agent.tool.envParamName', defaultMessage: 'Param Name' })}
-                      </th>
-                      <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 500, color: 'var(--vip-text-secondary)', width: '35%' }}>
-                        {intl.formatMessage({ id: 'pages.agent.tool.envVarName', defaultMessage: 'Env Variable' })}
-                      </th>
-                      <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 500, color: 'var(--vip-text-secondary)', width: '35%' }}>
-                        {intl.formatMessage({ id: 'pages.agent.tool.envVarValue', defaultMessage: 'Value' })}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(config.envBindings || []).map((binding, envIdx) => {
-                      const envEntry = config.envEntries?.[envIdx];
-                      const selectedEnvVar = binding.envVarId ? envVarOptions.find(opt => opt.id === binding.envVarId) : null;
-                      return (
-                        <tr key={envIdx} style={{ borderBottom: '1px solid var(--vip-border)' }}>
-                          <td style={{ padding: '6px 8px', fontFamily: 'monospace', color: 'var(--vip-text-primary)' }}>
-                            {binding.envKey}
-                            {envEntry?.required && <Tag color="red" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', marginLeft: 4 }}>{intl.formatMessage({ id: 'pages.mcp.config.required', defaultMessage: '必填' })}</Tag>}
-                            {envEntry?.secret && <Tag color="orange" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', marginLeft: 4 }}>{intl.formatMessage({ id: 'pages.mcp.config.secret', defaultMessage: '敏感' })}</Tag>}
-                          </td>
-                          <td style={{ padding: '6px 8px' }}>
-                            <Select
-                              size="small"
-                              style={{ width: '100%' }}
-                              value={binding.customInput ? -1 : binding.envVarId}
-                              onChange={(val) => handleEnvBindingSelect(index, envIdx, val)}
-                              placeholder={intl.formatMessage({ id: 'pages.agent.tool.selectEnvVar', defaultMessage: 'Select env variable' })}
-                              allowClear
-                              onClear={() => {
-                                const newConfigs = [...toolConfigs];
-                                const bindings = [...(newConfigs[index].envBindings || [])];
-                                bindings[envIdx] = { ...bindings[envIdx], envVarId: undefined, envValue: '', customInput: undefined };
-                                newConfigs[index].envBindings = bindings;
-                                setToolConfigs(newConfigs);
-                              }}
-                              showSearch
-                              filterOption={(input, option) =>
-                                (option?.label as string)?.toLowerCase().includes(input.toLowerCase()) ?? false
-                              }
-                              options={[
-                                ...envVarOptions.map(opt => ({ label: opt.envKey, value: opt.id })),
-                                { label: `✏️ ${intl.formatMessage({ id: 'pages.agent.tool.customInput', defaultMessage: 'Custom' })}`, value: -1 },
-                              ]}
-                            />
-                          </td>
-                          <td style={{ padding: '6px 8px' }}>
-                            {binding.customInput ? (
-                              <Input
-                                size="small"
-                                value={binding.envValue}
-                                onChange={(e) => handleCustomInputChange(index, envIdx, e.target.value)}
-                                placeholder={intl.formatMessage({ id: 'pages.agent.tool.inputValue', defaultMessage: 'Enter value' })}
-                                style={{ fontFamily: 'monospace' }}
-                              />
-                            ) : selectedEnvVar ? (
-                              <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--vip-text-secondary)' }}>
-                                {selectedEnvVar.sensitive ? (
-                                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--vip-text-quaternary)' }}>
-                                    <LockOutlined />
-                                    {selectedEnvVar.displayValue}
-                                  </span>
-                                ) : (
-                                  <span style={{ wordBreak: 'break-all' }}>{selectedEnvVar.displayValue}</span>
-                                )}
-                              </span>
-                            ) : (
-                              <span style={{ color: 'var(--vip-text-quaternary)' }}>-</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </div>
+            <EnvParamTable
+              entries={config.envEntries}
+              bindings={config.envBindings || []}
+              envVarOptions={envVarOptions}
+              collapsed={collapsed.has(index)}
+              onToggleCollapsed={() => toggleCollapsed(index)}
+              onRowChange={(envIndex, next) => writeRow(index, envIndex, next)}
+            />
           )}
         </div>
       ))}
