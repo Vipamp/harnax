@@ -17,7 +17,6 @@ import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.SkillRepository
 import com.agnetix.harnax.entity.dto.SkillAgentBindingCount
 import com.agnetix.harnax.mapper.AgentSkillBindingMapper
-import com.agnetix.harnax.mapper.CliSkillBindingMapper
 import com.agnetix.harnax.mapper.SkillMapper
 import com.agnetix.harnax.mapper.SkillRepositoryMapper
 import com.agnetix.harnax.mapper.TeamSkillBindingMapper
@@ -71,9 +70,6 @@ class SkillServiceImplTest {
 
     @Mock
     private lateinit var agentSkillBindingMapper: AgentSkillBindingMapper
-
-    @Mock
-    private lateinit var cliSkillBindingMapper: CliSkillBindingMapper
 
     @Mock
     private lateinit var teamSkillBindingMapper: TeamSkillBindingMapper
@@ -162,7 +158,6 @@ class SkillServiceImplTest {
         skillMapper = skillMapper,
         skillRepositoryService = skillRepositoryService,
         agentSkillBindingMapper = agentSkillBindingMapper,
-        cliSkillBindingMapper = cliSkillBindingMapper,
         teamSkillBindingMapper = teamSkillBindingMapper,
         skillLoaderRegistry = skillLoaderRegistry,
         // A real installer over the same mocked mappers, so the persistence assertions below still
@@ -176,7 +171,6 @@ class SkillServiceImplTest {
         skillMapper = skillMapper,
         skillRepositoryMapper = syncRepositoryMapper,
         agentSkillBindingMapper = agentSkillBindingMapper,
-        cliSkillBindingMapper = cliSkillBindingMapper,
         teamSkillBindingMapper = teamSkillBindingMapper,
     )
 
@@ -1056,7 +1050,6 @@ class SkillServiceImplTest {
             // Then
             assertTrue(result)
             verify(agentSkillBindingMapper).deleteBySkillIds(listOf(1L))
-            verify(cliSkillBindingMapper).deleteBySkillIds(listOf(1L))
             verify(skillMapper).deleteById(1L)
         }
 

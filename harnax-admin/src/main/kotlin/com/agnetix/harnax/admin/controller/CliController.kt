@@ -1,8 +1,6 @@
 package com.agnetix.harnax.admin.controller
 
-import com.agnetix.harnax.admin.dto.CliCreateRequest
 import com.agnetix.harnax.admin.dto.CliResponse
-import com.agnetix.harnax.admin.dto.CliUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.mapRecords
 import com.agnetix.harnax.admin.service.CliService
@@ -13,13 +11,16 @@ import com.agnetix.harnax.common.dto.ResultVo
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.tags.Tag
-import jakarta.validation.Valid
 import org.slf4j.LoggerFactory
 import org.springframework.web.bind.annotation.*
 
 /**
- * CLI management controller.
- * Manages command-line tools that are installed into agent sandbox images.
+ * CLI read side: the registered plugin packages and the switch that takes one out of circulation.
+ *
+ * There is no create/update/delete route. A CLI is published by dropping its `.harnaxcli.zip` into
+ * admin's package directory, which `CliPackageAutoRegistrar` reads at startup (design D2); the
+ * `related-agents` and `related-sessions` reads exist so the effect of the switch is visible before
+ * it is thrown.
  */
 @RestController
 @RequestMapping("/api/admin/clis")
@@ -65,29 +66,6 @@ class CliController(
         ResultVo.error(e.message ?: "Failed to get CLI details")
     }
 
-    @PostMapping
-    @Operation(summary = "Create CLI", description = "Add new CLI tool information")
-    fun createCli(
-        @Valid @RequestBody request: CliCreateRequest,
-    ): ResultVo<Void> = try {
-        if (cliService.createCli(request)) ResultVo.success() else ResultVo.error("Failed to create CLI")
-    } catch (e: Exception) {
-        log.error("Failed to create CLI", e)
-        ResultVo.error(e.message ?: "Failed to create CLI")
-    }
-
-    @PutMapping("/update/{id}")
-    @Operation(summary = "Update CLI", description = "Update CLI information by CLI ID")
-    fun updateCli(
-        @Parameter(description = "CLI ID") @PathVariable(name = "id") id: Long,
-        @Valid @RequestBody request: CliUpdateRequest,
-    ): ResultVo<Void> = try {
-        if (cliService.updateCli(id, request)) ResultVo.success() else ResultVo.error("Failed to update CLI")
-    } catch (e: Exception) {
-        log.error("Failed to update CLI", e)
-        ResultVo.error(e.message ?: "Failed to update CLI")
-    }
-
     @PutMapping("/toggle/{id}")
     @Operation(summary = "Toggle CLI status", description = "Toggle CLI status by CLI ID")
     fun toggleCli(
@@ -98,17 +76,6 @@ class CliController(
     } catch (e: Exception) {
         log.error("Failed to toggle CLI status", e)
         ResultVo.error(e.message ?: "Failed to toggle CLI status")
-    }
-
-    @DeleteMapping("/{id}")
-    @Operation(summary = "Delete CLI", description = "Delete CLI by CLI ID")
-    fun deleteCli(
-        @Parameter(description = "CLI ID") @PathVariable(name = "id") id: Long,
-    ): ResultVo<Void> = try {
-        if (cliService.deleteCli(id)) ResultVo.success() else ResultVo.error("Failed to delete CLI")
-    } catch (e: Exception) {
-        log.error("Failed to delete CLI", e)
-        ResultVo.error(e.message ?: "Failed to delete CLI")
     }
 
     @GetMapping("/{id}/related-agents")

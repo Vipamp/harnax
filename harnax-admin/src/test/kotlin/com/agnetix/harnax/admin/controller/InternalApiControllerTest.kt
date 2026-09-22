@@ -1,6 +1,5 @@
 package com.agnetix.harnax.admin.controller
 
-import com.agnetix.harnax.admin.constant.BuiltinRepository
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.service.McpOAuthUserService
@@ -16,12 +15,10 @@ import com.agnetix.harnax.entity.AgentToolBinding
 import com.agnetix.harnax.entity.ApiKeyEntity
 import com.agnetix.harnax.entity.Channel
 import com.agnetix.harnax.entity.Cli
-import com.agnetix.harnax.entity.CliSkillBinding
 import com.agnetix.harnax.entity.McpAuthTypes
 import com.agnetix.harnax.entity.McpServer
 import com.agnetix.harnax.entity.Session
 import com.agnetix.harnax.entity.Skill
-import com.agnetix.harnax.entity.SkillRepository
 import com.agnetix.harnax.entity.Team
 import com.agnetix.harnax.entity.TeamMember
 import com.agnetix.harnax.entity.TeamSkillBinding
@@ -36,13 +33,11 @@ import com.agnetix.harnax.mapper.AgentToolMapper
 import com.agnetix.harnax.mapper.ApiKeyMapper
 import com.agnetix.harnax.mapper.ChannelMapper
 import com.agnetix.harnax.mapper.CliMapper
-import com.agnetix.harnax.mapper.CliSkillBindingMapper
 import com.agnetix.harnax.mapper.McpServerMapper
 import com.agnetix.harnax.mapper.ModelMapper
 import com.agnetix.harnax.mapper.ModelProviderMapper
 import com.agnetix.harnax.mapper.SessionMapper
 import com.agnetix.harnax.mapper.SkillMapper
-import com.agnetix.harnax.mapper.SkillRepositoryMapper
 import com.agnetix.harnax.mapper.TeamMapper
 import com.agnetix.harnax.mapper.TeamMemberMapper
 import com.agnetix.harnax.mapper.TeamSkillBindingMapper
@@ -122,16 +117,10 @@ class InternalApiControllerTest {
     private lateinit var mcpServerMapper: McpServerMapper
 
     @Mock
-    private lateinit var skillRepositoryMapper: SkillRepositoryMapper
-
-    @Mock
     private lateinit var cliBindingMapper: AgentCliBindingMapper
 
     @Mock
     private lateinit var cliMapper: CliMapper
-
-    @Mock
-    private lateinit var cliSkillBindingMapper: CliSkillBindingMapper
 
     @Mock
     private lateinit var envVariableService: EnvVariableService
@@ -931,11 +920,19 @@ class InternalApiControllerTest {
             skillmd = "# $name"
         }
 
-        /** 让 agent 100 额外绑定一个 CLI，并把该 CLI 关联的技能 ID stub 好 */
-        private fun stubCliWithSkills(
+        /**
+         * 让 agent 100 绑定一个 CLI 包。
+         *
+         * [skillId] 是包自带技能所在的行，`null` 表示这个包不带技能；[skillRow] 只在该行确实存在时
+         * stub。留空 [skillRow] 就是「CLI 指向一个已被删除的技能行」这种悬空形状。
+         * [cliStatus] 与技能行自身的 status 分别对应两张表——登记器会让它们同步（I5），但运维单独
+         * 停用技能仍然是必须挡住的口子，所以两者要能各自表达。
+         */
+        private fun stubCli(
             cliId: Long,
-            cliSkillIds: List<Long>,
-            status: Int = 1,
+            skillId: Long?,
+            skillRow: Skill? = null,
+            cliStatus: Int = 1,
         ) {
             `when`(cliBindingMapper.selectByAgentId(100L)).thenReturn(
                 listOf(
@@ -950,18 +947,14 @@ class InternalApiControllerTest {
                     Cli().apply {
                         id = cliId
                         name = "cli-$cliId"
-                        this.status = status
+                        this.skillId = skillId
+                        status = cliStatus
                     },
                 ),
             )
-            `when`(cliSkillBindingMapper.selectByCliIds(listOf(cliId))).thenReturn(
-                cliSkillIds.map {
-                    CliSkillBinding().apply {
-                        this.cliId = cliId
-                        skillId = it
-                    }
-                },
-            )
+            if (skillRow != null) {
+                `when`(skillMapper.selectByIds(listOf(skillRow.id))).thenReturn(listOf(skillRow))
+            }
         }
 
         @Test
@@ -1009,39 +1002,63 @@ class InternalApiControllerTest {
         }
 
         @Test
-        @DisplayName("CLI 只透传绑定的技能 ID，不并入 skillDetails")
-        fun `getAgentSpec should carry CLI skill ids without merging them into skillDetails`() {
-            // 内置 CLI 技能在 agent 配置页既不展示也不可勾选，「选没选中这个 CLI」就是唯一开关。
-            // 开关由 agent-service 判定（它才知道本次注入了哪些内置技能），admin 只负责把 ID 带下去
+        @DisplayName("CLI 自带技能内联随 cliDetails.skill 下发，不并入 agent 自己的 skillDetails")
+        fun `getAgentSpec should deliver the shipped skill inline without merging it into skillDetails`() {
+            // 「选没选中这个 CLI」就是唯一开关：技能跟着包走，agent 配置页既看不到也勾不到。
+            // 内联而不是下发一个 ID 让运行侧再查一次，是为了杜绝同一份答案的两半各自漂移
             stubAgentWithSkills(skill(31L, "own-skill", 1))
-            stubCliWithSkills(7L, listOf(32L))
-            // 合并逻辑已删、这行桩生产路径不再触发，但刻意留着：谁把合并加回来，32 就会出现在
-            // skillDetails 里把用例弄红——没有它，回归会伪装成通过
-            `when`(skillMapper.selectByIds(listOf(32L))).thenReturn(listOf(skill(32L, "cli-skill", 1)))
+            val shipped = skill(32L, "cli-skill", 1)
+            stubCli(7L, skillId = 32L, skillRow = shipped)
 
             val data = controller.getAgentSpec("web-skill").data
 
             assertNotNull(data)
             assertEquals(listOf(31L), data?.skillDetails?.map { it.id })
             assertEquals("31", data?.skillList)
-            assertEquals(listOf(32L), data?.cliDetails?.single()?.skillIds)
+            assertEquals(32L, data?.cliDetails?.single()?.skill?.id)
+            assertEquals("# cli-skill", data?.cliDetails?.single()?.skill?.skillmd)
         }
 
         @Test
-        @DisplayName("停用的 CLI 不下发，其技能绑定也随之消失")
-        fun `getAgentSpec should drop a disabled CLI and its skill ids`() {
-            // 唯一开关就在这一行闸门上：CLI 一旦停用，它关联的内置技能既装不进沙箱，
-            // 也不该再被 agent-service 按 skillIds 捞进 prompt
+        @DisplayName("停用的 CLI 不下发，其自带技能也随之消失")
+        fun `getAgentSpec should drop a disabled CLI and its shipped skill`() {
+            // 唯一开关就在这一行闸门上：CLI 一旦停用，它自带的技能既进不了 prompt，
+            // 载荷也不再装进沙箱
             stubAgentWithSkills(skill(35L, "own-skill", 1))
-            stubCliWithSkills(9L, listOf(36L), status = 0)
-            // 同上一条用例：桩不再被生产路径触发，留着是为了让「合并被加回来」这种回归仍然显形
-            `when`(skillMapper.selectByIds(listOf(36L))).thenReturn(listOf(skill(36L, "cli-skill", 1)))
+            stubCli(9L, skillId = 36L, skillRow = skill(36L, "cli-skill", 1), cliStatus = 0)
 
             val data = controller.getAgentSpec("web-skill").data
 
             assertNotNull(data)
             assertTrue(data?.cliDetails?.isEmpty() ?: false)
             assertEquals(listOf(35L), data?.skillDetails?.map { it.id })
+        }
+
+        @Test
+        @DisplayName("自带技能被单独停用时只丢技能，CLI 载荷照常下发")
+        fun `getAgentSpec should drop only the skill when it is the one disabled`() {
+            // 包里的 SKILL.md 被内容扫描降级就是这个形状：载荷照装，只是不能再让 agent
+            // 读那份说明
+            stubAgentWithSkills()
+            stubCli(11L, skillId = 37L, skillRow = skill(37L, "flagged-cli-skill", 0))
+
+            val data = controller.getAgentSpec("web-skill").data
+
+            assertEquals(11L, data?.cliDetails?.single()?.id)
+            assertNull(data?.cliDetails?.single()?.skill)
+            assertTrue(data?.skillDetails?.isEmpty() ?: false)
+        }
+
+        @Test
+        @DisplayName("自带技能行已被删除时 CLI 仍下发，技能为 null")
+        fun `getAgentSpec should tolerate a dangling skill pointer`() {
+            stubAgentWithSkills()
+            stubCli(12L, skillId = 38L)
+
+            val data = controller.getAgentSpec("web-skill").data
+
+            assertEquals(12L, data?.cliDetails?.single()?.id)
+            assertNull(data?.cliDetails?.single()?.skill)
         }
     }
 
@@ -1097,7 +1114,6 @@ class InternalApiControllerTest {
                     },
                 ),
             )
-            `when`(cliSkillBindingMapper.selectByCliIds(listOf(7L))).thenReturn(emptyList())
         }
 
         private fun deliveredEnv(): Map<String, String> {
@@ -1155,48 +1171,85 @@ class InternalApiControllerTest {
     }
 
     /**
-     * `/builtin-skills` 现在是 CLI 关联技能内容的唯一来源（agent-service 每次 resolve 现取），
-     * 内置技能的 `status` 闸门也就只剩这一处：运维直接改库降级一个内置技能，全靠这里拦住。
+     * CLI 包字段的下发口径：运行侧要靠 `payloadDigest` 判定镜像是否要重建、靠 `packageObject` 取包，
+     * 并把 `depsApt` 拼进镜像、把 `runtimeEnv` 解析成容器环境变量。这几列由登记器写成 JSON，
+     * 下发时必须还原成结构，否则沙箱里装出来的就是一个少装依赖、少配变量的镜像。
      */
     @Nested
-    @DisplayName("内置技能下发")
-    inner class BuiltinSkillsDeliveryTests {
+    @DisplayName("CLI 包字段下发")
+    inner class CliPackageDeliveryTests {
 
-        private fun builtinSkill(id: Long, name: String, status: Int) = Skill().apply {
-            this.id = id
-            this.name = name
-            this.status = status
-            repositoryId = 3L
-            skillmd = "# $name"
-        }
-
-        @Test
-        @DisplayName("被停用的内置技能不下发")
-        fun `getBuiltinSkills should deliver only enabled skills`() {
-            `when`(skillRepositoryMapper.selectBuiltinRepository(BuiltinRepository.CLI_SKILLS)).thenReturn(
-                SkillRepository().apply {
-                    id = 3L
-                    name = BuiltinRepository.CLI_SKILLS
+        private fun stubCliPackage(
+            depsApt: String?,
+            runtimeEnv: String?,
+        ) {
+            val session = Session().apply {
+                sessionId = "web-cli-pkg"
+                agentId = 100L
+                enableThink = 0
+                enableSearch = 0
+                enablePlan = 0
+            }
+            `when`(sessionMapper.selectBySessionIdAndStatus("web-cli-pkg", 1)).thenReturn(session)
+            `when`(agentMapper.selectById(100L)).thenReturn(
+                Agent().apply {
+                    id = 100L
+                    name = "Package CLI Agent"
+                    systemPrompt = "x"
+                    modelId = 5L
                 },
             )
-            `when`(skillMapper.selectByRepositoryId(3L)).thenReturn(
-                listOf(builtinSkill(41L, "harnax-cli", 1), builtinSkill(42L, "flagged-cli", 0)),
+            `when`(cliBindingMapper.selectByAgentId(100L)).thenReturn(
+                listOf(
+                    AgentCliBinding().apply {
+                        agentId = 100L
+                        cliId = 21L
+                    },
+                ),
             )
-
-            val data = controller.getBuiltinSkills().data
-
-            assertEquals(listOf(41L), data?.map { it.id })
+            `when`(cliMapper.selectByIds(listOf(21L))).thenReturn(
+                listOf(
+                    Cli().apply {
+                        id = 21L
+                        name = "harnax-cli"
+                        version = "1.4.0"
+                        checkCommand = "harnax --version"
+                        packageDigest = "a".repeat(64)
+                        payloadDigest = "b".repeat(64)
+                        packageObject = "harnax-cli/$packageDigest.harnaxcli.zip"
+                        this.depsApt = depsApt
+                        this.runtimeEnv = runtimeEnv
+                    },
+                ),
+            )
         }
 
         @Test
-        @DisplayName("内置仓库不存在时返回空列表，不报错")
-        fun `getBuiltinSkills should return an empty list when the repository is missing`() {
-            `when`(skillRepositoryMapper.selectBuiltinRepository(BuiltinRepository.CLI_SKILLS)).thenReturn(null)
+        @DisplayName("两个摘要、对象键、依赖与环境槽按声明原样下发")
+        fun `getAgentSpec should deliver the package fields the image is built from`() {
+            stubCliPackage("""["curl","jq"]""", """{"HARNAX_URL":"${'$'}{platform.adminUrl}"}""")
 
-            val result = controller.getBuiltinSkills()
+            val cli = controller.getAgentSpec("web-cli-pkg").data?.cliDetails?.single()
 
-            assertTrue(result.isSuccess())
-            assertTrue(result.data?.isEmpty() ?: false)
+            assertEquals("b".repeat(64), cli?.payloadDigest)
+            assertEquals("a".repeat(64), cli?.packageDigest)
+            assertEquals("harnax-cli/${"a".repeat(64)}.harnaxcli.zip", cli?.packageObject)
+            assertEquals(listOf("curl", "jq"), cli?.depsApt)
+            assertEquals(mapOf("HARNAX_URL" to "\${platform.adminUrl}"), cli?.runtimeEnv)
+        }
+
+        @Test
+        @DisplayName("JSON 列写坏时该项下发为空，整个 spec 不因此失败")
+        fun `getAgentSpec should degrade a malformed column instead of failing`() {
+            // 这两列只有登记器会写，正常路径下不会坏；坏在这里的代价必须是「少装一个依赖」，
+            // 不是「这个 agent 起不来」
+            stubCliPackage("{not json", "[/dev/null")
+
+            val cli = controller.getAgentSpec("web-cli-pkg").data?.cliDetails?.single()
+
+            assertNotNull(cli)
+            assertEquals(emptyList<String>(), cli?.depsApt)
+            assertEquals(emptyMap<String, String>(), cli?.runtimeEnv)
         }
     }
 

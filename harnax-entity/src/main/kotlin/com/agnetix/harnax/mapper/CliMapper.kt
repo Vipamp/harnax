@@ -4,6 +4,16 @@ import com.agnetix.harnax.entity.Cli
 import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
 
+/**
+ * CLI plugin package mapper.
+ *
+ * Rows are created and deleted only by `CliPackageAutoRegistrar`, which reads the package directory
+ * at startup; no page or API writes this table. `uk_cli_name` is what makes the upsert converge on
+ * one row per package name across versions.
+ *
+ * Tenant isolation is absent by design (design D10): a published package is a platform asset, so
+ * there is no per-tenant or per-author visibility left to express.
+ */
 @Mapper
 interface CliMapper {
 
@@ -11,20 +21,21 @@ interface CliMapper {
 
     fun selectByIds(@Param("ids") ids: List<Long>): List<Cli>
 
-    fun insert(cli: Cli): Int
-
-    fun updateById(cli: Cli): Int
-
-    fun deleteById(@Param("id") id: Long): Int
+    fun selectByName(@Param("name") name: String): Cli?
 
     fun selectCliList(
         @Param("name") name: String?,
         @Param("status") status: Int?,
-        @Param("currentUsername") currentUsername: String,
-        @Param("tenantId") tenantId: Long? = null,
     ): List<Cli>
 
-    fun selectByName(@Param("name") name: String, @Param("tenantId") tenantId: Long): Cli?
+    /** Every row including pruned-and-soft-deleted ones — the registrar diffs this against the directory */
+    fun selectAll(): List<Cli>
+
+    /** Insert or update by `name`. Never touches `status`, which is the operator's kill switch. */
+    fun upsertCliPackage(cli: Cli): Int
 
     fun updateStatus(@Param("id") id: Long, @Param("status") status: Int): Int
+
+    /** Hard delete for the prune path only. */
+    fun deleteByIds(@Param("ids") ids: List<Long>): Int
 }

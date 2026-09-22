@@ -30,7 +30,6 @@ import com.agnetix.harnax.mapper.AgentToolBindingMapper
 import com.agnetix.harnax.mapper.AgentToolEnvParamMapper
 import com.agnetix.harnax.mapper.AgentToolMapper
 import com.agnetix.harnax.mapper.CliMapper
-import com.agnetix.harnax.mapper.CliSkillBindingMapper
 import com.agnetix.harnax.mapper.McpServerMapper
 import com.agnetix.harnax.mapper.SessionMapper
 import com.agnetix.harnax.mapper.TeamMapper
@@ -64,7 +63,6 @@ class AgentServiceImpl(
     private val skillBindingMapper: AgentSkillBindingMapper,
     private val cliBindingMapper: AgentCliBindingMapper,
     private val cliMapper: CliMapper,
-    private val cliSkillBindingMapper: CliSkillBindingMapper,
     private val mcpServerMapper: McpServerMapper,
     private val agentToolMapper: AgentToolMapper,
     private val agentToolEnvParamMapper: AgentToolEnvParamMapper,
@@ -308,7 +306,6 @@ class AgentServiceImpl(
         if (cliBindings.isNotEmpty()) {
             val cliIds = cliBindings.map { it.cliId }.distinct()
             val clisById = cliMapper.selectByIds(cliIds).associateBy { it.id }
-            val skillBindingsByCli = cliSkillBindingMapper.selectByCliIds(cliIds).groupBy { it.cliId }
             val cliItems = mutableListOf<AgentResponse.CliItem>()
             for (binding in cliBindings) {
                 val cli = clisById[binding.cliId] ?: continue
@@ -318,16 +315,20 @@ class AgentServiceImpl(
                 item.cliDescription = cli.description
                 item.version = cli.version
                 item.envBindings = parseEnvBindingsJson(binding.envBindings)
-                val cliSkills = skillBindingsByCli[cli.id].orEmpty().mapNotNull { skillBinding ->
-                    val skill = skillService.getSkill(skillBinding.skillId) ?: return@mapNotNull null
-                    AgentResponse.SkillItem().apply {
-                        skillId = skill.id
-                        skillName = skill.name
-                        skillDescription = skill.description
-                    }
+                // One skill per CLI, the one its package shipped (design D3): the agent page shows it so
+                // the checkbox reads as "this CLI and what it teaches the agent", not as an unrelated
+                // skill that happens to share a name
+                val shippedSkill = cli.skillId?.let { skillId -> skillService.getSkill(skillId) }?.let { skill ->
+                    listOf(
+                        AgentResponse.SkillItem().apply {
+                            skillId = skill.id
+                            skillName = skill.name
+                            skillDescription = skill.description
+                        },
+                    )
                 }
-                if (cliSkills.isNotEmpty()) {
-                    item.skillList = cliSkills
+                if (!shippedSkill.isNullOrEmpty()) {
+                    item.skillList = shippedSkill
                 }
                 cliItems.add(item)
             }
@@ -464,9 +465,9 @@ class AgentServiceImpl(
     /**
      * Save skill bindings: delete old + insert new.
      *
-     * No `env_bindings` is written: per-skill environment variables have no consumer, unlike
-     * [saveToolBindings] / [saveMcpBindings] whose bindings are resolved on delivery. See the note
-     * on `AgentSkillBinding.envBindings`.
+     * Skills carry no env: unlike [saveToolBindings] / [saveMcpBindings], whose bindings are resolved
+     * on delivery, a skill binding has nothing beyond the pair of ids — the reserved `env_bindings`
+     * column was dropped by V36 once it was clear no consumer would arrive.
      */
     private fun saveSkillBindings(agentId: Long, skillList: String?) {
         skillBindingMapper.deleteByAgentId(agentId)
@@ -513,6 +514,14 @@ class AgentServiceImpl(
             // Same check tools and MCP servers run: this column is delivered into the sandbox env too
             // (`mergeCliEnvBindings`), so an unverified reference here resolves another tenant's secret
             assertEnvVarRefsBindable(config.envBindings, "CLI '${cli.name}'")
+            assertRequiredEnvParamsFilled(
+                "CLI '${cli.name}'",
+                secretFieldEncryptor.deserializeToolEnvEntries(cli.envParams),
+                config.envBindings,
+                // Unlike a builtin tool, a CLI's declared default does reach the sandbox: delivery merges
+                // `cli.env_params` under the binding values, so a default answers a required param.
+                defaultValueCounts = true,
+            )
             AgentCliBinding().apply {
                 this.agentId = agentId
                 this.cliId = cliId

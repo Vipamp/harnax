@@ -9,8 +9,8 @@ import java.time.LocalDateTime
  *
  * This is the only capability table a team owns. Tool, MCP and CLI bindings stay on [Agent], because a
  * lead orchestrates and executes nothing itself (design D8), so there is no entry point that could fill
- * such a binding in. Unlike [AgentSkillBinding] there is no `env_bindings` column: per-skill environment
- * values have no consumer on either side.
+ * such a binding in. There is no `env_bindings` column either here or on [AgentSkillBinding]:
+ * per-skill environment values have no consumer on either side.
  */
 @Schema(description = "Team Skill Binding entity")
 class TeamSkillBinding : Serializable {

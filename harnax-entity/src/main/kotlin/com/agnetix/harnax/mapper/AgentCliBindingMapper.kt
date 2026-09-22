@@ -15,4 +15,10 @@ interface AgentCliBindingMapper {
     fun batchInsert(@Param("list") list: List<AgentCliBinding>): Int
 
     fun deleteByAgentId(@Param("agentId") agentId: Long): Int
+
+    /**
+     * Cascade for a CLI that no longer exists: its package left the directory, so every agent that
+     * referenced it has to stop doing so.
+     */
+    fun deleteByCliIds(@Param("cliIds") cliIds: List<Long>): Int
 }

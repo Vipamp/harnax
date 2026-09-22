@@ -25,6 +25,12 @@ jwt:
 local:
   tmp-dir: ${java.io.tmpdir}/harnax-it/skills
 
+# No package directory is mounted for ITs, and the registrar must not mistake that for a missing
+# volume: an empty value is the "registration is not configured here" branch.
+harnax:
+  cli:
+    package-dir: ""
+
 skill:
   storage:
     type: local

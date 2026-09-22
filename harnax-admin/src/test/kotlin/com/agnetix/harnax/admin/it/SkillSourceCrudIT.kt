@@ -187,6 +187,14 @@ class SkillSourceCrudIT : BaseAdminIT() {
     @Test
     @Order(11)
     fun `delete the source also removes the skills it installed`() {
+        // The source cannot be deleted while its skill is still enabled (SkillSourceExtraIT asserts that
+        // refusal); switching it off is what a real operator does before removing a source.
+        val installed = findInPage("/api/admin/skills/page", "name=$skillDirName") {
+            it["name"]?.asText() == skillDirName
+        }
+        assertNotNull(installed, "the skill installed in order 1 should still be listed")
+        assertOk(putJson("/api/admin/skills/toggle/${installed["id"].asLong()}?status=0"))
+
         assertOk(deleteJson("/api/admin/skill-sources/$sourceId"))
         assertErr(getJson("/api/admin/skill-sources/$sourceId"))
 

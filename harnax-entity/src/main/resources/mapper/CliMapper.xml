@@ -4,16 +4,18 @@
 
     <resultMap id="CliResultMap" type="com.agnetix.harnax.entity.Cli">
         <id column="id" property="id"/>
-        <result column="tenant_id" property="tenantId"/>
         <result column="name" property="name"/>
         <result column="description" property="description"/>
         <result column="version" property="version"/>
-        <result column="install_script" property="installScript"/>
         <result column="check_command" property="checkCommand"/>
+        <result column="skill_id" property="skillId"/>
+        <result column="package_digest" property="packageDigest"/>
+        <result column="payload_digest" property="payloadDigest"/>
+        <result column="package_object" property="packageObject"/>
+        <result column="deps_apt" property="depsApt"/>
+        <result column="runtime_env" property="runtimeEnv"/>
         <result column="env_params" property="envParams"/>
         <result column="status" property="status"/>
-        <result column="is_public" property="isPublic"/>
-        <result column="creator" property="creator"/>
         <result column="active" property="active"/>
         <result column="create_time" property="createTime"/>
         <result column="update_time" property="updateTime"/>
@@ -31,54 +33,71 @@
     </select>
 
     <select id="selectByName" resultMap="CliResultMap">
-        SELECT * FROM cli WHERE name = #{name} AND tenant_id = #{tenantId} AND active = 1 LIMIT 1
+        SELECT * FROM cli WHERE name = #{name} LIMIT 1
     </select>
-
-    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO cli (
-        tenant_id, name, description, version, install_script, check_command, env_params,
-        status, is_public, creator, active, create_time, update_time
-        ) VALUES (
-        #{tenantId}, #{name}, #{description}, #{version}, #{installScript}, #{checkCommand}, #{envParams},
-        #{status}, #{isPublic}, #{creator}, #{active}, #{createTime}, #{updateTime}
-        )
-    </insert>
-
-    <update id="updateById">
-        UPDATE cli SET
-        name = #{name},
-        description = #{description},
-        version = #{version},
-        install_script = #{installScript},
-        check_command = #{checkCommand},
-        env_params = #{envParams},
-        is_public = #{isPublic},
-        update_time = NOW()
-        WHERE id = #{id} AND active = 1
-    </update>
-
-    <update id="deleteById">
-        UPDATE cli SET active = 0, update_time = NOW() WHERE id = #{id} AND active = 1
-    </update>
-
-    <update id="updateStatus">
-        UPDATE cli SET status = #{status}, update_time = NOW() WHERE id = #{id} AND active = 1
-    </update>
 
     <select id="selectCliList" resultMap="CliResultMap">
         SELECT * FROM cli
         WHERE active = 1
-        AND (is_public = 1 OR creator = #{currentUsername})
-        <if test="tenantId != null">
-            AND tenant_id = #{tenantId}
-        </if>
         <if test='name != null and name != ""'>
             AND name LIKE CONCAT('%', #{name}, '%')
         </if>
         <if test='status != null'>
             AND status = #{status}
         </if>
-        ORDER BY update_time DESC
+        ORDER BY name ASC
     </select>
+
+    <!--
+        Package rows are registrar-owned, so this overwrites every field the manifest declares.
+        `status` is the deliberate exception: it is the operator's kill switch (design D9), and
+        rewriting it to 1 here would silently re-enable a CLI the day someone restarts admin.
+        `active = 1` needs no exception: the registrar is the only writer and a row it holds is live by
+        definition. V38 retired the pre-package leftovers under a `#retired-<id>` name, so looking a
+        package name up never lands on a soft-deleted row in the first place.
+    -->
+    <insert id="upsertCliPackage">
+        INSERT INTO cli (
+            name, description, version, check_command, skill_id, package_digest, payload_digest,
+            package_object, deps_apt, runtime_env, env_params, status, active, create_time, update_time
+        ) VALUES (
+            #{name}, #{description}, #{version}, #{checkCommand}, #{skillId}, #{packageDigest}, #{payloadDigest},
+            #{packageObject}, #{depsApt}, #{runtimeEnv}, #{envParams}, 1, 1, NOW(), NOW()
+        )
+        ON DUPLICATE KEY UPDATE
+            description = VALUES(description),
+            version = VALUES(version),
+            check_command = VALUES(check_command),
+            skill_id = VALUES(skill_id),
+            package_digest = VALUES(package_digest),
+            payload_digest = VALUES(payload_digest),
+            package_object = VALUES(package_object),
+            deps_apt = VALUES(deps_apt),
+            runtime_env = VALUES(runtime_env),
+            env_params = VALUES(env_params),
+            active = 1,
+            update_time = NOW()
+    </insert>
+
+    <update id="updateStatus">
+        UPDATE cli SET status = #{status}, update_time = NOW() WHERE id = #{id} AND active = 1
+    </update>
+
+    <select id="selectAll" resultMap="CliResultMap">
+        SELECT * FROM cli
+    </select>
+
+    <!--
+        Hard delete for the prune path only. A package that left the directory is gone, and keeping
+        an active = 0 row would block the name forever (uk_cli_name), so a re-added package could
+        never come back. No guard here because the caller hands over only ids it proved it wrote:
+        `pruneMissingPackages` starts from rows with a non-empty package_digest.
+    -->
+    <delete id="deleteByIds">
+        DELETE FROM cli WHERE id IN
+        <foreach collection="ids" item="cliId" open="(" separator="," close=")">
+            #{cliId}
+        </foreach>
+    </delete>
 
 </mapper>

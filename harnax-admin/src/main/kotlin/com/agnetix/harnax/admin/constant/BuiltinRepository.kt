@@ -8,9 +8,10 @@ package com.agnetix.harnax.admin.constant
  */
 object BuiltinRepository {
     /**
-     * Repository holding CLI-associated skills.
-     * - CLI skill bindings may ONLY reference skills from this repository.
-     * - Agents may NOT bind skills from this repository directly (they arrive via CLI).
+     * Repository holding the skills shipped inside CLI packages.
+     * - `CliPackageAutoRegistrar` upserts each package's `skill/SKILL.md` here and stores the row id
+     *   on `cli.skill_id`; the package, not an operator, is the writer.
+     * - Agents may NOT bind skills from this repository directly (they arrive via the CLI).
      * - The repository and its skills are read-only via management APIs.
      */
     const val CLI_SKILLS = "builtin-cli-skills"

@@ -12,6 +12,7 @@ import java.util.zip.ZipOutputStream
 import kotlin.random.Random
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -114,8 +115,29 @@ class SkillSourceExtraIT : BaseAdminIT() {
     @Test
     @Order(6)
     fun `cleanup delete skill source`() {
+        // Upload installs its skill enabled, and an enabled skill is what the delete gate reads: the
+        // cascade it guards reaches past the source into the agent bindings its skills hold.
+        val node = deleteJson("/api/admin/skill-sources/$sourceId")
+        assertErr(node)
+        assertTrue(
+            node["message"].asText().contains("still enabled"),
+            "the refusal should name the gate it hit: ${node["message"].asText()}",
+        )
+
+        val skill = findInPage("/api/admin/skills/page", "name=$skillDirName") {
+            it["name"]?.asText() == skillDirName
+        }
+        assertNotNull(skill, "an uploaded zip installs its skill, so the source has one")
+        assertOk(putJson("/api/admin/skills/toggle/${skill["id"].asLong()}?status=0"))
+
         assertOk(deleteJson("/api/admin/skill-sources/$sourceId"))
         assertErr(getJson("/api/admin/skill-sources/$sourceId"))
+        assertNull(
+            findInPage("/api/admin/skills/page", "name=$skillDirName") {
+                it["name"]?.asText() == skillDirName
+            },
+            "deleting a source takes its disabled skills with it",
+        )
         zipPath?.let { Files.deleteIfExists(it) }
     }
 }

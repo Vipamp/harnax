@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.multipart.MaxUploadSizeExceededException
 import org.springframework.web.servlet.NoHandlerFoundException
+import org.springframework.web.servlet.resource.NoResourceFoundException
 import java.sql.SQLException
 
 /**
@@ -87,6 +88,20 @@ class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.NOT_FOUND)
     fun handleNoHandlerFoundException(ex: NoHandlerFoundException): ResultVo<Void> {
         log.warn("Requested resource not found: {}", ex.requestURL)
+        return ResultVo.error(404, "Requested resource not found")
+    }
+
+    /**
+     * Handle a request that matched neither a controller nor a static resource.
+     *
+     * Spring reports this as NoResourceFoundException rather than NoHandlerFoundException, so without
+     * this handler an unmapped path is answered with a generic 500 and a caller cannot tell a removed
+     * route from a broken one.
+     */
+    @ExceptionHandler(NoResourceFoundException::class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    fun handleNoResourceFoundException(ex: NoResourceFoundException): ResultVo<Void> {
+        log.warn("Requested resource not found: {}", ex.resourcePath)
         return ResultVo.error(404, "Requested resource not found")
     }
 

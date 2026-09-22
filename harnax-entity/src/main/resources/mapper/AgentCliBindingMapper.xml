@@ -31,4 +31,11 @@
         DELETE FROM agent_cli_binding WHERE agent_id = #{agentId}
     </delete>
 
+    <delete id="deleteByCliIds">
+        DELETE FROM agent_cli_binding WHERE cli_id IN
+        <foreach collection="cliIds" item="cliId" open="(" separator="," close=")">
+            #{cliId}
+        </foreach>
+    </delete>
+
 </mapper>

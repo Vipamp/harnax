@@ -85,6 +85,12 @@
             <artifactId>flyway-mysql</artifactId>
         </dependency>
 
+        <!-- SnakeYAML - reads plugin.yaml inside a CLI package -->
+        <dependency>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
+        </dependency>
+
         <!-- BCrypt for Password Encryption -->
         <dependency>
             <groupId>org.mindrot</groupId>

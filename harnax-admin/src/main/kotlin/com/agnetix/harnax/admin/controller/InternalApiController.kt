@@ -1,6 +1,5 @@
 package com.agnetix.harnax.admin.controller
 
-import com.agnetix.harnax.admin.constant.BuiltinRepository
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.service.McpOAuthUserService
@@ -14,6 +13,7 @@ import com.agnetix.harnax.entity.AgentCliBinding
 import com.agnetix.harnax.entity.AgentMcpBinding
 import com.agnetix.harnax.entity.AgentToolBinding
 import com.agnetix.harnax.entity.Model
+import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.Team
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
 import com.agnetix.harnax.entity.dto.CliDetailDto
@@ -33,13 +33,11 @@ import com.agnetix.harnax.mapper.AgentToolMapper
 import com.agnetix.harnax.mapper.ApiKeyMapper
 import com.agnetix.harnax.mapper.ChannelMapper
 import com.agnetix.harnax.mapper.CliMapper
-import com.agnetix.harnax.mapper.CliSkillBindingMapper
 import com.agnetix.harnax.mapper.McpServerMapper
 import com.agnetix.harnax.mapper.ModelMapper
 import com.agnetix.harnax.mapper.ModelProviderMapper
 import com.agnetix.harnax.mapper.SessionMapper
 import com.agnetix.harnax.mapper.SkillMapper
-import com.agnetix.harnax.mapper.SkillRepositoryMapper
 import com.agnetix.harnax.mapper.TeamMapper
 import com.agnetix.harnax.mapper.TeamMemberMapper
 import com.agnetix.harnax.mapper.TeamSkillBindingMapper
@@ -66,10 +64,8 @@ class InternalApiController(
     private val agentToolMapper: AgentToolMapper,
     private val mcpServerMapper: McpServerMapper,
     private val skillMapper: SkillMapper,
-    private val skillRepositoryMapper: SkillRepositoryMapper,
     private val cliBindingMapper: AgentCliBindingMapper,
     private val cliMapper: CliMapper,
-    private val cliSkillBindingMapper: CliSkillBindingMapper,
     private val mcpOAuthUserService: McpOAuthUserService,
     private val mcpStdioPolicy: McpStdioPolicy,
     private val teamMapper: TeamMapper,
@@ -113,36 +109,6 @@ class InternalApiController(
      * to its owner, so a caller cannot name a user whose grant it wants to spend.
      */
     data class McpAccessTokenRequest(val sessionId: String, val mcpId: Long)
-
-    /**
-     * List all active skills from the built-in skill repository.
-     * Called by agent-service per agent-spec resolution, which keeps only the ones the agent's
-     * selected CLIs bind.
-     *
-     * The `status` filter here is the only gate a built-in skill passes on its way to a CLI binding,
-     * so turning one off directly in the database takes effect on the next resolution.
-     *
-     * The lookup is tenant-agnostic and ordered by id: this endpoint runs without a tenant
-     * context, and the builtin repository is a single platform-wide row shared by every tenant.
-     */
-    @GetMapping("/builtin-skills")
-    fun getBuiltinSkills(): ResultVo<List<SkillDetailDto>> {
-        val repo = skillRepositoryMapper.selectBuiltinRepository(BuiltinRepository.CLI_SKILLS)
-            ?: return ResultVo.success(emptyList())
-        val skills = skillMapper.selectByRepositoryId(repo.id).filter { it.status == 1 }
-        return ResultVo.success(
-            skills.map { skill ->
-                SkillDetailDto(
-                    id = skill.id,
-                    name = skill.name,
-                    description = skill.description,
-                    skillmd = skill.skillmd,
-                    resources = skill.resources,
-                    version = skill.version,
-                )
-            },
-        )
-    }
 
     @PostMapping("/api-keys/validate")
     fun validateApiKey(@RequestBody request: ApiKeyValidateRequest): ResultVo<ApiKeyValidateResponse?> {
@@ -750,35 +716,29 @@ class InternalApiController(
                 log.warn("Skill not found: skillId={}", skillId)
                 null
             } else if (skill.status == 0) {
-                // The gate `/builtin-skills` applies, and the one the CLI branch below applies to a
-                // disabled CLI. A skill an operator switched off — or that a re-import stored
-                // disabled because SkillContentScanner flagged it — must not reach the harness just
-                // because a binding still points at it; honouring the flag is the whole point of it
+                // The same gate the CLI branch below applies to a disabled CLI — and, since the package
+                // model, the one `cliDetails[].skill` applies to a CLI's own skill. A skill an operator
+                // switched off — or that a re-import stored disabled because SkillContentScanner flagged
+                // it — must not reach the harness just because a binding still points at it; honouring
+                // the flag is the whole point of it
                 log.info("Skill '{}' (id={}) is disabled, skipping", skill.name, skill.id)
                 null
             } else {
-                SkillDetailDto(
-                    id = skill.id,
-                    name = skill.name,
-                    description = skill.description,
-                    skillmd = skill.skillmd,
-                    resources = skill.resources,
-                    version = skill.version,
-                )
+                skillDetail(skill)
             }
         }
         // Derived from what was actually resolved. Built from the bindings instead, it listed the ID
         // of every skill dropped just above, so the two halves of one answer disagreed
         val skillListStr = skillDetails.joinToString(",") { it.id.toString() }
 
-        // ── CLI bindings (full detail DTOs; skillIds resolve at the runtime) ──
+        // ── CLI bindings (full detail DTOs, each carrying the skill it ships) ──
         val cliDetails = if (cliBindings.isEmpty()) {
             emptyList()
         } else {
             val cliIds = cliBindings.map { it.cliId }.distinct()
             val clisById = cliMapper.selectByIds(cliIds).associateBy { it.id }
-            val skillIdsByCli = cliSkillBindingMapper.selectByCliIds(cliIds)
-                .groupBy({ it.cliId }, { it.skillId })
+            val skillIds = clisById.values.mapNotNull { it.skillId }.distinct()
+            val skillById = if (skillIds.isEmpty()) emptyMap() else skillMapper.selectByIds(skillIds).associateBy { it.id }
             cliBindings.mapNotNull { binding ->
                 val cli = clisById[binding.cliId]
                 if (cli == null) {
@@ -793,10 +753,30 @@ class InternalApiController(
                         name = cli.name,
                         description = cli.description,
                         version = cli.version,
-                        installScript = cli.installScript,
                         checkCommand = cli.checkCommand,
+                        packageObject = cli.packageObject,
+                        packageDigest = cli.packageDigest,
+                        payloadDigest = cli.payloadDigest,
+                        depsApt = readStringList(cli.depsApt),
+                        runtimeEnv = readStringMap(cli.runtimeEnv),
                         envBindings = mergeCliEnvBindings(binding.envBindings, cli.envParams),
-                        skillIds = skillIdsByCli[cli.id].orEmpty(),
+                        skill = cli.skillId?.let { skillId ->
+                            val skill = skillById[skillId]
+                            when {
+                                skill == null -> {
+                                    log.warn("CLI '{}' (id={}) points at skill {} which is gone", cli.name, cli.id, skillId)
+                                    null
+                                }
+                                // The package registrar keeps this row in step with `cli.status` (I5),
+                                // so this only catches a skill switched off on its own — e.g. one the
+                                // content scanner stored disabled — which must not reach the harness
+                                skill.status == 0 -> {
+                                    log.info("Skill '{}' (id={}) of CLI '{}' is disabled, skipping it", skill.name, skill.id, cli.name)
+                                    null
+                                }
+                                else -> skillDetail(skill)
+                            }
+                        },
                     )
                 }
             }
@@ -903,7 +883,7 @@ class InternalApiController(
      * with the defaults the CLI itself declares in `cli.env_params`.
      *
      * Without the top-up an installed CLI reaches the sandbox with no credentials at all — the
-     * install script runs, `check_command` passes, and every invocation then fails on "not logged
+     * payload lands, `check_command` passes, and every invocation then fails on "not logged
      * in", which is a silent failure no gate reports. The `ToolEnvParamEntry` entries marked
      * `secret` are stored encrypted and only this service holds the AES key, so decryption happens
      * here on the way out, the same way [plainToolEnvJson] does it.
@@ -925,6 +905,38 @@ class InternalApiController(
             .filter { (key, value) -> key.isNotBlank() && key !in overridden && value.isNotBlank() }
             .map { (key, value) -> mapOf("envKey" to key, "envValue" to value) }
         return perAgent + defaults
+    }
+
+    private fun skillDetail(skill: Skill): SkillDetailDto = SkillDetailDto(
+        id = skill.id,
+        name = skill.name,
+        description = skill.description,
+        skillmd = skill.skillmd,
+        resources = skill.resources,
+        version = skill.version,
+    )
+
+    /** Registrar-owned JSON columns: a malformed value delivers nothing rather than failing the call. */
+    private fun readStringList(json: String?): List<String> = readJson(json) {
+        objectMapper.readValue(it, objectMapper.typeFactory.constructCollectionType(List::class.java, String::class.java)) as List<String>
+    } ?: emptyList()
+
+    private fun readStringMap(json: String?): Map<String, String> = readJson(json) {
+        @Suppress("UNCHECKED_CAST")
+        objectMapper.readValue(it, Map::class.java) as Map<String, String>
+    } ?: emptyMap()
+
+    private fun <T : Any> readJson(
+        json: String?,
+        parse: (String) -> T,
+    ): T? {
+        if (json.isNullOrBlank()) return null
+        return try {
+            parse(json)
+        } catch (e: Exception) {
+            log.warn("Could not read a stored CLI column as JSON: {}", e.message)
+            null
+        }
     }
 
     /**

@@ -15,7 +15,6 @@ import com.agnetix.harnax.mapper.AgentToolMapper
 import com.agnetix.harnax.mapper.ApiKeyMapper
 import com.agnetix.harnax.mapper.ChannelMapper
 import com.agnetix.harnax.mapper.CliMapper
-import com.agnetix.harnax.mapper.CliSkillBindingMapper
 import com.agnetix.harnax.mapper.McpServerMapper
 import com.agnetix.harnax.mapper.ModelMapper
 import com.agnetix.harnax.mapper.ModelProviderMapper
@@ -108,9 +107,6 @@ class InternalApiTaskSpecTest {
 
     @Mock
     private lateinit var cliMapper: CliMapper
-
-    @Mock
-    private lateinit var cliSkillBindingMapper: CliSkillBindingMapper
 
     @Mock
     private lateinit var mcpOAuthUserService: McpOAuthUserService

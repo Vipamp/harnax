@@ -21,4 +21,10 @@ interface TeamSkillBindingMapper {
      * warning.
      */
     fun selectBoundSkillIds(@Param("skillIds") skillIds: List<Long>): List<Long>
+
+    /**
+     * Cascade for a skill being removed outside the management API — today that only means a CLI
+     * package whose shipped skill went with it.
+     */
+    fun deleteBySkillIds(@Param("skillIds") skillIds: List<Long>): Int
 }

@@ -7,42 +7,42 @@ import tools.jackson.databind.ObjectMapper
 import java.time.LocalDateTime
 
 /**
- * CLI response object
+ * CLI response object — one registered plugin package.
+ *
+ * [packageDigest] is what the page shows as the package summary: it is the identity of the exact
+ * archive that was registered, so two operators can tell whether they are looking at the same build.
+ * [skill] is the `SKILL.md` that came inside it, which is the only skill a CLI ever has.
  */
 @Schema(description = "CLI response object")
 data class CliResponse(
     @Schema(description = "ID", example = "1")
     val id: Long? = null,
-    @Schema(description = "CLI name", example = "kubectl")
+    @Schema(description = "CLI name", example = "harnax-cli")
     val name: String? = null,
     @Schema(description = "CLI description")
     val description: String? = null,
-    @Schema(description = "CLI version", example = "1.30.0")
+    @Schema(description = "CLI version", example = "1.4.0")
     val version: String? = null,
-    @Schema(description = "Dockerfile RUN fragment that installs this CLI")
-    val installScript: String? = null,
-    @Schema(description = "Command to verify installation")
+    @Schema(description = "Command the platform runs inside the built image to verify the payload")
     val checkCommand: String? = null,
+    @Schema(description = "sha256 of the registered package archive")
+    val packageDigest: String? = null,
     @Schema(description = "Environment variable declarations (masked for secret values)")
     val envParams: List<ToolEnvParamEntry>? = null,
-    @Schema(description = "Associated skills")
-    var skillList: List<SkillItem>? = null,
+    @Schema(description = "The skill shipped inside the package")
+    val skill: SkillItem? = null,
     @Schema(description = "Status (0:disabled, 1:enabled)", example = "1")
     val status: Int? = null,
-    @Schema(description = "Whether public (0:no, 1:yes)", example = "0")
-    val isPublic: Int? = null,
-    @Schema(description = "Creator", example = "admin")
-    val creator: String? = null,
     @Schema(description = "Creation time")
     val createTime: LocalDateTime? = null,
     @Schema(description = "Update time")
     val updateTime: LocalDateTime? = null,
 ) {
-    @Schema(description = "Associated skill item")
+    @Schema(description = "The skill shipped inside the package")
     data class SkillItem(
         @Schema(description = "Skill ID", example = "1")
         val skillId: Long? = null,
-        @Schema(description = "Skill name", example = "kubectl-usage")
+        @Schema(description = "Skill name", example = "harnax-cli")
         val skillName: String? = null,
         @Schema(description = "Skill description")
         val skillDescription: String? = null,
@@ -59,12 +59,10 @@ data class CliResponse(
             name = cli.name,
             description = cli.description,
             version = cli.version,
-            installScript = cli.installScript,
             checkCommand = cli.checkCommand,
+            packageDigest = cli.packageDigest,
             envParams = deserializeAndMaskToolEnvParams(cli.envParams, objectMapper, encryptor),
             status = cli.status,
-            isPublic = cli.isPublic,
-            creator = cli.creator,
             createTime = cli.createTime,
             updateTime = cli.updateTime,
         )
@@ -98,7 +96,10 @@ data class CliResponse(
         /**
          * 对敏感值做掩码处理，保留前 3 后 4 字符
          */
-        private fun maskValue(encryptedValue: String, encryptor: SecretFieldEncryptor?): String {
+        private fun maskValue(
+            encryptedValue: String,
+            encryptor: SecretFieldEncryptor?,
+        ): String {
             if (encryptor == null) return "******"
             return try {
                 val plain = encryptor.decrypt(encryptedValue)

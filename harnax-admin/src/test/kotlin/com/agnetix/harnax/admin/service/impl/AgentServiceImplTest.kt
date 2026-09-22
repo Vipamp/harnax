@@ -34,7 +34,6 @@ import com.agnetix.harnax.mapper.AgentToolBindingMapper
 import com.agnetix.harnax.mapper.AgentToolEnvParamMapper
 import com.agnetix.harnax.mapper.AgentToolMapper
 import com.agnetix.harnax.mapper.CliMapper
-import com.agnetix.harnax.mapper.CliSkillBindingMapper
 import com.agnetix.harnax.mapper.McpServerMapper
 import com.agnetix.harnax.mapper.SessionMapper
 import com.agnetix.harnax.mapper.SkillMapper
@@ -117,9 +116,6 @@ class AgentServiceImplTest {
 
     @Mock
     private lateinit var cliMapper: CliMapper
-
-    @Mock
-    private lateinit var cliSkillBindingMapper: CliSkillBindingMapper
 
     @Mock
     private lateinit var skillMapper: SkillMapper
@@ -1374,8 +1370,7 @@ class AgentServiceImplTest {
                 listOf(
                     Cli().apply {
                         id = 3L
-                        tenantId = 1L
-                        name = "kubectl"
+                        name = "harnax-cli"
                     },
                 ),
             )
@@ -1383,7 +1378,7 @@ class AgentServiceImplTest {
 
             // When & Then
             val exception = assertThrows<BizException> { agentService.updateAgent(1L, request) }
-            assertTrue(exception.message!!.contains("kubectl"), "message should name the CLI: ${exception.message}")
+            assertTrue(exception.message!!.contains("harnax-cli"), "message should name the CLI: ${exception.message}")
             verify(cliBindingMapper, never()).batchInsert(any())
         }
 
@@ -1511,6 +1506,113 @@ class AgentServiceImplTest {
 
             // Then
             verify(mcpBindingMapper).batchInsert(any())
+        }
+
+        /**
+         * A CLI whose package declared [entries] as its env params.
+         *
+         * The declarations live in `cli.env_params` as ciphertext, so the reading side is the encryptor
+         * rather than the entity — both stubs belong together or the guard reads an empty list.
+         */
+        private fun stubLarkCli(vararg entries: ToolEnvParamEntry) {
+            `when`(cliMapper.selectByIds(listOf(3L))).thenReturn(
+                listOf(
+                    Cli().apply {
+                        id = 3L
+                        name = "lark-cli"
+                        envParams = "declared"
+                    },
+                ),
+            )
+            `when`(secretFieldEncryptor.deserializeToolEnvEntries("declared")).thenReturn(entries.toList())
+        }
+
+        @Test
+        @DisplayName("updateAgent - Refuse a CLI whose required param is left empty")
+        fun `updateAgent should reject cli binding that leaves a required param empty`() {
+            // Given - 缺值的必填参数过去能存进去，要到沙箱里跑第一条命令才报「未配置」
+            stubLarkCli(
+                ToolEnvParamEntry(envParamName = "LARKSUITE_CLI_APP_ID", required = true),
+                ToolEnvParamEntry(envParamName = "LARKSUITE_CLI_APP_SECRET", required = true, secret = true),
+            )
+            val request = AgentUpdateRequest(
+                cliList = listOf(
+                    AgentCreateRequest.CliConfig(
+                        id = 3L,
+                        envBindings = listOf(EnvBinding(envKey = "LARKSUITE_CLI_APP_ID", customValue = "cli_xxx")),
+                    ),
+                ),
+            )
+            stubAgentForUpdate()
+
+            // When & Then
+            val exception = assertThrows<BizException> { agentService.updateAgent(1L, request) }
+            assertTrue(exception.message!!.contains("lark-cli"), "message should name the CLI: ${exception.message}")
+            // 点名缺的是哪个参数：一页勾了多个 CLI 时，只说「必填未填」无从下手
+            assertTrue(
+                exception.message!!.contains("LARKSUITE_CLI_APP_SECRET"),
+                "message should name the param: ${exception.message}",
+            )
+            verify(cliBindingMapper, never()).batchInsert(any())
+        }
+
+        @Test
+        @DisplayName("updateAgent - Accept a required CLI param answered by an env var reference")
+        fun `updateAgent should accept required cli param bound to an env var`() {
+            // Given - 引用只存指针、值由下发时现取，所以看得见 id 就算已填，不必读到值本身
+            stubLarkCli(ToolEnvParamEntry(envParamName = "TOKEN", required = true, secret = true))
+            `when`(envVariableService.getEnvVariable(7L)).thenReturn(liveEnvVariable())
+            val request = AgentUpdateRequest(
+                cliList = listOf(
+                    AgentCreateRequest.CliConfig(
+                        id = 3L,
+                        envBindings = listOf(EnvBinding(envKey = "TOKEN", envVarId = 7L)),
+                    ),
+                ),
+            )
+            stubAgentForUpdate()
+
+            // When
+            agentService.updateAgent(1L, request)
+
+            // Then
+            verify(cliBindingMapper).batchInsert(any())
+        }
+
+        @Test
+        @DisplayName("updateAgent - A CLI package default does answer a required param")
+        fun `updateAgent should accept required cli param covered by the package default`() {
+            // Given - 内置工具的 default_value 不下发所以顶不了必填；CLI 的包默认会由
+            // mergeCliEnvBindings 补进 envBindings，确实能到沙箱
+            stubLarkCli(ToolEnvParamEntry(envParamName = "REGION", required = true, defaultValue = "cn"))
+            val request = AgentUpdateRequest(cliList = listOf(AgentCreateRequest.CliConfig(id = 3L)))
+            stubAgentForUpdate()
+
+            // When
+            agentService.updateAgent(1L, request)
+
+            // Then
+            verify(cliBindingMapper).batchInsert(any())
+        }
+
+        @Test
+        @DisplayName("updateAgent - Reject a required CLI param carrying only masked text")
+        fun `updateAgent should reject required cli param filled with masked text`() {
+            // Given - 编辑回来的表单把接口的掩码值当值提交，存下就是字面量 `abc****wxyz`
+            stubLarkCli(ToolEnvParamEntry(envParamName = "TOKEN", required = true, secret = true))
+            val request = AgentUpdateRequest(
+                cliList = listOf(
+                    AgentCreateRequest.CliConfig(
+                        id = 3L,
+                        envBindings = listOf(EnvBinding(envKey = "TOKEN", customValue = "abc****wxyz")),
+                    ),
+                ),
+            )
+            stubAgentForUpdate()
+
+            // When & Then
+            assertThrows<BizException> { agentService.updateAgent(1L, request) }
+            verify(cliBindingMapper, never()).batchInsert(any())
         }
     }
 }

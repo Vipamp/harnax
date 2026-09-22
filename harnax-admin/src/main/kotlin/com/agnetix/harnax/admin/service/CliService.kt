@@ -1,13 +1,15 @@
 package com.agnetix.harnax.admin.service
 
-import com.agnetix.harnax.admin.dto.CliCreateRequest
 import com.agnetix.harnax.admin.dto.CliResponse
-import com.agnetix.harnax.admin.dto.CliUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.entity.Cli
 
 /**
- * CLI service interface
+ * CLI read side plus the one switch an operator is allowed to touch.
+ *
+ * There is no create, update or delete: a `cli` row is registered from a plugin package by
+ * `CliPackageAutoRegistrar` and goes away when that package leaves the directory (design D2). What the
+ * page can do is take a CLI out of circulation, which is why [toggleCliStatus] is the only writer.
  */
 interface CliService {
 
@@ -15,13 +17,7 @@ interface CliService {
 
     fun getCli(id: Long): Cli?
 
-    fun createCli(request: CliCreateRequest): Boolean
-
-    fun updateCli(id: Long, request: CliUpdateRequest): Boolean
-
     fun toggleCliStatus(id: Long, status: Int): Boolean
-
-    fun deleteCli(id: Long): Boolean
 
     fun convertToResponse(cli: Cli): CliResponse
 }

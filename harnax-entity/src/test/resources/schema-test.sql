@@ -588,14 +588,14 @@ CREATE TABLE IF NOT EXISTS `mcp_call_log` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='MCP 授权与调用审计表';
 
 -- ============================================
--- 25. Agent-Skill binding (V7; UNIQUE(agent_id, skill_id) arrives in V33, kept out of this schema on
---     purpose so the duplicate-row reads the guards must tolerate stay testable)
+-- 25. Agent-Skill binding (V7; V33's UNIQUE(agent_id, skill_id) is kept out of this schema on purpose
+--     so the duplicate-row reads the guards must tolerate stay testable. V36 dropped env_bindings:
+--     per-skill environment values never got a consumer)
 -- ============================================
 CREATE TABLE IF NOT EXISTS `agent_skill_binding` (
     `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT 'ID',
     `agent_id` BIGINT(20) NOT NULL COMMENT 'agent.id',
     `skill_id` BIGINT(20) NOT NULL COMMENT 'skill.id',
-    `env_bindings` TEXT DEFAULT NULL COMMENT 'JSON array of env binding snapshots',
     `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),

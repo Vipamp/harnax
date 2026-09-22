@@ -98,6 +98,9 @@ minio:
   access-key: ${MINIO_ACCESS_KEY:minioadmin}
   secret-key: ${MINIO_SECRET_KEY:minioadmin}
   output-bucket: ${MINIO_OUTPUT_BUCKET:harnax-output}
+  # CLI plugin packages. Must match agent-service's harness.minio.cli-package-bucket, which is the
+  # reader: admin only writes here.
+  cli-package-bucket: ${MINIO_CLI_PACKAGE_BUCKET:harnax-cli-packages}
 
 # Captcha test master code for UI automation (harnax-ui-test).
 # Empty (default) = disabled. Only set CAPTCHA_TEST_MASTER_CODE in test environments, NEVER in production.
@@ -146,3 +149,9 @@ harnax:
     # runtime has the same switch (`harness.mcp-stdio-enabled`) and one env var sets both. Turning it
     # on means accepting arbitrary command execution in whichever container runs the agent.
     stdio-enabled: ${HARNAX_MCP_STDIO_ENABLED:false}
+  cli:
+    # Directory holding `<name>-<version>.harnaxcli.zip` plugin packages. Read once at startup by
+    # `CliPackageAutoRegistrar`, which registers what it finds, uploads the archives to MinIO and
+    # prunes rows whose package disappeared. Publishing a CLI is now dropping a file in here, so it
+    # is a mounted volume rather than something built into the image.
+    package-dir: ${HARNAX_CLI_PACKAGE_DIR:/home/harnax/cli-packages}

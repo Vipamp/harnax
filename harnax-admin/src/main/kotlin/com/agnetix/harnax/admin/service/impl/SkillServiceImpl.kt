@@ -20,7 +20,6 @@ import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.SkillRepository
 import com.agnetix.harnax.mapper.AgentSkillBindingMapper
-import com.agnetix.harnax.mapper.CliSkillBindingMapper
 import com.agnetix.harnax.mapper.SkillMapper
 import com.agnetix.harnax.mapper.TeamSkillBindingMapper
 import com.github.pagehelper.PageHelper
@@ -40,7 +39,6 @@ class SkillServiceImpl(
     private val skillMapper: SkillMapper,
     private val skillRepositoryService: SkillRepositoryService,
     private val agentSkillBindingMapper: AgentSkillBindingMapper,
-    private val cliSkillBindingMapper: CliSkillBindingMapper,
     private val teamSkillBindingMapper: TeamSkillBindingMapper,
     private val skillLoaderRegistry: SkillLoaderRegistry,
     private val skillInstaller: SkillInstaller,
@@ -217,9 +215,8 @@ class SkillServiceImpl(
         // simply disappear — the harsher operation cannot have the looser precondition
         requireUnbound(skill, "deleted")
 
-        // Remove agent/cli references so no dangling bindings survive the delete
+        // Remove agent references so no dangling binding survives the delete
         agentSkillBindingMapper.deleteBySkillIds(listOf(id))
-        cliSkillBindingMapper.deleteBySkillIds(listOf(id))
 
         return skillMapper.deleteById(id) > 0
     }
