@@ -41,8 +41,8 @@
 | JDK | 21 | 构建产物按 Java 21 编译 |
 | MySQL | 8.0 | 两个库：`harnax_admin`（表结构由 **admin** 的 Flyway 维护）与 `agentscope`（会话 / 智能体状态）。**`agentscope` 这个库要预先存在**——库内的 `agent_state` 表由本服务启动时 `CREATE TABLE IF NOT EXISTS` 建，但建库不归它 |
 | Docker daemon | 必须可达 | 开启沙箱（`SANDBOX_ENABLED=true`）时要挂 `/var/run/docker.sock`，且容器内需有 `docker` CLI（镜像已装）：沙箱是通过 shell 调 `docker` 命令创建的，不是走 SDK。**裸 JVM 部署要自己保证 `docker` 在 PATH 上且当前用户可读 socket** |
-| 沙箱镜像 | `harnax-sandbox:py-node`（默认）、`harnax-sandbox:latest` | 由 `build.sh` Step 7 调根目录的 `sandbox-plugins/build.sh` 构建（**必须在仓库根目录执行**）。注意 `harnax-sandbox:latest` 在缺 Go 环境时会被整段跳过，只有 `py-node` 那个仍会构建 |
-| MinIO | 仅 `MINIO_ENABLED=true` 时需要 | 三个桶：`harnax-snapshots` / `harnax-store` / `harnax-output`（名字可改，见下文）。启动时会自动尝试建桶 |
+| 沙箱镜像 | `harnax-sandbox:py-node`（`SANDBOX_IMAGE` 默认值） | 由 `build.sh` Step 7 调根目录的 `sandbox-plugins/build.sh` 构建（**必须在仓库根目录执行**），这一步**不需要 Go**——旧的 `harnax-sandbox:latest` 插件镜像已删除。按 CLI 组合派生的 `harnax-sandbox:cli-<hash>` 不归构建期：本服务在首个用到它的会话前现场 `docker build`（相关变量见下文 `SANDBOX_CLI_PACKAGE_CACHE_DIR` 起三行），构建失败只影响那个会话 |
+| MinIO | 仅 `MINIO_ENABLED=true` 时需要 | 四个桶：`harnax-snapshots` / `harnax-store` / `harnax-output` / `harnax-cli-packages`（名字可改，见下文）。启动时会自动尝试建桶 |
 | Redis | **不需要** | 路由与实例注册状态由 router 持有 |
 
 ---
@@ -108,10 +108,10 @@
 | `SANDBOX_KEEP_ALIVE_MAX_IDLE_MS` | `1800000`（30 分钟） | 保活容器空闲多久后回收。**必须大于最长单轮对话**：时钟只在一轮开始挂载沙箱时刷新，轮中不刷新 |
 | `SANDBOX_KEEP_ALIVE_SWEEP_INTERVAL_MS` | `300000`（5 分钟） | 回收扫描周期，首次扫描同样延迟一个周期。仅 `SANDBOX_ENABLED=true` 时该定时任务才装配 |
 | `SANDBOX_NETWORK` | 空（`bridge`） | 需要容器按域名访问其他服务时填自定义网络名，例如 `docker-new_harnax-network` |
-| `SANDBOX_CLI_PLUGINS_ENABLED` | `false`（compose 里置 `true`） | 不只是「注入 harnax-cli」：开启后**换用 `SANDBOX_PLUGIN_IMAGE`**，并在会话装配期按 admin 下发的安装脚本对本机 Docker **执行一次 `docker build`**（产出 `harnax-sandbox:cli-<hash>` 这类镜像，会持续累积占宿主磁盘）。`SANDBOX_PLUGIN_ADMIN_URL` 或 `SANDBOX_PLUGIN_INTERNAL_SECRET` 为空时插件初始化整段跳过，只留一条 WARN |
-| `SANDBOX_PLUGIN_IMAGE` | `harnax-sandbox:py-node` | 带插件的镜像 |
-| `SANDBOX_PLUGIN_ADMIN_URL` | 空（compose 里 `http://admin:8080`） | 沙箱内 CLI 回调 admin 的地址 |
-| `SANDBOX_PLUGIN_INTERNAL_SECRET` | 空（compose 里取 `ADMIN_INTERNAL_API_SECRET`） | CLI 呈现的凭据，见下方「密钥一致性」 |
+| `SANDBOX_CLI_PACKAGE_CACHE_DIR` | `/tmp/harnax-agent/cli-packages` | CLI 包 payload 的解包与缓存目录，按 `packageDigest` 分片，是 `docker build` 的上下文。**容器内路径**，构建上下文由客户端打包成 tar 流给宿主 daemon，所以不必与宿主共享文件系统；容器重建后缓存丢失只会重新从 MinIO 拉一次 |
+| `SANDBOX_PLATFORM_ADMIN_URL` | 空（compose 里 `http://admin:8080`） | 包内 `${platform.adminUrl}` 的解析值，即沙箱内 CLI 回调 admin 的地址。**必须是容器可达的地址**。为空时该锚点解析不出值：受管 CLI 起得来但调不通 admin |
+| `SANDBOX_PLATFORM_INTERNAL_TOKEN` | 回退 `ADMIN_INTERNAL_API_SECRET` | 包内 `${platform.internalToken}` 的解析值。compose 不单独注入，靠的就是与 admin 同值的那个密钥变量；留过占位默认值会同时踩中「admin 拒收占位密钥」那条 401（见部署文档的密钥一致性） |
+| `MINIO_CLI_PACKAGE_BUCKET` | `harnax-cli-packages` | 取包用的桶，**必须与 admin 的 `minio.cli-package-bucket` 同值**（admin 登记时写进这个桶）。两侧读的是同一个环境变量名。**compose 目前不转发这个变量**，两服务都落在 yml 默认值上，因此在 `.env` 里设它不生效——真要换名得给 admin 与 agent-service 两个 `environment` 块同时加上 |
 
 ### 输出文件检测
 
@@ -151,7 +151,7 @@
 | `JWT_SECRET` | **admin** | 用户已登录但调本服务被拒；网页端表现为对话起不来 |
 | `ADMIN_INTERNAL_API_SECRET` | **admin / router / channel / scheduler** | 取不到 AgentSpec（内部 API 401），日志出现 `[InternalApiAuth] Invalid credentials` |
 | `HARNAX_AUTH_SECRET` | router / channel / scheduler | 服务间调用 401 |
-| `SANDBOX_PLUGIN_INTERNAL_SECRET` | 与 `ADMIN_INTERNAL_API_SECRET` 同值（compose 已如此注入） | 沙箱内 `harnax-cli` 调 admin 失败 |
+| `SANDBOX_PLATFORM_INTERNAL_TOKEN` | 默认**回退** `ADMIN_INTERNAL_API_SECRET`（compose 就这么落：不单独注入） | 沙箱内 CLI（如 `harnax`）调 admin 失败；显式设成别的值等于给 `${platform.internalToken}` 换了凭据，两件事必须同时改 |
 
 `ADMIN_INTERNAL_API_SECRET` 有**两个方向**的用途，两处都要通：
 
@@ -179,7 +179,7 @@
 
 - **`--scale` 现在起不来**：compose 里 `container_name: harnax-agent-service` 是固定名，且 `AGENT_INSTANCE_ID` 有默认值，两个副本会撞容器名并共用同一实例 ID。要多实例就复制服务块并各自改名、改 ID，而不是 `--scale`。
 - **实例挂掉时正在跑的会话会断**：SSE 直连 agent-service 时断的是这一条连接；会话与实例的绑定在 router 侧，重连由 router 决定落到哪台。缓存 agent 数上限（`AGENT_CACHE_MAX_SIZE`，默认 500）按实例计，容量规划据此摊。
-- **宿主磁盘会长**，三处：`harnax-snapshots` 桶里的 workspace 快照（回收取决于 MinIO 生命周期规则，代码不管）、`harnax-sandbox:cli-<hash>` 这类按安装脚本哈希产出的镜像、以及 `LOCAL_TMP_DIR` 下的临时工作区。部署说明里应写明定期回收策略，否则表现为宿主的 `docker system df` 一路涨。
+- **宿主磁盘会长**，四处：`harnax-snapshots` 桶里的 workspace 快照（回收取决于 MinIO 生命周期规则，代码不管）、`harnax-sandbox:cli-<hash>` 这类按所选 CLI 的 `payloadDigest` 组合哈希产出的镜像（**只在 `checkCommand` 验收失败时被 `docker rmi -f`，成功落地的没有任何回收**，所以每换一次二进制就多一个 tag）、`SANDBOX_CLI_PACKAGE_CACHE_DIR` 下按 `packageDigest` 分片的 payload 缓存、以及 `LOCAL_TMP_DIR` 下的临时工作区。部署说明里应写明定期回收策略，否则表现为宿主的 `docker system df` 一路涨。
 - **构建顺序**：`build.sh` 必须在**仓库根目录**执行；镜像构建依赖 `docker-new/dist/agent-service/*.jar`，那是 Step 3 的产物，跳过 Step 3 会在 Step 8 报「文件不存在」。
 
 ---

@@ -1,5 +1,7 @@
 # Sandbox CLI Plugin 设计规格
 
+> **已被取代（2026-09-21）**：本文设计的 `cli_plugin` 表、`pluginImage` 与 `HarnaxCliPluginInitializer` 那一套内置 CLI 插件机制，已由 [2026-09-21-cli-package-plugin-design.md](./2026-09-21-cli-package-plugin-design.md) 整体取代——CLI 不再区分内置与自定义，统一由插件包在 admin 启动时登记。**请勿按本文实现**，本文仅保留作决策史料。
+
 ## 概述
 
 将 CLI 工具作为可选插件嵌入 agent 沙箱镜像，使每个会话内的 agent 能通过 shell 调用 CLI 管理平台资源。设计为通用框架，harnax-cli 作为第一个实现。

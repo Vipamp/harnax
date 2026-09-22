@@ -87,6 +87,8 @@ Flyway 会在服务启动时自动执行 `db/migration` 下的建表脚本，无
 | `FLYWAY_CLEAN_DISABLED` | `true` | 禁止 `flyway clean`；compose 里是**字面量**，`.env` 改不动 |
 | `SKILL_UPLOAD_MAX_FILE_SIZE` / `SKILL_UPLOAD_MAX_REQUEST_SIZE` | `200MB` / `205MB` | 技能 ZIP 上传的 multipart 上限；nginx 的 `client_max_body_size` 要一起放，否则表现为 413 |
 | `MINIO_ENABLED` / `MINIO_ENDPOINT` / `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` / `MINIO_OUTPUT_BUCKET` | `false` / `http://localhost:9000` / `minioadmin` / `minioadmin` / `harnax-output` | 输出文件的下载代理。**admin 与 agent 两侧都要配同一个桶**，否则用户在网页上看不到 agent 产出的文件 |
+| `HARNAX_CLI_PACKAGE_DIR` | `/home/harnax/cli-packages` | CLI 插件包目录（配置项 `harnax.cli.package-dir`）。只影响 admin；compose 把宿主机 `docker-new/dist/cli-packages/` 以**只读 bind mount** 盖在同名路径上，详见下文「CLI 插件包投放与升级」 |
+| `MINIO_CLI_PACKAGE_BUCKET` | `harnax-cli-packages` | 登记后的包存放的桶（配置项 `minio.cli-package-bucket`）。**agent-service 读的是同一个变量名**（`harness.minio.cli-package-bucket`），只改一侧会导致运行期取不到包。两侧各自都会建桶（admin 登记器与 agent-service 的 `ensureBuckets`），谁先起来谁建，不需要手工预建 |
 | `HARNAX_AUTH_SECRET` | 占位串 | 服务间 token 的签名密钥，与 `ADMIN_INTERNAL_API_SECRET` 是两条不同的东西，别混用。**发布 2 起它是双向的**：既签本服务调 scheduler 的出向 token，也是 scheduler 校验 admin 转发进来的那枚 bearer 的密钥（契约 C4），所以**必须与 scheduler 同值**——compose 里两个服务由同一个变量插值，配一次就同源，手工/裸机部署两边各写一次才是坑。**两种配错的症状不一样，别混成一条**：两边**不同值**才是 401——scheduler 把每一次转发都拒掉，用户在网页上看到「Scheduler service unavailable」/40902，而 cron 照常触发；两边都**留占位值**（yml 与 compose 的默认串 `change-me-in-production-min-32-chars!!`，36 字符，过得了长度校验）**不报错、照常 200**，因为两个服务插的是同一个变量、值天然相同——它的问题是安全而不是可用：那串写在公开仓库里，等于给 `/api/scheduler/**` 配了一把谁都能配的钥匙，必须换掉。注意本服务另有一个 `ADMIN_INTERNAL_API_SECRET`（`admin.internal-api.secret`）确实会因占位值被拒（`JwtAuthenticationFilter` 认它为"未配置"，`/api/admin/**` 上直接 401），那是另一条链上的另一把密钥，别把两者的行为套到 `HARNAX_AUTH_SECRET` 上 |
 | `HARNAX_ROUTER_EXTERNAL_URL` | 空 | 返给前端 / 小程序的路由地址 |
 | `HARNAX_SCHEDULER_URL` | `http://localhost:8084`；compose 侧是 `${HARNAX_SCHEDULER_URL:-http://scheduler:8084}`，**可在 `.env` 覆盖** | admin → scheduler 的任务控制地址。**逗号分隔时只用第一个**：共享 Quartz store 之后转发塌缩成一次调用，不再逐实例广播。落到的那台必须是开着调度的实例——同名 service 下挂一台 `SCHEDULER_ENABLED=false` 的副本，就会按负载均衡的运气偶发 40903（reload 路径到用户那边表现为 40902），约束正文在 `docs/deploy-harnax-scheduler.md` |
@@ -244,6 +246,50 @@ java -jar harnax-admin-*.jar
 ```
 
 > **Flyway 注意**: 多个实例同时启动时，Flyway 会自动加锁串行执行迁移，不会出现并发建表冲突。但建议第一次部署时先启动一个实例等待建表完成，再启动其他实例。
+
+---
+
+## CLI 插件包投放与升级
+
+`/context/cli` 页面是只读的：CLI 不由人在界面上创建，只由 admin 启动时扫描包目录登记。包怎么写见 `prod_doc/cli-package-spec.zh-CN.md`，平台侧链路见 `prod_doc/cli-plugin-package-design.zh-CN.md`，这里只写运维动作。
+
+包的位置有四层，别混：
+
+| 层 | 路径 | 说明 |
+|---|---|---|
+| 货架（投递口） | `cli-packages/dist/*.harnaxcli.zip` | `cli-packages/build.sh` 只把有来源的包补齐进来：`harnax-cli`（`make package`）+ 每个 `cli-packages/<name>/build.sh`。**它不清架**，手工丢进来的 zip 原样留下、一起投放。同名两份留 manifest `version` 高的，落选那份移进 `cli-packages/dist/.superseded/`；只有同名同版本两份才让构建失败 |
+| 构建输入 | `docker-new/dist/cli-packages/` | 三个入口脚本（`build.sh` / `deploy-all.sh` / `deploy-service.sh admin`）先清空再从货架整份复制，然后才 `docker build`。多这一层是因为 `.dockerignore` 只放行 `docker-new/dist`，`cli-packages/dist` 进不了构建上下文 |
+| 镜像内 | `/home/harnax/cli-packages/`（配置项 `harnax.cli.package-dir`） | `Dockerfile.admin` 用一条 `COPY` 落进去，目录为空也能构建，只是不带任何 CLI。单独 `docker run` 这个镜像时，它就是登记来源 |
+| 运行期 | 同上路径，被 compose 的**只读 bind mount** 盖住 | 宿主机 `docker-new/dist/cli-packages/` 是唯一一份：换包就是换这个目录的内容，不再有「镜像里是新包、跑的是旧包」的失同步，也不再需要 `docker cp` |
+
+登记只发生在 admin 启动时（`ApplicationReadyEvent`，Flyway 之后），**运行期不重扫**。所以放好包必须重启才生效，页面没有「立即同步」按钮。
+
+| 动作 | 怎么做 | 何时对会话生效 |
+|---|---|---|
+| 加一个 CLI | 自研的放 `harnax-cli/`（`make package` 的产物自动上架），第三方的新建 `cli-packages/<name>/`（`plugin.yaml` + `skill/` + `build.sh`）；已经打好的包直接丢进货架 `cli-packages/dist/`，不必有来源目录 → `./cli-packages/build.sh` → 把 `cli-packages/dist/*.harnaxcli.zip` 复制进 `docker-new/dist/cli-packages/` → `docker compose -f docker-new/docker-compose.yml up -d --force-recreate admin` | 新会话 |
+| 升级 | 换掉那个包的来源（manifest 里的 `version` 提高），或把新版本包直接丢进货架——同名两份时 `build.sh` 留 `version` 高的、落选那份移进 `cli-packages/dist/.superseded/`；重跑上面两步：同 `name` 覆盖同一行 | 新会话。**已在保活的会话仍跑旧镜像的旧容器**，要立刻换过来只能等空闲回收或 `docker rm -f agentscope-sandbox-<sessionId>` |
+| 只改文档（`SKILL.md`） | 同上重打包 | 新会话拿到新提示词，镜像不动 |
+| 下线 | 两处都删：`docker-new/dist/cli-packages/` 与货架 `cli-packages/dist/`（有来源目录的还要删掉 `cli-packages/<name>/`，否则下次构建又打回货架）→ 重启 admin | 级联：`cli` 行硬删、`agent_cli_binding` 清空、自带技能行 `active=0`（软删），日志以 WARN 列出包名与行 id。**前提：架上留下的包要比待删的多**，否则被第三道刹车拒绝 |
+| 紧急停用 | 页面 toggle（绑定关系保留） | 下一次配置解析 |
+
+四个会咬人的点：
+
+1. **宿主机那一份是唯一的一份，而且挂载是只读的。** 投放就丢进货架 `cli-packages/dist/`，部署脚本会把整架复制进 `docker-new/dist/cli-packages/`；只改后者是临时的，下一轮部署整架覆盖它。`docker cp` 进容器会被拒——挂载本身不许写。换来的是不再有「镜像里是新包、卷里是旧包」：重建镜像并 recreate 即换包。
+2. **把 `docker-new/dist/cli-packages/` 清成空目录 = 把所有 CLI 一起报成退役。** 目录缺失时 Docker 会就地建一个空的，admin 读到空货架就下 pruning 结论；包少的部署里这一步会被第三道刹车拦下（只留一条 ERROR 什么都不删），但它不是「什么都没发生」的保险。
+3. **`MINIO_ENABLED=false` 且包目录非空 ⇒ admin 直接启动失败**，不回落本地存储。留空目录则不要求 MinIO。
+4. **包目录很小时「下线」会被静默拒绝**（其实是 ERROR，不是没执行）。prune 的第三道刹车是「待删数 ≥ 剩余数即拒绝」，所以 2 个包删 1 个正好落在拒绝侧，日志形如：`Skipping prune: 1 row(s) not in the directory vs only 1 registered — this looks like a missing package directory, not retired packages`。这时 `cli` 行、绑定、技能行都还在。要真退役：先多放一个包再重启（3 删 1 即 `1 < 2` 通过），或直接把这三处 SQL 手工清掉。这条刹车同时定了下界：能删的那一轮必须留 ≥2 个包在架上，所以登记器写的行永远删不到只剩 1 个——退掉倒数第二个 CLI 只能走 SQL。
+
+包放错地方、manifest 写坏，页面表现只有一个「没出现」——真相在日志里：
+
+```bash
+docker logs harnax-admin 2>&1 | grep -i "cli-package\|CliPackage"
+# 这一份就是容器里看到的那一份（只读 bind mount）
+ls -l docker-new/dist/cli-packages/
+# 对象是否真进了 MinIO（键是 <name>/<packageDigest>.harnaxcli.zip，没有 version 段）
+docker exec harnax-minio ls -R /data/harnax-cli-packages
+```
+
+`harnax` 自身的包就是按这套规范做的第一份实现，源码在 `harnax-cli/`，可当参考。
 
 ---
 

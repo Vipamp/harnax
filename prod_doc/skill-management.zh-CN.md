@@ -14,9 +14,9 @@ Skill（技能）是按 `SKILL.md` 规范组织的能力包：一份 Markdown �
 
 分层与 tool / MCP 体系一致：
 
-- **harnax-entity**：`skill_repository` / `skill` / `agent_skill_binding` / `cli_skill_binding` 四张表与 Mapper；
+- **harnax-entity**：`skill_repository` / `skill` / `agent_skill_binding` / `team_skill_binding` 四张表与 Mapper（CLI 自带的技能不走绑定表，见 2.3）；
 - **harnax-admin**：仓库 CRUD、多来源 Loader、同步落库、绑定管理、内部 API 下发；
-- **harnax-agent-service**：拉取智能体配置、内置技能缓存、运行时装配；
+- **harnax-agent-service**：拉取智能体配置、把 CLI 自带的技能并进 spec、运行时装配；
 - **harnax-harness-core**：把 `AgentSkill` 交给 agentscope（包装为 `InMemorySkillRepository`）；
 - **agentscope**：技能目录注入系统提示词 + 按需加载全文与资源。
 
@@ -58,8 +58,9 @@ Skill（技能）是按 `SKILL.md` 规范组织的能力包：一份 Markdown �
 
 ### 2.3 绑定表
 
-- `agent_skill_binding`：`agentId` + `skillId`，智能体直绑技能；`envBindings` 列存在但保存时不写入（见 TODO-1）；
-- `cli_skill_binding`：`cliId` + `skillId`，CLI 工具关联技能，语义是「教会 Agent 使用这个 CLI」。
+- `agent_skill_binding`：`agentId` + `skillId`（加时间戳），智能体直绑技能。没有技能级环境变量：预留的 `env_bindings` 列始终没等到消费者，已由 V36 删除——tool / MCP / CLI 三张绑定表上的同名列是**活的**（admin 下发时解析成明文），正因如此在这里留一份死副本才有害：它读起来像「技能也能带 per-agent 环境变量」，而这条通道两侧都没有实现。将来真要做，应当连同第一个消费者一起加回来；
+- `team_skill_binding`：`teamId` + `skillId`，团队自带主管配置的技能，规则与前者同源（校验走同一个 `SkillBindingResolver`，见第 5 节）；
+- **CLI 的技能不是绑定表**：包登记时把 `skill/SKILL.md` upsert 进内置仓库，再由 `cli.skill_id` 一列指过去（V35）。语义是「这个 CLI 自带一份说明书」，1:1 且生命周期随包级联；历史上的 `cli_skill_binding` 表（多对多、由 CLI 管理界面手工勾选）已被 V35 删除。
 
 ### 2.4 SkillDetailDto（内部 API 下发载体）
 
@@ -75,13 +76,13 @@ Skill（技能）是按 `SKILL.md` 规范组织的能力包：一份 Markdown �
 
 常量：`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/constant/BuiltinRepository.kt`
 
-- 由 Flyway `V12__seed_builtin_cli_skills.sql` 初始化（含 `harnax-cli` 技能），`V14` 更新过其 SKILL.md，`V15` 修正其来源语义（`source_type` 由 `ZIP` 改为 `BUILTIN`，`source_config` / `url` 由 NULL 改为空串）；
+- 由 Flyway `V12__seed_builtin_cli_skills.sql` 初始化（手种了一个 `harnax-cli` 技能），`V14` 更新过其 SKILL.md，`V15` 修正其来源语义（`source_type` 由 `ZIP` 改为 `BUILTIN`，`source_config` / `url` 由 NULL 改为空串）。V35 之后技能的正源是 CLI 包，那行手种的技能再没有读者（下面第 3 条是它唯一的来路，而这条来路已删），由 V37 软删；
 - 定位方式确定性：`SkillRepositoryMapper.selectBuiltinRepository(name)` 按 `name` + `active = 1` 查询、`ORDER BY id ASC LIMIT 1`，**不依赖调用方租户**。这里刻意不再按 `source_type` 过滤——`V15` 的 `uk_skill_repository_builtin_guard` 已保证全库至多一行叫这个名，再叠一层类型过滤只会让 `V15` 尚未执行的库查不到内置仓库，把该注入的内置技能静默丢掉。内置技能靠这条仓库定位，而它对所有租户共享；早期用带租户的 `selectByName` 查询，既会在存在同名仓库时返回不确定结果，也会让非 1 号租户查不到内置仓库、进而跳过绑定约束校验；
 - **管理 API 完全只读**：写操作经 `requireNotBuiltinRepo` / `requireWritable` 拦截，仓库名在创建、上传、改名三个入口一律被保留名校验拒绝；
 - 三条专属流转规则：
-  1. CLI 绑定的技能**只能**来自该仓库（`CliServiceImpl.saveSkillBindings` 校验）；
-  2. 智能体**不能**直绑该仓库的技能（`AgentServiceImpl.saveSkillBindings` 抛错，提示「auto-loaded via CLI」）；
-  3. 该仓库全部 `status=1` 的技能由 `GET /api/admin/internal/builtin-skills` 提供，agent-service 在**每次解析 agent-spec 时现取**，并只注入本会话选中的 CLI 所关联的那几个（见第 7 节）——没选 CLI 的 agent 一个内置技能都拿不到。现取而非缓存，是为了让「直接改库停用内置技能」和「迁移改写 SKILL.md」不必等 agent-service 重启。
+  1. 该仓库的技能由 **CLI 包登记器写入**（`CliPackageAutoRegistrar.upsertSkill`，以 `(repository_id, name)` 为 upsert 键、`name` 取包名），不存在手工创建入口；
+  2. 智能体与团队主管都**不能**直绑该仓库的技能（`SkillBindingResolver.resolveBindable` 在保存时抛错，提示「auto-loaded via CLI」）——要拿到它只能选那个 CLI；
+  3. 该仓库的技能随 `cliDetails[].skill` **内联下发**（见第 6 节）：admin 解析某个 CLI 时把它自带的整份 `SkillDetailDto` 挂在该 CLI 条目上，agent-service 只注入本会话选中的 CLI 所带的那些（见第 7 节）——没选 CLI 的 agent 一个内置技能都拿不到。原 `GET /api/admin/internal/builtin-skills` 端点已删除：技能与 CLI 同属一个包，分两次请求只会造成「CLI 到了、说明书没到」的窗口。
 
 ### 3.3 来源 Loader（三种）
 
@@ -128,34 +129,37 @@ Skill（技能）是按 `SKILL.md` 规范组织的能力包：一份 Markdown �
 
 ### 4.3 删除级联
 
-仓库删除：新版 `deleteSkillSource` 与旧版 `deleteSkillRepository` 共用 `SkillInstaller.deleteWithSkills(repository)`——先取该仓库全部技能 ID → `agentSkillBindingMapper.deleteBySkillIds` + `cliSkillBindingMapper.deleteBySkillIds` → 逐个删技能 → 删仓库，不留悬空绑定。单删技能（`SkillController.deleteSkill`）同样先清绑定。
+仓库删除：新版 `deleteSkillSource` 与旧版 `deleteSkillRepository` 共用 `SkillInstaller.deleteWithSkills(repository)`——先取该仓库全部技能，再走两道拒绝闸门：**仍有 `status=1` 的技能**、**仍有 agent 或团队主管绑定**（两道都在写入前，抛 `BizException` 即整事务回滚）；通过之后清 `agent_skill_binding` 的相关行 → 逐个软删技能（`skillMapper.deleteById` 置 `active = 0`）→ 软删仓库，不留悬空绑定。单删技能（`SkillController.deleteSkill`）同样先清绑定。CLI 自带的技能不走这里：它随包的生命周期级联（见 [CLI 插件包设计](./cli-plugin-package-design.zh-CN.md)）。
 
 ## 5. Agent 与 CLI 配置技能
 
-- 智能体保存时 `skillList`（逗号分隔技能 ID）→ `AgentServiceImpl.saveSkillBindings` **先删后插** `agent_skill_binding`，插入前校验两项：禁止直绑内置仓库技能、禁止同一 agent 绑定两个同名技能（技能名只在仓库内唯一，而 harness 按 name 归并，见 R5-3）。校验在事务内、抛错即整体回滚。
-- CLI 保存时写入 `cli_skill_binding`，且只接受内置仓库技能；
-- 详情回显 `convertToResponse`：技能项带所属仓库名；CLI 项内嵌其关联技能列表（供前端展示「这个 CLI 会附带哪些技能」）。
+- 智能体保存时 `skillList`（逗号分隔技能 ID）→ `AgentServiceImpl.saveSkillBindings` **先删后插** `agent_skill_binding`，插入前校验在 `SkillBindingResolver.resolveBindable`：禁止直绑内置仓库技能、禁止同一 agent 绑定两个同名技能（技能名只在仓库内唯一，而 harness 按 name 归并，见 R5-3）、禁止绑定不存在或已停用的技能。校验在事务内、抛错即整体回滚。
+- 团队主管的技能写 `team_skill_binding`（V34），校验复用同一个 `SkillBindingResolver`——同一个入口、同一句话拒绝，两条绑定路径不会分叉；
+- CLI 侧**没有**保存入口：技能随包登记写进内置仓库，`cli.skill_id` 一个外键指过去（V35 删掉了 `cli_skill_binding` 表与 CLI 手工创建接口）。「这个 CLI 带哪份说明书」由包里的 `skill/SKILL.md` 决定，界面改不了；
+- 详情回显 `convertToResponse`：技能项带所属仓库名；CLI 项内嵌它自带的那一份技能（`skill` 是单个对象，含名称与描述，不是列表）。
 
 ## 6. 配置下发（Admin → agent-service）
 
-`InternalApiController.buildAgentSpecResponse`（`GET /api/admin/internal/agent-spec/{sessionId}`）中与技能相关的四份数据：
+`InternalApiController.buildAgentSpecResponse`（`GET /api/admin/internal/agent-spec/{sessionId}`）中与技能相关的数据：
 
 1. `skillList`：绑定 ID 的 CSV 字符串（legacy 字段，保留兼容）；
 2. `skillDetails`：逐个查 `skill` 表组装的完整 `SkillDetailDto`；
-3. **CLI 技能关联**：查智能体的 CLI 绑定 → `cliSkillBindingMapper.selectByCliIds` 取各 CLI 的技能 ID → 随 `cliDetails[].skillIds` **原样透传**；**禁用的 CLI 整条跳过**，其技能随之下发不到。admin 不解析这些 ID——「选中哪个 CLI 就加载哪些内置技能」由 agent-service 判定（见第 7 节、R7-1）；
-4. 另有独立接口 `GET /api/admin/internal/builtin-skills`：返回内置仓库全部 `status=1` 技能（不存在该仓库时返回空列表），仓库经 `selectBuiltinRepository` 确定性定位、不传租户上下文。
+3. **CLI 自带的技能**：查智能体的 CLI 绑定 → 按 `cli.skill_id` 取技能行 → 整份 `SkillDetailDto` 挂在对应的 `cliDetails[].skill` 上（不再是待解析的 ID 列表，admin 已解析这一次）；**禁用的 CLI 整条跳过**，它带的技能随之下发不到。技能行自己处于停用状态（内容扫描命中、或运维直接改库）时，只把该条目的 `skill` 置空、CLI 条目照发，并 `log.info` 点名——被停用的东西不进 harness，这条闸门与 `skillDetails` 同语义（R5-1 / R7-1 收紧的正是它）；
+4. **不再有独立接口**：原 `GET /api/admin/internal/builtin-skills` 随包模型一起删掉了（理由见 3.2 第 3 条——技能与 CLI 出自同一次解析，分两次取只会造出一个只能用 warn 观测的窗口）。
 
 `cliDetails[].envBindings` 与技能无关但同属这一段下发，口径记在这里以免被当成漏项：它由 `mergeCliEnvBindings` 按 key 合并两份来源——`agent_cli_binding.env_bindings`（某个 agent 对某参数的显式赋值，优先）与 `cli.env_params` 声明的默认值，其中 `secret=true` 的条目在本服务内解密后明文下发（agent-service 不持 AES 密钥），声明了却没有值的参数整条跳过。详见 R8-1。
+
+包模型另加了一条并行通道 `cliDetails[].runtimeEnv`：包里 `plugin.yaml` 声明的运行时环境变量，admin 原样下发，`${platform.adminUrl}` / `${platform.internalToken}` 两个占位符由 agent-service 按自己的配置展开；它与 `envBindings` 一起进容器环境，同名时 `envBindings` 覆盖在前、按 agent 分账的那份赢。
 
 ## 7. 运行时装配链路（agent-service → HarnessAgent → agentscope）
 
 ```
 AgentSpecResolver.resolve(sessionId)
-    ├─ 内置技能注入：先取 cliDetails[].skillIds 的并集作筛选集，集为空则整段跳过（连对 admin 的请求
-    │     都不发）；集非空时按次调用 GET /builtin-skills 现取内容并按 ID 过滤，admin 未交付的 ID
-    │     记一条 warn（悬空绑定 / 被直接改库停用 / 不在内置仓库）
-    │     命中的排在前，按 skillId 与 specInfo.skillDetails 去重
-    │     与 spec 技能同名的内置技能让位（同名两份会让 harness 两层的判断相反，见 R5-3）
+    ├─ withCliSkills：CLI 技能直接读自 cliDetails[].skill（随 agent-spec 一次到达，不再对 admin 发第二次请求）
+    │     先按 skillId 滤掉 spec 已含的，再按 name 分区：与 spec 技能同名的不注入并 log.info 点名
+    │     （同名两份会让 harness 两层的判断相反，运维显式绑定的那一份赢，见 R5-3）
+    │     选中的 CLI 一个技能都没带 → log.warn 点名（包里没写 SKILL.md，或技能行已被删）
+    │     命中的排在 spec 技能之前，日志为 `Injected N CLI skill(s) into spec`
     │     → effectiveSpecInfo（copy(skillDetails = merged)）
     ├─ specContextHolder.set(effectiveSpecInfo)        ← 供 SkillAdaptor 读取
     └─ builder.addSkill(SkillSpec(skillId, skillName))
@@ -186,17 +190,20 @@ agentscope 消费端（HarnessAgent 内部）
 
 **技能生效方式**：不是把 SKILL.md 全文塞满上下文，而是「目录进提示词 + 工具按需读全文 + 资源文件落工作区」的渐进式披露，上下文成本与技能数量近似线性、与技能大小基本无关。
 
-## 8. 技能到达 Agent 的两条路径
+## 8. 技能到达 Agent 的三条路径
 
-| 路径 | 绑定表 | 来源限制 | 注入位置 |
+| 路径 | 承载 | 来源限制 | 注入位置 |
 |------|--------|---------|---------|
 | 智能体直绑 | `agent_skill_binding` | 禁止内置仓库技能 | Admin 下发 `skillDetails` |
-| CLI 关联 | `cli_skill_binding` | 仅内置仓库技能 | agent-service `AgentSpecResolver` 按 `cliDetails[].skillIds` 过滤当次 `/builtin-skills` 的返回结果注入 |
+| 团队主管直绑 | `team_skill_binding`（V34） | 同上，同一套校验 | Admin 下发 `skillDetails`（主管只编排、运行侧不装载，见 R9-7） |
+| CLI 自带 | `cli.skill_id`（V35，1:1） | 由包登记器写进内置仓库，界面不可改 | 随 `cliDetails[].skill` 下发，agent-service `withCliSkills` 注入 |
 
-两条路径最终都汇入 `skillDetails` → `SkillSpec` → `AgentSkill`。闸门各守一段：被停用的 CLI 由 admin 整条跳过（连 `skillIds` 一起消失），被停用的技能由 `/builtin-skills` 过滤，两条路径共用同一份 `status` 语义（这一致性由 R5-1 提出、R7-1 收拢）。同名归属由三处一致的规则裁决：注入处让位给运维显式绑定的那一份（见 R5-3），绑定写入处直接拒绝同名，装载处（`HarnessAgentBuilder.addSkill`）按 name 去重、保留最后一个，与 harness 的合并顺序和绑定表的 `ORDER BY id` 同向（见 R9-2）。团队主管两条路径都不走：它只编排、不执行，收到技能会 log.info 点名后丢掉（见 R9-7）。
+三条路径最终都汇入 `skillDetails` → `SkillSpec` → `AgentSkill`。闸门各守一段：被停用的 CLI 由 admin 整条跳过（连它自带的技能一起消失），被停用的技能由 admin 在同一个出口过滤（`skillDetails` 跳过、`cliDetails[].skill` 置空），三条路径共用同一份 `status` 语义（这一致性由 R5-1 提出、R7-1 收拢）。同名归属由三处一致的规则裁决：注入处让位给运维显式绑定的那一份（见 R5-3），绑定写入处直接拒绝同名，装载处（`HarnessAgentBuilder.addSkill`）按 name 去重、保留最后一个，与 harness 的合并顺序和绑定表的 `ORDER BY id` 同向（见 R9-2）。团队主管只可能走第二条，而且走到装载那一刻仍被跳过：它只编排、不执行，没有沙箱，收到技能会 log.info 点名后丢掉（见 R9-7）；第三条对它不存在——它没有 CLI 绑定。
 
 ## 9. 问题与修复记录
 
+> **一条时间线，读这节前先看**：第 1–8 节写的是**现在**的机制。本节按轮次记录发现与修复，其中凡涉及内置技能下发口径的条目（R3-6、R5-1、R5-3、R7-1、R9-2 与 9.6 节的验收表），描述的都是 2026-09-21 CLI 包模型（V35）落地**之前**的链路——那时技能经 `cli_skill_binding` 多对多关联、由 agent-service 每次 `resolve` 现调 `GET /api/admin/internal/builtin-skills` 取回。表与端点都已删除，技能现在随 `cliDetails[].skill` 内联到达（第 6、7 节）。这些记录保留原样，是因为它们钉住的是**闸门语义**（谁过滤停用、谁让位同名），那部分不变。
+>
 > 2026-09 对「前端 webui / 微信小程序 → admin Controller / Service / Loader / 解析器 → Mapper XML → Flyway DDL → harnax-cli 调用方」做了一次全链路走读，共发现 24 项问题（P0 五项、P1 十项、P2 九项），**已全部修复**，验证细节见 9.6 节。修复过程中另识别出 5 项残留与遗留事项，其中 TODO-4 已在第三轮修复、TODO-2 已在第四轮修复、TODO-3 已在第五轮结案，其余 2 项记在 9.5 节，**尚未处理**。
 >
 > 第一轮之后又按「功能流程是否通顺、边界情况是否处理充分」完整复查了两遍：第二遍聚焦写入路径与来源配置的边界，第三遍聚焦归一化、DTO 校验与读取闸门，并顺着收紧后的校验回查三个调用方（webui、harnax-cli、微信小程序）会不会被挡住，共新发现 19 项，**同样已全部修复**，逐项记在 9.4 节。
@@ -315,7 +322,7 @@ agentscope 消费端（HarnessAgent 内部）
 
 | 编号 | 问题 | 修复方式 |
 |------|------|---------|
-| R8-1 | **`cli.env_params` 里登记的环境参数从未到达沙箱，装了 CLI 的 agent 一敲命令就报未登录**：CLI 登记页采集的声明（含默认值，`secret=true` 的条目密文存列）由 `CliServiceImpl.createCli` 正常写库，但下发路径 `InternalApiController` 的 `cliDetails[].envBindings` 只读 `agent_cli_binding.env_bindings` 一份，而 agent 表单的 `cliList` 每项只发 `{id}`——两份写入都不产生值，下发于是恒为空数组。症状完全静默：install 脚本照跑、`check_command` 照过、定制镜像照建，模型按内置技能教出的用法去敲命令时才失败，且失败原因在沙箱里而非在链路上。docker-new 端到端实测确认为真（见 §9.6），非静态推断 | 新增 `mergeCliEnvBindings(storedJson, declaredEnvJson)` 取代单份读取：按 **key** 合并，agent 侧显式值优先、CLI 声明的默认值兜底（整份互斥的话，表单今后采集其中一个参数就会丢掉其余参数的默认值）。`secret` 条目经 `decryptToolEnvParamsToMap` 在本服务内解密后明文下发，口径与 `plainToolEnvJson` 一致——AES 密钥不出 admin。**声明了却没有值的参数整条跳过**：容器里 `GH_TOKEN=` 与「未设这个变量」对 CLI 是两种状态（`gh` 按变量存在与否判断是否已配置），下发空值等于把它配坏。`AgentSpecResolver` → `CliSpec.envBindings` → `HarnessAgentLauncher` 的 `cliEnv` 两段（`DockerFilesystemSpec.environment` 与保活容器的 `getOrCreate(env=)`）原样透传，无需改动。**agent 表单仍不采集 per-agent 值**，这是这条链未做完的一半，记在 TODO-8。**验证**：`InternalApiControllerTest$CliEnvDeliveryTests` 3 条用例先红（`expected: <{GH_TOKEN=ghp_plain, GH_HOST=github.com}> but was: <{}>`、`expected: <{GH_HOST=ghes.internal, GH_TOKEN=ghp_plain}> but was: <{GH_HOST=ghes.internal}>`），实现后该类 42 项全绿；docker-new 实跑（admin 重建镜像 + 真实沙箱容器）见 §9.6 |
+| R8-1 | **`cli.env_params` 里登记的环境参数从未到达沙箱，装了 CLI 的 agent 一敲命令就报未登录**：CLI 登记页采集的声明（含默认值，`secret=true` 的条目密文存列）由 `CliServiceImpl.createCli` 正常写库，但下发路径 `InternalApiController` 的 `cliDetails[].envBindings` 只读 `agent_cli_binding.env_bindings` 一份，而 agent 表单的 `cliList` 每项只发 `{id}`——两份写入都不产生值，下发于是恒为空数组。症状完全静默：install 脚本照跑、`check_command` 照过、定制镜像照建，模型按内置技能教出的用法去敲命令时才失败，且失败原因在沙箱里而非在链路上。docker-new 端到端实测确认为真（见 §9.6），非静态推断 | 新增 `mergeCliEnvBindings(storedJson, declaredEnvJson)` 取代单份读取：按 **key** 合并，agent 侧显式值优先、CLI 声明的默认值兜底（整份互斥的话，表单今后采集其中一个参数就会丢掉其余参数的默认值）。`secret` 条目经 `decryptToolEnvParamsToMap` 在本服务内解密后明文下发，口径与 `plainToolEnvJson` 一致——AES 密钥不出 admin。**声明了却没有值的参数整条跳过**：容器里 `GH_TOKEN=` 与「未设这个变量」对 CLI 是两种状态（`gh` 按变量存在与否判断是否已配置），下发空值等于把它配坏。`AgentSpecResolver` → `CliSpec.envBindings` → `HarnessAgentLauncher` 的 `cliEnv` 两段（`DockerFilesystemSpec.environment` 与保活容器的 `getOrCreate(env=)`）原样透传，无需改动。**agent 表单仍不采集 per-agent 值**，这是这条链未做完的一半，记在 TODO-8（该半条已于 2026-09-22 补上，见 TODO-8 结案）。**验证**：`InternalApiControllerTest$CliEnvDeliveryTests` 3 条用例先红（`expected: <{GH_TOKEN=ghp_plain, GH_HOST=github.com}> but was: <{}>`、`expected: <{GH_HOST=ghes.internal, GH_TOKEN=ghp_plain}> but was: <{GH_HOST=ghes.internal}>`），实现后该类 42 项全绿；docker-new 实跑（admin 重建镜像 + 真实沙箱容器）见 §9.6 |
 
 #### 第九轮：把记账的八条静态推断逐条复现（7 项）
 
@@ -335,11 +342,11 @@ agentscope 消费端（HarnessAgent 内部）
 
 > 以下 7 项不属于上述 37 项：TODO-1 与 TODO-5 是本文早先版本就记下的遗留项，TODO-6 由第六轮记录、TODO-7 由第七轮记录、TODO-8 由第八轮记录、TODO-9 由 CLI 功能梳理记录、TODO-10 由第九轮记录并在第十轮实跑复现（那一轮八条里唯一没能在单测里造出红灯的，最终靠运行期证据成立）。原 TODO-2（Loader 层静默丢技能）已在第四轮修复，见 R4-1；原 TODO-4（`getSkillRepository(id)` 无租户校验）已在第三轮修复，见 R3-5；原 TODO-3（Mapper 层缺 `tenant_id`）已在第五轮结案，见 R5-6。编号保留原样，便于与历史讨论对照。
 
-#### TODO-1（低）：预留字段未落地
+#### TODO-1（低，只剩 storagePath）：预留字段未落地
 
 - `SkillRepository.storagePath` 与 `Skill.storagePath`：除测试种子数据外无任何写入方，与「内容落库」的设计重复；
-- `AgentSkillBinding.envBindings`：`saveSkillBindings` 只写 `agentId` / `skillId` / `createTime`，技能级环境变量当前不生效（工具与 MCP 通道有，技能通道没有）。
-- **处理建议**：确认后续是否需要支持技能级环境变量；不需要则删除冗余列，避免误导。
+- `AgentSkillBinding.envBindings`：**已结案（V36）**。技能级环境变量始终没等到消费者，列、实体属性与 mapper 引用一并删除；为什么这份死副本比「留着不动」更糟（同名列在 tool / MCP / CLI 三张绑定表上是活的），判读理由记在 `V36__drop_skill_binding_env_bindings.sql`。将来真要支持技能级 env，连同第一个消费者一起加回来。
+- **处理建议**：只剩两个 `storagePath` 列，确认无人认领后按同样方式删掉。
 
 #### TODO-3（已结案，见 R5-6）
 
@@ -357,23 +364,27 @@ agentscope 消费端（HarnessAgent 内部）
 
 #### TODO-7（中，语义空洞）：非沙箱模式下 CLI 技能照进提示词
 
-- **现象**：`HarnessAgentLauncher` 只在 `harness.sandbox.enabled` 为真时才建 `CliImageBuilder`，`CliImageBuilder.resolveImage` 也才有换镜像的机会——即非沙箱部署里选中的 CLI **根本不会被安装**。而 R7-1 之后的注入判定只看 `cliDetails[].skillIds`，不看这个开关：技能照样进 prompt，模型被教去敲一个镜像里不存在的命令。
+- **现象**：`HarnessAgentLauncher` 只在 `harness.sandbox.enabled` 为真时才建 `CliImageBuilder`，`CliImageBuilder.resolveImage` 也才有换镜像的机会——即非沙箱部署里选中的 CLI **根本不会被安装**。而 R7-1 之后的注入判定只看 `cliDetails[].skill` 在不在，不看这个开关：技能照样进 prompt，模型被教去敲一个镜像里不存在的命令。
 - **和 R7-1 的关系**：这条不是新引入的，R7-1 反而把暴露面从「所有会话」缩到了「选了 CLI 的会话」；但闸门本身仍未闭合。
 - **处理建议**：要么让注入条件同时要求沙箱开启，要么在 `!sandbox.enabled && cliSpecs.isNotEmpty()` 时至少 warn 一次，让部署者知道这些会话拿到了一份用不上的说明书。
 
-#### TODO-8（中，半成品）：CLI 环境参数只有「CLI 默认值」一条来源
+#### TODO-8（已结案）：CLI 环境参数只有「CLI 默认值」一条来源
 
 - **现象**：R8-1 打通了下发，但值仍然只有一个来源。agent 配置页的 `cliList` 每项只发 `{id}`（`harnax-webui/src/pages/agent/components/CreateForm.tsx`、`UpdateForm.tsx`），`AgentCreateRequest.CliConfig` 早已支持 `envBindings` 却无人填；同一个 CLI 被多个 agent 选中时只能共用登记页上那一份凭证，无法按 agent 分账。
 - **另一条边界**：env 只在容器创建时注入。`KeepAliveSandboxManager.getOrCreate` 复用同一会话的既有容器，且**只有镜像不同才重建**，所以改 CLI 的默认值对一个已保活的会话不立刻生效——新会话或容器重建之后才生效。这不是本轮引入的（工具与 MCP 的 env 走 `ToolEnvContext`，每次 `resolve` 重建，不受影响），但 CLI 的 env 挂到容器生命周期上，是这条链特有的。
 - **处理建议**：agent 表单在 CLI 多选之下按所选 CLI 的声明渲染输入项（工具与 MCP 已有同类组件可复用），提交时填 `cliList[].envBindings`；至于保活边界，要么在部署文档里写明「改 CLI 参数需新会话」，要么把 env 指纹并入 `getOrCreate` 的重建条件。
+- **结案（2026-09-22）**：前半条已按建议实现——向导的 CLI 步骤一卡一个 CLI，卡内按 `cli.env_params` 渲染一张参数表，值走「引用全局环境变量」或「手填字面值」，提交 `cliList[].envBindings`；`required` 缺值时前端挡「完成」、后端 `assertRequiredEnvParamsFilled` 抛 `BizException`，两侧都点名是哪个 CLI 的哪个参数；包的 `defaultValue` 算已填（它确实会下发兜底），与工具「默认值不算填过」的判据相反但同源（`defaultValueCounts` 一个参数）。工具 / MCP / CLI 三张环境参数表并成一个 `EnvParamTable`，差异只剩 `showDefaultHint` 一个开关。CLI 管理页加「所需参数」只读列。后半条选了「写明」这一支：保活容器不重建、改参数需新会话，已写进包规范与功能说明，未把 env 指纹并入重建条件。规格：`docs/superpowers/specs/2026-09-22-cli-agent-env-params-design.md`；包侧作者视角：`prod_doc/cli-package-spec.zh-CN.md` §7。
 
-#### TODO-9（中，记账）：CLI 侧另三处未闭合
+#### TODO-9（三处已结案、一处仍成立）：CLI 功能梳理记下的四处缺口
 
-这三项来自同一次 CLI 功能梳理，本轮**未动代码**，记在这里以免随对话失效：
+这四项来自同一次 CLI 功能梳理，记录时**未动代码**，先记在这里以免随对话失效：
+
+> **去向（2026-09-21 更新，已实现）**：这四项已被 [CLI 插件包设计](./cli-plugin-package-design.zh-CN.md)（实现规格 `docs/superpowers/specs/2026-09-21-cli-package-plugin-design.md`）整体收口，且该设计现已落地。**前三条已结案**：`agent_cli_plugin_binding`、`cli_plugin` 全套被 V35 迁移删除，`cli.status` 成为真开关（toggle 直接门控下发），内置技能改为随包自带并内联进 `cliDetails` 下发。**最后一条经代码复核仍然成立**（`AgentServiceImpl.kt:501,511`——校验用 `distinct()` 集合，建 bindings 仍遍历原始 `cliList`）。下面四条正文保留原样作为历史记录，各自按此判读。
 
 - **`agent_cli_plugin_binding` 是死表**：Kotlin 里只有实体与 mapper 自身（`AgentCliPluginBinding.kt`、`AgentCliPluginBindingMapper.xml`），没有任何服务或接口读取它；
 - **`cli_plugin.status` 无运行侧读者**：真正的开关是环境变量——`HarnessAgentLauncher` 只看 `harness.sandbox.cliPluginsEnabled`（即 `SANDBOX_CLI_PLUGINS_ENABLED`，agent-service 默认 false、docker-new 显式置 true）决定是否挂 `HarnaxCliPluginInitializer`，admin 侧 `CliPluginServiceImpl` 与 `CliPluginAutoRegistrar` 管的是登记数据。也就是说把登记行 status 改成 0，沙箱里它照装。2026-09-21 起 CLI 页把内置 CLI 收成「系统集成」只读 Tab，原 `cli-plugin` 独立页连同它的启停开关一起删掉（`PUT /api/admin/cli-plugins/toggle/{id}` 仓库内已无人调用），这条缺口的表现从「页面误导」降级为「status 字段无读者」；要做成真开关，得由 admin 出一份按插件粒度的下发口径、harness 侧逐个门控；
-- **`AgentServiceImpl.saveCliBindings` 可写入重复行**：校验用 `distinct()` 后的 ID 集合，写库却遍历原始 `cliList`，所以前端重复提交同一个 CLI 会插进两条 `agent_cli_binding`。下发侧 `selectByAgentId` 不去重，`cliDetails` 于是出现重复条目（技能 ID 并集不受影响，镜像指纹会因脚本重复拼入而变化）。
+- **内置 CLI 的技能装载不到任何智能体**（2026-09-21 查清）：设计里这一条是 `docs/superpowers/specs/2026-07-26-sandbox-cli-plugin-design.md` §5「SKILL.md 自动关联」——绑定插件后由 agent-service 从镜像读 `/opt/plugins/<name>/SKILL.md` 注入为 Skill；落地时只做了它自己写的「初期简化：SKILL.md 仍通过平台 Skill 机制手动注册并绑定」，即 V12 把同一份 SKILL.md 种成 `builtin-cli-skills` 仓库里的同名技能。结果 `cli_plugin` 与 `skill` 之间**没有关系行**（`cli_skill_binding.cli_id` 只指向 `cli` 表），唯一的装载路径是「智能体勾选一个绑定了该技能的自定义 CLI」，而 `cli` 表当前为空。`HarnaxCliPluginInitializer` 只跑 `init.sh` 注凭据、不读 SKILL.md。同一份文档 §6 的前端列定义里也从没有技能列，所以这不是回退而是未建。本轮界面按同名约定把关联技能显示在「系统集成」Tab，并在提示里写明它只是登记信息；真要做成「内置 CLI 自带技能对所有智能体生效」，需要打通 `AgentSpecResolver.withBuiltinSkills` 的插件分支，代价是 harnax-cli 那篇约 580 行的 SKILL.md 会进每一次对话的上下文；
+- **【仍成立】`AgentServiceImpl.saveCliBindings` 可写入重复行**：校验用 `distinct()` 后的 ID 集合，写库却遍历原始 `cliList`，所以前端重复提交同一个 CLI 会插进两条 `agent_cli_binding`。下发侧 `selectByAgentId` 不去重，`cliDetails` 于是出现重复条目（技能 ID 并集不受影响）。CLI 包模型落地后这一条的后果变了但没消失：重复条目会重复进入 `CliImageBuilder.combinationHash` 与 Dockerfile 的 `COPY` 清单，于是算出一个**内容完全相同却 tag 不同**的镜像，等于白建一层。
 
 #### TODO-10（高，已复现）：技能附带的文件永远进不了沙箱
 
@@ -555,18 +566,18 @@ agentscope 消费端（HarnessAgent 内部）
 
 | 环节 | 文件 |
 |------|------|
-| 实体 | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/SkillRepository.kt`、`Skill.kt`、`AgentSkillBinding.kt`、`CliSkillBinding.kt`、`dto/SkillDetailDto.kt` |
-| Mapper | `harnax-entity/src/main/kotlin/com/agnetix/harnax/mapper/SkillMapper.kt`、`SkillRepositoryMapper.kt`、`AgentSkillBindingMapper.kt`、`CliSkillBindingMapper.kt`（XML 同名位于 `harnax-entity/src/main/resources/mapper/`） |
+| 实体 | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/SkillRepository.kt`、`Skill.kt`、`AgentSkillBinding.kt`、`TeamSkillBinding.kt`、`Cli.kt`（`skill_id` 一列承载 CLI 自带技能）、`dto/SkillDetailDto.kt` |
+| Mapper | `harnax-entity/src/main/kotlin/com/agnetix/harnax/mapper/SkillMapper.kt`、`SkillRepositoryMapper.kt`、`AgentSkillBindingMapper.kt`、`TeamSkillBindingMapper.kt`（XML 同名位于 `harnax-entity/src/main/resources/mapper/`；`CliSkillBinding*` 随 V35 删除） |
 | 管理 API | `harnax-admin/.../controller/SkillSourceController.kt`（新）、`SkillController.kt`、`SkillRepositoryController.kt`（旧） |
 | 管理服务 | `harnax-admin/.../service/impl/SkillSourceServiceImpl.kt`（新）、`SkillServiceImpl.kt`、`SkillRepositoryServiceImpl.kt`（旧） |
 | Loader | `harnax-admin/.../skill/loader/`：`SkillLoader.kt`、`SkillLoadResult.kt`、`SkillLoaderRegistry.kt`、`SkillFileParser.kt`、`GitSkillLoader.kt`、`NpmSkillLoader.kt`、`ZipSkillLoader.kt` |
 | 安装与内容安全 | `harnax-admin/.../skill/SkillInstaller.kt`（短事务落库 + 失败清单）、`SkillContentScanner.kt`（高危命令扫描） |
 | 安装结果 DTO | `harnax-admin/.../dto/SkillInstallResponse.kt`、`SkillSourceInstallResponse.kt` |
 | 来源配置与策略 | `harnax-admin/.../skill/SkillSourceConfigs.kt`（`parse` 给 Loader、`forApi` 给 DTO、`normalized` 给写入路径）、`SkillSourcePolicy.kt`（保留名、status 二态、内容非空与 `resources` 结构、不可刷新来源的统一裁决点）、`harnax-admin/.../constant/BuiltinRepository.kt` |
-| 内置技能种子 | `harnax-admin/src/main/resources/db/migration/V12__seed_builtin_cli_skills.sql`、`V14__*.sql` |
+| 内置技能的写入方 | `harnax-admin/.../registrar/CliPackageAutoRegistrar.kt`（现唯一的来路：随包 upsert 进内置仓库）；早期由 Flyway 手种，见 `V12__seed_builtin_cli_skills.sql`、`V14__*.sql`，那行孤儿技能由 `V37__retire_seeded_builtin_cli_skill.sql` 软删 |
 | 完整性迁移 | `harnax-admin/src/main/resources/db/migration/V15__skill_source_integrity.sql`（内置仓库语义修正 + `is_public` 继承 + 重复名重命名 + 三个唯一索引）、`V9__skill_content_in_mysql.sql`（`MEDIUMTEXT`） |
-| 绑定保存 / 下发 | `harnax-admin/.../service/impl/AgentServiceImpl.kt`、`CliServiceImpl.kt`、`controller/InternalApiController.kt` |
-| 内置技能获取 | `harnax-agent/harnax-agent-service/.../client/AdminApiClient.kt`（`getBuiltinSkills()` 每次 `resolve` 现取；启动缓存 `BuiltinSkillRegistry` 已随 R7-1 删除） |
+| 绑定保存 / 下发 | `harnax-admin/.../skill/SkillBindingResolver.kt`（agent 与团队主管共用的绑定校验）、`service/impl/AgentServiceImpl.kt`、`TeamServiceImpl.kt`、`CliServiceImpl.kt`、`controller/InternalApiController.kt` |
+| CLI 自带技能的获取 | 无独立获取路径：admin 在 `InternalApiController` 按 `cli.skill_id` 解析后随 `cliDetails[].skill` 内联下发，agent-service 在 `runner/AgentSpecResolver.kt` 的 `withCliSkills` 注入（原 `AdminApiClient.getBuiltinSkills()` 与启动缓存 `BuiltinSkillRegistry` 已随包模型删除） |
 | Spec 解析 | `harnax-agent/harnax-agent-service/.../runner/AgentSpecResolver.kt`、`harnax-harness-core/.../agent/AgentSpec.kt`（`SkillSpec`） |
 | 技能适配器 | `harnax-agent/harnax-agent-service/.../adaptor/SkillAdaptorImpl.kt`、`harnax-harness-core/.../agent/adaptor/SkillAdaptor.kt` |
 | 运行时装配 | `harnax-harness-core/.../HarnessAgentLauncher.kt`、`HarnessAgentBuilder.kt`（`InMemorySkillRepository`） |

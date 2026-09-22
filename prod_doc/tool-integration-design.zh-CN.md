@@ -5,6 +5,7 @@
 > 本文回答「工具体系为什么长成这样」：分类模型、数据模型、分层职责、关键设计决策与演进时间线。
 > 「怎么用」——注解写法、注册收敛规则、API 清单、新工具开发步骤、排障——见 [tool-capability.zh-CN.md](./tool-capability.zh-CN.md)。
 > MCP 服务见 [mcp-management.zh-CN.md](./mcp-management.zh-CN.md)，技能见 [skill-management.zh-CN.md](./skill-management.zh-CN.md)。
+> CLI 插件包见 [cli-package-spec.zh-CN.md](./cli-package-spec.zh-CN.md)（包怎么写）与 [cli-plugin-package-design.zh-CN.md](./cli-plugin-package-design.zh-CN.md)（平台怎么处理）——它与工具同形：来源只有一种（工具是代码里的注解，CLI 是包目录里的文件），都在 admin 启动时登记，页面都只读。
 >
 > 早期方案稿 `harnax-admin/TOOL_INTEGRATION_DESIGN.md` 保留作历史归档，其中与本文冲突的部分（`enable_skip`、工具创建接口、按 ToolBox 一条记录、运行时默认工具集兜底）一律以本文为准。
 

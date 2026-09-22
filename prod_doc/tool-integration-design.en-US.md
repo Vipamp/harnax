@@ -5,6 +5,7 @@
 > This document answers "why the tool system looks the way it does": the classification model, the data model, layer responsibilities, key design decisions and the evolution timeline.
 > For "how to use it" — annotation syntax, registration convergence rules, API list, new-tool walkthrough, troubleshooting — see [tool-capability.en-US.md](./tool-capability.en-US.md).
 > MCP servers: [mcp-management.en-US.md](./mcp-management.en-US.md). Skills: [skill-management.en-US.md](./skill-management.en-US.md).
+> CLI plugin packages: [cli-package-spec.en-US.md](./cli-package-spec.en-US.md) (how to write a package) and [cli-plugin-package-design.en-US.md](./cli-plugin-package-design.en-US.md) (what the platform does with one) — same shape as tools: exactly one kind of source (annotations in code for tools, files in a package directory for CLIs), registered at admin startup, read-only page.
 >
 > The original proposal `harnax-admin/TOOL_INTEGRATION_DESIGN.md` is kept as an archive. Wherever it disagrees with this document (`enable_skip`, a tool-create endpoint, one record per ToolBox, the runtime default tool set) this document wins.
 

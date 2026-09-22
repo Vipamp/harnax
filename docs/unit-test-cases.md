@@ -517,6 +517,12 @@
 | EBG-07 | 引用能顶必填 | `required=1` 的参数带 `envVarId=7`,`getEnvVariable(7)` 返回同租户的行 | 保存通过,`batchInsert` 被调用(运行时按 id 现取,所以「有指针」就是「有值」) |
 | EBG-08 | 掩码自填值不算填过 | `required=1` 的参数带 `customValue="sk****ef"` | BizException。含 `****` 的是显示产物,不是值——这条判据同时服务 `secret` 项的预填问题 |
 | EBG-09 | MCP 的存储默认值**算**填过 | MCP 绑定 `required=1` 的参数,`mcp_server.env_params` 里有该项 | 保存通过。与 EBG-06 相反的结论、同一条判据：`mcp_server.env_params` 会整份解密成 stdio 进程的环境变量,默认值运行时到得了 |
+| EBG-10 | CLI 的必填参数留空 | lark-cli 声明两个 `required=1`,请求只带了 `LARKSUITE_CLI_APP_ID` | BizException,message 同时含 `lark-cli` 与 `LARKSUITE_CLI_APP_SECRET`;`batchInsert` never()。一页可能勾多个 CLI,只说「必填未填」无从下手 |
+| EBG-11 | CLI 的必填参数由引用顶 | `required=1` + `secret=true` 的 `TOKEN`,绑定带 `envVarId=7` 且该变量同租户 | 保存通过。引用只存指针、值由下发时现取,所以看得见 id 就算已填 |
+| EBG-12 | CLI 的包默认值**算**填过 | `required=1` 的 `REGION`,声明带 `defaultValue="cn"`,请求没带绑定 | 保存通过。与 EBG-06 相反：`mergeCliEnvBindings` 会把包默认值补进下发,它确实到得了沙箱 |
+| EBG-13 | CLI 的必填参数只有掩码文本 | `required=1` 的 `TOKEN` 带 `customValue="abc****wxyz"` | BizException;`batchInsert` never()。编辑回来的表单把接口掩码当值提交,存下就是那串字面量 |
+
+> EBG-10 至 EBG-13 是 CLI 这一类（同一写入口上的第三类配置,2026-09-22 加）。打桩必须成对：`cli.env_params` 存的是密文,声明列表由 `secretFieldEncryptor.deserializeToolEnvEntries` 读出,只桩 `cliMapper` 不桩解密器,守卫读到的是空列表、四条用例全绿得毫无意义。
 
 ---
 

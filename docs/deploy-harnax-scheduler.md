@@ -178,7 +178,7 @@ SELECT INSTANCE_NAME, LAST_CHECKIN_TIME, CHECKIN_INTERVAL FROM harnax_scheduler.
 
 这一步把本服务的数据源从 `harnax_admin` 换进自有的 `harnax_scheduler`，是整个改造里唯一需要停服的动作，也是唯一不能滚动做的动作。
 
-**它不搬任何数据。** 用户确认没有历史包袱，spec 的 D8（迁任务定义、不迁历史日志）因此取消：没有迁移脚本，没有自校验查询，也没有"历史清空 / 最近运行两列变空"这类要公告的损失——没有东西可失去。新库从空开始，**切口后由用户在界面重建任务**。旧库 `harnax_admin` 里的 `agent_task` / `agent_task_log` / `agent_task_execution` 与 11 张 `QRTZ_*` 在切口后没有任何活着的读者，**当场 DROP 即可，不需要观察期**（本仓库不随发布合入 DROP 脚本，那条 SQL 由运维执行）。
+**它不搬任何数据。** 用户确认没有历史包袱，spec 的 D8（迁任务定义、不迁历史日志）因此取消：没有迁移脚本，没有自校验查询，也没有"历史清空 / 最近运行两列变空"这类要公告的损失——没有东西可失去。新库从空开始，**切口后由用户在界面重建任务**。旧库 `harnax_admin` 里的 `agent_task` / `agent_task_log` / `agent_task_execution` 与 11 张 `QRTZ_*` 在切口后没有任何活着的读者，**当场 DROP 即可，不需要观察期**。三张业务表的那一刀已合进 admin 的 `V39__drop_agent_task_tables.sql`（admin 起 Flyway 就删，从头重放的老库与全新安装因此收敛到同一终态）；`QRTZ_*` 仍归运维就地执行——那 11 张表只在跑过发布 1 的安装里出现过，全新部署的 `harnax_admin` 里没有它们。
 
 **为什么 admin 与 scheduler 必须一起下线**——两条理由都与数据无关，所以"先把库换过去、代码以后再合"这种分两批的做法在这里不成立：
 
@@ -194,7 +194,7 @@ SELECT INSTANCE_NAME, LAST_CHECKIN_TIME, CHECKIN_INTERVAL FROM harnax_scheduler.
 5. 起 admin（发布 2 版本），三客户端主链路各跑一遍：webui 列表/创建/编辑/启停/删除/立即执行/日志轮询、CLI `task list|get|create|trigger|stop`、小程序任务页。
 6. 起第二副本（`--scale scheduler=2`，或 `roll-scheduler.sh`），回读 `harnax_scheduler.QRTZ_SCHEDULER_STATE`：要看到的是**两个 `INSTANCE_NAME` 各自的 `LAST_CHECKIN_TIME` 每 15s 前进**，不是"两行"（见「双实例与逐台滚动」）。
 7. 用户在界面重建任务。
-8. DROP `harnax_admin` 里的三张 `agent_task*` 与 11 张 `QRTZ_*`。
+8. 旧库收尾：三张 `agent_task*` 由 admin 的 `V39__drop_agent_task_tables.sql` 删除（起一次 admin 即生效，不用手工）；11 张 `QRTZ_*` 由运维就地 DROP，且只在跑过发布 1 的安装里有东西可删。
 
 ### 回滚
 
@@ -206,7 +206,7 @@ SCHEDULER_FLYWAY_ENABLED=false             # 否则它会拿 V2 去碰 harnax_ad
 
 三个都要：`QUARTZ_JOB_STORE=memory` 让这台节点不进集群、不往一张已经没有活着的对端承诺同源更新的旧 store 里写调度真相（离集群的完整代价见「Quartz 存储模式」）；`SCHEDULER_FLYWAY_ENABLED=false` 是因为 V2 对旧库虽是 `IF NOT EXISTS` 的空转，却会把 V2 记进旧库的 `flyway_schema_history_scheduler`，让一个回滚状态看起来像应用过发布 2 的 schema。**并且要说清**：只把 URL 指回去**不等于回到发布 1 的行为**——C4 的门禁与 C1 的四段 id 都在代码里，旧 admin 与新 scheduler 仍然互相读不懂，要退就得连镜像一起退、两个服务同时退。回滚的残留是明确的：切口之后新建/改过的任务只存在于 `harnax_scheduler`，不会跟着回到旧库，也没有合并路径。
 
-> **这条退路有截止日期**：上面三步只在**第 8 步还没执行**时成立。一旦 `harnax_admin` 的三张 `agent_task*` 与 11 张 `QRTZ_*` 被 DROP，指回旧库就连表都没有——要退就得先把表建回来（运维手工建表是干净的一条；把 `SCHEDULER_FLYWAY_ENABLED` 临时开成 true 让 V1+V2 在旧 URL 上重放也行，但前提是旧库那张 `flyway_schema_history_scheduler` 台账还在——被一起删过就得先把它对齐，否则 validate 会先拦下来），然后再关回去。所以第 8 步之前先确认新库跑顺，这一步做完之后回滚的成本就不再是"改三个变量"。
+> **这条退路有截止日期，而且到期是自动的**：上面三步只在 `harnax_admin` 的三张 `agent_task*` 还在时成立，而 V39 之后 admin 一启动就把它们删掉——第 8 步不再是一次能拖着的运维动作。要留这条退路就别合 V39；合了之后再退，指回旧库就连表都没有，得先把表建回来（运维手工建表是干净的一条；把 `SCHEDULER_FLYWAY_ENABLED` 临时开成 true 让 V1+V2 在旧 URL 上重放也行，但前提是旧库那张 `flyway_schema_history_scheduler` 台账还在——被一起删过就得先把它对齐，否则 validate 会先拦下来），然后再关回去。11 张 `QRTZ_*` 是同一个道理，只是它们在旧库存在与否取决于这个安装有没有跑过发布 1。
 
 ## 全新部署一次（2026-09-16 实测）
 
@@ -222,7 +222,7 @@ SCHEDULER_FLYWAY_ENABLED=false             # 否则它会拿 V2 去碰 harnax_ad
 - 观测面无漂移：`scheduler.jobs.scheduled`=0（空库），`scheduler.reconcile.rounds{outcome=success}` 每分钟一次、没有 `failure` 标签，`scheduler.reconcile.drift` 从未被采样。
 - 界面链路通：`https://localhost/` 200（80 端口 301 跳 443），`/api/admin/auth/cli-login` 拿到 JWT，`GET /api/admin/agent-tasks/page` 与 `GET /api/admin/agent-tasks/{id}/logs` 经 admin 转发到 scheduler 均 200 且 `Page` 形状完好。webui 调用的 11 条 agent-task 路径与 admin `AgentTaskController` 暴露的一一对得上，搬迁没漏路由。
 - **仍未覆盖**：spec §11 的第 3/4/5/7 条（带执行中任务重启、执行中点"停止"、界面建任务/立即执行、OAuth MCP 的 C5 回归）。它们的前置是库里有一个 agent，而建 agent 要真实的模型 API Key——这一步只能由使用方给。
-- 两条新登记的记账：`harnax_admin` 里会被历史迁移重放出三张 0 行的孤儿 `agent_task*` 表（spec §9 F16）；两副本冷启动时系统 sweep 撞一次重复键、20ms 后自愈，代价是一条带 SQL 字样的 WARN（spec §9 F17）。
+- 两条新登记的记账：`harnax_admin` 里会被历史迁移重放出三张 0 行的孤儿 `agent_task*` 表（spec §9 F16，**已由 admin 的 `V39__drop_agent_task_tables.sql` 收口**）；两副本冷启动时系统 sweep 撞一次重复键、20ms 后自愈，代价是一条带 SQL 字样的 WARN（spec §9 F17）。
 
 ## 常见问题
 

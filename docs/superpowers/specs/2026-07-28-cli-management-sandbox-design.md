@@ -3,6 +3,9 @@
 日期：2026-07-28
 分支：kotlin-dev
 
+> **部分被取代（2026-09-21）**：本文中「管理员手工填 `install_script` 自由文本」与「CLI 绑定 `builtin-cli-skills` 仓库里的现成技能」两项，已由 [2026-09-21-cli-package-plugin-design.md](./2026-09-21-cli-package-plugin-design.md) 取代为插件包登记 + 技能随包自带。
+> 仍然有效、且是新设计直接继承的部分：`agent_cli_binding` 绑定模型、`env_bindings` 下发、`CliImageBuilder` 的镜像 tag 与本地缓存、构建后逐个跑 `checkCommand` 失败即删镜像的验收语义。
+
 ## 背景
 
 Agent 在 Docker sandbox 中执行任务时，经常需要调用通用命令行工具（kubectl、gh、awscli 等）。

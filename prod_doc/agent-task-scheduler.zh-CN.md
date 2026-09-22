@@ -16,7 +16,7 @@
 4. **admin 退化为「校验用户 JWT + 带身份转发」的薄入口**。三个客户端（webui / cli / 小程序）继续打 `/api/admin/agent-tasks/**`，前缀与契约不变；scheduler 的 HTTP 面不直接对浏览器开放。发布 2 起每一发转发带三样东西：一枚 `typ=internal` 的 JWT、`X-Forwarded-User`、`X-Tenant-Id`（契约 C4），而 scheduler 只在接受了那枚 JWT 之后才读那两个头。
 5. **CRUD 与它的调度通知现在在同一个进程里**。改造前 admin 改完任务要 HTTP 广播 `/reload` 给所有 scheduler 节点；共享 store 之后广播删成**一次转发**（`urls[0]`）；发布 2 之后写 `agent_task` 与跑那一轮 reconcile 都在 scheduler 内，`/reload` 只剩"外部（admin）也可以手动叫一轮收敛"这一个作用。`/reload` 的语义仍是**跑一轮对账**——写 `agent_task` 与写 store 不在一个事务里，所以通知依旧可能在提交后丢失，丢掉的那次由 60s 的集群清扫兜住（见 6.1）。
 6. **对账（reconcile）取代"全删重建"**。共享存储下"把 `AgentTaskGroup` 里的 job 全删再重建"是集群级破坏操作（任一节点重启会瞬时报掉全集群任务）。改成 diff 式收敛，并由一个每 60s 的集群内 job 兜底——这个 job 本身也依赖集群保证"全集群同时只有一个节点在跑"。
-7. **发布 2 不动任何数据——一次都不搬**。用户确认本部署没有历史数据，所以评审 D8（迁定义、不迁历史日志）连同它的迁移脚本、幂等守卫、自校验查询一起取消：`harnax_scheduler` 从空开始，**切口后由用户在界面重建任务**。旧库 `harnax_admin` 的三张业务表与 11 张 `QRTZ_*` 在切口后没有任何活着的读者，**直接 DROP，不留观察期**（原计划的"另存 DROP 脚本 + 运维签认"随迁移一起取消）。唯一必须建出来的是 `agent_task_log` 这张表本身，哪怕它空着——`AgentTaskMapper.xml` 的 `selectTaskList` 自联它取 `lastRunStatus`/`lastRunTime`，缺表是列表页 500（见 2.1 那两条跨边界 SQL 的归宿）。
+7. **发布 2 不动任何数据——一次都不搬**。用户确认本部署没有历史数据，所以评审 D8（迁定义、不迁历史日志）连同它的迁移脚本、幂等守卫、自校验查询一起取消：`harnax_scheduler` 从空开始，**切口后由用户在界面重建任务**。旧库 `harnax_admin` 的三张业务表与 11 张 `QRTZ_*` 在切口后没有任何活着的读者，**直接 DROP，不留观察期**（原计划的"另存 DROP 脚本 + 运维签认"随迁移一起取消；三张业务表那条 DROP 后来以 admin `V39__drop_agent_task_tables.sql` 合入仓库——不合进去，每次全新部署都会被 `V1__init_schema.sql` 重放出这三张 0 行的空表，见 M5 的 5.1 与 spec §9 F16；11 张 `QRTZ_*` 仍由运维就地删）。唯一必须建出来的是 `agent_task_log` 这张表本身，哪怕它空着——`AgentTaskMapper.xml` 的 `selectTaskList` 自联它取 `lastRunStatus`/`lastRunTime`，缺表是列表页 500（见 2.1 那两条跨边界 SQL 的归宿）。
 8. **入站保护已经从"只有网络隔离"变成"网络 + 验签"**（发布 2 的 C4）。`harnax.auth.enabled` 仍是 `false`（那套完整自鉴权属第 13 节的 F1），但本服务自己装了一道只认 `typ=internal` JWT 的门禁，覆盖 `/api/scheduler/**` 的**全部**接口——**读也在内**。不发布宿主端口、nginx 不代理 `/api/scheduler/` 于是从"唯一屏障"变成纵深。
 
 ## 2. 现状与问题
@@ -460,7 +460,7 @@ C 方案下 scheduler 需要两个数据源（业务库 + 引擎库，靠 `@Quar
 
 | # | 项 | 状态 |
 |---|---|---|
-| 5.1 | admin `V27__drop_agent_task_tables.sql`。~~硬约束：晚于 scheduler 上线、观察过至少一个完整 cron 周期、运维签认后才合入~~ | ✅ **形态已变（发布 2）**：那三条硬约束是为**搬了数据**的表设的，而这一版什么都不迁（D8 取消，见 10.4），所以旧 `harnax_admin` 的三张业务表与 11 张 `QRTZ_*` 在切口后没有任何活着的读者——**切口步骤里直接 DROP，不留观察期，也不合入 DROP 迁移脚本**（那条 SQL 由运维就地执行；仓库不代为决定）。步骤第 8 步：`docs/deploy-harnax-scheduler.md` |
+| 5.1 | admin `V27__drop_agent_task_tables.sql`。~~硬约束：晚于 scheduler 上线、观察过至少一个完整 cron 周期、运维签认后才合入~~ | ✅ **形态已变（发布 2）**：那三条硬约束是为**搬了数据**的表设的，而这一版什么都不迁（D8 取消，见 10.4），所以旧 `harnax_admin` 的三张业务表与 11 张 `QRTZ_*` 在切口后没有任何活着的读者——**直接 DROP，不留观察期**。**最终落法（2026-09-22）**：三张业务表的那一刀合进了仓库，用的就是当初起的名字，号位从 V27 挪到 V39（V27 已被执行锁的 sweep 索引占用）→ `V39__drop_agent_task_tables.sql`。不合进去的代价更实在：`V1__init_schema.sql` 建过这三张表，全新部署每次都会把它们重放出来，运维在这个库里找任务表会找到一张空的。11 张 `QRTZ_*` 仍由运维就地执行——它们只在跑过发布 1 的安装里存在过。反面代价：回滚三件套里"数据源指回 `harnax_admin`"从此要先重建表才指得回去。步骤与回滚正文：`docs/deploy-harnax-scheduler.md`「发布 2 切口」第 8 步 |
 | 5.2 | nginx `/api/scheduler/` 改 allowlist 或删除；若保留补 `client_max_body_size` | ✅ 已完成（第二轮 R1）：该 location 整段删除并在原位留了禁止回加的注释，compose 侧也只有 `expose: ["8084"]`、不发布宿主端口 |
 | 5.3 | 重写 `docs/agent-task-design.md` 架构节；修 `docs/deploy-harnax-admin.md` 的 RAMJobStore 说法；新建 scheduler 部署文档 | ✅ **三项齐了（发布 2 补完最后一项）**：`docs/deploy-harnax-scheduler.md` 已有、按集群拓扑重写过、并新增「发布 2 切口」；`docs/deploy-harnax-admin.md` 现在写明本服务的定时任务域只剩鉴权 + 带身份转发（12 端点契约不变、四张表零 SQL、转发头三件套与 `HARNAX_AUTH_SECRET` 必须两侧同值）；`docs/agent-task-design.md` 的架构节不再把 Quartz/`AgentTaskJob`/`agent_task` 的写侧画在 admin 里，并把「一、数据模型」标为已被 `V2__agent_task_domain.sql` 取代 |
 
@@ -518,8 +518,8 @@ mvn -o -pl harnax-scheduler verify -Pintegration-test
 6. 让对账跑一轮（等 60s 清扫，或建一个任务由 admin 转发触发），核对**被调度任务是 0 个**：`/actuator/health` 的 `scheduledJobCount`，或 `GET /api/scheduler/tasks/status` 的 `scheduledTaskCount`（后者从 C4 起要带内部 JWT）。非 0 = 这台连的还是旧库。
 7. 起 admin，三客户端主链路各一遍（webui 列表/创建/编辑/启停/删除/立即执行/日志轮询、CLI `task list|get|create|trigger|stop`、小程序任务页）。
 8. 起第二副本（`--scale scheduler=2`），回读 `harnax_scheduler.QRTZ_SCHEDULER_STATE`：**看两个 `INSTANCE_NAME` 各自的 `LAST_CHECKIN_TIME` 每 15s 前进**，别数行数（节点不删自己那行，刚起完表里可能还有没被对端清掉的尸行）。
-9. 用户在界面重建任务。**没有合并路径把切口后新建的东西带回旧库**，所以第 10 步之前请确认重建已完成。
-10. DROP `harnax_admin` 的三张 `agent_task*` 与 11 张 `QRTZ_*`——不留观察期，因为没有任何活着的读者；仓库不合入 DROP 脚本，这条由运维就地执行。
+9. 用户在界面重建任务。**没有合并路径把切口后新建的东西带回旧库**，所以旧库那三张表一旦被删，回滚就只剩"先重建表"这一条路——而删表的动作现在在第 7 步（见下一条）。
+10. 清旧库：`harnax_admin` 的三张 `agent_task*` 由 admin 的 `V39__drop_agent_task_tables.sql` 删除，随第 7 步的启动自动生效，不再是一个能拖着的手工步骤；11 张 `QRTZ_*` 仍由运维就地 DROP，且只在跑过发布 1 的安装里有东西可删。都不留观察期，因为没有任何活着的读者。
 
 **发布公告（四条，与"迁不迁数据"无关的那四条）**：
 

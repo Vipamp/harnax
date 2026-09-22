@@ -131,7 +131,6 @@ graph TB
 | 方法 | 端点 | 说明 |
 |------|------|------|
 | GET | `/api/admin/internal/agent-spec/{sessionId}` | 按 sessionId 统一解析 Agent 配置（session/channel/task 三种来源） |
-| GET | `/api/admin/internal/builtin-skills` | 加载内置 Skill |
 | PUT | `/api/admin/internal/sessions/{sessionId}/capabilities` | 回写会话能力开关 |
 | PUT | `/api/admin/internal/sessions/{sessionId}/permission-mode` | 回写会话权限模式 |
 

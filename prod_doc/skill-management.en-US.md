@@ -14,9 +14,9 @@ Installation has **partial-success semantics**: only some of the skills in a sou
 
 Layering matches the tool / MCP system:
 
-- **harnax-entity**: `skill_repository` / `skill` / `agent_skill_binding` / `cli_skill_binding` entities and mappers;
+- **harnax-entity**: `skill_repository` / `skill` / `agent_skill_binding` / `team_skill_binding` entities and mappers (a CLI's own skill does not live in a binding table — see 2.3);
 - **harnax-admin**: repository CRUD, multi-source loaders, sync-into-DB, binding management, internal API delivery;
-- **harnax-agent-service**: spec fetching, built-in skill cache, runtime assembly;
+- **harnax-agent-service**: spec fetching, merging the skills the selected CLIs ship into the spec, runtime assembly;
 - **harnax-harness-core**: hands `AgentSkill` instances to agentscope (wrapped in `InMemorySkillRepository`);
 - **agentscope**: skill catalog prompt injection and on-demand loading.
 
@@ -58,8 +58,9 @@ Entity: `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Skill.kt`
 
 ### 2.3 Binding tables
 
-- `agent_skill_binding`: `agentId` + `skillId`, direct agent-to-skill binding; the `envBindings` column exists but is never written (see TODO-1);
-- `cli_skill_binding`: `cliId` + `skillId`, CLI-to-skill association, semantically "teach the agent how to use this CLI".
+- `agent_skill_binding`: `agentId` + `skillId` (plus timestamps), direct agent-to-skill binding. There is no per-skill environment channel: the reserved `env_bindings` column never acquired a consumer and was dropped by V36. The same column on `agent_tool_binding` / `agent_mcp_binding` / `agent_cli_binding` **is** live (admin resolves those into plaintext on delivery), which is precisely why keeping a dead copy here was harmful — it read as "skills can carry per-agent env" in a table where nothing supports it. A future skill-level env channel should arrive together with its first consumer;
+- `team_skill_binding`: `teamId` + `skillId` (V34), the skills a team's lead is given, validated by the same `SkillBindingResolver` so the two binding paths cannot diverge (see section 5);
+- **A CLI's skill is not a binding table**: the package registrar upserts `skill/SKILL.md` into the built-in repository and `cli.skill_id` points at that row (V35). The relation is 1:1 — "this CLI ships this manual" — and its lifecycle cascades with the package. The former `cli_skill_binding` table (many-to-many, hand-picked in the CLI admin UI) was dropped by V35.
 
 ### 2.4 SkillDetailDto (internal API delivery carrier)
 
@@ -75,13 +76,13 @@ Created via the management API, fully editable; every write path goes through `r
 
 Constant: `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/constant/BuiltinRepository.kt`
 
-- Seeded by Flyway `V12__seed_builtin_cli_skills.sql` (containing the `harnax-cli` skill), with its SKILL.md updated by `V14` and its source semantics corrected by `V15` (`source_type` changed from `ZIP` to `BUILTIN`, `source_config` / `url` changed from NULL to empty strings);
+- Seeded by Flyway `V12__seed_builtin_cli_skills.sql` (it hand-planted a `harnax-cli` skill), with its SKILL.md updated by `V14` and its source semantics corrected by `V15` (`source_type` changed from `ZIP` to `BUILTIN`, `source_config` / `url` changed from NULL to empty strings). Under the package model the package is the source of truth for these skills, so that hand-planted row had no reader left — rule 3 below was its only route out, and that route is gone — and `V37` soft-deletes it;
 - Located deterministically: `SkillRepositoryMapper.selectBuiltinRepository(name)` queries by `name` + `active = 1` with `ORDER BY id ASC LIMIT 1` and **does not depend on the caller's tenant**. The `source_type` filter is deliberately absent: `V15`'s `uk_skill_repository_builtin_guard` already guarantees at most one row carries that name, and layering a type filter on top would make a database where `V15` has not run return nothing, silently dropping the built-in skills that are meant to be injected. Built-in skills are located through this repository, which every tenant shares; the earlier tenant-scoped `selectByName` both returned an undefined row when duplicates existed and made non-tenant-1 callers miss the repository entirely, which silently skipped the binding constraint check;
 - **Read-only through the management API**: writes are blocked by `requireNotBuiltinRepo` / `requireWritable`, and the name is rejected by the reserved-name check at all three entry points (create, upload, rename);
 - Three dedicated flow rules:
-  1. CLI bindings may only reference skills from this repository (`CliServiceImpl.saveSkillBindings` validation);
-  2. Agents may **not** bind skills from this repository directly (`AgentServiceImpl.saveSkillBindings` throws, hinting "auto-loaded via CLI");
-  3. All `status=1` skills of this repository are served by `GET /api/admin/internal/builtin-skills`, which agent-service calls **on every agent-spec resolution**; only the skills bound to the CLIs the session selected are injected (see section 7) — an agent that selected no CLI receives no built-in skill and issues no request at all. Fetching rather than caching keeps the operator's kill switch (turning a built-in skill off directly in the database) and a migration-rewritten SKILL.md effective without restarting agent-service.
+  1. Skills in this repository are written by the **CLI package registrar** (`CliPackageAutoRegistrar.upsertSkill`, upserted on `(repository_id, name)` with the package name as `name`); there is no manual entry point;
+  2. Neither an agent nor a team lead may bind skills from this repository directly — `SkillBindingResolver.resolveBindable` refuses at save time with "auto-loaded via CLI". Selecting the CLI is the only way to get the skill;
+  3. These skills are delivered **inline on `cliDetails[].skill`** (see section 6): when admin resolves a CLI it attaches the whole `SkillDetailDto` the package shipped to that CLI entry, and agent-service injects only the ones the session's selected CLIs carry (see section 7) — an agent that selected no CLI receives no built-in skill. The former `GET /api/admin/internal/builtin-skills` endpoint was deleted with the package model: a skill and its CLI come from one package, so splitting them across two requests only opens a window where the CLI arrives and the manual that explains it does not.
 
 ### 3.3 Source loaders (three types)
 
@@ -128,36 +129,42 @@ The two install endpoints (`POST /` and `POST /upload`) return `SkillSourceInsta
 
 ### 4.3 Cascading delete
 
-Deleting a repository: the new `deleteSkillSource` and the legacy `deleteSkillRepository` share `SkillInstaller.deleteWithSkills(repository)` — load all its skill IDs → `agentSkillBindingMapper.deleteBySkillIds` + `cliSkillBindingMapper.deleteBySkillIds` → delete skills one by one → delete the repository, leaving no dangling bindings. Single skill deletion (`SkillController.deleteSkill`) clears bindings the same way.
+Deleting a repository: the new `deleteSkillSource` and the legacy `deleteSkillRepository` share `SkillInstaller.deleteWithSkills(repository)` — load all its skills, then two refusing gates checked **before any write**: a skill still `status=1`, or a skill still bound by an agent or a team lead (each throws `BizException`, rolling the transaction back). Past them: clear the relevant `agent_skill_binding` rows → soft-delete each skill (`skillMapper.deleteById` sets `active = 0`) → soft-delete the repository, leaving no dangling bindings. Single skill deletion (`SkillController.deleteSkill`) clears bindings the same way. A CLI's own skill does not go through here: it cascades with the package lifecycle (see [CLI plugin package design](./cli-plugin-package-design.en-US.md)).
 
 ## 5. Agent and CLI Skill Configuration
 
-- When saving an agent, `skillList` (comma-separated skill IDs) goes to `AgentServiceImpl.saveSkillBindings`, which **deletes then re-inserts** `agent_skill_binding`; before inserting it rejects two things: direct binding of built-in repository skills, and binding two skills that share a name to one agent (skill names are unique per repository only, while the harness merges skills by name — see R5-3). Both checks run inside the transaction, so a rejection rolls the whole write back;
-- Saving a CLI writes `cli_skill_binding` and accepts built-in repository skills only;
-- Detail rendering (`convertToResponse`): skill items carry their repository name; CLI items embed their associated skill list (so the UI can show "which skills this CLI brings along").
+- When saving an agent, `skillList` (comma-separated skill IDs) goes to `AgentServiceImpl.saveSkillBindings`, which **deletes then re-inserts** `agent_skill_binding`. The checks themselves live in `SkillBindingResolver.resolveBindable`: no built-in repository skill, no two skills sharing a name for one agent (skill names are unique per repository only, while the harness merges skills by name — see R5-3), and no skill that is missing or disabled. They run inside the transaction, so a rejection rolls the whole write back;
+- A team lead's skills go to `team_skill_binding` (V34), validated by the **same** `SkillBindingResolver` — one entry point, one wording, so the two binding paths cannot drift apart;
+- The CLI side has **no** save path: the skill is written into the built-in repository when the package is registered and `cli.skill_id` points at it (V35 dropped both `cli_skill_binding` and the manual CLI create endpoint). "Which manual this CLI carries" is decided by `skill/SKILL.md` inside the zip, not by the UI;
+- Detail rendering (`convertToResponse`): skill items carry their repository name; CLI items embed the one skill they ship (`skill` is a single object with name and description, not a list).
 
 ## 6. Config Delivery (Admin → agent-service)
 
-Four skill-related payloads in `InternalApiController.buildAgentSpecResponse` (`GET /api/admin/internal/agent-spec/{sessionId}`):
+The skill-related payloads in `InternalApiController.buildAgentSpecResponse` (`GET /api/admin/internal/agent-spec/{sessionId}`):
 
 1. `skillList`: comma-separated bound IDs (legacy field, kept for compatibility);
 2. `skillDetails`: full `SkillDetailDto` list assembled by querying the `skill` table per ID;
-3. **CLI skill association**: read the agent's CLI bindings → `cliSkillBindingMapper.selectByCliIds` for each CLI's skill IDs → forwarded **verbatim** on `cliDetails[].skillIds`; **disabled CLIs are skipped entirely**, so their skills are not delivered either. Admin does not resolve those IDs — "which CLI is selected decides which built-in skills load" is agent-service's call (see section 7);
-4. A separate endpoint `GET /api/admin/internal/builtin-skills` returns all `status=1` skills of the built-in repository (empty list when the repository does not exist); the repository is located deterministically via `selectBuiltinRepository` without a tenant context.
+3. **The skill a CLI ships**: read the agent's CLI bindings → load the skill row behind `cli.skill_id` → attach the full `SkillDetailDto` to that `cliDetails[].skill` entry (no id list left for the runtime to resolve; admin does the lookup once). **A disabled CLI is skipped wholesale**, and the skill it ships disappears with it. When the skill row itself is disabled (content-scan hit, or an operator's direct DB edit), only that entry's `skill` is nulled — the CLI still ships — and the skip is named in a `log.info`. Disabled things never reach the harness, and this gate carries the same semantics as `skillDetails` (R5-1 raised it, R7-1 consolidated it);
+4. **No second endpoint**: the former `GET /api/admin/internal/builtin-skills` was deleted with the package model (see rule 3 of 3.2 for why — one resolution pass, where two requests would only open a window observable through a warn line).
 
 `cliDetails[].envBindings` is not skill-related but ships in the same payload, so its rule is noted here rather than left to be rediscovered: `mergeCliEnvBindings` merges two sources key by key — `agent_cli_binding.env_bindings` (an agent's explicit value for a parameter, which wins) and the defaults declared in `cli.env_params`. Entries marked `secret` are decrypted inside this service and delivered in plain text (agent-service holds no AES key), and a declared parameter carrying no value is dropped instead of delivered empty. See R8-1 in `prod_doc/skill-management.zh-CN.md` §9.4 — that document is authoritative and carries rounds six to nine, which this translation has not yet caught up with.
+
+The package model adds a parallel channel, `cliDetails[].runtimeEnv`: the runtime environment variables declared in the package's `plugin.yaml`, delivered verbatim, with `${platform.adminUrl}` / `${platform.internalToken}` expanded by agent-service from its own configuration. It lands in the container environment together with `envBindings`, where the per-agent value wins.
 
 ## 7. Runtime Assembly (agent-service → HarnessAgent → agentscope)
 
 ```
 AgentSpecResolver.resolve(sessionId)
-    ├─ Built-in injection: the union of cliDetails[].skillIds is the filter set; an empty set skips
-    │     the whole branch (no request to admin at all). Otherwise GET /builtin-skills is called per
-    │     resolution and filtered by those ids; ids admin did not deliver log a warn
-    │     (dangling binding, disabled, or outside the built-in repository).
-    │     Survivors go first, deduped against specInfo.skillDetails by skillId
-    │     a built-in skill whose name is already used by a spec-defined skill stands down (two copies
-    │     under one name make the two harness layers disagree — see R5-3)
+    ├─ withCliSkills: the CLI skills are read straight off cliDetails[].skill — they arrive with the
+    │     agent-spec, so there is no second request to admin.
+    │     Skills the spec already carries by id are dropped; the rest are partitioned by name: one whose
+    │     name a spec-defined skill already uses is not injected and is named in a log.info
+    │     (two copies under one name make the two harness layers disagree, and the copy the operator
+    │     bound explicitly wins — see R5-3)
+    │     a selected CLI carrying no skill → log.warn naming it (its package shipped none, or its skill
+    │     row was deleted since)
+    │     survivors go ahead of the spec's own skills; the log line reads
+    │     `Injected N CLI skill(s) into spec`
     │     → effectiveSpecInfo (copy(skillDetails = merged))
     ├─ specContextHolder.set(effectiveSpecInfo)        ← read by SkillAdaptor
     └─ builder.addSkill(SkillSpec(skillId, skillName))
@@ -190,17 +197,20 @@ agentscope consumer (inside HarnessAgent)
 
 **How skills take effect**: not by stuffing full SKILL.md into the context, but "catalog into the prompt + on-demand full-text loading tool + resource files materialized in the workspace". Context cost scales roughly linearly with the number of skills and is nearly independent of their size.
 
-## 8. Two Paths for a Skill to Reach an Agent
+## 8. Three Paths for a Skill to Reach an Agent
 
-| Path | Binding table | Source restriction | Injection point |
-|------|---------------|--------------------|-----------------|
+| Path | Carrier | Source restriction | Injection point |
+|------|---------|--------------------|-----------------|
 | Direct agent binding | `agent_skill_binding` | Built-in repository skills forbidden | Admin delivers `skillDetails` |
-| CLI association | `cli_skill_binding` | Built-in repository skills only | `AgentSpecResolver`, filtered by `cliDetails[].skillIds` against the skills `/builtin-skills` delivers for this resolution |
+| Direct team-lead binding | `team_skill_binding` (V34) | Same, same validation | Admin delivers `skillDetails` (the lead orchestrates; nothing is loaded at runtime — see R9-7) |
+| Shipped by a CLI | `cli.skill_id` (V35, 1:1) | Written into the built-in repository by the package registrar; not editable in the UI | Delivered on `cliDetails[].skill`, injected by agent-service's `withCliSkills` |
 
-Both converge into `skillDetails` → `SkillSpec` → `AgentSkill`. Each gate guards one half: a disabled CLI is dropped wholesale by admin (its `skillIds` disappear with it), a disabled skill is filtered by `/builtin-skills`, so both paths share one `status` semantics (raised by R5-1, now consolidated in agent-service). Name ownership is settled by three consistent rules: at injection time the copy the operator bound explicitly wins (see R5-3), at binding time a duplicate name is rejected outright, and at load time `HarnessAgentBuilder.addSkill` dedupes by name keeping the **last** binding — the same direction the harness merges in and the same order `ORDER BY id` reads the binding table (see R9-2). A team lead walks neither path: it orchestrates and executes nothing, so any skill delivered to it is logged by name and dropped (see R9-7).
+All three converge into `skillDetails` → `SkillSpec` → `AgentSkill`. Each gate guards one half: a disabled CLI is dropped wholesale by admin, taking its skill with it, and a disabled skill is filtered by admin at the same exit (`skillDetails` skips it, `cliDetails[].skill` is nulled), so all three paths share one `status` semantics (raised by R5-1, now consolidated in agent-service). Name ownership is settled by three consistent rules: at injection time the copy the operator bound explicitly wins (see R5-3), at binding time a duplicate name is rejected outright, and at load time `HarnessAgentBuilder.addSkill` dedupes by name keeping the **last** binding — the same direction the harness merges in and the same order `ORDER BY id` reads the binding table (see R9-2). A team lead can only ever be on the second path, and even there the load step skips it: it orchestrates and executes nothing, has no sandbox, so any skill delivered to it is logged by name and dropped (see R9-7). The third path does not exist for it — a lead has no CLI bindings.
 
 ## 9. Issues and Fix Record
 
+> **One timeline, read this first**: sections 1–8 describe the mechanism **as it is**. This section records findings per review round, and the entries about how built-in skills are delivered (R3-6, R5-1, R5-5 and the acceptance table in 9.6) describe the chain **before** the CLI package model landed on 2026-09-21 — back then skills were associated many-to-many through `cli_skill_binding` and fetched from `GET /api/admin/internal/builtin-skills` on every `resolve`. Both are gone; skills now arrive inline on `cliDetails[].skill` (sections 6 and 7). The records are kept verbatim because what they pin down is the **gate semantics** — who filters disabled, who yields on a duplicate name — and that part has not changed.
+>
 > A full-chain walkthrough in 2026-09 covered "webui / WeChat mini program → admin Controller / Service / Loader / parser → Mapper XML → Flyway DDL → harnax-cli callers" and found 24 issues (5 P0, 10 P1, 9 P2), **all of them now fixed**; see section 9.6 for the verification details. Five residual and carry-over items surfaced while fixing them; TODO-4 was fixed in round three, TODO-2 in round four and TODO-3 was closed in round five, leaving two items in section 9.5 that are **still open**.
 >
 > The chain was then walked twice more against the question "does the flow hold together, and are the boundaries handled": the second pass focused on write paths and source-config boundaries, the third on normalisation, DTO validation and read gates, and then on whether the tightened validation blocks any of the three callers (webui, harnax-cli, the WeChat mini program). They found 19 further issues, **likewise all fixed**, itemised in section 9.4.
@@ -314,11 +324,11 @@ Round nine did not open a new walkthrough. It took the eight defects the previou
 
 > This section lists TODO-1, TODO-5 and TODO-10; TODO-6 through TODO-9 (recorded by rounds six, seven, eight and by the CLI review) are itemised in the Chinese document only. None of them is part of the 26 + 7 fixed above. The former TODO-2 (a loader dropping skills silently) was fixed in round four — see R4-1; the former TODO-4 (no tenant check in `getSkillRepository(id)`) was fixed in round three — see R3-5; the former TODO-3 (no `tenant_id` in the mapper layer) was closed in round five — see R5-6. The numbering is kept as it was so that it still matches earlier discussions.
 
-#### TODO-1 (low): reserved fields never implemented
+#### TODO-1 (low, storagePath only): reserved fields never implemented
 
 - `SkillRepository.storagePath` and `Skill.storagePath`: no writer outside test seed data, and redundant given the "content in DB" design;
-- `AgentSkillBinding.envBindings`: `saveSkillBindings` writes `agentId` / `skillId` / `createTime` only, so per-skill environment variables do not work today (tools and MCP have such a channel; skills do not).
-- **Suggested fix**: confirm whether per-skill env vars are on the roadmap; if not, drop the redundant columns to avoid misleading readers.
+- `AgentSkillBinding.envBindings`: **closed by V36**. Per-skill environment variables never acquired a consumer, so the column, the entity property and the mapper references were removed together. Why a dead copy was worse than no column at all — the same column on the tool / MCP / CLI binding tables *is* live — is written down in `V36__drop_skill_binding_env_bindings.sql`. If a skill-level env channel is ever built, it should arrive together with its first consumer;
+- **Suggested fix**: only the two `storagePath` columns remain — once nobody claims them, drop them the same way.
 
 #### TODO-3 (closed — see R5-6)
 
@@ -504,18 +514,18 @@ Why this item cannot be pinned by a unit test: it spans two filesystems — agen
 
 | Step | File |
 |------|------|
-| Entities | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/SkillRepository.kt`, `Skill.kt`, `AgentSkillBinding.kt`, `CliSkillBinding.kt`, `dto/SkillDetailDto.kt` |
-| Mappers | `harnax-entity/src/main/kotlin/com/agnetix/harnax/mapper/SkillMapper.kt`, `SkillRepositoryMapper.kt`, `AgentSkillBindingMapper.kt`, `CliSkillBindingMapper.kt` (XMLs with the same names under `harnax-entity/src/main/resources/mapper/`) |
+| Entities | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/SkillRepository.kt`, `Skill.kt`, `AgentSkillBinding.kt`, `TeamSkillBinding.kt`, `Cli.kt` (the `skill_id` column carries a CLI's own skill), `dto/SkillDetailDto.kt` |
+| Mappers | `harnax-entity/src/main/kotlin/com/agnetix/harnax/mapper/SkillMapper.kt`, `SkillRepositoryMapper.kt`, `AgentSkillBindingMapper.kt`, `TeamSkillBindingMapper.kt` (XMLs with the same names under `harnax-entity/src/main/resources/mapper/`; `CliSkillBinding*` was deleted with V35) |
 | Management APIs | `harnax-admin/.../controller/SkillSourceController.kt` (new), `SkillController.kt`, `SkillRepositoryController.kt` (legacy) |
 | Management services | `harnax-admin/.../service/impl/SkillSourceServiceImpl.kt` (new), `SkillServiceImpl.kt`, `SkillRepositoryServiceImpl.kt` (legacy) |
 | Loaders | `harnax-admin/.../skill/loader/`: `SkillLoader.kt`, `SkillLoadResult.kt`, `SkillLoaderRegistry.kt`, `SkillFileParser.kt`, `GitSkillLoader.kt`, `NpmSkillLoader.kt`, `ZipSkillLoader.kt` |
 | Install and content safety | `harnax-admin/.../skill/SkillInstaller.kt` (short-transaction persistence + failure list), `SkillContentScanner.kt` (high-risk command scan) |
 | Install result DTOs | `harnax-admin/.../dto/SkillInstallResponse.kt`, `SkillSourceInstallResponse.kt` |
 | Source config and policy | `harnax-admin/.../skill/SkillSourceConfigs.kt` (`parse` for loaders, `forApi` for DTOs, `normalized` for write paths), `SkillSourcePolicy.kt` (the single place deciding reserved names, the two-state status, non-empty content and the shape of `resources`, and non-refreshable sources), `harnax-admin/.../constant/BuiltinRepository.kt` |
-| Built-in skill seeds | `harnax-admin/src/main/resources/db/migration/V12__seed_builtin_cli_skills.sql`, `V14__*.sql` |
+| Who writes a built-in skill | `harnax-admin/.../registrar/CliPackageAutoRegistrar.kt` (now the only route: upserted into the built-in repository with the package); the earlier Flyway seed is `V12__seed_builtin_cli_skills.sql` / `V14__*.sql`, and `V37__retire_seeded_builtin_cli_skill.sql` soft-deletes the orphan row it left |
 | Integrity migration | `harnax-admin/src/main/resources/db/migration/V15__skill_source_integrity.sql` (built-in semantics fix + `is_public` inheritance + duplicate renaming + three unique indexes), `V9__skill_content_in_mysql.sql` (`MEDIUMTEXT`) |
-| Binding save / delivery | `harnax-admin/.../service/impl/AgentServiceImpl.kt`, `CliServiceImpl.kt`, `controller/InternalApiController.kt` |
-| Built-in skill fetch | `harnax-agent/harnax-agent-service/.../client/AdminApiClient.kt` (`getBuiltinSkills()`, fetched on every `resolve`; the startup cache `BuiltinSkillRegistry` was deleted with round seven) |
+| Binding save / delivery | `harnax-admin/.../skill/SkillBindingResolver.kt` (the checks both an agent and a team lead pass), `service/impl/AgentServiceImpl.kt`, `TeamServiceImpl.kt`, `CliServiceImpl.kt`, `controller/InternalApiController.kt` |
+| Fetching a CLI's skill | No separate fetch: admin resolves `cli.skill_id` in `InternalApiController` and ships the DTO inline on `cliDetails[].skill`, and `runner/AgentSpecResolver.kt` injects it in `withCliSkills` (the former `AdminApiClient.getBuiltinSkills()` and the `BuiltinSkillRegistry` startup cache were deleted with the package model) |
 | Spec resolution | `harnax-agent/harnax-agent-service/.../runner/AgentSpecResolver.kt`, `harnax-harness-core/.../agent/AgentSpec.kt` (`SkillSpec`) |
 | Skill adaptor | `harnax-agent/harnax-agent-service/.../adaptor/SkillAdaptorImpl.kt`, `harnax-harness-core/.../agent/adaptor/SkillAdaptor.kt` |
 | Runtime assembly | `harnax-harness-core/.../HarnessAgentLauncher.kt`, `HarnessAgentBuilder.kt` (`InMemorySkillRepository`) |
