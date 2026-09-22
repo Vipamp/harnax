@@ -1,0 +1,23 @@
+# Third-party package: the upstream Lark/Feishu CLI, repacked to this spec.
+# `name` is the identity and must equal the skill's frontmatter name; the zip has to be named
+# lark-cli-<version>.harnaxcli.zip, which build.sh does.
+name: lark-cli
+version: 1.0.96
+description: 飞书 / Lark 开放平台命令行，读写消息、日历、多维表格、文档、云盘、审批、任务、邮箱、通讯录等平台资源
+# Runs inside the freshly built image, so it must pass with credentials absent: --version is the
+# only thing that proves the binary landed executable. cobra exposes the flag but no `version`
+# subcommand here, so the latter would fail as "unknown command" and void the image.
+checkCommand: lark-cli --version
+# One static Go binary, no shared-library needs => no apt layer, build stays offline.
+# Credentials are per-deployment, so they are envParams (admin fills them per agent) and not
+# runtimeEnv: the platform publishes no slot for a Lark app, and a package is a plain zip, so it
+# must never carry a secret. lark-cli reads these two names directly and needs no config file.
+envParams:
+  - envParamName: LARKSUITE_CLI_APP_ID
+    description: 飞书开放平台应用的 App ID（形如 cli_xxx），在「凭证与基础信息」页取
+    required: true
+    secret: false
+  - envParamName: LARKSUITE_CLI_APP_SECRET
+    description: 对应的 App Secret；应用需已开通所要调用的接口权限
+    required: true
+    secret: true

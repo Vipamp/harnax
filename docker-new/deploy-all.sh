@@ -51,15 +51,28 @@ mkdir -p docker-new/dist/harnax-scheduler/
 cp harnax-scheduler/target/harnax-scheduler-*.jar docker-new/dist/harnax-scheduler/
 echo "  ✓ harnax-scheduler"
 
+# 产物文件名带 hash，覆盖式复制会把上一版的 chunk 一起留在镜像里
+rm -rf docker-new/dist/frontend/
 mkdir -p docker-new/dist/frontend/
 cp -r harnax-webui/dist/* docker-new/dist/frontend/
 echo "  ✓ harnax-frontend"
+
+# CLI 插件包：统一货架在 cli-packages/dist，admin 镜像 COPY docker-new/dist/cli-packages/ 作启动登记目录
+mkdir -p docker-new/dist/cli-packages/
+# 暂存目录先清：残留旧包等于让 admin 在两个包里替你裁决，上架的不再是刚构建的那个
+rm -f docker-new/dist/cli-packages/*.harnaxcli.zip
+# 货架是投递口：cli-packages/build.sh 不清架，只把有源码的包（harnax-cli + cli-packages/ 下每个第三方包）补上架；
+# 同名两份留 manifest 版本高的，落选的移进 dist/.superseded——手工直接丢进来的 zip 同样照此上架。
+# 它只在整架为空或同名同版本两份时失败；少一个包会被 admin 读成「这个 CLI 下架了」并 prune 它的行，所以这里失败必须停住整条部署。
+./cli-packages/build.sh
+cp cli-packages/dist/*.harnaxcli.zip docker-new/dist/cli-packages/
+echo "  ✓ cli-packages: $(ls docker-new/dist/cli-packages | tr '\n' ' ')"
 
 # 4. 构建 Docker 镜像
 echo ""
 echo "🐳 步骤 4/6: 构建 Docker 镜像..."
 
-echo "  构建沙箱镜像 (harnax-cli 打包 + 默认沙箱 harnax-sandbox:py-node)..."
+echo "  构建默认沙箱镜像 (harnax-sandbox:py-node)..."
 bash sandbox-plugins/build.sh
 
 echo "  构建 harnax-admin..."

@@ -1,10 +1,24 @@
+---
+name: harnax
+description: 通过 harnax 命令行管理 Harnax 平台的 Agent、模型、工具、技能、会话、渠道、环境变量、定时任务、API Key 等资源
+---
+
 # Harnax Admin CLI
 
-通过 `harnax` 命令行管理 Harnax 平台的全部资源。支持 Agent、模型、工具、MCP Server、Skill、会话、渠道、环境变量、定时任务、API Key、租户、用户、CLI 工具的增删改查操作。
+通过 `harnax` 命令行管理 Harnax 平台的全部资源。支持 Agent、模型、工具、MCP Server、Skill、会话、渠道、环境变量、定时任务、API Key、租户、用户的增删改查；CLI 工具由平台插件包登记，此处只能查看与启停。
 
 ## 前置条件
 
-使用前必须配置服务地址并登录：
+**在 Agent 沙箱内无需任何配置。** 平台创建容器时注入两个环境变量：
+
+```bash
+HARNAX_URL=<admin 服务地址>
+HARNAX_TOKEN=<平台内部令牌>
+```
+
+命令会自动使用它们（内部令牌模式），不需要 `harnax login`，也不读写 `~/.harnax`。用 `harnax whoami` 确认身份、`harnax health` 确认连通性即可。
+
+在沙箱外（本机、CI）使用时，需要先配置服务地址并登录：
 
 ```bash
 harnax config set serverUrl http://localhost:8080
@@ -13,6 +27,8 @@ harnax login --username admin --password your-password
 
 登录成功后 token 自动保存到 `~/.harnax/credentials.json`，后续命令自动携带认证。
 
+服务地址的取值优先级：`--server-url` > `HARNAX_URL`（仅在未指定 profile 时）> 当前 profile 的 `serverUrl`。
+
 ## 全局选项
 
 所有命令均支持以下全局选项：
@@ -20,7 +36,7 @@ harnax login --username admin --password your-password
 ```
 --server-url <url>    覆盖服务地址（不修改配置）
 --output json|table   输出格式，默认 table
---profile <name>      使用指定环境 profile
+--profile <name>      使用指定环境 profile（凭据改用 `harnax login` 保存的，不使用注入的内部令牌）
 --verbose             打印 HTTP 请求/响应详情
 ```
 
@@ -569,22 +585,18 @@ harnax user toggle <id>
 
 ## CLI 工具管理
 
-管理安装到 Agent 沙箱镜像中的 CLI 工具：
+CLI 工具即平台插件包：admin 启动时扫描 `harnax.cli.package-dir` 目录下的 `<name>-<version>.harnaxcli.zip`，逐个登记为一条 CLI 并装载它自带的技能。命令行只读取与启停，没有新增/编辑/删除入口。
 
 ```bash
-harnax cli list [--page <n>] [--size <n>]
+harnax cli list [--name <kw>] [--status <0|1>] [--page <n>] [--size <n>]
 harnax cli get <id>
-harnax cli create --name <name> --install-script <dockerfile-run-fragment> \
-  [--version <ver>] [--description <desc>] [--check-command <cmd>] \
-  [--env-params '<json>'] [--skill-ids <id1,id2>] [--public]
-harnax cli update <id> [--name <name>] [--install-script <fragment>] [--version <ver>]
-harnax cli delete <id>
-harnax cli toggle <id>
+harnax cli toggle <id> [--status <0|1>]
 ```
 
-- `--install-script`（创建时必需）：Dockerfile 中安装该 CLI 的 RUN 片段
-- `--env-params`：JSON 数组格式的环境参数，如 `'[{"envParamName":"API_KEY","required":true,"secret":true}]'`
-- `--skill-ids`：关联的 Skill ID，逗号分隔
+- 发布新 CLI：把包放进 admin 的包目录并重启 admin；包内 `skill/SKILL.md` 就是选用该 CLI 的 Agent 会拿到的提示词。
+- `cli get` 的 `Package Digest` 是已登记包的 sha256，用它判断两个环境是否同一构建。
+- `toggle` 不带 `--status` 就是翻转当前状态；停用会连带停用其技能，技能与 CLI 一起生效或一起停用。
+- 例外：被内容扫描判定为危险而停用的技能，不会因为重新启用 CLI 就被放行——那需要人在技能页显式启用。
 
 ## 健康检查
 

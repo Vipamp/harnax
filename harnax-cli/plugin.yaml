@@ -1,0 +1,10 @@
+# Package manifest: admin reads it when it scans its package directory, and it is the only metadata
+# source — there is no form to fill in. `make package` stamps the binary with this same version.
+name: harnax
+version: 1.0.0
+description: Harnax 平台管理命令行，在沙箱内以注入的内部令牌读写 Agent、模型、技能、会话等资源
+checkCommand: harnax --version
+# The payload is one CGO-free static binary, so the image needs no apt packages.
+runtimeEnv:
+  HARNAX_URL: ${platform.adminUrl}
+  HARNAX_TOKEN: ${platform.internalToken}

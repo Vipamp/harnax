@@ -144,17 +144,30 @@ npm run build
 
 echo "Copying frontend files to docker-new/dist/frontend/..."
 cd ..
+# Hashed file names: a plain overwrite leaves the previous build's chunks behind
+rm -rf docker-new/dist/frontend
 mkdir -p docker-new/dist/frontend
 cp -r harnax-webui/dist/* docker-new/dist/frontend/
 echo "Frontend built successfully."
 echo ""
 
 # ==========================================
-# Step 7: Build Sandbox Images (harnax-cli plugin + default sandbox)
+# Step 7: Sandbox artifacts (CLI plugin packages + default sandbox image)
 # ==========================================
-echo "Step 7/9: Building sandbox images (harnax-sandbox:latest + harnax-sandbox:py-node)..."
+echo "Step 7/9: Building CLI plugin packages and sandbox image (harnax-sandbox:py-node)..."
+mkdir -p docker-new/dist/cli-packages
+rm -f docker-new/dist/cli-packages/*.harnaxcli.zip
+# cli-packages/build.sh tops the shelf up: harnax-cli plus every third-party package under
+# cli-packages/. The shelf is a drop box — it is never cleared, so a zip put there by hand ships too —
+# and one CLI name still means one package, with the higher manifest version kept and the loser moved
+# to dist/.superseded/. The copy exists because .dockerignore keeps `dist/` out of the build context
+# everywhere except docker-new/dist. Failing here fails the build — a shelf that is short a package
+# reads to admin as a retirement, and that CLI's row gets pruned.
+./cli-packages/build.sh || { echo "ERROR: cli-packages/build.sh failed, refusing to ship a partial shelf" >&2; exit 1; }
+cp cli-packages/dist/*.harnaxcli.zip docker-new/dist/cli-packages/
+echo "  ✓ CLI packages staged: $(ls docker-new/dist/cli-packages | tr '\n' ' ')"
 bash sandbox-plugins/build.sh
-echo "Sandbox images built successfully."
+echo "Sandbox artifacts built successfully."
 echo ""
 
 # ==========================================

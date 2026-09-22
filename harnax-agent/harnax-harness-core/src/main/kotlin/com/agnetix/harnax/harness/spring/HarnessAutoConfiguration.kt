@@ -45,6 +45,9 @@ class MinioProperties {
     var snapshotBucket: String = "harnax-snapshots"
     var storeBucket: String = "harnax-store"
     var outputBucket: String = "harnax-output"
+
+    /** Where admin stores registered `.harnaxcli.zip` packages; must match admin's own bucket. */
+    var cliPackageBucket: String = "harnax-cli-packages"
     var snapshotPrefix: String = "snapshots/"
     var storePrefix: String = "store/"
 }
@@ -57,10 +60,15 @@ class SandboxProperties {
     var isolationScope: String = "SESSION"
     var keepAlive: Boolean = false
     var network: String? = null
-    var cliPluginsEnabled: Boolean = false
-    var pluginImage: String = "harnax-sandbox:latest"
-    var pluginAdminUrl: String = ""
-    var pluginInternalSecret: String = ""
+
+    /** Where `CliPackageStore` unpacks CLI payloads; see `SandboxConfig.cliPackageCacheDir`. */
+    var cliPackageCacheDir: String = "/tmp/harnax-agent/cli-packages"
+
+    /** The `platform.adminUrl` slot, as a sandbox container can reach it. */
+    var platformAdminUrl: String = ""
+
+    /** The `platform.internalToken` slot: admin's internal API secret. */
+    var platformInternalToken: String = ""
 
     /** Idle budget of one keep-alive sandbox; see `SandboxConfig.keepAliveMaxIdleTimeMs`. */
     var keepAliveMaxIdleTimeMs: Long = 30 * 60 * 1000L
@@ -139,6 +147,7 @@ class HarnessAutoConfiguration {
             snapshotBucket = props.snapshotBucket,
             storeBucket = props.storeBucket,
             outputBucket = props.outputBucket,
+            cliPackageBucket = props.cliPackageBucket,
             snapshotPrefix = props.snapshotPrefix,
             storePrefix = props.storePrefix,
         )
@@ -211,10 +220,9 @@ class HarnessAutoConfiguration {
                 .getOrDefault(IsolationScope.SESSION),
             keepAlive = sandboxProps.keepAlive,
             network = sandboxProps.network,
-            cliPluginsEnabled = sandboxProps.cliPluginsEnabled,
-            pluginImage = sandboxProps.pluginImage,
-            pluginAdminUrl = sandboxProps.pluginAdminUrl,
-            pluginInternalSecret = sandboxProps.pluginInternalSecret,
+            cliPackageCacheDir = sandboxProps.cliPackageCacheDir,
+            platformAdminUrl = sandboxProps.platformAdminUrl,
+            platformInternalToken = sandboxProps.platformInternalToken,
             keepAliveMaxIdleTimeMs = sandboxProps.keepAliveMaxIdleTimeMs,
         ),
         enableWorkspaceContext = harnessProps.enableWorkspaceContext,

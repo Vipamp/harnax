@@ -9,7 +9,6 @@ import com.agnetix.harnax.agent.SkillSpec
 import com.agnetix.harnax.agent.service.client.AdminApiClient
 import com.agnetix.harnax.agent.service.client.AgentSpecContextHolder
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
-import com.agnetix.harnax.entity.dto.SkillDetailDto
 import com.agnetix.harnax.harness.team.TeamMemberSpec
 import com.agnetix.harnax.harness.team.TeamRuntimeSpec
 import com.agnetix.harnax.tools.sdk.ToolEnvContext
@@ -56,7 +55,7 @@ class AgentSpecResolver(
      */
     fun resolve(sessionId: String): Pair<AgentSpec, ChatSpec> {
         val specInfo = adminApiClient.getAgentSpec(sessionId)
-        val effectiveSpecInfo = withBuiltinSkills(specInfo, sessionId) { adminApiClient.getBuiltinSkills() }
+        val effectiveSpecInfo = withCliSkills(specInfo, sessionId)
 
         // Store full spec in context so adaptors can read during agent creation
         specContextHolder.set(effectiveSpecInfo)
@@ -90,14 +89,11 @@ class AgentSpecResolver(
      */
     fun resolveTeam(sessionId: String): TeamRuntimeSpec {
         val teamSpec = adminApiClient.getTeamSpec(sessionId)
-        // One repository fetch for the whole roster: every agent's CLI bindings filter this same list.
-        val builtinSkills by lazy { adminApiClient.getBuiltinSkills() }
 
-        // Built-in skills come only from the CLIs an agent selected, and a team's lead config has no CLI
-        // section (design D8), so there is nothing to merge here: `lead.spec.cliDetails` arrives empty and
-        // `withBuiltinSkills` returns it untouched. The lead's own skills are a different matter — they
-        // load like any agent's, see `HarnessAgentLauncher`.
-        val leadSpecInfo = teamSpec.lead
+        // A team lead has no CLI section (design D8), so this injects nothing today; it runs through the
+        // same call as a member so both halves of a team resolve skills one way. The lead's own skills are
+        // a different matter — they load like any agent's, see `HarnessAgentLauncher`.
+        val leadSpecInfo = withCliSkills(teamSpec.lead, sessionId)
         val (leadAgentSpec, leadChatSpec) = buildSpecs(leadSpecInfo, sessionId)
         // Plan mode writes its plan into the agent's workspace, and a lead has none.
         val leadSpec = ChatSpec.builder()
@@ -107,7 +103,7 @@ class AgentSpecResolver(
             .build()
 
         val members = teamSpec.members.map { member ->
-            val specInfo = withBuiltinSkills(member.spec, sessionId) { builtinSkills }
+            val specInfo = withCliSkills(member.spec, sessionId)
             val (agentSpec, chatSpec) = buildSpecs(specInfo, sessionId)
             TeamMemberSpec(
                 memberAgentId = member.memberAgentId,
@@ -140,51 +136,46 @@ class AgentSpecResolver(
     }
 
     /**
-     * Adds the built-in skills the agent's selected CLIs need.
+     * Adds the skills the agent's selected CLIs ship.
      *
-     * Built-in skills reach an agent only through the CLIs it selected: they are neither listed nor
-     * selectable on the agent page, so a selected CLI is the one switch that turns them on. Their content
-     * is fetched per resolve rather than cached at startup, because both the operator's kill switch
-     * (turning a built-in skill off directly in the database) and a migration rewriting a SKILL.md have to
-     * take effect without restarting agent-service. `/builtin-skills` already filters disabled skills and
-     * admin already drops a disabled CLI from `cliDetails`, so both gates are applied before this filter.
+     * A CLI's skill is part of its package, so it arrives inline on `cliDetails` and is selectable only by
+     * selecting the CLI — which is also why it needs no separate fetch, and why one round trip cannot
+     * deliver a CLI and not the skill that explains it. Admin has already dropped a disabled CLI and a
+     * disabled skill row, so a missing one here means the row the package registered is gone.
+     *
+     * Injected before the spec's own skills, deduped by id and then by name: skill names are only unique
+     * per repository, so a tenant's own skill can be named like a CLI's. The harness keys skills by name
+     * (`AgentSkill.getSkillId()` is `name + "_" + source`), so delivering both would let the registry and
+     * the in-memory repository disagree on which copy is live — the operator's explicit binding wins.
      */
-    private fun withBuiltinSkills(
+    private fun withCliSkills(
         specInfo: AgentSpecInfoResponse,
         sessionId: String,
-        builtinSkills: () -> List<SkillDetailDto>,
     ): AgentSpecInfoResponse {
-        val cliSkillIds = specInfo.cliDetails.flatMap { it.skillIds }.toSet()
-        if (cliSkillIds.isEmpty()) return specInfo
-        val matched = builtinSkills().filter { it.id in cliSkillIds }
-        // A CLI can still point at a skill admin no longer delivers. Nothing else on this path
-        // reports it, and the symptom is an agent that quietly forgot how to use its own CLI.
-        val unresolvedSkillIds = cliSkillIds - matched.map { it.id }.toSet()
-        if (unresolvedSkillIds.isNotEmpty()) {
+        val cliSkills = specInfo.cliDetails.mapNotNull { it.skill }
+        val skillless = specInfo.cliDetails.filter { it.skill == null }.map { "${it.name}(id=${it.id})" }
+        if (skillless.isNotEmpty()) {
             log.warn(
-                "CLI-bound skills not delivered by admin (deleted, disabled, or outside the builtin repository): sessionId={}, skillIds={}",
+                "Selected CLI(s) ship no skill to load — its package registered none, or its skill row was " +
+                    "deleted since: sessionId={}, clis={}",
                 sessionId,
-                unresolvedSkillIds,
+                skillless,
             )
         }
-        // Inject the selected built-in skills: loaded first (before spec-defined skills), dedup by id and by name.
+        if (cliSkills.isEmpty()) return specInfo
         val specSkillIds = specInfo.skillDetails.map { it.id }.toSet()
-        // Skill names are only unique per repository, so a tenant's own repository can hold a skill
-        // named like a built-in one. The harness keys skills by name (`AgentSkill.getSkillId()` is
-        // `name + "_" + source`), so delivering both would let the registry and the in-memory
-        // repository disagree on which copy is live; the operator's explicit binding wins.
         val specSkillNames = specInfo.skillDetails.map { it.name }.toSet()
-        val (injectedSkills, shadowedSkills) = matched.filter { it.id !in specSkillIds }
+        val (injectedSkills, shadowedSkills) = cliSkills.filter { it.id !in specSkillIds }
             .partition { it.name !in specSkillNames }
         if (shadowedSkills.isNotEmpty()) {
             log.info(
-                "Built-in skills not injected, a spec-defined skill already uses the name: sessionId={}, skills={}",
+                "CLI skills not injected, a spec-bound skill already uses the name: sessionId={}, skills={}",
                 sessionId,
                 shadowedSkills.map { it.name },
             )
         }
         if (injectedSkills.isEmpty()) return specInfo
-        log.info("Injected {} built-in skills into spec: sessionId={}, skills={}", injectedSkills.size, sessionId, injectedSkills.map { it.name })
+        log.info("Injected {} CLI skill(s) into spec: sessionId={}, skills={}", injectedSkills.size, sessionId, injectedSkills.map { it.name })
         return specInfo.copy(skillDetails = injectedSkills + specInfo.skillDetails)
     }
 
@@ -244,27 +235,30 @@ class AgentSpecResolver(
         }
 
         // ── Skill details (full config from admin, no SkillMapper needed) ──
-        // Note: CLI-associated skills were already injected in `resolve`, filtered by the CLIs this
-        // agent selected; admin only carries their ids on `cliDetails`.
+        // Note: the skills the selected CLIs ship are already merged in by `withCliSkills`, which reads
+        // them off `cliDetails[].skill` — a package's skill has no existence apart from its CLI.
         for (skill in specInfo.skillDetails) {
             builder.addSkill(SkillSpec(skillId = skill.id, skillName = skill.name))
         }
 
-        // ── CLI details (install scripts for sandbox image + env bindings) ──
+        // ── CLI details (package coordinates for the sandbox image + env bindings) ──
         for (cli in specInfo.cliDetails) {
             builder.addCliSpec(
                 CliSpec(
                     cliId = cli.id,
                     name = cli.name,
                     version = cli.version,
-                    installScript = cli.installScript,
+                    packageObject = cli.packageObject,
+                    packageDigest = cli.packageDigest,
+                    payloadDigest = cli.payloadDigest,
+                    depsApt = cli.depsApt,
                     checkCommand = cli.checkCommand,
+                    runtimeEnv = cli.runtimeEnv,
                     envBindings = cli.envBindings.mapNotNull { binding ->
                         val key = binding["envKey"] ?: return@mapNotNull null
                         val value = binding["envValue"] ?: return@mapNotNull null
                         key to value
                     }.toMap(),
-                    skillIds = cli.skillIds,
                 ),
             )
         }

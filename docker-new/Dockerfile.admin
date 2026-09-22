@@ -18,6 +18,12 @@ WORKDIR /app
 # Copy JAR file from docker-new/dist/harnax-admin/ (executable fat jar has -exec classifier)
 COPY docker-new/dist/harnax-admin/harnax-admin-*-exec.jar app.jar
 
+# CLI plugin packages admin registers at startup, staged from cli-packages/dist/ by the build
+# scripts. An empty directory is fine (the image then ships no CLI). Under docker-compose the same
+# path is a read-only bind mount of docker-new/dist/cli-packages, so the host shelf — not this
+# baked-in copy — is what admin reads; the COPY keeps the image usable on its own.
+COPY docker-new/dist/cli-packages/ /home/harnax/cli-packages/
+
 # Create log directory, skill storage directory and set permissions
 RUN mkdir -p /app/logs /home/harnax/skills && chown -R harnax:harnax /app /home/harnax
 

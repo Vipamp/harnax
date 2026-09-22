@@ -2,6 +2,7 @@ package com.agnetix.harnax.harness
 
 import com.agnetix.harnax.agent.AgentSpec
 import com.agnetix.harnax.agent.ChatSpec
+import com.agnetix.harnax.agent.CliSpec
 import com.agnetix.harnax.agent.adaptor.ChatModelConfigAdaptor
 import com.agnetix.harnax.agent.adaptor.McpAccessTokenSourceFactory
 import com.agnetix.harnax.agent.adaptor.McpConfigAdaptor
@@ -27,9 +28,8 @@ import com.agnetix.harnax.harness.minio.MinioSnapshotClient
 import com.agnetix.harnax.harness.output.OutputFileDetector
 import com.agnetix.harnax.harness.output.OutputFileStore
 import com.agnetix.harnax.harness.sandbox.CliImageBuilder
+import com.agnetix.harnax.harness.sandbox.CliPackageStore
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
-import com.agnetix.harnax.harness.sandbox.plugin.HarnaxCliPluginInitializer
-import com.agnetix.harnax.harness.sandbox.plugin.SandboxPluginInitializer
 import com.agnetix.harnax.harness.team.TeamLeadToolBox
 import com.agnetix.harnax.harness.team.TeamMemberSpec
 import com.agnetix.harnax.harness.team.TeamMemberToolBox
@@ -499,21 +499,26 @@ class HarnessAgentLauncher(
             agentBuilder.enablePlan(true)
         }
 
-        // ----- CLI sandbox image (per-agent, built from CLI install scripts) -----
-        val cliEnv: Map<String, String> = agentSpec.cliSpecs
-            .flatMap { it.envBindings.entries }
-            .associate { it.key to it.value }
-        val resolvedSandboxImage: String = if (!isLead && agentSpec.cliSpecs.isNotEmpty() && cliImageBuilder != null) {
-            val image = cliImageBuilder.resolveImage(agentSpec.cliSpecs)
-            log.info(
-                "Resolved CLI sandbox image '{}' for agent '{}' (CLIs: {})",
-                image,
-                agentSpec.name,
-                agentSpec.cliSpecs.joinToString(",") { it.name },
+        // ----- CLI sandbox image (one per payload combination) and the env those packages ask for -----
+        val cliEnv: Map<String, String> = cliEnvironment(agentSpec.cliSpecs)
+        val resolvedSandboxImage: String = when {
+            isLead || agentSpec.cliSpecs.isEmpty() -> harnessConfig.sandbox.image
+            cliImageBuilder == null -> throw IllegalStateException(
+                "Agent '${agentSpec.name}' selects CLI packages " +
+                    "${agentSpec.cliSpecs.joinToString(",") { "${it.name} (${it.packageDigest.take(12)})" }} " +
+                    "but this runtime has no MinIO to fetch them from — set harness.minio.enabled=true",
             )
-            image
-        } else {
-            harnessConfig.sandbox.image
+
+            else -> {
+                val image = cliImageBuilder.resolveImage(agentSpec.cliSpecs)
+                log.info(
+                    "Resolved CLI sandbox image '{}' for agent '{}' (CLIs: {})",
+                    image,
+                    agentSpec.name,
+                    agentSpec.cliSpecs.joinToString(",") { it.name },
+                )
+                image
+            }
         }
 
         // ----- Docker Sandbox + Snapshot (snapshotSpec pre-created in initLauncher) -----
@@ -661,13 +666,48 @@ class HarnessAgentLauncher(
             sandboxNetwork = harnessConfig.sandbox.network,
             permissionMode = chatSpec.permissionMode,
             configuredPermissionContext = builtPermCtx,
-            pluginInitializers = if (harnessConfig.sandbox.cliPluginsEnabled) listOf<SandboxPluginInitializer>(HarnaxCliPluginInitializer()) else emptyList(),
-            pluginAdminUrl = harnessConfig.sandbox.pluginAdminUrl,
-            pluginInternalSecret = harnessConfig.sandbox.pluginInternalSecret,
             outputFileDetector = if (teamRole is TeamRole.Member) null else outputFileDetector,
             outputFileStore = if (teamRole is TeamRole.Member) null else outputFileStore,
             teamOrchestrator = (teamRole as? TeamRole.Lead)?.orchestrator,
         )
+    }
+
+    /**
+     * Environment the selected CLI packages ask the platform to inject, plus the agent's own bindings.
+     *
+     * admin guarantees a `runtimeEnv` value is either a literal or exactly one supported slot, so an
+     * unresolved placeholder here means this deployment was never configured for it.
+     */
+    internal fun cliEnvironment(cliSpecs: List<CliSpec>): Map<String, String> {
+        if (cliSpecs.isEmpty()) return emptyMap()
+        val slots = mapOf(
+            "platform.adminUrl" to harnessConfig.sandbox.platformAdminUrl,
+            "platform.internalToken" to harnessConfig.sandbox.platformInternalToken,
+        )
+        val env = LinkedHashMap<String, String>()
+        for (cli in cliSpecs) {
+            for ((name, value) in cli.runtimeEnv) {
+                val slot = RUNTIME_ENV_SLOT.matchEntire(value)?.groupValues?.get(1)
+                val resolved = slot?.let { slots[it] }
+                when {
+                    slot == null -> env[name] = value
+                    resolved.isNullOrBlank() -> log.warn(
+                        "CLI '{}' asks for runtimeEnv {} = {} but this deployment publishes no {} — " +
+                            "the variable is left unset so the CLI reports why it cannot work",
+                        cli.name,
+                        name,
+                        value,
+                        slot,
+                    )
+
+                    else -> env[name] = resolved
+                }
+            }
+        }
+        for (cli in cliSpecs) {
+            env.putAll(cli.envBindings)
+        }
+        return env
     }
 
     /**
@@ -826,13 +866,8 @@ class HarnessAgentLauncher(
             }
 
             val keepAliveManager = if (harnessConfig.sandbox.enabled && harnessConfig.sandbox.keepAlive) {
-                val effectiveImage = if (harnessConfig.sandbox.cliPluginsEnabled) {
-                    harnessConfig.sandbox.pluginImage
-                } else {
-                    harnessConfig.sandbox.image
-                }
                 KeepAliveSandboxManager(
-                    image = effectiveImage,
+                    image = harnessConfig.sandbox.image,
                     workspaceRoot = harnessConfig.sandbox.workspaceRoot,
                     maxIdleTimeMs = harnessConfig.sandbox.keepAliveMaxIdleTimeMs,
                     snapshotSpec = snapshotSpec,
@@ -841,8 +876,19 @@ class HarnessAgentLauncher(
             } else {
                 null
             }
-            val cliImageBuilder = if (harnessConfig.sandbox.enabled) {
-                CliImageBuilder(baseImage = harnessConfig.sandbox.image)
+            // A CLI's payload lives in MinIO because that is where admin stored the package it was
+            // registered from. With no MinIO there is nothing to build an image from, so the builder
+            // stays absent and an agent that selected a CLI is refused with that reason — rather than
+            // starting without the binaries its own shipped skill tells it to run.
+            val cliImageBuilder = if (harnessConfig.sandbox.enabled && minioConfig != null) {
+                CliImageBuilder(
+                    baseImage = harnessConfig.sandbox.image,
+                    packageStore = CliPackageStore(
+                        minioClient = minioConfig.createMinioClient(),
+                        bucket = minioConfig.cliPackageBucket,
+                        cacheDir = Path.of(harnessConfig.sandbox.cliPackageCacheDir),
+                    ),
+                )
             } else {
                 null
             }
@@ -872,5 +918,8 @@ class HarnessAgentLauncher(
 
         /** The one MCP type that is a local process rather than a connection; see [HarnessConfig.mcpStdioEnabled]. */
         private const val STDIO_TYPE = "stdio"
+
+        /** A `runtimeEnv` value that is a platform slot rather than a literal; see [cliEnvironment]. */
+        private val RUNTIME_ENV_SLOT = Regex("^\\$\\{([A-Za-z0-9._-]+)\\}$")
     }
 }

@@ -100,14 +100,24 @@ data class SkillSpec(
     val skillName: String,
 )
 
+/**
+ * One CLI an agent selected, as registered from its plugin package.
+ *
+ * [payloadDigest] is what the sandbox image is named after, [packageDigest] what the archive is stored
+ * and cached under — see `CliPackageLayout`. [runtimeEnv] still holds unresolved platform slots
+ * (`${platform.adminUrl}`); the launcher fills them, since only it knows this deployment's admin URL.
+ */
 data class CliSpec(
     val cliId: Long,
     val name: String,
     val version: String = "",
-    val installScript: String,
+    val packageObject: String = "",
+    val packageDigest: String = "",
+    val payloadDigest: String = "",
+    val depsApt: List<String> = emptyList(),
     val checkCommand: String = "",
+    val runtimeEnv: Map<String, String> = emptyMap(),
     val envBindings: Map<String, String> = emptyMap(),
-    val skillIds: List<Long> = emptyList(),
 )
 
 data class PlanSpec(

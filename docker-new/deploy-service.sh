@@ -47,7 +47,7 @@ case $SERVICE in
     admin)
         # Safety check: verify database has Flyway history (warn if empty)
         if docker ps --format '{{.Names}}' | grep -q harnax-mysql; then
-            FLYWAY_EXISTS=$(docker exec harnax-mysql mysql -uroot -p"${DB_PASSWORD:-harnax123}" harnax_admin -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='harnax_admin' AND table_name='flyway_schema_history'" 2>/dev/null | tr -d '[:space:]')
+            FLYWAY_EXISTS=$(docker exec harnax-mysql mysql -u"${DB_USERNAME:-harnax}" -p"${DB_PASSWORD:-harnax123}" harnax_admin -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='harnax_admin' AND table_name='flyway_schema_history'" 2>/dev/null | tr -d '[:space:]')
             if [ "$FLYWAY_EXISTS" = "0" ]; then
                 echo "⚠️  WARNING: harnax_admin database is EMPTY (no flyway_schema_history)."
                 echo "   All migrations will run from scratch and existing data will be lost."
@@ -59,9 +59,20 @@ case $SERVICE in
         echo "📦 步骤 1/4: 编译 harnax-admin..."
         mvn clean package -Dmaven.test.skip=true -pl harnax-admin -am -q
 
-        echo "📋 步骤 2/4: 复制 jar 包..."
+        echo "📋 步骤 2/4: 复制 jar 包与 CLI 插件包..."
         mkdir -p docker-new/dist/harnax-admin
         cp harnax-admin/target/harnax-admin-*-exec.jar docker-new/dist/harnax-admin/
+
+        # Dockerfile.admin COPY 这个目录，缺它 docker build 直接失败，所以先保证目录存在
+        mkdir -p docker-new/dist/cli-packages/
+        rm -f docker-new/dist/cli-packages/*.harnaxcli.zip
+        # 货架是投递口：cli-packages/build.sh 不清架，只把有源码的包补上架；同名两份留 manifest 版本高的，
+        # 落选的移进 dist/.superseded——手工直接丢进来的 zip 同样照此上架。它只在整架为空或同名同版本时失败。
+        # 少一个包会被 admin 读成「这个 CLI 下架了」并 prune 它的行，所以 set -e 下构建失败就直接停，
+        # 不给它上线半个货架的机会。
+        ./cli-packages/build.sh
+        cp cli-packages/dist/*.harnaxcli.zip docker-new/dist/cli-packages/
+        echo "  ✓ cli-packages: $(ls docker-new/dist/cli-packages | tr '\n' ' ')"
 
         echo "🐳 步骤 3/4: 构建 Docker 镜像..."
         docker rmi -f harnax-admin:latest 2>/dev/null || true
@@ -143,6 +154,8 @@ case $SERVICE in
         cd "$PROJECT_DIR"
 
         echo "📋 步骤 2/3: 复制构建产物..."
+        # 产物文件名带 hash，覆盖式复制会把上一版的 chunk 一起留在镜像里
+        rm -rf docker-new/dist/frontend
         mkdir -p docker-new/dist/frontend
         cp -r harnax-webui/dist/* docker-new/dist/frontend/
 

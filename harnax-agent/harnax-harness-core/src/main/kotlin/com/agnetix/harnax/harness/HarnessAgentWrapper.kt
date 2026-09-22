@@ -16,7 +16,6 @@ import com.agnetix.harnax.common.error.HarnaxException
 import com.agnetix.harnax.harness.output.OutputFileDetector
 import com.agnetix.harnax.harness.output.OutputFileStore
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
-import com.agnetix.harnax.harness.sandbox.plugin.SandboxPluginInitializer
 import com.agnetix.harnax.harness.team.TeamOrchestrator
 import io.agentscope.core.agent.RuntimeContext
 import io.agentscope.core.event.AgentEventType
@@ -93,9 +92,6 @@ class HarnessAgentWrapper(
      * causing read-only tools like `glob_files` to skip the confirmation prompt.
      */
     val configuredPermissionContext: PermissionContextState? = null,
-    val pluginInitializers: List<SandboxPluginInitializer> = emptyList(),
-    val pluginAdminUrl: String = "",
-    val pluginInternalSecret: String = "",
     val outputFileDetector: OutputFileDetector? = null,
     val outputFileStore: OutputFileStore? = null,
     /**
@@ -116,10 +112,6 @@ class HarnessAgentWrapper(
 
     /** Set once by [release]; see the note there about reaching this from two paths. */
     private val released = AtomicBoolean(false)
-
-    /** Tracks whether CLI plugins have been initialized for this wrapper's sandbox. */
-    @Volatile
-    private var pluginsInitialized = false
 
     /**
      * Cached pending tool calls from the last [RequireUserConfirmEvent].
@@ -1004,16 +996,6 @@ class HarnessAgentWrapper(
                 env = sandboxEnv,
             )
             keepAliveSandbox = sandbox
-
-            // === CLI Plugin initialization (only once per wrapper lifecycle) ===
-            if (!pluginsInitialized && pluginInitializers.isNotEmpty() && pluginAdminUrl.isNotEmpty() && pluginInternalSecret.isNotEmpty()) {
-                pluginInitializers.forEach { initializer ->
-                    initializer.initialize(sandbox, pluginAdminUrl, pluginInternalSecret)
-                }
-                pluginsInitialized = true
-            } else if (!pluginsInitialized && pluginInitializers.isNotEmpty()) {
-                log.warn("[harness] CLI plugins configured but skipped: pluginAdminUrl or pluginInternalSecret is empty")
-            }
 
             val clientOptions = DockerSandboxClientOptions()
                 .image(sandboxImage)

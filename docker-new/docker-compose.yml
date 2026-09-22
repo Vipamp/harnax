@@ -188,6 +188,11 @@ services:
     volumes:
       - admin-logs:/app/logs
       - admin-skills:/home/harnax/skills
+      # The package shelf is the host directory the image was built from, mounted read-only: one
+      # copy, so a rebuilt image puts new packages on the shelf and retirements take them off, with
+      # no `docker cp` in between. Keep the directory non-empty on purpose — an absent one is what
+      # Docker creates as empty, and admin then reads every CLI on the shelf as retired and prunes it.
+      - ./dist/cli-packages:/home/harnax/cli-packages:ro
       - /etc/localtime:/etc/localtime:ro
     depends_on:
       mysql:
@@ -482,11 +487,10 @@ services:
       # Docker network for sandbox containers (default: bridge).
       # Set to a custom network name if sandbox needs to reach other services by DNS name.
       SANDBOX_NETWORK: ${SANDBOX_NETWORK:-docker-new_harnax-network}
-      # CLI Plugin Configuration (sandbox plugin injection)
-      SANDBOX_CLI_PLUGINS_ENABLED: "true"
-      SANDBOX_PLUGIN_IMAGE: harnax-sandbox:py-node
-      SANDBOX_PLUGIN_ADMIN_URL: http://admin:8080
-      SANDBOX_PLUGIN_INTERNAL_SECRET: ${ADMIN_INTERNAL_API_SECRET:-change-me-in-production-min-32-chars!!}
+      # CLI plugin packages: a package's `${platform.adminUrl}` slot resolves to this.
+      # `${platform.internalToken}` needs no line here — application.yml defaults it to
+      # ADMIN_INTERNAL_API_SECRET, which this service already carries.
+      SANDBOX_PLATFORM_ADMIN_URL: http://admin:8080
       # Router Configuration
       ROUTER_SERVICE_URL: http://router:8081
       AGENT_INSTANCE_ID: ${AGENT_INSTANCE_ID:-agent-service-1}

@@ -51,7 +51,7 @@ func getOutputFormat() output.Format {
 }
 
 func newAdminClient() (*client.AdminClient, error) {
-	creds, err := config.LoadCredentials()
+	creds, err := config.EffectiveCredentials(profile)
 	if err != nil {
 		return nil, err
 	}
@@ -59,13 +59,13 @@ func newAdminClient() (*client.AdminClient, error) {
 	var c *client.AdminClient
 
 	if creds.Mode == "internal" {
-		// Internal secret mode: serverUrl from credentials, --server-url flag overrides
+		// Internal secret mode: serverUrl from the injected env or credentials, --server-url overrides
 		url := creds.ServerURL
 		if serverURL != "" {
 			url = serverURL
 		}
 		if url == "" {
-			return nil, fmt.Errorf("internal mode requires serverUrl in credentials or --server-url flag")
+			return nil, fmt.Errorf("internal mode needs a server URL: set HARNAX_URL or pass --server-url")
 		}
 		c = client.NewAdminClientWithSecret(url, creds.InternalSecret)
 	} else {

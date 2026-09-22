@@ -39,9 +39,10 @@ import org.springframework.stereotype.Component
  * id, plus the [SessionInfoClient] cache: it remembers an `Unknown` for five minutes, so a `chn-` id
  * asked about before admin learned to answer it keeps passing for that long after a rollout.
  *
- * That reasoning stops short of `task-`. Admin resolves those from the `agent_task` table and they are
- * somebody's, but its ownership endpoint still does not consult that table, so they arrive Unknown here
- * and would have passed with the forged id choosing whose configuration and credentials the agent runs
+ * That reasoning stops short of `task-`. Those sessions are somebody's, but admin resolves them by
+ * parsing the id — `agent_task` lives in the scheduler's own schema now, so there is no row left for it
+ * to consult — and its ownership endpoint still does not answer for them. They arrive Unknown here and
+ * would have passed with the forged id choosing whose configuration and credentials the agent runs
  * with — and `task-{taskId}` is an id a caller can count through. A prefix rule decided before the
  * lookup closes that; see [PrivilegedSessionPrefixes] for why it is a rule and not a query, and for
  * why `chn-` needs no such rule now that the query answers it.
@@ -65,8 +66,8 @@ class SessionAccessGuard(
         // Scheduler's task sessions are the ones the caller has no business naming.
         //
         // This is a prefix rule and not an ownership query, because a query cannot answer it: admin
-        // resolves `task-` by parsing the prefix against the agent_task table, while the lookup below
-        // only reads the `session` table. Every forged id of that shape comes back Unknown, and
+        // resolves `task-` from the id's own agentId segment, while the lookup below only reads the
+        // `session` table. Every forged id of that shape comes back Unknown, and
         // Unknown passes — so the asymmetry between what this guard can see and what admin can resolve
         // was the hole.
         //

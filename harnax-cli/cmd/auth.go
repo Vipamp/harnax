@@ -99,9 +99,11 @@ var whoamiCmd = &cobra.Command{
 	Use:   "whoami",
 	Short: "Show current logged-in user info and login status",
 	Run: func(cmd *cobra.Command, args []string) {
-		creds, err := config.LoadCredentials()
+		creds, err := config.EffectiveCredentials(profile)
 		if err != nil {
-			output.PrintError("Login status: not logged in. Please run 'harnax login' first")
+			// The reason, not a fixed line: "run harnax login" is wrong advice for a damaged
+			// credentials file and impossible advice inside a sandbox.
+			output.PrintError(err.Error())
 			os.Exit(1)
 		}
 

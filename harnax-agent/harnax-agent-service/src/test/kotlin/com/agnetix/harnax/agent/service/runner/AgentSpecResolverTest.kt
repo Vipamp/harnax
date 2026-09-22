@@ -16,7 +16,6 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.mockito.Mockito.*
-import org.mockito.kotlin.whenever
 import tools.jackson.databind.ObjectMapper
 
 class AgentSpecResolverTest {
@@ -31,7 +30,6 @@ class AgentSpecResolverTest {
         adminApiClient = mock(AdminApiClient::class.java)
         specContextHolder = AgentSpecContextHolder()
         objectMapper = ObjectMapper()
-        whenever(adminApiClient.getBuiltinSkills()).thenReturn(emptyList())
         resolver = AgentSpecResolver(adminApiClient, specContextHolder, objectMapper)
     }
 
@@ -285,8 +283,8 @@ class AgentSpecResolverTest {
     }
 
     @Nested
-    @DisplayName("内置技能注入")
-    inner class BuiltinSkillInjection {
+    @DisplayName("CLI 自带技能装载")
+    inner class CliSkillInjection {
 
         private fun skill(id: Long, name: String) = SkillDetailDto(
             id = id,
@@ -296,80 +294,51 @@ class AgentSpecResolverTest {
             resources = "",
         )
 
-        /** agent 选中一个 CLI，并带上该 CLI 在管理页关联的内置技能 ID */
-        private fun cli(id: Long, skillIds: List<Long>) = CliDetailDto(
+        /** 一个由包登记的 CLI：技能随包下来，不再是运维在管理页勾出来的关联 */
+        private fun cliWithSkill(id: Long, skillId: Long) = CliDetailDto(
             id = id,
             name = "cli-$id",
-            installScript = "RUN echo install",
-            skillIds = skillIds,
+            packageObject = "cli-$id-1.0.0.harnaxcli.zip",
+            packageDigest = "%064x".format(id),
+            payloadDigest = "%064x".format(id + 100),
+            skill = skill(skillId, "cli-$id"),
         )
 
+        private fun cliWithoutSkill(id: Long) = cliWithSkill(id, 900L).copy(skill = null)
+
         @Test
-        @DisplayName("agent 没选任何 CLI 时，一个内置技能都不注入")
-        fun `resolve should inject no built-in skill without a selected CLI`() {
-            // 内置技能在配置页既不展示也不可勾选，唯一的开关就是「有没有选中携带它的 CLI」
-            whenever(adminApiClient.getBuiltinSkills()).thenReturn(listOf(skill(90L, "harnax-cli")))
+        @DisplayName("agent 没选任何 CLI 时，一个 CLI 技能都不注入")
+        fun `resolve should inject no CLI skill without a selected CLI`() {
+            // CLI 技能在配置页既不展示也不可勾选，唯一的开关就是「有没有选中这个 CLI」
             `when`(adminApiClient.getAgentSpec("web-1")).thenReturn(buildSpecResponse())
 
             val (agentSpec, _) = resolver.resolve("web-1")
 
             assertTrue(agentSpec.skills.isEmpty())
-            // 上下文里也不能留下它，否则 SkillAdaptor 按 id 回查之外还会从 skillDetails 命中
             assertTrue(specContextHolder.get()?.skillDetails?.isEmpty() ?: false)
-            // 连请求都不该发出：没选 CLI 的会话占大多数，不该为它们付一次对 admin 的同步往返
-            verify(adminApiClient, never()).getBuiltinSkills()
         }
 
         @Test
-        @DisplayName("CLI 绑定的技能若 admin 不再交付，就不注入")
-        fun `resolve should not inject a CLI-bound skill admin does not deliver`() {
-            // 悬空绑定，或被运维直接改库降级为 status=0 的内置技能：`/builtin-skills` 不再返回它，
-            // 运行时只当它不存在（并留一条 warn 供归因），不能凭 cliDetails 里的 ID 去 DB 捞回来
-            whenever(adminApiClient.getBuiltinSkills()).thenReturn(listOf(skill(90L, "harnax-cli")))
-            val spec = buildSpecResponse(cliDetails = listOf(cli(7L, listOf(90L, 99L))))
-            `when`(adminApiClient.getAgentSpec("web-1")).thenReturn(spec)
-
-            val (agentSpec, _) = resolver.resolve("web-1")
-
-            assertEquals(listOf(90L), agentSpec.skills.map { it.skillId })
-        }
-
-        @Test
-        @DisplayName("内置技能内容以本次 resolve 从 admin 取回的结果为准，不吃启动时的进程缓存")
-        fun `resolve should read built-in skills fresh from admin instead of a startup cache`() {
-            // 「直接改库把内置技能降级为 status=0」是 R5-1 论证过并保留的运维 kill switch，
-            // V14 式迁移也会就地改写 SKILL.md；内容缓存在进程里，这两件事都得等 agent-service 重启才生效
-            `when`(adminApiClient.getBuiltinSkills()).thenReturn(listOf(skill(90L, "harnax-cli")))
-            val spec = buildSpecResponse(cliDetails = listOf(cli(7L, listOf(90L))))
-            `when`(adminApiClient.getAgentSpec("web-1")).thenReturn(spec)
-
-            val (agentSpec, _) = resolver.resolve("web-1")
-
-            assertEquals(listOf(90L), agentSpec.skills.map { it.skillId })
-        }
-
-        @Test
-        @DisplayName("只注入被选中 CLI 绑定的内置技能")
-        fun `resolve should inject only the built-in skills the selected CLI binds`() {
-            whenever(adminApiClient.getBuiltinSkills()).thenReturn(
-                listOf(skill(90L, "harnax-cli"), skill(91L, "unbound-skill")),
-            )
-            val spec = buildSpecResponse(cliDetails = listOf(cli(7L, listOf(90L))))
-            `when`(adminApiClient.getAgentSpec("web-1")).thenReturn(spec)
-
-            val (agentSpec, _) = resolver.resolve("web-1")
-
-            assertEquals(listOf(90L), agentSpec.skills.map { it.skillId })
-        }
-
-        @Test
-        @DisplayName("多个 CLI 的绑定技能取并集")
-        fun `resolve should union the skills bound to every selected CLI`() {
-            whenever(adminApiClient.getBuiltinSkills()).thenReturn(
-                listOf(skill(90L, "harnax-cli"), skill(91L, "other-cli-skill")),
-            )
+        @DisplayName("选中一个 CLI 就装载它自带的技能，且排在 spec 自带技能之前")
+        fun `resolve should inject the selected CLI skill ahead of the spec-defined ones`() {
             val spec = buildSpecResponse(
-                cliDetails = listOf(cli(7L, listOf(90L)), cli(8L, listOf(91L))),
+                skillDetails = listOf(skill(1L, "code-review")),
+                cliDetails = listOf(cliWithSkill(7L, 90L)),
+            )
+            `when`(adminApiClient.getAgentSpec("web-1")).thenReturn(spec)
+
+            val (agentSpec, _) = resolver.resolve("web-1")
+
+            assertEquals(listOf(90L, 1L), agentSpec.skills.map { it.skillId })
+            // 上下文里存的也必须是合并后的结果，否则 SkillAdaptor 回退到 DB 又会把已删的行捞回来
+            assertEquals(listOf(90L, 1L), specContextHolder.get()?.skillDetails?.map { it.id })
+        }
+
+        @Test
+        @DisplayName("多个 CLI 的技能取并集")
+        fun `resolve should union the skills of every selected CLI`() {
+            val spec = buildSpecResponse(
+                cliDetails = listOf(cliWithSkill(7L, 90L), cliWithSkill(8L, 91L)),
             )
             `when`(adminApiClient.getAgentSpec("web-1")).thenReturn(spec)
 
@@ -378,28 +347,29 @@ class AgentSpecResolverTest {
             assertEquals(setOf(90L, 91L), agentSpec.skills.map { it.skillId }.toSet())
         }
 
+        /**
+         * I5 的运行时那一半：admin 已经把 status=0 的 CLI 整个跳过了，这里能遇到的「没有技能」只有
+         * 包登记的那一行被删掉。CLI 仍然要装进镜像，只是没人再指望模型知道怎么用它。
+         */
         @Test
-        @DisplayName("内置技能排在 spec 自带技能之前注入")
-        fun `resolve should inject built-in skills ahead of the spec-defined ones`() {
-            whenever(adminApiClient.getBuiltinSkills()).thenReturn(listOf(skill(90L, "harnax-cli")))
-            val spec = buildSpecResponse(
-                skillDetails = listOf(skill(1L, "code-review")),
-                cliDetails = listOf(cli(7L, listOf(90L))),
-            )
+        @DisplayName("不带技能的 CLI 什么也不注入，但包坐标照常下发")
+        fun `resolve should inject nothing for a CLI whose skill row is gone`() {
+            val spec = buildSpecResponse(cliDetails = listOf(cliWithoutSkill(7L)))
             `when`(adminApiClient.getAgentSpec("web-1")).thenReturn(spec)
 
             val (agentSpec, _) = resolver.resolve("web-1")
 
-            assertEquals(listOf(90L, 1L), agentSpec.skills.map { it.skillId })
+            assertTrue(agentSpec.skills.isEmpty())
+            assertEquals(1, agentSpec.cliSpecs.size)
+            assertEquals("%064x".format(7L), agentSpec.cliSpecs[0].packageDigest)
         }
 
         @Test
-        @DisplayName("spec 已按 id 带过同一个技能时，内置那份不重复注入")
-        fun `resolve should not inject a built-in skill the spec already carries by id`() {
-            whenever(adminApiClient.getBuiltinSkills()).thenReturn(listOf(skill(1L, "code-review")))
+        @DisplayName("spec 已按 id 带过同一个技能时，CLI 那份不重复注入")
+        fun `resolve should not inject a skill the spec already carries by id`() {
             val spec = buildSpecResponse(
                 skillDetails = listOf(skill(1L, "code-review")),
-                cliDetails = listOf(cli(7L, listOf(1L))),
+                cliDetails = listOf(cliWithSkill(7L, 1L).copy(name = "code-review")),
             )
             `when`(adminApiClient.getAgentSpec("web-1")).thenReturn(spec)
 
@@ -409,17 +379,14 @@ class AgentSpecResolverTest {
         }
 
         @Test
-        @DisplayName("内置技能与 spec 自带技能同名时不注入，保留运维显式绑定的那一个")
-        fun `resolve should skip a built-in skill whose name collides with a spec-defined one`() {
-            // 技能名只在仓库内唯一，租户自己的仓库完全可以放一个和内置技能同名的技能。而 harness
+        @DisplayName("CLI 技能与 spec 自带技能同名时不注入，保留运维显式绑定的那一个")
+        fun `resolve should skip a CLI skill whose name collides with a spec-defined one`() {
+            // 技能名只在仓库内唯一，租户自己的仓库完全可以放一个和 CLI 技能同名的技能。而 harness
             // 按 name 归并技能（AgentSkill.getSkillId() 是 name + "_" + source），两份都下发会让
             // SkillRegistry（后者替换前者）和 InMemorySkillRepository（取第一个）对「谁生效」判断相反
-            whenever(adminApiClient.getBuiltinSkills()).thenReturn(
-                listOf(skill(90L, "code-review"), skill(91L, "harnax-cli")),
-            )
             val spec = buildSpecResponse(
-                skillDetails = listOf(skill(1L, "code-review")),
-                cliDetails = listOf(cli(7L, listOf(90L, 91L))),
+                skillDetails = listOf(skill(1L, "cli-7")),
+                cliDetails = listOf(cliWithSkill(7L, 90L), cliWithSkill(8L, 91L).copy(skill = skill(91L, "other"))),
             )
             `when`(adminApiClient.getAgentSpec("web-1")).thenReturn(spec)
 
@@ -427,8 +394,34 @@ class AgentSpecResolverTest {
 
             // 同名的 90 被让位，不同名的 91 照常注入且仍排在前面
             assertEquals(listOf(91L, 1L), agentSpec.skills.map { it.skillId })
-            // 上下文里存的也必须是合并后的结果，否则 SkillAdaptor 回退到 DB 又会把 90 捞回来
-            assertEquals(listOf(91L, 1L), specContextHolder.get()?.skillDetails?.map { it.id })
+        }
+
+        @Test
+        @DisplayName("包坐标与两类环境变量原样带到 CliSpec")
+        fun `resolve should carry package coordinates and env through to CliSpec`() {
+            val packageCli = cliWithSkill(7L, 90L).copy(
+                version = "1.2.3",
+                depsApt = listOf("ca-certificates"),
+                checkCommand = "harnax --version",
+                runtimeEnv = mapOf("HARNAX_URL" to "\${platform.adminUrl}"),
+                envBindings = listOf(mapOf("envKey" to "HARNAX_TOKEN", "envValue" to "agent-token")),
+            )
+            `when`(adminApiClient.getAgentSpec("web-1")).thenReturn(
+                buildSpecResponse(cliDetails = listOf(packageCli)),
+            )
+
+            val (agentSpec, _) = resolver.resolve("web-1")
+
+            val cli = agentSpec.cliSpecs.single()
+            assertEquals(7L, cli.cliId)
+            assertEquals("1.2.3", cli.version)
+            assertEquals(packageCli.packageObject, cli.packageObject)
+            assertEquals(packageCli.payloadDigest, cli.payloadDigest)
+            assertEquals(listOf("ca-certificates"), cli.depsApt)
+            assertEquals("harnax --version", cli.checkCommand)
+            // 槽位留给 launcher 填：只有它知道这次部署的 admin URL 与内部密钥
+            assertEquals(mapOf("HARNAX_URL" to "\${platform.adminUrl}"), cli.runtimeEnv)
+            assertEquals(mapOf("HARNAX_TOKEN" to "agent-token"), cli.envBindings)
         }
     }
 

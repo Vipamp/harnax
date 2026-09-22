@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -12,6 +13,11 @@ const (
 	configFile      = "config.yaml"
 	credentialsFile = "credentials.json"
 	profilesDir     = "profiles"
+
+	// HARNAX_URL / HARNAX_TOKEN carry the admin address and the internal secret into a container
+	// that has no home directory to write ~/.harnax into.
+	envServerURL = "HARNAX_URL"
+	envToken     = "HARNAX_TOKEN"
 )
 
 type Config struct {
@@ -145,7 +151,38 @@ func ClearCredentials() error {
 	return nil
 }
 
+// EnvServerURL is the admin address the platform injected, or "" when the variable is absent.
+func EnvServerURL() string { return strings.TrimSpace(os.Getenv(envServerURL)) }
+
+// EnvInternalToken is the internal secret the platform injected, or "" when the variable is absent.
+func EnvInternalToken() string { return strings.TrimSpace(os.Getenv(envToken)) }
+
+// EffectiveCredentials answers with the injected environment when a sandbox carries it, and with the
+// saved login otherwise. Commands with no profile resolve their client through here, so an agent
+// container needs neither a ~/.harnax directory nor a login.
+//
+// A named profile is a request to talk somewhere other than the deployment this process was started
+// in, so it deliberately does not get the injected secret: the alternative is `--profile prod`
+// sending the platform's own credentials to whatever prod happens to be while reporting success.
+func EffectiveCredentials(profileName string) (*Credentials, error) {
+	if profileName == "" {
+		if secret := EnvInternalToken(); secret != "" {
+			return &Credentials{Mode: "internal", ServerURL: EnvServerURL(), InternalSecret: secret}, nil
+		}
+		if EnvServerURL() != "" {
+			return nil, fmt.Errorf("%s is set but %s is not, so this process points at a platform it cannot authenticate to", envServerURL, envToken)
+		}
+	}
+	return LoadCredentials()
+}
+
 func GetServerURL(profileName string) (string, error) {
+	if profileName == "" {
+		if url := EnvServerURL(); url != "" {
+			return url, nil
+		}
+	}
+
 	cfg, err := LoadConfig()
 	if err != nil {
 		return "", err

@@ -4,7 +4,6 @@ import com.agnetix.harnax.agent.adaptor.mcp.McpAuthRequiredException
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
 import com.agnetix.harnax.entity.dto.McpAccessTokenResponse
-import com.agnetix.harnax.entity.dto.SkillDetailDto
 import com.agnetix.harnax.entity.dto.TeamSpecInfoResponse
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -146,31 +145,6 @@ class AdminApiClient(
             response.data!!.lead.skillDetails.size,
             response.data!!.members.map { it.memberAgentId },
         )
-        return response.data!!
-    }
-
-    /**
-     * Fetch built-in skills from admin's built-in repository.
-     * Returns empty list on failure (startup must not be blocked by admin downtime).
-     */
-    fun getBuiltinSkills(): List<SkillDetailDto> {
-        val url = "$adminUrl/api/admin/internal/builtin-skills"
-        log.info("[Agent→Admin] GET {} - fetching built-in skills", url)
-
-        val responseType = object : ParameterizedTypeReference<ResultVo<List<SkillDetailDto>>>() {}
-        val response = try {
-            restTemplate.exchange(url, HttpMethod.GET, null, responseType).body
-        } catch (e: Exception) {
-            log.error("[Agent←Admin] Failed to get built-in skills: {}", e.message, e)
-            return emptyList()
-        }
-
-        if (response == null || response.code != 200 || response.data == null) {
-            log.warn("[Agent←Admin] Error getting built-in skills: {}", response?.message)
-            return emptyList()
-        }
-
-        log.info("[Agent←Admin] Got {} built-in skills: {}", response.data!!.size, response.data!!.map { it.name })
         return response.data!!
     }
 

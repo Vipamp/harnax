@@ -12,9 +12,15 @@ cp bin/harnax /usr/local/bin/
 
 # 或 go install
 go install github.com/agnetix/harnax-cli@latest
+
+# 或打成平台插件包，投放给 admin 登记
+make package        # → dist/harnax-<version>.harnaxcli.zip
 ```
 
 ## 快速开始
+
+在 Agent 沙箱内无需任何准备：平台创建容器时注入 `HARNAX_URL` 与 `HARNAX_TOKEN`，命令开箱即用。
+下面是沙箱外（本机、CI）的一次性配置：
 
 ```bash
 # 1. 配置服务地址
@@ -33,7 +39,7 @@ harnax health
 
 | 选项 | 说明 | 默认值 |
 |------|------|--------|
-| `--server-url <url>` | 覆盖 Admin 服务地址 | 配置文件中的值 |
+| `--server-url <url>` | 覆盖 Admin 服务地址 | `HARNAX_URL`，其次配置文件中的值 |
 | `--output <format>` | 输出格式：`json` 或 `table` | `table` |
 | `--profile <name>` | 使用指定 profile | `default` |
 | `--verbose` | 显示 HTTP 请求/响应详情 | `false` |
@@ -57,6 +63,8 @@ harnax --profile dev agent list
 - `config.json` — 全局配置
 - `credentials.json` — 登录凭证（权限 0600）
 
+沙箱内可以完全没有这个目录：`HARNAX_URL` + `HARNAX_TOKEN` 等价于已登录的内部令牌模式。
+
 ## 认证
 
 ```bash
@@ -68,6 +76,9 @@ harnax logout
 ```
 
 登录后 JWT token 自动保存，后续命令自动携带认证信息。
+
+内部令牌模式（沙箱内）不需要登录：设置了 `HARNAX_TOKEN` 即以该令牌访问 admin 内部接口，
+`harnax whoami` 会显示 `internal secret`。地址优先级：`--server-url` > `HARNAX_URL` > profile 的 `serverUrl`。
 
 ## 命令参考
 
@@ -120,25 +131,24 @@ harnax tool env-params <id>
 
 ### CLI 工具管理
 
-CLI 工具（如 kubectl、gh、awscli）会在构建 agent sandbox 镜像时自动安装，关联的 skill 会在运行时自动加载到 agent。
+CLI 工具是一个平台插件包 `<name>-<version>.harnaxcli.zip`：admin 启动时扫描 `harnax.cli.package-dir`，
+按包内 `plugin.yaml` 登记 CLI，把 `payload/` 装进 Agent 沙箱镜像，并把包内 `skill/SKILL.md` 作为该 CLI 自带
+的技能随选用关系一起加载。命令行侧只支持查看与启停，没有增删改入口。
 
 ```bash
 harnax cli list [--name X] [--status N] [--page N] [--size N]
 harnax cli get <id>
-harnax cli create --name X --install-script X [--version X] [--check-command X] [--skill-ids 1,2] [--public]
-harnax cli update <id> [--name X] [--install-script X] [--skill-ids 1,2]
-harnax cli delete <id>
 harnax cli toggle <id> [--status 0|1]
 ```
 
-示例：
+发布新 CLI（以 kubectl 为例）：准备 `plugin.yaml`、`skill/SKILL.md` 与 `payload/` 三件套后打包投放。
 
 ```bash
-# 注册 kubectl，并关联 id=5 的使用教学 skill
-harnax cli create --name kubectl --version 1.30.0 \
-  --install-script 'curl -LO "https://dl.k8s.io/release/v1.30.0/bin/linux/amd64/kubectl" && install -m 0755 kubectl /usr/local/bin/kubectl && rm kubectl' \
-  --check-command 'kubectl version --client' \
-  --skill-ids 5
+mkdir -p stage/skill stage/payload/usr/local/bin
+cp SKILL.md stage/skill/
+install -m 0755 kubectl stage/payload/usr/local/bin/kubectl   # 可执行位要靠 zip 携带
+(cd stage && zip -X -r ../kubectl-1.30.0.harnaxcli.zip plugin.yaml skill payload)
+# 丢进货架 cli-packages/dist/，再走一次 docker-new 的打包部署（脚本会把整架复制进构建输入目录）
 ```
 
 ### MCP Server 管理
@@ -349,6 +359,9 @@ harnax env-var toggle 1
 ```bash
 # 构建
 make build
+
+# 打平台插件包
+make package
 
 # 测试
 make test

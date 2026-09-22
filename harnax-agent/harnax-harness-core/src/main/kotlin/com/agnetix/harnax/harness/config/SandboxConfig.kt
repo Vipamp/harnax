@@ -15,10 +15,12 @@ import io.agentscope.harness.agent.IsolationScope
  * @param network Docker network mode or name passed to `docker run --network`;
  *   when null, Docker uses the default bridge network; set to "host" to share host network,
  *   or a custom network name (e.g. "docker-new_harnax-network") for inter-container communication
- * @param cliPluginsEnabled when true, CLI plugins are initialized inside the sandbox container
- * @param pluginImage Docker image containing CLI plugins (used when cliPluginsEnabled=true)
- * @param pluginAdminUrl admin service URL accessible from within the container (for CLI auth)
- * @param pluginInternalSecret service-level internal secret (for CLI auth)
+ * @param cliPackageCacheDir directory CLI payloads are downloaded and unpacked into, keyed by package
+ *   digest. It has to survive across sessions only to spare a re-download; a fresh container refetches.
+ * @param platformAdminUrl the `platform.adminUrl` slot a package may bind: the admin URL as the sandbox
+ *   container can reach it, which is not necessarily the URL agent-service was configured with
+ * @param platformInternalToken the `platform.internalToken` slot: the admin internal API secret, handed
+ *   to a CLI that declares it needs one instead of the container guessing at credentials
  * @param keepAliveMaxIdleTimeMs how long a keep-alive sandbox survives without being used, after which
  *   the idle reaper removes its container. The clock refreshes when a turn attaches the sandbox, not
  *   while it runs, so this must stay above the longest single turn (the member-turn timeout and the
@@ -31,9 +33,8 @@ data class SandboxConfig(
     val isolationScope: IsolationScope = IsolationScope.SESSION,
     val keepAlive: Boolean = false,
     val network: String? = null,
-    val cliPluginsEnabled: Boolean = false,
-    val pluginImage: String = "harnax-sandbox:latest",
-    val pluginAdminUrl: String = "",
-    val pluginInternalSecret: String = "",
+    val cliPackageCacheDir: String = "/tmp/harnax-agent/cli-packages",
+    val platformAdminUrl: String = "",
+    val platformInternalToken: String = "",
     val keepAliveMaxIdleTimeMs: Long = 30 * 60 * 1000L,
 )

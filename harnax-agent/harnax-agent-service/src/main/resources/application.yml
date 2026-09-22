@@ -54,6 +54,8 @@ harness:
     snapshot-bucket: ${MINIO_SNAPSHOT_BUCKET:harnax-snapshots}
     store-bucket: ${MINIO_STORE_BUCKET:harnax-store}
     output-bucket: ${MINIO_OUTPUT_BUCKET:harnax-output}
+    # Must match the admin's `minio.cli-package-bucket`: it writes the registered packages there.
+    cli-package-bucket: ${MINIO_CLI_PACKAGE_BUCKET:harnax-cli-packages}
     snapshot-prefix: ${MINIO_SNAPSHOT_PREFIX:snapshots/}
     store-prefix: ${MINIO_STORE_PREFIX:store/}
   sandbox:
@@ -68,10 +70,12 @@ harness:
     # How often the reaper looks for expired sandboxes. The budget above only takes effect on a sweep.
     keep-alive-sweep-interval-ms: ${SANDBOX_KEEP_ALIVE_SWEEP_INTERVAL_MS:300000}
     network: ${SANDBOX_NETWORK:}
-    cli-plugins-enabled: ${SANDBOX_CLI_PLUGINS_ENABLED:false}
-    plugin-image: ${SANDBOX_PLUGIN_IMAGE:harnax-sandbox:py-node}
-    plugin-admin-url: ${SANDBOX_PLUGIN_ADMIN_URL:}
-    plugin-internal-secret: ${SANDBOX_PLUGIN_INTERNAL_SECRET:}
+    # Where CLI package payloads are unpacked and cached, keyed by the package digest.
+    cli-package-cache-dir: ${SANDBOX_CLI_PACKAGE_CACHE_DIR:/tmp/harnax-agent/cli-packages}
+    # Values a CLI package's `${platform.*}` slots resolve to. The URL must be one a sandbox container
+    # can reach, and the token is admin's internal API secret — the same value the admin service holds.
+    platform-admin-url: ${SANDBOX_PLATFORM_ADMIN_URL:}
+    platform-internal-token: ${SANDBOX_PLATFORM_INTERNAL_TOKEN:${ADMIN_INTERNAL_API_SECRET:}}
   output-detection:
     enabled: ${OUTPUT_DETECTION_ENABLED:true}
     max-file-size: ${OUTPUT_MAX_FILE_SIZE:52428800}
