@@ -117,11 +117,19 @@ class ModelTenantIsolationIT : BaseAdminIT() {
 
         assertTrue(rowsNamed("/api/admin/model-providers/page", ownPrivateProvider, otherTenant).isEmpty(), "a private row must stay out of another tenant's list")
 
-        val hidden = parseBody(exchange(HttpMethod.GET, "/api/admin/model-providers/$ownPrivateProviderId", tenantId = otherTenant))
+        val hiddenResponse = exchange(HttpMethod.GET, "/api/admin/model-providers/$ownPrivateProviderId", tenantId = otherTenant)
         // Same shape as an id nobody holds: probing the id space cannot enumerate whose rows exist.
-        val absent = getJson("/api/admin/model-providers/$noSuchId")
+        val absentResponse = exchange(HttpMethod.GET, "/api/admin/model-providers/$noSuchId")
+        val hidden = parseBody(hiddenResponse)
+        val absent = parseBody(absentResponse)
+        // The miss travels in the envelope, so neither answer may turn into an HTTP error status.
+        assertEquals(200, hiddenResponse.statusCode.value(), "an invisible row must answer HTTP 200 with an envelope 404")
+        assertEquals(200, absentResponse.statusCode.value(), "a missing row must answer HTTP 200 with an envelope 404")
         assertEquals(absent["code"].asInt(), hidden["code"].asInt(), "an invisible row must not read differently from a missing one")
         assertEquals(messageOf(absent), messageOf(hidden), "the refusal must not reveal that the row exists at all")
+        // getMessage echoes the key itself when the bundle lacks it, which would leave both sides equal and
+        // make the line above pass on an untranslated response — so pin that the text really resolved.
+        assertNotEquals("error.model.provider.notfound", messageOf(absent), "the refusal must be the bundle's text, not the key")
         assertEquals(404, hidden["code"].asInt(), "a read that misses is a 404, not an empty success")
         assertTrue(answersAsAbsent(hidden), "another tenant's private provider must not be readable by id")
         assertTrue(answersAsAbsent(absent))
@@ -220,10 +228,15 @@ class ModelTenantIsolationIT : BaseAdminIT() {
     fun `a private model of one tenant stays out of the other list and detail`() {
         assertTrue(rowsNamed("/api/admin/models/page", otherPrivateModel, null).isEmpty(), "a private model must stay out of another tenant's list")
 
-        val hidden = getJson("/api/admin/models/$otherPrivateModelId")
-        val absent = getJson("/api/admin/models/$noSuchId")
+        val hiddenResponse = exchange(HttpMethod.GET, "/api/admin/models/$otherPrivateModelId")
+        val absentResponse = exchange(HttpMethod.GET, "/api/admin/models/$noSuchId")
+        val hidden = parseBody(hiddenResponse)
+        val absent = parseBody(absentResponse)
+        assertEquals(200, hiddenResponse.statusCode.value(), "an invisible model must answer HTTP 200 with an envelope 404")
+        assertEquals(200, absentResponse.statusCode.value(), "a missing model must answer HTTP 200 with an envelope 404")
         assertEquals(absent["code"].asInt(), hidden["code"].asInt(), "an invisible model must not read differently from a missing one")
         assertEquals(messageOf(absent), messageOf(hidden), "the refusal must not reveal that the row exists at all")
+        assertNotEquals("error.model.notfound", messageOf(absent), "the refusal must be the bundle's text, not the key")
         assertEquals(404, hidden["code"].asInt(), "a read that misses is a 404, not an empty success")
         assertTrue(answersAsAbsent(hidden), "another tenant's private model must not be readable by id")
         assertTrue(answersAsAbsent(absent))

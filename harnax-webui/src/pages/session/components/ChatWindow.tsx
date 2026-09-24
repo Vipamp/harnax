@@ -710,7 +710,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
         // 并行加载历史消息和会话配置：配置读不到（会话已删或不可见）只让开关停在默认值，不能连带放弃历史消息
         const [messagesResponse, configResponse] = await Promise.all([
           getSessionMessages(sessionId),
-          getSessionConfig(sessionId, { skipErrorHandler: true }).catch(() => undefined),
+          getSessionConfig(sessionId, { skipErrorHandler: true }).catch((error) => {
+            console.warn('[chat] session config load failed', error);
+            return undefined;
+          }),
         ]);
         
         // 加载会话配置
