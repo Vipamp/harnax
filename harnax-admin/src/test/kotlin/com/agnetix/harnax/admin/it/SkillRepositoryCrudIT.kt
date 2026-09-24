@@ -166,11 +166,11 @@ class SkillRepositoryCrudIT : BaseAdminIT() {
 
     @Test
     @Order(14)
-    fun `delete repository then detail returns empty`() {
+    fun `delete repository then detail reports not found`() {
         assertOk(deleteJson("/api/admin/skill-repositories/${locateRepoId()}"))
 
         val node = getJson("/api/admin/skill-repositories/$repoId")
-        assertEquals(200, node["code"].asInt())
+        assertEquals(404, node["code"].asInt(), "读不到的行不该是成功响应")
         assertTrue(node["data"] == null || node["data"].isNull, "deleted repository should not be returned")
 
         val record = findInPage("/api/admin/skill-repositories/page", "name=$repoName") {

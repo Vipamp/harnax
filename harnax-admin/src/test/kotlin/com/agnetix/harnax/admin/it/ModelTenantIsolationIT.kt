@@ -118,10 +118,13 @@ class ModelTenantIsolationIT : BaseAdminIT() {
         assertTrue(rowsNamed("/api/admin/model-providers/page", ownPrivateProvider, otherTenant).isEmpty(), "a private row must stay out of another tenant's list")
 
         val hidden = parseBody(exchange(HttpMethod.GET, "/api/admin/model-providers/$ownPrivateProviderId", tenantId = otherTenant))
-        assertEquals(200, hidden["code"].asInt(), "an invisible row reads as absent, not as an error")
-        assertTrue(answersAsAbsent(hidden), "another tenant's private provider must not be readable by id")
         // Same shape as an id nobody holds: probing the id space cannot enumerate whose rows exist.
-        assertTrue(answersAsAbsent(getJson("/api/admin/model-providers/$noSuchId")))
+        val absent = getJson("/api/admin/model-providers/$noSuchId")
+        assertEquals(absent["code"].asInt(), hidden["code"].asInt(), "an invisible row must not read differently from a missing one")
+        assertEquals(messageOf(absent), messageOf(hidden), "the refusal must not reveal that the row exists at all")
+        assertEquals(404, hidden["code"].asInt(), "a read that misses is a 404, not an empty success")
+        assertTrue(answersAsAbsent(hidden), "another tenant's private provider must not be readable by id")
+        assertTrue(answersAsAbsent(absent))
 
         assertEquals(ownPrivateProvider, assertOk(getJson("/api/admin/model-providers/$ownPrivateProviderId"))["name"].asText())
     }
@@ -218,9 +221,12 @@ class ModelTenantIsolationIT : BaseAdminIT() {
         assertTrue(rowsNamed("/api/admin/models/page", otherPrivateModel, null).isEmpty(), "a private model must stay out of another tenant's list")
 
         val hidden = getJson("/api/admin/models/$otherPrivateModelId")
-        assertEquals(200, hidden["code"].asInt())
+        val absent = getJson("/api/admin/models/$noSuchId")
+        assertEquals(absent["code"].asInt(), hidden["code"].asInt(), "an invisible model must not read differently from a missing one")
+        assertEquals(messageOf(absent), messageOf(hidden), "the refusal must not reveal that the row exists at all")
+        assertEquals(404, hidden["code"].asInt(), "a read that misses is a 404, not an empty success")
         assertTrue(answersAsAbsent(hidden), "another tenant's private model must not be readable by id")
-        assertTrue(answersAsAbsent(getJson("/api/admin/models/$noSuchId")))
+        assertTrue(answersAsAbsent(absent))
 
         assertEquals(otherPrivateModel, assertOk(parseBody(exchange(HttpMethod.GET, "/api/admin/models/$otherPrivateModelId", tenantId = otherTenant)))["name"].asText())
     }

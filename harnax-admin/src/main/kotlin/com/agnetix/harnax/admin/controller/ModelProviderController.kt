@@ -6,6 +6,7 @@ import com.agnetix.harnax.admin.dto.ModelProviderUpdateRequest
 import com.agnetix.harnax.admin.dto.ModelStatsInfo
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.mapRecords
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.ModelProviderService
 import com.agnetix.harnax.common.dto.ResultVo
 import io.swagger.v3.oas.annotations.Operation
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.*
 @Tag(name = "Model Provider Management", description = "Model provider CRUD APIs")
 class ModelProviderController(
     private val modelProviderService: ModelProviderService,
+    private val messageUtil: MessageUtil,
 ) {
 
     /**
@@ -58,9 +60,10 @@ class ModelProviderController(
     @Operation(summary = "Get model provider details", description = "Get model provider details by ID")
     fun getModelProvider(
         @Parameter(description = "Model provider ID") @PathVariable(name = "id") id: Long,
-    ): ResultVo<ModelProviderResponse?> {
+    ): ResultVo<ModelProviderResponse> {
         val response = modelProviderService.getVisibleModelProvider(id)
-        return ResultVo.success(response?.let { modelProviderService.convertToResponse(it) })
+            ?: return ResultVo.error(404, messageUtil.getMessage("error.model.provider.notfound"))
+        return ResultVo.success(modelProviderService.convertToResponse(response))
     }
 
     /**

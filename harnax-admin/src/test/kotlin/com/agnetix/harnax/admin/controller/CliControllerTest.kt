@@ -2,6 +2,7 @@ package com.agnetix.harnax.admin.controller
 
 import com.agnetix.harnax.admin.dto.CliResponse
 import com.agnetix.harnax.admin.dto.Page
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.CliService
 import com.agnetix.harnax.admin.service.impl.AgentSessionRefreshService
 import com.agnetix.harnax.admin.service.impl.RelatedAgentInfo
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+import org.mockito.ArgumentMatchers.anyString
 import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.verify
@@ -43,6 +45,9 @@ class CliControllerTest {
     @Mock
     private lateinit var agentSessionRefreshService: AgentSessionRefreshService
 
+    @Mock
+    private lateinit var messageUtil: MessageUtil
+
     @InjectMocks
     private lateinit var controller: CliController
 
@@ -51,6 +56,8 @@ class CliControllerTest {
 
     @BeforeEach
     fun setUp() {
+        // MessageUtil 桩成回显消息码：断言只看键，不依赖 bundle 文案
+        `when`(messageUtil.getMessage(anyString())).thenAnswer { invocation -> invocation.arguments[0] as String }
         testCli = Cli().apply {
             id = 1L
             name = "harnax-cli"
@@ -146,13 +153,15 @@ class CliControllerTest {
         }
 
         @Test
-        @DisplayName("getCli - 不存在时 data 为 null")
-        fun `getCli should return null data when not found`() {
+        @DisplayName("getCli - 读不到时返回具名 404")
+        fun `getCli should report not found with a named 404`() {
             `when`(cliService.getCli(999L)).thenReturn(null)
 
             val result = controller.getCli(999L)
 
-            assertTrue(result.isSuccess())
+            assertFalse(result.isSuccess(), "读不到的行不能算成功响应")
+            assertEquals(404, result.code)
+            assertEquals("error.cli.notfound", result.message)
             assertNull(result.data)
         }
 

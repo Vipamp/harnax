@@ -170,9 +170,9 @@ class MpSessionFlowIT : BaseAdminIT() {
         val sessions = assertOk(getJson("/api/admin/mp/sessions"))
         assertTrue(sessions.none { it["id"].asLong() == mpSessionId }, "deleted mp session should not be listed")
 
-        // Backing router session is gone as well (config lookup returns data=null)
+        // Backing router session is gone as well, and the config lookup says so with a 404
         val node = getJson("/api/admin/sessions/$routerSessionId/config")
-        assertEquals(200, node["code"].asInt())
+        assertEquals(404, node["code"].asInt(), "读不到的行不该是成功响应")
         assertTrue(node["data"] == null || node["data"].isNull, "router session should be deleted")
     }
 

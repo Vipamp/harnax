@@ -3,6 +3,7 @@ package com.agnetix.harnax.admin.controller
 import com.agnetix.harnax.admin.dto.CliResponse
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.mapRecords
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.CliService
 import com.agnetix.harnax.admin.service.impl.AgentSessionRefreshService
 import com.agnetix.harnax.admin.service.impl.RelatedAgentInfo
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.*
 class CliController(
     private val cliService: CliService,
     private val agentSessionRefreshService: AgentSessionRefreshService,
+    private val messageUtil: MessageUtil,
 ) {
 
     private val log = LoggerFactory.getLogger(CliController::class.java)
@@ -58,9 +60,10 @@ class CliController(
     @Operation(summary = "Get CLI details", description = "Get CLI information by CLI ID")
     fun getCli(
         @Parameter(description = "CLI ID") @PathVariable(name = "id") id: Long,
-    ): ResultVo<CliResponse?> = try {
+    ): ResultVo<CliResponse> = try {
         val cli = cliService.getCli(id)
-        ResultVo.success(cli?.let { cliService.convertToResponse(it) })
+            ?: return ResultVo.error(404, messageUtil.getMessage("error.cli.notfound"))
+        ResultVo.success(cliService.convertToResponse(cli))
     } catch (e: Exception) {
         log.error("Failed to get CLI details", e)
         ResultVo.error(e.message ?: "Failed to get CLI details")

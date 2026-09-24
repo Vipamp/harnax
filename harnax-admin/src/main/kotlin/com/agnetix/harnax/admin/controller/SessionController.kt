@@ -1,6 +1,7 @@
 package com.agnetix.harnax.admin.controller
 
 import com.agnetix.harnax.admin.dto.*
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.SessionService
 import com.agnetix.harnax.common.dto.ResultVo
 import io.swagger.v3.oas.annotations.Operation
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.*
 @Tag(name = "Session Management", description = "Session related APIs")
 class SessionController(
     private val sessionService: SessionService,
+    private val messageUtil: MessageUtil,
 ) {
 
     private val log = LoggerFactory.getLogger(SessionController::class.java)
@@ -53,9 +55,10 @@ class SessionController(
     @Operation(summary = "Get session details", description = "Get session information by session ID")
     fun getSession(
         @Parameter(description = "Session ID") @PathVariable(name = "id") id: Long,
-    ): ResultVo<SessionResponse?> = try {
+    ): ResultVo<SessionResponse> = try {
         val session = sessionService.getSession(id)
-        ResultVo.success(session?.let { sessionService.convertToResponse(it) })
+            ?: return ResultVo.error(404, messageUtil.getMessage("error.session.notfound"))
+        ResultVo.success(sessionService.convertToResponse(session))
     } catch (e: Exception) {
         log.error("Failed to get session details", e)
         ResultVo.error(e.message ?: "Failed to get session details")
@@ -108,9 +111,10 @@ class SessionController(
     @Schema(description = "Get session chat configuration")
     fun getSessionConfig(
         @PathVariable("sessionId") sessionId: String,
-    ): ResultVo<SessionResponse?> = try {
+    ): ResultVo<SessionResponse> = try {
         val sessionChatConfig = sessionService.getSessionChatConfig(sessionId)
-        ResultVo.success(sessionChatConfig?.let { sessionService.convertToResponse(it) })
+            ?: return ResultVo.error(404, messageUtil.getMessage("error.session.notfound"))
+        ResultVo.success(sessionService.convertToResponse(sessionChatConfig))
     } catch (e: Exception) {
         ResultVo.error(e.toString())
     }

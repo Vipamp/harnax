@@ -192,7 +192,8 @@ const SkillDetail: React.FC = () => {
   const loadSkillDetail = async (id: number) => {
     setLoading(true);
     try {
-      const res = await getSkillById(id);
+      // skipErrorHandler：后端读不到时给的是具名 404，提示由下面的 catch 单处发出，不叠两条 toast
+      const res = await getSkillById(id, { skipErrorHandler: true });
       if (res.code === 200 && res.data) {
         setSkillInfo(res.data);
         // 解析 resources
@@ -211,11 +212,12 @@ const SkillDetail: React.FC = () => {
             // resources 解析失败，忽略
           }
         }
-      } else {
-        message.error(res.message || intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
       }
-    } catch (error) {
-      message.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
+    } catch (error: any) {
+      message.error(
+        error?.info?.errorMessage ||
+          intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }),
+      );
     } finally {
       setLoading(false);
     }

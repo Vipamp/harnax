@@ -5,6 +5,7 @@ import com.agnetix.harnax.admin.dto.SkillCreateRequest
 import com.agnetix.harnax.admin.dto.SkillInstallResponse
 import com.agnetix.harnax.admin.dto.SkillResponse
 import com.agnetix.harnax.admin.dto.SkillUpdateRequest
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.SkillService
 import com.agnetix.harnax.admin.util.ApiErrors
 import com.agnetix.harnax.common.dto.ResultVo
@@ -26,6 +27,7 @@ import org.springframework.web.bind.annotation.*
 @Tag(name = "Skill Management", description = "Skill related APIs")
 class SkillController(
     private val skillService: SkillService,
+    private val messageUtil: MessageUtil,
 ) {
 
     private val log = LoggerFactory.getLogger(SkillController::class.java)
@@ -63,10 +65,11 @@ class SkillController(
     @Operation(summary = "Get skill details", description = "Get skill information by skill ID")
     fun getSkill(
         @Parameter(description = "Skill ID") @PathVariable(name = "id") id: Long,
-    ): ResultVo<SkillResponse?> = try {
+    ): ResultVo<SkillResponse> = try {
         val skill = skillService.getSkill(id)
+            ?: return ResultVo.error(404, messageUtil.getMessage("error.skill.notfound"))
         // Convert through the service: the binding count the response carries comes from its query
-        ResultVo.success(skill?.let { skillService.convertToResponse(it) })
+        ResultVo.success(skillService.convertToResponse(skill))
     } catch (e: Exception) {
         log.error("Failed to get skill details", e)
         ResultVo.error(ApiErrors.message(e, "Failed to get skill details"))

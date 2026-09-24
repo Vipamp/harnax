@@ -7,6 +7,7 @@ import com.agnetix.harnax.admin.dto.ApiKeyResponse
 import com.agnetix.harnax.admin.dto.ApiKeyUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.mapRecords
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.security.SecurityUtils
 import com.agnetix.harnax.admin.service.ApiKeyService
 import com.agnetix.harnax.common.dto.ResultVo
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.*
 class ApiKeyController(
     private val apiKeyService: ApiKeyService,
     private val apiKeyMapper: ApiKeyMapper,
+    private val messageUtil: MessageUtil,
 ) {
 
     private val log = LoggerFactory.getLogger(ApiKeyController::class.java)
@@ -51,9 +53,10 @@ class ApiKeyController(
     @Operation(summary = "Get API Key details")
     fun get(
         @Parameter(description = "API Key ID") @PathVariable("id") id: Long,
-    ): ResultVo<ApiKeyResponse?> = try {
+    ): ResultVo<ApiKeyResponse> = try {
         val entity = apiKeyService.getApiKey(id)
-        ResultVo.success(entity?.let { apiKeyService.convertToResponse(it) })
+            ?: return ResultVo.error(404, messageUtil.getMessage("error.apikey.notfound"))
+        ResultVo.success(apiKeyService.convertToResponse(entity))
     } catch (e: Exception) {
         log.error("Failed to get API Key details", e)
         ResultVo.error(e.message ?: "Failed to get API Key details")

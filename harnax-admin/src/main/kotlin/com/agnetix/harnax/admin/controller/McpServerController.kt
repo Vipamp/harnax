@@ -3,6 +3,7 @@ package com.agnetix.harnax.admin.controller
 import com.agnetix.harnax.admin.dto.*
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.mapRecords
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.McpServerService
 import com.agnetix.harnax.admin.service.impl.AgentSessionRefreshService
 import com.agnetix.harnax.admin.service.impl.RelatedAgentInfo
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.*
 class McpServerController(
     private val mcpServerService: McpServerService,
     private val agentSessionRefreshService: AgentSessionRefreshService,
+    private val messageUtil: MessageUtil,
 ) {
 
     private val log = LoggerFactory.getLogger(McpServerController::class.java)
@@ -62,9 +64,10 @@ class McpServerController(
     @Operation(summary = "Get MCP server details", description = "Get MCP server information by ID")
     fun getMcpServer(
         @Parameter(description = "MCP ID") @PathVariable(name = "id") id: Long,
-    ): ResultVo<McpServerResponse?> = try {
+    ): ResultVo<McpServerResponse> = try {
         val mcpServer = mcpServerService.getVisibleMcpServer(id)
-        ResultVo.success(mcpServer?.let { mcpServerService.convertToResponse(it) })
+            ?: return ResultVo.error(404, messageUtil.getMessage("error.mcp.server.notfound"))
+        ResultVo.success(mcpServerService.convertToResponse(mcpServer))
     } catch (e: Exception) {
         log.error("Failed to get MCP server details", e)
         ResultVo.error(e.message ?: "Failed to get MCP server details")

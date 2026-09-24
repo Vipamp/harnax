@@ -202,11 +202,11 @@ class ModelCrudIT : BaseAdminIT() {
 
     @Test
     @Order(10)
-    fun `delete model then detail returns empty`() {
+    fun `delete model then detail reports not found`() {
         assertOk(deleteJson("/api/admin/models/${locateModelId()}"))
 
         val node = getJson("/api/admin/models/$modelId")
-        assertEquals(200, node["code"].asInt())
+        assertEquals(404, node["code"].asInt(), "读不到的行不该是成功响应")
         assertTrue(node["data"] == null || node["data"].isNull, "deleted model should not be returned")
 
         // Cleanup prerequisite provider

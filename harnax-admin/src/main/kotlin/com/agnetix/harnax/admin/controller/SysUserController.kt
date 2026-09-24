@@ -5,6 +5,7 @@ import com.agnetix.harnax.admin.dto.SysUserCreateRequest
 import com.agnetix.harnax.admin.dto.SysUserResponse
 import com.agnetix.harnax.admin.dto.SysUserUpdateRequest
 import com.agnetix.harnax.admin.dto.mapRecords
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.SysUserService
 import com.agnetix.harnax.common.dto.ResultVo
 import io.swagger.v3.oas.annotations.Operation
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.*
 @Tag(name = "User Management", description = "User related APIs")
 class SysUserController(
     private val sysUserService: SysUserService,
+    private val messageUtil: MessageUtil,
 ) {
 
     private val log = LoggerFactory.getLogger(SysUserController::class.java)
@@ -59,9 +61,10 @@ class SysUserController(
     @Operation(summary = "Get user details", description = "Get user information by user ID")
     fun getSysUser(
         @Parameter(description = "User ID") @PathVariable(name = "id") id: Long,
-    ): ResultVo<SysUserResponse?> = try {
+    ): ResultVo<SysUserResponse> = try {
         val user = sysUserService.getSysUser(id)
-        ResultVo.success(user?.let { sysUserService.convertToResponse(it) })
+            ?: return ResultVo.error(404, messageUtil.getMessage("error.user.notfound"))
+        ResultVo.success(sysUserService.convertToResponse(user))
     } catch (e: Exception) {
         log.error("Failed to get user details", e)
         ResultVo.error(e.message ?: "Failed to get user details")

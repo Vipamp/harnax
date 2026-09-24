@@ -149,12 +149,12 @@ class SkillCrudIT : BaseAdminIT() {
 
     @Test
     @Order(9)
-    fun `delete skill then detail lookup returns null data`() {
+    fun `delete skill then detail lookup reports not found`() {
         assertOk(deleteJson("/api/admin/skills/${locateSkillId()}"))
 
-        // Detail lookup for a missing skill returns code=200 with data=null (same as other modules)
+        // Same contract as every other detail endpoint: a read that misses is a 404 with no data.
         val node = getJson("/api/admin/skills/$skillId")
-        assertEquals(200, node["code"].asInt())
+        assertEquals(404, node["code"].asInt(), "读不到的行不该是成功响应")
         assertTrue(node["data"] == null || node["data"].isNull)
 
         val record = findInPage("/api/admin/skills/page", "name=$skillName") {
@@ -168,7 +168,7 @@ class SkillCrudIT : BaseAdminIT() {
     fun `cleanup delete skill repository`() {
         assertOk(deleteJson("/api/admin/skill-repositories/${locateRepoId()}"))
         val node = getJson("/api/admin/skill-repositories/$repoId")
-        assertEquals(200, node["code"].asInt())
+        assertEquals(404, node["code"].asInt(), "读不到的行不该是成功响应")
         assertTrue(node["data"] == null || node["data"].isNull)
     }
 }

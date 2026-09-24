@@ -5,14 +5,18 @@ import com.agnetix.harnax.admin.dto.SysUserCreateRequest
 import com.agnetix.harnax.admin.dto.SysUserResponse
 import com.agnetix.harnax.admin.dto.SysUserUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.SysUserService
 import com.agnetix.harnax.entity.SysUser
 import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+import org.mockito.ArgumentMatchers.anyString
 import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.verify
@@ -34,6 +38,9 @@ class SysUserControllerTest {
     @Mock
     private lateinit var sysUserService: SysUserService
 
+    @Mock
+    private lateinit var messageUtil: MessageUtil
+
     @InjectMocks
     private lateinit var controller: SysUserController
 
@@ -42,6 +49,8 @@ class SysUserControllerTest {
 
     @BeforeEach
     fun setUp() {
+        // MessageUtil 桩成回显消息码：断言只看键，不依赖 bundle 文案
+        `when`(messageUtil.getMessage(anyString())).thenAnswer { invocation -> invocation.arguments[0] as String }
         testUser = SysUser().apply {
             id = 1L
             username = "zhangsan"
@@ -144,13 +153,15 @@ class SysUserControllerTest {
         }
 
         @Test
-        @DisplayName("getSysUser - 不存在时 data 为 null")
-        fun `getSysUser should return null data when not found`() {
+        @DisplayName("getSysUser - 读不到时返回具名 404")
+        fun `getSysUser should report not found with a named 404`() {
             `when`(sysUserService.getSysUser(999L)).thenReturn(null)
 
             val result = controller.getSysUser(999L)
 
-            assertTrue(result.isSuccess())
+            assertFalse(result.isSuccess(), "读不到的行不能算成功响应")
+            assertEquals(404, result.code)
+            assertEquals("error.user.notfound", result.message)
             assertNull(result.data)
         }
 

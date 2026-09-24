@@ -1,6 +1,7 @@
 package com.agnetix.harnax.admin.controller
 
 import com.agnetix.harnax.admin.dto.*
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.util.ApiErrors
 import com.agnetix.harnax.common.dto.ResultVo
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.*
 @Tag(name = "Environment Variable Management", description = "Environment variable CRUD APIs")
 class EnvVariableController(
     private val envVariableService: EnvVariableService,
+    private val messageUtil: MessageUtil,
 ) {
 
     private val log = LoggerFactory.getLogger(EnvVariableController::class.java)
@@ -47,9 +49,10 @@ class EnvVariableController(
     @Operation(summary = "Get env variable details", description = "Get env variable by ID")
     fun getById(
         @Parameter(description = "Env Variable ID") @PathVariable(name = "id") id: Long,
-    ): ResultVo<EnvVariableResponse?> = try {
+    ): ResultVo<EnvVariableResponse> = try {
         val env = envVariableService.getEnvVariable(id)
-        ResultVo.success(env?.let { envVariableService.convertToResponse(it) })
+            ?: return ResultVo.error(404, messageUtil.getMessage("error.env.variable.notfound"))
+        ResultVo.success(envVariableService.convertToResponse(env))
     } catch (e: Exception) {
         log.error("Failed to get env variable details", e)
         ResultVo.error("Failed to get env variable details")

@@ -109,9 +109,10 @@ class SessionRuntimeCleanupIT : BaseAdminIT() {
         assertEquals("Session not found", refused["message"].asText())
     }
 
-    /** A row this service has let go of: the by-id read keeps its envelope and carries nothing. */
+    /** A row this service has let go of: the by-id read says so with a 404 and carries nothing. */
     private fun assertAbsent(id: Long) {
         val node = getJson("/api/admin/sessions/$id")
+        assertEquals(404, node["code"].asInt(), "读不到的会话不该算成功响应: $node")
         assertTrue(node["data"] == null || node["data"].isNull, "删除后的会话不该再读得到: $node")
     }
 }

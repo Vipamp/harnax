@@ -6,6 +6,7 @@ import com.agnetix.harnax.admin.dto.ModelProviderUpdateRequest
 import com.agnetix.harnax.admin.dto.ModelStatsInfo
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.ModelProviderService
 import com.agnetix.harnax.entity.ModelProvider
 import org.junit.jupiter.api.Assertions.*
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.extension.ExtendWith
+import org.mockito.ArgumentMatchers.anyString
 import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.verify
@@ -36,6 +38,9 @@ class ModelProviderControllerTest {
     @Mock
     private lateinit var modelProviderService: ModelProviderService
 
+    @Mock
+    private lateinit var messageUtil: MessageUtil
+
     @InjectMocks
     private lateinit var controller: ModelProviderController
 
@@ -44,6 +49,8 @@ class ModelProviderControllerTest {
 
     @BeforeEach
     fun setUp() {
+        // MessageUtil 桩成回显消息码：断言只看键，不依赖 bundle 文案
+        `when`(messageUtil.getMessage(anyString())).thenAnswer { invocation -> invocation.arguments[0] as String }
         testProvider = ModelProvider().apply {
             id = 1L
             tenantId = 1L
@@ -158,13 +165,15 @@ class ModelProviderControllerTest {
         }
 
         @Test
-        @DisplayName("getModelProvider - 不可见时 data 为 null")
-        fun `getModelProvider should return null data when not found`() {
+        @DisplayName("getModelProvider - 读不到时返回具名 404")
+        fun `getModelProvider should report not found with a named 404`() {
             `when`(modelProviderService.getVisibleModelProvider(999L)).thenReturn(null)
 
             val result = controller.getModelProvider(999L)
 
-            assertTrue(result.isSuccess())
+            assertFalse(result.isSuccess(), "读不到的行不能算成功响应")
+            assertEquals(404, result.code)
+            assertEquals("error.model.provider.notfound", result.message)
             assertNull(result.data)
         }
     }

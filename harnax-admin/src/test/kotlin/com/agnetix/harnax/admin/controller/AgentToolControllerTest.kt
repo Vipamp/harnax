@@ -3,6 +3,7 @@ package com.agnetix.harnax.admin.controller
 import com.agnetix.harnax.admin.dto.AgentToolResponse
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.AgentToolService
 import com.agnetix.harnax.entity.AgentTool
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+import org.mockito.ArgumentMatchers.anyString
 import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.verify
@@ -35,6 +37,9 @@ class AgentToolControllerTest {
     @Mock
     private lateinit var agentToolService: AgentToolService
 
+    @Mock
+    private lateinit var messageUtil: MessageUtil
+
     @InjectMocks
     private lateinit var controller: AgentToolController
 
@@ -43,6 +48,8 @@ class AgentToolControllerTest {
 
     @BeforeEach
     fun setUp() {
+        // MessageUtil 桩成回显消息码：断言只看键，不依赖 bundle 文案
+        `when`(messageUtil.getMessage(anyString())).thenAnswer { invocation -> invocation.arguments[0] as String }
         testTool = AgentTool().apply {
             id = 1L
             name = "send_email"
@@ -138,13 +145,15 @@ class AgentToolControllerTest {
         }
 
         @Test
-        @DisplayName("getAgentTool - 不存在时 data 为 null")
-        fun `getAgentTool should return null data when not found`() {
+        @DisplayName("getAgentTool - 读不到时返回具名 404")
+        fun `getAgentTool should report not found with a named 404`() {
             `when`(agentToolService.getAgentTool(999L)).thenReturn(null)
 
             val result = controller.getAgentTool(999L)
 
-            assertTrue(result.isSuccess())
+            assertFalse(result.isSuccess(), "读不到的行不能算成功响应")
+            assertEquals(404, result.code)
+            assertEquals("error.tool.notfound", result.message)
             assertNull(result.data)
         }
 

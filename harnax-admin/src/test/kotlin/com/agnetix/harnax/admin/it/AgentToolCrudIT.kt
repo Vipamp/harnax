@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Order
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.TestMethodOrder
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -74,9 +76,10 @@ class AgentToolCrudIT : BaseAdminIT() {
 
     @Test
     @Order(6)
-    fun `get detail of non-existent tool returns empty data`() {
+    fun `get detail of non-existent tool reports 404`() {
         val node = getJson("/api/admin/tools/99999999")
-        assertTrue(node["code"].asInt() == 200)
+        assertEquals(404, node["code"].asInt(), "查无此行不能是成功响应")
         assertTrue(node["data"] == null || node["data"].isNull)
+        assertFalse(node["message"].asText().isEmpty(), "404 要带上具名文案")
     }
 }

@@ -120,11 +120,11 @@ class ApiKeyCrudIT : BaseAdminIT() {
 
     @Test
     @Order(10)
-    fun `delete api key then detail returns empty`() {
+    fun `delete api key then detail reports not found`() {
         assertOk(deleteJson("/api/admin/api-keys/$keyId"))
 
         val node = getJson("/api/admin/api-keys/$keyId")
-        assertEquals(200, node["code"].asInt())
+        assertEquals(404, node["code"].asInt(), "读不到的行不该是成功响应")
         assertTrue(node["data"] == null || node["data"].isNull, "deleted key should not be returned")
 
         val record = findInPage("/api/admin/api-keys/page", "keyword=$keyName") {

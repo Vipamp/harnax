@@ -5,6 +5,7 @@ import com.agnetix.harnax.admin.dto.ModelResponse
 import com.agnetix.harnax.admin.dto.ModelUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.mapRecords
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.ModelService
 import com.agnetix.harnax.common.dto.ResultVo
 import io.swagger.v3.oas.annotations.Operation
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.*
 @Tag(name = "Model Management", description = "Model CRUD APIs")
 class ModelController(
     private val modelService: ModelService,
+    private val messageUtil: MessageUtil,
 ) {
 
     /**
@@ -60,9 +62,10 @@ class ModelController(
     @Operation(summary = "Get model details", description = "Get model details by ID")
     fun getModel(
         @Parameter(description = "Model ID") @PathVariable(name = "id") id: Long,
-    ): ResultVo<ModelResponse?> {
+    ): ResultVo<ModelResponse> {
         val model = modelService.getVisibleModel(id)
-        return ResultVo.success(model?.let { modelService.convertToResponse(it) })
+            ?: return ResultVo.error(404, messageUtil.getMessage("error.model.notfound"))
+        return ResultVo.success(modelService.convertToResponse(model))
     }
 
     /**

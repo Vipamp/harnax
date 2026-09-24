@@ -3,6 +3,7 @@ package com.agnetix.harnax.admin.controller
 import com.agnetix.harnax.admin.dto.*
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.mapRecords
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.SkillRepositoryService
 import com.agnetix.harnax.admin.util.ApiErrors
 import com.agnetix.harnax.common.dto.ResultVo
@@ -26,6 +27,7 @@ import org.springframework.web.bind.annotation.*
 @Tag(name = "Skill Repository Management", description = "Skill repository related APIs")
 class SkillRepositoryController(
     private val skillRepositoryService: SkillRepositoryService,
+    private val messageUtil: MessageUtil,
 ) {
 
     private val log = LoggerFactory.getLogger(SkillRepositoryController::class.java)
@@ -86,9 +88,10 @@ class SkillRepositoryController(
     )
     fun getSkillRepository(
         @Parameter(description = "Skill repository ID") @PathVariable(name = "id") id: Long,
-    ): ResultVo<SkillRepositoryResponse?> = try {
+    ): ResultVo<SkillRepositoryResponse> = try {
         val repository = skillRepositoryService.getSkillRepository(id)
-        ResultVo.success(repository?.let { SkillRepositoryResponse.fromEntity(it) })
+            ?: return ResultVo.error(404, messageUtil.getMessage("error.skill.repository.notfound"))
+        ResultVo.success(SkillRepositoryResponse.fromEntity(repository))
     } catch (e: Exception) {
         log.error("Failed to get skill repository details", e)
         ResultVo.error(ApiErrors.message(e, "Failed to get skill repository details"))

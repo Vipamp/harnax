@@ -137,11 +137,11 @@ class SysUserCrudIT : BaseAdminIT() {
 
     @Test
     @Order(11)
-    fun `delete user then detail returns empty`() {
+    fun `delete user then detail reports not found`() {
         assertOk(deleteJson("/api/admin/users/${locateUserId()}"))
 
         val node = getJson("/api/admin/users/$userId")
-        assertEquals(200, node["code"].asInt())
+        assertEquals(404, node["code"].asInt(), "读不到的行不该是成功响应")
         assertTrue(node["data"] == null || node["data"].isNull, "deleted user should not be returned")
 
         val record = findInPage("/api/admin/users/page", "keyword=$username") {

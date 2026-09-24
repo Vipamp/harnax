@@ -5,6 +5,7 @@ import com.agnetix.harnax.admin.dto.ChannelResponse
 import com.agnetix.harnax.admin.dto.ChannelUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.mapRecords
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.ChannelService
 import com.agnetix.harnax.common.dto.ResultVo
 import io.swagger.v3.oas.annotations.Operation
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.*
 @Tag(name = "Channel Management", description = "Channel related APIs")
 class ChannelController(
     private val channelService: ChannelService,
+    private val messageUtil: MessageUtil,
 ) {
 
     private val log = LoggerFactory.getLogger(ChannelController::class.java)
@@ -52,9 +54,10 @@ class ChannelController(
     @Operation(summary = "Get channel details", description = "Get channel information by channel ID")
     fun getChannel(
         @Parameter(description = "Channel ID") @PathVariable(name = "id") id: Long,
-    ): ResultVo<ChannelResponse?> = try {
+    ): ResultVo<ChannelResponse> = try {
         val channel = channelService.getChannel(id)
-        ResultVo.success(channel?.let { channelService.convertToResponse(it) })
+            ?: return ResultVo.error(404, messageUtil.getMessage("error.channel.notfound"))
+        ResultVo.success(channelService.convertToResponse(channel))
     } catch (e: Exception) {
         log.error("Failed to get channel details", e)
         ResultVo.error(e.message ?: "Failed to get channel details")

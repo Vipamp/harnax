@@ -179,11 +179,11 @@ class EnvVariableCrudIT : BaseAdminIT() {
 
     @Test
     @Order(11)
-    fun `delete env variable then detail returns empty`() {
+    fun `delete env variable then detail reports not found`() {
         assertOk(deleteJson("/api/admin/env-variables/${locateEnvId()}"))
 
         val node = getJson("/api/admin/env-variables/$envId")
-        assertEquals(200, node["code"].asInt())
+        assertEquals(404, node["code"].asInt(), "读不到的行不该是成功响应")
         assertTrue(node["data"] == null || node["data"].isNull, "deleted env variable should not be returned")
     }
 

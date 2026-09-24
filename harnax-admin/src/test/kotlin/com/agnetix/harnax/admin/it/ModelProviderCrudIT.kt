@@ -139,11 +139,11 @@ class ModelProviderCrudIT : BaseAdminIT() {
 
     @Test
     @Order(10)
-    fun `delete provider then detail returns empty`() {
+    fun `delete provider then detail reports not found`() {
         assertOk(deleteJson("/api/admin/model-providers/${locateProviderId()}"))
 
         val node = getJson("/api/admin/model-providers/$providerId")
-        assertEquals(200, node["code"].asInt())
+        assertEquals(404, node["code"].asInt(), "读不到的行不该是成功响应")
         assertTrue(node["data"] == null || node["data"].isNull, "deleted provider should not be returned")
     }
 }

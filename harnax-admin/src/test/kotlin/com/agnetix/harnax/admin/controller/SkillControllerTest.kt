@@ -6,15 +6,19 @@ import com.agnetix.harnax.admin.dto.SkillInstallResponse
 import com.agnetix.harnax.admin.dto.SkillResponse
 import com.agnetix.harnax.admin.dto.SkillUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.SkillService
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.SkillRepository
 import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+import org.mockito.ArgumentMatchers.anyString
 import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.verify
@@ -36,6 +40,9 @@ class SkillControllerTest {
     @Mock
     private lateinit var skillService: SkillService
 
+    @Mock
+    private lateinit var messageUtil: MessageUtil
+
     @InjectMocks
     private lateinit var controller: SkillController
 
@@ -45,6 +52,8 @@ class SkillControllerTest {
 
     @BeforeEach
     fun setUp() {
+        // MessageUtil 桩成回显消息码：断言只看键，不依赖 bundle 文案
+        `when`(messageUtil.getMessage(anyString())).thenAnswer { invocation -> invocation.arguments[0] as String }
         testSkill = Skill().apply {
             id = 1L
             tenantId = 1L
@@ -165,13 +174,15 @@ class SkillControllerTest {
         }
 
         @Test
-        @DisplayName("getSkill - 不存在时 data 为 null")
-        fun `getSkill should return null data when not found`() {
+        @DisplayName("getSkill - 读不到时返回具名 404")
+        fun `getSkill should report not found with a named 404`() {
             `when`(skillService.getSkill(999L)).thenReturn(null)
 
             val result = controller.getSkill(999L)
 
-            assertTrue(result.isSuccess())
+            assertFalse(result.isSuccess(), "读不到的行不能算成功响应")
+            assertEquals(404, result.code)
+            assertEquals("error.skill.notfound", result.message)
             assertNull(result.data)
         }
 

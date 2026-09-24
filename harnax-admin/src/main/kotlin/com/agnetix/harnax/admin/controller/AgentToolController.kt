@@ -1,6 +1,7 @@
 package com.agnetix.harnax.admin.controller
 
 import com.agnetix.harnax.admin.dto.*
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.AgentToolService
 import com.agnetix.harnax.common.dto.ResultVo
 import io.swagger.v3.oas.annotations.Operation
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.*
 @Tag(name = "Agent Tool Management", description = "Agent tool related APIs")
 class AgentToolController(
     private val agentToolService: AgentToolService,
+    private val messageUtil: MessageUtil,
 ) {
 
     private val log = LoggerFactory.getLogger(AgentToolController::class.java)
@@ -40,9 +42,10 @@ class AgentToolController(
     @Operation(summary = "Get tool details", description = "Get tool information by ID")
     fun getAgentTool(
         @Parameter(description = "Tool ID") @PathVariable(name = "id") id: Long,
-    ): ResultVo<AgentToolResponse?> = try {
+    ): ResultVo<AgentToolResponse> = try {
         val tool = agentToolService.getAgentTool(id)
-        ResultVo.success(tool?.let { agentToolService.convertToResponse(it) })
+            ?: return ResultVo.error(404, messageUtil.getMessage("error.tool.notfound"))
+        ResultVo.success(agentToolService.convertToResponse(tool))
     } catch (e: Exception) {
         log.error("Failed to get tool details", e)
         ResultVo.error(e.message ?: "Failed to get tool details")

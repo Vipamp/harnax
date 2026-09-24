@@ -5,6 +5,7 @@ import com.agnetix.harnax.admin.dto.TeamCreateRequest
 import com.agnetix.harnax.admin.dto.TeamResponse
 import com.agnetix.harnax.admin.dto.TeamUpdateRequest
 import com.agnetix.harnax.admin.dto.mapRecords
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.TeamService
 import com.agnetix.harnax.admin.service.impl.RelatedSessionInfo
 import com.agnetix.harnax.common.dto.ResultVo
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.*
 @Tag(name = "Team Management", description = "Multi-agent team related APIs")
 class TeamController(
     private val teamService: TeamService,
+    private val messageUtil: MessageUtil,
 ) {
 
     private val log = LoggerFactory.getLogger(TeamController::class.java)
@@ -53,9 +55,10 @@ class TeamController(
     @Operation(summary = "Get team details", description = "Get team information by team ID")
     fun getTeam(
         @Parameter(description = "Team ID") @PathVariable(name = "id") id: Long,
-    ): ResultVo<TeamResponse?> = try {
+    ): ResultVo<TeamResponse> = try {
         val team = teamService.getTeam(id)
-        ResultVo.success(team?.let { teamService.convertToResponse(it) })
+            ?: return ResultVo.error(404, messageUtil.getMessage("error.team.notfound"))
+        ResultVo.success(teamService.convertToResponse(team))
     } catch (e: Exception) {
         log.error("Failed to get team details", e)
         ResultVo.error(e.message ?: "Failed to get team details")

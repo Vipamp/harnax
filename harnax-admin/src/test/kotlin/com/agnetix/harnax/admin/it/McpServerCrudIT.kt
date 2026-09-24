@@ -159,11 +159,11 @@ class McpServerCrudIT : BaseAdminIT() {
 
     @Test
     @Order(11)
-    fun `delete mcp server then detail returns empty`() {
+    fun `delete mcp server then detail reports not found`() {
         assertOk(deleteJson("/api/admin/mcp/${locateMcpId()}"))
 
         val node = getJson("/api/admin/mcp/$mcpId")
-        assertEquals(200, node["code"].asInt())
+        assertEquals(404, node["code"].asInt(), "读不到的行不该是成功响应")
         assertTrue(node["data"] == null || node["data"].isNull, "deleted MCP server should not be returned")
 
         val record = findInPage("/api/admin/mcp/page", "keyword=$mcpName") {
