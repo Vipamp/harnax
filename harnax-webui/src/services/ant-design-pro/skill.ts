@@ -30,34 +30,6 @@ export async function getSkillById(id: number, options?: { [key: string]: any })
   });
 }
 
-/** 创建技能 POST /api/skills */
-export async function createSkill(data: API.SkillCreateRequest, options?: { [key: string]: any }) {
-  return request('/api/admin/skills', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    data: data,
-    ...(options || {}),
-  });
-}
-
-/** 更新技能 PUT /api/skills/update/${skillId} */
-export async function updateSkill(
-  skillId: number,
-  data: API.SkillUpdateRequest,
-  options?: { [key: string]: any },
-) {
-  return request(`/api/admin/skills/update/${skillId}`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    data: data,
-    ...(options || {}),
-  });
-}
-
 /** 切换技能状态 PUT /api/skills/toggle/${skillId} */
 export async function toggleSkillStatus(
   skillId: number,
@@ -69,14 +41,6 @@ export async function toggleSkillStatus(
     params: {
       status,
     },
-    ...(options || {}),
-  });
-}
-
-/** 删除技能 DELETE /api/skills/${skillId} */
-export async function deleteSkill(skillId: number, options?: { [key: string]: any }) {
-  return request(`/api/admin/skills/${skillId}`, {
-    method: 'DELETE',
     ...(options || {}),
   });
 }

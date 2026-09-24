@@ -22,14 +22,6 @@ export async function getAgentTaskPage(
   });
 }
 
-/** 获取智能体定时任务详情 GET /api/admin/agent-tasks/${id} */
-export async function getAgentTaskById(id: number, options?: { [key: string]: any }) {
-  return request(`/api/admin/agent-tasks/${id}`, {
-    method: 'GET',
-    ...(options || {}),
-  });
-}
-
 /** 创建智能体定时任务 POST /api/admin/agent-tasks */
 export async function createAgentTask(data: API.AgentTaskCreateRequest, options?: { [key: string]: any }) {
   return request('/api/admin/agent-tasks', {
@@ -62,22 +54,6 @@ export async function updateAgentTask(
 export async function deleteAgentTask(id: number, options?: { [key: string]: any }) {
   return request(`/api/admin/agent-tasks/${id}`, {
     method: 'DELETE',
-    ...(options || {}),
-  });
-}
-
-/** 启动智能体定时任务 POST /api/admin/agent-tasks/${id}/start */
-export async function startAgentTask(id: number, options?: { [key: string]: any }) {
-  return request(`/api/admin/agent-tasks/${id}/start`, {
-    method: 'POST',
-    ...(options || {}),
-  });
-}
-
-/** 暂停智能体定时任务 POST /api/admin/agent-tasks/${id}/pause */
-export async function pauseAgentTask(id: number, options?: { [key: string]: any }) {
-  return request(`/api/admin/agent-tasks/${id}/pause`, {
-    method: 'POST',
     ...(options || {}),
   });
 }

@@ -20,6 +20,7 @@ import {
   createTeam,
   deleteTeam,
   getTeamPage,
+  getTeamRelatedSessions,
   toggleTeam,
   updateTeam,
 } from '@/services/ant-design-pro/team';
@@ -71,7 +72,7 @@ const TeamManagement: React.FC = () => {
     }
   };
 
-  // 成员下拉框一次拉够，团队内不分页
+  // 成员下拉框的初始候选：向导里打字时按名字搜全量（见 MembersField）
   const loadAgents = async () => {
     try {
       const res = await getAgentPage({ pageNum: 1, pageSize: 200, status: 1 });
@@ -127,16 +128,36 @@ const TeamManagement: React.FC = () => {
     }
   };
 
-  const handleDelete = (record: API.TeamItem) => {
+  /** Sessions still binding this team, or an empty list when admin cannot be asked — a warning, not a guard. */
+  const relatedSessions = async (id: number) => {
+    try {
+      const res = await getTeamRelatedSessions(id);
+      return res.code === 200 ? res.data || [] : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const handleDelete = async (record: API.TeamItem) => {
+    const sessions = await relatedSessions(record.id);
     Modal.confirm({
       title: intl.formatMessage({
         id: 'pages.team.deleteConfirm',
         defaultMessage: 'Are you sure to delete this team?',
       }),
-      content: intl.formatMessage({
-        id: 'pages.team.deleteConfirmContent',
-        defaultMessage: 'This cannot be undone. Team sessions already bound to it stop working instead of falling back to a single agent.',
-      }),
+      content: sessions.length
+        ? intl.formatMessage(
+            {
+              id: 'pages.team.deleteBlockedContent',
+              defaultMessage:
+                '{count} session(s) still bind this team, so deleting it will be refused. Delete those sessions first — that is also what removes their artifacts.',
+            },
+            { count: sessions.length },
+          )
+        : intl.formatMessage({
+            id: 'pages.team.deleteConfirmContent',
+            defaultMessage: 'This cannot be undone. Members and the lead skill bindings are removed with it.',
+          }),
       okText: intl.formatMessage({ id: 'pages.common.confirm', defaultMessage: 'Confirm' }),
       cancelText: intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' }),
       okButtonProps: { danger: true },

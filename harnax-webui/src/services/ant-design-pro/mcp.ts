@@ -77,6 +77,14 @@ export async function toggleMcpServerStatus(
   });
 }
 
+/** 获取绑定该 MCP 服务的 agent 列表 GET /api/admin/mcp/${id}/related-agents */
+export async function getMcpRelatedAgents(id: number, options?: { [key: string]: any }) {
+  return request(`/api/admin/mcp/${id}/related-agents`, {
+    method: 'GET',
+    ...(options || {}),
+  });
+}
+
 /** 删除 MCP 服务 DELETE /api/mcp/${id} */
 export async function deleteMcpServer(id: number, options?: { [key: string]: any }) {
   return request(`/api/admin/mcp/${id}`, {

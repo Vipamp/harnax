@@ -189,11 +189,6 @@ message?: string;
   };
 
   /**
-   * @deprecated Use ToolEnvParamEntry instead
-   */
-  export type ToolEnvEntry = ToolEnvParamEntry;
-
-  /**
    * @zh-CN MCP 服务对象
    */
   export type McpServerItem = {
@@ -454,8 +449,10 @@ message?: string;
     skillmd?: string;
     resources?: string;
     status: number;
-    /** 绑定该技能的 agent 数。被绑定的技能既不能停用也不能删除（后端同一条规则） */
+    /** 绑定该技能的 agent 数。被 agent 或团队主管绑定的技能都不能停用/删除（后端同一条规则） */
     boundAgentCount?: number;
+    /** 主管技能直接挂在 team 上（V34），只被团队绑定时 agent 数为零但开关仍必须锁住 */
+    boundTeamCount?: number;
     isPublic?: number;
     creator?: string;
     createTime?: string;
@@ -479,7 +476,6 @@ message?: string;
    * @zh-CN 技能更新请求
    */
   export type SkillUpdateRequest = {
-    id?: number;
     name?: string;
     repositoryId?: number;
     description?: string;
@@ -653,6 +649,15 @@ message?: string;
   };
 
   /**
+   * @zh-CN 绑定了某 MCP 服务的智能体（删除前展示影响范围）
+   */
+  export type McpRelatedAgent = {
+    agentId: number;
+    agentName: string;
+    status: number;
+  };
+
+  /**
    * @zh-CN 智能体创建请求
    */
   export type AgentCreateRequest = {
@@ -673,7 +678,6 @@ message?: string;
    * @zh-CN 智能体更新请求
    */
   export type AgentUpdateRequest = {
-    id?: number;
     name?: string;
     description?: string;
     systemPrompt?: string;
@@ -682,7 +686,6 @@ message?: string;
     toolList?: { id?: number; needConfirm?: boolean; envBindings?: EnvBinding[] }[];
     skillList?: string; // 逗号分隔的字符串 "1,2,3"
     cliList?: { id?: number; envBindings?: EnvBinding[] }[];
-    owner?: string;
     status?: number;
     isPublic?: number;
   };

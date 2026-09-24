@@ -206,121 +206,6 @@ declare namespace API {
     status?: number;
   };
 
-  // 技能仓库相关类型
-  type SkillRepositoryItem = {
-    id: number;
-    name: string;
-    url?: string;
-    branch?: string;
-    sourceType?: string;
-    sourceConfig?: Record<string, any>;
-    version?: string;
-    description?: string;
-    status: number;
-    isPublic?: number;
-    creator?: string;
-    createTime?: string;
-    updateTime?: string;
-    /** 上次同步结论，从未同步过为空。对应后端 SkillSyncRecorder 的四种状态 */
-    lastSyncStatus?: 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'EMPTY';
-    lastSyncTime?: string;
-    /** 上次同步报告原文：saved / installed / updated / failed / flagged / stale / error */
-    lastSyncDetail?: SkillSyncDetail;
-    /** 仓库下仍处于启用态的技能数，删源要求它为 0。/skill-sources/active 不带这个数 */
-    enabledSkillCount?: number;
-  };
-
-  type SkillRepositoryCreateRequest = {
-    name: string;
-    url?: string;
-    branch?: string;
-    sourceType?: string;
-    sourceConfig?: Record<string, any>;
-    version?: string;
-    description?: string;
-    status?: number;
-    isPublic?: number;
-  };
-
-  type SkillRepositoryUpdateRequest = {
-    id?: number;
-    name?: string;
-    url?: string;
-    branch?: string;
-    sourceConfig?: Record<string, any>;
-    version?: string;
-    description?: string;
-    status?: number;
-    isPublic?: number;
-  };
-
-  // 技能来源相关类型
-  type SkillSourceCreateRequest = {
-    name: string;
-    sourceType: string;
-    sourceConfig?: Record<string, any>;
-    version?: string;
-    description?: string;
-    status?: number;
-    isPublic?: number;
-    url?: string;
-    branch?: string;
-  };
-
-  type SkillSourceItem = {
-    id: number;
-    name: string;
-    sourceType: string;
-    sourceConfig?: Record<string, any>;
-    version?: string;
-    url?: string;
-    branch?: string;
-    description?: string;
-    status: number;
-    isPublic?: number;
-    creator?: string;
-    createTime?: string;
-    updateTime?: string;
-    lastSyncStatus?: 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'EMPTY';
-    lastSyncTime?: string;
-    lastSyncDetail?: SkillSyncDetail;
-    enabledSkillCount?: number;
-  };
-
-  // 技能相关类型
-  type SkillItem = {
-    id: number;
-    name: string;
-    repositoryId: number;
-    repositoryName?: string;
-    repositoryUrl?: string;
-    repositoryBranch?: string;
-    skillmd?: string;
-    resources?: string;
-    status: number;
-    /** 绑定该技能的 agent 数。被绑定的技能既不能停用也不能删除（后端同一条规则） */
-    boundAgentCount?: number;
-    createTime?: string;
-    updateTime?: string;
-  };
-
-  type SkillCreateRequest = {
-    name: string;
-    repositoryId: number;
-    skillmd?: string;
-    resources?: string;
-    status?: number;
-  };
-
-  type SkillUpdateRequest = {
-    id?: number;
-    name?: string;
-    repositoryId?: number;
-    skillmd?: string;
-    resources?: string;
-    status?: number;
-  };
-
   // 会话相关类型
   type SessionItem = {
     id: number;
@@ -385,15 +270,6 @@ declare namespace API {
     mcpName?: string;
     mcpDescription?: string;
     envBindings?: EnvBinding[];
-  };
-
-  // Agent skill item (from AgentResponse.SkillItem)
-  type AgentSkillItem = {
-    repositoryId?: number;
-    repositoryName?: string;
-    skillId?: number;
-    skillName?: string;
-    skillDescription?: string;
   };
 
   type SessionCreateRequest = {

@@ -70,9 +70,17 @@ const McpDetail: React.FC = () => {
   useEffect(() => {
     if (mcpId) {
       loadMcpDetail(parseInt(mcpId, 10));
-      loadTools(parseInt(mcpId, 10));
     }
   }, [mcpId]);
+
+  // The admin refuses listTools for a disabled server (probing it is what the toggle stops), so the
+  // request goes out only once the detail says the row is enabled — otherwise every visit to a
+  // disabled server's page would flash a failure it cannot act on.
+  useEffect(() => {
+    if (mcpId && mcpInfo?.status === 1) {
+      loadTools(parseInt(mcpId, 10));
+    }
+  }, [mcpId, mcpInfo?.status]);
 
   const loadMcpDetail = async (mcpId: number) => {
     setLoading(true);
@@ -373,7 +381,14 @@ const McpDetail: React.FC = () => {
                   pagination={false}
                   scroll={{ x: 'max-content' }}
                   locale={{
-                    emptyText: toolsLoading ? intl.formatMessage({ id: 'pages.common.loading', defaultMessage: 'Loading...' }) : intl.formatMessage({ id: 'pages.mcp.detail.noTools', defaultMessage: 'No tools' }),
+                    emptyText: toolsLoading
+                      ? intl.formatMessage({ id: 'pages.common.loading', defaultMessage: 'Loading...' })
+                      : mcpInfo?.status === 1
+                        ? intl.formatMessage({ id: 'pages.mcp.detail.noTools', defaultMessage: 'No tools' })
+                        : intl.formatMessage({
+                          id: 'pages.mcp.detail.toolsNotProbed',
+                          defaultMessage: 'Tool list is not fetched while the server is disabled',
+                        }),
                   }}
                   style={{ borderRadius: '12px' }}
                   components={{

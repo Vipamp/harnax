@@ -21,13 +21,6 @@ export async function getSkillSourcePage(
   });
 }
 
-export async function getSkillSourceById(id: number, options?: { [key: string]: any }) {
-  return request(`/api/admin/skill-sources/${id}`, {
-    method: 'GET',
-    ...(options || {}),
-  });
-}
-
 export async function createSkillSource(data: API.SkillSourceCreateRequest, options?: { [key: string]: any }) {
   return request('/api/admin/skill-sources', {
     method: 'POST',

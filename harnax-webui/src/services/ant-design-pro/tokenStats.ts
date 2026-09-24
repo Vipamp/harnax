@@ -29,7 +29,7 @@ export async function getTokenStatsTimeSeries(
   params: {
     startTime?: string;
     endTime?: string;
-    granularity?: 'hour' | 'day' | 'month';
+    granularity?: 'hour' | 'day' | 'week' | 'month';
   },
   options?: { [key: string]: any },
 ) {
@@ -51,7 +51,7 @@ export async function getModelTimeSeries(
   params: {
     startTime?: string;
     endTime?: string;
-    granularity?: 'hour' | 'day' | 'month';
+    granularity?: 'hour' | 'day' | 'week' | 'month';
   },
   options?: { [key: string]: any },
 ) {
@@ -73,7 +73,7 @@ export async function getAgentTimeSeries(
   params: {
     startTime?: string;
     endTime?: string;
-    granularity?: 'hour' | 'day' | 'month';
+    granularity?: 'hour' | 'day' | 'week' | 'month';
   },
   options?: { [key: string]: any },
 ) {
@@ -95,7 +95,7 @@ export async function getSessionTimeSeries(
   params: {
     startTime?: string;
     endTime?: string;
-    granularity?: 'hour' | 'day' | 'month';
+    granularity?: 'hour' | 'day' | 'week' | 'month';
   },
   options?: { [key: string]: any },
 ) {

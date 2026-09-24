@@ -259,7 +259,6 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
           description: formValues.description,
           systemPrompt: formValues.systemPrompt,
           modelId: formValues.modelId,
-          status: 1,
           isPublic: isPublic ? 1 : 0,
           mcpList: mcpConfigs.filter(c => c.mcpId).map(c => ({
             id: c.mcpId,

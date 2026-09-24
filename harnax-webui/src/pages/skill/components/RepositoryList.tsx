@@ -464,7 +464,7 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
                     />
                     <DeleteButton
                       onConfirm={() => handleDelete(repository.id)}
-                      confirmTitle={intl.formatMessage({ id: 'pages.skill.repository.confirmDelete', defaultMessage: 'Are you sure to delete this repository?' })}
+                      confirmTitle={intl.formatMessage({ id: 'pages.skill.repository.confirmDelete', defaultMessage: 'Are you sure to delete this repository? Disabled skills under it are deleted with it, and the deletion is refused while any skill is still enabled.' })}
                       disabled={!!deleteBlockedReason(repository)}
                       tooltip={deleteBlockedReason(repository)}
                     />

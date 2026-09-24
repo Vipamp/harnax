@@ -54,22 +54,3 @@ export async function getSessionConfig(
     ...(options || {}),
   });
 }
-
-/**
- * 更新会话的聊天配置
- */
-export async function updateSessionConfig(
-  sessionId: string,
-  data: {
-    enableThink: boolean;
-    enableSearch: boolean;
-    enablePlan: boolean;
-  },
-  options?: { [key: string]: any },
-) {
-  return request(`/api/admin/sessions/${sessionId}/config`, {
-    method: 'PUT',
-    data,
-    ...(options || {}),
-  });
-}

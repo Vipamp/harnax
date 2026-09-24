@@ -844,6 +844,10 @@ const TokenMonitor: React.FC = () => {
               value: 'day' 
             },
             { 
+              label: intl.formatMessage({ id: 'pages.tokenMonitor.byWeek', defaultMessage: 'By week' }), 
+              value: 'week' 
+            },
+            { 
               label: intl.formatMessage({ id: 'pages.tokenMonitor.byMonth', defaultMessage: 'By month' }), 
               value: 'month' 
             },

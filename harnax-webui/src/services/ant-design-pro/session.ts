@@ -24,16 +24,6 @@ export async function getSessionPage(
 }
 
 /**
- * 获取会话详情
- */
-export async function getSessionById(id: number, options?: { [key: string]: any }) {
-  return request(`/api/admin/sessions/${id}`, {
-    method: 'GET',
-    ...(options || {}),
-  });
-}
-
-/**
  * 检查会话名称是否存在
  */
 export async function checkSessionTitle(
@@ -60,21 +50,6 @@ export async function createSession(
       'Content-Type': 'application/json',
     },
     data,
-    ...(options || {}),
-  });
-}
-
-/**
- * 切换会话状态
- */
-export async function toggleSessionStatus(
-  id: number,
-  status: number,
-  options?: { [key: string]: any },
-) {
-  return request(`/api/admin/sessions/toggle/${id}`, {
-    method: 'PUT',
-    params: { status },
     ...(options || {}),
   });
 }

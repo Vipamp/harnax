@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Button, Form, Input, Select, Space, Tooltip, Typography } from 'antd';
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import { useIntl } from '@umijs/max';
+import { getAgentPage } from '@/services/ant-design-pro/agent';
 
 const { Text } = Typography;
 
@@ -19,25 +20,64 @@ const MembersField: React.FC<MembersFieldProps> = ({ agents, currentMembers }) =
   const intl = useIntl();
   const form = Form.useFormInstance();
 
+  // `agents` is one page of the catalogue, so typing searches the rest of it instead of
+  // silently capping whom a team can contain.
+  const [candidates, setCandidates] = useState<API.AgentItem[] | null>(null);
+  const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(
+    () => () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    },
+    [],
+  );
+
+  const handleSearch = (keyword: string) => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    if (!keyword) {
+      setCandidates(null);
+      return;
+    }
+    searchTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await getAgentPage({ pageNum: 1, pageSize: 50, status: 1, name: keyword });
+        setCandidates(res.data?.records || []);
+      } catch {
+        // Fall back to the seed page instead of an empty dropdown: no results is a claim about the
+        // catalogue, and a failed request does not entitle us to make it.
+        setCandidates(null);
+      }
+    }, 300);
+  };
+
+  const pool = candidates || agents;
+
   const optionOf = (agent: API.AgentItem) => ({
     label: `${agent.name}${agent.description ? ` - ${agent.description}` : ''}`,
     value: agent.id,
   });
 
-  const options = agents.map(optionOf);
+  const options = pool.map(optionOf);
 
-  // 团队里引用了已删除或已停用的智能体时，保留一行带名字的禁用项，
-  // 否则下拉框只剩一个裸 ID，用户不知道该换掉谁。
+  // A member whose agent is not among the candidates needs a row of its own, otherwise the
+  // dropdown is left with a bare ID. Whether to call it "deleted or disabled" is answered by the
+  // availability flags admin computed per member — not by membership of this page.
   (currentMembers || []).forEach((member) => {
-    if (member.agentAvailable === false || !agents.some((agent) => agent.id === member.agentId)) {
-      options.push({
-        label: `${member.agentName || `#${member.agentId}`} · ${intl.formatMessage({
-          id: 'pages.team.memberUnavailable',
-          defaultMessage: 'referenced agent is deleted or disabled',
-        })}`,
-        value: member.agentId,
-      });
+    if (pool.some((agent) => agent.id === member.agentId)) {
+      return;
     }
+    const unavailable =
+      member.agentAvailable === false || (member.agentStatus !== undefined && member.agentStatus !== 1);
+    const name = member.agentName || `#${member.agentId}`;
+    options.push({
+      label: unavailable
+        ? `${name} · ${intl.formatMessage({
+            id: 'pages.team.memberUnavailable',
+            defaultMessage: 'referenced agent is deleted or disabled',
+          })}`
+        : name,
+      value: member.agentId,
+    });
   });
 
   return (
@@ -93,7 +133,8 @@ const MembersField: React.FC<MembersFieldProps> = ({ agents, currentMembers }) =
                 >
                   <Select
                     showSearch
-                    optionFilterProp="label"
+                    filterOption={false}
+                    onSearch={handleSearch}
                     placeholder={intl.formatMessage({
                       id: 'pages.team.memberAgentPlaceholder',
                       defaultMessage: 'Select member agent',

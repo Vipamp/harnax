@@ -138,19 +138,6 @@ export async function uploadWorkspaceFile(
 }
 
 /**
- * Get download URL for a workspace file
- * Can be used with window.open() or <a> tag
- */
-export function getWorkspaceFileDownloadUrl(
-  sessionId: string,
-  path: string,
-): string {
-  const apiKey = getRouterApiKey();
-  const encodedPath = encodeURIComponent(path);
-  return `/api/router/agent/workspace/${sessionId}/download?path=${encodedPath}&X-Api-Key=${apiKey}`;
-}
-
-/**
  * Download a file from workspace (programmatic download)
  */
 export async function downloadWorkspaceFile(

@@ -120,6 +120,7 @@ const McpCard: React.FC<{
 };
 import {
   deleteMcpServer,
+  getMcpRelatedAgents,
   getMcpServerPage,
   toggleMcpServerStatus,
   createMcpServer,
@@ -293,11 +294,31 @@ const McpManagement: React.FC = () => {
     loadDataWithFilters(1);
   };
 
+  /** Agents still binding this server, or an empty list when admin cannot be asked — a warning, not a guard. */
+  const relatedAgents = async (id: number): Promise<API.McpRelatedAgent[]> => {
+    try {
+      const res = await getMcpRelatedAgents(id);
+      return res.code === 200 ? res.data || [] : [];
+    } catch {
+      return [];
+    }
+  };
+
   /** 删除 MCP */
   const handleRemove = async (id: number) => {
+    const agents = await relatedAgents(id);
     Modal.confirm({
       title: intl.formatMessage({ id: 'pages.message.mcpDeleteConfirm', defaultMessage: 'Are you sure to delete this MCP service?' }),
-      content: intl.formatMessage({ id: 'pages.message.irreversibleOperation', defaultMessage: 'This operation cannot be undone, please proceed with caution' }),
+      content: agents.length
+        ? intl.formatMessage(
+          {
+            id: 'pages.mcp.deleteConfirmContent',
+            defaultMessage:
+              '{count} agent(s) bind this service ({names}). Deleting it removes those bindings and the environment values set on them.',
+          },
+          { count: agents.length, names: agents.slice(0, 5).map((a) => a.agentName).join('、') },
+        )
+        : intl.formatMessage({ id: 'pages.message.irreversibleOperation', defaultMessage: 'This operation cannot be undone, please proceed with caution' }),
       okText: intl.formatMessage({ id: 'pages.common.confirm', defaultMessage: 'Confirm' }),
       cancelText: intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' }),
       okButtonProps: { danger: true },

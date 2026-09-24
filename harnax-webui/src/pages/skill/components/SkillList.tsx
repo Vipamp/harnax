@@ -89,20 +89,39 @@ const SkillList: React.FC<SkillListProps> = ({ repositoryId, filters, onRefresh,
             <Tag>{intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}</Tag>
           );
         }
-        // 停用一个还被 agent 绑着的技能等于把那段上下文从 agent 身上撕下来，
-        // 后端两个状态写入口都拒绝，这里事前就把它挡住。反向（重新启用）不设限。
-        const bound = record.boundAgentCount ?? 0;
-        if (bound > 0 && record.status === 1) {
+        // 停用一条还被绑着的技能等于把那段上下文从持有者身上撕下来，后端 requireUnbound 同时看
+        // agent 绑定与团队主管绑定，这里必须同口径——只算 agent 会让「只被主管用着」的开关看着可点、
+        // 点了必被拒。反向（重新启用）不设限。
+        const agents = record.boundAgentCount ?? 0;
+        const teams = record.boundTeamCount ?? 0;
+        if ((agents > 0 || teams > 0) && record.status === 1) {
+          const blocked =
+            agents > 0 && teams > 0
+              ? intl.formatMessage(
+                  {
+                    id: 'pages.skill.list.boundBlockedBoth',
+                    defaultMessage:
+                      'Bound to {agents} agent(s) and {teams} team lead(s). Unbind them before disabling this skill',
+                  },
+                  { agents, teams },
+                )
+              : teams > 0
+                ? intl.formatMessage(
+                    {
+                      id: 'pages.skill.list.boundBlockedTeams',
+                      defaultMessage: 'Bound to {count} team lead(s). Unbind them before disabling this skill',
+                    },
+                    { count: teams },
+                  )
+                : intl.formatMessage(
+                    {
+                      id: 'pages.skill.list.boundBlocked',
+                      defaultMessage: 'Bound to {count} agent(s). Unbind them before disabling this skill',
+                    },
+                    { count: agents },
+                  );
           return (
-            <Tooltip
-              title={intl.formatMessage(
-                {
-                  id: 'pages.skill.list.boundBlocked',
-                  defaultMessage: 'Bound to {count} agent(s). Unbind them before disabling this skill',
-                },
-                { count: bound },
-              )}
-            >
+            <Tooltip title={blocked}>
               <span style={{ display: 'inline-block' }}>
                 <StatusSwitch
                   status={record.status}
