@@ -90,6 +90,20 @@ class AgentServiceImpl(
         return Page.fromPageInfo(agentMapper.selectAgentList(name, status, currentUsername, currentTenantId()))
     }
 
+    /**
+     * The write-side twin of the read rule in [convertToResponse].
+     *
+     * A binding stores a bare id, so an unchecked write lets any tenant point an agent at a row it was
+     * only ever allowed to *use* — or at one it cannot see at all, which the read side then spends the
+     * turn hiding. Existence and visibility answer with the same message: which of the two failed is
+     * not something a caller may ask.
+     */
+    private fun requireVisibleModel(modelId: Long) {
+        if (modelService.getVisibleModel(modelId) == null) {
+            throw BizException("Model not found or not visible to the current tenant: $modelId")
+        }
+    }
+
     @Transactional(rollbackFor = [Exception::class])
     override fun createAgent(request: AgentCreateRequest): Boolean = try {
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
@@ -100,6 +114,7 @@ class AgentServiceImpl(
         if (agentMapper.selectByName(request.name!!, tenantId) != null) {
             throw BizException("Agent name already exists")
         }
+        requireVisibleModel(request.modelId!!)
 
         val agent = Agent()
         agent.name = request.name!!
@@ -153,7 +168,10 @@ class AgentServiceImpl(
         }
         request.description?.let { agent.description = it }
         request.systemPrompt?.let { agent.systemPrompt = it }
-        request.modelId?.let { agent.modelId = it }
+        request.modelId?.let { modelId ->
+            requireVisibleModel(modelId)
+            agent.modelId = modelId
+        }
         request.isPublic?.let { agent.isPublic = it }
 
         agent.updateTime = LocalDateTime.now()
@@ -392,7 +410,7 @@ class AgentServiceImpl(
         val bindings = toolList.mapNotNull { config ->
             val toolId = config.id ?: return@mapNotNull null
             val tool = toolsById[toolId] ?: return@mapNotNull null
-            assertEnvVarRefsBindable(config.envBindings, "tool '${tool.name}'")
+            assertEnvBindingsBindable(config.envBindings, "tool '${tool.name}'")
             assertRequiredEnvParamsFilled(
                 "tool '${tool.name}'",
                 // The tool's own default never reaches a builtin tool at runtime (only the binding
@@ -430,7 +448,7 @@ class AgentServiceImpl(
         val bindings = mcpList.mapNotNull { config ->
             val mcpId = config.id ?: return@mapNotNull null
             val server = serversById[mcpId] ?: return@mapNotNull null
-            assertEnvVarRefsBindable(config.envBindings, "MCP server '${server.name}'")
+            assertEnvBindingsBindable(config.envBindings, "MCP server '${server.name}'")
             assertRequiredEnvParamsFilled(
                 "MCP server '${server.name}'",
                 secretFieldEncryptor.deserializeToolEnvEntries(server.envParams),
@@ -553,7 +571,7 @@ class AgentServiceImpl(
             val cli = clisById[cliId] ?: return@mapNotNull null
             // Same check tools and MCP servers run: this column is delivered into the sandbox env too
             // (`mergeCliEnvBindings`), so an unverified reference here resolves another tenant's secret
-            assertEnvVarRefsBindable(config.envBindings, "CLI '${cli.name}'")
+            assertEnvBindingsBindable(config.envBindings, "CLI '${cli.name}'")
             assertRequiredEnvParamsFilled(
                 "CLI '${cli.name}'",
                 secretFieldEncryptor.deserializeToolEnvEntries(cli.envParams),
@@ -590,7 +608,7 @@ class AgentServiceImpl(
             if (binding.envVarId != null) {
                 snapshot["envVarId"] = binding.envVarId
                 // Resolve envVarName from DB
-                snapshot["envVarName"] = binding.envVarName ?: envVariableService.getEnvVariable(binding.envVarId)?.envKey
+                snapshot["envVarName"] = binding.envVarName ?: envVariableService.getRowWithinTenant(binding.envVarId)?.envKey
                 // No value is stored for a reference. What the client sends here is the read API's
                 // display value — `******` for a sensitive variable — and snapshotting that turns the
                 // stars into the fallback a tool receives once the variable is gone; resolving it
@@ -609,17 +627,37 @@ class AgentServiceImpl(
     }
 
     /**
-     * Reject references to env variables this save cannot resolve.
+     * Reject a save whose env bindings would not resolve the way the form shows them.
      *
-     * Only the reference is stored, and delivery follows it with an unscoped
-     * `getDecryptedValue(envVarId)`: an id that is gone leaves the tool with nothing, and an id of
-     * another tenant's variable hands over that tenant's secret. Both are knowable at save time.
+     * Two distinct failures, both knowable at save time:
+     *
+     * - One key filled from two sources. Delivery emits one `{envKey, envValue}` pair per binding row
+     *   and the runtime folds those pairs into a name-keyed map (`AgentSpecResolver.parseEnvBindings`,
+     *   where the last row wins), so which credential actually reaches the tool is decided by ordering.
+     *   Key uniqueness is scoped to one creator since V46, so this is reachable: two users can each hold
+     *   an `OPENAI_KEY`, and an agent shared across them would otherwise pick one by accident.
+     * - A reference that does not resolve. Only the pointer is stored, and delivery follows it with
+     *   `getDecryptedValue(envVarId, agentTenantId)`, which answers null for a row that is gone, disabled,
+     *   or outside the agent's tenant. The save has to run the same three checks, and it has to run them
+     *   at that scope rather than the console's creator scope — [EnvVariableService.getRowWithinTenant]
+     *   — or a collaborator editing a shared agent would be refused pointers that do arrive at runtime.
      */
-    private fun assertEnvVarRefsBindable(bindings: List<EnvBinding>?, target: String) {
+    private fun assertEnvBindingsBindable(bindings: List<EnvBinding>?, target: String) {
+        // One key with two sources is decided by ordering alone, so which credential reaches the tool
+        // becomes an accident. Repeating a key with the same source is kept: a server whose declared
+        // params list one name twice yields exactly those rows, and both resolve to the same thing.
+        val sources = bindings.orEmpty().groupBy { it.envKey }.mapValues { (_, rows) -> rows.map { it.boundSource() }.distinct() }
+        val ambiguous = sources.filterValues { it.size > 1 }.keys
+        if (ambiguous.isNotEmpty()) {
+            throw BizException(
+                "$target binds one env key to several variables or values, keep one: ${ambiguous.joinToString(",")}",
+            )
+        }
+
         val ids = bindings?.mapNotNull { it.envVarId }?.distinct().orEmpty()
         if (ids.isEmpty()) return
         val tenantId = currentTenantId()
-        val rows = ids.associateWith { envVariableService.getEnvVariable(it) }
+        val rows = ids.associateWith { envVariableService.getRowWithinTenant(it) }
         val unresolved = ids.filter { rows[it]?.tenantId != tenantId }
         if (unresolved.isNotEmpty()) {
             throw BizException(
@@ -634,6 +672,20 @@ class AgentServiceImpl(
                 "$target references a disabled env variable, enable it before binding: ${disabled.joinToString(",")}",
             )
         }
+    }
+
+    /**
+     * What one binding resolves to: a pointer to a variable, or the literal it carries.
+     *
+     * The branches follow [serializeEnvBindings] one for one, because that is what decides the stored
+     * row - an unfilled form row (`envValue` empty) and a reference have to compare as the two distinct
+     * sources they are, and two unfilled rows for the same key as the one source they share.
+     */
+    private fun EnvBinding.boundSource(): String = when {
+        envVarId != null -> "var:$envVarId"
+        customValue != null -> "value:$customValue"
+        envValue != null -> "value:$envValue"
+        else -> "unset"
     }
 
     /**
@@ -706,7 +758,7 @@ class AgentServiceImpl(
                 // resolveEnvBindingsJson); fall back to the stored snapshot.
                 // Sensitive variables are masked for display.
                 val displayValue = if (envVarId != null) {
-                    val envVar = envVariableService.getEnvVariable(envVarId)
+                    val envVar = envVariableService.getRowWithinTenant(envVarId)
                     if (envVar != null && envVar.sensitive == 1) {
                         "******"
                     } else {

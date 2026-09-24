@@ -63,7 +63,7 @@ class EnvVariableController(
         if (envVariableService.createEnvVariable(request)) ResultVo.success() else ResultVo.error("Failed to create env variable")
     } catch (e: Exception) {
         log.error("Failed to create env variable", e)
-        ResultVo.error("Failed to create env variable")
+        ResultVo.error(ApiErrors.message(e, "Failed to create env variable"))
     }
 
     @PutMapping("/update/{id}")
@@ -75,7 +75,7 @@ class EnvVariableController(
         if (envVariableService.updateEnvVariable(id, request)) ResultVo.success() else ResultVo.error("Failed to update env variable")
     } catch (e: Exception) {
         log.error("Failed to update env variable", e)
-        ResultVo.error("Failed to update env variable")
+        ResultVo.error(ApiErrors.message(e, "Failed to update env variable"))
     }
 
     @DeleteMapping("/{id}")

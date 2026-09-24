@@ -241,10 +241,9 @@ class ModelTenantIsolationIT : BaseAdminIT() {
 
     @Test
     @Order(8)
-    fun `the model behind an agent is named only as far as it is visible`() {
-        // Writing a foreign id is still an open item (createAgent stores request.modelId unchecked), so
-        // this shape is reachable today. What the read side owes the other tenant is silence about the
-        // row: the id stays on the response because the operator saved it, the name and price do not.
+    fun `a model is bindable only as far as it is visible, by the write and by the read alike`() {
+        // The pair the rule has to hold on both sides of: a reference this tenant may not see is
+        // refused going in, and stays silent coming out.
         val model = assertOk(getJson("/api/admin/models/${ensureAgentModelId()}"))
         val ownName = "it_agent_own_model_$suffix"
         assertOk(postJson("/api/admin/agents", agentCreateBody(ownName)))
@@ -256,15 +255,32 @@ class ModelTenantIsolationIT : BaseAdminIT() {
         )
 
         val foreignName = "it_agent_foreign_model_$suffix"
-        assertOk(postJson("/api/admin/agents", agentCreateBody(foreignName) + mapOf("modelId" to otherPrivateModelId)))
-        val foreignId = agentIdNamed(foreignName)
-        val foreign = assertOk(getJson("/api/admin/agents/$foreignId"))
-        assertEquals(otherPrivateModelId, foreign["modelId"].asLong(), "the reference the operator saved stays on the row")
-        assertTrue(carriesNothing(foreign, "modelName"), "another tenant's private model must not be named through an agent binding")
-        assertTrue(carriesNothing(foreign, "modelPrice"), "nor priced out")
+        val refusedCreate = assertErr(postJson("/api/admin/agents", agentCreateBody(foreignName) + mapOf("modelId" to otherPrivateModelId)))
+        assertTrue(messageOf(refusedCreate).contains(otherPrivateModelId.toString()), "the refusal should name the id it refused: $refusedCreate")
+        assertTrue(rowsNamed("/api/admin/agents/page", foreignName, null).isEmpty(), "a refused create must not have left a row behind")
+
+        // The same refusal on the rename, without disturbing the model already on the row.
+        assertErr(putJson("/api/admin/agents/update/$ownId", mapOf("modelId" to otherPrivateModelId)))
+        assertEquals(
+            model["modelName"].asText(),
+            assertOk(getJson("/api/admin/agents/$ownId"))["modelName"].asText(),
+            "a refused write must not have moved the binding",
+        )
+
+        // What a reference that got there without asking looks like: a row bound before the write
+        // check existed. The id stays on the response because the operator saved it; the name and
+        // price do not.
+        val legacyName = "it_agent_legacy_model_$suffix"
+        assertOk(postJson("/api/admin/agents", agentCreateBody(legacyName)))
+        val legacyId = agentIdNamed(legacyName)
+        assertEquals(1, jdbc.update("UPDATE agent SET model_id = ? WHERE id = ?", otherPrivateModelId, legacyId))
+        val legacy = assertOk(getJson("/api/admin/agents/$legacyId"))
+        assertEquals(otherPrivateModelId, legacy["modelId"].asLong(), "the reference the operator saved stays on the row")
+        assertTrue(carriesNothing(legacy, "modelName"), "another tenant's private model must not be named through an agent binding")
+        assertTrue(carriesNothing(legacy, "modelPrice"), "nor priced out")
 
         assertOk(deleteJson("/api/admin/agents/$ownId"))
-        assertOk(deleteJson("/api/admin/agents/$foreignId"))
+        assertOk(deleteJson("/api/admin/agents/$legacyId"))
     }
 
     /** The one live agent carried by this name, as the calling tenant sees it. */

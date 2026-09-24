@@ -39,14 +39,20 @@ class EnvVariableServiceImpl(
     }
 
     /**
-     * Single-row access to `env_variable`.
+     * Single-row access to `env_variable`, as the console sees it.
      *
-     * `GET /env-variables/{id}` answers with this row and a non-sensitive value goes out verbatim, so
-     * an unscoped by-id read makes the list filter cosmetic: any logged-in user could enumerate ids
-     * and read another tenant's variables. A row outside the current tenant answers as a missing one,
-     * which is also how [com.agnetix.harnax.admin.service.impl.McpServerServiceImpl] treats one.
+     * `GET /env-variables/{id}` answers with this row and a non-sensitive value goes out verbatim, so an
+     * unscoped by-id read makes the list filter cosmetic: any logged-in user could enumerate ids and
+     * read someone else's variables. The unit of isolation is the creator, not just the tenant, because
+     * that is what the list ([page]) and the config dropdown ([listForAgentConfig]) already answer with
+     * - the console never shows a row the caller did not type, so a read that did would be the one door
+     * left open. A row outside that scope answers as a missing one, which is also how
+     * [com.agnetix.harnax.admin.service.impl.McpServerServiceImpl] treats one.
      */
-    override fun getEnvVariable(id: Long): EnvVariable? = envVariableMapper.selectById(id)?.takeIf { it.tenantId == currentTenantId() }
+    override fun getEnvVariable(id: Long): EnvVariable? = getRowWithinTenant(id)?.takeIf { it.creator == UserContextUtil.getCurrentUsername(jwtUtil) }
+
+    /** What a stored binding resolves through: any live row of this tenant, whoever typed it. */
+    override fun getRowWithinTenant(id: Long): EnvVariable? = envVariableMapper.selectById(id)?.takeIf { it.tenantId == currentTenantId() }
 
     /**
      * The tenant this request acts within.
@@ -79,6 +85,13 @@ class EnvVariableServiceImpl(
         envVariable.createTime = LocalDateTime.now()
         envVariable.updateTime = LocalDateTime.now()
 
+        // Checked before the insert so a clash reads as the key that clashed, not as the SQL error
+        // `uk_env_tenant_creator_active_key` would raise - and asked of the caller's own rows only,
+        // which is what that key covers: two users of one tenant may hold the same key.
+        if (envVariableMapper.selectByKey(envVariable.envKey, envVariable.creator, envVariable.tenantId) != null) {
+            throw BizException("Env variable key '${envVariable.envKey}' already exists")
+        }
+
         // Encrypt value if sensitive
         if (envVariable.sensitive == 1) {
             envVariable.envValue = aesUtil.encrypt(envVariable.envValue)
@@ -86,6 +99,8 @@ class EnvVariableServiceImpl(
 
         envVariableMapper.insert(envVariable)
         true
+    } catch (e: BizException) {
+        throw e
     } catch (e: Exception) {
         log.error("Failed to create env variable", e)
         throw RuntimeException("Failed to create env variable")
@@ -93,17 +108,21 @@ class EnvVariableServiceImpl(
 
     @Transactional(rollbackFor = [Exception::class])
     override fun updateEnvVariable(id: Long, request: EnvVariableUpdateRequest): Boolean = try {
+        // `getEnvVariable` holds this tenant's rows typed by this caller, so both the cross-tenant and
+        // the cross-user row - the two things the explicit IDOR check used to compare by hand - answer
+        // here as a row that is simply not there.
         val envVariable = getEnvVariable(id)
-            ?: throw RuntimeException("Env variable not found")
+            ?: throw BizException("Env variable not found")
 
-        // IDOR check
-        val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-        val currentTenantId = currentTenantId()
-        if (envVariable.creator != currentUsername || envVariable.tenantId != currentTenantId) {
-            throw RuntimeException("No permission to modify this env variable")
+        request.envKey?.let { envKey ->
+            // Only a rename can collide: the row's own name is held by this very row.
+            if (envKey != envVariable.envKey &&
+                envVariableMapper.selectByKey(envKey, envVariable.creator, envVariable.tenantId) != null
+            ) {
+                throw BizException("Env variable key '$envKey' already exists")
+            }
+            envVariable.envKey = envKey
         }
-
-        request.envKey?.let { envVariable.envKey = it }
         // Determine the resulting sensitive flag before deciding encryption
         val targetSensitive = request.sensitive ?: envVariable.sensitive
         // Only update value if provided (empty means keep current for sensitive)
@@ -135,6 +154,8 @@ class EnvVariableServiceImpl(
         envVariable.updateTime = LocalDateTime.now()
         envVariableMapper.updateById(envVariable)
         true
+    } catch (e: BizException) {
+        throw e
     } catch (e: Exception) {
         log.error("Failed to update env variable", e)
         throw RuntimeException("Failed to update env variable")
@@ -143,11 +164,6 @@ class EnvVariableServiceImpl(
     override fun deleteEnvVariable(id: Long): Boolean {
         val envVariable = getEnvVariable(id)
             ?: throw RuntimeException("Env variable not found")
-        val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-        val currentTenantId = currentTenantId()
-        if (envVariable.creator != currentUsername || envVariable.tenantId != currentTenantId) {
-            throw RuntimeException("No permission to delete this env variable")
-        }
         assertNotReferencedByAgents(id, envVariable.envKey, "delete")
         return envVariableMapper.deleteById(id) > 0
     }
@@ -173,11 +189,6 @@ class EnvVariableServiceImpl(
     override fun toggleEnabled(id: Long, enabled: Int): Boolean {
         val envVariable = getEnvVariable(id)
             ?: throw RuntimeException("Env variable not found")
-        val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-        val currentTenantId = currentTenantId()
-        if (envVariable.creator != currentUsername || envVariable.tenantId != currentTenantId) {
-            throw RuntimeException("No permission to modify this env variable")
-        }
         // Symmetric with delete: the binding snapshots keep their envVarId either way, so the agents
         // that read this variable lose its value the moment it is switched off.
         if (enabled == 0) {
@@ -212,8 +223,10 @@ class EnvVariableServiceImpl(
 
     override fun listForAgentConfig(): List<Map<String, Any?>> {
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-        // The dropdown offers things this tenant may bind, so it answers with the same scope the save
-        // check enforces; `creator` stays as "only the ones you typed yourself".
+        // The dropdown offers only what this caller typed, same as the list page. That is narrower than
+        // what a saved agent may hold: a reference already on the row is resolved by tenant
+        // ([getRowWithinTenant]), because a shared agent legitimately binds its owner's variables -
+        // adding one is the act scoped to the person adding it.
         val allVars = envVariableMapper.selectEnvVariableList(null, currentUsername, currentTenantId())
         return allVars.filter { it.enabled == 1 }.map { env ->
             val isSensitive = env.sensitive == 1
@@ -264,6 +277,8 @@ class EnvVariableServiceImpl(
         // Same asymmetry the MCP branch of delivery already closes: this resolver is the only one with
         // no tenant in sight, so a stale cross-tenant reference would hand over another tenant's
         // secret. Answers as a missing row, which is how delivery already treats deleted and disabled.
+        // Creator-blind on purpose, like [getRowWithinTenant]: delivery runs for whoever is chatting
+        // with the agent, not for whoever typed the variable.
         if (env.tenantId != tenantId) return null
         // The one delivery resolves through, so this is where disabling a variable has to take effect:
         // the agent-config dropdown already hides such a row, which makes an ignored toggle a switch

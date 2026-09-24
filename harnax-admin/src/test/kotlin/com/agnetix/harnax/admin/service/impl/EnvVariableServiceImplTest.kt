@@ -3,6 +3,7 @@ package com.agnetix.harnax.admin.service.impl
 import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.EnvVariableCreateRequest
 import com.agnetix.harnax.admin.dto.EnvVariableUpdateRequest
+import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.entity.Agent
@@ -201,6 +202,59 @@ class EnvVariableServiceImplTest {
             // Then - 跨租户与查不到给同一个答复，不暴露「这个 id 存在」
             assertNull(result)
         }
+
+        @Test
+        @DisplayName("getEnvVariable - Another user's row of the same tenant reads as absent")
+        fun `getEnvVariable should return null for another user row of the same tenant`() {
+            // 列表与下拉本来就只给调用者自己建的行，按 id 直读是唯一还跨得过这条线的地方：
+            // 非敏感值是原样回显的，同租户的同事猜到 id 就读走了名字和值。
+            // 隔离单位收成创建人，与「列表只显示当前用户的环境变量」是同一条口径。
+            TenantContext.setTenantId(1L)
+            `when`(envVariableMapper.selectById(3L)).thenReturn(
+                EnvVariable().apply {
+                    id = 3L
+                    tenantId = 1L
+                    envKey = "CO_WORKER_KEY"
+                    envValue = "their-plain-value"
+                    creator = "co-worker"
+                    active = 1
+                },
+            )
+
+            assertNull(createService().getEnvVariable(3L))
+        }
+
+        @Test
+        @DisplayName("getRowWithinTenant - Another user's row still resolves for a binding")
+        fun `getRowWithinTenant should return another user row of the same tenant`() {
+            // 这一半是同一条隔离收口的代价：智能体按 id 存引用，共享智能体绑的是它属主建的行，
+            // 而编辑那个智能体的人不是属主。绑定的回填与保存判据因此按租户，不按创建人——
+            // 运行下发（getDecryptedValue）也是按租户，两侧同口径才不会出现「能跑不能存」。
+            TenantContext.setTenantId(1L)
+            `when`(envVariableMapper.selectById(3L)).thenReturn(
+                EnvVariable().apply {
+                    id = 3L
+                    tenantId = 1L
+                    envKey = "CO_WORKER_KEY"
+                    envValue = "their-plain-value"
+                    creator = "co-worker"
+                    active = 1
+                },
+            )
+
+            assertEquals("CO_WORKER_KEY", createService().getRowWithinTenant(3L)?.envKey)
+            // 租户这一半照旧守住：桩一行别人租户的，缺席的答复必须仍然按租户给
+            `when`(envVariableMapper.selectById(2L)).thenReturn(
+                EnvVariable().apply {
+                    id = 2L
+                    tenantId = 2L
+                    envKey = "OTHER_TENANT_KEY"
+                    creator = "co-worker"
+                    active = 1
+                },
+            )
+            assertNull(createService().getRowWithinTenant(2L))
+        }
     }
 
     @Nested
@@ -323,6 +377,41 @@ class EnvVariableServiceImplTest {
         }
 
         @Test
+        @DisplayName("createEnvVariable - Refuse a key the caller already holds, naming it")
+        fun `createEnvVariable should refuse a key the caller already holds`() {
+            // uk_env_tenant_creator_active_key 会把这撞成一句 SQL 错误，服务层先给可读的拒绝；
+            // 而 AGENT-23 的旧形状是连这句拒绝都被控制器的兜底串吞掉，只回 "Failed to create env variable"
+            val clash = EnvVariable().apply {
+                id = 1L
+                tenantId = 1L
+                envKey = "API_KEY"
+                creator = "admin"
+                active = 1
+            }
+            `when`(envVariableMapper.selectByKey("API_KEY", "admin", 1L)).thenReturn(clash)
+
+            val request = EnvVariableCreateRequest(envKey = "API_KEY", envValue = "another-value")
+            val exception = assertThrows<BizException> { createService().createEnvVariable(request) }
+
+            assertTrue(exception.message!!.contains("API_KEY"), "the refusal should name the key, got: ${exception.message}")
+            verify(envVariableMapper, never()).insert(any())
+        }
+
+        @Test
+        @DisplayName("createEnvVariable - A key another user holds stays free for this caller")
+        fun `createEnvVariable should accept a key another user holds`() {
+            // 按用户唯一的全部含义：同租户同事占了这个名字不再挡住这里。这条用例在只有租户条件时
+            // 也会绿，所以判据落在探测语句被问的是谁——按调用人，不按租户
+            `when`(envVariableMapper.selectByKey("API_KEY", "admin", 1L)).thenReturn(null)
+            `when`(envVariableMapper.insert(any())).thenReturn(1)
+
+            val result = createService().createEnvVariable(EnvVariableCreateRequest(envKey = "API_KEY", envValue = "v"))
+
+            assertTrue(result)
+            verify(envVariableMapper).selectByKey("API_KEY", "admin", 1L)
+        }
+
+        @Test
         @DisplayName("createEnvVariable - Throw RuntimeException when insert fails")
         fun `createEnvVariable should throw RuntimeException when insert fails`() {
             // Given
@@ -371,6 +460,44 @@ class EnvVariableServiceImplTest {
             assertEquals("updated-value", updated.envValue)
             assertEquals("Updated description", updated.description)
             verify(aesUtil, never()).encrypt(anyString())
+        }
+
+        @Test
+        @DisplayName("updateEnvVariable - Refuse a rename onto a key the caller already holds")
+        fun `updateEnvVariable should refuse a rename onto a key the caller already holds`() {
+            // 改名也是写入，撞的还是 uk_env_tenant_creator_active_key。旧形状里这句 SQL 错误
+            // 被服务的兜底串包成 "Failed to update env variable"，调用方看不出是哪个键
+            TenantContext.setTenantId(1L)
+            val held = EnvVariable().apply {
+                id = 5L
+                tenantId = 1L
+                envKey = "TAKEN"
+                creator = "admin"
+                active = 1
+            }
+            `when`(envVariableMapper.selectById(1L)).thenReturn(testEnvVariable)
+            `when`(envVariableMapper.selectByKey("TAKEN", "admin", 1L)).thenReturn(held)
+
+            val exception = assertThrows<BizException> {
+                createService().updateEnvVariable(1L, EnvVariableUpdateRequest(envKey = "TAKEN"))
+            }
+
+            assertTrue(exception.message!!.contains("TAKEN"), "the refusal should name the key, got: ${exception.message}")
+            verify(envVariableMapper, never()).updateById(any())
+        }
+
+        @Test
+        @DisplayName("updateEnvVariable - The row's own key is not a clash")
+        fun `updateEnvVariable should not treat the stored key as a clash`() {
+            // 这一行自己占着那个名字：按名字查重而不排除自己，会把每一次"改值不改名"的保存撞死
+            TenantContext.setTenantId(1L)
+            `when`(envVariableMapper.selectById(1L)).thenReturn(testEnvVariable)
+            `when`(envVariableMapper.updateById(any())).thenReturn(1)
+
+            val result = createService().updateEnvVariable(1L, EnvVariableUpdateRequest(envKey = "API_KEY", description = "kept key"))
+
+            assertTrue(result)
+            verify(envVariableMapper, never()).selectByKey(anyString(), anyString(), anyLong())
         }
 
         @Test
@@ -532,25 +659,25 @@ class EnvVariableServiceImplTest {
         }
 
         @Test
-        @DisplayName("updateEnvVariable - Throw RuntimeException when not found")
-        fun `updateEnvVariable should throw RuntimeException when not found`() {
+        @DisplayName("updateEnvVariable - Refuse a missing row by name")
+        fun `updateEnvVariable should refuse a missing row by name`() {
             // Given
             val request = EnvVariableUpdateRequest(description = "Update")
 
             `when`(envVariableMapper.selectById(999L)).thenReturn(null)
 
             // When & Then
-            val exception = assertThrows<RuntimeException> {
+            val exception = assertThrows<BizException> {
                 createService().updateEnvVariable(999L, request)
             }
-            // Service wraps the exception
-            assertEquals("Failed to update env variable", exception.message)
+            // 不再被兜底 catch 折成「Failed to update」：调用方要分得清「这行不是你的」和「库坏了」
+            assertEquals("Env variable not found", exception.message)
             verify(envVariableMapper, never()).updateById(any())
         }
 
         @Test
-        @DisplayName("updateEnvVariable - Throw RuntimeException when creator mismatch")
-        fun `updateEnvVariable should throw RuntimeException when creator mismatch`() {
+        @DisplayName("updateEnvVariable - Refuse another user's row as absent")
+        fun `updateEnvVariable should refuse another user row as absent`() {
             // Given
             TenantContext.setTenantId(1L)
             val otherUserEnv = EnvVariable().apply {
@@ -565,16 +692,16 @@ class EnvVariableServiceImplTest {
             `when`(envVariableMapper.selectById(1L)).thenReturn(otherUserEnv)
 
             // When & Then
-            val exception = assertThrows<RuntimeException> {
+            val exception = assertThrows<BizException> {
                 createService().updateEnvVariable(1L, request)
             }
-            assertEquals("Failed to update env variable", exception.message)
+            assertEquals("Env variable not found", exception.message)
             verify(envVariableMapper, never()).updateById(any())
         }
 
         @Test
-        @DisplayName("updateEnvVariable - Throw RuntimeException when tenant mismatch")
-        fun `updateEnvVariable should throw RuntimeException when tenant mismatch`() {
+        @DisplayName("updateEnvVariable - Refuse another tenant's row as absent")
+        fun `updateEnvVariable should refuse another tenant row as absent`() {
             // Given
             TenantContext.setTenantId(2L)
             val request = EnvVariableUpdateRequest(description = "Cross tenant attempt")
@@ -582,10 +709,10 @@ class EnvVariableServiceImplTest {
             `when`(envVariableMapper.selectById(1L)).thenReturn(testEnvVariable) // tenantId = 1L
 
             // When & Then
-            val exception = assertThrows<RuntimeException> {
+            val exception = assertThrows<BizException> {
                 createService().updateEnvVariable(1L, request)
             }
-            assertEquals("Failed to update env variable", exception.message)
+            assertEquals("Env variable not found", exception.message)
             verify(envVariableMapper, never()).updateById(any())
         }
     }
@@ -649,9 +776,9 @@ class EnvVariableServiceImplTest {
         }
 
         @Test
-        @DisplayName("deleteEnvVariable - Throw RuntimeException when creator mismatch")
-        fun `deleteEnvVariable should throw RuntimeException when creator mismatch`() {
-            // Given
+        @DisplayName("deleteEnvVariable - Refuse another user's row as absent")
+        fun `deleteEnvVariable should refuse another user row as absent`() {
+            // Given - 手写 creator 比对已删：作用域在 getEnvVariable 里，别人的行到这里就是「不存在」
             TenantContext.setTenantId(1L)
             val otherUserEnv = EnvVariable().apply {
                 id = 1L
@@ -665,7 +792,7 @@ class EnvVariableServiceImplTest {
             val exception = assertThrows<RuntimeException> {
                 createService().deleteEnvVariable(1L)
             }
-            assertEquals("No permission to delete this env variable", exception.message)
+            assertEquals("Env variable not found", exception.message)
             verify(envVariableMapper, never()).deleteById(anyLong())
         }
 
@@ -736,9 +863,9 @@ class EnvVariableServiceImplTest {
         }
 
         @Test
-        @DisplayName("toggleEnabled - Throw RuntimeException when no permission")
-        fun `toggleEnabled should throw RuntimeException when no permission`() {
-            // Given
+        @DisplayName("toggleEnabled - Refuse another user's row as absent")
+        fun `toggleEnabled should refuse another user row as absent`() {
+            // Given - 开关和删除走同一个作用域读法，别人的行到这里就是「不存在」
             TenantContext.setTenantId(1L)
             val otherUserEnv = EnvVariable().apply {
                 id = 1L
@@ -752,7 +879,7 @@ class EnvVariableServiceImplTest {
             val exception = assertThrows<RuntimeException> {
                 createService().toggleEnabled(1L, 0)
             }
-            assertEquals("No permission to modify this env variable", exception.message)
+            assertEquals("Env variable not found", exception.message)
             verify(envVariableMapper, never()).toggleEnabled(anyLong(), anyInt())
         }
 

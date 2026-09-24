@@ -489,7 +489,7 @@ class WeatherToolBox : ToolBox() {
 
 **赋值**：工具绑定到智能体时，Admin UI 会按声明渲染环境参数表单，操作者二选一：
 
-1. **引用全局环境变量**：先在 Admin「环境变量管理」（`/api/admin/env-variables`，值加密存储）中创建变量，绑定时选择关联（存 `envVarId`）。运行时 Admin 会解析为**最新**的解密值注入——改全局变量即可对所有引用方生效。**快照里不存这个值**，只存指针：客户端回填的是展示值（敏感项即 `******`），存下来等于把一串星号当密钥；在服务端解密后再写则会把明文密钥落进 `env_bindings` 列（AES 密钥只在 admin，见 `mcp-management` §7.16）。指针要落得下去，保存时就得先验一次：`assertEnvVarRefsBindable` 检查这批 `envVarId` **解析得到、属于当前租户、且没被停用**，工具 / MCP / CLI 三条绑定路径共用这一道（CLI 也走它，因为 `mergeCliEnvBindings` 同样把这列下发）。两条「停用」的口径配套：`getDecryptedValue` 现在对 `enabled = 0` 返回 null，所以**停用变量等于从所有引用方收回**；而引用停用变量的绑定根本存不进去，否则表单里选得到、运行时是空的。反向的约束是：**被引用的变量删不掉**，`deleteEnvVariable` 会先查三张绑定表的 `envVarId`，命中就报「被 N 个 agent 绑着：…，先改绑再删」；
+1. **引用全局环境变量**：先在 Admin「环境变量管理」（`/api/admin/env-variables`，值加密存储）中创建变量，绑定时选择关联（存 `envVarId`）。运行时 Admin 会解析为**最新**的解密值注入——改全局变量即可对所有引用方生效。**快照里不存这个值**，只存指针：客户端回填的是展示值（敏感项即 `******`），存下来等于把一串星号当密钥；在服务端解密后再写则会把明文密钥落进 `env_bindings` 列（AES 密钥只在 admin，见 `mcp-management` §7.16）。指针要落得下去，保存时就得先验一次：`assertEnvBindingsBindable` 检查这批 `envVarId` **解析得到、属于当前租户、且没被停用**，工具 / MCP / CLI 三条绑定路径共用这一道（CLI 也走它，因为 `mergeCliEnvBindings` 同样把这列下发）。两条「停用」的口径配套：`getDecryptedValue` 现在对 `enabled = 0` 返回 null，所以**停用变量等于从所有引用方收回**；而引用停用变量的绑定根本存不进去，否则表单里选得到、运行时是空的。反向的约束是：**被引用的变量删不掉**，`deleteEnvVariable` 会先查三张绑定表的 `envVarId`，命中就报「被 N 个 agent 绑着：…，先改绑再删」；
 2. **自定义值**：直接填写字面量（存 `customValue`），以快照形式保存。
 
 `secret = true` 的参数**不预填默认值**：读接口对密钥项的默认值给的也是掩码，预填会把 `abc****wxyz` 这串字面量填进表单并落库。要覆盖它只能自己填一个真值，或者引用一个全局变量。

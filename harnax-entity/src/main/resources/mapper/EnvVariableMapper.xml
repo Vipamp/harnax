@@ -62,4 +62,14 @@
         ORDER BY update_time DESC
     </select>
 
+    <!-- Exactly the columns uk_env_tenant_creator_active_key covers: the pre-write read of that key -->
+    <select id="selectByKey" resultMap="EnvVariableResultMap">
+        SELECT * FROM env_variable
+        WHERE active = 1
+        AND tenant_id = #{tenantId}
+        AND creator = #{creator}
+        AND env_key = #{envKey}
+        LIMIT 1
+    </select>
+
 </mapper>

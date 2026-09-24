@@ -182,7 +182,7 @@
 | AGT-13 | serializeEnvBindings 引用只落指针 | envVarId=7,envValue=`******` | JSON 含 `"envVarId":7`、不含 `******`、不含 `envValue` 键。旧期望「envValue 取 getDecryptedValue(id)」会把明文密钥写进 `env_bindings` 列，而客户端回填的又常常是掩码，两边都不成立。这条现在**有**用例，在 §5.11 |
 | AGT-14 | parseEnvBindingsJson 脏数据 | "not-json" | 返回 null,不抛 |
 | AGT-15 | parseEnvBindingsJson 敏感变量掩码 | envVar.sensitive=1 | displayValue="******" |
-| AGT-16 | parseEnvBindingsJson 变量已删除回退快照 | getEnvVariable=null | 使用存储的 snapshotValue。**只对历史行成立**：新写入的引用条目没有 snapshotValue 可兜，界面与下发都拿不到值（下发侧剩一句 warn），见 §5.11 与 `mcp-management` §7.16 |
+| AGT-16 | parseEnvBindingsJson 变量已删除回退快照 | getRowWithinTenant=null | 使用存储的 snapshotValue。**只对历史行成立**：新写入的引用条目没有 snapshotValue 可兜，界面与下发都拿不到值（下发侧剩一句 warn），见 §5.11 与 `mcp-management` §7.16 |
 | AGT-17 | 同一请求内重复 mcpId 去重 | mcpList=[{id:3},{id:3},{id:4}] | 只插入 mcpId=3、4 各一条(取首次出现),配合 `V19` 的 (agent_id, mcp_id) 唯一键;绑定行已无 `enableSkip` 字段(`V20` 连同列一起删除) |
 | AGT-18 | 绑定的 mcpId 解析不到 | mcpList=[{id:9}],`mcpServerMapper.selectByIds([9])` 返回空(服务已删/不存在) | BizException,message 含 `9`;`mcpBindingMapper.batchInsert` never()(存得进去但 `agent-spec` 解析不出来的绑定从此造不出来) |
 | AGT-19 | 绑定的 mcpId 属别的租户 | selectByIds 返回 tenantId=2 的行,当前租户为默认的 1 | BizException;`batchInsert` never()。判定口径与 `McpServerService.getMcpServer` 一致(`selectByIds` 已排除 `active=0`,再比租户) |
@@ -504,7 +504,7 @@
 
 > 三件事在同一个入口上：绑的工具解析不到、引用的变量解析不到、必填参数留空。它们过去都能存进去，代价要到运行期才付——少一个工具、或者一个参数永远拿到空。所以守卫放在 `updateAgent` 这条写入口，测的也是它（打桩 mapper、`argumentCaptor` 取真正要落库的那份 JSON），而不是私有的 `serializeEnvBindings`。
 >
-> `resolveBindableTools` 是照着 AGT-18 / AGT-19 那两条 MCP 用例平移的，判据一致（`selectByIds` 已排除 `active=0`，再比租户）；`assertEnvVarRefsBindable` 用 `envVariableService.getEnvVariable(id)?.tenantId` 比对，理由是引用型快照不存值，id 失效就等于这个参数什么都不发。
+> `resolveBindableTools` 是照着 AGT-18 / AGT-19 那两条 MCP 用例平移的，判据一致（`selectByIds` 已排除 `active=0`，再比租户）；`assertEnvBindingsBindable` 用 `envVariableService.getRowWithinTenant(id)?.tenantId` 比对，理由是引用型快照不存值，id 失效就等于这个参数什么都不发。比的是**租户**而不是创建者：`getEnvVariable` 自 V46 起只认自己建的行（与列表、下拉同口径），绑定解析若跟着收，共享智能体里所有者填的那些变量就成了「运行取得到、表单存不进」。
 
 | 编号 | 用例 | 输入 | 期望 |
 |------|------|------|------|
@@ -521,6 +521,13 @@
 | EBG-11 | CLI 的必填参数由引用顶 | `required=1` + `secret=true` 的 `TOKEN`,绑定带 `envVarId=7` 且该变量同租户 | 保存通过。引用只存指针、值由下发时现取,所以看得见 id 就算已填 |
 | EBG-12 | CLI 的包默认值**算**填过 | `required=1` 的 `REGION`,声明带 `defaultValue="cn"`,请求没带绑定 | 保存通过。与 EBG-06 相反：`mergeCliEnvBindings` 会把包默认值补进下发,它确实到得了沙箱 |
 | EBG-13 | CLI 的必填参数只有掩码文本 | `required=1` 的 `TOKEN` 带 `customValue="abc****wxyz"` | BizException;`batchInsert` never()。编辑回来的表单把接口掩码当值提交,存下就是那串字面量 |
+| EBG-14 | 平台级工具行可以绑 | selectByIds 返回 `tenant_id` 为平台哨兵的行,当前租户 1 | 保存通过。「工具按平台登记、人人可用」与「引用别人的密钥」是两件事,判据只在后者那边 |
+| EBG-15 | CLI 引用别的租户的变量 | CLI 绑定带 `envVarId=7`,该行 tenantId=2 | BizException,message 含 `7`;`cliBindingMapper.batchInsert` never()。CLI 的绑定同样整份并进沙箱环境,少比一次租户就是把别人的密钥送进去 |
+| EBG-16 | 引用一个已停用的变量 | `envVarId=7` 且该行 `enabled=0` | BizException,message 含变量名 `OPENAI_KEY`;`batchInsert` never()。停用侧已改为对在用引用返回 null,存进去等于表单显示已填、运行拿到空 |
+| EBG-17 | 同一个键挂两个来源 | 一个工具两条绑定同为 `OPENAI_KEY`,分别指向 envVarId 7 与 8 | BizException,message 含 `OPENAI_KEY`;`batchInsert` never()。V46 之后同租户两人各持一个同名键是合法数据,而下发按名字装 map,用谁的凭据全看数组顺序 |
+| EBG-18 | 同一个键两条同源**照旧可存** | 两条绑定同为 `API_KEY` 且都不带值（`envValue=""`） | 保存通过,`batchInsert` 被调用。表单是按服务自己声明的参数逐行建绑定的,声明里写两遍同名参数就是这种形状;拒掉等于那类智能体永久存不进,而两个来源的歧义并不存在 |
+
+> EBG-17 与 EBG-18 是一对：守卫只拒「同一个键两个来源」，不拒「同一个键重复出现」。只写前一条，看不出闸是不是开得太宽。
 
 > EBG-10 至 EBG-13 是 CLI 这一类（同一写入口上的第三类配置,2026-09-22 加）。打桩必须成对：`cli.env_params` 存的是密文,声明列表由 `secretFieldEncryptor.deserializeToolEnvEntries` 读出,只桩 `cliMapper` 不桩解密器,守卫读到的是空列表、四条用例全绿得毫无意义。
 

@@ -228,6 +228,18 @@ class AgentServiceImplTest {
         `when`(skillBindingResolver.resolveBindable(any())).thenAnswer { invocation ->
             realResolver.resolveBindable(invocation.getArgument<List<Long>>(0))
         }
+
+        // createAgent/updateAgent now resolve the referenced model through getVisibleModel, so the
+        // binding tests below keep working on a model that is there to be seen. A test that cares about
+        // the refusal stubs its own id.
+        `when`(modelService.getVisibleModel(any())).thenAnswer { invocation ->
+            Model().apply {
+                id = invocation.getArgument<Long>(0)
+                tenantId = 1L
+                modelName = "model-$id"
+                status = 1
+            }
+        }
     }
 
     @Nested
@@ -513,6 +525,51 @@ class AgentServiceImplTest {
         }
 
         @Test
+        @DisplayName("createAgent - Refuse a model the caller cannot see")
+        fun `createAgent should refuse a model the caller cannot see`() {
+            // 引用哪个 modelId 至今无人校验：知道别租户某个私有模型的 id，就能在自己的智能体上
+            // 回显它的名字和价格。判据与读取侧、与团队主管模型同一条（本租户或 is_public）
+            val request = AgentCreateRequest(
+                name = "Foreign Model Agent",
+                description = "Foreign model description",
+                systemPrompt = "Foreign model prompt",
+                modelId = 777L,
+                owner = "admin",
+            )
+            `when`(modelService.getVisibleModel(777L)).thenReturn(null)
+
+            val exception = assertThrows<BizException> { agentService.createAgent(request) }
+
+            assertTrue(exception.message!!.contains("777"), exception.message)
+            verify(agentMapper, never()).insert(any())
+        }
+
+        @Test
+        @DisplayName("createAgent - A public model of another tenant stays usable")
+        fun `createAgent should accept a public model of another tenant`() {
+            // 收紧过头的那一半也要钉住：公开模型就是给所有租户用的，拒它会让平台级模型没人能用
+            val request = AgentCreateRequest(
+                name = "Shared Model Agent",
+                description = "Shared model description",
+                systemPrompt = "Shared model prompt",
+                modelId = 888L,
+                owner = "admin",
+            )
+            `when`(modelService.getVisibleModel(888L)).thenReturn(
+                Model().apply {
+                    id = 888L
+                    tenantId = 2L
+                    modelName = "Shared chat model"
+                    status = 1
+                },
+            )
+            `when`(agentMapper.insert(any())).thenReturn(1)
+
+            assertTrue(agentService.createAgent(request))
+            verify(agentMapper).insert(any())
+        }
+
+        @Test
         @DisplayName("createAgent - Ask about the name under the caller's tenant only")
         fun `createAgent should look the name up under the caller tenant`() {
             // 另一个租户的同名行不占这里的名字，所以这次查询必须带上租户
@@ -765,6 +822,31 @@ class AgentServiceImplTest {
             // Then
             assertTrue(result)
             verify(agentMapper).updateById(any())
+        }
+
+        @Test
+        @DisplayName("updateAgent - Refuse a model the caller cannot see")
+        fun `updateAgent should refuse a model the caller cannot see`() {
+            val request = AgentUpdateRequest(modelId = 777L)
+            `when`(agentMapper.selectById(1L)).thenReturn(testAgent)
+            `when`(modelService.getVisibleModel(777L)).thenReturn(null)
+
+            val exception = assertThrows<BizException> { agentService.updateAgent(1L, request) }
+
+            assertTrue(exception.message!!.contains("777"), exception.message)
+            verify(agentMapper, never()).updateById(any())
+        }
+
+        @Test
+        @DisplayName("updateAgent - An edit that omits modelId never consults the model")
+        fun `updateAgent should leave the stored model alone when the request omits it`() {
+            // 只改提示词的向导不该因为没带 modelId 就被判成"引用了不存在的模型"
+            val request = AgentUpdateRequest(systemPrompt = "Updated prompt")
+            `when`(agentMapper.selectById(1L)).thenReturn(testAgent)
+            `when`(agentMapper.updateById(any())).thenReturn(1)
+
+            assertTrue(agentService.updateAgent(1L, request))
+            verify(modelService, never()).getVisibleModel(any())
         }
 
         @Test
@@ -1526,7 +1608,7 @@ class AgentServiceImplTest {
                 ),
             )
             stubAgentForUpdate()
-            `when`(envVariableService.getEnvVariable(7L)).thenReturn(null)
+            `when`(envVariableService.getRowWithinTenant(7L)).thenReturn(null)
 
             // When & Then
             val exception = assertThrows<BizException> { agentService.updateAgent(1L, request) }
@@ -1552,7 +1634,7 @@ class AgentServiceImplTest {
                     },
                 ),
             )
-            `when`(envVariableService.getEnvVariable(7L)).thenReturn(null)
+            `when`(envVariableService.getRowWithinTenant(7L)).thenReturn(null)
 
             // When & Then
             val exception = assertThrows<BizException> { agentService.updateAgent(1L, request) }
@@ -1577,7 +1659,7 @@ class AgentServiceImplTest {
                 ),
             )
             stubAgentForUpdate()
-            `when`(envVariableService.getEnvVariable(7L)).thenReturn(paused)
+            `when`(envVariableService.getRowWithinTenant(7L)).thenReturn(paused)
 
             // When & Then
             val exception = assertThrows<BizException> { agentService.updateAgent(1L, request) }
@@ -1586,10 +1668,67 @@ class AgentServiceImplTest {
         }
 
         @Test
+        @DisplayName("updateAgent - Reject two bindings that fill the same key")
+        fun `updateAgent should reject two bindings carrying the same env key`() {
+            // 键改成按用户唯一之后，同租户两个用户各有一个 OPENAI_KEY 是合法数据，而一个工具的两条
+            // 绑定可以各自指向一行。下发按名字装 map，后写的盖掉先写的——用谁的凭据全看数组顺序
+            val theirs = EnvVariable().apply {
+                id = 8L
+                tenantId = 1L
+                envKey = "OPENAI_KEY"
+                sensitive = 1
+            }
+            val request = AgentUpdateRequest(
+                toolList = listOf(
+                    ToolConfig(
+                        id = 5L,
+                        envBindings = listOf(
+                            EnvBinding(envKey = "OPENAI_KEY", envVarId = 7L),
+                            EnvBinding(envKey = "OPENAI_KEY", envVarId = 8L),
+                        ),
+                    ),
+                ),
+            )
+            stubAgentForUpdate()
+            `when`(envVariableService.getRowWithinTenant(7L)).thenReturn(liveEnvVariable())
+            `when`(envVariableService.getRowWithinTenant(8L)).thenReturn(theirs)
+
+            // When & Then
+            val exception = assertThrows<BizException> { agentService.updateAgent(1L, request) }
+            assertTrue(exception.message!!.contains("OPENAI_KEY"), "the refusal should name the key: ${exception.message}")
+            verify(toolBindingMapper, never()).batchInsert(any())
+        }
+
+        @Test
+        @DisplayName("updateAgent - A key repeated from one source stays bindable")
+        fun `updateAgent should accept a key repeated with the same source`() {
+            // 表单是按服务自己声明的参数逐行建绑定的（McpConfigPanel），声明里写两遍同一个参数名就会
+            // 出现同键同值的两行。它们下发的是同一个值，拒掉等于让这类智能体永远存不进去
+            val request = AgentUpdateRequest(
+                toolList = listOf(
+                    ToolConfig(
+                        id = 5L,
+                        envBindings = listOf(
+                            EnvBinding(envKey = "API_KEY", envValue = ""),
+                            EnvBinding(envKey = "API_KEY", envValue = ""),
+                        ),
+                    ),
+                ),
+            )
+            stubAgentForUpdate()
+
+            // When
+            agentService.updateAgent(1L, request)
+
+            // Then
+            verify(toolBindingMapper).batchInsert(any())
+        }
+
+        @Test
         @DisplayName("updateAgent - Store a reference as a pointer, without the incoming mask")
         fun `updateAgent should not snapshot a value for a reference`() {
             // Given - 表单回填的是展示值（敏感变量即 `******`），落进快照就成了变量被删后的兜底值
-            `when`(envVariableService.getEnvVariable(7L)).thenReturn(liveEnvVariable())
+            `when`(envVariableService.getRowWithinTenant(7L)).thenReturn(liveEnvVariable())
 
             // When
             val json = boundToolEnvJson(5L)
@@ -1637,7 +1776,7 @@ class AgentServiceImplTest {
             )
             stubAgentForUpdate()
             `when`(agentToolEnvParamMapper.selectByToolId(5L)).thenReturn(requiredToolParam("API_KEY"))
-            `when`(envVariableService.getEnvVariable(7L)).thenReturn(liveEnvVariable())
+            `when`(envVariableService.getRowWithinTenant(7L)).thenReturn(liveEnvVariable())
 
             // When
             agentService.updateAgent(1L, request)
@@ -1739,7 +1878,7 @@ class AgentServiceImplTest {
         fun `updateAgent should accept required cli param bound to an env var`() {
             // Given - 引用只存指针、值由下发时现取，所以看得见 id 就算已填，不必读到值本身
             stubLarkCli(ToolEnvParamEntry(envParamName = "TOKEN", required = true, secret = true))
-            `when`(envVariableService.getEnvVariable(7L)).thenReturn(liveEnvVariable())
+            `when`(envVariableService.getRowWithinTenant(7L)).thenReturn(liveEnvVariable())
             val request = AgentUpdateRequest(
                 cliList = listOf(
                     AgentCreateRequest.CliConfig(

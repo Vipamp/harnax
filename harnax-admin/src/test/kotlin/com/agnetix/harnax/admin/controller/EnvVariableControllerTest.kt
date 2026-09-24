@@ -238,7 +238,7 @@ class EnvVariableControllerTest {
         }
 
         @Test
-        @DisplayName("create - service 抛异常时返回错误")
+        @DisplayName("create - service 抛异常时原样回传拒因")
         fun `create should return error on service exception`() {
             `when`(envVariableService.createEnvVariable(any()))
                 .thenThrow(BizException("Env key already exists"))
@@ -246,7 +246,7 @@ class EnvVariableControllerTest {
             val result = controller.create(request)
 
             assertFalse(result.isSuccess())
-            assertEquals("Failed to create env variable", result.message)
+            assertEquals("Env key already exists", result.message)
         }
     }
 
@@ -278,7 +278,7 @@ class EnvVariableControllerTest {
         }
 
         @Test
-        @DisplayName("update - service 抛异常时返回错误")
+        @DisplayName("update - service 抛异常时原样回传拒因")
         fun `update should return error on service exception`() {
             `when`(envVariableService.updateEnvVariable(any(), any()))
                 .thenThrow(BizException("Env variable not found"))
@@ -286,7 +286,7 @@ class EnvVariableControllerTest {
             val result = controller.update(999L, request)
 
             assertFalse(result.isSuccess())
-            assertEquals("Failed to update env variable", result.message)
+            assertEquals("Env variable not found", result.message)
         }
     }
 

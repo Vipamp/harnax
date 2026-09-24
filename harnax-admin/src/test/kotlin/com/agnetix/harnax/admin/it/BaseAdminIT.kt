@@ -240,10 +240,10 @@ abstract class BaseAdminIT {
      * A body `/api/admin/agents` accepts.
      *
      * `description`, `systemPrompt` and `modelId` are required: since AGENT-20 the DTO validates them,
-     * so an omitted one is a named 400 rather than the 500 it used to be. The write does not check
-     * `modelId` against the table, but every read resolves it to fill `modelName` and `price`, so the
-     * id should name a real row — which is what [ensureAgentModelId] provides. An empty description or
-     * prompt stays legal.
+     * so an omitted one is a named 400 rather than the 500 it used to be. Since AGENT-07 the write also
+     * resolves `modelId` through the visibility rule, so the id has to name a row the caller may see —
+     * which is what [ensureAgentModelId] hands out — and an id pointing at another tenant's private
+     * model is refused rather than stored. An empty description or prompt stays legal.
      */
     protected fun agentCreateBody(name: String, description: String = ""): Map<String, Any?> = mapOf(
         "name" to name,

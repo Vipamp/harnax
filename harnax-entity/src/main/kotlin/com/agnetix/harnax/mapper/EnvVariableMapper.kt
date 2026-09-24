@@ -29,4 +29,17 @@ interface EnvVariableMapper {
         @Param("currentUsername") currentUsername: String,
         @Param("tenantId") tenantId: Long,
     ): List<EnvVariable>
+
+    /**
+     * The live row of [tenantId] that holds [envKey] under [creator], if any.
+     *
+     * The three columns are the exact key `uk_env_tenant_creator_active_key` covers, so this is the
+     * pre-write read of that constraint: the service asks it to answer a clash with a sentence naming
+     * the key instead of the SQL error the insert would raise.
+     */
+    fun selectByKey(
+        @Param("envKey") envKey: String,
+        @Param("creator") creator: String,
+        @Param("tenantId") tenantId: Long,
+    ): EnvVariable?
 }

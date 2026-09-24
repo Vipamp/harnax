@@ -10,7 +10,25 @@ interface EnvVariableService {
 
     fun page(keyword: String?, pageNum: Int, pageSize: Int): Page<EnvVariable>
 
+    /**
+     * The row behind [id] as the console sees it: this tenant's, and typed by the caller.
+     *
+     * The list and the agent-config dropdown already answer with only the caller's own rows, so this is
+     * the one place a co-tenant user could still reach another user's variable — and a non-sensitive
+     * value goes out verbatim through `GET /env-variables/{id}`. A row outside that scope answers as a
+     * missing one, which is also what the update, delete and toggle paths do.
+     */
     fun getEnvVariable(id: Long): EnvVariable?
+
+    /**
+     * The row behind [id] as far as this tenant holds it, whoever typed it.
+     *
+     * What an agent binding resolves through: a binding stores the id alone, and a shared agent points
+     * at variables its owner created while whoever edits it now is somebody else. The runtime delivery
+     * ([getDecryptedValue]) resolves the same way, so keeping this tenant-scoped is what stops the
+     * console's narrower view from turning a variable that works into one that cannot be saved.
+     */
+    fun getRowWithinTenant(id: Long): EnvVariable?
 
     fun createEnvVariable(request: EnvVariableCreateRequest): Boolean
 
