@@ -1288,7 +1288,7 @@ class AgentServiceImplTest {
                 description = "Weather service"
             }
 
-            `when`(modelService.getModel(1L)).thenReturn(model)
+            `when`(modelService.getVisibleModel(1L)).thenReturn(model)
             `when`(sessionMapper.selectByAgentId(1L)).thenReturn(sessions)
             `when`(mcpBindingMapper.selectByAgentId(1L)).thenReturn(listOf(mcpBinding))
             `when`(mcpServerService.getMcpServer(1L)).thenReturn(mcpServer)
@@ -1305,7 +1305,7 @@ class AgentServiceImplTest {
             assertEquals(1, result.sessionCount)
             assertNotNull(result.mcpList)
             assertEquals(1, result.mcpList?.size)
-            verify(modelService).getModel(1L)
+            verify(modelService).getVisibleModel(1L)
             verify(sessionMapper).selectByAgentId(1L)
             verify(mcpBindingMapper).selectByAgentId(1L)
             verify(mcpServerService).getMcpServer(1L)
@@ -1322,7 +1322,7 @@ class AgentServiceImplTest {
             }
 
             val sessions = listOf<Session>()
-            `when`(modelService.getModel(1L)).thenReturn(null)
+            `when`(modelService.getVisibleModel(1L)).thenReturn(null)
             `when`(sessionMapper.selectByAgentId(1L)).thenReturn(sessions)
 
             // When
@@ -1346,7 +1346,7 @@ class AgentServiceImplTest {
             }
 
             val sessions = listOf<Session>()
-            `when`(modelService.getModel(1L)).thenReturn(null)
+            `when`(modelService.getVisibleModel(1L)).thenReturn(null)
             `when`(sessionMapper.selectByAgentId(1L)).thenReturn(sessions)
 
             // When
@@ -1374,7 +1374,7 @@ class AgentServiceImplTest {
             }
 
             val sessions = listOf<Session>()
-            `when`(modelService.getModel(1L)).thenReturn(null)
+            `when`(modelService.getVisibleModel(1L)).thenReturn(null)
             `when`(sessionMapper.selectByAgentId(1L)).thenReturn(sessions)
             `when`(skillBindingMapper.selectByAgentId(1L)).thenReturn(listOf(skillBinding))
             `when`(skillService.getSkill(999L)).thenReturn(null)
@@ -1398,7 +1398,7 @@ class AgentServiceImplTest {
             }
 
             val sessions = listOf<Session>()
-            `when`(modelService.getModel(1L)).thenReturn(null)
+            `when`(modelService.getVisibleModel(1L)).thenReturn(null)
             `when`(sessionMapper.selectByAgentId(1L)).thenReturn(sessions)
             `when`(mcpBindingMapper.selectByAgentId(1L)).thenReturn(listOf(mcpBinding))
             `when`(mcpServerService.getMcpServer(1L)).thenReturn(null)
@@ -1428,7 +1428,7 @@ class AgentServiceImplTest {
             }
 
             val sessions = listOf<Session>()
-            `when`(modelService.getModel(1L)).thenReturn(null)
+            `when`(modelService.getVisibleModel(1L)).thenReturn(null)
             `when`(sessionMapper.selectByAgentId(1L)).thenReturn(sessions)
             `when`(skillBindingMapper.selectByAgentId(1L)).thenReturn(listOf(skillBinding))
             `when`(skillService.getSkill(999L)).thenReturn(null)

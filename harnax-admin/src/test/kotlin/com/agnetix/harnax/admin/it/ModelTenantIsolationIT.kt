@@ -241,6 +241,39 @@ class ModelTenantIsolationIT : BaseAdminIT() {
 
     @Test
     @Order(8)
+    fun `the model behind an agent is named only as far as it is visible`() {
+        // Writing a foreign id is still an open item (createAgent stores request.modelId unchecked), so
+        // this shape is reachable today. What the read side owes the other tenant is silence about the
+        // row: the id stays on the response because the operator saved it, the name and price do not.
+        val model = assertOk(getJson("/api/admin/models/${ensureAgentModelId()}"))
+        val ownName = "it_agent_own_model_$suffix"
+        assertOk(postJson("/api/admin/agents", agentCreateBody(ownName)))
+        val ownId = agentIdNamed(ownName)
+        assertEquals(
+            model["modelName"].asText(),
+            assertOk(getJson("/api/admin/agents/$ownId"))["modelName"].asText(),
+            "a model this tenant holds must still be named - the rule is visibility, not a blank card",
+        )
+
+        val foreignName = "it_agent_foreign_model_$suffix"
+        assertOk(postJson("/api/admin/agents", agentCreateBody(foreignName) + mapOf("modelId" to otherPrivateModelId)))
+        val foreignId = agentIdNamed(foreignName)
+        val foreign = assertOk(getJson("/api/admin/agents/$foreignId"))
+        assertEquals(otherPrivateModelId, foreign["modelId"].asLong(), "the reference the operator saved stays on the row")
+        assertTrue(carriesNothing(foreign, "modelName"), "another tenant's private model must not be named through an agent binding")
+        assertTrue(carriesNothing(foreign, "modelPrice"), "nor priced out")
+
+        assertOk(deleteJson("/api/admin/agents/$ownId"))
+        assertOk(deleteJson("/api/admin/agents/$foreignId"))
+    }
+
+    /** The one live agent carried by this name, as the calling tenant sees it. */
+    private fun agentIdNamed(name: String): Long = findInPage("/api/admin/agents/page", "name=$name") {
+        it["name"]?.asText() == name
+    }?.get("id")?.asLong() ?: error("no agent named $name visible here")
+
+    @Test
+    @Order(9)
     fun `cleanup removes what this class created`() {
         assertOk(parseBody(exchange(HttpMethod.DELETE, "/api/admin/models/$otherPrivateModelId", tenantId = otherTenant)))
         assertOk(parseBody(exchange(HttpMethod.DELETE, "/api/admin/model-providers/$otherProviderId", tenantId = otherTenant)))

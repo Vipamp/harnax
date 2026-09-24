@@ -989,7 +989,7 @@ class SessionServiceImplTest {
                 name = "qoder-skills"
             }
 
-            `when`(modelService.getModel(1L)).thenReturn(model)
+            `when`(modelService.getVisibleModel(1L)).thenReturn(model)
             `when`(mcpBindingMapper.selectByAgentId(100L)).thenReturn(listOf(mcpBinding(100L, 1L)))
             `when`(mcpServerService.getMcpServer(1L)).thenReturn(mcpServer)
             `when`(skillBindingMapper.selectByAgentId(100L))
@@ -1015,7 +1015,7 @@ class SessionServiceImplTest {
             assertEquals(2, result.skillList.size)
             assertEquals("code-review", result.skillList[0].skillName)
             assertEquals("qoder-skills", result.skillList[0].repositoryName)
-            verify(modelService).getModel(1L)
+            verify(modelService).getVisibleModel(1L)
             verify(mcpServerService).getMcpServer(1L)
         }
 
@@ -1029,7 +1029,7 @@ class SessionServiceImplTest {
                 modelId = 999L
             }
 
-            `when`(modelService.getModel(999L)).thenReturn(null)
+            `when`(modelService.getVisibleModel(999L)).thenReturn(null)
 
             // When
             val result = createService().convertToResponse(emptySession)
@@ -1051,7 +1051,7 @@ class SessionServiceImplTest {
                 modelId = 1L
             }
 
-            `when`(modelService.getModel(1L)).thenReturn(null)
+            `when`(modelService.getVisibleModel(1L)).thenReturn(null)
             `when`(mcpBindingMapper.selectByAgentId(100L)).thenReturn(listOf(mcpBinding(100L, 88L)))
             `when`(mcpServerService.getMcpServer(88L)).thenReturn(null)
 
@@ -1074,7 +1074,7 @@ class SessionServiceImplTest {
                 modelId = 1L
             }
 
-            `when`(modelService.getModel(1L)).thenReturn(null)
+            `when`(modelService.getVisibleModel(1L)).thenReturn(null)
             `when`(mcpBindingMapper.selectByAgentId(100L)).thenReturn(emptyList())
             `when`(skillBindingMapper.selectByAgentId(100L)).thenReturn(emptyList())
 
@@ -1104,7 +1104,7 @@ class SessionServiceImplTest {
                 modelId = 1L
             }
 
-            `when`(modelService.getModel(1L)).thenReturn(null)
+            `when`(modelService.getVisibleModel(1L)).thenReturn(null)
             `when`(skillBindingMapper.selectByAgentId(100L))
                 .thenReturn(listOf(skillBinding(100L, 999L), skillBinding(100L, 10L)))
             // binding 999 points at a deleted skill

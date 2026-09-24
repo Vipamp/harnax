@@ -98,6 +98,6 @@ class EnvVariableController(
         if (envVariableService.toggleEnabled(id, enabled)) ResultVo.success() else ResultVo.error("Failed to toggle env variable")
     } catch (e: Exception) {
         log.error("Failed to toggle env variable", e)
-        ResultVo.error("Failed to toggle env variable")
+        ResultVo.error(ApiErrors.message(e, "Failed to toggle env variable"))
     }
 }

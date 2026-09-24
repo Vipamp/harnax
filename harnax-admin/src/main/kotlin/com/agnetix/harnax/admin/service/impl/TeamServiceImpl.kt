@@ -6,6 +6,7 @@ import com.agnetix.harnax.admin.dto.TeamCreateRequest
 import com.agnetix.harnax.admin.dto.TeamResponse
 import com.agnetix.harnax.admin.dto.TeamUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.service.ModelService
 import com.agnetix.harnax.admin.service.SkillRepositoryService
 import com.agnetix.harnax.admin.service.TeamService
 import com.agnetix.harnax.admin.skill.SkillBindingResolver
@@ -45,6 +46,7 @@ class TeamServiceImpl(
     private val teamSkillBindingMapper: TeamSkillBindingMapper,
     private val agentMapper: AgentMapper,
     private val modelMapper: ModelMapper,
+    private val modelService: ModelService,
     private val sessionMapper: SessionMapper,
     private val skillMapper: SkillMapper,
     private val skillRepositoryService: SkillRepositoryService,
@@ -177,7 +179,7 @@ class TeamServiceImpl(
         val skillBindings = teamSkillBindingMapper.selectByTeamId(team.id)
         val skills = skillsOf(skillBindings.map { it.skillId })
         return TeamResponse.fromEntity(team).copy(
-            modelName = modelMapper.selectById(team.modelId)?.modelName,
+            modelName = modelService.getVisibleModel(team.modelId)?.modelName,
             skillList = skillBindings.map { binding ->
                 val skill = skills[binding.skillId]
                 TeamResponse.SkillItem(

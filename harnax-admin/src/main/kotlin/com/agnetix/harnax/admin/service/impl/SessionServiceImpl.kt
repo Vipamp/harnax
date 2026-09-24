@@ -90,9 +90,10 @@ class SessionServiceImpl(
         response.systemPrompt = session.systemPrompt
         response.modelId = session.modelId
 
-        // Query model name
+        // Display only: the model behind a session is resolved by the same visibility rule the model
+        // list uses, so a foreign private model's name cannot be read out through a session's id.
         session.modelId.let { modelId ->
-            val model = modelService.getModel(modelId)
+            val model = modelService.getVisibleModel(modelId)
             model?.let {
                 response.modelName = it.modelName
                 response.modelPrice = it.price

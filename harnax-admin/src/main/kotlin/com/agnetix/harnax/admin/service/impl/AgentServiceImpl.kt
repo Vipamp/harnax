@@ -252,9 +252,10 @@ class AgentServiceImpl(
         response.systemPrompt = agent.systemPrompt
         response.modelId = agent.modelId
 
-        // Query model name and price
+        // Resolved through the model list's own visibility rule: a binding carries a bare id, and echoing
+        // the name and price of a model this tenant may not see would leak the row it points at.
         agent.modelId.let { modelId ->
-            val model = modelService.getModel(modelId)
+            val model = modelService.getVisibleModel(modelId)
             model?.let {
                 response.modelName = it.modelName
                 response.modelPrice = it.price

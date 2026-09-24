@@ -48,7 +48,8 @@ interface ModelService {
     /**
      * Get model details as the current tenant sees them: its own rows plus published ones.
      *
-     * [getModel] stays the unfiltered lookup for callers rendering a binding that already exists.
+     * [getModel] is left to callers that resolve the model a binding names without a tenant of their
+     * own - runtime spec assembly and headerless mobile reads - not to anything the console renders.
      *
      * @param id ID
      * @return Model entity, or null when this tenant may not see it

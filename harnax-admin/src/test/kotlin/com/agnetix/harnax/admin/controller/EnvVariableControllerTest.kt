@@ -369,14 +369,29 @@ class EnvVariableControllerTest {
         }
 
         @Test
-        @DisplayName("toggleEnabled - service 抛异常时返回错误")
-        fun `toggleEnabled should return error on service exception`() {
-            `when`(envVariableService.toggleEnabled(999L, 1)).thenThrow(RuntimeException("DB error"))
+        @DisplayName("toggleEnabled - 守卫文案原样返回")
+        fun `toggleEnabled should pass the reference guard message through`() {
+            `when`(envVariableService.toggleEnabled(1L, 0)).thenThrow(
+                BizException("Env variable 'GITHUB_TOKEN' is bound by 1 agent(s): customer-support. Rebind them first, then disable."),
+            )
 
-            val result = controller.toggleEnabled(999L, 1)
+            val result = controller.toggleEnabled(1L, 0)
 
             assertFalse(result.isSuccess())
-            assertEquals("Failed to toggle env variable", result.message)
+            assertTrue(result.message.startsWith("Env variable 'GITHUB_TOKEN' is bound by"), result.message)
+        }
+
+        @Test
+        @DisplayName("toggleEnabled - 数据库错误不透传原文")
+        fun `toggleEnabled should not leak a database failure in its own words`() {
+            `when`(envVariableService.toggleEnabled(1L, 0)).thenThrow(
+                QueryTimeoutException("UPDATE env_variable SET enabled = 0 WHERE id = 1 timed out"),
+            )
+
+            val result = controller.toggleEnabled(1L, 0)
+
+            assertFalse(result.isSuccess())
+            assertEquals("Database operation failed, please check the submitted values and try again", result.message)
         }
     }
 }

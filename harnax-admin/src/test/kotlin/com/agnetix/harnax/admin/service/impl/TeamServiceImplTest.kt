@@ -4,6 +4,7 @@ import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.TeamCreateRequest
 import com.agnetix.harnax.admin.dto.TeamUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.service.ModelService
 import com.agnetix.harnax.admin.service.SkillRepositoryService
 import com.agnetix.harnax.admin.skill.SkillBindingResolver
 import com.agnetix.harnax.admin.util.JwtUtil
@@ -80,6 +81,9 @@ class TeamServiceImplTest {
     private lateinit var modelMapper: ModelMapper
 
     @Mock
+    private lateinit var modelService: ModelService
+
+    @Mock
     private lateinit var sessionMapper: SessionMapper
 
     @Mock
@@ -119,6 +123,7 @@ class TeamServiceImplTest {
             invocation.getArgument<List<Long>>(0).mapNotNull { agents[it] }
         }
         `when`(modelMapper.selectById(anyLong())).thenAnswer { models[it.getArgument<Long>(0)] }
+        `when`(modelService.getVisibleModel(anyLong())).thenAnswer { models[it.getArgument<Long>(0)] }
         `when`(skillMapper.selectByIds(any())).thenAnswer { invocation ->
             invocation.getArgument<List<Long>>(0).mapNotNull { skills[it] }
         }
@@ -160,6 +165,7 @@ class TeamServiceImplTest {
             teamSkillBindingMapper = teamSkillBindingMapper,
             agentMapper = agentMapper,
             modelMapper = modelMapper,
+            modelService = modelService,
             sessionMapper = sessionMapper,
             skillMapper = skillMapper,
             skillRepositoryService = skillRepositoryService,
