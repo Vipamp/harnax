@@ -31,15 +31,17 @@ class TeamArtifact : Serializable {
     @Schema(description = "Owning tenant ID")
     var tenantId: Long = 1
 
-    @Schema(description = "Root team session this artifact belongs to")
+    @Schema(description = "Root team session this artifact belongs to — the key cleanup works off")
     var sessionId: String = ""
 
+    /** Kept for manual investigation only: no code reads it. */
     @Schema(description = "FK to team.id")
     var teamId: Long = 0
 
     @Schema(description = "FK to agent.id, the member that produced it")
     var memberAgentId: Long = 0
 
+    /** Kept for manual investigation only: no code reads it. */
     @Schema(description = "Member child session that produced it")
     var childSessionId: String = ""
 

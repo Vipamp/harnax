@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.service.impl
 
+import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.ModelCreateRequest
 import com.agnetix.harnax.admin.dto.ModelUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
@@ -7,8 +8,10 @@ import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.entity.Model
 import com.agnetix.harnax.entity.ModelProvider
+import com.agnetix.harnax.entity.dto.ModelUsage
 import com.agnetix.harnax.mapper.ModelMapper
 import com.agnetix.harnax.mapper.ModelProviderMapper
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
@@ -16,6 +19,7 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.extension.ExtendWith
+import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.InjectMocks
@@ -87,7 +91,6 @@ class ModelServiceImplTest {
             isPublic = 1
             status = 1
             active = 1
-            tenantId = 1L
             creator = "admin"
             createTime = LocalDateTime.now()
             updateTime = LocalDateTime.now()
@@ -124,7 +127,7 @@ class ModelServiceImplTest {
                     listOf("advanced"),
                     0.01,
                     0.05,
-                    "admin",
+                    1L,
                 ),
             ).thenReturn(models)
 
@@ -151,7 +154,7 @@ class ModelServiceImplTest {
                 listOf("advanced"),
                 0.01,
                 0.05,
-                "admin",
+                1L,
             )
         }
 
@@ -169,7 +172,7 @@ class ModelServiceImplTest {
                     null,
                     null,
                     null,
-                    "admin",
+                    1L,
                 ),
             ).thenReturn(models)
 
@@ -196,7 +199,7 @@ class ModelServiceImplTest {
                 null,
                 null,
                 null,
-                "admin",
+                1L,
             )
         }
     }
@@ -626,6 +629,7 @@ class ModelServiceImplTest {
         fun `deleteModel should delete model successfully`() {
             // Given
             `when`(modelMapper.selectById(1L)).thenReturn(testModel)
+            `when`(modelMapper.selectUsageByModelId(1L)).thenReturn(ModelUsage())
             `when`(modelMapper.deleteById(1L)).thenReturn(1)
 
             // When
@@ -635,6 +639,46 @@ class ModelServiceImplTest {
             assertTrue(result)
             verify(modelMapper).selectById(1L)
             verify(modelMapper).deleteById(1L)
+        }
+
+        @Test
+        @DisplayName("deleteModel - Reject while agents and teams still point at it")
+        fun `deleteModel should reject while agents and teams point at it`() {
+            // agent/team 上的 model_id 要到那条配置被真正使用才暴露，届时已经晚了
+            `when`(modelMapper.selectById(1L)).thenReturn(testModel)
+            `when`(modelMapper.selectUsageByModelId(1L)).thenReturn(
+                ModelUsage().apply {
+                    agentCount = 2
+                    teamCount = 1
+                },
+            )
+            `when`(messageUtil.getMessage(anyString(), any())).thenAnswer { invocation ->
+                "${invocation.arguments[0]}:${invocation.arguments[1]}"
+            }
+
+            val exception = assertThrows<BizException> { modelService.deleteModel(1L) }
+
+            assertEquals("error.model.in_use:2 agent(s), 1 team(s)", exception.message)
+            verify(modelMapper, never()).deleteById(anyLong())
+        }
+
+        @Test
+        @DisplayName("deleteModel - Reject while only sessions remain")
+        fun `deleteModel should reject while sessions remain`() {
+            `when`(modelMapper.selectById(1L)).thenReturn(testModel)
+            `when`(modelMapper.selectUsageByModelId(1L)).thenReturn(
+                ModelUsage().apply {
+                    sessionCount = 7
+                },
+            )
+            `when`(messageUtil.getMessage(anyString(), any())).thenAnswer { invocation ->
+                "${invocation.arguments[0]}:${invocation.arguments[1]}"
+            }
+
+            val exception = assertThrows<BizException> { modelService.deleteModel(1L) }
+
+            assertEquals("error.model.in_use:7 session(s)", exception.message)
+            verify(modelMapper, never()).deleteById(anyLong())
         }
 
         @Test
@@ -694,6 +738,132 @@ class ModelServiceImplTest {
             assertEquals("Unknown Model", result.name)
             assertNull(result.providerName)
             verify(modelProviderMapper).selectById(999L)
+        }
+    }
+
+    @Nested
+    @DisplayName("Tenant Isolation Tests")
+    inner class TenantIsolationTests {
+
+        @AfterEach
+        fun clearTenant() {
+            TenantContext.clear()
+        }
+
+        private fun modelOf(tenantId: Long, publicFlag: Int): Model = Model().apply {
+            id = 1L
+            this.tenantId = tenantId
+            name = "GPT-4"
+            modelName = "gpt-4"
+            providerId = 1L
+            modelType = "chat"
+            isPublic = publicFlag
+            status = 1
+            active = 1
+            creator = "admin"
+        }
+
+        @Test
+        @DisplayName("getVisibleModel - Own private row is visible")
+        fun `getVisibleModel should return the own row`() {
+            TenantContext.setTenantId(2L)
+            `when`(modelMapper.selectById(1L)).thenReturn(modelOf(2L, 0))
+
+            assertNotNull(modelService.getVisibleModel(1L))
+        }
+
+        @Test
+        @DisplayName("getVisibleModel - Public row of another tenant is visible")
+        fun `getVisibleModel should return another tenant public row`() {
+            `when`(modelMapper.selectById(1L)).thenReturn(modelOf(9L, 1))
+
+            assertNotNull(modelService.getVisibleModel(1L))
+        }
+
+        @Test
+        @DisplayName("getVisibleModel - Private row of another tenant reads as absent")
+        fun `getVisibleModel should hide another tenant private row`() {
+            `when`(modelMapper.selectById(1L)).thenReturn(modelOf(9L, 0))
+
+            assertNull(modelService.getVisibleModel(1L))
+        }
+
+        @Test
+        @DisplayName("updateModel - A public row of another tenant still cannot be changed")
+        fun `updateModel should refuse another tenant model`() {
+            `when`(modelMapper.selectById(1L)).thenReturn(modelOf(9L, 1))
+
+            val exception = assertThrows<BizException> {
+                modelService.updateModel(1L, ModelUpdateRequest(name = "Hijacked"))
+            }
+
+            assertEquals("error.model.notfound", exception.message)
+            verify(modelMapper, never()).updateById(any())
+        }
+
+        @Test
+        @DisplayName("updateStatus - Another tenant's model cannot be enabled or disabled here")
+        fun `updateStatus should refuse another tenant model`() {
+            `when`(modelMapper.selectById(1L)).thenReturn(modelOf(9L, 1))
+
+            val exception = assertThrows<BizException> { modelService.updateStatus(1L, 0) }
+
+            assertEquals("error.model.notfound", exception.message)
+            verify(modelMapper, never()).updateStatus(anyLong(), anyInt())
+        }
+
+        @Test
+        @DisplayName("deleteModel - A public row of another tenant still cannot be deleted")
+        fun `deleteModel should refuse another tenant model`() {
+            `when`(modelMapper.selectById(1L)).thenReturn(modelOf(9L, 1))
+
+            val exception = assertThrows<BizException> { modelService.deleteModel(1L) }
+
+            assertEquals("error.model.notfound", exception.message)
+            verify(modelMapper, never()).deleteById(anyLong())
+        }
+
+        @Test
+        @DisplayName("createModel - Store the caller tenant on the row")
+        fun `createModel should stamp the caller tenant`() {
+            TenantContext.setTenantId(3L)
+            val ownProvider = ModelProvider().apply {
+                id = 1L
+                tenantId = 3L
+                status = 1
+                active = 1
+            }
+            `when`(modelProviderMapper.selectById(1L)).thenReturn(ownProvider)
+            `when`(modelMapper.insert(any())).thenReturn(1)
+
+            val created = modelService.createModel(
+                ModelCreateRequest(name = "New Model", modelName = "new-model", providerId = 1L, modelType = "chat"),
+            )
+
+            assertTrue(created)
+            verify(modelMapper).insert(argThat { tenantId == 3L })
+        }
+
+        @Test
+        @DisplayName("createModel - A private provider of another tenant is not a base to build on")
+        fun `createModel should refuse a provider another tenant keeps private`() {
+            val foreignPrivate = ModelProvider().apply {
+                id = 1L
+                tenantId = 9L
+                isPublic = 0
+                status = 1
+                active = 1
+            }
+            `when`(modelProviderMapper.selectById(1L)).thenReturn(foreignPrivate)
+
+            val exception = assertThrows<BizException> {
+                modelService.createModel(
+                    ModelCreateRequest(name = "New Model", modelName = "new-model", providerId = 1L, modelType = "chat"),
+                )
+            }
+
+            assertEquals("error.model.provider.notfound", exception.message)
+            verify(modelMapper, never()).insert(any())
         }
     }
 }

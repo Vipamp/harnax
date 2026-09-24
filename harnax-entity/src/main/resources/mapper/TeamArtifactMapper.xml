@@ -35,4 +35,8 @@
         SELECT * FROM team_artifact WHERE session_id = #{sessionId} ORDER BY id
     </select>
 
+    <delete id="deleteById">
+        DELETE FROM team_artifact WHERE id = #{id}
+    </delete>
+
 </mapper>

@@ -1,6 +1,7 @@
 package com.agnetix.harnax.mapper
 
 import com.agnetix.harnax.entity.TeamSkillBinding
+import com.agnetix.harnax.entity.dto.SkillTeamBindingCount
 import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
 
@@ -21,6 +22,14 @@ interface TeamSkillBindingMapper {
      * warning.
      */
     fun selectBoundSkillIds(@Param("skillIds") skillIds: List<Long>): List<Long>
+
+    /**
+     * How many teams bind each of [skillIds]. Skills with no binding are absent.
+     *
+     * Grouped so a page of skills asks it once, and a count rather than a presence check so the list's
+     * switch and `SkillServiceImpl.requireUnbound` read the same number.
+     */
+    fun selectTeamBindingCounts(@Param("skillIds") skillIds: List<Long>): List<SkillTeamBindingCount>
 
     /**
      * Cascade for a skill being removed outside the management API — today that only means a CLI

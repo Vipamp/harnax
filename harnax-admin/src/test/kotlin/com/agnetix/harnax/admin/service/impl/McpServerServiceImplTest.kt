@@ -4,6 +4,7 @@ import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.McpOAuthConfig
 import com.agnetix.harnax.admin.dto.McpServerCreateRequest
 import com.agnetix.harnax.admin.dto.McpServerUpdateRequest
+import com.agnetix.harnax.admin.dto.ToolEnvParamEntry
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.McpStdioPolicy
 import com.agnetix.harnax.admin.util.JwtUtil
@@ -622,6 +623,82 @@ class McpServerServiceImplTest {
     }
 
     @Nested
+    @DisplayName("env_params 存储范围测试")
+    inner class EnvParamStorageScopeTests {
+
+        private val declared = listOf(ToolEnvParamEntry(envParamName = "API_KEY", defaultValue = "sk-1", secret = true))
+
+        @Test
+        @DisplayName("createMcpServer - 网络型不落 env_params")
+        fun `createMcpServer should not store env params for a network row`() {
+            val request = McpServerCreateRequest(
+                name = "Sse MCP",
+                type = "sse",
+                url = "http://localhost:3000/sse",
+                envParams = declared,
+            )
+            `when`(mcpServerMapper.selectByName("Sse MCP", 1L)).thenReturn(null)
+            `when`(mcpServerMapper.insert(any())).thenReturn(1)
+
+            mcpServerService.createMcpServer(request)
+
+            // The never() is what makes this case mean anything: an unstubbed encryptor answers null
+            // for a serialize call too, so assertNull on its own would pass with the gate removed.
+            verify(secretFieldEncryptor, never()).serializeToolEnvParams(any(), anyOrNull())
+            val captor = argumentCaptor<McpServer>()
+            verify(mcpServerMapper).insert(captor.capture())
+            assertNull(captor.firstValue.envParams)
+        }
+
+        @Test
+        @DisplayName("createMcpServer - stdio 型照声明存 env_params")
+        fun `createMcpServer should store env params on a stdio row`() {
+            allowStdio()
+            `when`(secretFieldEncryptor.serializeToolEnvParams(any(), anyOrNull())).thenReturn("stored-env")
+            val request = McpServerCreateRequest(
+                name = "Stdio MCP",
+                type = "stdio",
+                command = "python app.py",
+                envParams = declared,
+            )
+            `when`(mcpServerMapper.selectByName("Stdio MCP", 1L)).thenReturn(null)
+            `when`(mcpServerMapper.insert(any())).thenReturn(1)
+
+            mcpServerService.createMcpServer(request)
+
+            val captor = argumentCaptor<McpServer>()
+            verify(mcpServerMapper).insert(captor.capture())
+            assertEquals("stored-env", captor.firstValue.envParams)
+        }
+
+        @Test
+        @DisplayName("updateMcpServer - 网络型收到 env_params 时清列而不是存")
+        fun `updateMcpServer should retire the column for a network row carrying env params`() {
+            // Given - a row an older create left with values on a transport that cannot use them
+            val stored = McpServer().apply {
+                id = 1L
+                tenantId = 1L
+                name = "Weather MCP"
+                type = "sse"
+                url = "http://localhost:3000/sse"
+                envParams = """[{"envParamName":"LEGACY","defaultValue":"enc:x","secret":true}]"""
+                status = 1
+                active = 1
+                creator = "admin"
+            }
+            `when`(mcpServerMapper.selectById(1L)).thenReturn(stored)
+            `when`(mcpServerMapper.updateById(any())).thenReturn(1)
+
+            mcpServerService.updateMcpServer(1L, McpServerUpdateRequest(envParams = declared))
+
+            verify(secretFieldEncryptor, never()).serializeToolEnvParams(any(), anyOrNull())
+            val captor = argumentCaptor<McpServer>()
+            verify(mcpServerMapper).updateById(captor.capture())
+            assertNull(captor.firstValue.envParams)
+        }
+    }
+
+    @Nested
     @DisplayName("Toggle Status Tests")
     inner class ToggleStatusTests {
 
@@ -1183,6 +1260,107 @@ class McpServerServiceImplTest {
             val exception = assertThrows<BizException> { mcpServerService.listTools(1L) }
 
             assertTrue(exception.message!!.contains("authorizes per user"))
+        }
+    }
+
+    @Nested
+    @DisplayName("Visibility Tests")
+    inner class VisibilityTests {
+
+        private fun row(
+            creator: String,
+            isPublic: Int,
+        ) = McpServer().apply {
+            id = 1L
+            tenantId = 1L
+            name = "Weather MCP"
+            type = "streamablehttp"
+            url = "http://localhost:8081/weather"
+            status = 1
+            this.isPublic = isPublic
+            this.creator = creator
+            active = 1
+        }
+
+        @Test
+        @DisplayName("getMcpServer - 别人的私有行仍可解析，绑定回显不该少一项")
+        fun `getMcpServer should still resolve another user's private row`() {
+            `when`(mcpServerMapper.selectById(1L)).thenReturn(row(creator = "other", isPublic = 0))
+
+            // An agent form renders what an agent is already configured with. Hiding this row there
+            // would drop a live binding silently instead of refusing an operation on it.
+            assertNotNull(mcpServerService.getMcpServer(1L))
+        }
+
+        @Test
+        @DisplayName("getVisibleMcpServer - 同租户别人的私有行按不存在回答")
+        fun `getVisibleMcpServer should answer missing for another user's private row`() {
+            `when`(mcpServerMapper.selectById(1L)).thenReturn(row(creator = "other", isPublic = 0))
+
+            assertNull(mcpServerService.getVisibleMcpServer(1L))
+        }
+
+        @Test
+        @DisplayName("getVisibleMcpServer - 沿用列表的 is_public OR creator")
+        fun `getVisibleMcpServer should keep the list predicate`() {
+            `when`(mcpServerMapper.selectById(1L)).thenReturn(row(creator = "other", isPublic = 1))
+            assertNotNull(mcpServerService.getVisibleMcpServer(1L))
+
+            `when`(mcpServerMapper.selectById(1L)).thenReturn(row(creator = "admin", isPublic = 0))
+            assertNotNull(mcpServerService.getVisibleMcpServer(1L))
+        }
+
+        @Test
+        @DisplayName("改/删/启停/探测 - 共用同一个可见性判断")
+        fun `mutating and probing paths should refuse another user's private row`() {
+            `when`(mcpServerMapper.selectById(1L)).thenReturn(row(creator = "other", isPublic = 0))
+
+            // The list hides this row, so without the same predicate on the by-id routes `is_public`
+            // only shapes the page: anyone in the tenant who guesses the id could still edit, delete,
+            // switch or probe the server.
+            val paths = listOf(
+                "update" to { mcpServerService.updateMcpServer(1L, McpServerUpdateRequest(description = "taken over")) },
+                "delete" to { mcpServerService.deleteMcpServer(1L) },
+                "toggle" to { mcpServerService.toggleMcpServerStatus(1L, 0) },
+                "listTools" to { mcpServerService.listTools(1L) },
+            )
+            paths.forEach { (name, call) ->
+                val exception = assertThrows<BizException> { call() }
+                assertEquals("MCP server not found", exception.message, name)
+            }
+            verify(mcpServerMapper, never()).updateById(any())
+            verify(mcpServerMapper, never()).deleteById(anyLong())
+            verify(mcpServerMapper, never()).updateStatus(anyLong(), anyInt())
+            verify(agentMcpBindingMapper, never()).deleteByMcpId(anyLong())
+            verify(mcpUserCredentialMapper, never()).deleteByMcpId(anyLong())
+        }
+    }
+
+    @Nested
+    @DisplayName("Disabled Row Probe Tests")
+    inner class DisabledRowProbeTests {
+
+        @Test
+        @DisplayName("listTools - 停用的行不去真连探测")
+        fun `listTools should refuse a disabled row before connecting`() {
+            val stored = McpServer().apply {
+                id = 1L
+                tenantId = 1L
+                name = "Disabled MCP"
+                type = "streamablehttp"
+                url = "http://127.0.0.1:1/never-listens"
+                status = 0
+                active = 1
+                creator = "admin"
+            }
+            `when`(mcpServerMapper.selectById(1L)).thenReturn(stored)
+
+            // Delivery holds a disabled row back, so a probe that still connects would make the switch
+            // mean "not delivered" rather than "off". connectivityTest runs through this method, so
+            // one gate covers both entries.
+            val exception = assertThrows<BizException> { mcpServerService.listTools(1L) }
+
+            assertTrue(exception.message!!.contains("is disabled, enable it before testing"), exception.message)
         }
     }
 }

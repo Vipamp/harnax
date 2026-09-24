@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.service.impl
 
+import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.ModelProviderCreateRequest
 import com.agnetix.harnax.admin.dto.ModelProviderUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
@@ -8,6 +9,7 @@ import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.entity.ModelProvider
 import com.agnetix.harnax.mapper.ModelMapper
 import com.agnetix.harnax.mapper.ModelProviderMapper
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
@@ -23,6 +25,7 @@ import org.mockito.Mockito.*
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
 import org.mockito.quality.Strictness
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.web.context.request.RequestContextHolder
@@ -93,7 +96,7 @@ class ModelProviderServiceImplTest {
         fun `page should return paginated provider list`() {
             // Given
             val providers = listOf(testProvider)
-            `when`(modelProviderMapper.selectModelProviderList(null, null, null, null, "admin"))
+            `when`(modelProviderMapper.selectModelProviderList(null, null, null, null, 1L))
                 .thenReturn(providers)
 
             // When
@@ -101,14 +104,14 @@ class ModelProviderServiceImplTest {
 
             // Then
             assertNotNull(result)
-            verify(modelProviderMapper).selectModelProviderList(null, null, null, null, "admin")
+            verify(modelProviderMapper).selectModelProviderList(null, null, null, null, 1L)
         }
 
         @Test
         @DisplayName("page - Filter by name and status")
         fun `page should filter by name and status`() {
             // Given
-            `when`(modelProviderMapper.selectModelProviderList("Test", "openai", 1, null, "admin"))
+            `when`(modelProviderMapper.selectModelProviderList("Test", "openai", 1, null, 1L))
                 .thenReturn(listOf(testProvider))
 
             // When
@@ -116,7 +119,7 @@ class ModelProviderServiceImplTest {
 
             // Then
             assertNotNull(result)
-            verify(modelProviderMapper).selectModelProviderList("Test", "openai", 1, null, "admin")
+            verify(modelProviderMapper).selectModelProviderList("Test", "openai", 1, null, 1L)
         }
     }
 
@@ -172,7 +175,7 @@ class ModelProviderServiceImplTest {
                 isPublic = 1,
             )
 
-            `when`(modelProviderMapper.countByName("New Provider")).thenReturn(0)
+            `when`(modelProviderMapper.countByName("New Provider", 1L)).thenReturn(0)
             `when`(modelProviderMapper.insert(any())).thenReturn(1)
 
             // When
@@ -180,7 +183,7 @@ class ModelProviderServiceImplTest {
 
             // Then
             assertTrue(result)
-            verify(modelProviderMapper).countByName("New Provider")
+            verify(modelProviderMapper).countByName("New Provider", 1L)
             verify(modelProviderMapper).insert(any())
         }
 
@@ -193,7 +196,7 @@ class ModelProviderServiceImplTest {
                 type = "openai",
             )
 
-            `when`(modelProviderMapper.countByName("Existing Provider")).thenReturn(1)
+            `when`(modelProviderMapper.countByName("Existing Provider", 1L)).thenReturn(1)
 
             // When & Then
             val exception = assertThrows<BizException> {
@@ -214,7 +217,7 @@ class ModelProviderServiceImplTest {
                 baseUrl = null,
             )
 
-            `when`(modelProviderMapper.countByName("Minimal Provider")).thenReturn(0)
+            `when`(modelProviderMapper.countByName("Minimal Provider", 1L)).thenReturn(0)
             `when`(modelProviderMapper.insert(any())).thenReturn(1)
 
             // When
@@ -244,7 +247,7 @@ class ModelProviderServiceImplTest {
             )
 
             `when`(modelProviderMapper.selectById(1L)).thenReturn(testProvider)
-            `when`(modelProviderMapper.countByName("Updated Provider")).thenReturn(0)
+            `when`(modelProviderMapper.countByName("Updated Provider", 1L)).thenReturn(0)
             `when`(modelProviderMapper.updateById(any())).thenReturn(1)
 
             // When
@@ -275,7 +278,7 @@ class ModelProviderServiceImplTest {
             // Given
             val request = ModelProviderUpdateRequest(name = "Duplicate Name")
             `when`(modelProviderMapper.selectById(1L)).thenReturn(testProvider)
-            `when`(modelProviderMapper.countByName("Duplicate Name")).thenReturn(1)
+            `when`(modelProviderMapper.countByName("Duplicate Name", 1L)).thenReturn(1)
 
             // When & Then
             val exception = assertThrows<BizException> {
@@ -421,7 +424,8 @@ class ModelProviderServiceImplTest {
         @DisplayName("deleteModelProvider - Delete provider successfully")
         fun `deleteModelProvider should delete provider successfully`() {
             // Given
-            `when`(modelMapper.countActiveModelsByProviderId(1L)).thenReturn(0)
+            `when`(modelProviderMapper.selectById(1L)).thenReturn(testProvider)
+            `when`(modelMapper.countModelsByProviderId(1L)).thenReturn(0)
             `when`(modelProviderMapper.deleteById(1L)).thenReturn(1)
 
             // When
@@ -433,12 +437,29 @@ class ModelProviderServiceImplTest {
         }
 
         @Test
-        @DisplayName("deleteModelProvider - Throw exception when has enabled models")
-        fun `deleteModelProvider should throw exception when has enabled models`() {
+        @DisplayName("deleteModelProvider - Throw exception when has models")
+        fun `deleteModelProvider should throw exception when has models`() {
             // Given
-            `when`(modelMapper.countActiveModelsByProviderId(1L)).thenReturn(2)
+            `when`(modelProviderMapper.selectById(1L)).thenReturn(testProvider)
+            `when`(modelMapper.countModelsByProviderId(1L)).thenReturn(2)
 
             // When & Then
+            val exception = assertThrows<BizException> {
+                modelProviderService.deleteModelProvider(1L)
+            }
+            assertEquals("error.model.provider.cannot_delete", exception.message)
+            verify(modelProviderMapper, never()).deleteById(anyLong())
+        }
+
+        @Test
+        @DisplayName("deleteModelProvider - A provider of only disabled models still cannot go")
+        fun `deleteModelProvider should refuse while every model it has is disabled`() {
+            // Given - 停用中的模型仍被 agent 指着，服务商一走那行 model.provider_id 就没人应答了；
+            // 只有「停使用该服务商」才按在用的模型来判
+            `when`(modelProviderMapper.selectById(1L)).thenReturn(testProvider)
+            `when`(modelMapper.countModelsByProviderId(1L)).thenReturn(1)
+            `when`(modelMapper.countActiveModelsByProviderId(1L)).thenReturn(0)
+
             val exception = assertThrows<BizException> {
                 modelProviderService.deleteModelProvider(1L)
             }
@@ -450,7 +471,8 @@ class ModelProviderServiceImplTest {
         @DisplayName("deleteModelProvider - Return false when delete fails")
         fun `deleteModelProvider should return false when delete fails`() {
             // Given
-            `when`(modelMapper.countActiveModelsByProviderId(1L)).thenReturn(0)
+            `when`(modelProviderMapper.selectById(1L)).thenReturn(testProvider)
+            `when`(modelMapper.countModelsByProviderId(1L)).thenReturn(0)
             `when`(modelProviderMapper.deleteById(1L)).thenReturn(0)
 
             // When
@@ -469,6 +491,7 @@ class ModelProviderServiceImplTest {
         @DisplayName("getModelStats - Return model statistics")
         fun `getModelStats should return model statistics`() {
             // Given
+            `when`(modelProviderMapper.selectById(1L)).thenReturn(testProvider)
             `when`(modelMapper.countModelsByProviderId(1L)).thenReturn(10)
             `when`(modelMapper.countActiveModelsByProviderId(1L)).thenReturn(7)
             `when`(modelMapper.countDisabledModelsByProviderId(1L)).thenReturn(3)
@@ -481,6 +504,28 @@ class ModelProviderServiceImplTest {
             assertEquals(10, result.totalModels)
             assertEquals(7, result.enabledModels)
             assertEquals(3, result.disabledModels)
+        }
+
+        @Test
+        @DisplayName("getModelStats - A public provider of another tenant has no stats to hand out")
+        fun `getModelStats should refuse another tenant provider`() {
+            // Given - 公开只决定「别家能不能用」，统计数说的是归属方自己的模型清单
+            val foreign = ModelProvider().apply {
+                id = 1L
+                tenantId = 2L
+                name = "Foreign Provider"
+                type = "anthropic"
+                isPublic = 1
+                status = 1
+                active = 1
+                creator = "other"
+            }
+            `when`(modelProviderMapper.selectById(1L)).thenReturn(foreign)
+
+            val exception = assertThrows<BizException> { modelProviderService.getModelStats(1L) }
+
+            assertEquals("error.model.provider.notfound", exception.message)
+            verify(modelMapper, never()).countModelsByProviderId(anyLong())
         }
     }
 
@@ -530,6 +575,117 @@ class ModelProviderServiceImplTest {
                 modelProviderService.connectivityTest(999L)
             }
             assertEquals("error.model.provider.notfound", exception.message)
+        }
+    }
+
+    @Nested
+    @DisplayName("Tenant Isolation Tests")
+    inner class TenantIsolationTests {
+
+        @AfterEach
+        fun clearTenant() {
+            TenantContext.clear()
+        }
+
+        private fun providerOf(tenantId: Long, publicFlag: Int): ModelProvider = ModelProvider().apply {
+            id = 1L
+            this.tenantId = tenantId
+            name = "Tenant $tenantId Provider"
+            type = "openai"
+            apiKey = "sk-owned"
+            isPublic = publicFlag
+            status = 1
+            active = 1
+            creator = "admin"
+        }
+
+        @Test
+        @DisplayName("getVisibleModelProvider - Own row is visible")
+        fun `getVisibleModelProvider should return the own row`() {
+            TenantContext.setTenantId(2L)
+            `when`(modelProviderMapper.selectById(1L)).thenReturn(providerOf(2L, 0))
+
+            assertNotNull(modelProviderService.getVisibleModelProvider(1L))
+        }
+
+        @Test
+        @DisplayName("getVisibleModelProvider - Public row of another tenant is visible")
+        fun `getVisibleModelProvider should return another tenant public row`() {
+            `when`(modelProviderMapper.selectById(1L)).thenReturn(providerOf(9L, 1))
+
+            assertNotNull(modelProviderService.getVisibleModelProvider(1L))
+        }
+
+        @Test
+        @DisplayName("getVisibleModelProvider - Private row of another tenant reads as absent")
+        fun `getVisibleModelProvider should hide another tenant private row`() {
+            `when`(modelProviderMapper.selectById(1L)).thenReturn(providerOf(9L, 0))
+
+            assertNull(modelProviderService.getVisibleModelProvider(1L))
+        }
+
+        @Test
+        @DisplayName("updateModelProvider - A public row of another tenant still cannot be changed")
+        fun `updateModelProvider should refuse another tenant provider`() {
+            `when`(modelProviderMapper.selectById(1L)).thenReturn(providerOf(9L, 1))
+
+            val exception = assertThrows<BizException> {
+                modelProviderService.updateModelProvider(1L, ModelProviderUpdateRequest(description = "hijack"))
+            }
+
+            assertEquals("error.model.provider.notfound", exception.message)
+            verify(modelProviderMapper, never()).updateById(any())
+        }
+
+        @Test
+        @DisplayName("deleteModelProvider - A public row of another tenant still cannot be deleted")
+        fun `deleteModelProvider should refuse another tenant provider`() {
+            `when`(modelProviderMapper.selectById(1L)).thenReturn(providerOf(9L, 1))
+
+            val exception = assertThrows<BizException> { modelProviderService.deleteModelProvider(1L) }
+
+            assertEquals("error.model.provider.notfound", exception.message)
+            verify(modelProviderMapper, never()).deleteById(anyLong())
+        }
+
+        @Test
+        @DisplayName("connectivityTest - Another tenant provider key is never spent")
+        fun `connectivityTest should refuse another tenant provider`() {
+            `when`(modelProviderMapper.selectById(1L)).thenReturn(providerOf(9L, 1))
+
+            assertThrows<BizException> { modelProviderService.connectivityTest(1L) }
+        }
+
+        @Test
+        @DisplayName("createModelProvider - Store the caller tenant on the row")
+        fun `createModelProvider should stamp the caller tenant`() {
+            TenantContext.setTenantId(3L)
+            `when`(modelProviderMapper.countByName("New Provider", 3L)).thenReturn(0)
+            `when`(modelProviderMapper.insert(any())).thenReturn(1)
+            val captor = argumentCaptor<ModelProvider>()
+
+            val created = modelProviderService.createModelProvider(
+                ModelProviderCreateRequest(name = "New Provider", type = "openai"),
+            )
+
+            assertTrue(created)
+            verify(modelProviderMapper).insert(captor.capture())
+            assertEquals(3L, captor.firstValue.tenantId, "the row must belong to the caller's tenant")
+        }
+
+        @Test
+        @DisplayName("createModelProvider - Another tenant holding the same name does not block it")
+        fun `createModelProvider should scope name uniqueness to the tenant`() {
+            TenantContext.setTenantId(3L)
+            `when`(modelProviderMapper.countByName("Shared Name", 3L)).thenReturn(0)
+            `when`(modelProviderMapper.insert(any())).thenReturn(1)
+
+            val created = modelProviderService.createModelProvider(
+                ModelProviderCreateRequest(name = "Shared Name", type = "openai"),
+            )
+
+            assertTrue(created)
+            verify(modelProviderMapper).countByName("Shared Name", 3L)
         }
     }
 }

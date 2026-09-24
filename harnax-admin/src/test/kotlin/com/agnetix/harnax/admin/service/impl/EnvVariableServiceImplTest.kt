@@ -107,7 +107,7 @@ class EnvVariableServiceImplTest {
         @DisplayName("page - Normal pagination query")
         fun `page should return paginated results`() {
             // Given
-            `when`(envVariableMapper.selectEnvVariableList(null, "admin")).thenReturn(listOf(testEnvVariable))
+            `when`(envVariableMapper.selectEnvVariableList(null, "admin", 1L)).thenReturn(listOf(testEnvVariable))
 
             // When
             val page = createService().page(null, 1, 10)
@@ -115,35 +115,35 @@ class EnvVariableServiceImplTest {
             // Then
             assertNotNull(page)
             assertTrue(page.total >= 0)
-            verify(envVariableMapper).selectEnvVariableList(null, "admin")
+            verify(envVariableMapper).selectEnvVariableList(null, "admin", 1L)
         }
 
         @Test
         @DisplayName("page - Filter by keyword")
         fun `page should filter by keyword`() {
             // Given
-            `when`(envVariableMapper.selectEnvVariableList("API", "admin")).thenReturn(listOf(testEnvVariable))
+            `when`(envVariableMapper.selectEnvVariableList("API", "admin", 1L)).thenReturn(listOf(testEnvVariable))
 
             // When
             val page = createService().page("API", 1, 10)
 
             // Then
             assertNotNull(page)
-            verify(envVariableMapper).selectEnvVariableList("API", "admin")
+            verify(envVariableMapper).selectEnvVariableList("API", "admin", 1L)
         }
 
         @Test
         @DisplayName("page - Bound invalid pageNum and pageSize")
         fun `page should bound invalid pageNum and pageSize`() {
             // Given - pageNum < 1 is coerced to 1 and pageSize is coerced into 1..1000
-            `when`(envVariableMapper.selectEnvVariableList(null, "admin")).thenReturn(emptyList())
+            `when`(envVariableMapper.selectEnvVariableList(null, "admin", 1L)).thenReturn(emptyList())
 
             // When
             val page = createService().page(null, 0, 10000)
 
             // Then
             assertNotNull(page)
-            verify(envVariableMapper).selectEnvVariableList(null, "admin")
+            verify(envVariableMapper).selectEnvVariableList(null, "admin", 1L)
         }
     }
 
@@ -405,7 +405,8 @@ class EnvVariableServiceImplTest {
             // Given: the row already holds ciphertext and the page sends back what the detail API masked
             testEnvVariable.sensitive = 1
             testEnvVariable.envValue = "encrypted-stored-value"
-            val request = EnvVariableUpdateRequest(envValue = "sk****alue")
+            `when`(aesUtil.decrypt("encrypted-stored-value")).thenReturn("sk-live-value")
+            val request = EnvVariableUpdateRequest(envValue = "sk-****ue")
 
             `when`(envVariableMapper.selectById(1L)).thenReturn(testEnvVariable)
             `when`(envVariableMapper.updateById(any())).thenReturn(1)
@@ -414,6 +415,53 @@ class EnvVariableServiceImplTest {
             val result = createService().updateEnvVariable(1L, request)
 
             // Then: encrypting the mask would store the mask in place of the credential
+            assertTrue(result)
+            val captor = argumentCaptor<EnvVariable>()
+            verify(envVariableMapper).updateById(captor.capture())
+            assertEquals("encrypted-stored-value", captor.firstValue.envValue)
+            verify(aesUtil, never()).encrypt(anyString())
+        }
+
+        @Test
+        @DisplayName("updateEnvVariable - A real value that contains asterisks is stored")
+        fun `updateEnvVariable should store a new value that contains the mask pattern`() {
+            // Given: the mask is compared against, not searched for — a credential typed with "****" in
+            // it used to be read as "unchanged", so the call answered success and kept the old secret
+            testEnvVariable.sensitive = 1
+            testEnvVariable.envValue = "encrypted-stored-value"
+            `when`(aesUtil.decrypt("encrypted-stored-value")).thenReturn("sk-live-value")
+            val request = EnvVariableUpdateRequest(envValue = "secret****key")
+
+            `when`(envVariableMapper.selectById(1L)).thenReturn(testEnvVariable)
+            `when`(aesUtil.encrypt("secret****key")).thenReturn("encrypted-asterisk-value")
+            `when`(envVariableMapper.updateById(any())).thenReturn(1)
+
+            // When
+            val result = createService().updateEnvVariable(1L, request)
+
+            // Then
+            assertTrue(result)
+            val captor = argumentCaptor<EnvVariable>()
+            verify(envVariableMapper).updateById(captor.capture())
+            assertEquals("encrypted-asterisk-value", captor.firstValue.envValue)
+        }
+
+        @Test
+        @DisplayName("updateEnvVariable - The full mask of a short stored value keeps the ciphertext")
+        fun `updateEnvVariable should keep ciphertext for full mask of a short value`() {
+            // Given: a four-character credential displays as the fixed mask rather than a reduced one
+            testEnvVariable.sensitive = 1
+            testEnvVariable.envValue = "encrypted-stored-value"
+            `when`(aesUtil.decrypt("encrypted-stored-value")).thenReturn("abcd")
+            val request = EnvVariableUpdateRequest(envValue = "******")
+
+            `when`(envVariableMapper.selectById(1L)).thenReturn(testEnvVariable)
+            `when`(envVariableMapper.updateById(any())).thenReturn(1)
+
+            // When
+            val result = createService().updateEnvVariable(1L, request)
+
+            // Then
             assertTrue(result)
             val captor = argumentCaptor<EnvVariable>()
             verify(envVariableMapper).updateById(captor.capture())
@@ -707,6 +755,52 @@ class EnvVariableServiceImplTest {
             assertEquals("No permission to modify this env variable", exception.message)
             verify(envVariableMapper, never()).toggleEnabled(anyLong(), anyInt())
         }
+
+        @Test
+        @DisplayName("toggleEnabled - Refuse to switch off a variable agents still bind")
+        fun `toggleEnabled should refuse to disable a referenced variable`() {
+            // 停用与删除一样会把值抽走：绑定里存的是 envVarId，每次下发都要现取
+            TenantContext.setTenantId(1L)
+            `when`(envVariableMapper.selectById(1L)).thenReturn(testEnvVariable)
+            `when`(agentMapper.selectByEnvVarRef(1L)).thenReturn(
+                listOf(
+                    Agent().apply {
+                        id = 11L
+                        name = "customer-support"
+                    },
+                ),
+            )
+
+            val exception = assertThrows<RuntimeException> {
+                createService().toggleEnabled(1L, 0)
+            }
+
+            val message = exception.message!!
+            assertTrue(message.contains("Env variable 'API_KEY' is bound by 1 agent(s): customer-support"), message)
+            assertTrue(message.contains("then disable"), message)
+            verify(envVariableMapper, never()).toggleEnabled(anyLong(), anyInt())
+        }
+
+        @Test
+        @DisplayName("toggleEnabled - Switching a referenced variable back on stays open")
+        fun `toggleEnabled should allow re-enabling a referenced variable`() {
+            // 被引用只挡住「把值抽走」的方向，重新启用是补回来
+            TenantContext.setTenantId(1L)
+            `when`(envVariableMapper.selectById(1L)).thenReturn(testEnvVariable)
+            `when`(agentMapper.selectByEnvVarRef(1L)).thenReturn(
+                listOf(
+                    Agent().apply {
+                        id = 11L
+                        name = "customer-support"
+                    },
+                ),
+            )
+            `when`(envVariableMapper.toggleEnabled(1L, 1)).thenReturn(1)
+
+            assertTrue(createService().toggleEnabled(1L, 1))
+
+            verify(envVariableMapper).toggleEnabled(1L, 1)
+        }
     }
 
     @Nested
@@ -808,7 +902,7 @@ class EnvVariableServiceImplTest {
                 creator = "admin"
             }
 
-            `when`(envVariableMapper.selectEnvVariableList(null, "admin"))
+            `when`(envVariableMapper.selectEnvVariableList(null, "admin", 1L))
                 .thenReturn(listOf(testEnvVariable, disabledEnv))
 
             // When
@@ -834,7 +928,7 @@ class EnvVariableServiceImplTest {
                 creator = "admin"
             }
 
-            `when`(envVariableMapper.selectEnvVariableList(null, "admin")).thenReturn(listOf(sensitiveEnv))
+            `when`(envVariableMapper.selectEnvVariableList(null, "admin", 1L)).thenReturn(listOf(sensitiveEnv))
             `when`(aesUtil.decrypt("encrypted-payload")).thenReturn("sk-1234567890abcdef")
 
             // When
@@ -859,7 +953,7 @@ class EnvVariableServiceImplTest {
                 creator = "admin"
             }
 
-            `when`(envVariableMapper.selectEnvVariableList(null, "admin")).thenReturn(listOf(sensitiveEnv))
+            `when`(envVariableMapper.selectEnvVariableList(null, "admin", 1L)).thenReturn(listOf(sensitiveEnv))
             `when`(aesUtil.decrypt("bad-payload")).thenThrow(RuntimeException("decrypt error"))
 
             // When
@@ -874,7 +968,7 @@ class EnvVariableServiceImplTest {
         @DisplayName("listForAgentConfig - Return empty list when no variables")
         fun `listForAgentConfig should return empty list when no variables`() {
             // Given
-            `when`(envVariableMapper.selectEnvVariableList(null, "admin")).thenReturn(emptyList())
+            `when`(envVariableMapper.selectEnvVariableList(null, "admin", 1L)).thenReturn(emptyList())
 
             // When
             val result = createService().listForAgentConfig()
@@ -903,7 +997,7 @@ class EnvVariableServiceImplTest {
             `when`(aesUtil.decrypt("encrypted-payload")).thenReturn("real-secret")
 
             // When
-            val result = createService().getDecryptedValue(2L)
+            val result = createService().getDecryptedValue(2L, 1L)
 
             // Then
             assertEquals("real-secret", result)
@@ -917,7 +1011,7 @@ class EnvVariableServiceImplTest {
             `when`(envVariableMapper.selectById(1L)).thenReturn(testEnvVariable)
 
             // When
-            val result = createService().getDecryptedValue(1L)
+            val result = createService().getDecryptedValue(1L, 1L)
 
             // Then
             assertEquals("sk-plain-value", result)
@@ -931,7 +1025,7 @@ class EnvVariableServiceImplTest {
             `when`(envVariableMapper.selectById(999L)).thenReturn(null)
 
             // When
-            val result = createService().getDecryptedValue(999L)
+            val result = createService().getDecryptedValue(999L, 1L)
 
             // Then
             assertNull(result)
@@ -952,7 +1046,7 @@ class EnvVariableServiceImplTest {
             `when`(aesUtil.decrypt("bad-payload")).thenThrow(RuntimeException("decrypt error"))
 
             // When
-            val result = createService().getDecryptedValue(2L)
+            val result = createService().getDecryptedValue(2L, 1L)
 
             // Then
             assertNull(result)
@@ -973,7 +1067,7 @@ class EnvVariableServiceImplTest {
             `when`(envVariableMapper.selectById(2L)).thenReturn(paused)
 
             // When & Then
-            assertNull(createService().getDecryptedValue(2L))
+            assertNull(createService().getDecryptedValue(2L, 1L))
         }
     }
 }

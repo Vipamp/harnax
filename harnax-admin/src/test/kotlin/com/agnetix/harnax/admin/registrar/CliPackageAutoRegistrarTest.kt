@@ -15,6 +15,7 @@ import com.agnetix.harnax.mapper.TeamSkillBindingMapper
 import io.minio.BucketExistsArgs
 import io.minio.MinioClient
 import io.minio.PutObjectArgs
+import io.minio.RemoveObjectArgs
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry
 import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -31,6 +32,8 @@ import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mock
 import org.mockito.Mockito.atLeastOnce
+import org.mockito.Mockito.inOrder
+import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
@@ -42,6 +45,8 @@ import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.quality.Strictness
 import org.springframework.beans.factory.ObjectProvider
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.TransactionStatus
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.file.attribute.FileTime
@@ -51,8 +56,9 @@ import java.nio.file.attribute.FileTime
  *
  * The registrar is the only writer of the `cli` table, so what is covered here is the lifecycle it
  * decides: whether a row exists at all, whether its archive is re-uploaded, whether a skill follows the
- * operator's switch, which of two packages claiming one name wins, and whether a row is allowed to be
- * deleted. Archive rules belong to [CliPackageParserTest]; the one column this class must not touch —
+ * operator's switch, whether the rows one package writes land as one unit, which of two packages claiming
+ * one name wins, and whether a row is allowed to be deleted. Archive rules belong to
+ * [CliPackageParserTest]; the one column this class must not touch —
  * `status` — is asserted against a real database by CliManagementIT, because the guard is a SQL column
  * list and a mocked mapper cannot see it.
  */
@@ -89,12 +95,18 @@ class CliPackageAutoRegistrarTest {
     @Mock
     private lateinit var minio: MinioClient
 
+    @Mock
+    private lateinit var transactionManager: PlatformTransactionManager
+
     /** The last skill row [SkillMapper.insert] was called with, as the registrar handed it over. */
     private var lastInsertedSkill: Skill? = null
 
     @BeforeEach
     fun setUp() {
         `when`(minioClients.getIfAvailable()).thenReturn(minio)
+        // One status per transaction, not one shared stub: a run that registers two packages and then
+        // prunes opens three transactions, and the assertions below name which one rolled back.
+        `when`(transactionManager.getTransaction(any())).thenAnswer { mock(TransactionStatus::class.java) }
         `when`(minio.bucketExists(any<BucketExistsArgs>())).thenReturn(true)
         `when`(skillRepositoryMapper.selectBuiltinRepository(BuiltinRepository.CLI_SKILLS)).thenReturn(repository())
         `when`(skillMapper.selectByNameAndRepo(anyString(), anyLong())).thenReturn(null)
@@ -121,6 +133,7 @@ class CliPackageAutoRegistrarTest {
         teamSkillBindingMapper,
         secretFieldEncryptor,
         minioClients,
+        transactionManager,
         dir.path,
         BUCKET,
     )
@@ -411,6 +424,113 @@ runtimeEnv:
 
             assertEquals(SKILL_ID, capturedCli().skillId)
             assertEquals(0, requireNotNull(lastInsertedSkill).status)
+        }
+    }
+
+    /**
+     * The two rows a package writes are one unit of work, and so are the rows a prune removes.
+     *
+     * `register` puts the shipped skill in before the `cli` row that points at it; the prune deletes
+     * bindings, the skill and the `cli` row. Neither half can land alone: a skill row no `cli.skill_id`
+     * names is invisible to every later prune forever, and bindings whose `cli` row vanished are agents
+     * configured with a CLI that no longer exists. The archive stays outside the transaction on purpose —
+     * an object store cannot roll back, so the failure mode that leaves a stray object behind is the one
+     * that never leaves a committed row pointing at nothing.
+     */
+    @Nested
+    inner class TransactionScope {
+        @Test
+        fun `the shipped skill and the cli row commit together`() {
+            writePackage("demo", "1.4.0")
+            sync()
+
+            // The order is the point, not the count: with the skill write outside the transaction the run
+            // still commits and the orphan this fix exists to prevent comes straight back.
+            val order = inOrder(transactionManager, skillMapper, cliMapper)
+            order.verify(transactionManager).getTransaction(any())
+            order.verify(skillMapper).insert(any())
+            order.verify(cliMapper).upsertCliPackage(any())
+            order.verify(transactionManager).commit(any())
+            verify(transactionManager, never()).rollback(any())
+        }
+
+        @Test
+        fun `a skill write that fails rolls back and never reaches the cli row`() {
+            writePackage("demo", "1.4.0")
+            `when`(skillMapper.insert(any())).thenThrow(RuntimeException("skill write failed"))
+            sync()
+
+            // A rollback can only be asked for by an exception that escaped the transaction body, so
+            // this is what proves the skill write is inside it — and the cli row is the one that follows.
+            verify(transactionManager).rollback(any())
+            verify(transactionManager, never()).commit(any())
+            verify(cliMapper, never()).upsertCliPackage(any())
+        }
+
+        @Test
+        fun `a cli row that fails to write rolls its skill back and prunes nothing`() {
+            writePackage("demo", "1.4.0")
+            `when`(cliMapper.upsertCliPackage(any())).thenThrow(RuntimeException("cli write failed"))
+            sync()
+
+            // Without the transaction this is the orphan: an active skill row in the managed repository
+            // that no cli row names, which the prune only ever reaches through cli.skill_id.
+            verify(transactionManager).rollback(any())
+            verify(transactionManager, never()).commit(any())
+            verify(cliMapper, never()).selectAll()
+        }
+
+        @Test
+        fun `the archive is stored before the transaction opens`() {
+            writePackage("demo", "1.4.0")
+            sync()
+
+            val order = inOrder(minio, transactionManager)
+            order.verify(minio).putObject(any<PutObjectArgs>())
+            order.verify(transactionManager).getTransaction(any())
+        }
+
+        @Test
+        fun `a prune that fails on its first delete rolls back and stops before the cli row`() {
+            writePackage("demo", "1.4.0")
+            writePackage("other", "2.0.0")
+            `when`(cliMapper.selectAll()).thenReturn(
+                listOf(
+                    staleRow(1L, "demo", 11L),
+                    staleRow(2L, "other", 12L),
+                    staleRow(3L, "gone", 13L),
+                ),
+            )
+            `when`(agentCliBindingMapper.deleteByCliIds(any())).thenThrow(RuntimeException("binding delete failed"))
+            assertThrows(RuntimeException::class.java) { sync() }
+
+            // Without the transaction the bindings of a stale row are gone while its `cli` row lives on —
+            // an agent quietly missing a CLI, with no row left to prune it from.
+            verify(transactionManager).rollback(any())
+            verify(cliMapper, never()).deleteByIds(any())
+            verify(minio, never()).removeObject(any<RemoveObjectArgs>())
+        }
+
+        @Test
+        fun `a prune that fails after its skill deletes still reclaims nothing`() {
+            writePackage("demo", "1.4.0")
+            writePackage("other", "2.0.0")
+            `when`(cliMapper.selectAll()).thenReturn(
+                listOf(
+                    staleRow(1L, "demo", 11L),
+                    staleRow(2L, "other", 12L),
+                    staleRow(3L, "gone", 13L),
+                ),
+            )
+            `when`(cliMapper.deleteByIds(any())).thenThrow(RuntimeException("cli delete failed"))
+
+            assertThrows(RuntimeException::class.java) { sync() }
+
+            verify(skillMapper).deleteById(13L)
+            verify(transactionManager).rollback(any())
+            // The reclaim sits after the commit, so a rolled-back prune must not delete the archive the
+            // row that is still live points at.
+            verify(minio, never()).removeObject(any<RemoveObjectArgs>())
         }
     }
 

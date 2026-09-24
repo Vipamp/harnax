@@ -3,11 +3,13 @@ package com.agnetix.harnax.admin.service.impl
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.AgentCliBinding
+import com.agnetix.harnax.entity.AgentMcpBinding
 import com.agnetix.harnax.entity.ApiKeyEntity
 import com.agnetix.harnax.entity.Channel
 import com.agnetix.harnax.entity.Session
 import com.agnetix.harnax.mapper.AgentCliBindingMapper
 import com.agnetix.harnax.mapper.AgentMapper
+import com.agnetix.harnax.mapper.AgentMcpBindingMapper
 import com.agnetix.harnax.mapper.ApiKeyMapper
 import com.agnetix.harnax.mapper.ChannelMapper
 import com.agnetix.harnax.mapper.SessionMapper
@@ -53,6 +55,9 @@ class AgentSessionRefreshServiceTest {
     @Mock
     private lateinit var cliBindingMapper: AgentCliBindingMapper
 
+    @Mock
+    private lateinit var mcpBindingMapper: AgentMcpBindingMapper
+
     /** 使用真实 AesUtil 加解密 SYSTEM key */
     private val aesUtil = AesUtil("test-secret-key-for-unit-tests!!")
 
@@ -75,6 +80,7 @@ class AgentSessionRefreshServiceTest {
         apiKeyMapper,
         agentMapper,
         cliBindingMapper,
+        mcpBindingMapper,
         aesUtil,
         routerUrl,
     )
@@ -388,6 +394,66 @@ class AgentSessionRefreshServiceTest {
             `when`(cliBindingMapper.selectByCliId(5L)).thenReturn(emptyList())
 
             assertTrue(createService().listAgentsByCli(5L).isEmpty())
+        }
+    }
+
+    @Nested
+    @DisplayName("按MCP查询关联Agent测试")
+    inner class ListAgentsByMcpTests {
+
+        private fun binding(agentId: Long) = AgentMcpBinding().apply {
+            this.agentId = agentId
+            this.mcpId = 7L
+        }
+
+        @Test
+        @DisplayName("listAgentsByMcp - 返回绑定该MCP的Agent信息")
+        fun `listAgentsByMcp should return agents binding the mcp`() {
+            // Given
+            `when`(mcpBindingMapper.selectByMcpId(7L)).thenReturn(listOf(binding(10L), binding(11L)))
+            `when`(agentMapper.selectById(10L)).thenReturn(
+                Agent().apply {
+                    id = 10L
+                    name = "客服Agent"
+                    status = 1
+                },
+            )
+            `when`(agentMapper.selectById(11L)).thenReturn(
+                Agent().apply {
+                    id = 11L
+                    name = "翻译Agent"
+                    status = 0
+                },
+            )
+
+            // When
+            val result = createService().listAgentsByMcp(7L)
+
+            // Then
+            assertEquals(2, result.size)
+            assertEquals("客服Agent", result[0].agentName)
+            assertEquals(1, result[0].status)
+            assertEquals("翻译Agent", result[1].agentName)
+            assertEquals(0, result[1].status)
+        }
+
+        @Test
+        @DisplayName("listAgentsByMcp - 去重相同Agent的多条绑定，无绑定时为空")
+        fun `listAgentsByMcp should deduplicate agent ids`() {
+            // Given - 一张表里同一 agent 可以绑同一 MCP 的多条历史行
+            `when`(mcpBindingMapper.selectByMcpId(7L)).thenReturn(listOf(binding(10L), binding(10L)))
+            `when`(agentMapper.selectById(10L)).thenReturn(
+                Agent().apply {
+                    id = 10L
+                    name = "客服Agent"
+                    status = 1
+                },
+            )
+
+            // When & Then
+            assertEquals(1, createService().listAgentsByMcp(7L).size)
+            `when`(mcpBindingMapper.selectByMcpId(8L)).thenReturn(emptyList())
+            assertTrue(createService().listAgentsByMcp(8L).isEmpty())
         }
     }
 

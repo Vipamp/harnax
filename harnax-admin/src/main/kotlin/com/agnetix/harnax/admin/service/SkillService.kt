@@ -76,16 +76,7 @@ interface SkillService {
     fun getByNameAndRepo(repositoryId: Long, name: String): Skill?
 
     /**
-     * Batch save skills (for sync)
-     *
-     * @param repositoryId Repository ID
-     * @param skills       Skill list
-     * @return Number of saved skills
-     */
-    fun batchSaveSkills(repositoryId: Long, skills: List<String>): Int
-
-    /**
-     * Same selective sync as [batchSaveSkills], but reporting what happened to every skill.
+     * Batch save skills (for sync), reporting what happened to every skill.
      *
      * A skill that could not be stored used to disappear behind a warn log while the endpoint
      * still answered 200 with a smaller count.

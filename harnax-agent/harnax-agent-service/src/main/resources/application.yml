@@ -43,6 +43,9 @@ harness:
   enable-workspace-context: ${HARNESS_ENABLE_WORKSPACE_CONTEXT:true}
   enable-memory-hooks: ${HARNESS_ENABLE_MEMORY_HOOKS:false}
   enable-session-persistence: ${HARNESS_ENABLE_SESSION_PERSISTENCE:true}
+  # Budget of one agent turn (batch and streaming). A team run is bounded by `harness.team.*` instead,
+  # so team leads and members do not get this limit.
+  turn-timeout-seconds: ${HARNAX_TURN_TIMEOUT_SECONDS:300}
   # Second line of defence for stdio MCP servers: admin holds such rows back from delivery, and this
   # runtime refuses to start one even if a row reaches it. Same env var as the admin's own switch.
   mcp-stdio-enabled: ${HARNAX_MCP_STDIO_ENABLED:false}

@@ -15,6 +15,10 @@
         SELECT * FROM agent_mcp_binding WHERE agent_id = #{agentId} ORDER BY id
     </select>
 
+    <select id="selectByMcpId" resultMap="AgentMcpBindingResultMap">
+        SELECT * FROM agent_mcp_binding WHERE mcp_id = #{mcpId} ORDER BY id
+    </select>
+
     <insert id="batchInsert">
         INSERT INTO agent_mcp_binding (agent_id, mcp_id, env_bindings, create_time, update_time)
         VALUES

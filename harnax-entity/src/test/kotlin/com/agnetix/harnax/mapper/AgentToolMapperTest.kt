@@ -14,6 +14,7 @@ import org.testcontainers.containers.MySQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -21,8 +22,8 @@ import kotlin.test.assertTrue
 /**
  * AgentToolMapper Integration Tests
  *
- * The table is written only by the startup sync, so the write-side cases here go through
- * upsertBuiltinTool / deleteBuiltinByIds instead of a CRUD surface.
+ * The table is platform-scoped and additive (V40): the sync resolves a declaration by `name`, so the
+ * write-side cases here go through `insert` / `updateById` — there is no delete on this mapper.
  *
  * @author agnetix
  * @since 2026-04-25
@@ -53,9 +54,8 @@ open class AgentToolMapperTest {
     @Autowired
     private lateinit var agentToolMapper: AgentToolMapper
 
-    /** A row as the code sync would write it; bean/method pick the uk_tenant_bean_method slot. */
-    private fun syncedTool(beanName: String, methodName: String, name: String = methodName): AgentTool = AgentTool().apply {
-        tenantId = 1L
+    /** A row as the code sync would write it; `name` is the identity, bean/method only serve instantiation. */
+    private fun syncedTool(name: String, beanName: String, methodName: String = name): AgentTool = AgentTool().apply {
         this.name = name
         displayName = "Synced $name"
         description = "synced by test"
@@ -64,7 +64,6 @@ open class AgentToolMapperTest {
         readOnly = 0
         needConfirm = 0
         isRequired = 0
-        timeoutSeconds = 30
         status = 1
         active = 1
     }
@@ -96,16 +95,16 @@ open class AgentToolMapperTest {
         }
 
         @Test
-        @DisplayName("selectById - Do not return deleted AgentTool")
-        fun `selectById should not return deleted agent tool`() {
-            // 种子数据 id=6 是 deleted-tool（active=0）；id=5 是 disabled-tool，只是 status=0，仍然可查
+        @DisplayName("selectById - Do not return an inactive AgentTool")
+        fun `selectById should not return inactive agent tool`() {
+            // 种子 id=6 是历史软删残留（active=0）；id=5 是 disabled-tool，只是 status=0，仍然可查
             assertNull(agentToolMapper.selectById(6L))
             assertNotNull(agentToolMapper.selectById(5L))
         }
 
         @Test
         @DisplayName("selectByIds - Batch load keeps only active rows")
-        fun `selectByIds should skip deleted rows`() {
+        fun `selectByIds should skip inactive rows`() {
             val tools = agentToolMapper.selectByIds(listOf(1L, 2L, 6L))
 
             assertEquals(2, tools.size)
@@ -128,12 +127,15 @@ open class AgentToolMapperTest {
         }
 
         @Test
-        @DisplayName("selectByBeanName - One record per @Tool method")
-        fun `selectByBeanName should return every method of the toolbox`() {
-            val tools = agentToolMapper.selectByBeanName("time-tool-box")
+        @DisplayName("selectByName - Also finds an inactive row, because it is the sync's identity lookup")
+        fun `selectByName should find an inactive row`() {
+            // The retired manual delete left rows at active = 0. The name is still taken: missing it
+            // would make the sync insert a second row under uk_agent_tool_name instead of reviving this one.
+            val agentTool = agentToolMapper.selectByName("deleted-tool")
 
-            assertEquals(2, tools.size)
-            assertTrue(tools.all { it.beanName == "time-tool-box" })
+            assertNotNull(agentTool)
+            assertEquals(6L, agentTool.id)
+            assertEquals(0, agentTool.active)
         }
     }
 
@@ -147,7 +149,7 @@ open class AgentToolMapperTest {
             val agentTools = agentToolMapper.selectAgentToolList(null, null)
 
             assertTrue(agentTools.isNotEmpty())
-            // id=6 is soft-deleted, so the seed leaves four queryable rows
+            // id=6 is inactive, so the seed leaves four queryable rows
             assertEquals(4, agentTools.size)
             assertTrue(agentTools.none { it.id == 6L })
         }
@@ -197,10 +199,10 @@ open class AgentToolMapperTest {
         fun `selectRequiredTools should return mandatory tools only`() {
             assertTrue(agentToolMapper.selectRequiredTools().isEmpty())
 
-            val mandatory = syncedTool("mandatory-tool-box", "doMandatory", name = "mandatory_tool").apply {
+            val mandatory = syncedTool("mandatory_tool", "mandatory-tool-box", "doMandatory").apply {
                 isRequired = 1
             }
-            agentToolMapper.upsertBuiltinTool(mandatory)
+            agentToolMapper.insert(mandatory)
 
             val tools = agentToolMapper.selectRequiredTools()
             assertEquals(1, tools.size)
@@ -213,51 +215,64 @@ open class AgentToolMapperTest {
     inner class SyncWritePath {
 
         @Test
-        @DisplayName("upsertBuiltinTool - Insert then refresh in place on the same key")
-        fun `upsertBuiltinTool should insert and then update the same row`() {
-            val tool = syncedTool("sync-tool-box", "syncMethod")
-            assertEquals(1, agentToolMapper.upsertBuiltinTool(tool))
+        @DisplayName("insert - Stamps the row as the sync would, creator included")
+        fun `insert should write an enabled row stamped by the system`() {
+            val tool = syncedTool("sync_tool", "sync-tool-box", "syncMethod").apply { creator = "someone" }
 
-            val inserted = agentToolMapper.selectByName("syncMethod")
+            assertEquals(1, agentToolMapper.insert(tool))
+            assertTrue(tool.id > 0)
+
+            val inserted = agentToolMapper.selectByName("sync_tool")
             assertNotNull(inserted)
-            assertTrue(inserted.id > 0)
-
-            // Second pass on the same (tenant, bean, method): the row is refreshed, not duplicated
-            inserted.description = "changed by the next startup"
-            assertEquals(2, agentToolMapper.upsertBuiltinTool(inserted))
-
-            val refreshed = agentToolMapper.selectByName("syncMethod")
-            assertEquals(inserted.id, refreshed?.id)
-            assertEquals("changed by the next startup", refreshed?.description)
-            assertEquals(1, agentToolMapper.selectByBeanName("sync-tool-box").size)
+            assertEquals("SYSTEM", inserted.creator)
+            assertEquals(1, inserted.status)
+            assertEquals(1, inserted.active)
         }
 
         @Test
-        @DisplayName("upsertBuiltinTool - Creator is the sync, never the caller")
-        fun `upsertBuiltinTool should stamp the system creator`() {
-            agentToolMapper.upsertBuiltinTool(syncedTool("creator-tool-box", "syncMethod").apply { creator = "someone" })
+        @DisplayName("insert - The name is the identity: a second row with it is refused")
+        fun `insert should refuse a duplicate name`() {
+            agentToolMapper.insert(syncedTool("identity_tool", "a-tool-box", "run"))
 
-            assertEquals("SYSTEM", agentToolMapper.selectByName("syncMethod")?.creator)
+            assertFailsWith<Exception> {
+                agentToolMapper.insert(syncedTool("identity_tool", "b-tool-box", "run"))
+            }
         }
 
         @Test
-        @DisplayName("selectAllBuiltin - Includes soft-deleted rows so the sync can prune residue")
-        fun `selectAllBuiltin should include inactive rows`() {
-            val all = agentToolMapper.selectAllBuiltin()
+        @DisplayName("updateById - Refreshes the code-owned columns and leaves the identity alone")
+        fun `updateById should refresh the code-owned columns`() {
+            agentToolMapper.insert(syncedTool("refresh_tool", "refresh-tool-box", "run"))
+            val inserted = requireNotNull(agentToolMapper.selectByName("refresh_tool"))
 
-            assertTrue(all.any { it.id == 6L })
+            val desired = syncedTool("refresh_tool", "moved-tool-box", "movedMethod").apply {
+                id = inserted.id
+                description = "changed by the next startup"
+                needConfirm = 1
+            }
+            assertEquals(1, agentToolMapper.updateById(desired))
+
+            val refreshed = agentToolMapper.selectByName("refresh_tool")
+            assertNotNull(refreshed)
+            assertEquals(inserted.id, refreshed.id)
+            assertEquals("changed by the next startup", refreshed.description)
+            assertEquals(1, refreshed.needConfirm)
+            assertEquals("moved-tool-box", refreshed.beanName)
+            assertEquals("SYSTEM", refreshed.creator)
         }
 
         @Test
-        @DisplayName("deleteBuiltinByIds - Hard delete")
-        fun `deleteBuiltinByIds should remove rows`() {
-            agentToolMapper.upsertBuiltinTool(syncedTool("gone-tool-box", "syncMethod"))
-            val id = requireNotNull(agentToolMapper.selectByName("syncMethod")?.id)
+        @DisplayName("updateById - Revives a legacy inactive row instead of leaving it out of delivery")
+        fun `updateById should revive an inactive row`() {
+            val legacy = requireNotNull(agentToolMapper.selectByName("deleted-tool"))
+            assertEquals(0, legacy.active)
 
-            assertEquals(1, agentToolMapper.deleteBuiltinByIds(listOf(id)))
+            val desired = syncedTool("deleted-tool", "revived-tool-box", "run").apply { id = legacy.id }
+            assertEquals(1, agentToolMapper.updateById(desired))
 
-            assertNull(agentToolMapper.selectByName("syncMethod"))
-            assertNull(agentToolMapper.selectById(id))
+            val revived = agentToolMapper.selectByName("deleted-tool")
+            assertEquals(1, revived?.active)
+            assertNotNull(agentToolMapper.selectById(legacy.id))
         }
     }
 }

@@ -41,7 +41,7 @@ class InternalApiIT : BaseAdminIT() {
 
     private fun ensureSession(): String {
         if (sessionUuid.isNotEmpty()) return sessionUuid
-        assertOk(postJson("/api/admin/agents", mapOf("name" to agentName, "status" to 1)))
+        assertOk(postJson("/api/admin/agents", agentCreateBody(agentName)))
         val agent = findInPage("/api/admin/agents/page", "name=$agentName") {
             it["name"]?.asText() == agentName
         }

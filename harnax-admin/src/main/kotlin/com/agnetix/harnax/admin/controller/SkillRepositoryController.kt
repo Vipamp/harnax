@@ -18,8 +18,8 @@ import org.springframework.web.bind.annotation.*
  *
  * Every handler is deprecated in favour of `/api/admin/skill-sources`. The endpoints stay served so
  * external integrations keep working, and each one answers through the same service the new API
- * uses. Nothing inside this repository calls them any more: `harnax-cli`, the webui and the mini
- * program all went over to `skill-sources`.
+ * uses. The webui and the mini program went over to `skill-sources`; `harnax-cli` still calls this
+ * family (`cmd/skill.go`), so dropping an entry point here means moving the CLI off it first.
  */
 @RestController
 @RequestMapping("/api/admin/skill-repositories")

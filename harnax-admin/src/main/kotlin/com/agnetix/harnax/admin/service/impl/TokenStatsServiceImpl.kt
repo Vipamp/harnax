@@ -20,6 +20,13 @@ class TokenStatsServiceImpl(
     private val tokenStatsMapper: TokenStatsMapper,
 ) : TokenStatsService {
 
+    companion object {
+        /**
+         * The one format the window bounds, the generated bucket keys and the response `timePoint` use
+         */
+        private val TIMESTAMP_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+    }
+
     private val log = LoggerFactory.getLogger(TokenStatsServiceImpl::class.java)
 
     @Transactional(rollbackFor = [Exception::class])
@@ -81,18 +88,15 @@ class TokenStatsServiceImpl(
 
         val response = TokenStatsAggregationResponse()
 
-        // Weekly statistics not supported
-        var actualGranularity = if ("week" == granularity) "day" else granularity
-
-        // Query time series data based on time granularity
-        val timeSeriesData = when (actualGranularity) {
+        val timeSeriesData = when (granularity) {
             "hour" -> tokenStatsMapper.getTimeSeriesByHour(startTime, endTime)
+            "week" -> tokenStatsMapper.getTimeSeriesByWeek(startTime, endTime)
             "month" -> tokenStatsMapper.getTimeSeriesByMonth(startTime, endTime)
             else -> tokenStatsMapper.getTimeSeriesByDay(startTime, endTime)
         }
 
-        // Fill all time points (even if no data, should display as 0)
-        val filledTimeSeriesData = fillTimePoints(timeSeriesData, startTime, endTime, actualGranularity)
+        // Every bucket in the window gets a point; the ones without traffic report 0
+        val filledTimeSeriesData = fillTimePoints(timeSeriesData, startTime, endTime, granularity)
 
         response.timeSeriesData = filledTimeSeriesData.map { TokenStatsAggregationResponse.mapToTimeSeriesData(it) }
 
@@ -138,25 +142,24 @@ class TokenStatsServiceImpl(
     ): TokenStatsAggregationResponse {
         val response = TokenStatsAggregationResponse()
 
-        // Weekly statistics not supported
-        var actualGranularity = if ("week" == granularity) "day" else granularity
-
-        // Query time series data based on dimension type and time granularity
         val timeSeriesData = when (dimensionType) {
-            "model" -> when (actualGranularity) {
+            "model" -> when (granularity) {
                 "hour" -> tokenStatsMapper.getModelTimeSeriesByHour(startTime, endTime)
+                "week" -> tokenStatsMapper.getModelTimeSeriesByWeek(startTime, endTime)
                 "month" -> tokenStatsMapper.getModelTimeSeriesByMonth(startTime, endTime)
                 else -> tokenStatsMapper.getModelTimeSeriesByDay(startTime, endTime)
             }
 
-            "agent" -> when (actualGranularity) {
+            "agent" -> when (granularity) {
                 "hour" -> tokenStatsMapper.getAgentTimeSeriesByHour(startTime, endTime)
+                "week" -> tokenStatsMapper.getAgentTimeSeriesByWeek(startTime, endTime)
                 "month" -> tokenStatsMapper.getAgentTimeSeriesByMonth(startTime, endTime)
                 else -> tokenStatsMapper.getAgentTimeSeriesByDay(startTime, endTime)
             }
 
-            "session" -> when (actualGranularity) {
+            "session" -> when (granularity) {
                 "hour" -> tokenStatsMapper.getSessionTimeSeriesByHour(startTime, endTime)
+                "week" -> tokenStatsMapper.getSessionTimeSeriesByWeek(startTime, endTime)
                 "month" -> tokenStatsMapper.getSessionTimeSeriesByMonth(startTime, endTime)
                 else -> tokenStatsMapper.getSessionTimeSeriesByDay(startTime, endTime)
             }
@@ -169,12 +172,12 @@ class TokenStatsServiceImpl(
             timeSeriesData,
             startTime,
             endTime,
-            actualGranularity,
+            granularity,
             dimensionType,
         )
 
         response.timeSeriesData = filledTimeSeriesData.map {
-            TokenStatsAggregationResponse.mapToDimensionTimeSeriesData(it as MutableMap<String?, Any?>, dimensionType)
+            TokenStatsAggregationResponse.mapToDimensionTimeSeriesData(it, dimensionType)
         }
 
         log.info("{} time series data retrieval completed, total {} records", dimensionType, response.timeSeriesData!!.size)
@@ -182,85 +185,23 @@ class TokenStatsServiceImpl(
     }
 
     /**
-     * Fill time points to ensure all time points from start to end have data (points without data are 0)
+     * Fill time points so every bucket in the window has a point, the ones without data being 0
      */
     private fun fillTimePoints(
         queryData: MutableList<MutableMap<String?, Any?>?>?,
         startTimeStr: String,
         endTimeStr: String,
         granularity: String,
-    ): List<Map<String, Any>> {
-        val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-        val startTime = LocalDateTime.parse(startTimeStr, formatter)
-        val endTime = LocalDateTime.parse(endTimeStr, formatter)
-
-        // Convert query results to Map for easy lookup
-        val dataMap = mutableMapOf<String, Map<String?, Any?>?>()
-        for (data in queryData ?: emptyList()) {
-            val timePointObj = data?.get("timePoint") as? LocalDateTime?
-            if (timePointObj != null) {
-                val timeKey = if (true) {
-                    timePointObj.format(formatter)
-                } else {
-                    timePointObj.toString()
-                }
-                dataMap[timeKey] = data
-            }
+    ): List<Map<String?, Any?>> {
+        val rowsByBucket = rowsByBucket(queryData)
+        return timePoints(startTimeStr, endTimeStr, granularity).map { timePoint ->
+            val row = rowsByBucket[timePoint]
+            if (row == null) emptyBucket(timePoint) else row.withTimePoint(timePoint)
         }
-
-        val result = mutableListOf<Map<String, Any?>?>()
-        var currentTime = startTime
-
-        // Normalize start time based on granularity
-        currentTime = when (granularity) {
-            "hour" -> currentTime.withMinute(0).withSecond(0)
-            "month" -> currentTime.withDayOfMonth(1).withHour(0).withMinute(0).withSecond(0)
-            else -> currentTime.withHour(0).withMinute(0).withSecond(0)
-        }
-
-        while (!currentTime.isAfter(endTime)) {
-            val (timeKey, displayTime) = when (granularity) {
-                "hour" -> Pair(
-                    currentTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:00:00")),
-                    currentTime.format(formatter),
-                ).also { currentTime = currentTime.plusHours(1) }
-
-                "month" -> Pair(
-                    currentTime.format(DateTimeFormatter.ofPattern("yyyy-MM")),
-                    currentTime.format(formatter),
-                ).also { currentTime = currentTime.plusMonths(1).withDayOfMonth(1) }
-
-                else -> Pair(
-                    currentTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd 00:00:00")),
-                    currentTime.format(formatter),
-                ).also { currentTime = currentTime.plusDays(1) }
-            }
-
-            // Find data for this time point, if not found create with 0
-            val data = dataMap[timeKey]
-            if (data == null) {
-                // Create empty data
-                val emptyData = mutableMapOf<String, Any>(
-                    "timePoint" to displayTime,
-                    "totalInputToken" to 0L,
-                    "totalOutputToken" to 0L,
-                    "grandTotalToken" to 0L,
-                    "totalFee" to BigDecimal.ZERO,
-                )
-                result.add(emptyData)
-            } else {
-                // Use queried data, but update timePoint to display time
-                val mutableData = data.toMutableMap()
-                mutableData["timePoint"] = displayTime
-                result.add(mutableData as Map<String, Any?>?)
-            }
-        }
-
-        return result as List<Map<String, Any>>
     }
 
     /**
-     * Fill dimension time points to ensure all time points from start to end have data for each dimension (points without data are 0)
+     * Fill time points per dimension, so each dimension reports a point for every bucket in the window
      */
     private fun fillDimensionTimePoints(
         queryData: List<MutableMap<String?, Any?>?>?,
@@ -268,114 +209,122 @@ class TokenStatsServiceImpl(
         endTimeStr: String,
         granularity: String,
         dimensionType: String,
-    ): List<Map<String, Any>> {
-        val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-        val startTime = LocalDateTime.parse(startTimeStr, formatter)
-        val endTime = LocalDateTime.parse(endTimeStr, formatter)
-
-        // Group by dimension ID
-        val dimensionIdField = when (dimensionType) {
+    ): List<Map<String?, Any?>> {
+        val idField = when (dimensionType) {
             "session" -> "sessionId"
             "agent" -> "agentId"
             else -> "modelId"
         }
-
-        val dimensionGroups = mutableMapOf<String, MutableList<Map<String, Any>>>()
-        if (queryData != null) {
-            for (data in queryData) {
-                val dimIdObj = data?.get(dimensionIdField)
-                val dimId = dimIdObj?.toString() ?: "unknown"
-                dimensionGroups.computeIfAbsent(dimId) { mutableListOf() }.add(data as Map<String, Any>)
-            }
+        val nameField = when (dimensionType) {
+            "session" -> "sessionTitle"
+            "agent" -> "agentName"
+            else -> "modelName"
         }
 
-        val result = mutableListOf<Map<String, Any>>()
+        val dimensionGroups = mutableMapOf<String, MutableList<MutableMap<String?, Any?>?>>()
+        for (data in queryData ?: emptyList()) {
+            val dimensionId = data?.get(idField)?.toString() ?: "unknown"
+            dimensionGroups.computeIfAbsent(dimensionId) { mutableListOf() }.add(data)
+        }
 
-        // Fill time points for each dimension
-        for ((dimensionId, dimData) in dimensionGroups) {
-            // Convert this dimension's data to Map
-            val dataMap = mutableMapOf<String, Map<String, Any>>()
-            for (data in dimData) {
-                val timePointObj = data["timePoint"]
-                if (timePointObj != null) {
-                    val timeKey = if (timePointObj is LocalDateTime) {
-                        timePointObj.format(formatter)
+        val points = timePoints(startTimeStr, endTimeStr, granularity)
+        val result = mutableListOf<Map<String?, Any?>>()
+        for (rows in dimensionGroups.values) {
+            val rowsByBucket = rowsByBucket(rows)
+            // A zero-filled bucket still has to carry its dimension, else the series loses its legend.
+            // Names stay nullable: the LEFT JOIN yields NULL once the model/agent/session row is gone.
+            val sample = rows.firstOrNull { it != null } ?: emptyMap()
+            for (timePoint in points) {
+                val row = rowsByBucket[timePoint]
+                result.add(
+                    if (row == null) {
+                        emptyBucket(timePoint).apply {
+                            put(idField, sample[idField])
+                            put(nameField, sample[nameField])
+                        }
                     } else {
-                        timePointObj.toString()
-                    }
-                    dataMap[timeKey] = data
-                }
-            }
-
-            // Fill time points for this dimension
-            var currentTime = startTime
-
-            // Normalize start time based on granularity
-            currentTime = when (granularity) {
-                "hour" -> currentTime.withMinute(0).withSecond(0)
-                "month" -> currentTime.withDayOfMonth(1).withHour(0).withMinute(0).withSecond(0)
-                else -> currentTime.withHour(0).withMinute(0).withSecond(0)
-            }
-
-            while (!currentTime.isAfter(endTime)) {
-                val (timeKey, displayTime) = when (granularity) {
-                    "hour" -> Pair(
-                        currentTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:00:00")),
-                        currentTime.format(formatter),
-                    ).also { currentTime = currentTime.plusHours(1) }
-
-                    "month" -> Pair(
-                        currentTime.format(DateTimeFormatter.ofPattern("yyyy-MM")),
-                        currentTime.format(formatter),
-                    ).also { currentTime = currentTime.plusMonths(1).withDayOfMonth(1) }
-
-                    else -> Pair(
-                        currentTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd 00:00:00")),
-                        currentTime.format(formatter),
-                    ).also { currentTime = currentTime.plusDays(1) }
-                }
-
-                // Find data for this time point, if not found create with 0
-                val data = dataMap[timeKey]
-                if (data == null) {
-                    // Create empty data, preserve dimension information
-                    val emptyData = mutableMapOf<String, Any>(
-                        "timePoint" to displayTime,
-                        "totalInputToken" to 0L,
-                        "totalOutputToken" to 0L,
-                        "grandTotalToken" to 0L,
-                        "totalFee" to BigDecimal.ZERO,
-                    )
-
-                    // Preserve dimension fields
-                    val sampleData = if (dimData.isEmpty()) emptyMap() else dimData[0]
-                    when (dimensionType) {
-                        "model" -> {
-                            emptyData["modelId"] = sampleData["modelId"]!!
-                            emptyData["modelName"] = sampleData["modelName"]!!
-                        }
-
-                        "agent" -> {
-                            emptyData["agentId"] = sampleData["agentId"]!!
-                            emptyData["agentName"] = sampleData["agentName"]!!
-                        }
-
-                        "session" -> {
-                            emptyData["sessionId"] = sampleData["sessionId"]!!
-                            emptyData["sessionTitle"] = sampleData["sessionTitle"]!!
-                        }
-                    }
-
-                    result.add(emptyData)
-                } else {
-                    // Use queried data, but update timePoint to display time
-                    val mutableData = data.toMutableMap()
-                    mutableData["timePoint"] = displayTime
-                    result.add(mutableData)
-                }
+                        row.withTimePoint(timePoint)
+                    },
+                )
             }
         }
-
         return result
     }
+
+    /**
+     * Index series rows by the bucket they belong to
+     *
+     * Every statement CASTs its bucket to DATETIME at the bucket start, so a row keys with the same full
+     * timestamp the generated points use. The month branch used to build the lookup key as `yyyy-MM`, which
+     * matched nothing and left an otherwise correct query rendering as an all-zero series.
+     */
+    private fun rowsByBucket(
+        queryData: List<MutableMap<String?, Any?>?>?,
+    ): Map<String, MutableMap<String?, Any?>> {
+        val rows = mutableMapOf<String, MutableMap<String?, Any?>>()
+        for (data in queryData ?: emptyList()) {
+            val timePoint = data?.get("timePoint") as? LocalDateTime ?: continue
+            rows[timePoint.format(TIMESTAMP_FORMATTER)] = data
+        }
+        return rows
+    }
+
+    /**
+     * Every bucket key from the window start to its end, inclusive
+     */
+    private fun timePoints(
+        startTimeStr: String,
+        endTimeStr: String,
+        granularity: String,
+    ): List<String> {
+        val endTime = LocalDateTime.parse(endTimeStr, TIMESTAMP_FORMATTER)
+        val points = mutableListOf<String>()
+        var currentTime = alignToBucketStart(LocalDateTime.parse(startTimeStr, TIMESTAMP_FORMATTER), granularity)
+        while (!currentTime.isAfter(endTime)) {
+            points.add(currentTime.format(TIMESTAMP_FORMATTER))
+            currentTime = nextBucket(currentTime, granularity)
+        }
+        return points
+    }
+
+    /**
+     * Roll a timestamp down to the start of its bucket. Week buckets start on Monday to match the
+     * `weekBucket` fragment in TokenStatsMapper.xml — any other alignment keys every generated point
+     * away from its row and zeroes the series.
+     */
+    private fun alignToBucketStart(
+        time: LocalDateTime,
+        granularity: String,
+    ): LocalDateTime = when (granularity) {
+        "hour" -> time.withMinute(0).withSecond(0).withNano(0)
+
+        "week" -> time.minusDays((time.dayOfWeek.value - 1).toLong())
+            .withHour(0).withMinute(0).withSecond(0).withNano(0)
+
+        "month" -> time.withDayOfMonth(1).withHour(0).withMinute(0).withSecond(0).withNano(0)
+        else -> time.withHour(0).withMinute(0).withSecond(0).withNano(0)
+    }
+
+    private fun nextBucket(
+        time: LocalDateTime,
+        granularity: String,
+    ): LocalDateTime = when (granularity) {
+        "hour" -> time.plusHours(1)
+        "week" -> time.plusWeeks(1)
+        "month" -> time.plusMonths(1)
+        else -> time.plusDays(1)
+    }
+
+    private fun emptyBucket(timePoint: String): MutableMap<String?, Any?> = mutableMapOf(
+        "timePoint" to timePoint,
+        "totalInputToken" to 0L,
+        "totalOutputToken" to 0L,
+        "grandTotalToken" to 0L,
+        "totalFee" to BigDecimal.ZERO,
+    )
+
+    /**
+     * Rows come back with a DATETIME bucket, the response contract wants it as the display string
+     */
+    private fun MutableMap<String?, Any?>.withTimePoint(timePoint: String): MutableMap<String?, Any?> = toMutableMap().apply { put("timePoint", timePoint) }
 }

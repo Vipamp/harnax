@@ -669,6 +669,10 @@ class HarnessAgentLauncher(
             outputFileDetector = if (teamRole is TeamRole.Member) null else outputFileDetector,
             outputFileStore = if (teamRole is TeamRole.Member) null else outputFileStore,
             teamOrchestrator = (teamRole as? TeamRole.Lead)?.orchestrator,
+            // A team wrapper gets no turn budget of its own: the team layer's own limits wrap this
+            // stream from the outside, and inside a team a long silence is normal (a member running a
+            // long tool, a lead parked on a confirmation) rather than a stuck turn.
+            turnTimeoutSeconds = if (teamRole == null) harnessConfig.turnTimeoutSeconds else 0L,
         )
     }
 

@@ -45,7 +45,6 @@ class ModelControllerTest {
     fun setUp() {
         testModel = Model().apply {
             id = 1L
-            tenantId = 1L
             name = "GPT-4"
             modelName = "gpt-4"
             providerId = 10L
@@ -145,9 +144,9 @@ class ModelControllerTest {
     inner class GetByIdEndpoint {
 
         @Test
-        @DisplayName("getModel - 模型存在时返回详情")
+        @DisplayName("getModel - 模型可见时返回详情")
         fun `getModel should return model when found`() {
-            `when`(modelService.getModel(1L)).thenReturn(testModel)
+            `when`(modelService.getVisibleModel(1L)).thenReturn(testModel)
             `when`(modelService.convertToResponse(testModel)).thenReturn(testResponse)
 
             val result = controller.getModel(1L)
@@ -161,7 +160,7 @@ class ModelControllerTest {
         @Test
         @DisplayName("getModel - 模型不存在时 data 为 null")
         fun `getModel should return null data when not found`() {
-            `when`(modelService.getModel(999L)).thenReturn(null)
+            `when`(modelService.getVisibleModel(999L)).thenReturn(null)
 
             val result = controller.getModel(999L)
 

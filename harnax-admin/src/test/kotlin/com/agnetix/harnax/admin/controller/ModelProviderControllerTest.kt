@@ -144,9 +144,9 @@ class ModelProviderControllerTest {
     inner class GetByIdEndpoint {
 
         @Test
-        @DisplayName("getModelProvider - 存在时返回详情")
+        @DisplayName("getModelProvider - 可见时返回详情")
         fun `getModelProvider should return provider when found`() {
-            `when`(modelProviderService.getModelProvider(1L)).thenReturn(testProvider)
+            `when`(modelProviderService.getVisibleModelProvider(1L)).thenReturn(testProvider)
             `when`(modelProviderService.convertToResponse(testProvider)).thenReturn(testResponse)
 
             val result = controller.getModelProvider(1L)
@@ -158,9 +158,9 @@ class ModelProviderControllerTest {
         }
 
         @Test
-        @DisplayName("getModelProvider - 不存在时 data 为 null")
+        @DisplayName("getModelProvider - 不可见时 data 为 null")
         fun `getModelProvider should return null data when not found`() {
-            `when`(modelProviderService.getModelProvider(999L)).thenReturn(null)
+            `when`(modelProviderService.getVisibleModelProvider(999L)).thenReturn(null)
 
             val result = controller.getModelProvider(999L)
 

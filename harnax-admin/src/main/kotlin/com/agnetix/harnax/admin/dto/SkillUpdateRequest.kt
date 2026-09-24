@@ -8,8 +8,6 @@ import jakarta.validation.constraints.*
  */
 @Schema(description = "Skill update request object")
 data class SkillUpdateRequest(
-    @Schema(description = "ID")
-    val id: Long? = null,
     @Schema(description = "Skill name")
     // `@field:` is what makes the limit real: a bare annotation on a Kotlin data class lands on the
     // constructor parameter, which bean validation never reads. `SkillCreateRequest` already spells

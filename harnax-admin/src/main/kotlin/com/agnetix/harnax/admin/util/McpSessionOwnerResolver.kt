@@ -138,6 +138,18 @@ class McpSessionOwnerResolver(
             )
             return null
         }
+        // `status` is the account switch and `selectByUsername` does not filter it — it cannot, since
+        // login runs the same query and has to say "account disabled" rather than "no such user".
+        // A session opened before the switch was thrown must not keep spending its owner's grants.
+        if (user.status != 1) {
+            log.info(
+                "Session {} creator '{}' (user {}) is disabled, so no MCP identity is used",
+                sessionId,
+                username,
+                user.id,
+            )
+            return null
+        }
         return McpSessionOwner(userId = user.id, tenantId = tenantId)
     }
 

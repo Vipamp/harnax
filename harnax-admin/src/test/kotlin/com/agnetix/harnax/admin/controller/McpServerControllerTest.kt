@@ -6,6 +6,8 @@ import com.agnetix.harnax.admin.dto.McpServerUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.McpServerService
+import com.agnetix.harnax.admin.service.impl.AgentSessionRefreshService
+import com.agnetix.harnax.admin.service.impl.RelatedAgentInfo
 import com.agnetix.harnax.entity.McpServer
 import io.modelcontextprotocol.spec.McpSchema
 import org.junit.jupiter.api.Assertions.*
@@ -34,6 +36,9 @@ class McpServerControllerTest {
 
     @Mock
     private lateinit var mcpServerService: McpServerService
+
+    @Mock
+    private lateinit var agentSessionRefreshService: AgentSessionRefreshService
 
     @InjectMocks
     private lateinit var controller: McpServerController
@@ -129,7 +134,7 @@ class McpServerControllerTest {
         @Test
         @DisplayName("getMcpServer - 存在时返回详情")
         fun `getMcpServer should return server when found`() {
-            `when`(mcpServerService.getMcpServer(1L)).thenReturn(testMcpServer)
+            `when`(mcpServerService.getVisibleMcpServer(1L)).thenReturn(testMcpServer)
             `when`(mcpServerService.convertToResponse(testMcpServer)).thenReturn(testResponse)
 
             val result = controller.getMcpServer(1L)
@@ -142,7 +147,7 @@ class McpServerControllerTest {
         @Test
         @DisplayName("getMcpServer - 不存在时 data 为 null")
         fun `getMcpServer should return null data when not found`() {
-            `when`(mcpServerService.getMcpServer(999L)).thenReturn(null)
+            `when`(mcpServerService.getVisibleMcpServer(999L)).thenReturn(null)
 
             val result = controller.getMcpServer(999L)
 
@@ -153,7 +158,7 @@ class McpServerControllerTest {
         @Test
         @DisplayName("getMcpServer - service 抛异常时返回错误")
         fun `getMcpServer should return error on service exception`() {
-            `when`(mcpServerService.getMcpServer(1L)).thenThrow(RuntimeException("DB error"))
+            `when`(mcpServerService.getVisibleMcpServer(1L)).thenThrow(RuntimeException("DB error"))
 
             val result = controller.getMcpServer(1L)
 
@@ -350,6 +355,53 @@ class McpServerControllerTest {
 
             assertFalse(result.isSuccess())
             assertEquals("MCP server is in use", result.message)
+        }
+    }
+
+    @Nested
+    @DisplayName("GET /api/admin/mcp/{id}/related-agents")
+    inner class RelatedAgentsEndpoint {
+
+        @Test
+        @DisplayName("relatedAgents - 返回绑定的 Agent 列表")
+        fun `relatedAgents should return agent list`() {
+            val agents = listOf(
+                RelatedAgentInfo(agentId = 100L, agentName = "Agent A", status = 1),
+                RelatedAgentInfo(agentId = 200L, agentName = "Agent B", status = 0),
+            )
+            `when`(agentSessionRefreshService.listAgentsByMcp(1L)).thenReturn(agents)
+
+            val result = controller.relatedAgents(1L)
+
+            assertTrue(result.isSuccess())
+            assertEquals(2, result.data?.size)
+            assertEquals(100L, result.data?.get(0)?.agentId)
+            assertEquals("Agent A", result.data?.get(0)?.agentName)
+        }
+
+        @Test
+        @DisplayName("relatedAgents - 无绑定时返回空列表")
+        fun `relatedAgents should return empty list when none bound`() {
+            `when`(agentSessionRefreshService.listAgentsByMcp(1L)).thenReturn(emptyList())
+
+            val result = controller.relatedAgents(1L)
+
+            // An empty list is what tells the confirm dialog to fall back to the plain
+            // cannot-be-undone sentence; an error would read the same way but for the wrong reason.
+            assertTrue(result.isSuccess())
+            assertTrue(result.data?.isEmpty() == true)
+        }
+
+        @Test
+        @DisplayName("relatedAgents - service 抛异常时返回错误")
+        fun `relatedAgents should return error on service exception`() {
+            `when`(agentSessionRefreshService.listAgentsByMcp(1L))
+                .thenThrow(RuntimeException("DB error"))
+
+            val result = controller.relatedAgents(1L)
+
+            assertFalse(result.isSuccess())
+            assertEquals("DB error", result.message)
         }
     }
 

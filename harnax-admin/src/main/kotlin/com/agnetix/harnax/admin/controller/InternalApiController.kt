@@ -1,9 +1,11 @@
 package com.agnetix.harnax.admin.controller
 
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.registrar.BuiltinToolAutoRegistrar
 import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.service.McpOAuthUserService
 import com.agnetix.harnax.admin.service.McpStdioPolicy
+import com.agnetix.harnax.admin.skill.SkillBindingResolver
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.common.dto.ResultVo
@@ -71,6 +73,8 @@ class InternalApiController(
     private val teamMapper: TeamMapper,
     private val teamMemberMapper: TeamMemberMapper,
     private val teamSkillBindingMapper: TeamSkillBindingMapper,
+    private val builtinToolAutoRegistrar: BuiltinToolAutoRegistrar,
+    private val skillBindingResolver: SkillBindingResolver,
 ) {
 
     private val log = LoggerFactory.getLogger(InternalApiController::class.java)
@@ -586,7 +590,7 @@ class InternalApiController(
                 mapOf(
                     "id" to binding.toolId,
                     "need_confirm" to (binding.needConfirm == 1),
-                    "env_bindings" to resolveEnvBindingsJson(binding.envBindings),
+                    "env_bindings" to resolveEnvBindingsJson(binding.envBindings, agentTenantId),
                 )
             }
             objectMapper.writeValueAsString(items)
@@ -604,11 +608,22 @@ class InternalApiController(
         val toolById = if (toolIdsToDeliver.isEmpty()) {
             emptyMap()
         } else {
-            agentToolMapper.selectByIds(toolIdsToDeliver).associateBy { it.id }
+            // The startup sync never deletes, so the table can hold a row whose declaration left the
+            // classpath: its method no longer exists and the runtime could not assemble it. Held back
+            // here by comparing against what the last sync declared — the row stays for the operator,
+            // it just stops travelling. An empty declared set means the sync did not run, not that no
+            // tool exists, so it disables this filter rather than blocking every tool.
+            val declaredNames = builtinToolAutoRegistrar.registeredToolNames()
+            agentToolMapper.selectByIds(toolIdsToDeliver)
+                .filter { declaredNames.isEmpty() || it.name in declaredNames }
+                .associateBy { it.id }
         }
         val missingToolIds = toolIdsToDeliver - toolById.keys
         if (missingToolIds.isNotEmpty()) {
-            log.warn("Tools not found (deleted?), skipped from spec: toolIds={}", missingToolIds)
+            log.warn(
+                "Tools not deliverable (deleted, or no longer declared by the code), skipped from spec: toolIds={}",
+                missingToolIds,
+            )
         }
 
         val toolDetails = toolIdsToDeliver.mapNotNull { toolId ->
@@ -627,7 +642,6 @@ class InternalApiController(
                     readOnly = tool.readOnly,
                     needConfirm = tool.needConfirm,
                     requiredEnvParamKeys = tool.requiredEnvParamKeys,
-                    timeoutSeconds = tool.timeoutSeconds,
                     status = tool.status,
                     bindingNeedConfirm = bindingByToolId[toolId]?.needConfirm == 1,
                 )
@@ -675,9 +689,9 @@ class InternalApiController(
         if (heldDisabled.isNotEmpty()) {
             log.info("MCP server(s) {} are disabled, skipping", heldDisabled.values.map { "${it.name} (id=${it.id})" })
         }
-        // Derived from what was actually resolved, like skillList above: a binding whose server row is
+        // Derived from what was actually resolved, like `skillDetails` below: a binding whose server row is
         // gone would otherwise still contribute its env bindings to the other half of the answer
-        val mcpListJson = serializeMcpBindings(mcpBindings.filter { it.mcpId in mcpById })
+        val mcpListJson = serializeMcpBindings(mcpBindings.filter { it.mcpId in mcpById }, agentTenantId)
 
         val mcpDetails = mcpIdsToDeliver.mapNotNull { mcpId ->
             val mcp = mcpById[mcpId]
@@ -702,18 +716,17 @@ class InternalApiController(
             }
         }
 
-        // ── Skill bindings (comma-separated IDs + full detail DTOs) ──
+        // ── Skill bindings (full detail DTOs) ──
         val skillIdsToDeliver = skillIds.distinct()
-        val skillById = if (skillIdsToDeliver.isEmpty()) {
-            emptyMap()
-        } else {
-            skillMapper.selectByIds(skillIdsToDeliver).associateBy { it.id }
-        }
+        // Tenant-guarded exactly as a binding is at save time, and for the same reason: `selectByIds`
+        // has no tenant condition and an internal call carries no trustworthy tenant header, so a
+        // cross-tenant binding row would otherwise hand over another tenant's SKILL.md and resources.
+        val skillById = skillBindingResolver.deliverable(skillIdsToDeliver, agentTenantId).associateBy { it.id }
 
         val skillDetails = skillIdsToDeliver.mapNotNull { skillId ->
             val skill = skillById[skillId]
             if (skill == null) {
-                log.warn("Skill not found: skillId={}", skillId)
+                log.warn("Skill not resolved (deleted, or outside agent tenant {}), skipped from spec: skillId={}", agentTenantId, skillId)
                 null
             } else if (skill.status == 0) {
                 // The same gate the CLI branch below applies to a disabled CLI — and, since the package
@@ -727,10 +740,6 @@ class InternalApiController(
                 skillDetail(skill)
             }
         }
-        // Derived from what was actually resolved. Built from the bindings instead, it listed the ID
-        // of every skill dropped just above, so the two halves of one answer disagreed
-        val skillListStr = skillDetails.joinToString(",") { it.id.toString() }
-
         // ── CLI bindings (full detail DTOs, each carrying the skill it ships) ──
         val cliDetails = if (cliBindings.isEmpty()) {
             emptyList()
@@ -751,7 +760,6 @@ class InternalApiController(
                     CliDetailDto(
                         id = cli.id,
                         name = cli.name,
-                        description = cli.description,
                         version = cli.version,
                         checkCommand = cli.checkCommand,
                         packageObject = cli.packageObject,
@@ -759,7 +767,7 @@ class InternalApiController(
                         payloadDigest = cli.payloadDigest,
                         depsApt = readStringList(cli.depsApt),
                         runtimeEnv = readStringMap(cli.runtimeEnv),
-                        envBindings = mergeCliEnvBindings(binding.envBindings, cli.envParams),
+                        envBindings = mergeCliEnvBindings(binding.envBindings, cli.envParams, agentTenantId),
                         skill = cli.skillId?.let { skillId ->
                             val skill = skillById[skillId]
                             when {
@@ -810,7 +818,6 @@ class InternalApiController(
             modelId = modelId,
             toolList = toolListJson,
             mcpList = mcpListJson,
-            skillList = skillListStr,
             enableThink = enableThink,
             enableSearch = enableSearch,
             enablePlan = enablePlan,
@@ -831,9 +838,17 @@ class InternalApiController(
      * try to get latest value from env_variable table, fallback to stored snapshot.
      * For customValue, use directly.
      * Returns a list of {envKey, envValue} maps for runtime use.
+     *
+     * [tenantId] is the tenant of the holder being delivered to (its agent or team row), taken from
+     * the database rather than the request: an internal call carries no tenant header, and this is the
+     * one place a binding's `envVarId` is followed. Without it a stale cross-tenant reference resolved
+     * another tenant's secret — the asymmetry the MCP row filter above already closes.
      */
     @Suppress("UNCHECKED_CAST")
-    private fun resolveEnvBindingsJson(storedJson: String?): List<Map<String, String>> {
+    private fun resolveEnvBindingsJson(
+        storedJson: String?,
+        tenantId: Long,
+    ): List<Map<String, String>> {
         if (storedJson.isNullOrBlank()) return emptyList()
         return try {
             val list: List<Map<String, Any?>> = objectMapper.readValue(
@@ -849,15 +864,16 @@ class InternalApiController(
                 val resolvedValue = when {
                     envVarId != null -> {
                         // Try latest value from env_variable table, fallback to snapshot
-                        val latest = envVariableService.getDecryptedValue(envVarId)
+                        val latest = envVariableService.getDecryptedValue(envVarId, tenantId)
                         if (latest == null && snapshotValue == null) {
                             // A reference carries no value of its own, so a variable that is gone
                             // leaves nothing to deliver: the tool sees the parameter as unconfigured.
                             log.warn(
-                                "Env binding '{}' references env variable {} that no longer resolves; " +
+                                "Env binding '{}' references env variable {} that no longer resolves in tenant {}; " +
                                     "delivering nothing for it",
                                 envKey,
                                 envVarId,
+                                tenantId,
                             )
                         }
                         latest ?: snapshotValue
@@ -896,8 +912,9 @@ class InternalApiController(
     private fun mergeCliEnvBindings(
         storedJson: String?,
         declaredEnvJson: String?,
+        tenantId: Long,
     ): List<Map<String, String>> {
-        val perAgent = resolveEnvBindingsJson(storedJson)
+        val perAgent = resolveEnvBindingsJson(storedJson, tenantId)
         if (declaredEnvJson.isNullOrBlank()) return perAgent
         val overridden = perAgent.mapNotNull { it["envKey"] }.toSet()
         val defaults = secretFieldEncryptor
@@ -945,11 +962,14 @@ class InternalApiController(
      * agent-service reads `env_bindings` from here (see `AgentSpecResolver`), while the server
      * configuration itself arrives in `mcpDetails`.
      */
-    private fun serializeMcpBindings(bindings: List<AgentMcpBinding>): String = objectMapper.writeValueAsString(
+    private fun serializeMcpBindings(
+        bindings: List<AgentMcpBinding>,
+        tenantId: Long,
+    ): String = objectMapper.writeValueAsString(
         bindings.map { binding ->
             mapOf(
                 "id" to binding.mcpId,
-                "env_bindings" to resolveEnvBindingsJson(binding.envBindings),
+                "env_bindings" to resolveEnvBindingsJson(binding.envBindings, tenantId),
             )
         },
     )

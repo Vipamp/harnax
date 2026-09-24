@@ -127,6 +127,38 @@ class McpServerCrudIT : BaseAdminIT() {
 
     @Test
     @Order(10)
+    fun `related-agents names the agents that would lose this server`() {
+        // The delete confirmation reads this list, so a server nobody binds has to answer with nothing
+        // rather than an error.
+        assertEquals(0, assertOk(getJson("/api/admin/mcp/${locateMcpId()}/related-agents")).size())
+
+        val agentName = "it_mcp_agent_$suffix"
+        val body = mapOf(
+            "name" to agentName,
+            "description" to "IT mcp holder",
+            "systemPrompt" to "You are an IT agent.",
+            "modelId" to ensureAgentModelId(),
+            "status" to 1,
+            "mcpList" to listOf(mapOf("id" to locateMcpId())),
+        )
+        assertOk(postJson("/api/admin/agents", body))
+        val record = findInPage("/api/admin/agents/page", "name=$agentName") {
+            it["name"]?.asText() == agentName
+        }
+        assertNotNull(record, "the binding agent should be listed")
+
+        val related = assertOk(getJson("/api/admin/mcp/${locateMcpId()}/related-agents"))
+        assertEquals(1, related.size(), "the bound agent is the only one losing the server: $related")
+        assertEquals(agentName, related[0]["agentName"].asText())
+        assertEquals(1, related[0]["status"].asInt())
+
+        // The count follows live bindings, not rows that outlived their agent.
+        assertOk(deleteJson("/api/admin/agents/${record["id"].asLong()}"))
+        assertEquals(0, assertOk(getJson("/api/admin/mcp/${locateMcpId()}/related-agents")).size())
+    }
+
+    @Test
+    @Order(11)
     fun `delete mcp server then detail returns empty`() {
         assertOk(deleteJson("/api/admin/mcp/${locateMcpId()}"))
 

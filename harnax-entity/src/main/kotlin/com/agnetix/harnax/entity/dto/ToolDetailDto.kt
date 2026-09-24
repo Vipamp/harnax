@@ -38,9 +38,6 @@ data class ToolDetailDto(
     @Schema(description = "Required environment parameter keys, JSON array format")
     val requiredEnvParamKeys: String? = null,
 
-    @Schema(description = "Timeout in seconds")
-    val timeoutSeconds: Int = 30,
-
     @Schema(description = "Tool status (0: disabled, 1: enabled). The sync is the only writer and always writes 1.")
     val status: Int = 1,
 

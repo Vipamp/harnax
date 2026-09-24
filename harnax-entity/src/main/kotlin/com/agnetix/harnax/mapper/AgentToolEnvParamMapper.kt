@@ -4,19 +4,17 @@ import com.agnetix.harnax.entity.AgentToolEnvParam
 import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
 
+/**
+ * AgentToolEnvParam mapper.
+ *
+ * Reconciliation happens per row: the builtin tool registrar reads a tool's params with
+ * [selectByToolId], then inserts, updates or deletes single rows. There is therefore no batch insert
+ * and no delete-by-tool here.
+ */
 @Mapper
 interface AgentToolEnvParamMapper {
 
     fun selectByToolId(@Param("toolId") toolId: Long): List<AgentToolEnvParam>
-
-    fun batchInsert(@Param("list") list: List<AgentToolEnvParam>): Int
-
-    fun deleteByToolId(@Param("toolId") toolId: Long): Int
-
-    /** Cascade clean when the builtin tool sync removes records the code no longer declares */
-    fun deleteByToolIds(@Param("toolIds") toolIds: List<Long>): Int
-
-    fun selectById(@Param("id") id: Long): AgentToolEnvParam?
 
     fun insert(envParam: AgentToolEnvParam): Int
 

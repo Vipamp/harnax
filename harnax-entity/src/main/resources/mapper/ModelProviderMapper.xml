@@ -5,6 +5,7 @@
     <!-- Result Map -->
     <resultMap id="ModelProviderResultMap" type="com.agnetix.harnax.entity.ModelProvider">
         <id column="id" property="id"/>
+        <result column="tenant_id" property="tenantId"/>
         <result column="type" property="type"/>
         <result column="name" property="name"/>
         <result column="description" property="description"/>
@@ -30,22 +31,17 @@
         UPDATE model_provider SET active = 0 WHERE id = #{id}
     </update>
 
-    <!-- countByType -->
-    <select id="countByType" resultType="int">
-        SELECT COUNT(*) FROM model_provider WHERE type = #{type} AND active = 1
-    </select>
-
-    <!-- countByName -->
+    <!-- countByName: unique within the tenant that owns the row -->
     <select id="countByName" resultType="int">
-        SELECT COUNT(*) FROM model_provider WHERE name = #{name} AND active = 1
+        SELECT COUNT(*) FROM model_provider WHERE name = #{name} AND tenant_id = #{tenantId} AND active = 1
     </select>
 
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO model_provider (
-        type, name, description, api_key, base_url, status, is_public, creator, active, create_time, update_time
+        tenant_id, type, name, description, api_key, base_url, status, is_public, creator, active, create_time, update_time
         ) VALUES (
-        #{type}, #{name}, #{description}, #{apiKey}, #{baseUrl}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime},
+        #{tenantId}, #{type}, #{name}, #{description}, #{apiKey}, #{baseUrl}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime},
         #{updateTime}
         )
     </insert>
@@ -71,11 +67,11 @@
         UPDATE model_provider SET status = #{status}, update_time = NOW() WHERE id = #{id} AND active = 1
     </update>
 
-    <!-- selectModelProviderList -->
+    <!-- selectModelProviderList: own tenant plus anything published to the platform -->
     <select id="selectModelProviderList" resultMap="ModelProviderResultMap">
         SELECT * FROM model_provider
         WHERE active = 1
-        AND (is_public = 1 OR creator = #{currentUsername})
+        AND (tenant_id = #{tenantId} OR is_public = 1)
         <if test="name != null and name != ''">
             AND (name LIKE CONCAT('%', #{name}, '%') OR description LIKE CONCAT('%', #{name}, '%'))
         </if>

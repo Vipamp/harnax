@@ -4,6 +4,10 @@ import com.agnetix.harnax.entity.AgentTool
 import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
 
+/**
+ * The tool table is written by `BuiltinToolAutoRegistrar` only, and the sync is additive: it inserts
+ * a declaration it does not find and updates one it does. There is deliberately no delete here.
+ */
 @Mapper
 interface AgentToolMapper {
 
@@ -12,6 +16,7 @@ interface AgentToolMapper {
     /** Batch load undeleted tools by id (spec delivery resolves all bound + required tools at once) */
     fun selectByIds(@Param("ids") ids: List<Long>): List<AgentTool>
 
+    /** Identity lookup the sync resolves a declaration with; see the XML for why it ignores `active`. */
     fun selectByName(@Param("name") name: String): AgentTool?
 
     fun selectAgentToolList(
@@ -27,18 +32,9 @@ interface AgentToolMapper {
     /** Required tools: injected into every agent spec, never bound explicitly */
     fun selectRequiredTools(): List<AgentTool>
 
-    /** Select tool records by Spring bean name (returns multiple records, one per @Tool method) */
-    fun selectByBeanName(@Param("beanName") beanName: String): List<AgentTool>
+    /** Insert a declaration the table does not hold yet */
+    fun insert(agentTool: AgentTool): Int
 
-    /** Upsert a builtin tool record (insert or update on duplicate key) */
-    fun upsertBuiltinTool(agentTool: AgentTool): Int
-
-    /** Every record including soft-deleted ones — the sync diffs this against the code to prune residue */
-    fun selectAllBuiltin(): List<AgentTool>
-
-    /**
-     * Hard delete for the sync only. Unguarded by design: the sync owns every row of this table, so
-     * an id it lists is a row it wrote.
-     */
-    fun deleteBuiltinByIds(@Param("ids") ids: List<Long>): Int
+    /** Refresh a row the sync resolved by name; `name` itself is never part of this statement */
+    fun updateById(agentTool: AgentTool): Int
 }

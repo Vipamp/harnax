@@ -34,6 +34,22 @@
         </foreach>
     </select>
 
+    <resultMap id="SkillTeamBindingCountResultMap" type="com.agnetix.harnax.entity.dto.SkillTeamBindingCount">
+        <result column="skill_id" property="skillId"/>
+        <result column="team_count" property="teamCount"/>
+    </resultMap>
+
+    <!-- selectTeamBindingCounts -->
+    <select id="selectTeamBindingCounts" resultMap="SkillTeamBindingCountResultMap">
+        SELECT skill_id, COUNT(DISTINCT team_id) AS team_count
+        FROM team_skill_binding
+        WHERE skill_id IN
+        <foreach collection="skillIds" item="skillId" open="(" separator="," close=")">
+            #{skillId}
+        </foreach>
+        GROUP BY skill_id
+    </select>
+
     <delete id="deleteBySkillIds">
         DELETE FROM team_skill_binding WHERE skill_id IN
         <foreach collection="skillIds" item="skillId" open="(" separator="," close=")">

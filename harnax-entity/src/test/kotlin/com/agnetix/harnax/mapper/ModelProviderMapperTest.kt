@@ -191,7 +191,7 @@ open class ModelProviderMapperTest {
         @DisplayName("selectModelProviderList - Query all model providers")
         fun `selectModelProviderList should return all providers`() {
             // When
-            val providers = modelProviderMapper.selectModelProviderList(null, null, null, 1, "admin")
+            val providers = modelProviderMapper.selectModelProviderList(null, null, null, 1, 1L)
 
             // Then
             assertTrue(providers.isNotEmpty())
@@ -202,7 +202,7 @@ open class ModelProviderMapperTest {
         @DisplayName("selectModelProviderList - Filter by name")
         fun `selectModelProviderList should filter by name`() {
             // When
-            val providers = modelProviderMapper.selectModelProviderList(null, null, null, 1, "admin")
+            val providers = modelProviderMapper.selectModelProviderList(null, null, null, 1, 1L)
 
             // Then
             assertTrue(providers.isNotEmpty())
@@ -212,20 +212,39 @@ open class ModelProviderMapperTest {
         }
 
         @Test
-        @DisplayName("countByType - Count providers by type")
-        fun `countByType should count providers by type`() {
+        @DisplayName("selectModelProviderList - Another tenant sees public rows but not private ones")
+        fun `selectModelProviderList should keep another tenant private rows out`() {
+            // Given - seed has tenant 1 private row (id 5) and tenant 2 public row (id 6)
+            val tenant2ProviderId = 6L
+
             // When
-            val count = modelProviderMapper.countByType("dashscope")
+            val forTenant2 = modelProviderMapper.selectModelProviderList(null, null, null, null, 2L)
+            val forTenant1 = modelProviderMapper.selectModelProviderList(null, null, null, null, 1L)
 
             // Then
-            assertEquals(1, count)
+            assertTrue(
+                forTenant2.any { it.id == tenant2ProviderId },
+                "the tenant's own row must be listed for that tenant",
+            )
+            assertTrue(
+                forTenant2.any { it.id == 1L },
+                "tenant 1 public rows stay visible to tenant 2",
+            )
+            assertTrue(
+                forTenant1.any { it.id == 5L },
+                "tenant 1 private row belongs to tenant 1's list",
+            )
+            assertTrue(
+                forTenant2.none { it.id == 5L },
+                "a private row of another tenant must never be listed",
+            )
         }
 
         @Test
         @DisplayName("countByName - Count providers by name")
         fun `countByName should count providers by name`() {
             // When
-            val count = modelProviderMapper.countByName("阿里云百炼")
+            val count = modelProviderMapper.countByName("阿里云百炼", 1L)
 
             // Then
             assertEquals(1, count)
@@ -235,10 +254,53 @@ open class ModelProviderMapperTest {
         @DisplayName("countByName - Return 0 for non-existent name")
         fun `countByName should return 0 for non-existent name`() {
             // When
-            val count = modelProviderMapper.countByName("不存在的名称")
+            val count = modelProviderMapper.countByName("不存在的名称", 1L)
 
             // Then
             assertEquals(0, count)
+        }
+
+        @Test
+        @DisplayName("countByName - Ignore the same name held by another tenant")
+        fun `countByName should ignore a name that only another tenant holds`() {
+            // When - '租户二服务商' is tenant 2's row, so tenant 1 is free to take that name
+            val asTenant1 = modelProviderMapper.countByName("租户二服务商", 1L)
+            val asTenant2 = modelProviderMapper.countByName("租户二服务商", 2L)
+
+            // Then
+            assertEquals(0, asTenant1, "name uniqueness is scoped to the owning tenant")
+            assertEquals(1, asTenant2, "the owning tenant must see its own row")
+        }
+    }
+
+    @Nested
+    @DisplayName("Tenant Attribution Tests")
+    inner class TenantAttributionTests {
+
+        @Test
+        @DisplayName("insert - Store the tenant the row was created under")
+        fun `insert should store the row tenant`() {
+            // Given
+            val now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
+            val provider = ModelProvider().apply {
+                tenantId = 7L
+                type = "tenant7_type"
+                name = "Tenant 7 Provider"
+                status = 1
+                isPublic = 0
+                creator = "admin"
+                active = 1
+                createTime = now
+                updateTime = now
+            }
+
+            // When
+            assertEquals(1, modelProviderMapper.insert(provider))
+
+            // Then
+            val stored = modelProviderMapper.selectById(provider.id)
+            assertNotNull(stored)
+            assertEquals(7L, stored.tenantId, "the insert must carry the tenant, not the DDL default")
         }
     }
 }

@@ -10,6 +10,7 @@ import com.agnetix.harnax.admin.service.ApiKeyService
 import com.agnetix.harnax.admin.service.SysUserService
 import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.SysUser
+import com.agnetix.harnax.mapper.McpUserCredentialMapper
 import com.agnetix.harnax.mapper.SysUserMapper
 import com.agnetix.harnax.mapper.TenantMapper
 import com.agnetix.harnax.mapper.UserTenantMapper
@@ -29,6 +30,7 @@ class SysUserServiceImpl(
     private val tenantMapper: TenantMapper,
     private val messageUtil: MessageUtil,
     private val apiKeyService: ApiKeyService,
+    private val mcpUserCredentialMapper: McpUserCredentialMapper,
 ) : SysUserService {
 
     private val log = LoggerFactory.getLogger(SysUserServiceImpl::class.java)
@@ -265,9 +267,19 @@ class SysUserServiceImpl(
             log.info("User removed from all tenants, userId: {}", id)
         }
 
-        // Physically delete user
-        log.info("Executing physical delete user, userId: {}", id)
-        return sysUserMapper.deleteById(id) > 0
+        // Logical delete: `deleteById` sets active = 0, the row stays
+        log.info("Executing user delete, userId: {}", id)
+        val deleted = sysUserMapper.deleteById(id) > 0
+        if (deleted) {
+            // The row above only goes `active = 0`, so this is the last moment anything reaches this
+            // user's grants. Left alone they stay ACTIVE with their ciphertext and no owner who can
+            // sign in to revoke them.
+            val grants = mcpUserCredentialMapper.deleteByUserId(id)
+            if (grants > 0) {
+                log.info("User {} deleted, {} MCP grant(s) cleared", id, grants)
+            }
+        }
+        return deleted
     }
 
     override fun convertToResponse(sysUser: SysUser): SysUserResponse {

@@ -2,25 +2,15 @@ package com.agnetix.harnax.mapper
 
 import com.agnetix.harnax.entity.ToolCallLogEntity
 import org.apache.ibatis.annotations.Mapper
-import org.apache.ibatis.annotations.Param
 
 /**
- * ToolCallLogEntity Mapper interface
+ * ToolCallLogEntity Mapper interface.
+ *
+ * Append-only: a call log row is written once and never read back through this mapper, so there is no
+ * select, update or delete here. `tool_call_log` is not cleaned up with its session or agent.
  */
 @Mapper
 interface ToolCallLogMapper {
 
-    // ==================== Basic CRUD methods ====================
-
-    fun selectById(@Param("id") id: Long): ToolCallLogEntity?
-
     fun insert(toolcalllogentity: ToolCallLogEntity): Int
-
-    fun updateById(toolcalllogentity: ToolCallLogEntity): Int
-
-    fun deleteById(@Param("id") id: Long): Int
-    fun selectBySessionId(@Param("sessionId") sessionId: String): List<ToolCallLogEntity>
-    fun selectByToolName(@Param("toolName") toolName: String): List<ToolCallLogEntity>
-
-    // ==================== Custom query methods ====================
 }

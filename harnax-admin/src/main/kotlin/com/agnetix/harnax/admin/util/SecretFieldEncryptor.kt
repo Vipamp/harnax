@@ -9,8 +9,8 @@ import org.springframework.stereotype.Component
 import tools.jackson.databind.ObjectMapper
 
 /**
- * MCP 配置敏感字段加密/解密工具
- * 复用 AesUtil 进行 AES-256-GCM 加解密，处理 McpConfigEntry 列表中 secret=true 的条目
+ * Encrypts and decrypts the secret fields of an MCP configuration.
+ * Reuses [AesUtil] for AES-256-GCM and covers the `secret = true` entries of an `McpConfigEntry` list.
  */
 @Component
 class SecretFieldEncryptor(
@@ -21,7 +21,7 @@ class SecretFieldEncryptor(
     private val log = LoggerFactory.getLogger(SecretFieldEncryptor::class.java)
 
     /**
-     * 对配置列表中 secret=true 的条目加密 value，然后序列化为 JSON
+     * Encrypts the `value` of every `secret = true` entry in the list, then serializes to JSON.
      *
      * `storedJson` is the row's current column value. The detail API masks secrets, so an edit that
      * leaves such a field untouched sends the mask straight back; encrypting it would store the mask
@@ -104,32 +104,47 @@ class SecretFieldEncryptor(
     }
 
     /**
-     * 反序列化 JSON 配置，对 secret=true 的条目解密 value，返回明文 Map
-     * 实现 McpConfigDecryptor 接口
+     * Deserializes the JSON configuration, decrypts the `value` of every `secret = true` entry and
+     * returns the plaintext map. Satisfies the [McpConfigDecryptor] contract.
      */
     override fun decryptToMap(json: String?): Map<String, String> {
         if (json.isNullOrBlank()) return emptyMap()
-        return try {
-            val entries = deserializeEntries(json)
-            entries.associate { entry ->
-                val value = if (entry.secret && entry.value.isNotBlank()) {
-                    aesUtil.decrypt(entry.value)
-                } else {
-                    entry.value
-                }
-                entry.key to value
+        // A column that will not parse answers as no headers at all; serializeDecrypted says so when
+        // it delivers an empty object for a column that is not an empty array.
+        val entries = deserializeEntries(json)
+        var undecryptable = 0
+        // Per entry, not one try around the batch: a single value this key cannot open used to drop
+        // every header with it, so one bad row turned into "no headers configured" rather than one
+        // missing header.
+        val values = entries.mapNotNull { entry ->
+            val value = if (entry.secret && entry.value.isNotBlank()) {
+                runCatching { aesUtil.decrypt(entry.value) }
+                    .onFailure {
+                        undecryptable++
+                        log.warn("MCP header \"{}\" could not be decrypted, skipping it", entry.key)
+                    }
+                    .getOrNull()
+            } else {
+                entry.value
             }
-        } catch (e: Exception) {
-            // Was a silent empty map, which reads as "this server has no headers" downstream. A rotated
-            // or truncated AES key shows up here as an MCP server whose tools stopped working, so the
-            // reason has to be in the log - without the value, which is a credential, in it.
-            log.warn("A stored MCP header set could not be decrypted ({}), delivering no headers", e.javaClass.simpleName)
-            emptyMap()
+            value?.let { entry.key to it }
+        }.toMap()
+        // The row-level picture the per-key lines above cannot add up to: a config that is mostly
+        // undecryptable used to announce itself as "no headers at all", and that much signal is worth
+        // keeping after the failure became per entry.
+        if (undecryptable > 0) {
+            log.warn(
+                "{} of the {} MCP header entries cannot be decrypted with the current key, {} are being delivered",
+                undecryptable,
+                entries.size,
+                values.size,
+            )
         }
+        return values
     }
 
     /**
-     * 解密单个加密字符串
+     * Decrypts a single stored ciphertext.
      */
     fun decrypt(encryptedValue: String): String = aesUtil.decrypt(encryptedValue)
 
@@ -184,23 +199,34 @@ class SecretFieldEncryptor(
      */
     override fun decryptToolEnvParamsToMap(json: String?): Map<String, String> {
         if (json.isNullOrBlank()) return emptyMap()
-        return try {
-            deserializeToolEnvEntries(json).associate { entry ->
-                val value = if (entry.secret && !entry.defaultValue.isNullOrBlank()) {
-                    aesUtil.decrypt(entry.defaultValue!!)
-                } else {
-                    entry.defaultValue ?: ""
-                }
-                entry.envParamName to value
+        val entries = deserializeToolEnvEntries(json)
+        var undecryptable = 0
+        val values = entries.mapNotNull { entry ->
+            val value = if (entry.secret && !entry.defaultValue.isNullOrBlank()) {
+                runCatching { aesUtil.decrypt(entry.defaultValue!!) }
+                    .onFailure {
+                        undecryptable++
+                        log.warn("Tool env param \"{}\" could not be decrypted, skipping it", entry.envParamName)
+                    }
+                    .getOrNull()
+            } else {
+                entry.defaultValue ?: ""
             }
-        } catch (e: Exception) {
-            log.warn("A stored tool env-param set could not be decrypted ({}), delivering no parameters", e.javaClass.simpleName)
-            emptyMap()
+            value?.let { entry.envParamName to it }
+        }.toMap()
+        if (undecryptable > 0) {
+            log.warn(
+                "{} of the {} tool env param entries cannot be decrypted with the current key, {} are being delivered",
+                undecryptable,
+                entries.size,
+                values.size,
+            )
         }
+        return values
     }
 
     /**
-     * 反序列化 JSON 为 McpConfigEntry 列表
+     * Deserializes JSON into a list of [McpConfigEntry] without touching the values.
      */
     fun deserializeEntries(json: String?): List<McpConfigEntry> {
         if (json.isNullOrBlank()) return emptyList()
@@ -215,7 +241,7 @@ class SecretFieldEncryptor(
     }
 
     /**
-     * 反序列化 JSON 为 ToolEnvParamEntry 列表（值保持库中原样，不解密）
+     * Deserializes JSON into a list of [ToolEnvParamEntry]; values stay exactly as stored, undecrypted.
      */
     fun deserializeToolEnvEntries(json: String?): List<ToolEnvParamEntry> {
         if (json.isNullOrBlank()) return emptyList()

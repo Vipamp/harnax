@@ -128,6 +128,14 @@ interface TokenStatsMapper {
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
+     * Query Token consumption time series data by model + week
+     */
+    fun getModelTimeSeriesByWeek(
+        @Param("startTime") startTime: String?,
+        @Param("endTime") endTime: String?,
+    ): MutableList<MutableMap<String?, Any?>?>?
+
+    /**
      * Query Token consumption time series data by model + month
      */
     fun getModelTimeSeriesByMonth(
@@ -152,6 +160,14 @@ interface TokenStatsMapper {
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
+     * Query Token consumption time series data by agent + week
+     */
+    fun getAgentTimeSeriesByWeek(
+        @Param("startTime") startTime: String?,
+        @Param("endTime") endTime: String?,
+    ): MutableList<MutableMap<String?, Any?>?>?
+
+    /**
      * Query Token consumption time series data by agent + month
      */
     fun getAgentTimeSeriesByMonth(
@@ -171,6 +187,14 @@ interface TokenStatsMapper {
      * Query Token consumption time series data by session + day
      */
     fun getSessionTimeSeriesByDay(
+        @Param("startTime") startTime: String?,
+        @Param("endTime") endTime: String?,
+    ): MutableList<MutableMap<String?, Any?>?>?
+
+    /**
+     * Query Token consumption time series data by session + week
+     */
+    fun getSessionTimeSeriesByWeek(
         @Param("startTime") startTime: String?,
         @Param("endTime") endTime: String?,
     ): MutableList<MutableMap<String?, Any?>?>?

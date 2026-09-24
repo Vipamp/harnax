@@ -34,6 +34,14 @@ interface ModelProviderService {
     fun getModelProvider(id: Long): ModelProvider?
 
     /**
+     * Get model provider details as far as the current tenant may see it
+     *
+     * @param id ID
+     * @return Model provider response, null when the row belongs to another tenant and is not public
+     */
+    fun getVisibleModelProvider(id: Long): ModelProvider?
+
+    /**
      * Create model provider
      *
      * @param request Create request

@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.Mock
+import org.mockito.Mockito.never
+import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
@@ -134,6 +136,39 @@ class SkillBindingResolverTest {
             "Skills from '${BuiltinRepository.CLI_SKILLS}' cannot be bound directly (auto-loaded via CLI): cli 内置技能",
             error.message,
         )
+    }
+
+    @Test
+    @DisplayName("下发只给持有者租户的行，别租户的技能整篇不出门")
+    fun deliversOnlyTheHoldersTenant() {
+        skill(1L, "本租户技能")
+        skill(2L, "别租户技能", tenantId = TENANT + 1, repositoryId = 20L)
+
+        val delivered = resolver.deliverable(listOf(1L, 2L), TENANT)
+
+        // `selectByIds` carries no tenant condition and an internal call has no header to read one
+        // from, so this filter is the only thing standing between a stale binding row and another
+        // tenant's SKILL.md plus its bundled resources.
+        assertEquals(listOf(1L), delivered.map { it.id })
+    }
+
+    @Test
+    @DisplayName("下发同样豁免内置仓库：CLI 自带技能跨租户照样能到运行侧")
+    fun deliversBuiltinRepositorySkillsToAnyTenant() {
+        skill(1L, "cli 内置技能", tenantId = TENANT + 1, repositoryId = BUILTIN_REPO)
+
+        assertEquals(listOf(1L), resolver.deliverable(listOf(1L), TENANT).map { it.id })
+    }
+
+    @Test
+    @DisplayName("没有绑定就不查库，下发回答空集合")
+    fun skipsTheReadWhenNothingIsBound() {
+        assertEquals(emptyList<Skill>(), resolver.deliverable(emptyList(), TENANT))
+
+        // Both reads, not just the skill one: the builtin repository lookup is a SELECT of its own, and
+        // ordering it ahead of the empty check made every skill-less agent's spec pay for it
+        verify(skillRepositoryService, never()).getBuiltinRepository()
+        verify(skillMapper, never()).selectByIds(any())
     }
 }
 

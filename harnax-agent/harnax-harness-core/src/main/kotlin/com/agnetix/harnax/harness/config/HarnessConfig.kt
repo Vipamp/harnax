@@ -7,6 +7,11 @@ package com.agnetix.harnax.harness.config
  * @param enableWorkspaceContext whether to inject AGENTS.md / workspace context into system prompt
  * @param enableMemoryHooks whether to enable built-in memory flush/maintenance hooks
  * @param enableSessionPersistence whether to enable automatic session persistence via SessionPersistenceHook
+ * @param turnTimeoutSeconds budget of one whole turn, applied by [com.agnetix.harnax.harness.HarnessAgentWrapper]
+ *   to both the batch and the streaming call. It replaces the former per-tool `@ToolMeta(timeoutSeconds)`:
+ *   a tool-level value reached the entity but was read by nobody, so the only timeout that ever applied
+ *   was this one. Raise it for runs that legitimately wait long (a team lead between delegations is the
+ *   usual case — see [TeamConfig.memberTurnTimeoutSeconds]).
  * @param mcpStdioEnabled whether an MCP server of type stdio may be started as a local process; off by
  *   default because this process runs without isolation against the host (see the admin's
  *   `McpStdioPolicy`, which holds such rows back from delivery as the first line of defence)
@@ -17,6 +22,7 @@ data class HarnessConfig(
     val enableWorkspaceContext: Boolean = false,
     val enableMemoryHooks: Boolean = false,
     val enableSessionPersistence: Boolean = true,
+    val turnTimeoutSeconds: Long = 300,
     val mcpStdioEnabled: Boolean = false,
     val team: TeamConfig = TeamConfig(),
 )

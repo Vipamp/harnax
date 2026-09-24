@@ -34,4 +34,13 @@ interface McpUserCredentialMapper {
      * `mcp_user_credential` has no `active` column and no soft-delete path.
      */
     fun deleteByMcpId(@Param("mcpId") mcpId: Long): Int
+
+    /**
+     * Hard delete of every grant one user holds, on any MCP server.
+     *
+     * A user row is only ever soft-deleted, so nothing else ever reaches these again: without this call
+     * the grants of a deleted account stay ACTIVE, keep their ciphertext, and can no longer be revoked
+     * by their owner because that owner has no page left to do it from.
+     */
+    fun deleteByUserId(@Param("userId") userId: Long): Int
 }

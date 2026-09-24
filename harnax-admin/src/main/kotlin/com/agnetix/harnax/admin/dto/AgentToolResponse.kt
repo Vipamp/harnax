@@ -41,9 +41,6 @@ data class AgentToolResponse(
     @Schema(description = "Required environment parameter keys")
     val requiredEnvParamKeys: List<String>? = null,
 
-    @Schema(description = "Timeout in seconds")
-    val timeoutSeconds: Int? = null,
-
     @Schema(description = "Status (0:disabled, 1:enabled)")
     val status: Int? = null,
 

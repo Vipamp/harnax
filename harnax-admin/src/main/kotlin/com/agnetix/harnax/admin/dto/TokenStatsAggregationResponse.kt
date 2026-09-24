@@ -77,7 +77,7 @@ data class TokenStatsAggregationResponse(
         /**
          * Convert Map to TimeSeriesData
          */
-        fun mapToTimeSeriesData(map: Map<String, Any?>): TimeSeriesData = TimeSeriesData(
+        fun mapToTimeSeriesData(map: Map<String?, Any?>): TimeSeriesData = TimeSeriesData(
             timePoint = map["timePoint"] as? String,
             dimensionId = map["dimensionId"] as? String,
             dimensionName = map["dimensionName"] as? String,
@@ -90,7 +90,7 @@ data class TokenStatsAggregationResponse(
         /**
          * Convert Map to TimeSeriesData (with dimension)
          */
-        fun mapToDimensionTimeSeriesData(map: MutableMap<String?, Any?>, dimensionType: String?): TimeSeriesData {
+        fun mapToDimensionTimeSeriesData(map: Map<String?, Any?>, dimensionType: String?): TimeSeriesData {
             val data = TimeSeriesData()
             val timePointObj = map.get("timePoint")
             if (timePointObj != null) {

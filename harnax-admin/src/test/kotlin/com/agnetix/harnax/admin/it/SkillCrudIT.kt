@@ -67,7 +67,7 @@ class SkillCrudIT : BaseAdminIT() {
             "repositoryId" to locateRepoId(),
             "description" to "IT skill",
             "skillmd" to "# IT Skill\n\nHello from integration test.",
-            "resources" to "[]",
+            "resources" to "{}",
             "status" to 1,
         )
         assertOk(postJson("/api/admin/skills", body))
@@ -129,7 +129,7 @@ class SkillCrudIT : BaseAdminIT() {
             "repositoryId" to locateRepoId(),
             "description" to "dup",
             "skillmd" to "# dup",
-            "resources" to "[]",
+            "resources" to "{}",
         )
         assertErr(postJson("/api/admin/skills", body))
     }
@@ -142,7 +142,7 @@ class SkillCrudIT : BaseAdminIT() {
             "repositoryId" to locateRepoId(),
             "description" to "bad",
             "skillmd" to "# bad",
-            "resources" to "[]",
+            "resources" to "{}",
         )
         assertErr(postJson("/api/admin/skills", body))
     }

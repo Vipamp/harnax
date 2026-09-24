@@ -83,6 +83,23 @@ class McpServerServiceImpl(
     override fun getMcpServer(id: Long): McpServer? = mcpServerMapper.selectById(id)?.takeIf { it.tenantId == currentTenantId() }
 
     /**
+     * MCP-06: the by-id counterpart of the list's `is_public = 1 OR creator` predicate.
+     *
+     * Only the mutating and probing paths use it. The name resolvers that render a binding's server
+     * ([com.agnetix.harnax.admin.service.impl.AgentServiceImpl], a session's capability list) stay on
+     * [getMcpServer]: they show what an agent is already configured with, and hiding another user's
+     * private server there would silently drop a live binding from the agent form rather than refuse
+     * an operation on it.
+     */
+    override fun getVisibleMcpServer(id: Long): McpServer? = getMcpServer(id)?.takeIf { visibleToCurrentUser(it) }
+
+    private fun requireVisibleServer(id: Long): McpServer = getVisibleMcpServer(id)
+        ?: throw BizException("MCP server not found")
+
+    private fun visibleToCurrentUser(mcpServer: McpServer): Boolean = mcpServer.isPublic == 1 ||
+        mcpServer.creator == UserContextUtil.getCurrentUsername(jwtUtil)
+
+    /**
      * The tenant this request acts within.
      *
      * `X-Tenant-ID` stays first because switching workspace is the point of it, and
@@ -140,7 +157,17 @@ class McpServerServiceImpl(
 
         // Serialize headers with encryption (McpConfigEntry) and envParams with ToolEnvParamEntry format
         mcpServer.headers = secretFieldEncryptor.serializeWithEncryption(request.headers)
-        mcpServer.envParams = secretFieldEncryptor.serializeToolEnvParams(request.envParams)
+        // Two readers, both stdio-only in effect: the runtime passes the column as the spawned
+        // process's env (`McpHelper`'s stdio branch), and `saveMcpBindings` reads it to learn which
+        // params the row declares required. A network row therefore declares none - which is the
+        // point, not a loss: nothing else reads their values. `updateMcpServer` clears the column when
+        // a row moves to a network transport, and storing them here would park values no transport can
+        // use: the same half-filled row the update path refuses for `command` and `url`.
+        mcpServer.envParams = if (mcpStdioPolicy.isStdio(request.type)) {
+            secretFieldEncryptor.serializeToolEnvParams(request.envParams)
+        } else {
+            null
+        }
 
         // Set tenant ID
         mcpServer.tenantId = tenantId
@@ -158,8 +185,7 @@ class McpServerServiceImpl(
     override fun updateMcpServer(id: Long, request: McpServerUpdateRequest): Boolean {
         log.info("Updating MCP server, id: {}", id)
 
-        val mcpServer = getMcpServer(id)
-            ?: throw BizException("MCP server not found")
+        val mcpServer = requireVisibleServer(id)
         // Read before any field is applied: the end of this method has to know whether the request
         // turned OAuth off, which it can no longer tell from the entity once auth_type is overwritten.
         val wasOAuth = mcpServer.authType == McpAuthTypes.OAUTH2
@@ -235,7 +261,13 @@ class McpServerServiceImpl(
             mcpServer.headers = secretFieldEncryptor.serializeWithEncryption(request.headers, mcpServer.headers)
         }
         if (request.envParams != null) {
-            mcpServer.envParams = secretFieldEncryptor.serializeToolEnvParams(request.envParams, mcpServer.envParams)
+            // Same rule as creation: only a row that spawns a process has anything to put in the env.
+            // Nulling rather than ignoring also retires a value an older create left on a network row.
+            mcpServer.envParams = if (mcpStdioPolicy.isStdio(mcpServer.type)) {
+                secretFieldEncryptor.serializeToolEnvParams(request.envParams, mcpServer.envParams)
+            } else {
+                null
+            }
         }
 
         // Validate type and field linkage logic after update
@@ -291,8 +323,7 @@ class McpServerServiceImpl(
     override fun toggleMcpServerStatus(id: Long, status: Int): Boolean {
         log.info("Toggling MCP server status, id: {}, status: {}", id, status)
 
-        val mcpServer = getMcpServer(id)
-            ?: throw BizException("MCP server not found")
+        requireVisibleServer(id)
 
         val success = mcpServerMapper.updateStatus(id, status) > 0
         log.info("MCP server status toggle {}, id: {}, status: {}", if (success) "successful" else "failed", id, status)
@@ -303,8 +334,7 @@ class McpServerServiceImpl(
     override fun deleteMcpServer(id: Long): Boolean {
         log.info("Deleting MCP server, id: {}", id)
 
-        val mcpServer = getMcpServer(id)
-            ?: throw BizException("MCP server not found")
+        requireVisibleServer(id)
 
         if (mcpServerMapper.deleteById(id) == 0) {
             log.info("MCP server deletion failed, id: {}", id)
@@ -428,7 +458,12 @@ class McpServerServiceImpl(
     override fun convertToResponse(mcpServer: McpServer): McpServerResponse = McpServerResponse.fromEntity(mcpServer, objectMapper, secretFieldEncryptor)
 
     override fun listTools(mcpId: Long): List<McpSchema.Tool> {
-        val mcpServer = getMcpServer(mcpId) ?: throw BizException("MCP server not found")
+        val mcpServer = requireVisibleServer(mcpId)
+        // Same gate as delivery: a row the operator switched off must not be reachable here either,
+        // because this is the one admin path that opens a real connection with what the row stores.
+        if (mcpServer.status == 0) {
+            throw BizException("MCP server '${mcpServer.name}' is disabled, enable it before testing")
+        }
         // This is the one admin path that *runs* a stored configuration: a stdio row's `command` is
         // spawned here, in this container, and `connectivityTest` comes through it too. Holding such
         // rows back from delivery keeps the runtime from spawning them but not this, so the gate has

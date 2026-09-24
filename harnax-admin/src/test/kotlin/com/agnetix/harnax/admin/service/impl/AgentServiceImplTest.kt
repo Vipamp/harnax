@@ -12,11 +12,13 @@ import com.agnetix.harnax.admin.skill.SkillBindingResolver
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.entity.Agent
+import com.agnetix.harnax.entity.AgentCliBinding
 import com.agnetix.harnax.entity.AgentMcpBinding
 import com.agnetix.harnax.entity.AgentSkillBinding
 import com.agnetix.harnax.entity.AgentTool
 import com.agnetix.harnax.entity.AgentToolBinding
 import com.agnetix.harnax.entity.AgentToolEnvParam
+import com.agnetix.harnax.entity.Channel
 import com.agnetix.harnax.entity.Cli
 import com.agnetix.harnax.entity.EnvVariable
 import com.agnetix.harnax.entity.McpServer
@@ -33,6 +35,7 @@ import com.agnetix.harnax.mapper.AgentSkillBindingMapper
 import com.agnetix.harnax.mapper.AgentToolBindingMapper
 import com.agnetix.harnax.mapper.AgentToolEnvParamMapper
 import com.agnetix.harnax.mapper.AgentToolMapper
+import com.agnetix.harnax.mapper.ChannelMapper
 import com.agnetix.harnax.mapper.CliMapper
 import com.agnetix.harnax.mapper.McpServerMapper
 import com.agnetix.harnax.mapper.SessionMapper
@@ -136,6 +139,9 @@ class AgentServiceImplTest {
     private lateinit var teamMemberMapper: TeamMemberMapper
 
     @Mock
+    private lateinit var channelMapper: ChannelMapper
+
+    @Mock
     private lateinit var secretFieldEncryptor: SecretFieldEncryptor
 
     @Mock
@@ -196,7 +202,6 @@ class AgentServiceImplTest {
             invocation.getArgument<List<Long>>(0).map { id ->
                 AgentTool().apply {
                     this.id = id
-                    tenantId = 1L
                     name = "tool-$id"
                 }
             }
@@ -487,6 +492,48 @@ class AgentServiceImplTest {
             assertTrue(result)
             verify(agentMapper).insert(any())
         }
+
+        @Test
+        @DisplayName("createAgent - Reject a name this tenant already has live")
+        fun `createAgent should reject a name already taken`() {
+            // uk_agent_tenant_active_name 会把这撞成一串 SQL 错误，服务层要先给出可读的拒绝
+            val request = AgentCreateRequest(
+                name = "Test Agent",
+                description = "Duplicate description",
+                systemPrompt = "Duplicate prompt",
+                modelId = 1L,
+                owner = "admin",
+            )
+            `when`(agentMapper.selectByName("Test Agent", 1L)).thenReturn(testAgent)
+
+            val exception = assertThrows<BizException> { agentService.createAgent(request) }
+
+            assertEquals("Agent name already exists", exception.message)
+            verify(agentMapper, never()).insert(any())
+        }
+
+        @Test
+        @DisplayName("createAgent - Ask about the name under the caller's tenant only")
+        fun `createAgent should look the name up under the caller tenant`() {
+            // 另一个租户的同名行不占这里的名字，所以这次查询必须带上租户
+            TenantContext.setTenantId(7L)
+            try {
+                val request = AgentCreateRequest(
+                    name = "Cross Tenant Agent",
+                    description = "Cross tenant description",
+                    systemPrompt = "Cross tenant prompt",
+                    modelId = 1L,
+                    owner = "admin",
+                )
+                `when`(agentMapper.insert(any())).thenReturn(1)
+
+                assertTrue(agentService.createAgent(request))
+
+                verify(agentMapper).selectByName("Cross Tenant Agent", 7L)
+            } finally {
+                TenantContext.clear()
+            }
+        }
     }
 
     @Nested
@@ -704,7 +751,6 @@ class AgentServiceImplTest {
                 description = "Updated description",
                 systemPrompt = "Updated prompt",
                 modelId = 2L,
-                owner = "newowner",
                 isPublic = 0,
                 mcpList = listOf(mcpConfig),
                 skillList = "4,5",
@@ -719,6 +765,45 @@ class AgentServiceImplTest {
             // Then
             assertTrue(result)
             verify(agentMapper).updateById(any())
+        }
+
+        @Test
+        @DisplayName("updateAgent - status goes through the statement the toggle uses")
+        fun `updateAgent should apply status through the status statement`() {
+            // Given - the DTO advertises status, so an edit that flips it must not be dropped
+            val request = AgentUpdateRequest(
+                name = "Updated Agent",
+                status = 0,
+            )
+
+            `when`(agentMapper.selectById(1L)).thenReturn(testAgent)
+            `when`(agentMapper.updateById(any())).thenReturn(1)
+            `when`(agentMapper.updateStatus(1L, 0)).thenReturn(1)
+
+            // When
+            val result = agentService.updateAgent(1L, request)
+
+            // Then
+            assertTrue(result)
+            verify(agentMapper).updateStatus(1L, 0)
+        }
+
+        @Test
+        @DisplayName("updateAgent - an omitted status leaves start/stop alone")
+        fun `updateAgent should leave status untouched when the request omits it`() {
+            // Given
+            val request = AgentUpdateRequest(
+                name = "Updated Agent",
+            )
+
+            `when`(agentMapper.selectById(1L)).thenReturn(testAgent)
+            `when`(agentMapper.updateById(any())).thenReturn(1)
+
+            // When
+            agentService.updateAgent(1L, request)
+
+            // Then
+            verify(agentMapper, never()).updateStatus(anyLong(), anyInt())
         }
 
         @Test
@@ -908,6 +993,38 @@ class AgentServiceImplTest {
             assertTrue(exception.message?.contains("Agent not found") == true)
             verify(agentMapper, never()).updateById(any())
         }
+
+        @Test
+        @DisplayName("updateAgent - Reject a rename another live agent already owns")
+        fun `updateAgent should reject a colliding rename`() {
+            val request = AgentUpdateRequest(name = "Taken")
+            `when`(agentMapper.selectById(1L)).thenReturn(testAgent)
+            `when`(agentMapper.selectByName("Taken", 1L)).thenReturn(
+                Agent().apply {
+                    id = 9L
+                    name = "Taken"
+                    tenantId = 1L
+                },
+            )
+
+            val exception = assertThrows<BizException> { agentService.updateAgent(1L, request) }
+
+            assertEquals("Agent name already exists", exception.message)
+            verify(agentMapper, never()).updateById(any())
+        }
+
+        @Test
+        @DisplayName("updateAgent - Resending the stored name is not a collision")
+        fun `updateAgent should not treat the unchanged name as a collision`() {
+            // 表单会把当前名字一并提交回来，按名字查一次就会撞上这一行自己
+            val request = AgentUpdateRequest(name = "Test Agent")
+            `when`(agentMapper.selectById(1L)).thenReturn(testAgent)
+            `when`(agentMapper.updateById(any())).thenReturn(1)
+
+            assertTrue(agentService.updateAgent(1L, request))
+
+            verify(agentMapper, never()).selectByName(any(), any())
+        }
     }
 
     @Nested
@@ -1071,6 +1188,68 @@ class AgentServiceImplTest {
             assertTrue(exception.message!!.contains("Research"))
             verify(agentMapper, never()).deleteById(any())
             verify(skillBindingMapper, never()).deleteByAgentId(any())
+        }
+
+        @Test
+        @DisplayName("deleteAgent - Reject while sessions still resolve to it")
+        fun `deleteAgent should reject while sessions still resolve to it`() {
+            // 会话在运行期按 id 解析 agent，留下这些会话就是让下一条消息去失败
+            `when`(agentMapper.selectById(1L)).thenReturn(testAgent)
+            `when`(sessionMapper.countByAgentId(1L)).thenReturn(3)
+            `when`(sessionMapper.countRunningByAgentId(1L)).thenReturn(1)
+
+            val exception = assertThrows<BizException> { agentService.deleteAgent(1L) }
+
+            assertTrue(exception.message!!.contains("3 session(s), 1 of them still in progress"))
+            verify(agentMapper, never()).deleteById(any())
+        }
+
+        @Test
+        @DisplayName("deleteAgent - Reject while a channel still points at it")
+        fun `deleteAgent should reject while a channel points at it`() {
+            `when`(agentMapper.selectById(1L)).thenReturn(testAgent)
+            `when`(channelMapper.selectByAgentId(1L)).thenReturn(
+                listOf(
+                    Channel().apply {
+                        id = 5L
+                        name = "Feishu bot"
+                        agentId = 1L
+                    },
+                ),
+            )
+
+            val exception = assertThrows<BizException> { agentService.deleteAgent(1L) }
+
+            assertTrue(exception.message!!.contains("channel(s): Feishu bot"))
+            // selectByAgentId 只取 10 条，会话那一半因此必须走计数而不是列表
+            assertFalse(exception.message!!.contains("session(s)"))
+            verify(agentMapper, never()).deleteById(any())
+        }
+
+        @Test
+        @DisplayName("deleteAgent - Name both references in one refusal")
+        fun `deleteAgent should name sessions and channels together`() {
+            `when`(agentMapper.selectById(1L)).thenReturn(testAgent)
+            `when`(sessionMapper.countByAgentId(1L)).thenReturn(2)
+            `when`(channelMapper.selectByAgentId(1L)).thenReturn(
+                listOf(
+                    Channel().apply {
+                        id = 6L
+                        name = "DingTalk bot"
+                        agentId = 1L
+                    },
+                ),
+            )
+
+            val exception = assertThrows<BizException> { agentService.deleteAgent(1L) }
+
+            val message = exception.message!!
+            assertTrue(message.contains("2 session(s)"))
+            // 全为已结束会话时不该出现进度那一小句
+            assertFalse(message.contains("in progress"))
+            assertTrue(message.contains("DingTalk bot"))
+            assertTrue(message.contains(" and "))
+            verify(mcpBindingMapper, never()).deleteByAgentId(any())
         }
     }
 
@@ -1320,11 +1499,10 @@ class AgentServiceImplTest {
         }
 
         @Test
-        @DisplayName("updateAgent - Bind a tool row owned by the sync, whatever tenant it carries")
-        fun `updateAgent should bind tool row of another tenant`() {
+        @DisplayName("updateAgent - A tool row is platform-scoped, so binding never compares a tenant")
+        fun `updateAgent should bind a platform scoped tool row`() {
             val synced = AgentTool().apply {
                 id = 9L
-                tenantId = 1L
                 name = "getDate"
             }
             val request = AgentUpdateRequest(toolList = listOf(ToolConfig(id = 9L)))
@@ -1613,6 +1791,41 @@ class AgentServiceImplTest {
             // When & Then
             assertThrows<BizException> { agentService.updateAgent(1L, request) }
             verify(cliBindingMapper, never()).batchInsert(any())
+        }
+
+        @Test
+        @DisplayName("updateAgent - Collapse repeated CLI ids within one request")
+        fun `updateAgent should dedupe repeated cli ids`() {
+            // Given - `cliList` is what the agent wizard rebuilds from a multi-select, so repeats do
+            // reach here; V41's uk_agent_cli_binding_agent_id_cli_id would reject the batch outright
+            `when`(cliMapper.selectByIds(listOf(3L, 4L))).thenReturn(
+                listOf(
+                    Cli().apply {
+                        id = 3L
+                        name = "lark-cli"
+                    },
+                    Cli().apply {
+                        id = 4L
+                        name = "aws-cli"
+                    },
+                ),
+            )
+            val request = AgentUpdateRequest(
+                cliList = listOf(
+                    AgentCreateRequest.CliConfig(id = 3L),
+                    AgentCreateRequest.CliConfig(id = 3L),
+                    AgentCreateRequest.CliConfig(id = 4L),
+                ),
+            )
+            stubAgentForUpdate()
+
+            // When
+            agentService.updateAgent(1L, request)
+
+            // Then - one row per cliId, in first-seen order
+            val captor = argumentCaptor<List<AgentCliBinding>>()
+            verify(cliBindingMapper).batchInsert(captor.capture())
+            assertEquals(listOf(3L, 4L), captor.firstValue.map { it.cliId })
         }
     }
 }

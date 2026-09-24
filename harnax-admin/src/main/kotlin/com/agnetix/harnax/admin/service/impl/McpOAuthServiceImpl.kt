@@ -116,11 +116,12 @@ class McpOAuthServiceImpl(
     }
 
     /**
-     * Single-row access goes through [McpServerService.getMcpServer] on purpose: that is where the
-     * tenant guard lives, and discovery hands out endpoints for a row the caller may not own.
+     * Single-row access goes through [McpServerService.getVisibleMcpServer] on purpose: that is where
+     * the tenant and visibility guards live, and discovery hands out endpoints for a row the caller may
+     * not own.
      */
     private fun requireOAuthServer(mcpId: Long): McpServer {
-        val server = mcpServerService.getMcpServer(mcpId)
+        val server = mcpServerService.getVisibleMcpServer(mcpId)
             ?: throw BizException("MCP server not found")
         if (server.authType != McpAuthTypes.OAUTH2) {
             throw BizException("MCP server '${server.name}' has auth type ${server.authType}, OAuth discovery does not apply")

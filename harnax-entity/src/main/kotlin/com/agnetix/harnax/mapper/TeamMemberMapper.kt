@@ -9,9 +9,6 @@ interface TeamMemberMapper {
 
     fun selectByTeamId(@Param("teamId") teamId: Long): List<TeamMember>
 
-    /** Batch read for the list page, so rendering N teams does not issue N member queries. */
-    fun selectByTeamIds(@Param("teamIds") teamIds: List<Long>): List<TeamMember>
-
     fun selectByMemberAgentId(@Param("agentId") agentId: Long): List<TeamMember>
 
     fun batchInsert(@Param("list") list: List<TeamMember>): Int

@@ -99,6 +99,7 @@ open class ModelMapperTest {
             // Given
             val now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
             val newModel = Model().apply {
+                tenantId = 8L
                 name = "New Model"
                 modelName = "new-model"
                 providerId = 1L
@@ -128,6 +129,7 @@ open class ModelMapperTest {
             val insertedModel = modelMapper.selectById(newModel.id)
             assertNotNull(insertedModel)
             assertEquals("New Model", insertedModel.name)
+            assertEquals(8L, insertedModel.tenantId, "the insert must carry the tenant, not the DDL default")
         }
 
         @Test
@@ -199,7 +201,7 @@ open class ModelMapperTest {
         @DisplayName("selectModelList - Query all models")
         fun `selectModelList should return all models`() {
             // When
-            val models = modelMapper.selectModelList(null, null, null, null, null, null, null, "admin")
+            val models = modelMapper.selectModelList(null, null, null, null, null, null, null, 1L)
 
             // Then
             assertTrue(models.isNotEmpty())
@@ -210,7 +212,7 @@ open class ModelMapperTest {
         @DisplayName("selectModelList - Filter by provider ID")
         fun `selectModelList should filter by provider id`() {
             // When
-            val models = modelMapper.selectModelList(null, 1L, null, null, null, null, null, "admin")
+            val models = modelMapper.selectModelList(null, 1L, null, null, null, null, null, 1L)
 
             // Then
             assertTrue(models.isNotEmpty())
@@ -223,13 +225,36 @@ open class ModelMapperTest {
         @DisplayName("selectModelList - Filter by model type")
         fun `selectModelList should filter by model type`() {
             // When
-            val models = modelMapper.selectModelList(null, null, "chat", null, null, null, null, "admin")
+            val models = modelMapper.selectModelList(null, null, "chat", null, null, null, null, 1L)
 
             // Then
             assertTrue(models.isNotEmpty())
             models.forEach {
                 assertEquals("chat", it.modelType)
             }
+        }
+
+        @Test
+        @DisplayName("selectModelList - Own tenant plus public rows of others")
+        fun `selectModelList should follow the tenant and public visibility rule`() {
+            // Given - seed: id 6 is tenant 1 private, id 7 is tenant 2 public
+            val otherTenantPrivateId = 6L
+            val otherTenantPublicId = 7L
+
+            // When
+            val forTenant1 = modelMapper.selectModelList(null, null, null, null, null, null, null, 1L)
+            val forTenant2 = modelMapper.selectModelList(null, null, null, null, null, null, null, 2L)
+
+            // Then
+            assertTrue(forTenant1.any { it.id == otherTenantPrivateId }, "own private rows stay listed")
+            assertTrue(
+                forTenant2.none { it.id == otherTenantPrivateId },
+                "another tenant's private row must not be listed",
+            )
+            assertTrue(
+                forTenant1.any { it.id == otherTenantPublicId } && forTenant2.any { it.id == otherTenantPublicId },
+                "a model published to the platform stays listed for every tenant",
+            )
         }
 
         @Test

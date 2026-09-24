@@ -59,7 +59,7 @@ class ModelProviderController(
     fun getModelProvider(
         @Parameter(description = "Model provider ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<ModelProviderResponse?> {
-        val response = modelProviderService.getModelProvider(id)
+        val response = modelProviderService.getVisibleModelProvider(id)
         return ResultVo.success(response?.let { modelProviderService.convertToResponse(it) })
     }
 

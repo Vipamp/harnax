@@ -2,6 +2,7 @@ package com.agnetix.harnax.admin.dto
 
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Size
 
 /**
@@ -14,13 +15,16 @@ data class AgentCreateRequest(
     @Size(min = 1, max = 100, message = "Agent name length must be between 1-100")
     val name: String? = null,
 
-    @Schema(description = "Agent description")
+    @Schema(description = "Agent description", requiredMode = Schema.RequiredMode.REQUIRED)
+    @NotNull(message = "Agent description cannot be empty")
     val description: String? = null,
 
-    @Schema(description = "System prompt (Markdown supported)")
+    @Schema(description = "System prompt (Markdown supported)", requiredMode = Schema.RequiredMode.REQUIRED)
+    @NotNull(message = "System prompt cannot be empty")
     val systemPrompt: String? = null,
 
-    @Schema(description = "Chat model ID", example = "1")
+    @Schema(description = "Chat model ID", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
+    @NotNull(message = "Chat model ID cannot be empty")
     val modelId: Long? = null,
 
     @Schema(description = "MCP server list")

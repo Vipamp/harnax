@@ -40,6 +40,8 @@ class SessionServiceImpl(
     private val teamMapper: TeamMapper,
     private val teamMemberMapper: TeamMemberMapper,
     private val teamSkillBindingMapper: TeamSkillBindingMapper,
+    private val teamArtifactCleaner: TeamArtifactCleaner,
+    private val agentRuntimeClient: AgentRuntimeClient,
 ) : SessionService {
 
     private val log = LoggerFactory.getLogger(SessionServiceImpl::class.java)
@@ -164,6 +166,11 @@ class SessionServiceImpl(
             if (loaded.tenantId != tenantId) {
                 throw BizException("Team belongs to another tenant")
             }
+            // Same rule the team list applies. Without it a private team someone cannot see could
+            // still be started against, which runs another user's configuration under this session.
+            if (loaded.isPublic != 1 && loaded.creator != UserContextUtil.getCurrentUsername(jwtUtil)) {
+                throw BizException("Team not found: $teamId")
+            }
             if (loaded.status != 1) {
                 throw BizException("Team '${loaded.name}' is disabled")
             }
@@ -237,7 +244,10 @@ class SessionServiceImpl(
         }
         session.title = request.title
         session.description = request.sessionDescription
-        request.agentId?.let { session.agentId = it }
+        // Resolved rather than copied: `getAgent` is where the tenant guard lives, and writing an
+        // unchecked id here let a session point at another tenant's agent — after which the spec
+        // delivered to this conversation was that agent's, tools and MCP headers included.
+        request.agentId?.let { session.agentId = agentService.getAgent(it)?.id ?: throw BizException("Agent not found") }
         session.updateTime = LocalDateTime.now()
         return sessionMapper.updateById(session) > 0
     }
@@ -298,6 +308,23 @@ class SessionServiceImpl(
 
         val session = ownedSession(id)
             ?: throw BizException("Session not found")
+
+        // The row is the last thing to go, not the first. What a conversation leaves behind — the stored
+        // agent state, the plan notes, the sandbox container — lives in the runtime, and admin cannot reach
+        // any of it from here; only the instance holding the session can release it. A runtime that says it
+        // could not therefore means a session would go on living as state nobody can name any more, so the
+        // deletion is refused and the row stays.
+        val cleared = agentRuntimeClient.clearSession(session.sessionId)
+        if (!cleared.isSuccess()) {
+            throw BizException("Session could not be released by the runtime, so it was not deleted: ${cleared.message}")
+        }
+
+        // A team artifact is keyed by this session id and nothing else can reach it once the session is
+        // gone, so the artifacts go first. Objects before rows: a later database failure then leaves a
+        // row naming a missing object, which a retry repairs, whereas the reverse order would strand an
+        // object no row points at. A team cannot be deleted while its sessions exist, so this is the
+        // only path that has to reclaim them.
+        teamArtifactCleaner.deleteForSession(session.sessionId)
 
         return this.sessionMapper.deleteById(id) > 0
     }

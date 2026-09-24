@@ -2,6 +2,7 @@ package com.agnetix.harnax.admin.it
 
 import com.agnetix.harnax.admin.HarnaxAdminApplication
 import com.agnetix.harnax.admin.util.JwtUtil
+import okhttp3.mockwebserver.MockWebServer
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.web.server.LocalServerPort
@@ -12,6 +13,7 @@ import org.springframework.http.HttpMethod
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.http.client.ClientHttpResponse
+import org.springframework.http.client.SimpleClientHttpRequestFactory
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
@@ -23,6 +25,8 @@ import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
 import tools.jackson.module.kotlin.jacksonObjectMapper
 import java.nio.file.Path
+import java.time.Duration
+import kotlin.random.Random
 
 /**
  * Base class for harnax-admin integration tests.
@@ -50,8 +54,17 @@ abstract class BaseAdminIT {
             .withUsername("root")
             .withPassword("it_test")
 
+        /** What admin's runtime releases look like to this JVM; see [FakeRouter]. */
+        @JvmStatic
+        val fakeRouter: FakeRouter = FakeRouter()
+
+        @JvmStatic
+        private val routerServer: MockWebServer = MockWebServer()
+
         init {
             mysql.start()
+            routerServer.dispatcher = fakeRouter
+            routerServer.start()
         }
 
         @JvmStatic
@@ -60,8 +73,15 @@ abstract class BaseAdminIT {
             registry.add("spring.datasource.url", mysql::getJdbcUrl)
             registry.add("spring.datasource.username", mysql::getUsername)
             registry.add("spring.datasource.password", mysql::getPassword)
+            // Deleting a session releases its runtime state through this address first, and a refused
+            // release keeps the session. Left on the default it would point at a router that does not
+            // exist here, and every deletion in every class would answer that refusal.
+            registry.add("harnax.router.url") { "http://localhost:${routerServer.port}" }
         }
     }
+
+    /** The released session ids admin has asked the runtime to let go of, oldest first. */
+    protected fun clearedSessions(): List<String> = fakeRouter.cleared.toList()
 
     @LocalServerPort
     protected var port: Int = 0
@@ -72,7 +92,13 @@ abstract class BaseAdminIT {
     protected val json: ObjectMapper = jacksonObjectMapper()
 
     private val rest: RestTemplate by lazy {
-        RestTemplate().apply {
+        // Bounded on purpose: in the 2026-09-23 full IT run one request never got answered and the JVM sat
+        // in a socket read for 45 minutes. A read timeout turns that into a named failure of one test class.
+        val factory = SimpleClientHttpRequestFactory().apply {
+            setConnectTimeout(Duration.ofSeconds(10))
+            setReadTimeout(Duration.ofSeconds(120))
+        }
+        RestTemplate(factory).apply {
             // Never throw on 4xx/5xx: tests assert on the ResultVo body instead
             errorHandler = object : ResponseErrorHandler {
                 override fun hasError(response: ClientHttpResponse): Boolean = false
@@ -89,10 +115,22 @@ abstract class BaseAdminIT {
         setBearerAuth(token)
     }
 
-    protected fun exchange(method: HttpMethod, path: String, body: Any? = null, token: String? = adminToken()): ResponseEntity<String> {
+    /**
+     * With [tenantId] set the request carries `X-Tenant-ID`, which is what the tenant interceptor
+     * turns into the caller's tenant. An admin token is enough to use it: the interceptor skips the
+     * membership check for admins, so a test can prove a rule is per-tenant rather than global.
+     */
+    protected fun exchange(
+        method: HttpMethod,
+        path: String,
+        body: Any? = null,
+        token: String? = adminToken(),
+        tenantId: Long? = null,
+    ): ResponseEntity<String> {
         val headers = HttpHeaders().apply {
             contentType = MediaType.APPLICATION_JSON
             if (token != null) setBearerAuth(token)
+            tenantId?.let { set("X-Tenant-ID", it.toString()) }
         }
         val payload: String? = when (body) {
             null -> null
@@ -164,4 +202,53 @@ abstract class BaseAdminIT {
             pageNum++
         }
     }
+
+    private var agentModelId: Long = 0
+
+    /**
+     * A model usable as `agent.modelId`, created on demand through the API.
+     *
+     * `createAgent` dereferences `modelId` before it writes anything, so an IT that needs an agent has
+     * to name a real model or every agent-dependent case in the class dies on the same 500.
+     */
+    protected fun ensureAgentModelId(): Long {
+        if (agentModelId > 0) return agentModelId
+        val tag = Random.nextInt(100000, 999999)
+        assertOk(postJson("/api/admin/model-providers", mapOf("type" to "it_base_$tag", "name" to "it_base_provider_$tag")))
+        val provider = findInPage("/api/admin/model-providers/page", "name=it_base_provider_$tag") {
+            it["name"]?.asText() == "it_base_provider_$tag"
+        } ?: error("prerequisite provider should exist")
+        assertOk(
+            postJson(
+                "/api/admin/models",
+                mapOf(
+                    "name" to "it_base_model_$tag",
+                    "modelName" to "it-base-model-$tag",
+                    "providerId" to provider["id"].asLong(),
+                    "modelType" to "chat",
+                ),
+            ),
+        )
+        val model = findInPage("/api/admin/models/page", "name=it_base_model_$tag") {
+            it["name"]?.asText() == "it_base_model_$tag"
+        } ?: error("prerequisite model should exist")
+        agentModelId = model["id"].asLong()
+        return agentModelId
+    }
+
+    /**
+     * A body `/api/admin/agents` accepts.
+     *
+     * `description`, `systemPrompt` and `modelId` are required: since AGENT-20 the DTO validates them,
+     * so an omitted one is a named 400 rather than the 500 it used to be. The write does not check
+     * `modelId` against the table, but every read resolves it to fill `modelName` and `price`, so the
+     * id should name a real row — which is what [ensureAgentModelId] provides. An empty description or
+     * prompt stays legal.
+     */
+    protected fun agentCreateBody(name: String, description: String = ""): Map<String, Any?> = mapOf(
+        "name" to name,
+        "description" to description,
+        "systemPrompt" to "",
+        "modelId" to ensureAgentModelId(),
+    )
 }

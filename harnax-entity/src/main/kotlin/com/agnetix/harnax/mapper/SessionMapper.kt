@@ -44,6 +44,15 @@ interface SessionMapper {
     fun selectByAgentId(@Param("agentId") agentId: Long): List<Session>
 
     /**
+     * Live sessions of one agent. `selectByAgentId` is capped at 10 rows because it only feeds the
+     * response's session list, so it cannot answer whether an agent is still in use.
+     */
+    fun countByAgentId(@Param("agentId") agentId: Long): Int
+
+    /** Of those, how many are still in progress (`status = 1`) rather than ended. */
+    fun countRunningByAgentId(@Param("agentId") agentId: Long): Int
+
+    /**
      * Active sessions running in team mode for this team.
      *
      * Deliberately unbounded: the caller pushes a refresh to every row it returns, so a cap would drop

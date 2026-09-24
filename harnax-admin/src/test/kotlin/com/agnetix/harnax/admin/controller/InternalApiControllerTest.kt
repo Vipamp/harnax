@@ -1,9 +1,11 @@
 package com.agnetix.harnax.admin.controller
 
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.registrar.BuiltinToolAutoRegistrar
 import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.service.McpOAuthUserService
 import com.agnetix.harnax.admin.service.McpStdioPolicy
+import com.agnetix.harnax.admin.skill.SkillBindingResolver
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.entity.Agent
@@ -42,11 +44,13 @@ import com.agnetix.harnax.mapper.TeamMapper
 import com.agnetix.harnax.mapper.TeamMemberMapper
 import com.agnetix.harnax.mapper.TeamSkillBindingMapper
 import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.ArgumentMatchers.anyInt
+import org.mockito.ArgumentMatchers.anyList
 import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.InjectMocks
@@ -140,8 +144,30 @@ class InternalApiControllerTest {
     @Mock
     private lateinit var teamSkillBindingMapper: TeamSkillBindingMapper
 
+    /**
+     * Left unstubbed in most cases on purpose: a mock returns an empty set, which the delivery filter
+     * reads as "the sync did not run" and therefore does not filter. Only the cases that pin the
+     * filter stub it with a name set.
+     */
+    @Mock
+    private lateinit var builtinToolAutoRegistrar: BuiltinToolAutoRegistrar
+
+    @Mock
+    private lateinit var skillBindingResolver: SkillBindingResolver
+
     @InjectMocks
     private lateinit var controller: InternalApiController
+
+    /**
+     * Delivery asks the binding resolver which skills the holder's tenant may receive; delegate that to
+     * the `skillMapper.selectByIds` stubs the cases below already set, so those stubs keep describing
+     * what goes out rather than how the scope is computed.
+     */
+    @BeforeEach
+    fun stubSkillDelivery() {
+        `when`(skillBindingResolver.deliverable(anyList(), anyLong()))
+            .thenAnswer { invocation -> skillMapper.selectByIds(invocation.getArgument(0)) }
+    }
 
     @Nested
     @DisplayName("API Key 验证接口")
@@ -666,7 +692,6 @@ class InternalApiControllerTest {
             assertEquals("你是本次协作的负责人，只拆解、委派与验收", data.lead.systemPrompt)
             assertEquals(11L, data.lead.modelId)
             assertEquals(listOf("pdf-report"), data.lead.skillDetails.map { it.name })
-            assertEquals("100", data.lead.skillList)
             assertEquals(listOf(3L), data.members.map { it.memberAgentId })
             assertEquals("Researcher", data.members.first().spec.agentName)
         }
@@ -958,7 +983,7 @@ class InternalApiControllerTest {
         }
 
         @Test
-        @DisplayName("停用的技能既不进 skillDetails，也不进 skillList")
+        @DisplayName("停用的技能不进 skillDetails")
         fun `getAgentSpec should drop a disabled skill from both halves of the answer`() {
             // status = 0 有两个来源：运维在管理页手动停用，或重新导入时被 SkillContentScanner
             // 命中高危命令后降级待审核。两种情况下绑定关系都还在，闸门只能在这里生效
@@ -968,8 +993,6 @@ class InternalApiControllerTest {
 
             assertNotNull(data)
             assertEquals(listOf(11L), data?.skillDetails?.map { it.id })
-            // skillList 若从绑定关系拼出来，就会把刚被丢弃的 12 也列进去，同一个响应两半自相矛盾
-            assertEquals("11", data?.skillList)
         }
 
         @Test
@@ -998,7 +1021,27 @@ class InternalApiControllerTest {
 
             assertNotNull(data)
             assertEquals(listOf(21L), data?.skillDetails?.map { it.id })
-            assertEquals("21", data?.skillList)
+        }
+
+        @Test
+        @DisplayName("技能下发按 agent 的租户向绑定解析器取行，不是裸查")
+        fun `getAgentSpec should scope skill delivery to the agents tenant`() {
+            stubAgentWithSkills(skill(11L, "own-skill", 1))
+            `when`(agentMapper.selectById(100L)).thenReturn(
+                Agent().apply {
+                    id = 100L
+                    name = "Skill Agent"
+                    systemPrompt = "You are a skill agent"
+                    modelId = 5L
+                    tenantId = 7L
+                },
+            )
+
+            controller.getAgentSpec("web-skill")
+
+            // The drop itself belongs to SkillBindingResolverTest; what this layer can get wrong is
+            // asking at all — a plain `skillMapper.selectByIds` here would deliver every bound row.
+            verify(skillBindingResolver).deliverable(listOf(11L), 7L)
         }
 
         @Test
@@ -1014,7 +1057,6 @@ class InternalApiControllerTest {
 
             assertNotNull(data)
             assertEquals(listOf(31L), data?.skillDetails?.map { it.id })
-            assertEquals("31", data?.skillList)
             assertEquals(32L, data?.cliDetails?.single()?.skill?.id)
             assertEquals("# cli-skill", data?.cliDetails?.single()?.skill?.skillmd)
         }
@@ -1340,6 +1382,31 @@ class InternalApiControllerTest {
 
             assertNotNull(tool)
             assertEquals(0, tool?.status)
+        }
+
+        @Test
+        @DisplayName("getAgentSpec - 代码里已删除的工具不下发（行还在库里）")
+        fun `getAgentSpec should hold back a tool the code no longer declares`() {
+            stubWebSessionWithBindings(22L)
+            // 同步不删除任何行，所以库里留着这个工具；它已不在本次声明的名字集合里
+            `when`(agentToolMapper.selectByIds(listOf(22L))).thenReturn(listOf(stubTool(22L, "removedTool")))
+            `when`(builtinToolAutoRegistrar.registeredToolNames()).thenReturn(setOf("getDate", "getDatetime"))
+
+            val data = controller.getAgentSpec("web-tools").data
+
+            assertTrue(data?.toolDetails.isNullOrEmpty(), "未声明的工具不应进入下发")
+        }
+
+        @Test
+        @DisplayName("getAgentSpec - 声明集合为空表示同步没跑，此时不做过滤")
+        fun `getAgentSpec should not filter when the sync has not run`() {
+            stubWebSessionWithBindings(22L)
+            `when`(agentToolMapper.selectByIds(listOf(22L))).thenReturn(listOf(stubTool(22L, "removedTool")))
+            `when`(builtinToolAutoRegistrar.registeredToolNames()).thenReturn(emptySet())
+
+            val data = controller.getAgentSpec("web-tools").data
+
+            assertEquals(listOf(22L), data?.toolDetails?.map { it.id })
         }
     }
 

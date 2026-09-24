@@ -29,6 +29,7 @@ import com.agnetix.harnax.mapper.AgentSkillBindingMapper
 import com.agnetix.harnax.mapper.AgentToolBindingMapper
 import com.agnetix.harnax.mapper.AgentToolEnvParamMapper
 import com.agnetix.harnax.mapper.AgentToolMapper
+import com.agnetix.harnax.mapper.ChannelMapper
 import com.agnetix.harnax.mapper.CliMapper
 import com.agnetix.harnax.mapper.McpServerMapper
 import com.agnetix.harnax.mapper.SessionMapper
@@ -56,6 +57,7 @@ class AgentServiceImpl(
     private val agentToolService: AgentToolService,
     private val modelService: ModelService,
     private val sessionMapper: SessionMapper,
+    private val channelMapper: ChannelMapper,
     private val jwtUtil: JwtUtil,
     private val envVariableService: EnvVariableService,
     private val toolBindingMapper: AgentToolBindingMapper,
@@ -92,6 +94,13 @@ class AgentServiceImpl(
     override fun createAgent(request: AgentCreateRequest): Boolean = try {
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
 
+        // Checked before the insert so a clash is a usable message rather than the SQL error the
+        // unique key V43 adds would raise - the same two-layer shape as uk_mcp_server_tenant_active_name
+        val tenantId = currentTenantId()
+        if (agentMapper.selectByName(request.name!!, tenantId) != null) {
+            throw BizException("Agent name already exists")
+        }
+
         val agent = Agent()
         agent.name = request.name!!
         agent.description = request.description!!
@@ -100,7 +109,7 @@ class AgentServiceImpl(
         agent.owner = currentUsername
         agent.status = request.status ?: 1
         agent.isPublic = request.isPublic ?: 0
-        agent.tenantId = currentTenantId()
+        agent.tenantId = tenantId
         agent.creator = currentUsername
 
         agent.createTime = LocalDateTime.now()
@@ -135,7 +144,13 @@ class AgentServiceImpl(
         val agent = getAgent(id)
             ?: throw RuntimeException("Agent not found")
 
-        request.name?.let { agent.name = it }
+        request.name?.let { name ->
+            // Only a rename can collide: keeping the stored name would match this very row.
+            if (name != agent.name && agentMapper.selectByName(name, agent.tenantId) != null) {
+                throw BizException("Agent name already exists")
+            }
+            agent.name = name
+        }
         request.description?.let { agent.description = it }
         request.systemPrompt?.let { agent.systemPrompt = it }
         request.modelId?.let { agent.modelId = it }
@@ -143,6 +158,10 @@ class AgentServiceImpl(
 
         agent.updateTime = LocalDateTime.now()
         agentMapper.updateById(agent)
+
+        // Start/stop goes through the statement the toggle endpoint uses, so an update that carries a
+        // status cannot land somewhere the switch does not. getAgent above already cleared the tenant.
+        request.status?.let { agentMapper.updateStatus(id, it) }
 
         // Update binding tables (delete-then-insert pattern)
         if (request.toolList != null) {
@@ -188,6 +207,24 @@ class AgentServiceImpl(
             throw BizException(
                 "This agent is a member of team(s): ${memberOf.joinToString(", ") { it.name }}. " +
                     "Remove it from these teams before deleting it.",
+            )
+        }
+        // A session or a channel resolves its agent by id at run time, so deleting this row would leave
+        // them failing on the next message. Both references have to be released first.
+        val sessions = sessionMapper.countByAgentId(id)
+        val running = sessionMapper.countRunningByAgentId(id)
+        val channels = channelMapper.selectByAgentId(id)
+        val refs = buildList {
+            if (sessions > 0) {
+                val progress = if (running > 0) ", $running of them still in progress" else ""
+                add("$sessions session(s)$progress")
+            }
+            if (channels.isNotEmpty()) add("channel(s): ${channels.joinToString(", ") { it.name }}")
+        }
+        if (refs.isNotEmpty()) {
+            throw BizException(
+                "This agent is still used by ${refs.joinToString(" and ")}. " +
+                    "Remove these before deleting it.",
             )
         }
         // Clean up bindings before deleting agent
@@ -397,8 +434,10 @@ class AgentServiceImpl(
                 "MCP server '${server.name}'",
                 secretFieldEncryptor.deserializeToolEnvEntries(server.envParams),
                 config.envBindings,
-                // `mcp_server.env_params` is delivered whole and decrypted as the stdio process env,
-                // so a declared default does land in the runtime and may answer a required param.
+                // Only a stdio row has anything in this column now, and for that row the claim holds:
+                // delivery sends `env_params` and the runtime spawns the process with them, so a
+                // declared default really does answer a required param. A network row yields no
+                // declarations here at all, which is why it has nothing to fill.
                 defaultValueCounts = true,
             )
             AgentMcpBinding().apply {
@@ -529,7 +568,7 @@ class AgentServiceImpl(
                 this.createTime = now
                 this.updateTime = now
             }
-        }
+        }.distinctBy { it.cliId }
         if (bindings.isNotEmpty()) {
             cliBindingMapper.batchInsert(bindings)
         }
@@ -670,7 +709,7 @@ class AgentServiceImpl(
                     if (envVar != null && envVar.sensitive == 1) {
                         "******"
                     } else {
-                        envVariableService.getDecryptedValue(envVarId) ?: snapshotValue
+                        envVariableService.getDecryptedValue(envVarId, currentTenantId()) ?: snapshotValue
                     }
                 } else {
                     snapshotValue

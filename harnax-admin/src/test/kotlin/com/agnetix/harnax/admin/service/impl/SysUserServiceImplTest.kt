@@ -9,6 +9,7 @@ import com.agnetix.harnax.admin.service.ApiKeyService
 import com.agnetix.harnax.entity.SysUser
 import com.agnetix.harnax.entity.TenantEntity
 import com.agnetix.harnax.entity.UserTenantEntity
+import com.agnetix.harnax.mapper.McpUserCredentialMapper
 import com.agnetix.harnax.mapper.SysUserMapper
 import com.agnetix.harnax.mapper.TenantMapper
 import com.agnetix.harnax.mapper.UserTenantMapper
@@ -56,6 +57,11 @@ class SysUserServiceImplTest {
 
     @Mock
     private lateinit var apiKeyService: ApiKeyService
+
+    // @InjectMocks picks the biggest constructor: a parameter that is not declared as a mock arrives
+    // as null and Kotlin's non-null check then fails the whole class.
+    @Mock
+    private lateinit var mcpUserCredentialMapper: McpUserCredentialMapper
 
     @InjectMocks
     private lateinit var sysUserService: SysUserServiceImpl
@@ -815,6 +821,39 @@ class SysUserServiceImplTest {
             assertTrue(result)
             verify(sysUserMapper).selectById(1L)
             verify(sysUserMapper).deleteById(1L)
+        }
+
+        @Test
+        @DisplayName("deleteUser - Clears the MCP grants of the deleted account")
+        fun `deleteUser should clear the MCP grants of the deleted account`() {
+            // Given
+            `when`(sysUserMapper.selectById(1L)).thenReturn(testUser)
+            `when`(sysUserMapper.deleteById(1L)).thenReturn(1)
+            `when`(mcpUserCredentialMapper.deleteByUserId(1L)).thenReturn(2)
+
+            // When
+            assertTrue(sysUserService.deleteUser(1L))
+
+            // Then - the user row only goes active = 0, so this is the last moment anything reaches
+            // those grants. Left alone they stay ACTIVE, keep their ciphertext, and their owner has
+            // no page left to revoke them from.
+            verify(mcpUserCredentialMapper).deleteByUserId(1L)
+        }
+
+        @Test
+        @DisplayName("deleteUser - 用户行没删掉时不动凭据")
+        fun `deleteUser should leave grants alone when the user row was not deleted`() {
+            // Given
+            `when`(sysUserMapper.selectById(1L)).thenReturn(testUser)
+            `when`(sysUserMapper.deleteById(1L)).thenReturn(0)
+
+            // When
+            val result = sysUserService.deleteUser(1L)
+
+            // Then - same reasoning as deleteMcpServer cascading only on a hit: the account is still
+            // there, so its grants are still someone's.
+            assertFalse(result)
+            verify(mcpUserCredentialMapper, never()).deleteByUserId(anyLong())
         }
 
         @Test

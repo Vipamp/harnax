@@ -45,7 +45,6 @@ class AgentToolControllerTest {
     fun setUp() {
         testTool = AgentTool().apply {
             id = 1L
-            tenantId = 1L
             name = "send_email"
             displayName = "Send Email"
             description = "Send an email"

@@ -21,10 +21,10 @@
         SELECT * FROM process_log WHERE id = #{id} LIMIT 1
     </select>
 
-    <!-- deleteById -->
-    <update id="deleteById">
-        UPDATE process_log SET active = 0 WHERE id = #{id}
-    </update>
+    <!-- deleteById: `process_log` has no active column, so a soft delete here would only fail -->
+    <delete id="deleteById">
+        DELETE FROM process_log WHERE id = #{id}
+    </delete>
 
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">

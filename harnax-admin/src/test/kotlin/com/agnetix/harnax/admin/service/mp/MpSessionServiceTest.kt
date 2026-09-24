@@ -3,6 +3,8 @@ package com.agnetix.harnax.admin.service.mp
 import com.agnetix.harnax.admin.dto.mp.MpCreateSessionRequest
 import com.agnetix.harnax.admin.dto.mp.MpUpdateSessionRequest
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.service.AgentRuntimeClient
+import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.MpSession
 import com.agnetix.harnax.entity.Session
@@ -20,6 +22,7 @@ import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.InjectMocks
 import org.mockito.Mock
+import org.mockito.Mockito.inOrder
 import org.mockito.Mockito.never
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
@@ -52,6 +55,9 @@ class MpSessionServiceTest {
 
     @Mock
     private lateinit var sessionMapper: SessionMapper
+
+    @Mock
+    private lateinit var agentRuntimeClient: AgentRuntimeClient
 
     @InjectMocks
     private lateinit var mpSessionService: MpSessionService
@@ -348,14 +354,45 @@ class MpSessionServiceTest {
                 status = 1
             }
             `when`(sessionMapper.selectBySessionIdAndStatus("mp-router-1", 1)).thenReturn(routerSession)
+            `when`(agentRuntimeClient.clearSession("mp-router-1")).thenReturn(ResultVo.success())
 
             // When
             mpSessionService.deleteSession(1L, 100L)
 
             // Then
-            verify(sessionMapper, times(1)).deleteById(200L)
-            verify(mpSessionMapper, times(1)).deleteById(100L)
+            val order = inOrder(agentRuntimeClient, sessionMapper, mpSessionMapper)
+            order.verify(agentRuntimeClient).clearSession("mp-router-1")
+            order.verify(sessionMapper).deleteById(200L)
+            order.verify(mpSessionMapper).deleteById(100L)
             verify(mpChatMessageMapper, times(1)).deleteBySessionId(100L)
+        }
+
+        @Test
+        @DisplayName("deleteSession - 运行侧未能释放时本地一行都不动")
+        fun `deleteSession should keep every row when the runtime cannot release it`() {
+            // Given
+            `when`(mpSessionMapper.selectByIdAndUserId(100L, 1L)).thenReturn(testMpSession)
+            `when`(sessionMapper.selectBySessionIdAndStatus("mp-router-1", 1)).thenReturn(
+                Session().apply {
+                    id = 200L
+                    sessionId = "mp-router-1"
+                    status = 1
+                },
+            )
+            `when`(agentRuntimeClient.clearSession("mp-router-1"))
+                .thenReturn(ResultVo.error(500, "sandbox container is busy"))
+
+            // When & Then - 运行侧那句原因是用户要读到的内容；行留着，否则运行态成了谁也指认不了的东西
+            val ex = assertThrows<BizException> {
+                mpSessionService.deleteSession(1L, 100L)
+            }
+            assertTrue(
+                ex.message!!.contains("sandbox container is busy"),
+                "expected the runtime's own reason, got: ${ex.message}",
+            )
+            verify(sessionMapper, never()).deleteById(anyLong())
+            verify(mpSessionMapper, never()).deleteById(anyLong())
+            verify(mpChatMessageMapper, never()).deleteBySessionId(anyLong())
         }
 
         @Test
@@ -369,6 +406,7 @@ class MpSessionServiceTest {
             mpSessionService.deleteSession(1L, 100L)
 
             // Then
+            verify(agentRuntimeClient, never()).clearSession(any())
             verify(sessionMapper, never()).deleteById(anyLong())
             verify(mpSessionMapper, times(1)).deleteById(100L)
             verify(mpChatMessageMapper, times(1)).deleteBySessionId(100L)

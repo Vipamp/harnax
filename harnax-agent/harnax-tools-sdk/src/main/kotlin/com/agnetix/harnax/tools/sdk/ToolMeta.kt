@@ -7,7 +7,7 @@ package com.agnetix.harnax.tools.sdk
  *
  * Works alongside @Tool (from agentscope):
  * - @Tool provides: name, description, readOnly
- * - @ToolMeta provides: displayName, displayNameZh, envParamDefs, timeoutSeconds, needConfirm
+ * - @ToolMeta provides: displayName, displayNameZh, envParamDefs, needConfirm
  *
  * Usage:
  * ```
@@ -36,8 +36,6 @@ annotation class ToolMeta(
      * Each tool method can declare its own set of env params.
      */
     val envParamDefs: Array<ToolEnvParamDef> = [],
-    /** Execution timeout in seconds (0 = use system default) */
-    val timeoutSeconds: Int = 0,
     /** Whether this tool requires user confirmation before execution */
     val needConfirm: Boolean = false,
     /**

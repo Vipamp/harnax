@@ -41,6 +41,7 @@ class AgentCrudIT : BaseAdminIT() {
             "systemPrompt" to "You are a helpful assistant.",
             "status" to 1,
             "isPublic" to 0,
+            "modelId" to ensureAgentModelId(),
         )
         assertOk(postJson("/api/admin/agents", body))
     }
@@ -98,18 +99,61 @@ class AgentCrudIT : BaseAdminIT() {
 
     @Test
     @Order(7)
-    fun `create agent without name returns 400`() {
-        assertErr(postJson("/api/admin/agents", mapOf("name" to "", "description" to "no name")))
+    fun `a create missing a required field is refused by name`() {
+        val base = agentCreateBody("it_agent_missing_$suffix")
+        // Every row is refused, so nothing here needs cleaning up — and a create that did land would
+        // fail the assertErr below.
+        val reasons = mapOf(
+            "name" to "Agent name cannot be empty",
+            "description" to "Agent description cannot be empty",
+            "systemPrompt" to "System prompt cannot be empty",
+            "modelId" to "Chat model ID cannot be empty",
+        )
+        reasons.forEach { (field, reason) ->
+            val node = postJson("/api/admin/agents", base - field)
+            assertErr(node)
+            val message = node["message"].asText()
+            // AGENT-20: the service force-unwrapped all four, so an omitted one surfaced as
+            // 500 "Failed to create agent: null" — a crash that named neither the field nor the fix.
+            assertTrue(message.startsWith("$field: "), "the refusal should name $field, got: $message")
+            assertTrue(message.contains(reason), "the refusal should carry the reason, got: $message")
+        }
     }
 
     @Test
     @Order(8)
-    fun `delete agent then detail returns empty`() {
+    fun `an agent that owns a session cannot be deleted until the session goes`() {
+        val holderName = "it_agent_holder_$suffix"
+        val title = "it_agent_holder_session_$suffix"
+        assertOk(postJson("/api/admin/agents", agentCreateBody(holderName)))
+        val holderId = findInPage("/api/admin/agents/page", "name=$holderName") {
+            it["name"]?.asText() == holderName
+        }?.get("id")?.asLong() ?: error("prerequisite agent should exist")
+        assertOk(postJson("/api/admin/sessions", mapOf("title" to title, "agentId" to holderId)))
+
+        // AGENT-03: the run-time resolves its agent by id, so deleting the row here would leave the
+        // session failing on its next message instead of reporting what still points at the agent.
+        val refused = deleteJson("/api/admin/agents/$holderId")
+        assertErr(refused)
+        val message = refused["message"].asText()
+        assertTrue(message.contains("session(s)"), "the refusal should count the sessions, got: $message")
+        assertTrue(message.contains("1 session(s)"), "the refusal should say how many, got: $message")
+
+        val sessionId = findInPage("/api/admin/sessions/page", "keyword=$title") {
+            it["title"]?.asText() == title
+        }?.get("id")?.asLong() ?: error("prerequisite session should exist")
+        assertOk(deleteJson("/api/admin/sessions/$sessionId"))
+        assertOk(deleteJson("/api/admin/agents/$holderId"))
+    }
+
+    @Test
+    @Order(9)
+    fun `delete agent then detail reports not found`() {
         assertOk(deleteJson("/api/admin/agents/${locateAgentId()}"))
 
         val node = getJson("/api/admin/agents/$agentId")
-        assertEquals(200, node["code"].asInt())
-        assertTrue(node["data"] == null || node["data"].isNull, "deleted agent should not be returned")
+        assertEquals(404, node["code"].asInt(), "a deleted agent should not be returned")
+        assertTrue(node["data"] == null || node["data"].isNull)
 
         val record = findInPage("/api/admin/agents/page", "name=$agentName") {
             it["name"]?.asText() == agentName

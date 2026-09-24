@@ -5,6 +5,7 @@
     <!-- Result Map -->
     <resultMap id="ModelResultMap" type="com.agnetix.harnax.entity.Model">
         <id column="id" property="id"/>
+        <result column="tenant_id" property="tenantId"/>
         <result column="name" property="name"/>
         <result column="model_name" property="modelName"/>
         <result column="provider_id" property="providerId"/>
@@ -23,6 +24,13 @@
         <result column="active" property="active"/>
         <result column="create_time" property="createTime"/>
         <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <!-- Reference counts for the delete guard: three live-row counts, read in one statement -->
+    <resultMap id="ModelUsageResultMap" type="com.agnetix.harnax.entity.dto.ModelUsage">
+        <result column="agent_count" property="agentCount"/>
+        <result column="team_count" property="teamCount"/>
+        <result column="session_count" property="sessionCount"/>
     </resultMap>
 
     <!-- ==================== Basic CRUD Methods ==================== -->
@@ -62,13 +70,21 @@
         SELECT COUNT(*) FROM model WHERE provider_id = #{providerId} AND status = 0 AND active = 1
     </select>
 
+    <!-- selectUsageByModelId: what still stands on this model, so a refusal can name it -->
+    <select id="selectUsageByModelId" resultMap="ModelUsageResultMap">
+        SELECT
+        (SELECT COUNT(*) FROM agent WHERE model_id = #{modelId} AND active = 1) AS agent_count,
+        (SELECT COUNT(*) FROM team WHERE model_id = #{modelId} AND active = 1) AS team_count,
+        (SELECT COUNT(*) FROM session WHERE model_id = #{modelId} AND active = 1) AS session_count
+    </select>
+
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO model (
-        name, model_name, provider_id, description, model_type, support_internet, support_reasoning, thinking_mode, support_tool,
+        tenant_id, name, model_name, provider_id, description, model_type, support_internet, support_reasoning, thinking_mode, support_tool,
         support_mcp, support_vision, price, status, is_public, creator, active, create_time, update_time
         ) VALUES (
-        #{name}, #{modelName}, #{providerId}, #{description}, #{modelType}, #{supportInternet}, #{supportReasoning},
+        #{tenantId}, #{name}, #{modelName}, #{providerId}, #{description}, #{modelType}, #{supportInternet}, #{supportReasoning},
         #{thinkingMode}, #{supportTool}, #{supportMcp}, #{supportVision}, #{price}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime},
         #{updateTime}
         )
@@ -100,11 +116,11 @@
         UPDATE model SET status = #{status}, update_time = NOW() WHERE id = #{id} AND active = 1
     </update>
 
-    <!-- selectModelList -->
+    <!-- selectModelList: own tenant plus anything published to the platform -->
     <select id="selectModelList" resultMap="ModelResultMap">
         SELECT * FROM model
         WHERE active = 1
-        AND (is_public = 1 OR creator = #{currentUsername})
+        AND (tenant_id = #{tenantId} OR is_public = 1)
         <if test='name != null and name != ""'>
             AND (name LIKE CONCAT('%', #{name}, '%')
             OR model_name LIKE CONCAT('%', #{name}, '%'))

@@ -1,32 +1,38 @@
 package com.agnetix.harnax.admin.registrar
 
 import com.agnetix.harnax.entity.AgentTool
-import com.agnetix.harnax.mapper.AgentToolBindingMapper
+import com.agnetix.harnax.entity.AgentToolEnvParam
 import com.agnetix.harnax.mapper.AgentToolEnvParamMapper
 import com.agnetix.harnax.mapper.AgentToolMapper
+import com.agnetix.harnax.tools.sdk.ToolEnvParamDescriptor
 import com.agnetix.harnax.tools.sdk.ToolMetaDescriptor
 import com.agnetix.harnax.tools.sdk.ToolMethodDescriptor
 import com.agnetix.harnax.tools.sdk.registry.ToolRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.extension.ExtendWith
-import org.mockito.ArgumentMatchers.*
+import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.Mock
 import org.mockito.Mockito.never
+import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
-import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.quality.Strictness
+import org.mockito.kotlin.any as kAny
 
 /**
  * BuiltinToolAutoRegistrar Unit Tests
- * The registrar is the only lifecycle path for builtin tools, so the convergence rules —
- * especially the prune that hard deletes — need coverage before they can be trusted.
+ *
+ * The registrar is the only lifecycle path for builtin tools, and it is additive: a declaration it
+ * does not find is inserted, one it finds is refreshed when a code-owned column differs, and nothing
+ * is ever deleted. These cases pin those three rules plus the duplicate-name refusal.
  */
 @ExtendWith(MockitoExtension::class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -41,189 +47,179 @@ class BuiltinToolAutoRegistrarTest {
     @Mock
     private lateinit var agentToolEnvParamMapper: AgentToolEnvParamMapper
 
-    @Mock
-    private lateinit var agentToolBindingMapper: AgentToolBindingMapper
-
     private lateinit var registrar: BuiltinToolAutoRegistrar
 
     @BeforeEach
     fun setUp() {
-        registrar = BuiltinToolAutoRegistrar(toolRegistry, agentToolMapper, agentToolEnvParamMapper, agentToolBindingMapper)
-        `when`(agentToolMapper.selectAllBuiltin()).thenReturn(emptyList())
+        registrar = BuiltinToolAutoRegistrar(toolRegistry, agentToolMapper, agentToolEnvParamMapper)
         `when`(agentToolEnvParamMapper.selectByToolId(anyLong())).thenReturn(emptyList())
     }
 
     @Test
-    @DisplayName("sync - one upsert per @Tool method, nothing pruned when DB matches code")
-    fun `sync should upsert every method and prune nothing when the database matches the code`() {
-        // Given
-        val live = dbTool(id = 1L, methodName = "currentTime", toolName = TOOL_NAME)
+    @DisplayName("sync - a declaration the table does not hold is inserted")
+    fun `sync should insert a tool the database does not hold`() {
         givenCode(LIVE_BEAN to listOf(methodOf("currentTime", TOOL_NAME)))
-        `when`(agentToolMapper.selectByBeanName(LIVE_BEAN)).thenReturn(listOf(live))
+        `when`(agentToolMapper.selectByName(TOOL_NAME)).thenReturn(null)
 
-        // When
         registrar.syncBuiltinTools()
 
-        // Then
-        verify(agentToolMapper).upsertBuiltinTool(any())
-        verify(agentToolMapper, never()).deleteBuiltinByIds(any())
-        verify(agentToolBindingMapper, never()).deleteByToolIds(any())
-        verify(agentToolEnvParamMapper, never()).deleteByToolIds(any())
+        val captor = argumentCaptor<AgentTool>()
+        verify(agentToolMapper).insert(captor.capture())
+        verify(agentToolMapper, never()).updateById(kAny())
+
+        val inserted = captor.firstValue
+        assertEquals(TOOL_NAME, inserted.name)
+        assertEquals(LIVE_BEAN, inserted.beanName)
+        assertEquals(1, inserted.status)
+        assertEquals(1, inserted.active)
+        assertEquals("SYSTEM", inserted.creator)
     }
 
     @Test
-    @DisplayName("prune - hard deletes rows the code no longer declares, cascading bindings and env params")
-    fun `prune should hard delete stale rows and cascade bindings and env param definitions`() {
-        // Given - a removed method leaves one orphan row; the code still declares two others
-        val live = dbTool(id = 1L, methodName = "currentTime", toolName = TOOL_NAME)
-        val otherLive = dbTool(id = 7L, methodName = "timezone", toolName = "get_timezone")
-        val stale = dbTool(id = 2L, methodName = "oldMethod", toolName = "old_tool")
-        givenCode(
-            LIVE_BEAN to listOf(
-                methodOf("currentTime", TOOL_NAME),
-                methodOf("timezone", "get_timezone"),
-            ),
-        )
-        `when`(agentToolMapper.selectByBeanName(LIVE_BEAN)).thenReturn(listOf(live, otherLive))
-        `when`(agentToolMapper.selectAllBuiltin()).thenReturn(listOf(live, otherLive, stale))
-
-        // When
-        registrar.syncBuiltinTools()
-
-        // Then
-        verify(agentToolBindingMapper).deleteByToolIds(listOf(2L))
-        verify(agentToolEnvParamMapper).deleteByToolIds(listOf(2L))
-        verify(agentToolMapper).deleteBuiltinByIds(listOf(2L))
-    }
-
-    @Test
-    @DisplayName("prune - purges a soft-deleted builtin row even though the code still declares it")
-    fun `prune should purge soft-deleted residue left by the retired manual delete`() {
-        // Given - the retired UI wrote active = 0; such a row would otherwise collide on re-insert
-        val live = dbTool(id = 1L, methodName = "currentTime", toolName = TOOL_NAME)
-        val softDeleted = dbTool(id = 3L, methodName = "timezone", toolName = "get_timezone", active = 0)
-        givenCode(
-            LIVE_BEAN to listOf(
-                methodOf("currentTime", TOOL_NAME),
-                methodOf("timezone", "get_timezone"),
-            ),
-        )
-        `when`(agentToolMapper.selectByBeanName(LIVE_BEAN)).thenReturn(listOf(live))
-        `when`(agentToolMapper.selectAllBuiltin()).thenReturn(listOf(live, softDeleted))
-
-        // When
-        registrar.syncBuiltinTools()
-
-        // Then
-        verify(agentToolMapper).deleteBuiltinByIds(listOf(3L))
-    }
-
-    @Test
-    @DisplayName("prune - renaming the Java method changes the identity key and drops the old row")
-    fun `prune should remove the old row when the annotated method was renamed`() {
-        // Given - bean_name + method_name are the duplicate key, so a method rename is a new tool
-        val oldMethod = dbTool(id = 4L, methodName = "currentTime", toolName = TOOL_NAME)
-        givenCode(
-            LIVE_BEAN to listOf(
-                methodOf("currentTimestamp", TOOL_NAME),
-                methodOf("timezone", "get_timezone"),
-            ),
-        )
-        `when`(agentToolMapper.selectByBeanName(LIVE_BEAN)).thenReturn(
-            listOf(
-                dbTool(id = 9L, methodName = "currentTimestamp", toolName = TOOL_NAME),
-                dbTool(id = 10L, methodName = "timezone", toolName = "get_timezone"),
-            ),
-        )
-        `when`(agentToolMapper.selectAllBuiltin()).thenReturn(listOf(oldMethod))
-
-        // When
-        registrar.syncBuiltinTools()
-
-        // Then
-        verify(agentToolMapper).deleteBuiltinByIds(listOf(4L))
-    }
-
-    @Test
-    @DisplayName("prune - skipped when more is being deleted than the code keeps")
-    fun `prune should skip when the stale set reaches the live set`() {
-        // Given - the brake for a broken scan: two orphans against one declared tool
+    @DisplayName("sync - a matching row is left untouched when no code-owned column differs")
+    fun `sync should not write when the row already matches the declaration`() {
+        val live = dbTool(id = 1L, methodName = "currentTime", toolName = TOOL_NAME).apply {
+            displayName = TOOL_NAME
+            description = "desc of $TOOL_NAME"
+        }
         givenCode(LIVE_BEAN to listOf(methodOf("currentTime", TOOL_NAME)))
-        `when`(agentToolMapper.selectByBeanName(LIVE_BEAN)).thenReturn(emptyList())
-        `when`(agentToolMapper.selectAllBuiltin()).thenReturn(
-            listOf(
-                dbTool(id = 2L, methodName = "oldMethod", toolName = "old_tool"),
-                dbTool(id = 3L, methodName = "olderMethod", toolName = "older_tool"),
-            ),
-        )
+        `when`(agentToolMapper.selectByName(TOOL_NAME)).thenReturn(live)
 
-        // When
         registrar.syncBuiltinTools()
 
-        // Then
-        verify(agentToolMapper, never()).deleteBuiltinByIds(any())
-        verify(agentToolBindingMapper, never()).deleteByToolIds(any())
+        verify(agentToolMapper, never()).insert(kAny())
+        verify(agentToolMapper, never()).updateById(kAny())
     }
 
     @Test
-    @DisplayName("sync - no @Tool method at all means nothing is synced or deleted")
+    @DisplayName("sync - only the columns that differ are reported, and the row keeps its id")
+    fun `sync should refresh a row whose code-owned columns differ`() {
+        val live = dbTool(id = 7L, methodName = "oldMethod", toolName = TOOL_NAME).apply {
+            displayName = "stale display name"
+            description = "desc of $TOOL_NAME"
+        }
+        givenCode(LIVE_BEAN to listOf(methodOf("currentTime", TOOL_NAME)))
+        `when`(agentToolMapper.selectByName(TOOL_NAME)).thenReturn(live)
+
+        registrar.syncBuiltinTools()
+
+        val captor = argumentCaptor<AgentTool>()
+        verify(agentToolMapper).updateById(captor.capture())
+        verify(agentToolMapper, never()).insert(kAny())
+
+        val updated = captor.firstValue
+        assertEquals(7L, updated.id, "the row is refreshed in place so its agent bindings survive")
+        assertEquals("currentTime", updated.methodName)
+        assertEquals(TOOL_NAME, updated.displayName)
+        assertEquals(live.createTime, updated.createTime)
+    }
+
+    @Test
+    @DisplayName("sync - a disabled row converges back to enabled, the sync being the only writer")
+    fun `sync should force status back to enabled`() {
+        val disabled = dbTool(id = 3L, methodName = "currentTime", toolName = TOOL_NAME).apply {
+            displayName = TOOL_NAME
+            description = "desc of $TOOL_NAME"
+            status = 0
+        }
+        givenCode(LIVE_BEAN to listOf(methodOf("currentTime", TOOL_NAME)))
+        `when`(agentToolMapper.selectByName(TOOL_NAME)).thenReturn(disabled)
+
+        registrar.syncBuiltinTools()
+
+        val captor = argumentCaptor<AgentTool>()
+        verify(agentToolMapper).updateById(captor.capture())
+        assertEquals(1, captor.firstValue.status)
+    }
+
+    @Test
+    @DisplayName("sync - a row the code no longer declares is neither updated nor deleted")
+    fun `sync should leave an undeclared row alone`() {
+        val orphan = dbTool(id = 42L, methodName = "removedMethod", toolName = "removed_tool", beanName = "removed-tool-box")
+        givenCode(LIVE_BEAN to listOf(methodOf("currentTime", TOOL_NAME)))
+        `when`(agentToolMapper.selectByName(TOOL_NAME)).thenReturn(null)
+        // The orphan's name is simply never looked up: the sync resolves by declaration, not by table scan
+        `when`(agentToolMapper.selectByName("removed_tool")).thenReturn(orphan)
+
+        registrar.syncBuiltinTools()
+
+        verify(agentToolMapper, never()).updateById(kAny())
+        assertTrue("removed_tool" !in registrar.registeredToolNames(), "an undeclared row is not deliverable")
+    }
+
+    @Test
+    @DisplayName("sync - two declarations sharing one name are refused before anything is written")
+    fun `sync should refuse duplicate names on the classpath`() {
+        givenCode(
+            "first-tool-box" to listOf(methodOf("runFirst", SHARED_NAME)),
+            "second-tool-box" to listOf(methodOf("runSecond", SHARED_NAME)),
+        )
+
+        val failure = assertThrows<IllegalStateException> { registrar.syncBuiltinTools() }
+
+        assertTrue(failure.message!!.contains(SHARED_NAME))
+        assertTrue(failure.message!!.contains("first-tool-box::runFirst"))
+        assertTrue(failure.message!!.contains("second-tool-box::runSecond"))
+        verify(agentToolMapper, never()).insert(kAny())
+        verify(agentToolMapper, never()).updateById(kAny())
+    }
+
+    @Test
+    @DisplayName("sync - nothing happens when the registry yields no tool meta")
     fun `sync should skip everything when the registry yields no tool meta`() {
-        // Given - the safety valve: an empty scan must never read as "every tool was deleted"
         `when`(toolRegistry.getAllToolMeta()).thenReturn(emptyMap())
 
-        // When
         registrar.syncBuiltinTools()
 
-        // Then
-        verify(agentToolMapper, never()).upsertBuiltinTool(any())
-        verify(agentToolMapper, never()).selectAllBuiltin()
-        verify(agentToolMapper, never()).deleteBuiltinByIds(any())
+        verify(agentToolMapper, never()).insert(kAny())
+        verify(agentToolMapper, never()).updateById(kAny())
+        assertTrue(registrar.registeredToolNames().isEmpty())
     }
 
     @Test
-    @DisplayName("sync - a failed tool group cancels the prune")
-    fun `sync should not prune when a tool group failed to sync`() {
-        // Given - upsert fails for broken-box, and the DB holds a genuine orphan that would otherwise be deleted
-        val broken = dbTool(id = 5L, beanName = BROKEN_BEAN, methodName = "boom", toolName = "boom_tool")
-        val live = dbTool(id = 1L, methodName = "currentTime", toolName = TOOL_NAME)
-        val orphan = dbTool(id = 6L, methodName = "gone", toolName = "gone_tool")
-        `when`(toolRegistry.getAllToolMeta()).thenReturn(
-            mapOf(
-                BROKEN_BEAN to metaOf(BROKEN_BEAN, methodOf("boom", "boom_tool")),
-                LIVE_BEAN to metaOf(LIVE_BEAN, methodOf("currentTime", TOOL_NAME)),
-            ),
+    @DisplayName("sync - one failing group does not stop the others, and its tools stay declared")
+    fun `sync should isolate a failing tool group`() {
+        val broken = methodOf("runBroken", "broken_tool")
+        val healthy = methodOf("runHealthy", "healthy_tool")
+        givenCode(
+            BROKEN_BEAN to listOf(broken),
+            LIVE_BEAN to listOf(healthy),
         )
-        `when`(agentToolMapper.upsertBuiltinTool(any())).thenAnswer { invocation ->
+        `when`(agentToolMapper.selectByName("broken_tool")).thenReturn(null)
+        `when`(agentToolMapper.selectByName("healthy_tool")).thenReturn(null)
+        `when`(agentToolMapper.insert(kAny())).thenAnswer { invocation ->
             val tool = invocation.getArgument<AgentTool>(0)
-            if (tool.beanName == BROKEN_BEAN) throw RuntimeException("simulated upsert failure")
+            if (tool.name == "broken_tool") throw RuntimeException("simulated insert failure")
             1
         }
-        `when`(agentToolMapper.selectByBeanName(LIVE_BEAN)).thenReturn(listOf(live))
-        `when`(agentToolMapper.selectAllBuiltin()).thenReturn(listOf(broken, live, orphan))
 
-        // When
         registrar.syncBuiltinTools()
 
-        // Then
-        verify(agentToolMapper, never()).deleteBuiltinByIds(any())
+        // Both groups were attempted, so the healthy one was not skipped because the other threw
+        val captor = argumentCaptor<AgentTool>()
+        verify(agentToolMapper, times(2)).insert(captor.capture())
+        assertEquals(listOf("broken_tool", "healthy_tool"), captor.allValues.map { it.name })
+        assertEquals(
+            setOf("broken_tool", "healthy_tool"),
+            registrar.registeredToolNames(),
+            "a write failure must not turn into a missing tool in every agent",
+        )
     }
 
     @Test
-    @DisplayName("sync - status and active are code-owned, not operator-owned")
-    fun `sync should force builtin status to enabled`() {
-        // Given
-        givenCode(LIVE_BEAN to listOf(methodOf("currentTime", TOOL_NAME)))
-        `when`(agentToolMapper.selectByBeanName(LIVE_BEAN)).thenReturn(emptyList())
+    @DisplayName("sync - env param definitions follow the tool they belong to")
+    fun `sync should converge env param definitions`() {
+        givenCode(LIVE_BEAN to listOf(methodOf("currentTime", TOOL_NAME).copy(envParamDescriptors = listOf(MANDATORY_ENV))))
+        `when`(agentToolMapper.selectByName(TOOL_NAME)).thenReturn(null)
+        `when`(agentToolEnvParamMapper.selectByToolId(anyLong())).thenReturn(listOf(staleEnvParam()))
 
-        // When
         registrar.syncBuiltinTools()
 
-        // Then
-        val captor = argumentCaptor<AgentTool>()
-        verify(agentToolMapper).upsertBuiltinTool(captor.capture())
-        assertEquals(1, captor.firstValue.status)
-        assertEquals(1, captor.firstValue.active)
-        assertEquals("SYSTEM", captor.firstValue.creator)
+        val captor = argumentCaptor<AgentToolEnvParam>()
+        verify(agentToolEnvParamMapper).insert(captor.capture())
+        assertEquals(MANDATORY_ENV.key, captor.firstValue.envParamName)
+        assertEquals(1, captor.firstValue.required)
+        verify(agentToolEnvParamMapper).deleteById(99L)
     }
 
     private fun givenCode(vararg groups: Pair<String, List<ToolMethodDescriptor>>) {
@@ -245,7 +241,6 @@ class BuiltinToolAutoRegistrarTest {
         readOnly = false,
         needConfirm = false,
         envParamDescriptors = emptyList(),
-        timeoutSeconds = 0,
         isRequired = false,
     )
 
@@ -269,9 +264,25 @@ class BuiltinToolAutoRegistrarTest {
         this.active = active
     }
 
+    private fun staleEnvParam(): AgentToolEnvParam = AgentToolEnvParam().apply {
+        id = 99L
+        toolId = 1L
+        envParamName = "REMOVED_KEY"
+        required = 0
+        secret = 0
+    }
+
     companion object {
         private const val LIVE_BEAN = "time-tool-box"
         private const val BROKEN_BEAN = "broken-tool-box"
         private const val TOOL_NAME = "get_current_time"
+        private const val SHARED_NAME = "shared_tool"
+        private val MANDATORY_ENV = ToolEnvParamDescriptor(
+            key = "SMTP_HOST",
+            description = "SMTP host",
+            required = true,
+            secret = false,
+            defaultValue = "",
+        )
     }
 }

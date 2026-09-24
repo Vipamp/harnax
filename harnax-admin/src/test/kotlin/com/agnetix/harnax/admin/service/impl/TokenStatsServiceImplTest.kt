@@ -272,39 +272,62 @@ class TokenStatsServiceImplTest {
         @Test
         @DisplayName("getTimeSeriesData - Query by month granularity")
         fun `getTimeSeriesData should query by month granularity`() {
-            // Given - 3 month range
+            // Given - a three month window with consumption in March only
             val startTime = "2026-01-01 00:00:00"
-            val endTime = "2026-03-01 00:00:00"
+            val endTime = "2026-03-31 23:59:59"
+            val dataRow = timeSeriesRow(
+                LocalDateTime.of(2026, 3, 1, 0, 0, 0),
+                input = 40L,
+                output = 60L,
+                total = 100L,
+                fee = BigDecimal("0.4"),
+            )
 
-            `when`(tokenStatsMapper.getTimeSeriesByMonth(startTime, endTime)).thenReturn(mutableListOf())
+            `when`(tokenStatsMapper.getTimeSeriesByMonth(startTime, endTime)).thenReturn(mutableListOf(dataRow))
 
             // When
             val result = createService().getTimeSeriesData(startTime, endTime, "month")
 
-            // Then
-            assertNotNull(result.timeSeriesData)
-            assertEquals(3, result.timeSeriesData?.size)
+            // Then - point count alone hid the bug, the row has to land on its own month
+            val months = result.timeSeriesData!!
+            assertEquals(3, months.size)
+            assertEquals("2026-01-01 00:00:00", months[0].timePoint)
+            assertEquals(0L, months[0].grandTotalToken)
+            assertEquals("2026-03-01 00:00:00", months[2].timePoint)
+            assertEquals(40L, months[2].totalInputToken)
+            assertEquals(60L, months[2].totalOutputToken)
+            assertEquals(100L, months[2].grandTotalToken)
             verify(tokenStatsMapper).getTimeSeriesByMonth(startTime, endTime)
         }
 
         @Test
-        @DisplayName("getTimeSeriesData - Downgrade week granularity to day")
-        fun `getTimeSeriesData should downgrade week granularity to day`() {
-            // Given
-            val startTime = "2026-01-01 00:00:00"
-            val endTime = "2026-01-02 00:00:00"
+        @DisplayName("getTimeSeriesData - Query by week granularity")
+        fun `getTimeSeriesData should query by week granularity`() {
+            // Given - two Monday-anchored weeks with consumption in the second one
+            val startTime = "2026-01-05 00:00:00"
+            val endTime = "2026-01-18 23:59:59"
+            val dataRow = timeSeriesRow(
+                LocalDateTime.of(2026, 1, 12, 0, 0, 0),
+                input = 40L,
+                output = 60L,
+                total = 100L,
+                fee = BigDecimal("0.4"),
+            )
 
-            `when`(tokenStatsMapper.getTimeSeriesByDay(startTime, endTime)).thenReturn(mutableListOf())
+            `when`(tokenStatsMapper.getTimeSeriesByWeek(startTime, endTime)).thenReturn(mutableListOf(dataRow))
 
             // When
             val result = createService().getTimeSeriesData(startTime, endTime, "week")
 
             // Then
-            assertNotNull(result.timeSeriesData)
-            assertEquals(2, result.timeSeriesData?.size)
-            // Weekly statistics not supported: falls back to day query
-            verify(tokenStatsMapper).getTimeSeriesByDay(startTime, endTime)
-            verify(tokenStatsMapper, never()).getTimeSeriesByWeek(anyOrNull(), anyOrNull())
+            val weeks = result.timeSeriesData!!
+            assertEquals(2, weeks.size)
+            assertEquals("2026-01-05 00:00:00", weeks[0].timePoint)
+            assertEquals(0L, weeks[0].grandTotalToken)
+            assertEquals("2026-01-12 00:00:00", weeks[1].timePoint)
+            assertEquals(100L, weeks[1].grandTotalToken)
+            verify(tokenStatsMapper).getTimeSeriesByWeek(startTime, endTime)
+            verify(tokenStatsMapper, never()).getTimeSeriesByDay(anyOrNull(), anyOrNull())
         }
 
         @Test
@@ -361,6 +384,30 @@ class TokenStatsServiceImplTest {
         }
 
         @Test
+        @DisplayName("getModelTimeSeriesData - Keep a deleted model name null instead of failing")
+        fun `getModelTimeSeriesData should survive a model row that is gone`() {
+            // Given - the LEFT JOIN reports no name once the model was deleted
+            val startTime = "2026-01-01 00:00:00"
+            val endTime = "2026-01-01 01:00:00"
+            val dataRow = timeSeriesRow(
+                LocalDateTime.of(2026, 1, 1, 0, 0, 0),
+                extra = mapOf("modelId" to 1L, "modelName" to null),
+            )
+
+            `when`(tokenStatsMapper.getModelTimeSeriesByHour(startTime, endTime)).thenReturn(mutableListOf(dataRow))
+
+            // When
+            val result = createService().getModelTimeSeriesData(startTime, endTime, "hour")
+
+            // Then - the zero-filled second bucket copies the dimension and must not blow up on it
+            val hours = result.timeSeriesData!!
+            assertEquals(2, hours.size)
+            assertNull(hours[1].dimensionName)
+            assertEquals("1", hours[1].dimensionId)
+            assertEquals(0L, hours[1].totalInputToken)
+        }
+
+        @Test
         @DisplayName("getModelTimeSeriesData - Query by day granularity")
         fun `getModelTimeSeriesData should query by day granularity`() {
             // Given
@@ -395,26 +442,41 @@ class TokenStatsServiceImplTest {
             // When
             val result = createService().getModelTimeSeriesData(startTime, endTime, "month")
 
-            // Then
-            assertNotNull(result.timeSeriesData)
-            assertEquals(2, result.timeSeriesData?.size)
+            // Then - January carries the row, February is a zero point that keeps the dimension
+            val months = result.timeSeriesData!!
+            assertEquals(2, months.size)
+            assertEquals("2026-01-01 00:00:00", months[0].timePoint)
+            assertEquals(10L, months[0].totalInputToken)
+            assertEquals("2026-02-01 00:00:00", months[1].timePoint)
+            assertEquals(0L, months[1].totalInputToken)
+            assertEquals("gpt-4", months[1].dimensionName)
             verify(tokenStatsMapper).getModelTimeSeriesByMonth(startTime, endTime)
         }
 
         @Test
-        @DisplayName("getModelTimeSeriesData - Downgrade week granularity to day")
-        fun `getModelTimeSeriesData should downgrade week granularity to day`() {
-            // Given
-            val startTime = "2026-01-01 00:00:00"
-            val endTime = "2026-01-01 00:00:00"
+        @DisplayName("getModelTimeSeriesData - Query by week granularity")
+        fun `getModelTimeSeriesData should query by week granularity`() {
+            // Given - the window starts on a Wednesday, so the only bucket is the Monday before it
+            val startTime = "2026-01-07 00:00:00"
+            val endTime = "2026-01-09 23:59:59"
+            val dataRow = timeSeriesRow(
+                LocalDateTime.of(2026, 1, 5, 0, 0, 0),
+                extra = mapOf("modelId" to 1L, "modelName" to "gpt-4"),
+            )
 
-            `when`(tokenStatsMapper.getModelTimeSeriesByDay(startTime, endTime)).thenReturn(mutableListOf())
+            `when`(tokenStatsMapper.getModelTimeSeriesByWeek(startTime, endTime)).thenReturn(mutableListOf(dataRow))
 
             // When
-            createService().getModelTimeSeriesData(startTime, endTime, "week")
+            val result = createService().getModelTimeSeriesData(startTime, endTime, "week")
 
             // Then
-            verify(tokenStatsMapper).getModelTimeSeriesByDay(startTime, endTime)
+            val weeks = result.timeSeriesData!!
+            assertEquals(1, weeks.size)
+            assertEquals("2026-01-05 00:00:00", weeks[0].timePoint)
+            assertEquals(10L, weeks[0].totalInputToken)
+            assertEquals("gpt-4", weeks[0].dimensionName)
+            verify(tokenStatsMapper).getModelTimeSeriesByWeek(startTime, endTime)
+            verify(tokenStatsMapper, never()).getModelTimeSeriesByDay(anyOrNull(), anyOrNull())
         }
     }
 
@@ -469,15 +531,48 @@ class TokenStatsServiceImplTest {
         fun `getAgentTimeSeriesData should query by month granularity`() {
             // Given
             val startTime = "2026-01-01 00:00:00"
-            val endTime = "2026-01-01 00:00:00"
+            val endTime = "2026-02-01 00:00:00"
+            val dataRow = timeSeriesRow(
+                LocalDateTime.of(2026, 2, 1, 0, 0, 0),
+                extra = mapOf("agentId" to 100L, "agentName" to "Test Agent"),
+            )
 
-            `when`(tokenStatsMapper.getAgentTimeSeriesByMonth(startTime, endTime)).thenReturn(mutableListOf())
+            `when`(tokenStatsMapper.getAgentTimeSeriesByMonth(startTime, endTime)).thenReturn(mutableListOf(dataRow))
 
             // When
-            createService().getAgentTimeSeriesData(startTime, endTime, "month")
+            val result = createService().getAgentTimeSeriesData(startTime, endTime, "month")
 
             // Then
+            val months = result.timeSeriesData!!
+            assertEquals(2, months.size)
+            assertEquals(0L, months[0].totalInputToken)
+            assertEquals("2026-02-01 00:00:00", months[1].timePoint)
+            assertEquals(10L, months[1].totalInputToken)
+            assertEquals("Test Agent", months[1].dimensionName)
             verify(tokenStatsMapper).getAgentTimeSeriesByMonth(startTime, endTime)
+        }
+
+        @Test
+        @DisplayName("getAgentTimeSeriesData - Query by week granularity")
+        fun `getAgentTimeSeriesData should query by week granularity`() {
+            // Given
+            val startTime = "2026-01-05 00:00:00"
+            val endTime = "2026-01-11 23:59:59"
+            val dataRow = timeSeriesRow(
+                LocalDateTime.of(2026, 1, 5, 0, 0, 0),
+                extra = mapOf("agentId" to 100L, "agentName" to "Test Agent"),
+            )
+
+            `when`(tokenStatsMapper.getAgentTimeSeriesByWeek(startTime, endTime)).thenReturn(mutableListOf(dataRow))
+
+            // When
+            val result = createService().getAgentTimeSeriesData(startTime, endTime, "week")
+
+            // Then
+            assertEquals(1, result.timeSeriesData?.size)
+            assertEquals(10L, result.timeSeriesData?.get(0)?.totalInputToken)
+            verify(tokenStatsMapper).getAgentTimeSeriesByWeek(startTime, endTime)
+            verify(tokenStatsMapper, never()).getAgentTimeSeriesByDay(anyOrNull(), anyOrNull())
         }
 
         @Test
@@ -560,15 +655,48 @@ class TokenStatsServiceImplTest {
         fun `getSessionTimeSeriesData should query by month granularity`() {
             // Given
             val startTime = "2026-01-01 00:00:00"
-            val endTime = "2026-01-01 00:00:00"
+            val endTime = "2026-02-01 00:00:00"
+            val dataRow = timeSeriesRow(
+                LocalDateTime.of(2026, 1, 1, 0, 0, 0),
+                extra = mapOf("sessionId" to "web-session-1", "sessionTitle" to "Test Session"),
+            )
 
-            `when`(tokenStatsMapper.getSessionTimeSeriesByMonth(startTime, endTime)).thenReturn(mutableListOf())
+            `when`(tokenStatsMapper.getSessionTimeSeriesByMonth(startTime, endTime)).thenReturn(mutableListOf(dataRow))
 
             // When
-            createService().getSessionTimeSeriesData(startTime, endTime, "month")
+            val result = createService().getSessionTimeSeriesData(startTime, endTime, "month")
 
             // Then
+            val months = result.timeSeriesData!!
+            assertEquals(2, months.size)
+            assertEquals(10L, months[0].totalInputToken)
+            assertEquals("2026-02-01 00:00:00", months[1].timePoint)
+            assertEquals(0L, months[1].totalInputToken)
+            assertEquals("web-session-1", months[1].dimensionId)
             verify(tokenStatsMapper).getSessionTimeSeriesByMonth(startTime, endTime)
+        }
+
+        @Test
+        @DisplayName("getSessionTimeSeriesData - Query by week granularity")
+        fun `getSessionTimeSeriesData should query by week granularity`() {
+            // Given
+            val startTime = "2026-01-05 00:00:00"
+            val endTime = "2026-01-11 23:59:59"
+            val dataRow = timeSeriesRow(
+                LocalDateTime.of(2026, 1, 5, 0, 0, 0),
+                extra = mapOf("sessionId" to "web-session-1", "sessionTitle" to "Test Session"),
+            )
+
+            `when`(tokenStatsMapper.getSessionTimeSeriesByWeek(startTime, endTime)).thenReturn(mutableListOf(dataRow))
+
+            // When
+            val result = createService().getSessionTimeSeriesData(startTime, endTime, "week")
+
+            // Then
+            assertEquals(1, result.timeSeriesData?.size)
+            assertEquals(10L, result.timeSeriesData?.get(0)?.totalInputToken)
+            verify(tokenStatsMapper).getSessionTimeSeriesByWeek(startTime, endTime)
+            verify(tokenStatsMapper, never()).getSessionTimeSeriesByDay(anyOrNull(), anyOrNull())
         }
 
         @Test

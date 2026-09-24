@@ -4,7 +4,6 @@ import com.agnetix.harnax.admin.constant.BuiltinRepository
 import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.SkillRepositoryCreateRequest
-import com.agnetix.harnax.admin.dto.SkillRepositoryResponse
 import com.agnetix.harnax.admin.dto.SkillRepositoryUpdateRequest
 import com.agnetix.harnax.admin.dto.SyncSkillResponse
 import com.agnetix.harnax.admin.exception.BizException
@@ -236,11 +235,6 @@ class SkillRepositoryServiceImpl(
         }
     }
 
-    override fun getByName(name: String): SkillRepository? {
-        val tenantId = TenantContext.getTenantId() ?: 1
-        return skillRepositoryMapper.selectByName(name, tenantId)
-    }
-
     override fun getBuiltinRepository(): SkillRepository? = skillRepositoryMapper.selectBuiltinRepository(BuiltinRepository.CLI_SKILLS)
 
     override fun fetchRemoteSkills(repositoryId: Long): List<SyncSkillResponse> {
@@ -295,6 +289,4 @@ class SkillRepositoryServiceImpl(
             }
         }
     }
-
-    override fun convertToResponse(skillRepository: SkillRepository): SkillRepositoryResponse = SkillRepositoryResponse.fromEntity(skillRepository)
 }

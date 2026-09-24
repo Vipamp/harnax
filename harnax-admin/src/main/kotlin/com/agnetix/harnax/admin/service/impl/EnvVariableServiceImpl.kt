@@ -35,7 +35,7 @@ class EnvVariableServiceImpl(
         val boundedPageSize = pageSize.coerceIn(1, 1000)
         val boundedPageNum = pageNum.coerceAtLeast(1)
         PageHelper.startPage<EnvVariable>(boundedPageNum, boundedPageSize)
-        return Page.fromPageInfo(envVariableMapper.selectEnvVariableList(keyword, currentUsername))
+        return Page.fromPageInfo(envVariableMapper.selectEnvVariableList(keyword, currentUsername, currentTenantId()))
     }
 
     /**
@@ -109,9 +109,16 @@ class EnvVariableServiceImpl(
         // Only update value if provided (empty means keep current for sensitive)
         if (request.envValue != null) {
             envVariable.envValue = if (targetSensitive == 1) {
-                // The detail API masks a sensitive value, so a mask coming back means "unchanged";
-                // encrypting it would store the mask in place of the credential it stands for.
-                if (request.envValue!!.contains("****")) envVariable.envValue else aesUtil.encrypt(request.envValue!!)
+                // The detail API masks a sensitive value, so the mask coming back means "unchanged";
+                // encrypting it would store the mask in place of the credential it stands for. Compared
+                // against this row's own mask rather than by looking for asterisks in it — a real
+                // credential that happens to contain "****" used to be forever uneditable, with the
+                // call answering success while keeping the old value.
+                if (isUnchangedMask(request.envValue!!, envVariable.envValue)) {
+                    envVariable.envValue
+                } else {
+                    aesUtil.encrypt(request.envValue!!)
+                }
             } else {
                 request.envValue!!
             }
@@ -141,25 +148,25 @@ class EnvVariableServiceImpl(
         if (envVariable.creator != currentUsername || envVariable.tenantId != currentTenantId) {
             throw RuntimeException("No permission to delete this env variable")
         }
-        assertNotReferencedByAgents(id, envVariable.envKey)
+        assertNotReferencedByAgents(id, envVariable.envKey, "delete")
         return envVariableMapper.deleteById(id) > 0
     }
 
     /**
-     * Refuse to delete a variable an agent still binds to.
+     * Refuse to take a variable an agent still binds to away from it, by deleting or by disabling.
      *
      * A binding that references a variable stores the id and nothing else, and delivery resolves the
-     * value through it every time, so deleting the variable empties every agent that points at it —
-     * with no error, because the resolve simply yields nothing.
+     * value through it every time, so both actions empty every agent that points at it - with no
+     * error, because the resolve simply yields nothing.
      */
-    private fun assertNotReferencedByAgents(id: Long, envKey: String?) {
+    private fun assertNotReferencedByAgents(id: Long, envKey: String?, then: String) {
         val referring = agentMapper.selectByEnvVarRef(id)
         if (referring.isEmpty()) return
         val shown = referring.take(MAX_REFERRING_AGENTS).joinToString(", ") { it.name } +
             if (referring.size > MAX_REFERRING_AGENTS) " …" else ""
         throw BizException(
             "Env variable '$envKey' is bound by ${referring.size} agent(s): $shown. " +
-                "Rebind them first, then delete.",
+                "Rebind them first, then $then.",
         )
     }
 
@@ -171,6 +178,11 @@ class EnvVariableServiceImpl(
         if (envVariable.creator != currentUsername || envVariable.tenantId != currentTenantId) {
             throw RuntimeException("No permission to modify this env variable")
         }
+        // Symmetric with delete: the binding snapshots keep their envVarId either way, so the agents
+        // that read this variable lose its value the moment it is switched off.
+        if (enabled == 0) {
+            assertNotReferencedByAgents(id, envVariable.envKey, "disable")
+        }
         return envVariableMapper.toggleEnabled(id, enabled) > 0
     }
 
@@ -180,7 +192,7 @@ class EnvVariableServiceImpl(
                 val decrypted = aesUtil.decrypt(envVariable.envValue)
                 maskValue(decrypted)
             } catch (e: Exception) {
-                "******"
+                FULL_MASK
             }
         } else {
             envVariable.envValue
@@ -200,7 +212,9 @@ class EnvVariableServiceImpl(
 
     override fun listForAgentConfig(): List<Map<String, Any?>> {
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-        val allVars = envVariableMapper.selectEnvVariableList(null, currentUsername)
+        // The dropdown offers things this tenant may bind, so it answers with the same scope the save
+        // check enforces; `creator` stays as "only the ones you typed yourself".
+        val allVars = envVariableMapper.selectEnvVariableList(null, currentUsername, currentTenantId())
         return allVars.filter { it.enabled == 1 }.map { env ->
             val isSensitive = env.sensitive == 1
             val displayValue = if (isSensitive && !env.envValue.isNullOrBlank()) {
@@ -209,7 +223,7 @@ class EnvVariableServiceImpl(
                     maskValue(realValue)
                 } catch (e: Exception) {
                     log.warn("Failed to decrypt env variable {}: {}", env.envKey, e.message)
-                    "******"
+                    FULL_MASK
                 }
             } else {
                 env.envValue ?: ""
@@ -224,13 +238,33 @@ class EnvVariableServiceImpl(
     }
 
     private fun maskValue(value: String): String = when {
-        value.length <= 4 -> "******"
+        value.length <= 4 -> FULL_MASK
         value.length <= 8 -> "${value.take(1)}****${value.takeLast(1)}"
         else -> "${value.take(3)}****${value.takeLast(2)}"
     }
 
-    override fun getDecryptedValue(id: Long): String? {
+    /**
+     * Whether [incoming] is the display form of what is already stored, i.e. the edit form echoing
+     * the mask back instead of typing a new value.
+     *
+     * Recomputed from the stored row rather than pattern-matched: the mask is a function of the value,
+     * so this says "unchanged" for exactly the strings the page could have shown and nothing else —
+     * including [FULL_MASK], which is what the page shows when the stored text will not open.
+     */
+    private fun isUnchangedMask(
+        incoming: String,
+        stored: String,
+    ): Boolean = (runCatching { maskValue(aesUtil.decrypt(stored)) }.getOrNull() ?: FULL_MASK) == incoming
+
+    override fun getDecryptedValue(
+        id: Long,
+        tenantId: Long,
+    ): String? {
         val env = envVariableMapper.selectById(id) ?: return null
+        // Same asymmetry the MCP branch of delivery already closes: this resolver is the only one with
+        // no tenant in sight, so a stale cross-tenant reference would hand over another tenant's
+        // secret. Answers as a missing row, which is how delivery already treats deleted and disabled.
+        if (env.tenantId != tenantId) return null
         // The one delivery resolves through, so this is where disabling a variable has to take effect:
         // the agent-config dropdown already hides such a row, which makes an ignored toggle a switch
         // that looks working while a rotated or compromised value stays live in every bound agent.
@@ -260,6 +294,9 @@ class EnvVariableServiceImpl(
     }
 
     private companion object {
+        /** What a value that must not be shown displays as: a short value and an unreadable one alike. */
+        const val FULL_MASK = "******"
+
         /** Enough to point at the offenders; the count in the message is the full one. */
         const val MAX_REFERRING_AGENTS = 5
 

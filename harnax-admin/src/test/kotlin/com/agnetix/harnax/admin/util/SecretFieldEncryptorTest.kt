@@ -163,6 +163,23 @@ class SecretFieldEncryptorTest {
         }
 
         @Test
+        @DisplayName("decryptToMap - 只丢掉解不开的那条，其余照常交付")
+        fun `decryptToMap should skip only the entry this key cannot open`() {
+            // A rotated AES key leaves every old ciphertext unopenable. Dropping the batch together is
+            // what made a server look like it had no headers at all; one bad row should cost one header.
+            val openable = aesUtil.encrypt("Bearer still-works")
+            val json = """[{"key":"Authorization","value":"$openable","secret":true},""" +
+                """{"key":"X-Stale","value":"not-valid-ciphertext","secret":true},""" +
+                """{"key":"Content-Type","value":"application/json","secret":false}]"""
+
+            val map = encryptor.decryptToMap(json)
+
+            assertEquals("Bearer still-works", map["Authorization"])
+            assertEquals("application/json", map["Content-Type"])
+            assertFalse(map.containsKey("X-Stale"))
+        }
+
+        @Test
         @DisplayName("decryptToMap - 非法JSON返回空Map")
         fun `decryptToMap should return empty map for invalid json`() {
             assertTrue(encryptor.decryptToMap("{not-a-json").isEmpty())
@@ -309,6 +326,22 @@ class SecretFieldEncryptorTest {
             val json = """[{"envParamName":"API_KEY","secret":true,"defaultValue":"bad-cipher"}]"""
 
             assertTrue(encryptor.decryptToolEnvParamsToMap(json).isEmpty())
+        }
+
+        @Test
+        @DisplayName("decryptToolEnvParamsToMap - 只跳过解不开的那条")
+        fun `decryptToolEnvParamsToMap should skip only the entry this key cannot open`() {
+            // Same rule as the headers: the stdio process env keeps whatever this key can still open.
+            val openable = aesUtil.encrypt("sk-still-works")
+            val json = """[{"envParamName":"API_KEY","secret":true,"defaultValue":"$openable"},""" +
+                """{"envParamName":"STALE","secret":true,"defaultValue":"bad-cipher"},""" +
+                """{"envParamName":"REGION","secret":false,"defaultValue":"us-east-1"}]"""
+
+            val map = encryptor.decryptToolEnvParamsToMap(json)
+
+            assertEquals("sk-still-works", map["API_KEY"])
+            assertEquals("us-east-1", map["REGION"])
+            assertFalse(map.containsKey("STALE"))
         }
     }
 

@@ -23,6 +23,15 @@ interface CliMapper {
 
     fun selectByName(@Param("name") name: String): Cli?
 
+    /**
+     * Packages shipping one of [skillIds] through `cli.skill_id`.
+     *
+     * The third holder a skill can have, and the one the binding tables do not show: a shipped skill
+     * belongs to its package, so a guard that reads only bindings would let it be disabled or deleted
+     * out from under a live CLI.
+     */
+    fun selectBySkillIds(@Param("skillIds") skillIds: List<Long>): List<Cli>
+
     fun selectCliList(
         @Param("name") name: String?,
         @Param("status") status: Int?,

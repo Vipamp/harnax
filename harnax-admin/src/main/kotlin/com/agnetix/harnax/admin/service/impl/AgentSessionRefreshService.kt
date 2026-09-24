@@ -3,6 +3,7 @@ package com.agnetix.harnax.admin.service.impl
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.mapper.AgentCliBindingMapper
 import com.agnetix.harnax.mapper.AgentMapper
+import com.agnetix.harnax.mapper.AgentMcpBindingMapper
 import com.agnetix.harnax.mapper.ApiKeyMapper
 import com.agnetix.harnax.mapper.ChannelMapper
 import com.agnetix.harnax.mapper.SessionMapper
@@ -30,6 +31,7 @@ class AgentSessionRefreshService(
     private val apiKeyMapper: ApiKeyMapper,
     private val agentMapper: AgentMapper,
     private val cliBindingMapper: AgentCliBindingMapper,
+    private val mcpBindingMapper: AgentMcpBindingMapper,
     private val aesUtil: AesUtil,
     @Value("\${harnax.router.url:http://localhost:8081}")
     private val routerUrl: String,
@@ -129,6 +131,18 @@ class AgentSessionRefreshService(
      * sessions to refresh after a CLI configuration change.
      */
     fun listAgentsByCli(cliId: Long): List<RelatedAgentInfo> = cliBindingMapper.selectByCliId(cliId)
+        .map { it.agentId }
+        .distinct()
+        .mapNotNull { agentId ->
+            val agent = agentMapper.selectById(agentId) ?: return@mapNotNull null
+            RelatedAgentInfo(agentId = agent.id, agentName = agent.name, status = agent.status)
+        }
+
+    /**
+     * Agents that bind the given MCP server. Deleting the server drops these bindings without
+     * asking, so the console names them in the confirm that comes before the second click.
+     */
+    fun listAgentsByMcp(mcpId: Long): List<RelatedAgentInfo> = mcpBindingMapper.selectByMcpId(mcpId)
         .map { it.agentId }
         .distinct()
         .mapNotNull { agentId ->

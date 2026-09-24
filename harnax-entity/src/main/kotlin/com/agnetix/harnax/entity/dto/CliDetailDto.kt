@@ -22,9 +22,6 @@ data class CliDetailDto(
     @Schema(description = "CLI name, e.g. harnax-cli")
     val name: String,
 
-    @Schema(description = "CLI description")
-    val description: String = "",
-
     @Schema(description = "CLI version")
     val version: String = "",
 

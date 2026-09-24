@@ -448,7 +448,7 @@ class McpOAuthUserServiceImplTest {
 
             assertFalse(result.authorized)
             assertTrue(result.message.contains("unknown or has expired"), result.message)
-            verify(mcpServerService, never()).getMcpServer(any())
+            verify(mcpServerService, never()).getVisibleMcpServer(any())
             verify(fetcher, never()).postForm(any(), any())
             verifyNoCredentialWrites()
         }
@@ -630,14 +630,14 @@ class McpOAuthUserServiceImplTest {
             val other = 99L
             configured()
             registration()
-            whenever(mcpServerService.getMcpServer(other)).thenReturn(server(id = other))
+            whenever(mcpServerService.getVisibleMcpServer(other)).thenReturn(server(id = other))
             stateStore.put("own", pending("own", mcpId = other))
             postAnswers[tokenUrl] = jsonFetch("""{"access_token":"at-1"}""")
 
             val result = service.exchange(presented(code = "c", state = "own"))
 
             assertTrue(result.authorized, result.message)
-            verify(mcpServerService).getMcpServer(other)
+            verify(mcpServerService).getVisibleMcpServer(other)
             assertEquals(other, argumentOfInsert().mcpId)
         }
 
@@ -787,7 +787,7 @@ class McpOAuthUserServiceImplTest {
             registration()
             val params = queryOf(service.authorizeUrl(mcpId, null).authorizeUrl)
             postAnswers[tokenUrl] = jsonFetch("""{"access_token":"at-1"}""")
-            whenever(mcpServerService.getMcpServer(mcpId)).thenReturn(server(tenantId = 2L))
+            whenever(mcpServerService.getVisibleMcpServer(mcpId)).thenReturn(server(tenantId = 2L))
 
             val result = service.exchange(presented(code = "c", state = params["state"]))
 
@@ -802,7 +802,7 @@ class McpOAuthUserServiceImplTest {
             configured()
             registration()
             val params = queryOf(service.authorizeUrl(mcpId, null).authorizeUrl)
-            whenever(mcpServerService.getMcpServer(mcpId)).thenReturn(server(authType = McpAuthTypes.STATIC_HEADER))
+            whenever(mcpServerService.getVisibleMcpServer(mcpId)).thenReturn(server(authType = McpAuthTypes.STATIC_HEADER))
 
             val result = service.exchange(presented(code = "c", state = params["state"]))
 
@@ -817,7 +817,7 @@ class McpOAuthUserServiceImplTest {
             registration()
             val params = queryOf(service.authorizeUrl(mcpId, null).authorizeUrl)
             postAnswers[tokenUrl] = jsonFetch("""{"access_token":"at-1"}""")
-            whenever(mcpServerService.getMcpServer(mcpId)).thenReturn(
+            whenever(mcpServerService.getVisibleMcpServer(mcpId)).thenReturn(
                 server().apply { url = "http://mcp.example.com:4000/mcp" },
             )
 
@@ -1132,6 +1132,41 @@ class McpOAuthUserServiceImplTest {
 
             verify(credentialMapper).selectByUserAndMcp(1L, 7L, mcpId)
         }
+
+        @Test
+        @DisplayName("撤销留下 REVOKE/OK 的审计行，且不带会话")
+        fun `a revocation is audited as the callers own act`() {
+            configured()
+            storedGrant()
+            registration(revocationEndpoint = revokeUrl)
+            postAnswers[revokeUrl] = RemoteFetch(200, null, null)
+
+            service.revoke(mcpId)
+
+            val audit = audits().single()
+            assertEquals(McpCallLog.ACTION_REVOKE, audit.action)
+            assertEquals(McpCallLog.OUTCOME_OK, audit.outcome)
+            assertEquals(1L, audit.tenantId)
+            assertEquals(7L, audit.userId)
+            assertEquals(mcpId, audit.mcpId)
+            // No session: this was a decision taken on the admin page, not a token spent by a run.
+            assertNull(audit.sessionId)
+        }
+
+        @Test
+        @DisplayName("上游拒绝撤销也留痕，因为本地已经清了")
+        fun `a refused upstream revocation is still audited`() {
+            configured()
+            storedGrant()
+            registration(revocationEndpoint = revokeUrl)
+            postAnswers[revokeUrl] = RemoteFetch(403, null, null)
+
+            service.revoke(mcpId)
+
+            // The audit records what this deployment did - cleared its own copy - not whether the
+            // upstream cooperated, so the row the operator can act on is never missing.
+            assertEquals(McpCallLog.ACTION_REVOKE, audits().single().action)
+        }
     }
 
     /**
@@ -1154,12 +1189,6 @@ class McpOAuthUserServiceImplTest {
 
         private fun ownedBy(userId: Long = 7L, tenantId: Long = 1L) {
             whenever(sessionOwnerResolver.resolve(session)).thenReturn(McpSessionOwner(userId, tenantId))
-        }
-
-        private fun audits(): List<McpCallLog> {
-            val captor = argumentCaptor<McpCallLog>()
-            verify(mcpCallLogMapper, atLeastOnce()).insert(captor.capture())
-            return captor.allValues
         }
 
         @Test
@@ -1381,7 +1410,7 @@ class McpOAuthUserServiceImplTest {
         config: McpOAuthConfig = McpOAuthConfig(authorizationServer = issuer, scopes = listOf("mcp:read")),
     ): McpServer {
         val server = server(authType = authType, config = config)
-        whenever(mcpServerService.getMcpServer(mcpId)).thenReturn(server)
+        whenever(mcpServerService.getVisibleMcpServer(mcpId)).thenReturn(server)
         return server
     }
 
@@ -1508,6 +1537,13 @@ class McpOAuthUserServiceImplTest {
         val captor = argumentCaptor<McpUserCredential>()
         verify(credentialMapper).insert(captor.capture())
         return captor.firstValue
+    }
+
+    /** Every audit row the call under test wrote, however many that is. */
+    private fun audits(): List<McpCallLog> {
+        val captor = argumentCaptor<McpCallLog>()
+        verify(mcpCallLogMapper, atLeastOnce()).insert(captor.capture())
+        return captor.allValues
     }
 
     private fun argumentOfUpdate(): McpUserCredential {

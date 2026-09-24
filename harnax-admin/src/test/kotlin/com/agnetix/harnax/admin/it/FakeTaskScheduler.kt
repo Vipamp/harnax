@@ -81,7 +81,7 @@ class FakeTaskScheduler : Dispatcher() {
             method == "POST" && rest.isEmpty() -> create(body)
             method == "PUT" && rest.matches(ID_PATH) -> update(id(rest), body)
             method == "DELETE" && rest.matches(ID_PATH) -> delete(id(rest))
-            method == "POST" && rest.matches(TOGGLE_PATH) -> toggle(request, id(rest))
+            method == "POST" && rest.matches(TOGGLE_PATH) -> toggle(request, rest.substringAfterLast('/').toLong())
             method == "POST" && rest.matches(VERB_PATH) -> verb(rest)
             method == "POST" && rest.matches(STOP_PATH) -> stop(rest)
             method == "GET" && rest.matches(LOGS_PATH) -> success(pageEnvelope(emptyList(), 1L, 10L))

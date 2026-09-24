@@ -5,6 +5,7 @@ import com.agnetix.harnax.admin.dto.AgentResponse
 import com.agnetix.harnax.admin.dto.AgentUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.AgentService
 import com.agnetix.harnax.admin.service.impl.AgentSessionRefreshService
 import com.agnetix.harnax.admin.service.impl.RelatedSessionInfo
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+import org.mockito.ArgumentMatchers.anyString
 import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.verify
@@ -39,6 +41,9 @@ class AgentControllerTest {
 
     @Mock
     private lateinit var agentSessionRefreshService: AgentSessionRefreshService
+
+    @Mock
+    private lateinit var messageUtil: MessageUtil
 
     @InjectMocks
     private lateinit var controller: AgentController
@@ -71,6 +76,9 @@ class AgentControllerTest {
             modelId = 100L,
             status = 1,
         )
+
+        // MessageUtil 桩成回显消息码：断言只看键，不依赖 bundle 文案
+        `when`(messageUtil.getMessage(anyString())).thenAnswer { invocation -> invocation.arguments[0] as String }
     }
 
     @Nested
@@ -146,13 +154,15 @@ class AgentControllerTest {
         }
 
         @Test
-        @DisplayName("getAgent - 不存在时 data 为 null")
-        fun `getAgent should return null data when not found`() {
+        @DisplayName("getAgent - 不存在时返回具名 404")
+        fun `getAgent should report not found when the agent is missing`() {
             `when`(agentService.getAgent(999L)).thenReturn(null)
 
             val result = controller.getAgent(999L)
 
-            assertTrue(result.isSuccess())
+            assertFalse(result.isSuccess(), "一个读不到的智能体不能算成功响应")
+            assertEquals(404, result.code)
+            assertEquals("error.agent.notfound", result.message)
             assertNull(result.data)
         }
 

@@ -49,7 +49,9 @@ class PaginationBoundaryIT : BaseAdminIT() {
         "username" to usernames[index],
         "password" to "abcdef123456",
         "nickname" to "IT PgBnd $suffix-$index",
-        "email" to "${prefix}_u$index@it.harnax.com",
+        // Tracks the username, not the loop index: `keyword` matches email with the same LIKE, so an
+        // offset here makes the "narrow" single-row filter hit two users.
+        "email" to "${usernames[index]}@it.harnax.com",
         "phone" to "13${index}${Random.nextLong(10000000, 99999999)}",
         "gender" to 1,
     )

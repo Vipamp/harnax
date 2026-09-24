@@ -63,7 +63,6 @@ class ToolConfigAdaptorImpl(
         entity.readOnly = dto.readOnly
         entity.needConfirm = dto.needConfirm
         entity.requiredEnvParamKeys = dto.requiredEnvParamKeys
-        entity.timeoutSeconds = dto.timeoutSeconds
         entity.status = dto.status
         return entity
     }

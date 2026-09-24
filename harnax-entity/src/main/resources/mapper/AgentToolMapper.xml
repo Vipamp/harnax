@@ -2,9 +2,10 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.agnetix.harnax.mapper.AgentToolMapper">
 
+    <!-- No tenant_id and no timeout_seconds: the table is platform-scoped (V40) and the tool-level
+         timeout is gone with @ToolMeta(timeoutSeconds) — the whole-turn timeout is set at assembly. -->
     <resultMap id="AgentToolResultMap" type="com.agnetix.harnax.entity.AgentTool">
         <id column="id" property="id"/>
-        <result column="tenant_id" property="tenantId"/>
         <result column="name" property="name"/>
         <result column="display_name" property="displayName"/>
         <result column="display_name_zh" property="displayNameZh"/>
@@ -15,7 +16,6 @@
         <result column="need_confirm" property="needConfirm"/>
         <result column="is_required" property="isRequired"/>
         <result column="required_env_param_keys" property="requiredEnvParamKeys"/>
-        <result column="timeout_seconds" property="timeoutSeconds"/>
         <result column="status" property="status"/>
         <result column="creator" property="creator"/>
         <result column="active" property="active"/>
@@ -35,8 +35,11 @@
         </foreach>
     </select>
 
+    <!-- The sync's identity lookup, so it must not be narrowed by `active`: a row the retired manual
+         delete left at active = 0 still holds the name, and missing it would make the sync insert a
+         second row under uk_agent_tool_name. The update revives such a row instead. -->
     <select id="selectByName" resultMap="AgentToolResultMap">
-        SELECT * FROM agent_tool WHERE name = #{name} AND active = 1 LIMIT 1
+        SELECT * FROM agent_tool WHERE name = #{name} LIMIT 1
     </select>
 
     <select id="selectAgentToolList" resultMap="AgentToolResultMap">
@@ -70,50 +73,37 @@
         ORDER BY id
     </select>
 
-    <!-- Select tools by bean name (returns multiple records, one per @Tool method) -->
-    <select id="selectByBeanName" resultMap="AgentToolResultMap">
-        SELECT * FROM agent_tool
-        WHERE bean_name = #{beanName} AND active = 1
-    </select>
-
-    <!-- Upsert a single tool method record (one per @Tool method).
-         The duplicate key is uk_tenant_bean_method, so `name` is the column a @Tool(name = ...)
-         rename changes: refreshing it in place keeps the id and the agent bindings hanging off it. -->
-    <insert id="upsertBuiltinTool">
+    <!-- Insert one declaration found for the first time. `status` and `active` are written literal:
+         the sync is the only writer and every tool it declares is enabled and undeleted. -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO agent_tool (
-            tenant_id, name, display_name, display_name_zh, description, bean_name, method_name,
-            read_only, need_confirm, is_required, required_env_param_keys, timeout_seconds,
+            name, display_name, display_name_zh, description, bean_name, method_name,
+            read_only, need_confirm, is_required, required_env_param_keys,
             status, creator, active, create_time, update_time
         ) VALUES (
-            #{tenantId}, #{name}, #{displayName}, #{displayNameZh}, #{description}, #{beanName}, #{methodName},
-            #{readOnly}, #{needConfirm}, #{isRequired}, #{requiredEnvParamKeys}, #{timeoutSeconds},
+            #{name}, #{displayName}, #{displayNameZh}, #{description}, #{beanName}, #{methodName},
+            #{readOnly}, #{needConfirm}, #{isRequired}, #{requiredEnvParamKeys},
             1, 'SYSTEM', 1, NOW(), NOW()
         )
-        ON DUPLICATE KEY UPDATE
-            name = VALUES(name),
-            display_name = VALUES(display_name),
-            display_name_zh = VALUES(display_name_zh),
-            description = VALUES(description),
-            read_only = VALUES(read_only),
-            need_confirm = VALUES(need_confirm),
-            is_required = VALUES(is_required),
-            required_env_param_keys = VALUES(required_env_param_keys),
-            timeout_seconds = VALUES(timeout_seconds),
-            status = VALUES(status),
-            update_time = NOW()
     </insert>
 
-    <!-- Every row, soft-deleted included: the sync diffs these against the code and prunes residue -->
-    <select id="selectAllBuiltin" resultMap="AgentToolResultMap">
-        SELECT * FROM agent_tool
-    </select>
-
-    <!-- Hard delete for the sync only; it owns every row of this table -->
-    <delete id="deleteBuiltinByIds">
-        DELETE FROM agent_tool WHERE id IN
-        <foreach collection="ids" item="toolId" open="(" separator="," close=")">
-            #{toolId}
-        </foreach>
-    </delete>
+    <!-- Refresh a row the sync resolved by name. `name` is absent on purpose: the row was found by it,
+         and a renamed declaration is a different tool that gets its own row (the old one is kept). -->
+    <update id="updateById">
+        UPDATE agent_tool
+        SET display_name = #{displayName},
+            display_name_zh = #{displayNameZh},
+            description = #{description},
+            bean_name = #{beanName},
+            method_name = #{methodName},
+            read_only = #{readOnly},
+            need_confirm = #{needConfirm},
+            is_required = #{isRequired},
+            required_env_param_keys = #{requiredEnvParamKeys},
+            status = 1,
+            active = 1,
+            update_time = NOW()
+        WHERE id = #{id}
+    </update>
 
 </mapper>

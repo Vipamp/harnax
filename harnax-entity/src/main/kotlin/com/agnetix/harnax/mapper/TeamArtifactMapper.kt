@@ -17,4 +17,10 @@ interface TeamArtifactMapper {
     fun selectByFileId(@Param("fileId") fileId: String): TeamArtifact?
 
     fun selectBySessionId(@Param("sessionId") sessionId: String): List<TeamArtifact>
+
+    /**
+     * Drop the metadata row of one artifact. Only called after its object is gone (or when there is no
+     * object to speak of), so no row ever outlives the bytes it names.
+     */
+    fun deleteById(@Param("id") id: Long): Int
 }

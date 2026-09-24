@@ -81,6 +81,13 @@ class HarnessProperties {
     var enableSessionPersistence: Boolean = true
 
     /**
+     * Budget of one whole turn, bound from `harness.turn-timeout-seconds` and set from
+     * `HARNAX_TURN_TIMEOUT_SECONDS`. It is the batch and streaming call budget alike; raise it for
+     * runs that legitimately wait long, such as a team lead sitting between delegations.
+     */
+    var turnTimeoutSeconds: Long = 300
+
+    /**
      * Whether an MCP server of type stdio may be started as a process in this runtime. Off by
      * default: see the admin's `McpStdioPolicy`, which holds those rows back from delivery as well.
      * Bound from `harness.mcp-stdio-enabled`, and set from `HARNAX_MCP_STDIO_ENABLED`.
@@ -228,6 +235,7 @@ class HarnessAutoConfiguration {
         enableWorkspaceContext = harnessProps.enableWorkspaceContext,
         enableMemoryHooks = harnessProps.enableMemoryHooks,
         enableSessionPersistence = harnessProps.enableSessionPersistence,
+        turnTimeoutSeconds = harnessProps.turnTimeoutSeconds,
         mcpStdioEnabled = harnessProps.mcpStdioEnabled,
         team = TeamConfig(
             maxDelegations = teamProps.maxDelegations,

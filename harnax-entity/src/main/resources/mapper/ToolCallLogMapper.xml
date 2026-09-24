@@ -2,36 +2,8 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.agnetix.harnax.mapper.ToolCallLogMapper">
 
-    <!-- Result Map -->
-    <resultMap id="ToolCallLogEntityResultMap" type="com.agnetix.harnax.entity.ToolCallLogEntity">
-        <id column="id" property="id"/>
-        <result column="agent_id" property="agentId"/>
-        <result column="session_id" property="sessionId"/>
-        <result column="tool_name" property="toolName"/>
-        <result column="args" property="args"/>
-        <result column="result" property="result"/>
-        <result column="success" property="success"/>
-        <result column="start_time" property="startTime"/>
-        <result column="end_time" property="endTime"/>
-        <result column="duration" property="duration"/>
-        <result column="ts" property="ts"/>
-    </resultMap>
-
-    <!-- ==================== Basic CRUD Methods ==================== -->
-
-    <!-- selectById -->
-    <select id="selectById" resultMap="ToolCallLogEntityResultMap">
-        SELECT * FROM tool_call_log WHERE id = #{id} LIMIT 1
-    </select>
-
-    <!-- deleteById: the table is an append-only log with no `active` column, so removal is a real
-         DELETE. The statement used to name the entity class (`tool_call_log_entity`) instead of the
-         table, which MySQL rejected outright -->
-    <delete id="deleteById">
-        DELETE FROM tool_call_log WHERE id = #{id}
-    </delete>
-
-    <!-- insert -->
+    <!-- Append-only: `insert` is the only statement this mapper has a caller for. Rows are kept even
+         after the agent or session they name is gone, so no select/update/delete belongs here -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO tool_call_log (
         agent_id, session_id, tool_name, args, result, success, start_time, end_time, duration, ts
@@ -40,27 +12,4 @@
         #{ts}
         )
     </insert>
-
-    <!-- updateById -->
-    <update id="updateById">
-        UPDATE tool_call_log SET
-        agent_id = #{agentId},
-        session_id = #{sessionId},
-        tool_name = #{toolName},
-        args = #{args},
-        result = #{result},
-        success = #{success},
-        start_time = #{startTime},
-        end_time = #{endTime},
-        duration = #{duration},
-        ts = #{ts}
-        WHERE id = #{id}
-    </update>
-
-    <select id="selectBySessionId" resultMap="ToolCallLogEntityResultMap">
-        SELECT * FROM tool_call_log WHERE session_id = #{sessionId}
-    </select>
-    <select id="selectByToolName" resultMap="ToolCallLogEntityResultMap">
-        SELECT * FROM tool_call_log WHERE tool_name = #{toolName}
-    </select>
 </mapper>

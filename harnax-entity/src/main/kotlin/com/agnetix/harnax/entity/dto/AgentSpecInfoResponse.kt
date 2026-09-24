@@ -44,9 +44,6 @@ data class AgentSpecInfoResponse(
     @Schema(description = "MCP bindings (JSON: [{id, envBindings}])")
     val mcpList: String = "[]",
 
-    @Schema(description = "Skill IDs (comma-separated)")
-    val skillList: String = "",
-
     @Schema(description = "Deep thinking enabled (0:no, 1:yes)")
     val enableThink: Int = 0,
 

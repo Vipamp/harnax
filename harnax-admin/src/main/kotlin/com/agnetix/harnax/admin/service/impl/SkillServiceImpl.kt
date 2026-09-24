@@ -20,6 +20,7 @@ import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.SkillRepository
 import com.agnetix.harnax.mapper.AgentSkillBindingMapper
+import com.agnetix.harnax.mapper.CliMapper
 import com.agnetix.harnax.mapper.SkillMapper
 import com.agnetix.harnax.mapper.TeamSkillBindingMapper
 import com.github.pagehelper.PageHelper
@@ -40,6 +41,7 @@ class SkillServiceImpl(
     private val skillRepositoryService: SkillRepositoryService,
     private val agentSkillBindingMapper: AgentSkillBindingMapper,
     private val teamSkillBindingMapper: TeamSkillBindingMapper,
+    private val cliMapper: CliMapper,
     private val skillLoaderRegistry: SkillLoaderRegistry,
     private val skillInstaller: SkillInstaller,
     private val skillSyncRecorder: SkillSyncRecorder,
@@ -226,20 +228,32 @@ class SkillServiceImpl(
      *
      * A binding means the skill is part of what that holder does on its next run. Switching it off or
      * deleting it from the skill page rewrites that holder without anyone looking at it, so the change
-     * has to start where it is visible: on the agent's or the team's own configuration. A team's lead
-     * binds skills on the team row itself since V34, so its table is counted too.
+     * has to start where it is visible: on the agent's, the team's or the CLI's own configuration. Both
+     * counts come from the reads the list page renders, or the switch and this guard drift apart — which
+     * is how a skill bound only to a lead used to read "0 agents" here and still be refused.
      */
     private fun requireUnbound(
         skill: Skill,
         action: String,
     ) {
-        val bound = boundAgentCounts(listOf(skill.id))[skill.id] ?: 0
-        if (bound > 0) {
-            val agents = if (bound == 1) "1 agent" else "$bound agents"
-            throw BizException("Skill '${skill.name}' is bound to $agents, so it cannot be $action")
+        val agents = boundAgentCounts(listOf(skill.id))[skill.id] ?: 0
+        if (agents > 0) {
+            val named = if (agents == 1) "1 agent" else "$agents agents"
+            throw BizException("Skill '${skill.name}' is bound to $named, so it cannot be $action")
         }
-        if (teamSkillBindingMapper.selectBoundSkillIds(listOf(skill.id)).isNotEmpty()) {
-            throw BizException("Skill '${skill.name}' is bound to a team lead, so it cannot be $action")
+        val teams = boundTeamCounts(listOf(skill.id))[skill.id] ?: 0
+        if (teams > 0) {
+            val named = if (teams == 1) "a team lead" else "$teams team leads"
+            throw BizException("Skill '${skill.name}' is bound to $named, so it cannot be $action")
+        }
+        // A package's skill is not the skill page's to disable: `cli.skill_id` is how the package owns
+        // it, and the registrar rewrites or removes the row with the package.
+        val packages = cliMapper.selectBySkillIds(listOf(skill.id))
+        if (packages.isNotEmpty()) {
+            throw BizException(
+                "Skill '${skill.name}' ships with CLI package(s) ${packages.joinToString(", ") { it.name }}, " +
+                    "so it cannot be $action from here",
+            )
         }
     }
 
@@ -275,8 +289,6 @@ class SkillServiceImpl(
     }
 
     override fun getByNameAndRepo(repositoryId: Long, name: String): Skill? = skillMapper.selectByNameAndRepo(name, repositoryId)
-
-    override fun batchSaveSkills(repositoryId: Long, skills: List<String>): Int = batchSaveSkillsDetailed(repositoryId, skills).savedCount
 
     /**
      * Selective sync: load the source once, then store exactly the skills the caller picked.
@@ -329,16 +341,28 @@ class SkillServiceImpl(
 
     override fun convertToResponse(skill: Skill): SkillResponse {
         val repository = skillRepositoryService.getSkillRepository(skill.repositoryId)
-        return SkillResponse.fromEntity(skill, repository, boundAgentCounts(listOf(skill.id))[skill.id] ?: 0)
+        return SkillResponse.fromEntity(
+            skill,
+            repository,
+            boundAgentCount = boundAgentCounts(listOf(skill.id))[skill.id] ?: 0,
+            boundTeamCount = boundTeamCounts(listOf(skill.id))[skill.id] ?: 0,
+        )
     }
 
     override fun convertToResponses(skills: List<Skill>): List<SkillResponse> {
         // Cache repository lookups so a page of skills triggers one query per distinct repository
         val repositories = skills.map { it.repositoryId }.distinct()
             .associateWith { skillRepositoryService.getSkillRepository(it) }
-        val boundAgents = boundAgentCounts(skills.map { it.id })
+        val ids = skills.map { it.id }
+        val boundAgents = boundAgentCounts(ids)
+        val boundTeams = boundTeamCounts(ids)
         return skills.map {
-            SkillResponse.fromEntity(it, repositories[it.repositoryId], boundAgents[it.id] ?: 0)
+            SkillResponse.fromEntity(
+                it,
+                repositories[it.repositoryId],
+                boundAgentCount = boundAgents[it.id] ?: 0,
+                boundTeamCount = boundTeams[it.id] ?: 0,
+            )
         }
     }
 
@@ -352,5 +376,16 @@ class SkillServiceImpl(
     private fun boundAgentCounts(skillIds: List<Long>): Map<Long, Int> {
         if (skillIds.isEmpty()) return emptyMap()
         return agentSkillBindingMapper.selectAgentBindingCounts(skillIds).associate { it.skillId to it.agentCount }
+    }
+
+    /**
+     * Teams per skill, same shape and same reason as [boundAgentCounts].
+     *
+     * A lead's skills hang off the team row since V34, so a skill can be in use with no agent binding
+     * at all; [requireUnbound] refuses to disable one either way and the page has to show the same.
+     */
+    private fun boundTeamCounts(skillIds: List<Long>): Map<Long, Int> {
+        if (skillIds.isEmpty()) return emptyMap()
+        return teamSkillBindingMapper.selectTeamBindingCounts(skillIds).associate { it.skillId to it.teamCount }
     }
 }

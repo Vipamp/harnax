@@ -246,6 +246,7 @@ class McpOAuthUserServiceImpl(
     }
 
     override fun revoke(mcpId: Long): McpOAuthRevokeResponse {
+        val started = System.nanoTime()
         val userId = currentUserId()
         val server = requireOAuthServer(mcpId)
         val credential = mcpUserCredentialMapper.selectByUserAndMcp(server.tenantId, userId, server.id)
@@ -272,6 +273,7 @@ class McpOAuthUserServiceImpl(
             toRevoke != null &&
             revokeUpstream(endpoint, client, toRevoke.first, toRevoke.second)
         clearLocally(credential)
+        audit(server, userId, null, McpCallLog.ACTION_REVOKE, McpCallLog.OUTCOME_OK, started)
         log.info("MCP {} authorization of user {} revoked (upstream revoked: {})", mcpId, userId, upstreamRevoked)
         return McpOAuthRevokeResponse(
             revoked = true,
@@ -606,7 +608,8 @@ class McpOAuthUserServiceImpl(
     private fun audit(
         server: McpServer,
         userId: Long?,
-        sessionId: String,
+        // Null for a decision taken from the admin page; the runtime session for a token exchange.
+        sessionId: String?,
         action: String,
         outcome: String,
         started: Long,
@@ -650,10 +653,10 @@ class McpOAuthUserServiceImpl(
         pending: PendingAuthorization,
         code: String,
     ): StoredGrant {
-        // Read through `McpServerService.getMcpServer`, which applies the request's tenant guard:
-        // this call is authenticated now, so a server the caller cannot see is simply not found. The
-        // state still pins the tenant the flow started in, and a row that has since moved out of it
-        // must not receive a grant.
+        // Read through `McpServerService.getVisibleMcpServer`, which applies the request's tenant and
+        // visibility guards: this call is authenticated now, so a server the caller cannot see is
+        // simply not found. The state still pins the tenant the flow started in, and a row that has
+        // since moved out of it must not receive a grant.
         val server = requireOAuthServer(pending.mcpId)
         if (server.tenantId != pending.tenantId) {
             throw BizException("The MCP server this authorization was started for no longer exists in this tenant")
@@ -870,11 +873,13 @@ class McpOAuthUserServiceImpl(
         ?: throw BizException("Authorization is per user and this request carries no user identity")
 
     /**
-     * Reads through [McpServerService] so the tenant guard applies, which the discovery service does
-     * for the same reason: these endpoints build URLs from a row the caller may not own.
+     * Reads through [McpServerService] so the tenant and visibility guards apply, which the discovery
+     * service does for the same reason: these endpoints build URLs from a row the caller may not own.
+     * The runtime exchange is deliberately not here — it is an internal call and resolves the server
+     * by id through the mapper, with the session owner supplying the identity instead of the caller.
      */
     private fun requireOAuthServer(mcpId: Long): McpServer {
-        val server = mcpServerService.getMcpServer(mcpId) ?: throw BizException("MCP server not found")
+        val server = mcpServerService.getVisibleMcpServer(mcpId) ?: throw BizException("MCP server not found")
         if (server.authType != McpAuthTypes.OAUTH2) {
             throw BizException("MCP server '${server.name}' has auth type ${server.authType}, OAuth authorization does not apply")
         }

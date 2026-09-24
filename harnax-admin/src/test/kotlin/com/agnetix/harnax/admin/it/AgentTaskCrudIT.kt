@@ -62,7 +62,7 @@ class AgentTaskCrudIT : BaseAdminIT() {
 
     private fun ensureAgent(): Long {
         if (agentId > 0) return agentId
-        assertOk(postJson("/api/admin/agents", mapOf("name" to agentName, "status" to 1)))
+        assertOk(postJson("/api/admin/agents", agentCreateBody(agentName)))
         val record = findInPage("/api/admin/agents/page", "name=$agentName") {
             it["name"]?.asText() == agentName
         }
@@ -186,7 +186,7 @@ class AgentTaskCrudIT : BaseAdminIT() {
     @Test
     @Order(9)
     fun `update task to another agent carries the new name`() {
-        assertOk(postJson("/api/admin/agents", mapOf("name" to "${agentName}_2", "status" to 1)))
+        assertOk(postJson("/api/admin/agents", agentCreateBody("${agentName}_2")))
         val second = findInPage("/api/admin/agents/page", "name=${agentName}_2") {
             it["name"]?.asText() == "${agentName}_2"
         }

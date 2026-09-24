@@ -48,7 +48,7 @@ class MpAgentIT : BaseAdminIT() {
 
     private fun ensureAgent(): Long {
         if (agentId > 0) return agentId
-        assertOk(postJson("/api/admin/agents", mapOf("name" to agentName, "description" to "IT mp agent", "status" to 1)))
+        assertOk(postJson("/api/admin/agents", agentCreateBody(agentName, "IT mp agent")))
         val record = findInPage("/api/admin/agents/page", "name=$agentName") {
             it["name"]?.asText() == agentName
         }

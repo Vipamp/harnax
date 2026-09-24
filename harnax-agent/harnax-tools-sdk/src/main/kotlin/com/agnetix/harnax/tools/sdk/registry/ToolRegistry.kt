@@ -117,7 +117,6 @@ class ToolRegistry {
                     readOnly = toolAnnotation.readOnly,
                     needConfirm = needConfirm,
                     envParamDescriptors = envParamDescriptors,
-                    timeoutSeconds = toolMeta?.timeoutSeconds ?: 0,
                     isRequired = toolMeta?.isRequired ?: false,
                 ),
             )

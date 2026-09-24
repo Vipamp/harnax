@@ -46,6 +46,16 @@ interface ModelService {
     fun getModel(id: Long): Model?
 
     /**
+     * Get model details as the current tenant sees them: its own rows plus published ones.
+     *
+     * [getModel] stays the unfiltered lookup for callers rendering a binding that already exists.
+     *
+     * @param id ID
+     * @return Model entity, or null when this tenant may not see it
+     */
+    fun getVisibleModel(id: Long): Model?
+
+    /**
      * Create model
      *
      * @param request Create request

@@ -61,7 +61,7 @@ class TeamServiceImpl(
         return Page.fromPageInfo(teamMapper.selectTeamList(name, status, currentUsername ?: "", currentTenantId()))
     }
 
-    override fun getTeam(id: Long): Team? = teamMapper.selectById(id)?.takeIf { it.tenantId == currentTenantId() }
+    override fun getTeam(id: Long): Team? = teamMapper.selectById(id)?.takeIf { visibleToCurrentUser(it) }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun createTeam(request: TeamCreateRequest): Boolean {
@@ -100,7 +100,7 @@ class TeamServiceImpl(
     override fun updateTeam(id: Long, request: TeamUpdateRequest): Boolean {
         log.info("Updating team, id: {}", id)
         val team = teamMapper.selectById(id) ?: throw BizException("Team not found")
-        requireSameTenant(team.tenantId)
+        requireVisibleTeam(team)
 
         if (request.name != null && request.name != team.name) {
             if (teamMapper.selectByName(request.name!!, team.tenantId) != null) {
@@ -135,19 +135,32 @@ class TeamServiceImpl(
     @Transactional(rollbackFor = [Exception::class])
     override fun toggleTeamStatus(id: Long, status: Int): Boolean {
         val team = teamMapper.selectById(id) ?: throw BizException("Team not found")
-        requireSameTenant(team.tenantId)
+        requireVisibleTeam(team)
         return teamMapper.updateStatus(id, status) > 0
     }
 
     /**
-     * Logical delete. Existing team sessions keep their `team_id` and then fail at the next resolve
-     * with "Team not found" rather than falling back to some other configuration — design section 3.3
-     * requires an explicit refusal over a silent downgrade.
+     * Refuses while the team still has sessions, naming them.
+     *
+     * Sessions are how a team is reached, and a session reads its configuration from the team row —
+     * design 3.3 wants that read to fail loudly rather than silently downgrade, so the team cannot be
+     * taken away underneath them. They also own the artifacts: each `team_artifact` is keyed by a
+     * session id, and deleting that session is what removes its objects (see `TeamArtifactCleaner`).
+     * Deleting the team first would leave both the sessions and their objects unreachable.
      */
     @Transactional(rollbackFor = [Exception::class])
     override fun deleteTeam(id: Long): Boolean {
         val team = teamMapper.selectById(id) ?: throw BizException("Team not found")
-        requireSameTenant(team.tenantId)
+        requireVisibleTeam(team)
+        val sessions = sessionMapper.selectByTeamId(id)
+        if (sessions.isNotEmpty()) {
+            val named = sessions.take(MAX_NAMED_SESSIONS).joinToString(", ") { it.sessionId }
+            val suffix = if (sessions.size > MAX_NAMED_SESSIONS) ", …" else ""
+            throw BizException(
+                "Team '${team.name}' still has ${sessions.size} session(s): $named$suffix. " +
+                    "Delete those sessions first — deleting a session is also what removes its artifacts.",
+            )
+        }
         teamMemberMapper.deleteByTeamId(id)
         teamSkillBindingMapper.deleteByTeamId(id)
         return teamMapper.deleteById(id) > 0
@@ -192,7 +205,7 @@ class TeamServiceImpl(
 
     override fun listRelatedSessions(id: Long): List<RelatedSessionInfo> {
         val team = teamMapper.selectById(id) ?: throw BizException("Team not found")
-        requireSameTenant(team.tenantId)
+        requireVisibleTeam(team)
         return sessionMapper.selectByTeamId(id)
             .filter { it.sessionId.isNotBlank() }
             .map {
@@ -215,13 +228,14 @@ class TeamServiceImpl(
      *
      * Stricter than the agent side, which never looked: delivery has no fallback for a lead whose model
      * cannot be used, so what the guard refuses here is exactly what would otherwise become a team that
-     * starts and then fails on its first message. Visibility follows the model picker's own rule
-     * (`is_public` or the caller's own), not tenancy — a shared public model is pickable.
+     * starts and then fails on its first message. Visibility follows the model picker's own rule, which
+     * is now the tenant's — own row or `is_public`, so a model shared to the platform stays pickable
+     * while another tenant's private rows do not.
      */
     private fun requireUsableModel(modelId: Long) {
         val model = modelMapper.selectById(modelId) ?: throw BizException("Lead model not found: $modelId")
-        if (model.isPublic != 1 && model.creator != UserContextUtil.getCurrentUsername(jwtUtil)) {
-            throw BizException("Lead model is not available to the current user: $modelId")
+        if (model.tenantId != currentTenantId() && model.isPublic != 1) {
+            throw BizException("Lead model is not available to the current tenant: $modelId")
         }
         if (model.status != 1) {
             throw BizException("Lead model is disabled: ${model.modelName}")
@@ -306,10 +320,31 @@ class TeamServiceImpl(
 
     private fun currentTenantId(): Long = TenantContext.getTenantId() ?: 1
 
+    /**
+     * `is_public OR creator`, the same rule the list query applies. Checking only the tenant left the
+     * by-id paths open to everyone inside it: a team someone cannot see in the list could still be
+     * read, edited, deleted and started against.
+     */
+    private fun visibleToCurrentUser(team: Team): Boolean = team.tenantId == currentTenantId() &&
+        (team.isPublic == 1 || team.creator == UserContextUtil.getCurrentUsername(jwtUtil))
+
+    /** Keeps the cross-tenant message distinct, and layers the visibility rule on top of it. */
+    private fun requireVisibleTeam(team: Team) {
+        requireSameTenant(team.tenantId)
+        if (team.isPublic != 1 && team.creator != UserContextUtil.getCurrentUsername(jwtUtil)) {
+            throw BizException("Team not found")
+        }
+    }
+
     private fun requireSameTenant(resourceTenantId: Long) {
         val currentTenantId = TenantContext.getTenantId() ?: return
         if (resourceTenantId != currentTenantId) {
             throw BizException("Team belongs to another tenant")
         }
+    }
+
+    companion object {
+        /** How many session ids the delete refusal spells out before collapsing the rest into "…". */
+        private const val MAX_NAMED_SESSIONS = 5
     }
 }

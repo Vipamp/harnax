@@ -5,6 +5,7 @@ import com.agnetix.harnax.admin.dto.AgentResponse
 import com.agnetix.harnax.admin.dto.AgentUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.mapRecords
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.AgentService
 import com.agnetix.harnax.admin.service.impl.AgentSessionRefreshService
 import com.agnetix.harnax.admin.service.impl.RelatedSessionInfo
@@ -27,6 +28,7 @@ import org.springframework.web.bind.annotation.*
 class AgentController(
     private val agentService: AgentService,
     private val agentSessionRefreshService: AgentSessionRefreshService,
+    private val messageUtil: MessageUtil,
 ) {
 
     private val log = LoggerFactory.getLogger(AgentController::class.java)
@@ -56,8 +58,11 @@ class AgentController(
     @Operation(summary = "Get agent details", description = "Get agent information by agent ID")
     fun getAgent(
         @Parameter(description = "Agent ID") @PathVariable(name = "id") id: Long,
-    ): ResultVo<AgentResponse?> = try {
-        ResultVo.success(agentService.getAgent(id)?.let { agentService.convertToResponse(it) })
+    ): ResultVo<AgentResponse> = try {
+        val agent = agentService.getAgent(id)
+            // A row in another tenant answers the same way as a missing one: naming it would confirm it exists.
+            ?: return ResultVo.error(404, messageUtil.getMessage("error.agent.notfound"))
+        ResultVo.success(agentService.convertToResponse(agent))
     } catch (e: Exception) {
         log.error("Failed to get agent details", e)
         ResultVo.error(e.message ?: "Failed to get agent details")

@@ -77,6 +77,15 @@ class HarnessAgentWrapper(
     val tokenStatAdaptor: TokenStatAdaptor,
     val sessionId: String,
     val userId: String? = null,
+    /**
+     * Budget of one whole turn, batch and streaming alike; see [com.agnetix.harnax.harness.config.HarnessConfig.turnTimeoutSeconds].
+     *
+     * `0` or less means "no budget": a team wrapper gets its limits from the team layer instead, whose
+     * budgets wrap this stream from the outside (`memberTurnTimeoutSeconds`, `confirmTimeoutSeconds`).
+     * A limit in here would fire first — a member running one long tool, or a lead waiting on its
+     * members, is silent rather than stuck.
+     */
+    val turnTimeoutSeconds: Long = 300,
     val keepAliveSandboxManager: KeepAliveSandboxManager? = null,
     val keepAliveSnapshotSpec: SandboxSnapshotSpec? = null,
     val sandboxImage: String = "python:3.11-slim",
@@ -371,8 +380,9 @@ class HarnessAgentWrapper(
         ensurePermissionRulesMerged()
         harnessAgent.setPermissionMode(ctxResult.runtimeContext, PermissionMode.fromString(permissionMode))
         try {
-            val mono = harnessAgent.call(msgs, ctxResult.runtimeContext)
-                .timeout(Duration.ofMinutes(5))
+            val mono = harnessAgent.call(msgs, ctxResult.runtimeContext).let { call ->
+                if (turnTimeoutSeconds > 0) call.timeout(Duration.ofSeconds(turnTimeoutSeconds)) else call
+            }
             // Use a single subscribe() to avoid double subscription on the cold Mono.
             // The previous subscribe()+block() pattern created two independent subscriptions,
             // causing SandboxLifecycleMiddleware to acquire/release the sandbox twice and
@@ -741,6 +751,14 @@ class HarnessAgentWrapper(
                     }
                     else -> ChatEventConverter.convert(agentEvent, dangerousTools)
                 }
+            }
+            // The same budget the batch path applies, so a streaming turn cannot outlive a batch one.
+            // Deliberately before the output-file detection below: that step is a blocking `ls` in the
+            // sandbox and is best-effort by contract, so it must not be able to consume the budget and
+            // turn a finished answer into a timeout. A timeout surfaces at onErrorResume like any other
+            // stream error. A non-positive budget skips it entirely (see `turnTimeoutSeconds`).
+            .let { stream ->
+                if (turnTimeoutSeconds > 0) stream.timeout(Duration.ofSeconds(turnTimeoutSeconds)) else stream
             }
             .doOnNext { extracted(it) }
             .doFinally { persistKeepAliveSnapshot(ctxResult) }

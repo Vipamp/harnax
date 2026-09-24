@@ -16,14 +16,6 @@
         SELECT * FROM team_member WHERE team_id = #{teamId} ORDER BY id
     </select>
 
-    <select id="selectByTeamIds" resultMap="TeamMemberResultMap">
-        SELECT * FROM team_member WHERE team_id IN
-        <foreach collection="teamIds" item="teamId" open="(" separator="," close=")">
-            #{teamId}
-        </foreach>
-        ORDER BY team_id, id
-    </select>
-
     <select id="selectByMemberAgentId" resultMap="TeamMemberResultMap">
         SELECT * FROM team_member WHERE member_agent_id = #{agentId} ORDER BY id
     </select>

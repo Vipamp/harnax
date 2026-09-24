@@ -4,6 +4,7 @@ import com.agnetix.harnax.admin.dto.mp.MpCreateSessionRequest
 import com.agnetix.harnax.admin.dto.mp.MpSessionResponse
 import com.agnetix.harnax.admin.dto.mp.MpUpdateSessionRequest
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.service.AgentRuntimeClient
 import com.agnetix.harnax.entity.MpSession
 import com.agnetix.harnax.entity.Session
 import com.agnetix.harnax.mapper.AgentMapper
@@ -21,6 +22,7 @@ class MpSessionService(
     private val mpChatMessageMapper: MpChatMessageMapper,
     private val agentMapper: AgentMapper,
     private val sessionMapper: SessionMapper,
+    private val agentRuntimeClient: AgentRuntimeClient,
 ) {
 
     private val log = LoggerFactory.getLogger(MpSessionService::class.java)
@@ -115,7 +117,17 @@ class MpSessionService(
             ?: throw BizException("Session not found or access denied")
 
         val routerSession = sessionMapper.selectBySessionIdAndStatus(session.routerSessionId, 1)
-        routerSession?.let { sessionMapper.deleteById(it.id) }
+        routerSession?.let {
+            // Same rule as the admin delete path: the chat state, plan notes and sandbox container live in
+            // the runtime, and a runtime that could not release them means the deletion is refused outright.
+            // The team-artifact cleaner it pairs with has nothing to reclaim here: an mp session is created
+            // without a team_id, and a team artifact is keyed by the team session that produced it.
+            val cleared = agentRuntimeClient.clearSession(it.sessionId)
+            if (!cleared.isSuccess()) {
+                throw BizException("Session could not be released by the runtime, so it was not deleted: ${cleared.message}")
+            }
+            sessionMapper.deleteById(it.id)
+        }
 
         mpSessionMapper.deleteById(sessionId)
         mpChatMessageMapper.deleteBySessionId(sessionId)

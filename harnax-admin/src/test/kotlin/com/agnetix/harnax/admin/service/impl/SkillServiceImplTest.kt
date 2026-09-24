@@ -13,10 +13,13 @@ import com.agnetix.harnax.admin.skill.loader.SkillLoadResult
 import com.agnetix.harnax.admin.skill.loader.SkillLoader
 import com.agnetix.harnax.admin.skill.loader.SkillLoaderRegistry
 import com.agnetix.harnax.admin.util.JwtUtil
+import com.agnetix.harnax.entity.Cli
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.SkillRepository
 import com.agnetix.harnax.entity.dto.SkillAgentBindingCount
+import com.agnetix.harnax.entity.dto.SkillTeamBindingCount
 import com.agnetix.harnax.mapper.AgentSkillBindingMapper
+import com.agnetix.harnax.mapper.CliMapper
 import com.agnetix.harnax.mapper.SkillMapper
 import com.agnetix.harnax.mapper.SkillRepositoryMapper
 import com.agnetix.harnax.mapper.TeamSkillBindingMapper
@@ -73,6 +76,10 @@ class SkillServiceImplTest {
 
     @Mock
     private lateinit var teamSkillBindingMapper: TeamSkillBindingMapper
+
+    /** Stands for "this skill ships inside a CLI package"; unstubbed means it ships in none. */
+    @Mock
+    private lateinit var cliMapper: CliMapper
 
     @Mock
     private lateinit var skillLoaderRegistry: SkillLoaderRegistry
@@ -153,12 +160,31 @@ class SkillServiceImplTest {
         agentCount = agents
     }
 
+    private fun teamBindingCount(
+        skillId: Long,
+        teams: Int = 1,
+    ): SkillTeamBindingCount = SkillTeamBindingCount().apply {
+        this.skillId = skillId
+        teamCount = teams
+    }
+
+    /** A CLI package that owns the skill row through `cli.skill_id`. */
+    private fun cliPackage(
+        name: String,
+        skillId: Long = 1L,
+    ): Cli = Cli().apply {
+        id = 40L
+        this.name = name
+        this.skillId = skillId
+    }
+
     private fun createService(): SkillServiceImpl = SkillServiceImpl(
         jwtUtil = jwtUtil,
         skillMapper = skillMapper,
         skillRepositoryService = skillRepositoryService,
         agentSkillBindingMapper = agentSkillBindingMapper,
         teamSkillBindingMapper = teamSkillBindingMapper,
+        cliMapper = cliMapper,
         skillLoaderRegistry = skillLoaderRegistry,
         // A real installer over the same mocked mappers, so the persistence assertions below still
         // describe what actually gets written
@@ -894,13 +920,31 @@ class SkillServiceImplTest {
             // 主管技能直接挂在 team 上（V34），停用守卫只看 agent 绑定就会让团队侧静默少一份技能
             `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
             `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
-            `when`(teamSkillBindingMapper.selectBoundSkillIds(listOf(1L))).thenReturn(listOf(1L))
+            `when`(teamSkillBindingMapper.selectTeamBindingCounts(listOf(1L))).thenReturn(listOf(teamBindingCount(1L)))
 
             val exception = assertThrows<BizException> {
                 createService().toggleSkillStatus(1L, 0)
             }
 
             assertTrue(exception.message!!.contains("team"), exception.message)
+            verify(skillMapper, never()).updateStatus(anyLong(), anyInt())
+        }
+
+        @Test
+        @DisplayName("toggleSkillStatus - Refuse to disable a skill a CLI package ships")
+        fun `toggleSkillStatus should refuse to disable a skill a CLI package ships`() {
+            // The switch is the entry point an operator reaches for first, and a package's own skill is
+            // the row the registrar keeps in step with `cli.status` - not this page's to quieten
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(cliMapper.selectBySkillIds(listOf(1L))).thenReturn(listOf(cliPackage("harnax-pdf")))
+
+            val exception = assertThrows<BizException> {
+                createService().toggleSkillStatus(1L, 0)
+            }
+
+            assertTrue(exception.message!!.contains("harnax-pdf"), exception.message)
+            assertTrue(exception.message!!.contains("cannot be disabled"), exception.message)
             verify(skillMapper, never()).updateStatus(anyLong(), anyInt())
         }
 
@@ -1027,11 +1071,27 @@ class SkillServiceImplTest {
             // 而运维此刻看的是技能页，不是团队页
             `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
             `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
-            `when`(teamSkillBindingMapper.selectBoundSkillIds(listOf(1L))).thenReturn(listOf(1L))
+            `when`(teamSkillBindingMapper.selectTeamBindingCounts(listOf(1L))).thenReturn(listOf(teamBindingCount(1L)))
 
             val exception = assertThrows<BizException> { createService().deleteSkill(1L) }
 
             assertTrue(exception.message!!.contains("team"), exception.message)
+            assertTrue(exception.message!!.contains("cannot be deleted"), exception.message)
+            verify(skillMapper, never()).deleteById(anyLong())
+        }
+
+        @Test
+        @DisplayName("deleteSkill - Refuse to delete a skill a CLI package ships")
+        fun `deleteSkill should refuse to delete a skill a CLI package ships`() {
+            // `cli.skill_id` is how a package owns its skill row: the registrar rewrites it on the next
+            // import and removes it with the package. Nothing on the skill page may take that row away.
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(cliMapper.selectBySkillIds(listOf(1L))).thenReturn(listOf(cliPackage("harnax-pdf")))
+
+            val exception = assertThrows<BizException> { createService().deleteSkill(1L) }
+
+            assertTrue(exception.message!!.contains("harnax-pdf"), exception.message)
             assertTrue(exception.message!!.contains("cannot be deleted"), exception.message)
             verify(skillMapper, never()).deleteById(anyLong())
         }
@@ -1148,7 +1208,7 @@ class SkillServiceImplTest {
             `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
 
             // When
-            val result = createService().batchSaveSkills(5L, emptyList())
+            val result = createService().batchSaveSkillsDetailed(5L, emptyList()).savedCount
 
             // Then
             assertEquals(0, result)
@@ -1163,7 +1223,7 @@ class SkillServiceImplTest {
 
             // When & Then
             val exception = assertThrows<BizException> {
-                createService().batchSaveSkills(10L, listOf("some-skill"))
+                createService().batchSaveSkillsDetailed(10L, listOf("some-skill"))
             }
             assertTrue(exception.message?.contains("read-only") == true)
             verify(skillMapper, never()).insert(any())
@@ -1177,7 +1237,7 @@ class SkillServiceImplTest {
 
             // When & Then
             val exception = assertThrows<BizException> {
-                createService().batchSaveSkills(999L, listOf("some-skill"))
+                createService().batchSaveSkillsDetailed(999L, listOf("some-skill"))
             }
             assertEquals("Skill repository not found", exception.message)
             verify(skillMapper, never()).insert(any())
@@ -1200,7 +1260,7 @@ class SkillServiceImplTest {
             `when`(skillMapper.insert(any())).thenReturn(1)
 
             // When
-            val result = createService().batchSaveSkills(5L, listOf("new-skill"))
+            val result = createService().batchSaveSkillsDetailed(5L, listOf("new-skill")).savedCount
 
             // Then
             assertEquals(1, result)
@@ -1231,7 +1291,7 @@ class SkillServiceImplTest {
             `when`(skillMapper.updateById(any())).thenReturn(1)
 
             // When
-            val result = createService().batchSaveSkills(5L, listOf("code-review"))
+            val result = createService().batchSaveSkillsDetailed(5L, listOf("code-review")).savedCount
 
             // Then
             assertEquals(1, result)
@@ -1391,7 +1451,7 @@ class SkillServiceImplTest {
             // When & Then
             // ZIP 上传后不留档，之前这条路径只会回一句 ZIP loader 的 requires 'zipPath'
             val exception = assertThrows<BizException> {
-                createService().batchSaveSkills(7L, listOf("any-skill"))
+                createService().batchSaveSkillsDetailed(7L, listOf("any-skill"))
             }
             assertTrue(exception.message!!.contains("installed once"))
             verify(skillLoaderRegistry, never()).getLoader(anyString())
@@ -1407,7 +1467,7 @@ class SkillServiceImplTest {
             // When & Then
             // 源里没有的名字会逐个回到失败清单里，不设上限就能用一个请求撑爆响应体
             val exception = assertThrows<BizException> {
-                createService().batchSaveSkills(5L, oversized)
+                createService().batchSaveSkillsDetailed(5L, oversized)
             }
             assertTrue(exception.message!!.contains("at most 1000"))
             verify(skillLoaderRegistry, never()).getLoader(anyString())
@@ -1585,6 +1645,26 @@ class SkillServiceImplTest {
             assertEquals(3, result[0].boundAgentCount)
             assertEquals(0, result[1].boundAgentCount)
             verify(agentSkillBindingMapper).selectAgentBindingCounts(listOf(1L, 2L))
+        }
+
+        /**
+         * The old split: the count came from `agent_skill_binding` alone while the guard also weighed
+         * `team_skill_binding`. A lead's skills hang off the team row since V34, so a skill could read
+         * "0 agents" on the page and still be refused on the switch. Both numbers now travel together.
+         */
+        @Test
+        @DisplayName("convertToResponses - 只被主管绑定时团队数不为零")
+        fun `convertToResponses reports the team a lead binds this skill to`() {
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(agentSkillBindingMapper.selectAgentBindingCounts(listOf(1L))).thenReturn(emptyList())
+            `when`(teamSkillBindingMapper.selectTeamBindingCounts(listOf(1L)))
+                .thenReturn(listOf(teamBindingCount(1L, teams = 2)))
+
+            val result = createService().convertToResponses(listOf(testSkill)).single()
+
+            assertEquals(0, result.boundAgentCount)
+            assertEquals(2, result.boundTeamCount)
+            verify(teamSkillBindingMapper).selectTeamBindingCounts(listOf(1L))
         }
 
         @Test

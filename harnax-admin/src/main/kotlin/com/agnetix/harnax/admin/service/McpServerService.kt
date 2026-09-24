@@ -27,10 +27,25 @@ interface McpServerService {
     /**
      * Get single MCP server details
      *
+     * Tenant scope only. Enough to resolve the name of a row a binding points at; not enough to
+     * open, edit, delete or exercise one — use [getVisibleMcpServer] for that.
+     *
      * @param id MCP ID
      * @return MCP server entity
      */
     fun getMcpServer(id: Long): McpServer?
+
+    /**
+     * [getMcpServer] plus the visibility rule the list query applies (`is_public = 1 OR creator`).
+     *
+     * Without it the list filter is decorative: a private server stays out of the list but every
+     * by-id route still answers for it, so anyone in the tenant who guesses an id can read, edit,
+     * delete, enable or disable it and probe its tools.
+     *
+     * @param id MCP ID
+     * @return MCP server entity, or null when this caller cannot see it
+     */
+    fun getVisibleMcpServer(id: Long): McpServer?
 
     /**
      * Create MCP server

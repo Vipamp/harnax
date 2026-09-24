@@ -86,7 +86,7 @@ class AgentTaskSchedulerIT : BaseAdminIT() {
      */
     private fun ensureTask(): Long {
         if (taskId > 0) return taskId
-        assertOk(postJson("/api/admin/agents", mapOf("name" to agentName, "status" to 1)))
+        assertOk(postJson("/api/admin/agents", agentCreateBody(agentName)))
         val agent = findInPage("/api/admin/agents/page", "name=$agentName") {
             it["name"]?.asText() == agentName
         }
@@ -114,7 +114,11 @@ class AgentTaskSchedulerIT : BaseAdminIT() {
     @Test
     @Order(1)
     fun `start task is forwarded to the task surface`() {
-        val answer = post("/api/admin/agent-tasks/${ensureTask()}/start")
+        val id = ensureTask()
+        // Creating the task is itself a forward, and only this first case pays for it: drop its request so the
+        // one taken below is the start under test.
+        drainRecordedRequests()
+        val answer = post("/api/admin/agent-tasks/$id/start")
         assertOk(answer)
 
         val request = takeSchedulerRequest()

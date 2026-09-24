@@ -61,7 +61,7 @@ class ModelController(
     fun getModel(
         @Parameter(description = "Model ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<ModelResponse?> {
-        val model = modelService.getModel(id)
+        val model = modelService.getVisibleModel(id)
         return ResultVo.success(model?.let { modelService.convertToResponse(it) })
     }
 

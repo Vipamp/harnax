@@ -1,8 +1,10 @@
 package com.agnetix.harnax.admin.controller
 
+import com.agnetix.harnax.admin.registrar.BuiltinToolAutoRegistrar
 import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.service.McpOAuthUserService
 import com.agnetix.harnax.admin.service.McpStdioPolicy
+import com.agnetix.harnax.admin.skill.SkillBindingResolver
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.entity.Agent
@@ -27,9 +29,12 @@ import com.agnetix.harnax.mapper.TeamSkillBindingMapper
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+import org.mockito.ArgumentMatchers.anyList
+import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.`when`
@@ -123,8 +128,25 @@ class InternalApiTaskSpecTest {
     @Mock
     private lateinit var teamSkillBindingMapper: TeamSkillBindingMapper
 
+    @Mock
+    private lateinit var builtinToolAutoRegistrar: BuiltinToolAutoRegistrar
+
+    /**
+     * Delivery asks the binding resolver which skills the holder's tenant may receive. Delegating that to
+     * the `skillMapper.selectByIds` stubs the cases below already set keeps those stubs describing what
+     * goes out rather than how the scope is computed.
+     */
+    @Mock
+    private lateinit var skillBindingResolver: SkillBindingResolver
+
     @InjectMocks
     private lateinit var controller: InternalApiController
+
+    @BeforeEach
+    fun stubSkillDelivery() {
+        `when`(skillBindingResolver.deliverable(anyList(), anyLong()))
+            .thenAnswer { invocation -> skillMapper.selectByIds(invocation.getArgument(0)) }
+    }
 
     @Test
     @DisplayName("C1: the agent id in the session id is the one that gets looked up")

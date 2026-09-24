@@ -124,6 +124,27 @@ class McpSessionOwnerResolverTest {
     }
 
     @Test
+    @DisplayName("creator 账号被停用就没有身份,花不掉别人的授权")
+    fun `a disabled creator account leaves no identity`() {
+        // `selectByUsername` cannot filter status - login runs the same query and has to tell
+        // "account disabled" from "no such user" - so this is where the switch has to be honoured.
+        stubSession("tester")
+        whenever(sysUserMapper.selectByUsername("tester")).thenReturn(user(7L, TENANT).apply { status = 0 })
+
+        assertNull(resolver.resolve("web-abc"))
+    }
+
+    @Test
+    @DisplayName("mp 会话的 creator 是 id:停用的账号同样不采用")
+    fun `a disabled account resolved by id leaves no identity`() {
+        stubSession("42")
+        whenever(sysUserMapper.selectByUsername("42")).thenReturn(null)
+        whenever(sysUserMapper.selectById(42L)).thenReturn(user(42L, TENANT).apply { status = 0 })
+
+        assertNull(resolver.resolve("mp-abc"))
+    }
+
+    @Test
     @DisplayName("creator 为空不查库")
     fun `a blank creator resolves to nobody without a lookup`() {
         stubSession("   ")

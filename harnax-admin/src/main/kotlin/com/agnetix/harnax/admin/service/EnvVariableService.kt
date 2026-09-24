@@ -31,6 +31,14 @@ interface EnvVariableService {
     /**
      * Get decrypted real value for an env variable by ID.
      * Returns null if not found.
+     *
+     * [tenantId] is the tenant of whatever is being resolved, not of the request: this is what the
+     * internal delivery call runs on, and an internal call carries no tenant header. A binding row
+     * that still points at another tenant's variable — saved before the save-time check existed — then
+     * resolves to nothing, the same way a deleted or disabled one does.
      */
-    fun getDecryptedValue(id: Long): String?
+    fun getDecryptedValue(
+        id: Long,
+        tenantId: Long,
+    ): String?
 }

@@ -2,7 +2,6 @@ package com.agnetix.harnax.admin.service
 
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.SkillRepositoryCreateRequest
-import com.agnetix.harnax.admin.dto.SkillRepositoryResponse
 import com.agnetix.harnax.admin.dto.SkillRepositoryUpdateRequest
 import com.agnetix.harnax.admin.dto.SyncSkillResponse
 import com.agnetix.harnax.entity.SkillRepository
@@ -73,14 +72,6 @@ interface SkillRepositoryService {
     fun deleteSkillRepository(id: Long): Boolean
 
     /**
-     * Query repository by name
-     *
-     * @param name Repository name
-     * @return Skill repository entity
-     */
-    fun getByName(name: String): SkillRepository?
-
-    /**
      * The platform-managed builtin repository, resolved without a tenant filter.
      *
      * It is seeded once and shared by every tenant, so looking it up by the caller's tenant
@@ -95,12 +86,4 @@ interface SkillRepositoryService {
      * @return Remote skill list
      */
     fun fetchRemoteSkills(repositoryId: Long): List<SyncSkillResponse>
-
-    /**
-     * Convert skill repository entity to skill repository response object
-     *
-     * @param skillRepository Skill repository entity
-     * @return Skill repository response object
-     */
-    fun convertToResponse(skillRepository: SkillRepository): SkillRepositoryResponse
 }

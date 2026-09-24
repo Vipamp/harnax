@@ -8,9 +8,6 @@ import jakarta.validation.constraints.Size
  */
 @Schema(description = "Agent update request object")
 data class AgentUpdateRequest(
-    @Schema(description = "ID", example = "1")
-    var id: Long? = null,
-
     @Schema(description = "Agent name", example = "assistant")
     @Size(min = 1, max = 100, message = "Agent name length must be between 1-100")
     val name: String? = null,
@@ -35,9 +32,6 @@ data class AgentUpdateRequest(
 
     @Schema(description = "CLI configuration list")
     val cliList: List<AgentCreateRequest.CliConfig>? = null,
-
-    @Schema(description = "Owner")
-    val owner: String? = null,
 
     @Schema(description = "Status (0:disabled 1:enabled)", example = "1")
     val status: Int? = null,

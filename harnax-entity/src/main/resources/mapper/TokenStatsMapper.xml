@@ -26,4 +26,415 @@
         )
     </insert>
 
+    <!-- ==================== Aggregations ==================== -->
+    <!--
+      The column labels are the wire contract: TokenStatsServiceImpl reads these result maps by the
+      camelCase keys TokenStatsAggregationResponse expects, so nothing here may rely on the driver's
+      own case or on map-underscore-to-camel-case.
+
+      Time buckets are CAST to DATETIME on purpose. The service indexes a series row by
+      `row["timePoint"] as? LocalDateTime`, so a DATE (LocalDate) or a DATE_FORMAT string silently
+      drops the row and the chart comes back all zeros.
+    -->
+
+    <sql id="timeWindow">
+        <if test="startTime != null and startTime != ''">
+            AND ${alias}.ts &gt;= #{startTime}
+        </if>
+        <if test="endTime != null and endTime != ''">
+            AND ${alias}.ts &lt;= #{endTime}
+        </if>
+    </sql>
+
+    <sql id="tokenMetrics">
+        COALESCE(SUM(${alias}.input_token), 0) AS totalInputToken,
+        COALESCE(SUM(${alias}.output_token), 0) AS totalOutputToken,
+        COALESCE(SUM(${alias}.total_token), 0) AS grandTotalToken,
+        COALESCE(SUM(${alias}.fee), 0) AS totalFee
+    </sql>
+
+    <sql id="hourBucket">CAST(DATE_FORMAT(${alias}.ts, '%Y-%m-%d %H:00:00') AS DATETIME)</sql>
+    <sql id="dayBucket">CAST(DATE_FORMAT(${alias}.ts, '%Y-%m-%d 00:00:00') AS DATETIME)</sql>
+    <sql id="weekBucket">
+        CAST(DATE_FORMAT(DATE_SUB(${alias}.ts, INTERVAL WEEKDAY(${alias}.ts) DAY), '%Y-%m-%d 00:00:00') AS DATETIME)
+    </sql>
+    <sql id="monthBucket">CAST(DATE_FORMAT(${alias}.ts, '%Y-%m-01 00:00:00') AS DATETIME)</sql>
+
+    <sql id="modelColumns">t.chat_model_id AS modelId, m.name AS modelName</sql>
+    <sql id="agentColumns">t.agent_id AS agentId, a.name AS agentName</sql>
+    <sql id="sessionColumns">t.session_id AS sessionId, s.title AS sessionTitle</sql>
+
+    <!-- Overall statistics: one row even for an empty window, because SUM over no rows is NULL. -->
+    <select id="getOverallStats" resultType="map">
+        SELECT
+        COALESCE(SUM(input_token), 0) AS totalInputToken,
+        COALESCE(SUM(output_token), 0) AS totalOutputToken,
+        COALESCE(SUM(total_token), 0) AS grandTotalToken,
+        COALESCE(SUM(fee), 0) AS totalFee,
+        COUNT(DISTINCT agent_id) AS agentCount,
+        COUNT(DISTINCT session_id) AS sessionCount,
+        COUNT(DISTINCT chat_model_id) AS modelCount
+        FROM token_stats t
+        WHERE 1 = 1
+        <include refid="timeWindow">
+            <property name="alias" value="t"/>
+        </include>
+    </select>
+
+    <!-- LEFT JOIN keeps consumption whose model/agent/session row is gone: dropping those rows would
+         make the per-dimension totals disagree with the overall ones the page shows next to them. -->
+    <select id="aggregateByModel" resultType="map">
+        SELECT
+        <include refid="modelColumns"/>,
+        p.name AS providerName,
+        <include refid="tokenMetrics">
+            <property name="alias" value="t"/>
+        </include>
+        FROM token_stats t
+        LEFT JOIN `model` m ON m.id = t.chat_model_id
+        LEFT JOIN model_provider p ON p.id = m.provider_id
+        WHERE 1 = 1
+        <include refid="timeWindow">
+            <property name="alias" value="t"/>
+        </include>
+        GROUP BY t.chat_model_id, m.name, p.name
+        ORDER BY grandTotalToken DESC
+    </select>
+
+    <select id="aggregateBySession" resultType="map">
+        SELECT
+        <include refid="sessionColumns"/>,
+        <include refid="tokenMetrics">
+            <property name="alias" value="t"/>
+        </include>
+        FROM token_stats t
+        LEFT JOIN session s ON s.session_id = t.session_id
+        WHERE 1 = 1
+        <include refid="timeWindow">
+            <property name="alias" value="t"/>
+        </include>
+        GROUP BY t.session_id, s.title
+        ORDER BY grandTotalToken DESC
+    </select>
+
+    <select id="aggregateByAgent" resultType="map">
+        SELECT
+        <include refid="agentColumns"/>,
+        <include refid="tokenMetrics">
+            <property name="alias" value="t"/>
+        </include>
+        FROM token_stats t
+        LEFT JOIN agent a ON a.id = t.agent_id
+        WHERE 1 = 1
+        <include refid="timeWindow">
+            <property name="alias" value="t"/>
+        </include>
+        GROUP BY t.agent_id, a.name
+        ORDER BY grandTotalToken DESC
+    </select>
+
+    <!-- ==================== Overall time series ==================== -->
+
+    <select id="getTimeSeriesByHour" resultType="map">
+        SELECT
+        <include refid="hourBucket">
+            <property name="alias" value="t"/>
+        </include> AS timePoint,
+        <include refid="tokenMetrics">
+            <property name="alias" value="t"/>
+        </include>
+        FROM token_stats t
+        WHERE 1 = 1
+        <include refid="timeWindow">
+            <property name="alias" value="t"/>
+        </include>
+        GROUP BY timePoint
+        ORDER BY timePoint
+    </select>
+
+    <select id="getTimeSeriesByDay" resultType="map">
+        SELECT
+        <include refid="dayBucket">
+            <property name="alias" value="t"/>
+        </include> AS timePoint,
+        <include refid="tokenMetrics">
+            <property name="alias" value="t"/>
+        </include>
+        FROM token_stats t
+        WHERE 1 = 1
+        <include refid="timeWindow">
+            <property name="alias" value="t"/>
+        </include>
+        GROUP BY timePoint
+        ORDER BY timePoint
+    </select>
+
+    <select id="getTimeSeriesByWeek" resultType="map">
+        SELECT
+        <include refid="weekBucket">
+            <property name="alias" value="t"/>
+        </include> AS timePoint,
+        <include refid="tokenMetrics">
+            <property name="alias" value="t"/>
+        </include>
+        FROM token_stats t
+        WHERE 1 = 1
+        <include refid="timeWindow">
+            <property name="alias" value="t"/>
+        </include>
+        GROUP BY timePoint
+        ORDER BY timePoint
+    </select>
+
+    <select id="getTimeSeriesByMonth" resultType="map">
+        SELECT
+        <include refid="monthBucket">
+            <property name="alias" value="t"/>
+        </include> AS timePoint,
+        <include refid="tokenMetrics">
+            <property name="alias" value="t"/>
+        </include>
+        FROM token_stats t
+        WHERE 1 = 1
+        <include refid="timeWindow">
+            <property name="alias" value="t"/>
+        </include>
+        GROUP BY timePoint
+        ORDER BY timePoint
+    </select>
+
+    <!-- ==================== Model dimension time series ==================== -->
+
+    <select id="getModelTimeSeriesByHour" resultType="map">
+        SELECT
+        <include refid="hourBucket">
+            <property name="alias" value="t"/>
+        </include> AS timePoint,
+        <include refid="modelColumns"/>,
+        <include refid="tokenMetrics">
+            <property name="alias" value="t"/>
+        </include>
+        FROM token_stats t
+        LEFT JOIN `model` m ON m.id = t.chat_model_id
+        WHERE 1 = 1
+        <include refid="timeWindow">
+            <property name="alias" value="t"/>
+        </include>
+        GROUP BY timePoint, t.chat_model_id, m.name
+        ORDER BY timePoint, grandTotalToken DESC
+    </select>
+
+    <select id="getModelTimeSeriesByDay" resultType="map">
+        SELECT
+        <include refid="dayBucket">
+            <property name="alias" value="t"/>
+        </include> AS timePoint,
+        <include refid="modelColumns"/>,
+        <include refid="tokenMetrics">
+            <property name="alias" value="t"/>
+        </include>
+        FROM token_stats t
+        LEFT JOIN `model` m ON m.id = t.chat_model_id
+        WHERE 1 = 1
+        <include refid="timeWindow">
+            <property name="alias" value="t"/>
+        </include>
+        GROUP BY timePoint, t.chat_model_id, m.name
+        ORDER BY timePoint, grandTotalToken DESC
+    </select>
+
+    <select id="getModelTimeSeriesByWeek" resultType="map">
+        SELECT
+        <include refid="weekBucket">
+            <property name="alias" value="t"/>
+        </include> AS timePoint,
+        <include refid="modelColumns"/>,
+        <include refid="tokenMetrics">
+            <property name="alias" value="t"/>
+        </include>
+        FROM token_stats t
+        LEFT JOIN `model` m ON m.id = t.chat_model_id
+        WHERE 1 = 1
+        <include refid="timeWindow">
+            <property name="alias" value="t"/>
+        </include>
+        GROUP BY timePoint, t.chat_model_id, m.name
+        ORDER BY timePoint, grandTotalToken DESC
+    </select>
+
+    <select id="getModelTimeSeriesByMonth" resultType="map">
+        SELECT
+        <include refid="monthBucket">
+            <property name="alias" value="t"/>
+        </include> AS timePoint,
+        <include refid="modelColumns"/>,
+        <include refid="tokenMetrics">
+            <property name="alias" value="t"/>
+        </include>
+        FROM token_stats t
+        LEFT JOIN `model` m ON m.id = t.chat_model_id
+        WHERE 1 = 1
+        <include refid="timeWindow">
+            <property name="alias" value="t"/>
+        </include>
+        GROUP BY timePoint, t.chat_model_id, m.name
+        ORDER BY timePoint, grandTotalToken DESC
+    </select>
+
+    <!-- ==================== Agent dimension time series ==================== -->
+
+    <select id="getAgentTimeSeriesByHour" resultType="map">
+        SELECT
+        <include refid="hourBucket">
+            <property name="alias" value="t"/>
+        </include> AS timePoint,
+        <include refid="agentColumns"/>,
+        <include refid="tokenMetrics">
+            <property name="alias" value="t"/>
+        </include>
+        FROM token_stats t
+        LEFT JOIN agent a ON a.id = t.agent_id
+        WHERE 1 = 1
+        <include refid="timeWindow">
+            <property name="alias" value="t"/>
+        </include>
+        GROUP BY timePoint, t.agent_id, a.name
+        ORDER BY timePoint, grandTotalToken DESC
+    </select>
+
+    <select id="getAgentTimeSeriesByDay" resultType="map">
+        SELECT
+        <include refid="dayBucket">
+            <property name="alias" value="t"/>
+        </include> AS timePoint,
+        <include refid="agentColumns"/>,
+        <include refid="tokenMetrics">
+            <property name="alias" value="t"/>
+        </include>
+        FROM token_stats t
+        LEFT JOIN agent a ON a.id = t.agent_id
+        WHERE 1 = 1
+        <include refid="timeWindow">
+            <property name="alias" value="t"/>
+        </include>
+        GROUP BY timePoint, t.agent_id, a.name
+        ORDER BY timePoint, grandTotalToken DESC
+    </select>
+
+    <select id="getAgentTimeSeriesByWeek" resultType="map">
+        SELECT
+        <include refid="weekBucket">
+            <property name="alias" value="t"/>
+        </include> AS timePoint,
+        <include refid="agentColumns"/>,
+        <include refid="tokenMetrics">
+            <property name="alias" value="t"/>
+        </include>
+        FROM token_stats t
+        LEFT JOIN agent a ON a.id = t.agent_id
+        WHERE 1 = 1
+        <include refid="timeWindow">
+            <property name="alias" value="t"/>
+        </include>
+        GROUP BY timePoint, t.agent_id, a.name
+        ORDER BY timePoint, grandTotalToken DESC
+    </select>
+
+    <select id="getAgentTimeSeriesByMonth" resultType="map">
+        SELECT
+        <include refid="monthBucket">
+            <property name="alias" value="t"/>
+        </include> AS timePoint,
+        <include refid="agentColumns"/>,
+        <include refid="tokenMetrics">
+            <property name="alias" value="t"/>
+        </include>
+        FROM token_stats t
+        LEFT JOIN agent a ON a.id = t.agent_id
+        WHERE 1 = 1
+        <include refid="timeWindow">
+            <property name="alias" value="t"/>
+        </include>
+        GROUP BY timePoint, t.agent_id, a.name
+        ORDER BY timePoint, grandTotalToken DESC
+    </select>
+
+    <!-- ==================== Session dimension time series ==================== -->
+
+    <select id="getSessionTimeSeriesByHour" resultType="map">
+        SELECT
+        <include refid="hourBucket">
+            <property name="alias" value="t"/>
+        </include> AS timePoint,
+        <include refid="sessionColumns"/>,
+        <include refid="tokenMetrics">
+            <property name="alias" value="t"/>
+        </include>
+        FROM token_stats t
+        LEFT JOIN session s ON s.session_id = t.session_id
+        WHERE 1 = 1
+        <include refid="timeWindow">
+            <property name="alias" value="t"/>
+        </include>
+        GROUP BY timePoint, t.session_id, s.title
+        ORDER BY timePoint, grandTotalToken DESC
+    </select>
+
+    <select id="getSessionTimeSeriesByDay" resultType="map">
+        SELECT
+        <include refid="dayBucket">
+            <property name="alias" value="t"/>
+        </include> AS timePoint,
+        <include refid="sessionColumns"/>,
+        <include refid="tokenMetrics">
+            <property name="alias" value="t"/>
+        </include>
+        FROM token_stats t
+        LEFT JOIN session s ON s.session_id = t.session_id
+        WHERE 1 = 1
+        <include refid="timeWindow">
+            <property name="alias" value="t"/>
+        </include>
+        GROUP BY timePoint, t.session_id, s.title
+        ORDER BY timePoint, grandTotalToken DESC
+    </select>
+
+    <select id="getSessionTimeSeriesByWeek" resultType="map">
+        SELECT
+        <include refid="weekBucket">
+            <property name="alias" value="t"/>
+        </include> AS timePoint,
+        <include refid="sessionColumns"/>,
+        <include refid="tokenMetrics">
+            <property name="alias" value="t"/>
+        </include>
+        FROM token_stats t
+        LEFT JOIN session s ON s.session_id = t.session_id
+        WHERE 1 = 1
+        <include refid="timeWindow">
+            <property name="alias" value="t"/>
+        </include>
+        GROUP BY timePoint, t.session_id, s.title
+        ORDER BY timePoint, grandTotalToken DESC
+    </select>
+
+    <select id="getSessionTimeSeriesByMonth" resultType="map">
+        SELECT
+        <include refid="monthBucket">
+            <property name="alias" value="t"/>
+        </include> AS timePoint,
+        <include refid="sessionColumns"/>,
+        <include refid="tokenMetrics">
+            <property name="alias" value="t"/>
+        </include>
+        FROM token_stats t
+        LEFT JOIN session s ON s.session_id = t.session_id
+        WHERE 1 = 1
+        <include refid="timeWindow">
+            <property name="alias" value="t"/>
+        </include>
+        GROUP BY timePoint, t.session_id, s.title
+        ORDER BY timePoint, grandTotalToken DESC
+    </select>
+
 </mapper>

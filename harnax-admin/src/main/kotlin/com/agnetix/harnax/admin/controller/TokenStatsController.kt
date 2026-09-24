@@ -92,7 +92,7 @@ class TokenStatsController(
         @RequestParam(name = "endTime", required = false)
         @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
         endTime: LocalDateTime?,
-        @Parameter(description = "Time granularity: hour/day/month")
+        @Parameter(description = "Time granularity: hour/day/week/month")
         @RequestParam(name = "granularity", defaultValue = "day")
         granularity: String,
     ): ResultVo<TokenStatsAggregationResponse> = try {
@@ -120,7 +120,7 @@ class TokenStatsController(
         @RequestParam(name = "endTime", required = false)
         @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
         endTime: LocalDateTime?,
-        @Parameter(description = "Time granularity: hour/day/month")
+        @Parameter(description = "Time granularity: hour/day/week/month")
         @RequestParam(name = "granularity", defaultValue = "day")
         granularity: String,
     ): ResultVo<TokenStatsAggregationResponse> = try {
@@ -148,7 +148,7 @@ class TokenStatsController(
         @RequestParam(name = "endTime", required = false)
         @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
         endTime: LocalDateTime?,
-        @Parameter(description = "Time granularity: hour/day/month")
+        @Parameter(description = "Time granularity: hour/day/week/month")
         @RequestParam(name = "granularity", defaultValue = "day")
         granularity: String,
     ): ResultVo<TokenStatsAggregationResponse> = try {

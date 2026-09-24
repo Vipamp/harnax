@@ -49,9 +49,11 @@
         UPDATE env_variable SET enabled = #{enabled}, update_time = NOW() WHERE id = #{id} AND active = 1
     </update>
 
+    <!-- Tenant is not implied by `creator`: usernames carry no unique index -->
     <select id="selectEnvVariableList" resultMap="EnvVariableResultMap">
         SELECT * FROM env_variable
         WHERE active = 1
+        AND tenant_id = #{tenantId}
         AND creator = #{currentUsername}
         <if test='keyword != null and keyword != ""'>
             AND (env_key LIKE CONCAT('%', #{keyword}, '%')

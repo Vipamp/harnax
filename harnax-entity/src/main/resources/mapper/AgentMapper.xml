@@ -34,6 +34,15 @@
         </foreach>
     </select>
 
+    <!-- selectByName: live rows only, the pair of uk_agent_tenant_active_name -->
+    <select id="selectByName" resultMap="AgentResultMap">
+        SELECT * FROM agent WHERE name = #{name} AND active = 1
+        <if test='tenantId != null'>
+            AND tenant_id = #{tenantId}
+        </if>
+        LIMIT 1
+    </select>
+
     <!-- deleteById -->
     <update id="deleteById">
         UPDATE agent SET active = 0 WHERE id = #{id}

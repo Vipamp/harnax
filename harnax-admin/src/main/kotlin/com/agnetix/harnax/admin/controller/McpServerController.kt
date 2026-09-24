@@ -4,6 +4,8 @@ import com.agnetix.harnax.admin.dto.*
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.mapRecords
 import com.agnetix.harnax.admin.service.McpServerService
+import com.agnetix.harnax.admin.service.impl.AgentSessionRefreshService
+import com.agnetix.harnax.admin.service.impl.RelatedAgentInfo
 import com.agnetix.harnax.common.dto.ResultVo
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.*
 @Tag(name = "MCP Server Management", description = "MCP server related APIs")
 class McpServerController(
     private val mcpServerService: McpServerService,
+    private val agentSessionRefreshService: AgentSessionRefreshService,
 ) {
 
     private val log = LoggerFactory.getLogger(McpServerController::class.java)
@@ -60,7 +63,7 @@ class McpServerController(
     fun getMcpServer(
         @Parameter(description = "MCP ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<McpServerResponse?> = try {
-        val mcpServer = mcpServerService.getMcpServer(id)
+        val mcpServer = mcpServerService.getVisibleMcpServer(id)
         ResultVo.success(mcpServer?.let { mcpServerService.convertToResponse(it) })
     } catch (e: Exception) {
         log.error("Failed to get MCP server details", e)
@@ -100,6 +103,20 @@ class McpServerController(
     } catch (e: Exception) {
         log.error("Failed to toggle MCP server status", e)
         ResultVo.error(e.message ?: "Failed to toggle status")
+    }
+
+    @GetMapping("/{id}/related-agents")
+    @Operation(
+        summary = "List agents bound to an MCP server",
+        description = "Agents that lose this server when it is deleted; used to warn before the delete goes through",
+    )
+    fun relatedAgents(
+        @Parameter(description = "MCP ID") @PathVariable(name = "id") id: Long,
+    ): ResultVo<List<RelatedAgentInfo>> = try {
+        ResultVo.success(agentSessionRefreshService.listAgentsByMcp(id))
+    } catch (e: Exception) {
+        log.error("Failed to list agents for MCP server {}", id, e)
+        ResultVo.error(e.message ?: "Failed to list related agents")
     }
 
     @DeleteMapping("/{id}")

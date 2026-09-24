@@ -82,7 +82,7 @@ class ToolConfigAdaptorImplTest {
                 displayNameZh = null, description = "From context",
                 beanName = "ctx-tool-bean", methodName = "run",
                 readOnly = 0, needConfirm = 0,
-                requiredEnvParamKeys = null, timeoutSeconds = 30,
+                requiredEnvParamKeys = null,
                 bindingNeedConfirm = false,
             )
             stubContext(listOf(dto))

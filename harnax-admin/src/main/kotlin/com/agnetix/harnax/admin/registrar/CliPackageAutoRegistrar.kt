@@ -17,12 +17,15 @@ import io.minio.BucketExistsArgs
 import io.minio.MakeBucketArgs
 import io.minio.MinioClient
 import io.minio.PutObjectArgs
+import io.minio.RemoveObjectArgs
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.support.TransactionTemplate
 import tools.jackson.databind.ObjectMapper
 import java.io.File
 
@@ -34,7 +37,8 @@ import java.io.File
  * MinIO under its own digest. Convergence strategy, run on every startup:
  *
  * - New package: object uploaded, skill row inserted into the managed repository, `cli` row inserted
- *   with `status = 1`.
+ *   with `status = 1`. The two rows commit together, so a package that fails halfway leaves no orphan
+ *   skill row that nothing points at and nothing prunes.
  * - Package already registered: every manifest-owned column is overwritten, so a bumped version or a
  *   reworded `SKILL.md` converges in place and keeps the row id — and with it `agent_cli_binding`.
  *   The archive is re-uploaded only when `packageDigest` changed (D15): an unchanged package costs one
@@ -69,12 +73,17 @@ class CliPackageAutoRegistrar(
     private val teamSkillBindingMapper: TeamSkillBindingMapper,
     private val secretFieldEncryptor: SecretFieldEncryptor,
     private val minioClients: ObjectProvider<MinioClient>,
+    transactionManager: PlatformTransactionManager,
     @Value("\${harnax.cli.package-dir:}") packageDir: String,
     @Value("\${minio.cli-package-bucket:harnax-cli-packages}") private val cliPackageBucket: String,
 ) {
     private val log = LoggerFactory.getLogger(CliPackageAutoRegistrar::class.java)
     private val objectMapper = ObjectMapper()
     private val dir = File(packageDir)
+
+    // `register` and `pruneMissingPackages` are private members this class calls itself, so an
+    // `@Transactional` annotation on them would never be seen by the proxy.
+    private val transactionTemplate = TransactionTemplate(transactionManager)
 
     @EventListener(ApplicationReadyEvent::class)
     fun syncCliPackages() {
@@ -191,32 +200,38 @@ class CliPackageAutoRegistrar(
         if (stored) {
             log.debug("[CliPackageAutoRegistrar] {} unchanged ({}), skipping upload", manifest.name, parsed.packageDigest)
         } else {
+            // Before the rows, deliberately. Uploaded afterwards it could fail while the committed
+            // `cli` row already names the object key — and `stored` above would then read that row as
+            // done, so the missing archive would never be re-tried. A stray object from a failed run
+            // costs disk; a row pointing at nothing costs every agent bound to that CLI.
             upload(file, objectKey)
         }
 
-        val repository = skillRepositoryMapper.selectBuiltinRepository(BuiltinRepository.CLI_SKILLS)
-            ?: throw CliPackageException(
-                "managed skill repository '${BuiltinRepository.CLI_SKILLS}' is missing — cannot register the shipped skill",
-            )
-        // The operator's kill switch survives this run: a disabled CLI keeps its skill disabled even
-        // though the package body just changed underneath it (I5).
-        val skillId = upsertSkill(repository, manifest.name, manifest.version, parsed, existing?.status ?: ENABLED)
+        transactionTemplate.executeWithoutResult {
+            val repository = skillRepositoryMapper.selectBuiltinRepository(BuiltinRepository.CLI_SKILLS)
+                ?: throw CliPackageException(
+                    "managed skill repository '${BuiltinRepository.CLI_SKILLS}' is missing — cannot register the shipped skill",
+                )
+            // The operator's kill switch survives this run: a disabled CLI keeps its skill disabled even
+            // though the package body just changed underneath it (I5).
+            val skillId = upsertSkill(repository, manifest.name, manifest.version, parsed, existing?.status ?: ENABLED)
 
-        cliMapper.upsertCliPackage(
-            Cli().apply {
-                name = manifest.name
-                description = manifest.description
-                version = manifest.version
-                checkCommand = manifest.checkCommand
-                this.skillId = skillId
-                packageDigest = parsed.packageDigest
-                payloadDigest = parsed.payloadDigest
-                packageObject = objectKey
-                depsApt = manifest.depsApt.takeIf { it.isNotEmpty() }?.let { objectMapper.writeValueAsString(it) }
-                runtimeEnv = manifest.runtimeEnv.takeIf { it.isNotEmpty() }?.let { objectMapper.writeValueAsString(it) }
-                envParams = secretFieldEncryptor.serializeToolEnvParams(manifest.envParams)
-            },
-        )
+            cliMapper.upsertCliPackage(
+                Cli().apply {
+                    name = manifest.name
+                    description = manifest.description
+                    version = manifest.version
+                    checkCommand = manifest.checkCommand
+                    this.skillId = skillId
+                    packageDigest = parsed.packageDigest
+                    payloadDigest = parsed.payloadDigest
+                    packageObject = objectKey
+                    depsApt = manifest.depsApt.takeIf { it.isNotEmpty() }?.let { objectMapper.writeValueAsString(it) }
+                    runtimeEnv = manifest.runtimeEnv.takeIf { it.isNotEmpty() }?.let { objectMapper.writeValueAsString(it) }
+                    envParams = secretFieldEncryptor.serializeToolEnvParams(manifest.envParams)
+                },
+            )
+        }
         log.info(
             "[CliPackageAutoRegistrar] Registered CLI package {} {} (payload {}, {})",
             manifest.name,
@@ -348,18 +363,54 @@ class CliPackageAutoRegistrar(
 
         val cliIds = stale.map { it.id }
         val skillIds = stale.mapNotNull { it.skillId }
-        agentCliBindingMapper.deleteByCliIds(cliIds)
-        if (skillIds.isNotEmpty()) {
-            agentSkillBindingMapper.deleteBySkillIds(skillIds)
-            teamSkillBindingMapper.deleteBySkillIds(skillIds)
-            skillIds.forEach { skillMapper.deleteById(it) }
+        transactionTemplate.executeWithoutResult {
+            agentCliBindingMapper.deleteByCliIds(cliIds)
+            if (skillIds.isNotEmpty()) {
+                agentSkillBindingMapper.deleteBySkillIds(skillIds)
+                teamSkillBindingMapper.deleteBySkillIds(skillIds)
+                skillIds.forEach { skillMapper.deleteById(it) }
+            }
+            cliMapper.deleteByIds(cliIds)
         }
-        cliMapper.deleteByIds(cliIds)
+        removeArchivesOf(stale)
         log.warn(
             "[CliPackageAutoRegistrar] Removed {} CLI row(s) whose package left the directory: {}",
             stale.size,
             stale.map { "${it.name}(id=${it.id})" },
         )
+    }
+
+    /**
+     * Deletes the stored archives of just-pruned rows.
+     *
+     * Runs after the commit and never inside the transaction: an object store cannot roll back, so a
+     * prune whose deletes were undone has to leave every archive alone. Re-reading `cli` for what is
+     * still referenced is defensive — `uk_cli_name` means no two rows can name the same key today.
+     *
+     * What this does *not* reclaim is the archive an in-place upgrade left behind when only the digest
+     * changed: that row is still live, and nothing on admin's side knows whether a running agent-service
+     * is still fetching the previous key. Reclaiming it needs the runtime reference contract, which is
+     * CLI-04.
+     *
+     * Best effort in both directions — a refused delete is logged and the pruned rows stay pruned, since
+     * a leftover archive costs disk while an aborted prune costs the operator the kill switch they asked
+     * for. (The object store is always present by the time this runs: a directory holding packages with
+     * no MinIO fails startup before the prune is reached.)
+     */
+    private fun removeArchivesOf(pruned: List<Cli>) {
+        if (pruned.isEmpty()) return
+        val client = minioClients.ifAvailable ?: return
+        val stillReferenced = cliMapper.selectAll().map { it.packageObject }.toSet()
+        for (row in pruned) {
+            val key = row.packageObject
+            if (key.isBlank() || key in stillReferenced) continue
+            try {
+                client.removeObject(RemoveObjectArgs.builder().bucket(cliPackageBucket).`object`(key).build())
+                log.info("[CliPackageAutoRegistrar] Removed stored archive {}", key)
+            } catch (e: Exception) {
+                log.warn("[CliPackageAutoRegistrar] Stored archive {} could not be removed: {}", key, e.message)
+            }
+        }
     }
 
     /**

@@ -37,6 +37,7 @@ INSERT INTO `sys_user` (`username`, `password`, `nickname`, `email`, `phone`, `g
 -- ============================================
 CREATE TABLE IF NOT EXISTS `model_provider` (
     `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT 'ID',
+    `tenant_id` BIGINT(20) NOT NULL DEFAULT 1 COMMENT '租户 ID',
     `type` VARCHAR(50) NOT NULL COMMENT '服务商类型(dashscope/openai/ollama)',
     `name` VARCHAR(100) NOT NULL COMMENT '名称',
     `description` TEXT DEFAULT NULL COMMENT '描述',
@@ -49,20 +50,26 @@ CREATE TABLE IF NOT EXISTS `model_provider` (
     `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
+    KEY `idx_tenant_id` (`tenant_id`),
     UNIQUE KEY `uk_type` (`type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模型服务商表';
 
-INSERT INTO `model_provider` (`type`, `name`, `api_key`, `base_url`, `status`, `is_public`, `creator`, `active`) VALUES
-('dashscope', '阿里云百炼', 'sk-test-key-12345', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 1, 1, 'admin', 1),
-('openai', 'OpenAI', 'sk-openai-key-67890', 'https://api.openai.com/v1', 1, 1, 'admin', 1),
-('ollama', 'Ollama', '', 'http://localhost:11434', 1, 1, 'admin', 1),
-('deleted_provider', '已删除服务商', 'sk-deleted', 'https://api.deleted.com', 1, 1, 'admin', 0);
+INSERT INTO `model_provider` (`tenant_id`, `type`, `name`, `api_key`, `base_url`, `status`, `is_public`, `creator`, `active`) VALUES
+(1, 'dashscope', '阿里云百炼', 'sk-test-key-12345', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 1, 1, 'admin', 1),
+(1, 'openai', 'OpenAI', 'sk-openai-key-67890', 'https://api.openai.com/v1', 1, 1, 'admin', 1),
+(1, 'ollama', 'Ollama', '', 'http://localhost:11434', 1, 1, 'admin', 1),
+(1, 'deleted_type', '已删除服务商', 'sk-deleted', 'https://api.deleted.com', 1, 1, 'admin', 0),
+-- 租户 1 的私有服务商：其他租户无论按 id 还是按列表都读不到
+(1, 'tenant1_private', '租户一私有家', 'sk-t1-private', 'https://t1.private.example.com', 1, 0, 'testuser1', 1),
+-- 租户 2 的服务商：只有租户 2 可写，公开后对其他租户可见
+(2, 'tenant2_provider', '租户二服务商', 'sk-t2-key', 'https://t2.example.com', 1, 1, 'testuser2', 1);
 
 -- ============================================
 -- 3. 模型表
 -- ============================================
 CREATE TABLE IF NOT EXISTS `model` (
     `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT 'ID',
+    `tenant_id` BIGINT(20) NOT NULL DEFAULT 1 COMMENT '租户 ID',
     `name` VARCHAR(100) NOT NULL COMMENT '名称',
     `model_name` VARCHAR(100) NOT NULL COMMENT '模型名称',
     `provider_id` BIGINT(20) NOT NULL COMMENT '服务商 ID',
@@ -82,15 +89,20 @@ CREATE TABLE IF NOT EXISTS `model` (
     `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
-    KEY `idx_provider_id` (`provider_id`)
+    KEY `idx_provider_id` (`provider_id`),
+    KEY `idx_tenant_id` (`tenant_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模型表';
 
-INSERT INTO `model` (`name`, `model_name`, `provider_id`, `description`, `model_type`, `support_internet`, `support_reasoning`, `support_tool`, `support_mcp`, `support_vision`, `price`, `status`, `is_public`, `creator`, `active`) VALUES
-('GPT-4', 'gpt-4', 1, 'GPT-4 模型', 'chat', 1, 1, 1, 1, 0, 0.0300, 1, 1, 'admin', 1),
-('GPT-3.5 Turbo', 'gpt-3.5-turbo', 1, 'GPT-3.5 Turbo 模型', 'chat', 0, 0, 1, 0, 0, 0.0020, 1, 1, 'admin', 1),
-('Claude 3', 'claude-3', 2, 'Claude 3 模型', 'chat', 0, 1, 1, 1, 0, 0.0250, 1, 1, 'admin', 1),
-('Qwen-Turbo', 'qwen-turbo', 3, '通义千问 Turbo', 'chat', 0, 0, 1, 0, 0, 0.0010, 1, 1, 'admin', 1),
-('Deleted Model', 'deleted-model', 1, '已删除模型', 'chat', 0, 0, 0, 0, 0, 0.0100, 1, 1, 'admin', 0);
+INSERT INTO `model` (`tenant_id`, `name`, `model_name`, `provider_id`, `description`, `model_type`, `support_internet`, `support_reasoning`, `support_tool`, `support_mcp`, `support_vision`, `price`, `status`, `is_public`, `creator`, `active`) VALUES
+(1, 'GPT-4', 'gpt-4', 1, 'GPT-4 模型', 'chat', 1, 1, 1, 1, 0, 0.0300, 1, 1, 'admin', 1),
+(1, 'GPT-3.5 Turbo', 'gpt-3.5-turbo', 1, 'GPT-3.5 Turbo 模型', 'chat', 0, 0, 1, 0, 0, 0.0020, 1, 1, 'admin', 1),
+(1, 'Claude 3', 'claude-3', 2, 'Claude 3 模型', 'chat', 0, 1, 1, 1, 0, 0.0250, 1, 1, 'admin', 1),
+(1, 'Qwen-Turbo', 'qwen-turbo', 3, '通义千问 Turbo', 'chat', 0, 0, 1, 0, 0, 0.0010, 1, 1, 'admin', 1),
+(1, 'Deleted Model', 'deleted-model', 1, '已删除模型', 'chat', 0, 0, 0, 0, 0, 0.0100, 1, 1, 'admin', 0),
+-- 租户 1 的私有模型：对其他租户既不在列表里也不可按 id 读到
+(1, 'T1 Private GPT', 't1-private-gpt', 5, '租户一私有模型', 'chat', 0, 0, 1, 0, 0, 0.0500, 1, 0, 'testuser1', 1),
+-- 租户 2 的模型：挂在租户 2 的服务商上
+(2, 'T2 Model', 't2-model', 6, '租户二模型', 'chat', 0, 0, 1, 0, 0, 0.0400, 1, 1, 'testuser2', 1);
 
 -- ============================================
 -- 4. MCP 服务表
@@ -216,8 +228,11 @@ CREATE TABLE IF NOT EXISTS `agent` (
     `active` TINYINT(1) DEFAULT 1 COMMENT '是否可用（0:被删除，1:可用）',
     `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    -- V43 uniqueness guard: per tenant, and only over active rows (the generated column turns NULL
+    -- once active = 0, so a deleted agent name can be taken again)
+    `active_name` VARCHAR(100) GENERATED ALWAYS AS (IF(active = 1, name, NULL)) VIRTUAL,
     PRIMARY KEY (`id`),
-    KEY `idx_tenant_id` (`tenant_id`)
+    UNIQUE KEY `uk_agent_tenant_active_name` (`tenant_id`, `active_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='智能体表';
 
 INSERT INTO `agent` (`tenant_id`, `name`, `description`, `system_prompt`, `model_id`, `owner`, `status`, `is_public`, `creator`, `active`) VALUES
@@ -386,29 +401,32 @@ INSERT INTO `tool_call_log` (`agent_id`, `session_id`, `tool_name`, `args`, `res
 -- ============================================
 -- 15. Token 统计表
 -- ============================================
+-- Mirrors `V1__init_schema.sql` and the resultMap in `TokenStatsMapper.xml`: those column names are
+-- what the insert writes, so a rename has to land here too or the mapper tests fail on
+-- `BadSqlGrammar` instead of on the change that caused it.
 CREATE TABLE IF NOT EXISTS `token_stats` (
-    `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT 'ID',
-    `session_id` VARCHAR(100) DEFAULT NULL COMMENT '会话 ID',
-    `agent_id` BIGINT(20) DEFAULT NULL COMMENT '智能体 ID',
-    `model_id` BIGINT(20) DEFAULT NULL COMMENT '模型 ID',
-    `user_id` BIGINT(20) DEFAULT NULL COMMENT '用户 ID',
-    `prompt_tokens` INT DEFAULT 0 COMMENT '输入 token 数',
-    `completion_tokens` INT DEFAULT 0 COMMENT '输出 token 数',
-    `total_tokens` INT DEFAULT 0 COMMENT '总 token 数',
-    `cost` DECIMAL(10, 4) DEFAULT 0.0000 COMMENT '费用',
-    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '统计 ID',
+    `agent_id` BIGINT DEFAULT NULL COMMENT '智能体 ID',
+    `session_id` VARCHAR(255) DEFAULT NULL COMMENT '会话 ID',
+    `chat_model_id` BIGINT DEFAULT NULL COMMENT '模型 ID',
+    `input_token` BIGINT DEFAULT 0 COMMENT '输入 token 数',
+    `output_token` BIGINT DEFAULT 0 COMMENT '输出 token 数',
+    `total_token` BIGINT DEFAULT 0 COMMENT '总 token 数',
+    `ts` DATETIME DEFAULT NULL COMMENT '统计时间',
+    `fee` DECIMAL(10, 0) DEFAULT NULL COMMENT '费用',
     PRIMARY KEY (`id`),
-    KEY `idx_session_id` (`session_id`),
-    KEY `idx_agent_id` (`agent_id`),
-    KEY `idx_create_time` (`create_time`)
+    KEY `idx_token_stats_agent_id` (`agent_id`),
+    KEY `idx_token_stats_session_id` (`session_id`),
+    KEY `idx_token_stats_chat_model_id` (`chat_model_id`),
+    KEY `idx_token_stats_ts` (`ts`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Token 统计表';
 
-INSERT INTO `token_stats` (`session_id`, `agent_id`, `model_id`, `user_id`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `cost`) VALUES
-('session-001', 1, 1, 1, 100, 50, 150, 0.0045),
-('session-001', 1, 1, 1, 200, 100, 300, 0.0090),
-('session-002', 1, 1, 1, 150, 75, 225, 0.0068),
-('session-003', 2, 2, 2, 300, 150, 450, 0.0060),
-('session-004', 3, 3, 1, 250, 120, 370, 0.0037);
+INSERT INTO `token_stats` (`session_id`, `agent_id`, `chat_model_id`, `input_token`, `output_token`, `total_token`, `fee`, `ts`) VALUES
+('session-001', 1, 1, 100, 50, 150, 1, '2025-01-01 10:00:00'),
+('session-001', 1, 1, 200, 100, 300, 2, '2025-01-02 10:00:00'),
+('session-002', 1, 1, 150, 75, 225, 1, '2025-01-03 10:00:00'),
+('session-003', 2, 2, 300, 150, 450, 3, '2025-01-04 10:00:00'),
+('session-004', 3, 3, 250, 120, 370, 1, '2025-01-05 10:00:00');
 
 -- ============================================
 -- 16. Token 黑名单表
@@ -472,26 +490,23 @@ CREATE TABLE IF NOT EXISTS `user_tenant` (
 -- ============================================
 CREATE TABLE IF NOT EXISTS `agent_tool` (
     `id`                       BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT 'Tool ID',
-    `tenant_id`                BIGINT(20) NOT NULL DEFAULT 1 COMMENT 'Tenant ID',
-    `name`                     VARCHAR(100) NOT NULL COMMENT 'Tool identifier name',
+    `name`                     VARCHAR(100) NOT NULL COMMENT 'Tool identifier name — the identity a @Tool declaration owns (V40)',
     `display_name`             VARCHAR(200) DEFAULT NULL COMMENT 'Display name (English)',
     `display_name_zh`          VARCHAR(200) DEFAULT NULL COMMENT 'Display name (Chinese, for i18n zh-CN locale)',
     `description`              TEXT COMMENT 'Tool description',
-    `bean_name`                VARCHAR(200) DEFAULT NULL COMMENT 'Spring Bean name',
-    `method_name`              VARCHAR(100) DEFAULT NULL COMMENT 'Java method name (one record per @Tool method)',
+    `bean_name`                VARCHAR(200) DEFAULT NULL COMMENT 'Spring Bean name (instantiation only, not identity)',
+    `method_name`              VARCHAR(100) DEFAULT NULL COMMENT 'Java method name (instantiation only, not identity)',
     `required_env_param_keys`  VARCHAR(1000) DEFAULT NULL COMMENT 'Required environment parameter keys, JSON array',
     `read_only`                TINYINT(1) DEFAULT 0 COMMENT 'Is read-only',
     `need_confirm`             TINYINT(1) DEFAULT 0 COMMENT 'Requires human confirmation',
     `is_required`              TINYINT NOT NULL DEFAULT 0 COMMENT 'Is mandatory tool (0: optional, 1: required)',
-    `timeout_seconds`          INT DEFAULT 30 COMMENT 'Timeout in seconds',
     `status`                   TINYINT(1) DEFAULT 1 COMMENT 'Status (0:disabled, 1:enabled)',
     `creator`                  VARCHAR(100) DEFAULT NULL COMMENT 'Creator',
-    `active`                   TINYINT(1) DEFAULT 1 COMMENT 'Active status',
+    `active`                   TINYINT(1) DEFAULT 1 COMMENT 'Active status (never written 0: the sync does not delete)',
     `create_time`              DATETIME DEFAULT CURRENT_TIMESTAMP,
     `update_time`              DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_tenant_bean_method` (`tenant_id`, `bean_name`, `method_name`, `active`),
-    KEY `idx_tenant_id` (`tenant_id`)
+    UNIQUE KEY `uk_agent_tool_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Agent Tool definition table';
 
 -- Tool Environment Parameter Table
@@ -510,12 +525,12 @@ CREATE TABLE IF NOT EXISTS `agent_tool_env_param` (
     UNIQUE KEY `uk_tool_env_param_name` (`tool_id`, `env_param_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Agent Tool environment parameter definitions';
 
-INSERT INTO `agent_tool` (`id`, `tenant_id`, `name`, `display_name`, `description`, `bean_name`, `method_name`, `need_confirm`, `status`, `creator`, `active`) VALUES
-(1, 1, 'getDate', '获取日期', '获取当前日期', 'time-tool-box', 'getDate', 0, 1, 'SYSTEM', 1),
-(2, 1, 'getDatetime', '获取时间', '获取当前时间', 'time-tool-box', 'getDatetime', 0, 1, 'SYSTEM', 1),
-(3, 1, 'weather-tool', '天气查询', '查询城市天气信息', 'weather-tool-box', 'getWeather', 1, 1, 'SYSTEM', 1),
-(5, 1, 'disabled-tool', '已禁用工具', '测试禁用状态', 'disabled-tool-box', 'doSomething', 0, 0, 'SYSTEM', 1),
-(6, 1, 'deleted-tool', '已删除工具', '测试删除状态', 'deleted-tool-box', 'doSomething', 0, 1, 'SYSTEM', 0);
+INSERT INTO `agent_tool` (`id`, `name`, `display_name`, `description`, `bean_name`, `method_name`, `need_confirm`, `status`, `creator`, `active`) VALUES
+(1, 'getDate', '获取日期', '获取当前日期', 'time-tool-box', 'getDate', 0, 1, 'SYSTEM', 1),
+(2, 'getDatetime', '获取时间', '获取当前时间', 'time-tool-box', 'getDatetime', 0, 1, 'SYSTEM', 1),
+(3, 'weather-tool', '天气查询', '查询城市天气信息', 'weather-tool-box', 'getWeather', 1, 1, 'SYSTEM', 1),
+(5, 'disabled-tool', '已禁用工具', '测试禁用状态', 'disabled-tool-box', 'doSomething', 0, 0, 'SYSTEM', 1),
+(6, 'deleted-tool', '已删除工具', '历史软删残留：证明名字仍占位、且 selectByName 不加 active 过滤', 'deleted-tool-box', 'doSomething', 0, 1, 'SYSTEM', 0);
 
 -- ============================================
 -- 22. MCP OAuth Client - 租户 x 授权服务器的客户端注册（V26）
@@ -672,3 +687,43 @@ CREATE TABLE IF NOT EXISTS `team_artifact` (
     KEY `idx_team_artifact_session_id` (`session_id`),
     KEY `idx_team_artifact_tenant_id` (`tenant_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='团队产物交接元数据表';
+
+-- ============================================
+-- 29. CLI 插件包表（V8 + V35，无租户：包是平台级资产）
+-- ============================================
+-- Rows are written only by `CliPackageAutoRegistrar`; the baseline still needs them because
+-- `AgentMapper.selectByEnvVarRef` UNIONs `agent_cli_binding` and delivery reads both tables.
+CREATE TABLE IF NOT EXISTS `cli` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'CLI ID',
+    `name` VARCHAR(128) NOT NULL COMMENT 'Package name from plugin.yaml, the identity',
+    `description` VARCHAR(512) DEFAULT '' COMMENT '描述',
+    `version` VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Manifest version',
+    `check_command` VARCHAR(512) NOT NULL DEFAULT '' COMMENT 'Command that proves the payload installed',
+    `skill_id` BIGINT DEFAULT NULL COMMENT 'FK to skill.id: the SKILL.md shipped inside the package',
+    `package_digest` CHAR(64) NOT NULL DEFAULT '' COMMENT 'sha256 of the whole package zip',
+    `payload_digest` CHAR(64) NOT NULL DEFAULT '' COMMENT 'Canonical sha256 of payload/ plus deps: the sandbox image fingerprint',
+    `package_object` VARCHAR(256) NOT NULL DEFAULT '' COMMENT 'MinIO object key of the package',
+    `deps_apt` VARCHAR(512) DEFAULT NULL COMMENT 'apt packages (JSON array)',
+    `runtime_env` VARCHAR(1024) DEFAULT NULL COMMENT 'Env slots injected at container creation (JSON object)',
+    `env_params` TEXT COMMENT 'Environment variable declarations (JSON)',
+    `status` TINYINT DEFAULT 1 COMMENT '状态（0:禁用 1:启用）',
+    `active` TINYINT DEFAULT 1 COMMENT '软删除标记',
+    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_cli_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='CLI 插件包表';
+
+-- ============================================
+-- 30. Agent-CLI binding（V8；V41 的 UNIQUE(agent_id, cli_id)）
+-- ============================================
+CREATE TABLE IF NOT EXISTS `agent_cli_binding` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'ID',
+    `agent_id` BIGINT NOT NULL COMMENT 'FK to agent.id',
+    `cli_id` BIGINT NOT NULL COMMENT 'FK to cli.id',
+    `env_bindings` TEXT DEFAULT NULL COMMENT 'JSON array of env binding snapshots',
+    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_agent_cli_binding_agent_id_cli_id` (`agent_id`, `cli_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='智能体-CLI 绑定表';

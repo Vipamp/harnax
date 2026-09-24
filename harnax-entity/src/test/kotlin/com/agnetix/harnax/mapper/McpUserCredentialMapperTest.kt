@@ -201,5 +201,27 @@ open class McpUserCredentialMapperTest {
         fun `deleteByMcpId should return zero when nothing matched`() {
             assertEquals(0, mcpUserCredentialMapper.deleteByMcpId(999_999L))
         }
+
+        @Test
+        @DisplayName("deleteByUserId - 删用户时清掉他在各租户下的全部凭据")
+        fun `deleteByUserId should remove every credential of the user`() {
+            insertCredential(26L, 108L, 208L)
+            insertCredential(27L, 108L, 208L)
+            insertCredential(26L, 109L, 208L)
+
+            // When - `sys_user.id` is a global primary key, so "this user's rows" is exactly this id
+            assertEquals(2, mcpUserCredentialMapper.deleteByUserId(108L))
+
+            // Then - another user's grant for the same server stays
+            assertNull(mcpUserCredentialMapper.selectByUserAndMcp(26L, 108L, 208L))
+            assertNull(mcpUserCredentialMapper.selectByUserAndMcp(27L, 108L, 208L))
+            assertNotNull(mcpUserCredentialMapper.selectByUserAndMcp(26L, 109L, 208L))
+        }
+
+        @Test
+        @DisplayName("deleteByUserId - 没有凭据时返回 0 而不是报错")
+        fun `deleteByUserId should return zero when nothing matched`() {
+            assertEquals(0, mcpUserCredentialMapper.deleteByUserId(999_998L))
+        }
     }
 }

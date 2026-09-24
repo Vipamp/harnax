@@ -4,12 +4,14 @@ import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.SessionChatUpdateRequest
 import com.agnetix.harnax.admin.dto.SessionCreateRequest
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.service.AgentRuntimeClient
 import com.agnetix.harnax.admin.service.AgentService
 import com.agnetix.harnax.admin.service.McpServerService
 import com.agnetix.harnax.admin.service.ModelService
 import com.agnetix.harnax.admin.service.SkillRepositoryService
 import com.agnetix.harnax.admin.service.SkillService
 import com.agnetix.harnax.admin.util.JwtUtil
+import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.AgentMcpBinding
 import com.agnetix.harnax.entity.AgentSkillBinding
@@ -39,6 +41,7 @@ import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mock
+import org.mockito.Mockito.inOrder
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
@@ -100,6 +103,12 @@ class SessionServiceImplTest {
     @Mock
     private lateinit var teamSkillBindingMapper: TeamSkillBindingMapper
 
+    @Mock
+    private lateinit var teamArtifactCleaner: TeamArtifactCleaner
+
+    @Mock
+    private lateinit var agentRuntimeClient: AgentRuntimeClient
+
     private lateinit var testSession: Session
     private lateinit var testAgent: Agent
 
@@ -148,6 +157,10 @@ class SessionServiceImplTest {
         // Mock JwtUtil
         `when`(jwtUtil.validateToken(anyString())).thenReturn(true)
         `when`(jwtUtil.getUsernameFromToken(anyString())).thenReturn("admin")
+
+        // Deleting a session releases its runtime state first, so every case that gets that far needs an
+        // answer from the runtime. The refusal cases re-stub this to name what went wrong.
+        `when`(agentRuntimeClient.clearSession(anyString())).thenReturn(ResultVo.success())
     }
 
     @AfterEach
@@ -168,6 +181,8 @@ class SessionServiceImplTest {
         teamMapper = teamMapper,
         teamMemberMapper = teamMemberMapper,
         teamSkillBindingMapper = teamSkillBindingMapper,
+        teamArtifactCleaner = teamArtifactCleaner,
+        agentRuntimeClient = agentRuntimeClient,
     )
 
     private fun mcpBinding(
@@ -369,6 +384,8 @@ class SessionServiceImplTest {
                     modelId = 11L
                     status = 1
                     creator = "boss"
+                    // 公开团队：可见性守卫（is_public OR creator）在私有团队上会拒绝非创建者
+                    isPublic = 1
                 },
             )
             `when`(teamMemberMapper.selectByTeamId(42L)).thenReturn(
@@ -396,6 +413,33 @@ class SessionServiceImplTest {
             assertEquals(11L, saved.modelId)
             assertEquals("boss", saved.owner)
             verify(agentService, never()).getAgent(anyLong())
+        }
+
+        @Test
+        @DisplayName("createSession - 别人的私有团队起不了会话")
+        fun `createSession should refuse a private team of another user`() {
+            // Given - 列表页看不到它（is_public=0 且 creator 不是自己），起会话也必须同样被挡
+            val request = SessionCreateRequest(title = "Not Mine", teamId = 43L)
+            `when`(sessionMapper.countByTitle("Not Mine")).thenReturn(0)
+            `when`(teamMapper.selectById(43L)).thenReturn(
+                Team().apply {
+                    id = 43L
+                    tenantId = 1L
+                    name = "Someone Else"
+                    systemPrompt = "私有团队的提示词"
+                    modelId = 11L
+                    status = 1
+                    creator = "boss"
+                    isPublic = 0
+                },
+            )
+
+            // When & Then
+            val exception = assertThrows<RuntimeException> {
+                createService().createSession(request)
+            }
+            assertTrue(exception.message?.contains("Team not found") == true)
+            verify(sessionMapper, never()).insert(any())
         }
 
         @Test
@@ -509,6 +553,7 @@ class SessionServiceImplTest {
             )
 
             `when`(sessionMapper.selectById(1L)).thenReturn(testSession)
+            `when`(agentService.getAgent(200L)).thenReturn(Agent().apply { id = 200L })
             `when`(sessionMapper.updateById(any())).thenReturn(1)
 
             // When
@@ -588,6 +633,7 @@ class SessionServiceImplTest {
             )
 
             `when`(sessionMapper.selectById(1L)).thenReturn(testSession)
+            `when`(agentService.getAgent(100L)).thenReturn(testAgent)
             `when`(sessionMapper.updateById(any())).thenReturn(0)
 
             // When
@@ -789,6 +835,59 @@ class SessionServiceImplTest {
             // Then
             assertTrue(result)
             verify(sessionMapper).deleteById(1L)
+        }
+
+        @Test
+        @DisplayName("deleteSession - 先清该会话的产物，再删会话行")
+        fun `deleteSession should remove the session's artifacts before the row`() {
+            // Given
+            `when`(sessionMapper.selectById(1L)).thenReturn(testSession)
+            `when`(sessionMapper.deleteById(1L)).thenReturn(1)
+
+            // When
+            assertTrue(createService().deleteSession(1L))
+
+            // Then - 产物先走：对象删完才轮到行，数据库失败时留下的是"行指向缺失对象"，重试即可修复
+            val order = inOrder(teamArtifactCleaner, sessionMapper)
+            order.verify(teamArtifactCleaner).deleteForSession(testSession.sessionId)
+            order.verify(sessionMapper).deleteById(1L)
+        }
+
+        @Test
+        @DisplayName("deleteSession - 运行侧释放排在本地两步之前")
+        fun `deleteSession should release the runtime before anything local`() {
+            // Given
+            `when`(sessionMapper.selectById(1L)).thenReturn(testSession)
+            `when`(sessionMapper.deleteById(1L)).thenReturn(1)
+
+            // When
+            assertTrue(createService().deleteSession(1L))
+
+            // Then - 释放按 sessionId 指名，因为那是运行态的键；行 id 对它没有意义
+            val order = inOrder(agentRuntimeClient, teamArtifactCleaner, sessionMapper)
+            order.verify(agentRuntimeClient).clearSession(testSession.sessionId)
+            order.verify(teamArtifactCleaner).deleteForSession(testSession.sessionId)
+            order.verify(sessionMapper).deleteById(1L)
+        }
+
+        @Test
+        @DisplayName("deleteSession - 运行侧未能释放时保留会话")
+        fun `deleteSession should keep the session when the runtime cannot release it`() {
+            // Given
+            `when`(sessionMapper.selectById(1L)).thenReturn(testSession)
+            `when`(agentRuntimeClient.clearSession(testSession.sessionId))
+                .thenReturn(ResultVo.error(500, "sandbox container is busy"))
+
+            // When & Then - 留着会话行：行没了而运行态还在，剩下的就是一份谁也指认不了的状态，比留着更坏
+            val exception = assertThrows<BizException> {
+                createService().deleteSession(1L)
+            }
+            assertTrue(
+                exception.message!!.contains("sandbox container is busy"),
+                "运行侧那句原因才是用户要读到的，实际: ${exception.message}",
+            )
+            verify(sessionMapper, never()).deleteById(anyLong())
+            verify(teamArtifactCleaner, never()).deleteForSession(anyString())
         }
 
         @Test

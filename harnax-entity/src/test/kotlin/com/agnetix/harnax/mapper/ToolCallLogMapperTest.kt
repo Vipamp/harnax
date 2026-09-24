@@ -16,7 +16,6 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
 import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 @Testcontainers
@@ -50,18 +49,6 @@ open class ToolCallLogMapperTest {
     inner class BasicCrudTests {
 
         @Test
-        @DisplayName("selectById - 根据 ID 查询工具调用日志")
-        fun `selectById should return tool call log by id`() {
-            val log = toolCallLogMapper.selectById(1L)
-            assertNotNull(log)
-            assertEquals(1L, log.id)
-            assertEquals(1L, log.agentId)
-            assertEquals("web-search", log.toolName)
-            assertEquals(1, log.success)
-            assertEquals(2000L, log.duration)
-        }
-
-        @Test
         @DisplayName("insert - 插入新工具调用日志")
         fun `insert should create new tool call log`() {
             val now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
@@ -81,31 +68,6 @@ open class ToolCallLogMapperTest {
             val result = toolCallLogMapper.insert(newLog)
             assertEquals(1, result)
             assertTrue(newLog.id > 0)
-        }
-    }
-
-    @Nested
-    @DisplayName("自定义查询测试")
-    inner class CustomQueryTests {
-
-        @Test
-        @DisplayName("selectBySessionId - 根据会话 ID 查询日志")
-        fun `selectBySessionId should return logs by session id`() {
-            val logs = toolCallLogMapper.selectBySessionId("session-001")
-            assertTrue(logs.isNotEmpty())
-            logs.forEach {
-                assertEquals("session-001", it.sessionId)
-            }
-        }
-
-        @Test
-        @DisplayName("selectByToolName - 根据工具名称查询日志")
-        fun `selectByToolName should return logs by tool name`() {
-            val logs = toolCallLogMapper.selectByToolName("web-search")
-            assertTrue(logs.isNotEmpty())
-            logs.forEach {
-                assertEquals("web-search", it.toolName)
-            }
         }
     }
 }

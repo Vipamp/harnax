@@ -16,10 +16,13 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import java.time.LocalDateTime
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 /**
- * 主管技能绑定的读写：`team_skill_binding` 与 `agent_skill_binding` 同构（V33 之后都带唯一键），
- * 这里验的是团队侧自己的那一套——按团队取回、整表替换、删技能时清干净，以及重复绑定进不了库。
+ * 主管技能绑定的读写：`team_skill_binding` 与 `agent_skill_binding` 形状相同，但实体测试库里只有团队这
+ * 一份带 `UNIQUE(team_id, skill_id)`——agent 那份刻意留在 V33 之前的样子，好让
+ * [AgentSkillBindingMapperTest] 用重复行去验 `COUNT(DISTINCT ...)`。
+ * 这里验团队侧自己的一套：按团队取回、整表替换、删技能时清干净、重复绑定进不了库，以及技能列表读的那个分组计数。
  *
  * @author agnetix
  * @since 2026-09-20
@@ -102,5 +105,24 @@ open class TeamSkillBindingMapperTest {
             listOf(100L, 101L),
             bindingMapper.selectBoundSkillIds(listOf(100L, 101L, 102L)).sorted(),
         )
+    }
+
+    @Test
+    @DisplayName("selectTeamBindingCounts - 每个技能一行，按团队计数")
+    fun countsTeamsPerSkill() {
+        // 本表的 UNIQUE(team_id, skill_id) 让"同团队重复绑同一技能"进不了库，所以这条验的是分组与计数，
+        // 不是 `DISTINCT` 本身——那个读法由 [AgentSkillBindingMapperTest] 用重复行验
+        bind(21L, 100L, 101L)
+        bind(22L, 100L)
+
+        val counts = bindingMapper.selectTeamBindingCounts(listOf(100L, 101L, 102L)).associate { it.skillId to it.teamCount }
+
+        assertEquals(mapOf(100L to 2, 101L to 1), counts)
+    }
+
+    @Test
+    @DisplayName("selectTeamBindingCounts - 未绑定的技能不出现在结果里")
+    fun omitsUnboundSkillsFromCounts() {
+        assertTrue(bindingMapper.selectTeamBindingCounts(listOf(999L)).isEmpty())
     }
 }

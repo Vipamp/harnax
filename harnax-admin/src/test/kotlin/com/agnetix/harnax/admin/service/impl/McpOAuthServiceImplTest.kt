@@ -145,7 +145,7 @@ class McpOAuthServiceImplTest {
     private fun onThisServer(config: McpOAuthConfig = McpOAuthConfig()): McpServer = server(config = config).also { stubServer(it) }
 
     private fun stubServer(vararg servers: McpServer) {
-        servers.forEach { whenever(mcpServerService.getMcpServer(it.id)).thenReturn(it) }
+        servers.forEach { whenever(mcpServerService.getVisibleMcpServer(it.id)).thenReturn(it) }
     }
 
     private fun storedRow(client: McpOauthClient): McpOauthClient = client.also {
@@ -657,7 +657,7 @@ class McpOAuthServiceImplTest {
 
         @Test
         fun `a row outside the tenant answers as missing`() {
-            whenever(mcpServerService.getMcpServer(9L)).thenReturn(null)
+            whenever(mcpServerService.getVisibleMcpServer(9L)).thenReturn(null)
 
             val error = assertThrows(BizException::class.java) { service.discover(9L) }
             assertEquals("MCP server not found", error.message)

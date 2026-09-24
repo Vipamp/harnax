@@ -28,11 +28,4 @@
         DELETE FROM agent_tool_binding WHERE agent_id = #{agentId}
     </delete>
 
-    <delete id="deleteByToolIds">
-        DELETE FROM agent_tool_binding WHERE tool_id IN
-        <foreach collection="toolIds" item="toolId" open="(" separator="," close=")">
-            #{toolId}
-        </foreach>
-    </delete>
-
 </mapper>

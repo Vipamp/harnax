@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.service.impl
 
+import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.ModelProviderCreateRequest
 import com.agnetix.harnax.admin.dto.ModelProviderResponse
 import com.agnetix.harnax.admin.dto.ModelProviderUpdateRequest
@@ -33,23 +34,35 @@ class ModelProviderServiceImpl(
     private val log = LoggerFactory.getLogger(ModelProviderServiceImpl::class.java)
 
     override fun page(name: String?, type: String?, status: Int?, isPublic: Int?, pageNum: Int, pageSize: Int): Page<ModelProvider> {
-        // Get current user
-        val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         val safePageNum = pageNum.coerceAtLeast(1)
         val safePageSize = pageSize.coerceIn(1, 1000)
         PageHelper.startPage<Agent>(safePageNum, safePageSize)
-        return Page.fromPageInfo(modelProviderMapper.selectModelProviderList(name, type, status, isPublic, currentUsername))
+        return Page.fromPageInfo(modelProviderMapper.selectModelProviderList(name, type, status, isPublic, currentTenantId()))
     }
 
     override fun getModelProvider(id: Long): ModelProvider? = this.modelProviderMapper.selectById(id)
 
+    override fun getVisibleModelProvider(id: Long): ModelProvider? = modelProviderMapper.selectById(id)?.takeIf { it.tenantId == currentTenantId() || it.isPublic == 1 }
+
+    /**
+     * A row this tenant may change. Another tenant's provider reads as absent even when it is public:
+     * its API key is the owning tenant's credential, and naming the row would confirm who holds it.
+     */
+    private fun ownedProvider(id: Long): ModelProvider = modelProviderMapper.selectById(id)?.takeIf { it.tenantId == currentTenantId() }
+        ?: throw BizException(messageUtil.getMessage("error.model.provider.notfound"))
+
+    private fun currentTenantId(): Long = TenantContext.getTenantId() ?: 1
+
     override fun createModelProvider(request: ModelProviderCreateRequest): Boolean {
-        // 检查服务商名称是否已存在
-        if (modelProviderMapper.countByName(request.name) > 0) {
+        val tenantId = currentTenantId()
+
+        // 检查本租户下服务商名称是否已存在
+        if (modelProviderMapper.countByName(request.name, tenantId) > 0) {
             throw BizException(messageUtil.getMessage("error.model.provider.name_exists"))
         }
 
         val modelProvider = ModelProvider()
+        modelProvider.tenantId = tenantId
         modelProvider.type = request.type
         modelProvider.name = request.name
         modelProvider.description = request.description
@@ -69,12 +82,11 @@ class ModelProviderServiceImpl(
     }
 
     override fun updateModelProvider(id: Long, request: ModelProviderUpdateRequest): Boolean {
-        val modelProvider = modelProviderMapper.selectById(id)
-            ?: throw BizException(messageUtil.getMessage("error.model.provider.notfound"))
+        val modelProvider = ownedProvider(id)
 
-        // 如果修改了名称，检查是否重复
+        // 如果修改了名称，检查本租户下是否重复
         if (!request.name.isNullOrBlank() && request.name != modelProvider.name) {
-            if (modelProviderMapper.countByName(request.name) > 0) {
+            if (modelProviderMapper.countByName(request.name, modelProvider.tenantId) > 0) {
                 throw BizException(messageUtil.getMessage("error.model.provider.name_exists"))
             }
             modelProvider.name = request.name
@@ -105,8 +117,7 @@ class ModelProviderServiceImpl(
     }
 
     override fun updateStatus(id: Long, status: Int): Boolean {
-        val modelProvider = modelProviderMapper.selectById(id)
-            ?: throw BizException(messageUtil.getMessage("error.model.provider.notfound"))
+        val modelProvider = ownedProvider(id)
 
         // 停用时检查是否存在启用的模型
         if (modelProvider.status == 1 && status == 0) {
@@ -121,25 +132,32 @@ class ModelProviderServiceImpl(
     override fun toggleModelProvider(id: Long, status: Int): Boolean = updateStatus(id, status)
 
     override fun deleteModelProvider(id: Long): Boolean {
-        // 检查是否存在启用的模型
-        if (modelMapper.countActiveModelsByProviderId(id) > 0) {
+        val modelProvider = ownedProvider(id)
+
+        // Every live model, not only the enabled ones: an agent can still point at a disabled model,
+        // and removing its provider takes the row that answers `model.provider_id`. Disabling the
+        // provider leaves the models intact, so that guard stays on the enabled set.
+        if (modelMapper.countModelsByProviderId(modelProvider.id) > 0) {
             throw BizException(messageUtil.getMessage("error.model.provider.cannot_delete"))
         }
-        return modelProviderMapper.deleteById(id) > 0
+        return modelProviderMapper.deleteById(modelProvider.id) > 0
     }
 
     override fun convertToResponse(it: ModelProvider): ModelProviderResponse = ModelProviderResponse.fromEntity(it)
 
     override fun getModelStats(providerId: Long): ModelStatsInfo {
-        val totalModels = modelMapper.countModelsByProviderId(providerId)
-        val enabledModels = modelMapper.countActiveModelsByProviderId(providerId)
-        val disabledModels = modelMapper.countDisabledModelsByProviderId(providerId)
+        // The counts describe the owning tenant's catalogue, and the test spends its API key, so both
+        // stay with the owner: a provider merely visible through is_public has no stats to hand out.
+        val modelProvider = ownedProvider(providerId)
+
+        val totalModels = modelMapper.countModelsByProviderId(modelProvider.id)
+        val enabledModels = modelMapper.countActiveModelsByProviderId(modelProvider.id)
+        val disabledModels = modelMapper.countDisabledModelsByProviderId(modelProvider.id)
         return ModelStatsInfo(totalModels, enabledModels, disabledModels)
     }
 
     override fun connectivityTest(id: Long): Boolean {
-        val modelProvider = this.modelProviderMapper.selectById(id)
-            ?: throw BizException(messageUtil.getMessage("error.model.provider.notfound"))
+        ownedProvider(id)
 
         // TODO: 实现真实的连接测试逻辑
         // 目前直接返回 true

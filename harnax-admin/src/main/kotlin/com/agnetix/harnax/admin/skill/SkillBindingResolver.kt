@@ -72,9 +72,7 @@ class SkillBindingResolver(
         builtinRepositoryId: Long?,
     ): List<Skill> {
         val tenantId = TenantContext.getTenantId() ?: 1
-        val resolvable = skillMapper.selectByIds(skillIds).filter {
-            it.tenantId == tenantId || it.repositoryId == builtinRepositoryId
-        }
+        val resolvable = deliverableWithin(skillIds, tenantId, builtinRepositoryId)
         val missing = skillIds - resolvable.map { it.id }.toSet()
         if (missing.isNotEmpty()) {
             throw BizException(
@@ -86,5 +84,36 @@ class SkillBindingResolver(
             throw BizException("Skill is disabled, enable it before binding: ${disabled.joinToString(",") { it.name }}")
         }
         return resolvable
+    }
+
+    /**
+     * Rows among [skillIds] that [tenantId] may receive — the same set a binding may point at.
+     *
+     * `SkillMapper.selectByIds` has no tenant condition, and an internal delivery call carries no
+     * trustworthy tenant header, so the holder's own tenant is the only comparable basis: without it a
+     * cross-tenant binding row, saved before the save-time check existed, hands over another tenant's
+     * SKILL.md and every bundled resource. The builtin repository is a platform-wide row and stays
+     * exempt, exactly as [com.agnetix.harnax.admin.service.impl.SkillServiceImpl.requireReadable] has
+     * to treat it — otherwise the CLI-shipped skills reach nobody but the seeding tenant.
+     */
+    fun deliverable(
+        skillIds: List<Long>,
+        tenantId: Long,
+    ): List<Skill> {
+        // Checked before the builtin lookup: an agent with no skills must not pay for a SELECT
+        if (skillIds.isEmpty()) return emptyList()
+        return deliverableWithin(skillIds, tenantId, skillRepositoryService.getBuiltinRepository()?.id)
+    }
+
+    /**
+     * The filter both readers share. Callers hold the non-empty precondition: [selectByIds] with an empty
+     * list renders `IN ()`, which MySQL rejects.
+     */
+    private fun deliverableWithin(
+        skillIds: List<Long>,
+        tenantId: Long,
+        builtinRepositoryId: Long?,
+    ): List<Skill> = skillMapper.selectByIds(skillIds).filter {
+        it.tenantId == tenantId || it.repositoryId == builtinRepositoryId
     }
 }

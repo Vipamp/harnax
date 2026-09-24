@@ -204,17 +204,25 @@ class TeamServiceImplTest {
         }
 
         @Test
-        fun `a private model of another user is refused`() {
-            models[MODEL] = model(MODEL, "qwen3-max", isPublic = 0, creator = "other-user")
+        fun `a private model of another tenant is refused`() {
+            models[MODEL] = model(MODEL, "qwen3-max", isPublic = 0, tenantId = TENANT + 1)
 
             val error = assertThrows<BizException> { service.createTeam(createRequest()) }
 
-            assertEquals("Lead model is not available to the current user: $MODEL", error.message)
+            assertEquals("Lead model is not available to the current tenant: $MODEL", error.message)
+        }
+
+        @Test
+        fun `a private model of another user in this tenant may lead`() {
+            // 隔离粒度是租户：同租户的私有行对同租户可选，模型列表也是这么给的
+            models[MODEL] = model(MODEL, "qwen3-max", isPublic = 0, creator = "other-user")
+
+            assertTrue(service.createTeam(createRequest()))
         }
 
         @Test
         fun `a public model of another tenant may lead`() {
-            models[MODEL] = model(MODEL, "qwen3-max", tenantId = TENANT + 1)
+            models[MODEL] = model(MODEL, "qwen3-max", isPublic = 1, tenantId = TENANT + 1)
 
             assertTrue(service.createTeam(createRequest()))
         }
@@ -590,6 +598,58 @@ class TeamServiceImplTest {
         }
 
         @Test
+        fun `delete refuses while the team still has sessions, naming them`() {
+            `when`(teamMapper.selectById(TEAM_ID)).thenReturn(team())
+            `when`(sessionMapper.selectByTeamId(TEAM_ID)).thenReturn(
+                listOf(session("web-1", "first"), session("web-2", "second")),
+            )
+
+            val error = assertThrows<BizException> { service.deleteTeam(TEAM_ID) }
+
+            assertTrue(error.message!!.contains("2 session(s)"))
+            assertTrue(error.message!!.contains("web-1"))
+            assertTrue(error.message!!.contains("web-2"))
+            verify(teamMapper, never()).deleteById(anyLong())
+            verify(teamMemberMapper, never()).deleteByTeamId(anyLong())
+            verify(teamSkillBindingMapper, never()).deleteByTeamId(anyLong())
+        }
+
+        @Test
+        fun `delete proceeds once the team has no sessions left`() {
+            `when`(teamMapper.selectById(TEAM_ID)).thenReturn(team())
+            `when`(sessionMapper.selectByTeamId(TEAM_ID)).thenReturn(emptyList())
+
+            assertTrue(service.deleteTeam(TEAM_ID))
+        }
+
+        @Test
+        fun `update hides a private team of another user`() {
+            `when`(teamMapper.selectById(TEAM_ID)).thenReturn(
+                team().apply {
+                    isPublic = 0
+                    creator = "someone-else"
+                },
+            )
+
+            val error = assertThrows<BizException> { service.updateTeam(TEAM_ID, TeamUpdateRequest()) }
+
+            assertEquals("Team not found", error.message)
+            verify(teamMapper, never()).updateById(any())
+        }
+
+        @Test
+        fun `getTeam hides a private team of another user`() {
+            `when`(teamMapper.selectById(TEAM_ID)).thenReturn(
+                team().apply {
+                    isPublic = 0
+                    creator = "someone-else"
+                },
+            )
+
+            assertNull(service.getTeam(TEAM_ID))
+        }
+
+        @Test
         fun `getTeam hides another tenant's team`() {
             `when`(teamMapper.selectById(TEAM_ID)).thenReturn(team(tenantId = TENANT + 1))
 
@@ -737,21 +797,21 @@ class TeamServiceImplTest {
     private fun model(
         id: Long,
         name: String,
-        tenantId: Long = TENANT,
         modelName: String = "$name-2026-07-15",
         status: Int = 1,
         isPublic: Int = 1,
         modelType: String = "chat",
         creator: String = CURRENT_USER,
+        tenantId: Long = TENANT,
     ): Model = Model().apply {
         this.id = id
         this.name = name
         this.modelName = modelName
-        this.tenantId = tenantId
         this.status = status
         this.isPublic = isPublic
         this.modelType = modelType
         this.creator = creator
+        this.tenantId = tenantId
     }.also { models[id] = it }
 
     private fun skill(

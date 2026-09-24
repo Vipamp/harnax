@@ -165,6 +165,43 @@ class ModelCrudIT : BaseAdminIT() {
 
     @Test
     @Order(9)
+    fun `a model an agent stands on cannot be deleted`() {
+        val holderModelName = "it_model_holder_$suffix"
+        assertOk(
+            postJson(
+                "/api/admin/models",
+                mapOf(
+                    "name" to holderModelName,
+                    "modelName" to "it-model-holder-$suffix",
+                    "providerId" to ensureProvider(),
+                    "modelType" to "chat",
+                ),
+            ),
+        )
+        val holderModelId = findInPage("/api/admin/models/page", "name=$holderModelName") {
+            it["name"]?.asText() == holderModelName
+        }?.get("id")?.asLong() ?: error("prerequisite model should exist")
+
+        val agentName = "it_model_agent_$suffix"
+        assertOk(postJson("/api/admin/agents", agentCreateBody(agentName) + mapOf("modelId" to holderModelId)))
+        val agentId = findInPage("/api/admin/agents/page", "name=$agentName") {
+            it["name"]?.asText() == agentName
+        }?.get("id")?.asLong() ?: error("prerequisite agent should exist")
+
+        // AGENT-06: `selectUsageByModelId` is three subselects (agent/team/session), so this asserts
+        // against the real tables — a wrong join condition reads as "nothing stands on it" and the
+        // delete would go through exactly as quietly as it did before.
+        val refused = deleteJson("/api/admin/models/$holderModelId")
+        assertErr(refused)
+        val message = refused["message"].asText()
+        assertTrue(message.contains("1 agent(s)"), "the refusal should count the agents, got: $message")
+
+        assertOk(deleteJson("/api/admin/agents/$agentId"))
+        assertOk(deleteJson("/api/admin/models/$holderModelId"))
+    }
+
+    @Test
+    @Order(10)
     fun `delete model then detail returns empty`() {
         assertOk(deleteJson("/api/admin/models/${locateModelId()}"))
 

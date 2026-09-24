@@ -130,6 +130,7 @@
 | `HARNESS_ENABLE_MEMORY_HOOKS` | `false` | 记忆钩子 |
 | `HARNESS_ENABLE_SESSION_PERSISTENCE` | `true` | 会话持久化 |
 | `HARNAX_MCP_STDIO_ENABLED` | `false` | **stdio 类型 MCP 服务的开关**，同一个变量同时决定 admin 的 `harnax.mcp.stdio-enabled`。详见下一节 |
+| `HARNAX_TURN_TIMEOUT_SECONDS` | `300` | 单个回合预算（秒），批量与流式共用。**团队不适用**：主管与成员由 `harness.team.member-turn-timeout-seconds`（默认 900）与确认等待预算限定，装配时对团队 wrapper 关掉这项 |
 | `ROUTER_SERVICE_URL` | `http://localhost:8081` | router 地址 |
 | `ADMIN_SERVICE_URL` | `http://localhost:8080` | admin 地址 |
 | `LOG_LEVEL` | `INFO` | 本服务包级别日志 |

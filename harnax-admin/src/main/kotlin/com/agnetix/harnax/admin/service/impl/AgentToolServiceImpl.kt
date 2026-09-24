@@ -48,7 +48,6 @@ class AgentToolServiceImpl(
             needConfirm = agentTool.needConfirm,
             isRequired = agentTool.isRequired,
             requiredEnvParamKeys = requiredEnvParamKeys,
-            timeoutSeconds = agentTool.timeoutSeconds,
             status = agentTool.status,
             creator = agentTool.creator,
             createTime = agentTool.createTime,

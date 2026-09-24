@@ -1,6 +1,7 @@
 package com.agnetix.harnax.mapper
 
 import com.agnetix.harnax.entity.Model
+import com.agnetix.harnax.entity.dto.ModelUsage
 import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
 
@@ -31,7 +32,7 @@ interface ModelMapper {
         @Param("tags") tags: List<String>?,
         @Param("minPrice") minPrice: Double?,
         @Param("maxPrice") maxPrice: Double?,
-        @Param("currentUsername") currentUsername: String,
+        @Param("tenantId") tenantId: Long,
     ): List<Model>
 
     fun countByProviderIdAndName(@Param("providerId") providerId: Long, @Param("name") name: String): Int
@@ -43,4 +44,7 @@ interface ModelMapper {
     fun countModelsByProviderId(@Param("providerId") providerId: Long): Int
 
     fun countDisabledModelsByProviderId(@Param("providerId") providerId: Long): Int
+
+    /** Live agent / team / session rows that still run on this model, for the delete guard. */
+    fun selectUsageByModelId(@Param("modelId") modelId: Long): ModelUsage
 }

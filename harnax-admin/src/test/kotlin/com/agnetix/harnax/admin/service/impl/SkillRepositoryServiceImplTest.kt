@@ -453,22 +453,6 @@ class SkillRepositoryServiceImplTest {
     }
 
     @Nested
-    @DisplayName("Get By Name Tests")
-    inner class GetByNameTests {
-
-        @Test
-        fun `getByName should use tenantId from context`() {
-            TenantContext.setTenantId(3L)
-            `when`(skillRepositoryMapper.selectByName(eq("test-repo"), eq(3L))).thenReturn(testRepository)
-
-            val result = service.getByName("test-repo")
-
-            assertNotNull(result)
-            verify(skillRepositoryMapper).selectByName(eq("test-repo"), eq(3L))
-        }
-    }
-
-    @Nested
     @DisplayName("Get Repository By Id Tests")
     inner class GetSkillRepositoryTests {
 

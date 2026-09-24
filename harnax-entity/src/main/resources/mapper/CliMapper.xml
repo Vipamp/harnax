@@ -36,6 +36,14 @@
         SELECT * FROM cli WHERE name = #{name} LIMIT 1
     </select>
 
+    <!-- selectBySkillIds: packages shipping one of the given skills -->
+    <select id="selectBySkillIds" resultMap="CliResultMap">
+        SELECT * FROM cli WHERE active = 1 AND skill_id IN
+        <foreach collection="skillIds" item="skillId" open="(" separator="," close=")">
+            #{skillId}
+        </foreach>
+    </select>
+
     <select id="selectCliList" resultMap="CliResultMap">
         SELECT * FROM cli
         WHERE active = 1
@@ -53,8 +61,9 @@
         `status` is the deliberate exception: it is the operator's kill switch (design D9), and
         rewriting it to 1 here would silently re-enable a CLI the day someone restarts admin.
         `active = 1` needs no exception: the registrar is the only writer and a row it holds is live by
-        definition. V38 retired the pre-package leftovers under a `#retired-<id>` name, so looking a
-        package name up never lands on a soft-deleted row in the first place.
+        definition. V38 and V42 retired the pre-package leftovers under a `#retired-<id>` name (V38 for
+        the live ones, V42 for the ones that were already soft-deleted), so looking a package name up
+        never lands on a soft-deleted row in the first place.
     -->
     <insert id="upsertCliPackage">
         INSERT INTO cli (

@@ -43,8 +43,8 @@ class ModelServiceImpl(
         pageNum: Int,
         pageSize: Int,
     ): Page<Model> {
-        // 获取当前用户
-        val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
+        // 获取当前租户与本页共用的可见性判据
+        val tenantId = currentTenantId()
 
         // 将标签字符串转为列表
         val tagsList = if (hasText(tags)) {
@@ -65,16 +65,31 @@ class ModelServiceImpl(
                 tagsList,
                 minPrice,
                 maxPrice,
-                currentUsername,
+                tenantId,
             ),
         )
     }
 
     override fun getModel(id: Long): Model? = this.modelMapper.selectById(id)
 
+    override fun getVisibleModel(id: Long): Model? = modelMapper.selectById(id)?.takeIf { it.tenantId == currentTenantId() || it.isPublic == 1 }
+
+    /**
+     * A row this tenant may change. Another tenant's row reads as absent even when it is public: naming
+     * it here would confirm which ids belong to somebody else, and a public model is meant to be used,
+     * not edited, from outside its owning tenant.
+     */
+    private fun ownedModel(id: Long): Model = modelMapper.selectById(id)?.takeIf { it.tenantId == currentTenantId() }
+        ?: throw BizException(messageUtil.getMessage("error.model.notfound"))
+
+    private fun currentTenantId(): Long = TenantContext.getTenantId() ?: 1
+
     override fun createModel(request: ModelCreateRequest): Boolean {
-        // 检查服务商是否存在
+        val tenantId = currentTenantId()
+
+        // 检查服务商是否存在，且本租户看得见它
         val provider = modelProviderMapper.selectById(request.providerId)
+            ?.takeIf { it.tenantId == tenantId || it.isPublic == 1 }
             ?: throw BizException(messageUtil.getMessage("error.model.provider.notfound"))
 
         // 检查同一服务商下名称是否已存在
@@ -104,22 +119,20 @@ class ModelServiceImpl(
         model.price = request.price ?: 0.0
         model.isPublic = request.isPublic ?: 1
 
-        // 设置租户ID
-        model.tenantId = TenantContext.getTenantId() ?: 1
-
-        // 设置创建者
+        // 设置创建者与所属租户
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         model.creator = currentUsername
+        model.tenantId = tenantId
         return this.modelMapper.insert(model) > 0
     }
 
     override fun updateModel(id: Long, request: ModelUpdateRequest): Boolean {
-        val model = modelMapper.selectById(id)
-            ?: throw BizException(messageUtil.getMessage("error.model.notfound"))
+        val model = ownedModel(id)
 
-        // 如果修改了服务商，检查服务商是否存在
+        // 如果修改了服务商，检查服务商是否存在且本租户看得见
         if (request.providerId != null && request.providerId != model.providerId) {
             modelProviderMapper.selectById(request.providerId)
+                ?.takeIf { it.tenantId == model.tenantId || it.isPublic == 1 }
                 ?: throw BizException(messageUtil.getMessage("error.model.provider.notfound"))
         }
 
@@ -164,8 +177,7 @@ class ModelServiceImpl(
     }
 
     override fun updateStatus(id: Long, status: Int): Boolean {
-        val model = this.modelMapper.selectById(id)
-            ?: throw BizException(messageUtil.getMessage("error.model.notfound"))
+        val model = ownedModel(id)
 
         // 启用模型时检查服务商是否已启用
         if (status == 1) {
@@ -183,8 +195,20 @@ class ModelServiceImpl(
 
     override fun deleteModel(id: Long): Boolean {
         log.info("删除模型, id: {}", id)
-        val model = modelMapper.selectById(id)
-            ?: throw BizException(messageUtil.getMessage("error.model.notfound"))
+        val model = ownedModel(id)
+
+        // A dangling model_id is not visible until the row that carries it is used: the agent then
+        // resolves no model at run time. Release the references first. The count is deliberately
+        // cross-tenant: a public model another tenant's agent stands on is still in use here.
+        val usage = modelMapper.selectUsageByModelId(id)
+        val refs = listOfNotNull(
+            usage.agentCount.takeIf { it > 0 }?.let { "$it agent(s)" },
+            usage.teamCount.takeIf { it > 0 }?.let { "$it team(s)" },
+            usage.sessionCount.takeIf { it > 0 }?.let { "$it session(s)" },
+        ).joinToString(", ")
+        if (refs.isNotEmpty()) {
+            throw BizException(messageUtil.getMessage("error.model.in_use", refs))
+        }
 
         // 逻辑删除：设置 active = 0
         val res = modelMapper.deleteById(id) > 0

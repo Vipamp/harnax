@@ -32,6 +32,8 @@ data class SkillResponse(
     val status: Int? = null,
     @Schema(description = "How many agents bind this skill. A bound skill can be neither disabled nor deleted from here")
     val boundAgentCount: Int = 0,
+    @Schema(description = "How many teams bind this skill as their lead's configuration. Counts against the same guard")
+    val boundTeamCount: Int = 0,
     @Schema(description = "Whether public (0:no, 1:yes)", example = "1")
     val isPublic: Int? = null,
     @Schema(description = "Creator", example = "admin")
@@ -50,6 +52,7 @@ data class SkillResponse(
             skill: Skill?,
             repository: SkillRepository? = null,
             boundAgentCount: Int = 0,
+            boundTeamCount: Int = 0,
         ): SkillResponse {
             if (skill == null) {
                 return SkillResponse()
@@ -66,6 +69,7 @@ data class SkillResponse(
                 resources = skill.resources,
                 status = skill.status,
                 boundAgentCount = boundAgentCount,
+                boundTeamCount = boundTeamCount,
                 isPublic = skill.isPublic,
                 creator = skill.creator,
                 createTime = skill.createTime,

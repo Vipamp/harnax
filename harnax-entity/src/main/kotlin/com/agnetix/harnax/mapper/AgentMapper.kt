@@ -20,6 +20,15 @@ interface AgentMapper {
     fun selectByIds(@Param("ids") ids: List<Long>): List<Agent>
 
     /**
+     * Exact-name lookup within one tenant, the pre-insert / pre-rename guard for
+     * `uk_agent_tenant_active_name`.
+     */
+    fun selectByName(
+        @Param("name") name: String,
+        @Param("tenantId") tenantId: Long?,
+    ): Agent?
+
+    /**
      * Insert
      */
     fun insert(agent: Agent): Int
