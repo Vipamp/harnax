@@ -245,7 +245,7 @@ Agent 装配（HarnessAgentLauncher.kt:174-188）
 7. `state`、`code_verifier` 一次性、短 TTL、绑定发起人。**第十四轮起这条绑的是凭据归属，不再是身份**：换票走 `POST /api/admin/mcp/oauth/exchange`，调用者由 JWT 认证，`state` 认出的那条 pending 只回答「这次同意该记到谁名下」，两者不一致就拒绝（`state` 无论哪一支都先烧掉，所以钓到的 `state` 一次也试不成）。原来那个「无 JWT 的回调 + 发起方自造的 `state` = 可以把别人的同意记到自己名下」的缺口（**F6**）随之闭合，实现细节与没验证的部分见 `mcp-management` §7.13；第十五轮又修了这条链上的判定次序（归属比对必须排在读请求体之前），见 §7.14。**残留要说清**：这挡的是「把 A 的授权链接拿去骗 B 同意，结果记到 A 名下」，挡不住「登录用户自己完成一次授权」——后者本来就是这条链路的能力。至于**在 AS 那个页面上是谁登录着点的同意**，由 AS 自己的会话决定，本服务看不见也管不着：`state` 只保证这次同意是给这台服务的（`resource`），不保证点同意的人是谁。
 8. 日志与 `last_error` 复用 `redact()` 口径（见 skill-management R2-3 的凭据泄漏教训），禁止输出 `Bearer` 后的内容。
 9. 换发接口需 `InternalApiAuthFilter` 的共享密钥（`InternalApiAuthFilter.kt:37-49`），并且只接受 `sessionId` 反查用户；下一步应改挂 `InternalTokenProvider` 的短时效 JWT（`InternalTokenProvider.kt:14-76`），把静态密钥下掉。
-10. 审计（`mcp_call_log`）不可关闭；`tool_call_log` 目前不在 `MybatisTenantInterceptor.EXCLUDED_TABLES` 的豁免名单之外（该拦截器整体被注释掉，未生效），所以租户隔离要在 SQL 里显式写。
+10. 审计（`mcp_call_log`）不可关闭；`tool_call_log` 的租户隔离要在 SQL 里显式写——仓内不设 MyBatis 租户拦截器，既没有自动过滤，也没有可供豁免的名单。
 
 ## 9. 接口清单
 

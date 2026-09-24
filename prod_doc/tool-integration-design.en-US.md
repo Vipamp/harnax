@@ -160,7 +160,7 @@ Two hard rules at assembly time: **there is no fallback registration at all** (e
 
 | Boundary | Detail |
 |----------|--------|
-| Tools are written with `tenant_id = 1` only | The sync always uses tenant 1, and `MybatisTenantInterceptor`'s filtering is currently disabled, so tools are a platform-wide shared resource rather than one copy per tenant |
+| Tools are written with `tenant_id = 1` only | The sync always uses tenant 1, and no MyBatis tenant interceptor exists (there is no automatic tenant filtering at all), so tools are a platform-wide shared resource rather than one copy per tenant |
 | Pruning residue needs a human | When the circuit breaker trips (stale rows ≥ declared rows) or a tool group failed to sync, the delete is skipped with an ERROR log; review the code and re-release |
 | `name` is not part of the unique key | `uk_tenant_bean_method` excludes `name`, so two methods declaring the same `@Tool(name)` are not caught by the database; the sync looks rows up by `name` to attach env params, so a duplicate can land those definitions on the wrong row |
 | Tenant filtering is closed; tools sit outside it | `mcp_server` and `agent` list queries now both filter by `tenant_id` (sections 7, rounds three and five of `mcp-management`; `AgentMapper.xml` maps and inserts `agent.tenant_id` today). Tools take no part in that convention — the sync writes every row with `tenant_id = 1` (see the first row) |

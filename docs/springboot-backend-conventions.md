@@ -661,18 +661,17 @@ throw BizException(messageUtil.getMessage("error.validation.required", "name"))
 
 业务表必须包含 `tenant_id BIGINT NOT NULL DEFAULT 1`，实体包含 `var tenantId: Long = 1`。
 
-### 10.2 拦截器自动隔离
+### 10.2 隔离靠 SQL 显式条件
 
-实现 MyBatis Interceptor 在 SQL 层自动处理：
+MyBatis 层不设租户拦截器，也没有方法级豁免注解：
 
-- SELECT：追加 `tenant_id = #{tenantId}` 过滤
-- INSERT：自动填充 `tenant_id`
-- UPDATE / DELETE：追加 `tenant_id` 条件
+- SELECT / UPDATE / DELETE 的租户条件写在各条 SQL 的 `WHERE` 里
+- INSERT 的 `tenant_id` 由服务层显式赋值（取自 `currentTenantId()`）
+- 一次查询是否租户安全，只看它的 `WHERE`，没有兜底机制可依赖
 
 ### 10.3 例外与豁免
 
-- **排除表**：系统级表（租户表、用户表、登录凭证表等）不需要租户过滤，在拦截器排除列表中显式声明并注释原因
-- **方法级豁免**：提供 `@SkipTenantFilter` 注解跳过单个 Mapper 方法的租户过滤（仅限内部统计、跨租户查询等场景，需评审）
+没有可豁免的自动机制。系统级表（租户表、用户表、登录凭证表）与平台级共享表是否带租户条件，由各自的语句逐条决定；不加租户条件时，在该方法或该表的设计说明里写明理由。
 
 ### 10.4 租户上下文
 

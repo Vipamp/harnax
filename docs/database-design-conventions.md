@@ -81,20 +81,27 @@
 - 关联检索字段（`agent_id`、`session_id` 等）并建索引
 - 时间字段（`ts` 或 `create_time`）
 
-### 3.3 租户字段与拦截器
+### 3.3 租户字段
 
-- 业务表 `tenant_id` 必须 `NOT NULL DEFAULT 1`，由 `MybatisTenantInterceptor` 在 INSERT 时自动填充、在 SELECT/UPDATE/DELETE 时自动过滤
-- 系统级表（`tenant`、`user_tenant`、`sys_user`、`sys_token_blacklist` 等）不需要租户过滤，需加入拦截器 `EXCLUDED_TABLES` 排除列表
-- 新表如需豁免租户过滤，必须同步修改排除列表并注释原因
+- 业务表 `tenant_id` 必须 `NOT NULL DEFAULT 1`：INSERT 由服务层显式赋值（取自 `currentTenantId()`），SELECT/UPDATE/DELETE 的条件写在各条 SQL 里，没有自动填充也没有自动过滤
+- 系统级表（`tenant`、`user_tenant`、`sys_user`、`sys_token_blacklist`）与平台级共享表（`agent_tool`）不带租户条件，是否需要写在该表的设计说明里
+- 新表默认按业务表处理；确需平台级共享（全平台一份、各租户共用）时，在建表迁移与实体注释里写明该表按平台级资产对待
 
 ### 3.4 唯一约束与逻辑删除的配合
 
-带逻辑删除的唯一字段，唯一键应把 `active` 纳入，避免已删除记录阻塞新建：
+**不要**把 `active` 放进唯一键。`UNIQUE KEY (tenant_id, name, active)` 只允许每个键留一条已删行：第一次逻辑删除把 `(tenant, name, 0)` 占住，之后「删了再建、再删」的第二次删除直接撞这个键报 duplicate——`env_variable` 就是这一形状（V45 之前删第二个同名变量必然失败）。仓内 `skill`（V15）、`mcp_server`（V23）、`agent`（V43）、`env_variable`（V45）都已换成生成列写法：
 
 ```sql
-UNIQUE KEY `uk_tenant_name` (`tenant_id`, `name`, `active`),
-UNIQUE KEY `uk_tenant_key_active` (`tenant_id`, `env_key`, `active`)
+`active_name` VARCHAR(100) GENERATED ALWAYS AS (IF(active = 1, name, NULL)) VIRTUAL,
+UNIQUE KEY `uk_tenant_active_name` (`tenant_id`, `active_name`)
 ```
+
+- MySQL 唯一索引忽略 NULL，`active = 0` 的行因此退出该键的覆盖范围，历史删除行可以无限累积
+- 存活行的约束强度不变：同租户内 `active = 1` 的行仍然唯一
+- 把已删行改回 `active = 1` 会重新撞键，这是预期行为：不允许两行同名复活
+- 唯一键左前缀已含 `tenant_id`，原有的 `idx_tenant_id` 一并删除
+- 加键前若存量已有重复的存活行，先改名（如 `原名#dup-<id>`）再加键，不删任何行（见 V43）
+- 只放宽「已删行」这一侧时不需要回填：旧键已保证存活行唯一，新键只改变删除之后的行为（见 V45）
 
 ## 四、数据类型规范
 

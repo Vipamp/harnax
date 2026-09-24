@@ -160,7 +160,7 @@ HarnessAgentLauncher.createAgentBase()
 
 | 边界 | 说明 |
 |------|------|
-| 工具只写 `tenant_id = 1` | 同步固定用租户 1；`MybatisTenantInterceptor` 的租户过滤逻辑当前未启用，因此工具是全平台共享资源，不是按租户各存一份 |
+| 工具只写 `tenant_id = 1` | 同步固定用租户 1；仓内不设 MyBatis 租户拦截器（无任何自动租户过滤），因此工具是全平台共享资源，不是按租户各存一份 |
 | 删除残留需人工确认 | 熔断保护命中时（待删条数 ≥ 代码声明条数，或某个工具组同步失败）跳过删除并打 ERROR，需要人工核对代码后重新发布 |
 | `name` 不参与唯一键 | `uk_tenant_bean_method` 不含 `name`，因此代码里两个方法标了同名 `@Tool(name)` 不会被数据库拦下；同步按 `name` 检索记录挂环境参数，这种重名会让参数定义落到错误的行上 |
 | 租户过滤已补齐，工具不在其内 | `mcp_server` 与 `agent` 的列表查询现在都按 `tenant_id` 过滤（`mcp-management` 第 7 节第三轮与第五轮，`AgentMapper.xml` 已映射并插入 `agent.tenant_id`）；工具不参与这套口径——每一行都由同步固定写成 `tenant_id = 1`（见第一行） |

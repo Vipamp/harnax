@@ -32,7 +32,7 @@ MCP（Model Context Protocol）服务是 Agent 的外部工具来源之一，与
 | `oauthConfig` | OAuth 非敏感配置 JSON（`V25`），由 `admin/dto/McpOAuthConfig.kt` 序列化：`authorizationServer`（留空则由 MCP 服务自身的 RFC 9728 元数据发现，见 3.5）、`scopes`、`audience`、`resourceIndicator`（是否发 RFC 8707 `resource` 参数）。**故意做成类型化 DTO 而不是自由 JSON**：客户端密钥与 token 在这上面没有字段可写，才不会被误写进这列——这列会以明文回给前端表单。仅 `authType=OAUTH2` 合法，切走 OAuth 时管理侧把它清成 null |
 | `status` | 启用状态（0 禁用 / 1 启用）。禁用的服务在 admin 组装 spec 时就被整行扣下（连同它那条绑定的 `env_bindings`，否则它解析出的值仍会进 `ToolEnvContext`）；`McpDetailDto` 仍带 `status`，运行侧再挡一道，防旧版 admin 下发 |
 | `isPublic` | 公开状态（0 私有 / 1 公开），实体、创建请求与列缺省（迁移 `V22`）均为 1。列表可见性口径为 `is_public = 1 OR creator = 当前用户`，再叠加租户过滤（见下） |
-| `creator` / `tenantId` | 创建人与租户。`tenantId` 由创建时的 `TenantContext` 写入并出现在 insert / resultMap 中；列表查询在传入 `tenantId` 时追加 `AND tenant_id = #{tenantId}`，与 CLI、技能同口径——`is_public` 只在租户内共享，跨租户的公开服务不再出现在别人列表里。**单行读写同样受租户约束**：`getMcpServer(id)` 取到行后比对当前租户，不属于自己就当不存在，`updateMcpServer` / `toggleMcpServerStatus` / `deleteMcpServer` 都从它进入。这一层是必须的——`MybatisTenantInterceptor` 的 `intercept` 整体是注释状态（空转），`selectById` 的 SQL 里也没有租户条件，只靠列过滤的话猜到自增 id 就能改删别租户的服务 |
+| `creator` / `tenantId` | 创建人与租户。`tenantId` 由创建时的 `TenantContext` 写入并出现在 insert / resultMap 中；列表查询在传入 `tenantId` 时追加 `AND tenant_id = #{tenantId}`，与 CLI、技能同口径——`is_public` 只在租户内共享，跨租户的公开服务不再出现在别人列表里。**单行读写同样受租户约束**：`getMcpServer(id)` 取到行后比对当前租户，不属于自己就当不存在，`updateMcpServer` / `toggleMcpServerStatus` / `deleteMcpServer` 都从它进入。这一层是必须的——仓内不设 MyBatis 租户拦截器（不重写任何 SQL），`selectById` 的 SQL 里也没有租户条件，只靠列过滤的话猜到自增 id 就能改删别租户的服务 |
 | `active` | 逻辑删除标记（0 已删除 / 1 有效） |
 
 ### 2.2 agent_mcp_binding（智能体-MCP 绑定表）
@@ -258,7 +258,7 @@ McpClientBuilder 构建客户端（buildSync / buildAsync）→ agentBuilder.add
 
 **2. 单行读写补租户归属（P1）**
 
-上一轮给列表加了 `tenant_id` 过滤，但 `selectById` 路径没有：`MybatisTenantInterceptor.intercept` 整体处于注释状态（不重写任何 SQL），于是编辑 / 启停 / 删除只要 id 猜得中就跨租户生效。现在 `getMcpServer(id)` 是唯一入口，取到行后比对当前租户，不属于自己就返回 `null`；`updateMcpServer` / `toggleMcpServerStatus` / `deleteMcpServer` 都改为先经它取行，跨租户与不存在共用一句「MCP server not found」，不区分以免变成 id 探测。历史遗留绑定行的表现与之前一致（下发时 `?: continue` 跳过），不额外报「已删除」。
+上一轮给列表加了 `tenant_id` 过滤，但 `selectById` 路径没有，而 MyBatis 层没有任何租户拦截器（它不重写 SQL），于是编辑 / 启停 / 删除只要 id 猜得中就跨租户生效。现在 `getMcpServer(id)` 是唯一入口，取到行后比对当前租户，不属于自己就返回 `null`；`updateMcpServer` / `toggleMcpServerStatus` / `deleteMcpServer` 都改为先经它取行，跨租户与不存在共用一句「MCP server not found」，不区分以免变成 id 探测。历史遗留绑定行的表现与之前一致（下发时 `?: continue` 跳过），不额外报「已删除」。
 
 **3. 服务名唯一键（P1）**
 
@@ -721,7 +721,7 @@ MCP 那条在第十六轮补过，工具这条没有：webui 的下拉 `options=
 
 **环境变量：四处（`admin/service/impl/EnvVariableServiceImpl.kt`）**
 
-- **跨租户单行读**：`getEnvVariable(id)` 原先直接 `selectById`（XML 里只有 `active = 1`，`MybatisTenantInterceptor` 整体是注释状态），而 `GET /env-variables/{id}` 对非敏感值原样回显——猜到自增 id 就能读到别人租户的变量。现在取到行后比对当前租户，不符按「不存在」回答，写法抄 `McpServerServiceImpl.getMcpServer`。顺带把 `updateEnvVariable` / `deleteEnvVariable` / `toggleEnabled` 三道权限校验里各写一遍的 `TenantContext.getTenantId() ?: 1` 收进同一个 `currentTenantId()`（context → token 声明 → 账号自己那行 → 字面量 1）：请求头没带 `X-Tenant-ID` 时那句 `?: 1` 恒等于 1，等于把校验基准钉在一个调用者未必属于的租户上。
+- **跨租户单行读**：`getEnvVariable(id)` 原先直接 `selectById`（XML 里只有 `active = 1`，而 MyBatis 层不设租户拦截器），而 `GET /env-variables/{id}` 对非敏感值原样回显——猜到自增 id 就能读到别人租户的变量。现在取到行后比对当前租户，不符按「不存在」回答，写法抄 `McpServerServiceImpl.getMcpServer`。顺带把 `updateEnvVariable` / `deleteEnvVariable` / `toggleEnabled` 三道权限校验里各写一遍的 `TenantContext.getTenantId() ?: 1` 收进同一个 `currentTenantId()`（context → token 声明 → 账号自己那行 → 字面量 1）：请求头没带 `X-Tenant-ID` 时那句 `?: 1` 恒等于 1，等于把校验基准钉在一个调用者未必属于的租户上。
 - **停用是空操作**：`toggleEnabled` 写下 `enabled = 0`，而下发解析走的 `getDecryptedValue` 根本不读这一列，被停用的值照旧进 `ToolEnvContext`。偏偏智能体配置的下拉已经按 `enabled == 1` 过滤（`listForAgentConfig`），于是这个开关看起来是有效的——轮换或泄露一个值之后想用它止血，止不住。现在解析返回 null；绑定保存侧同时拒引用停用变量（`assertEnvVarRefsBindable`），免得出现「表单里选得到、运行时是空的」。
 - **只翻 `sensitive` 会把值写坏**：这一列描述的是**编码方式**，标记变了值没变，就留下另一种编码的旧数据——1→0 把 AES 密文当明文发给工具（工具拿到一串 base64），0→1 把明文当密文存、下次解密失败、下发时报「没有值」。现在请求不带 `envValue` 而只改 `sensitive` 时走 `reEncode` 就地转换；解密失败时**原样保留**，解不开说明它不是本密钥产的密文，覆盖会烧掉运维真正存进去的东西。
 - **CLI 绑定的引用没人校验（本轮最实质的一条）**：`saveCliBindings` 把 `env_bindings` 原样序列化入库，而下发时 `mergeCliEnvBindings` 照样过 `resolveEnvBindingsJson` 解析——一个未校验的 `envVarId` 等于**把别的租户的密钥写进自己的 CLI 会话环境**。工具与 MCP 两条路都有 `assertEnvVarRefsBindable`，只有 CLI 漏了；漏的理由值得记下来：CLI 在管理员眼里是「装哪些软件」的配置项，看不出是一条密钥通道。现在三条绑定路径共用同一道校验。

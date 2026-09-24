@@ -427,7 +427,7 @@ Agent 产出的文件有两条通路，取决于会话类型。渠道会话（`c
 | 级别 | 问题 | 说明 |
 |------|------|------|
 | 高 | 渠道详情与列表把 `configJson` **原样返回**，即 `appSecret` / 企微 Bot Secret / `encodingAesKey` / 微信 `botToken` 全部明文下发；`/page` 一次泄露整页 | `ChannelResponse.fromEntity` 直接拷 blob，而同仓的 `McpServerResponse`、`ModelProviderResponse`、`EnvVariableResponse` 都做了掩码。脱敏要连前端回填逻辑一起改（否则掩码会被当新值写回），属独立决策 |
-| 高 | 渠道 CRUD 无权限注解、查询无租户条件 | admin 全局 `anyRequest().authenticated()`，`ChannelMapper.xml` 各语句没有 `tenant_id` 谓词（`MybatisTenantInterceptor` 整体注释掉了），与 `AgentMapper.xml` 的写法不一致 |
+| 高 | 渠道 CRUD 无权限注解、查询无租户条件 | admin 全局 `anyRequest().authenticated()`，`ChannelMapper.xml` 各语句没有 `tenant_id` 谓词（仓内不设 MyBatis 租户拦截器），与 `AgentMapper.xml` 的写法不一致 |
 | 中 | 删除渠道只软删 `active=0`，`chn-<uuid>` 会话、沙箱与工作区不清理 | 监听器会在下一个对账周期停掉（这是文档化行为），但 Agent 侧资源留着 |
 | 中 | `http` 类型没有任何 adaptor，四种模式都跑不起来，仍出现在类型下拉里 | 运行时会明确报 `no adaptor registered for channel type http`，admin 侧刻意没把它算进 webhook 校验（否则等于宣称问题出在 webhook） |
 | 中 | 「渠道现在到底连上不」在 UI 上完全看不见 | 列表状态只有 DB 的 `status`；admin 没有代理 `/actuator/channels`，也没有轮询。`enabled` 与 `status` 两个开关语义相近但作用不同，界面上没解释 |

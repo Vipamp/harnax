@@ -582,18 +582,17 @@ throw BizException(messageUtil.getMessage("error.validation.required", "username
 
 业务表必须包含 `tenant_id BIGINT NOT NULL DEFAULT 1`，实体包含 `var tenantId: Long = 1`。
 
-### 11.2 拦截器自动隔离
+### 11.2 隔离靠 SQL 显式条件，没有自动拦截
 
-`MybatisTenantInterceptor` 在 MyBatis 层自动处理：
+租户过滤没有任何自动机制：MyBatis 层不设拦截器，也没有 `@SkipTenantFilter` 之类的方法级豁免注解。因此：
 
-- SELECT：追加 `tenant_id = #{tenantId}` 过滤
-- INSERT：自动填充 `tenant_id`
-- UPDATE / DELETE：追加 `tenant_id` 条件
+- 每条 SELECT / UPDATE / DELETE 的租户条件写在自己的 SQL 里；判断一次查询是否租户安全只看它的 `WHERE`，不能假设有人兜底
+- INSERT 的 `tenant_id` 由服务层显式赋值（取自 `currentTenantId()`），不会自动填充
+- 平台级共享表（如 `agent_tool`）没有 `tenant_id` 列，属设计而非遗漏
 
 ### 11.3 例外与豁免
 
-- **排除表**（`EXCLUDED_TABLES`）：`tenant`、`user_tenant`、`sys_user`、`sys_token_blacklist`、`plan_note`、`tool_call_log`；新增系统级表如需豁免，须在此集合中显式添加并注释原因
-- **方法级豁免**：Mapper 方法标注 `@SkipTenantFilter` 可跳过租户过滤（仅限内部统计、跨租户查询等场景，需评审）
+没有可豁免的自动机制。系统级 / 平台级表（`tenant`、`user_tenant`、`sys_user`、`sys_token_blacklist`、`plan_note`、`tool_call_log`、`agent_tool`）是否带租户条件，由各自的列表与详情 SQL 逐条决定；去掉或不加租户条件时，在该方法（或该表的设计说明）里写明理由，别让下一个读代码的人以为漏了。
 
 ### 11.4 租户上下文
 
@@ -601,7 +600,8 @@ throw BizException(messageUtil.getMessage("error.validation.required", "username
 val tenantId = TenantContext.getTenantId() ?: 1
 ```
 
-- 请求进入时由 `TenantInterceptor` 从 JWT 解析并写入 `TenantContext`
+- 请求进入时由 `TenantInterceptor` 从 `X-Tenant-ID` 请求头取值，非全局管理员还要查 `user_tenant` 校验该用户确实属于这个租户，通过后才写入 `TenantContext`
+- 请求头缺失时该拦截器直接放行且不写入任何值，`currentTenantId()` 因此落到字面量 1——无头调用（内部 API、移动端）不能依赖它做归属判定
 - 请求结束自动清理，禁止在线程池/异步任务中直接透传
 
 ## 十二、安全规范
