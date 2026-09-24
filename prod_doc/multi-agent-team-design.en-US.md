@@ -71,6 +71,8 @@ The session's `teamId` determines entry into team mode, and a NULL `agent_id` st
 - Visibility of a Team does not grant the right to use any private Agent within it. Team configuration must not bypass members' own access controls.
 - Under the recommended single-level scope for the first release, members acting as executors do not load their own team relationships and cannot spawn further subteams. There is no need to build an arbitrary DAG executor for this.
 - If a Team or Agent becomes invalid, return an explicit error at startup or before the next delegation. Do not silently omit members or switch to the lead's model.
+- Team visibility is `is_public OR creator`, the same rule the list query applies: reading, editing, deleting, enabling/disabling and starting a team session by id all use it, so another user in the same tenant sees a private team as non-existent (`Team not found`).
+- The deletion entry point is the session, not the team: while a team still has sessions (`active = 1`) deleting it is **refused**, and the refusal names those sessions — they have to be deleted one by one first. Deleting a session also reclaims that session's team artifacts: the MinIO object goes first, then the `team_artifact` row; an object that cannot be deleted keeps its row, and with MinIO unconfigured the whole batch is kept. This makes "team_id still set, team already gone" unreachable.
 - Keep the resolved configuration fixed throughout a run and its confirmation/resume cycle. Do not switch members, tools, or parameters while waiting for user approval. Configuration activation and cache invalidation must be validated during implementation.
 
 ## 4. Assembling and Using Teams in the UI

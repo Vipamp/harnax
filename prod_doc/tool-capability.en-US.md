@@ -88,7 +88,6 @@ Path: `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sd
 | `displayName` | `""` | English display name in the Admin UI; when blank, the sync falls back to the tool name (`@Tool.name`); also serves as the i18n fallback text |
 | `displayNameZh` | `""` | Chinese display name in the Admin UI (used in the i18n zh-CN locale); the frontend falls back to the English name when blank |
 | `envParamDefs` | `[]` | Array of environment parameter definitions (`ToolEnvParamDef`), synced to the `agent_tool_env_param` table at startup and used as the rendering basis for the env-parameter form when binding tools in the Admin UI; each entry has `key` (parameter name), `description` (UI hint), `required` (mandatory or not), `secret` (secret or not, masked in the UI), and `defaultValue` (default, non-secret only — the sync stores the annotation value verbatim and never goes through the encryptor, so putting a default on a `secret = true` parameter writes a plaintext credential into the table) — see section 3.4 |
-| `timeoutSeconds` | `0` | Execution timeout in seconds; `0` means the system default (written as 30 seconds during DB sync) |
 | `needConfirm` | `false` | **Whether user confirmation is required before execution.** When `true`, an ASK permission rule is generated at runtime: every invocation pauses and waits for user confirmation; it does not inspect input content and is independent of the arguments; it can be skipped in `BYPASS` permission mode. This value comes from the annotation and is not editable in the UI; the only no-code way to tighten it is the binding row `agent_tool_binding.needConfirm` for one agent. The runtime ORs the two, so a binding can only add confirmation, never cancel a confirmation the tool itself declares (`agent_tool.needConfirm` has no write endpoint at all) — see section 6.4 |
 | `dangerousInput` | `false` | **Whether to scan string inputs for dangerous patterns** (dangerous commands like `rm -rf`, sensitive paths like `.env`/`.ssh`). Confirmation is triggered only when an input hits a dangerous pattern, and that confirmation cannot be skipped even in `BYPASS` mode (bypass-immune); safe inputs pass through directly; when combined with `needConfirm`, the input scanning is automatically skipped (the confirmation rule fires first) — see sections 6.3 / 6.4 |
 | `isRequired` | `false` | **Whether this is a mandatory tool**: when `true` it applies to every agent — Admin appends it to the delivered AgentSpec, so no binding row and no user selection is needed; it never appears in the agent wizard candidate list but is still listed on the tool management page (tagged "Required"); the value comes from the annotation only and has no UI switch. See 2.2 / 6.1 |
@@ -139,16 +138,16 @@ Path: `harnax-tools-external/harnax-tools-buildin/src/main/kotlin/com/agnetix/ha
 
 ### 4.1 TimeToolBox (bean `time-tool-box`)
 
-| `@Tool` name | `methodName` | Description | readOnly | needConfirm | isRequired | Timeout | Env params |
-|--------------|--------------|-------------|----------|-------------|------------|---------|------------|
-| `getDate` | `getDate` | Get the current date (`yyyy-MM-dd`) | yes | no | no | default 30s | none |
-| `getDatetime` | `getDatetime` | Get the current datetime (`yyyy-MM-dd HH:mm:ss`) | yes | no | no | default 30s | none |
+| `@Tool` name | `methodName` | Description | readOnly | needConfirm | isRequired | Env params |
+|--------------|--------------|-------------|----------|-------------|------------|------------|
+| `getDate` | `getDate` | Get the current date (`yyyy-MM-dd`) | yes | no | no | none |
+| `getDatetime` | `getDatetime` | Get the current datetime (`yyyy-MM-dd HH:mm:ss`) | yes | no | no | none |
 
 ### 4.2 EmailToolBox (bean `email-tool-box`)
 
-| `@Tool` name | `methodName` | Description | readOnly | needConfirm | isRequired | Timeout | Env params |
-|--------------|--------------|-------------|----------|-------------|------------|---------|------------|
-| `sendEmail` | `sendEmail` | Send an email via SMTP, supports plain text / HTML body | no | **yes** | no | default 30s | 5 (see below) |
+| `@Tool` name | `methodName` | Description | readOnly | needConfirm | isRequired | Env params |
+|--------------|--------------|-------------|----------|-------------|------------|------------|
+| `sendEmail` | `sendEmail` | Send an email via SMTP, supports plain text / HTML body | no | **yes** | no | 5 (see below) |
 
 - Uses Jakarta Mail directly, no Spring dependency.
 - LLM parameters: `to`, `subject`, `body`, `is_html` (optional).
@@ -168,27 +167,26 @@ Implementation:
 
 ### 5.1 Scan
 
-At startup `ToolRegistry` collects `getBeansOfType(ToolBox::class.java)` and reads `@Tool` + `@ToolMeta` per bean, per method, producing a `ToolMetaDescriptor` (`beanName` plus each method's `toolName`, `methodName`, `displayName` / `displayNameZh`, `description`, `readOnly`, `needConfirm`, `isRequired`, `timeoutSeconds`, `envParamDescriptors`). A bean without any `@Tool` method yields no metadata and is never persisted.
+At startup `ToolRegistry` collects `getBeansOfType(ToolBox::class.java)` and reads `@Tool` + `@ToolMeta` per bean, per method, producing a `ToolMetaDescriptor` (`beanName` plus each method's `toolName`, `methodName`, `displayName` / `displayNameZh`, `description`, `readOnly`, `needConfirm`, `isRequired`, `envParamDescriptors`). A bean without any `@Tool` method yields no metadata and is never persisted.
+
+Tool-level timeout is not annotation-driven: `@ToolMeta` has no `timeoutSeconds` (removed in V40 together with `agent_tool.timeout_seconds`); the whole-turn budget is set on the assembly side by `HarnessConfig.turnTimeoutSeconds` — see 6.5.
 
 ### 5.2 Sync (a full convergence pass on every admin start)
 
-1. **Insert**: a method present in code but not in the database → one new `agent_tool` row (`status=1`, `active=1`, `creator='SYSTEM'`, `tenant_id=1`).
-2. **Update**: anything that changed in code — the tool name, description, display names, `needConfirm`, `isRequired`, timeout, env parameter definitions — is written back field by field, `name` included. **`status` converges to 1 as well**; a tool has no "disabled by an operator" state.
-3. **Delete**: identity is `beanName + methodName + toolName`. Any row in the database (including historical `active=0` rows) that is not in the method set declared by the code is **hard-deleted**, together with its `agent_tool_env_param` definitions and its `agent_tool_binding` rows. This covers two kinds of residue: a removed ToolBox class, and a `@Tool` method whose Java name changed or disappeared.
-4. **Env parameter definitions**: `@ToolMeta.envParamDefs` sync into `agent_tool_env_param` with an "update in place + insert new + delete stale" strategy, preserving record IDs.
-5. **Three brakes on deletion** — deleting is the one thing this sync must not get wrong:
-   - when `ToolRegistry` finds no `@Tool` method at all (e.g. the tools module was not component-scanned), the whole sync is skipped and nothing is deleted;
-   - when any tool group failed to sync (`failCount > 0`), nothing is deleted in this run — "extra rows in the database" are not trustworthy while the declared set is incomplete;
-   - when the stale set is at least as large as the declared set, the run is treated as a broken scan rather than a code-side removal: the delete is skipped and an ERROR log lists the would-be victims. Fix the code and re-release.
+1. **Insert**: a name present in the declarations but absent from the database → one new `agent_tool` row (`status=1`, `active=1`, `creator='SYSTEM'`).
+2. **Update**: when a row with the same name already exists, every column is compared; an UPDATE is issued only when something differs, and the difference is written to the startup log (which tool, which columns, from what to what). `name` never takes part in the update: it is the lookup key. `status` and `active` converge to 1 as well; a tool has no "disabled by an operator" state.
+3. **No deletion**: a row that exists in the database but was not declared on this start is **kept as is**; neither the row nor its `agent_tool_binding` rows are touched. Because its name is not in this start's declared name set, it is **never delivered** (see 6.1) — it stays visible to operators only.
+4. **Env parameter definitions**: `@ToolMeta.envParamDefs` sync into `agent_tool_env_param` with an "update in place + insert new + delete stale" strategy, preserving record IDs. What gets deleted is a parameter definition, not a tool, which counts as updating the tool's definition.
+5. **Duplicate names fail hard**: when two `@Tool` methods declare the same `@Tool.name`, the whole sync throws `IllegalStateException` before any write, listing every conflicting `bean::method`. The name is the identity, so letting one of them win would make the bean order decide which method the tool actually executes.
 6. **Config-conflict warning**: a method combining `isRequired = true` with required `envParamDefs` is logged at startup — a required tool has no binding row and therefore no env values, so that combination is guaranteed to fail at runtime (see 6.1).
 
-> What a rename costs depends on which name changed:
-> - `@Tool(name = ...)` only: **converges in place**. The duplicate key is `(tenant_id, bean_name, method_name, active)` and the changed column is `name`, so the row keeps its id and the `agent_tool_binding` rows hanging off it (user-entered env values, the confirmation switch) survive — nothing to re-select.
-> - The Java method name or the bean name: the identity key changes, which is a delete plus a re-insert. The id moves and the old bindings are cascade-deleted, so the tool must be re-selected in the agent configuration.
+> A rename costs one of two things:
+> - Changing only `@Tool(name = ...)`: **this swaps the tool**. The identity is `name`, so the new name inserts a new row while the row under the old name is kept (but no longer delivered), and the `agent_tool_binding` rows on the old row are not migrated — an agent already using the tool silently loses it and needs the new tool re-selected in its configuration.
+> - Changing the Java method name (`methodName`) or the bean name: **still the same tool**. Both are merely parameters for reflective instantiation and take no part in identity, so the row refreshes in place (the difference shows up in the startup log) and its `id` and bindings are all preserved.
 
-> Builtin rows are always written with `tenant_id = 1`, and `MybatisTenantInterceptor`'s filtering is currently disabled: builtin tools are one platform-wide set of rows, not a copy per tenant.
+> Tools are a **platform-level asset**: the `agent_tool` table has no `tenant_id` (dropped in V40) — one shared set of rows for the whole platform, not a copy per tenant.
 
-> Consequently, the required/optional split, whether a tool exists at all, and every field value are code-owned: changing them means a code change plus a restart of admin, not an operator action.
+> Consequently, the required/optional split, whether a tool exists at all, and every field value are code-owned: changing them means a code change plus a re-release, not an operator action.
 
 ### 5.3 External write paths: they do not exist
 
@@ -202,23 +200,24 @@ At startup `ToolRegistry` collects `getBeansOfType(ToolBox::class.java)` and rea
 ### 5.4 Idempotency and troubleshooting anchors
 
 - **When it runs**: `BuiltinToolAutoRegistrar` listens on `ApplicationReadyEvent`, not `@PostConstruct`. `ToolRegistry` scans at `@PostConstruct`, but persisting has to wait for Flyway and the datasource, and the ready event is what guarantees `agent_tool` already exists.
-- **Idempotent**: the whole pass is replayed on every start. Thanks to the unique key plus `ON DUPLICATE KEY UPDATE`, a restart inserts nothing new and changes no value except `update_time`; env parameter definitions converge in place and keep their record IDs.
-- **Fault isolation**: each bean has its own `try/catch`, so a failing tool group affects only that group (the rest is still written) — the price is that this run performs no deletions.
+- **Idempotent**: the whole pass is replayed on every start. The identity is `name` (unique key `uk_agent_tool_name`); an existing row is updated only when a difference is found, so a restart inserts nothing new and changes no value except `update_time`; env parameter definitions converge in place and keep their record IDs.
+- **Fault isolation**: each bean has its own `try/catch`, so a failing tool group affects only that group (the rest is still written); the tool names of the failed group still count as declared, so one failed write never turns into every agent missing that tool.
 - **Log anchors** (grep the admin startup log):
 
 | Log line | Meaning |
 |----------|---------|
-| `Syncing N builtin tool groups to database` | N ToolBox classes found, sync starting |
+| `Syncing N builtin tool group(s), M declared tool(s)` | N ToolBoxes and M declarations scanned, sync starting |
 | `Required tool '...' declares required env params ...` | WARN: `isRequired` contradicts required env params — a required tool has no binding, so those values can never resolve (see 6.1) |
+| `Registered new tool '<name>' (<bean>::<method>)` | A newly declared tool was inserted |
+| `Updated tool '<name>' (id=N): <columns>` | An existing row differed and was refreshed; the column names after the colon are the ones that changed |
 | `Synced tool group: xxx [N methods]` | That group written successfully |
 | `Synced env params for tool 'bean::name': N total, M stale removed` | Env parameter definitions converged; `M > 0` means a parameter definition was removed in code (cleaned from `agent_tool_env_param`) |
-| `Failed to sync tool group: xxx` | That group threw; this run will not delete |
-| `Sync complete: X succeeded, Y failed` | Overview; when `Y > 0` no deletion happened |
-| `Skipping prune: ...` | ERROR: one of the three brakes stopped the delete; surplus rows are still in the table |
-| `Removed N builtin tool record(s) no longer declared by the code: [...]` | Deletion happened; the list is `beanName::methodName(id=…)` |
+| `Failed to sync tool group: xxx` | That group threw; the other groups are unaffected |
+| `Sync complete: X succeeded, Y failed; N tool name(s) declared` | Overview; `N` is the total number of names declared on this start |
+| `Duplicate @Tool name(s) on the classpath: ...` | Exception: duplicate names, startup fails; the parentheses list every conflicting `bean::method` |
 | `No @Tool annotated methods found, skipping sync` | Nothing was scanned; the whole sync was skipped |
 
-- **Unit coverage**: the convergence rules are pinned by `harnax-admin/src/test/kotlin/com/agnetix/harnax/admin/registrar/BuiltinToolAutoRegistrarTest.kt` (8 cases), case IDs in `docs/unit-test-cases.md` §5.2; the tool service keeps only queries, so the former "write entry rejects BUILTIN" guard cases were deleted together with the write endpoints, and `docs/unit-test-cases.md` §5.1 now registers the query and response-assembly cases.
+- **Unit coverage**: the convergence rules are pinned by `harnax-admin/src/test/kotlin/com/agnetix/harnax/admin/registrar/BuiltinToolAutoRegistrarTest.kt` (9 cases: insert, no diff means no write, refresh on diff, a disabled row converging back to enabled, undeclared rows left untouched, duplicate name rejected, empty registry skipped, single-group failure isolated, env parameter convergence), case IDs in `docs/unit-test-cases.md` §5.2; the mapper-level write and unique-key behaviour lives in `harnax-entity/src/test/kotlin/com/agnetix/harnax/mapper/AgentToolMapperTest.kt`. The tool service keeps only queries, so the former "write entry rejects BUILTIN" guard cases were deleted together with the write endpoints, and `docs/unit-test-cases.md` §5.1 now registers the query and response-assembly cases.
 
 ## 6. Runtime Tool Assembly in the Agent
 
@@ -230,6 +229,7 @@ Core implementation: `createAgentBase()` in `harnax-agent/harnax-harness-core/sr
 InternalApiController.buildAgentSpecResponse (Admin delivery stage)
         ├─ toolDetails = tools from agent_tool_binding
         │                + enabled builtin tools with is_required=1 (appended, deduped by id, no binding rows)
+        │                − rows whose name is not in this startup's declared name set (see the key points below)
         └─ toolList (legacy JSON) carries only the env-parameter snapshot of bound tools
         ▼
 AgentSpecResolver (admin response → AgentSpec)
@@ -265,7 +265,8 @@ HarnessAgentLauncher.createAgentBase()
 
 Key points:
 
-- **Required tools are injected at delivery**: tools with `is_required = 1` are appended to `toolDetails` by `InternalApiController` (deduped by id against the bindings); the agent wizard cannot select or deselect them. Taking one away means a code change — drop `isRequired` or delete the `@Tool` method — after which the sync pass converges the database (see 5.2).
+- **Undeclared rows are not delivered**: the sync deletes no `agent_tool` row (see 5.2), so the database may keep tools that "no longer exist in code" — their methods are gone, so assembling them at runtime is bound to fail. `buildAgentSpecResponse` filters against `BuiltinToolAutoRegistrar.registeredToolNames()` (the name set declared on this start) and logs every blocked id at WARN; an empty set means the sync never ran, in which case nothing is filtered rather than blocking every tool.
+- **Required tools are injected at delivery**: tools with `is_required = 1` are appended to `toolDetails` by `InternalApiController` (deduped by id against the bindings); the agent wizard cannot select or deselect them. Taking one away means a code change — drop `isRequired` or delete the `@Tool` method — and after the re-release the old row is kept but no longer delivered (see 5.2).
 - **`status` travels with the delivery**: `ToolDetailDto.status` → `ToolConfigAdaptorImpl` restores the entity → runtime skips `status == 0`. Drop any link in that chain and "disable a tool" silently stops working. Since sync forces `status` to 1 and no write endpoint can set it to 0, this skip is purely defensive today.
 - **Required tools have no binding row**, hence no `agent_tool_binding.envBindings` snapshot and no per-agent environment parameters. Do not mark a tool that needs env parameters as `isRequired` — `require()` will always fail with "not configured". Admin logs a warning for that combination at sync time.
 - **Dedup by beanName, grant by method**: multiple `agent_tool` records may share one ToolBox and `addTool` runs only once; because `addTool` registers every method of that ToolBox, the final sweep subtracts the granted method set from `ToolRegistry.getToolMeta(beanName)` and removes the remainder — otherwise selecting one tool in a ToolBox would expose the whole box.
@@ -334,6 +335,20 @@ fun executeCommand(
 
 > Combining note: when both are marked, the runtime skips the `dangerousInput` wrapping — the `needConfirm` ASK rule fires first in the permission engine, making input scanning redundant.
 
+### 6.5 Turn timeout (assembly-side, not a tool attribute)
+
+Timeout is not a property of a tool: `@ToolMeta` has no `timeoutSeconds`, and neither does `agent_tool` (both removed in V40 — the old value made it into the entity but had no reader, so it was decoration from the start).
+
+What actually applies is the **whole-turn budget**, decided by `HarnessConfig.turnTimeoutSeconds`:
+
+| Item | Location | Notes |
+|---|---|---|
+| Config | `harness.turn-timeout-seconds` / `HARNAX_TURN_TIMEOUT_SECONDS` | Defaults to 300 seconds; bound by `HarnessProperties` into `HarnessConfig` |
+| Batch path | `HarnessAgentWrapper.call` | Applies to the whole `harnessAgent.call` |
+| Streaming path | `HarnessAgentWrapper.callStreamInternal` | The same value; deliberately placed before the output-file probe so that probe does not consume budget. A timeout lands in `onErrorResume` like any other stream error and becomes an `ErrorChatEvent` |
+
+> A single tool call has no timeout of its own: a batch of tool calls shares this one turn budget. In a team the lead may wait a long time between delegations, so raise `turn-timeout-seconds` when needed (the team's own `memberTurnTimeoutSeconds` / `confirmTimeoutSeconds` are a separate budget — see `multi-agent-team-design`).
+
 ## 7. Data Model
 
 ### 7.1 agent_tool (tool master table)
@@ -344,15 +359,15 @@ Entity: `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentTool.kt`
 |-------|-------------|
 | `name` / `displayName` / `displayNameZh` | Tool identifier and English/Chinese display names |
 | `description` | Tool description (sent to the LLM) |
-| `beanName` / `methodName` | Locate the ToolBox bean and method; together with `tenant_id` and `active` they form the identity key |
-| `requiredEnvParamKeys` | Required env parameter key list (JSON); the definitions themselves live in `agent_tool_env_param` (see 7.3) |
+| `beanName` / `methodName` | Parameters for reflective ToolBox bean and method instantiation; **not part of the identity** |
+| `requiredEnvParamKeys` | Required env parameter key list (JSON); the definitions themselves live in `agent_tool_env_param` (see 7.3). The column only serves management-side display and save-time validation; the runtime never reads it |
 | `readOnly` / `needConfirm` / `isRequired` | Read-only, confirmation-required, and mandatory flags (0/1) |
-| `timeoutSeconds` | Timeout (default 30s) |
-| `status` / `active` | Enabled state and logical-delete flag; `status` is forced to 1 by the startup sync (see 5.2) |
+| `status` / `active` | Enabled state and logical-delete flag; `status` is forced to 1 by the startup sync and `active` is always 1 — the sync deletes no row (see 5.2) |
 
 > Constraints and deletion semantics:
-> - Unique key `uk_tenant_bean_method (tenant_id, bean_name, method_name, active)` (since V4). `name` is **not part of it**, which is exactly what lets the sync rename a row in place (see 5.2); the price is that two methods declaring the same `@Tool(name)` are not caught by the database.
-> - `deleteBuiltinByIds` (a hard delete, called only by the registration pass) is the only DELETE statement left on this table — every row is code-owned, so there is no ownership to guard. The soft delete `deleteById` (`active = 0`) was removed together with the write endpoints, which means `active = 0` can only come from historical data.
+> - Unique key `uk_agent_tool_name (name)` (since V40). `name` is the identity: when two `@Tool` methods in code declare the same name, the registration pass fails outright instead of leaving it to the database to catch (see 5.2).
+> - This table has **no DELETE statement**: the startup sync only inserts and updates, and `agent_tool_binding` / `agent_tool_env_param` are kept alongside the tool. Env parameter definitions still converge with the annotations (that counts as updating the tool definition).
+> - There is no `tenant_id` on the table: tools are a platform-level asset, one shared set of rows.
 
 ### 7.2 agent_tool_binding (agent-tool binding table)
 
@@ -432,7 +447,6 @@ class WeatherToolBox : ToolBox() {
             ToolEnvParamDef(key = "WEATHER_BASE_URL", description = "Weather service base URL", required = false, defaultValue = "https://api.example.com"),
         ],
         needConfirm = false,
-        timeoutSeconds = 15,
     )
     fun getWeather(
         @ToolParam(name = "city", description = "City name, e.g. Hangzhou")
@@ -508,11 +522,11 @@ Refer to `TimeToolBoxTest` and `EmailToolBoxTest` under `harnax-tools-buildin/sr
 ### Step 5: Register the Tool in the Database (Fully Automatic, No Manual Inserts)
 
 1. Build: run `mvn clean install` for the hosting module;
-2. **Restart harnax-admin**: `BuiltinToolAutoRegistrar` scans the `ToolRegistry` and runs the full convergence pass described in 5.2 — new methods inserted, changed methods overwritten, methods no longer present in code deleted along with their bindings; env parameter definitions sync into `agent_tool_env_param`;
+2. **Restart harnax-admin**: `BuiltinToolAutoRegistrar` scans the `ToolRegistry` and runs the full convergence pass described in 5.2 — new names inserted, changed rows refreshed in place only where a column differs, names no longer declared kept as rows but no longer delivered; env parameter definitions sync into `agent_tool_env_param`;
 3. Verify registration: the new tool appears on the Admin UI "Tool Management" page, or confirm the record in the `agent_tool` table;
 4. **Restart harnax-agent-service**: actual execution lives in agent-service; without a restart the `ToolRegistry` lacks the new ToolBox, and the runtime logs a warning and skips the tool (this behaviour has no switch).
 
-> Sync policy reminders: builtin tools are code-owned — adding, changing and deleting them all converge on an admin restart. The tool management page is read-only; there is no edit / delete / disable control. Renaming `@Tool(name = ...)` updates that row in place (`id` and bindings untouched); only renaming the Java method or the bean is a delete plus a re-insert, which drops the agent bindings on the old id (including user-entered env values) so they have to be selected again. When a prune is held back by one of the brakes (a tool group failed to sync, or the stale count reached the declared count), the startup log prints an ERROR listing the records it refused to delete, and the database keeps those temporarily surplus rows.
+> Sync policy reminders: builtin tools are code-owned — adding, changing and removing them all take effect on an admin restart. The tool management page is read-only; there is no edit / delete / disable control. Renaming `@Tool(name = ...)` swaps the tool: a new row under the new name, the old row kept but no longer delivered, and its bindings left behind, so the tool has to be re-selected in the agent configuration; renaming the Java method or the bean keeps the same tool and refreshes the row in place (`id` and bindings untouched). A tool removed from the code keeps its row and its bindings but stops being delivered (see 5.2).
 
 ### Step 6: Bind the Tool to an Agent and Configure Env Variables
 
@@ -540,9 +554,10 @@ Refer to `TimeToolBoxTest` and `EmailToolBoxTest` under `harnax-tools-buildin/sr
 | Env parameter resolves to nothing | A reference entry stores no value in the snapshot, only `envVarId`: as long as the variable still exists it is always resolved to its latest value, so an empty result usually means the envKey disagrees with the code declaration, or `agent_tool_binding.envBindings` has no entry for that key at all (the save-time required/reference checks now block that case first). One silent case remains in rows stored before the change: they may carry a mask string as the value while the variable is already gone, which is what surfaces as stars |
 | The form looked filled, yet the tool gets a string of stars | Those are mask characters, not a value. Two historical sources: a `secret = true` parameter used to prefill its masked default into the binding field, and a reference snapshot used to store `displayValue` (`******` for a sensitive one). Both are fixed now (secrets stay blank, references store no value). The rule is "anything containing `****` does not count as filled", so legacy dirty rows need to be filled in once more |
 | A required tool fails at runtime with "environment parameter not configured" | A tool with `is_required = 1` has no binding row, so it gets no envBindings snapshot at all. Do not declare required env params on a required tool; if the value really must be configurable, keep the tool optional so users can bind it, or have the code fall back via `ToolEnvContext.get(key)` instead of calling `require(key)` |
-| "I want to disable / rename / delete a tool" | There is no such entry point: tools are owned by the code sync (see 5.3) — the write endpoints do not exist and the page has no switch. Remove or rename them by editing the annotations and releasing; a manual row edit is converged back to the code state on the next admin restart |
-| Agents report "tool not found" after a Java method or bean rename | The identity key is `beanName + methodName + toolName`, so changing either of those two is a delete plus a re-insert: the id moved and its `agent_tool_binding` rows were cascade-deleted — re-select the tool in the agent configuration and refill its env parameters. A pure `@Tool(name = ...)` rename does not have this problem; that row is updated in place |
-| A tool the code removed is still in the table | A prune brake fired: some tool group failed to sync, or the stale count reached the declared count. Look for the `Skipping prune` ERROR in the admin startup log, confirm the code is right, then re-release |
+| "I want to disable / rename / delete a tool" | There is no such entry point: tools are owned exclusively by the code sync (see 5.3) — the write endpoints do not exist and the page has no switch. To disable or delete one, drop that `@Tool` method from the code and re-release: the row is kept but no longer delivered (see 5.2). A manual row edit is converged back to the code state on the next admin restart |
+| Agents report "tool not found" after a `@Tool(name = ...)` rename | The identity is `name`, so a rename swaps the tool: the new name inserts a new row, the old row is kept but no longer delivered, and the `agent_tool_binding` rows hanging off the old row do not migrate — go to the agent configuration and re-select the new tool |
+| Agents report "tool not found" after a Java method or bean rename | Those two take no part in identity, so this should not happen: the row refreshes in place and keeps its `id` and bindings. If it does happen, check the startup log for an `Updated tool ... (id=N)` line for that tool first |
+| A tool the code removed is still in the table | Expected behaviour: the sync deletes no row (see 5.2), so the old row is kept as is and is simply no longer delivered. Truly clearing it is a manual operation (confirm nothing binds it, then delete the row) |
 | Context bleed between sessions | Don't cache singleton state; the runtime already creates a fresh ToolBox instance per session — avoid relying on mutable member variables in methods |
 
 
@@ -564,3 +579,5 @@ Refer to `TimeToolBoxTest` and `EmailToolBoxTest` under `harnax-tools-buildin/sr
 | AgentSpec delivery (where required tools are appended) | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt` |
 | Management APIs | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/AgentToolController.kt` |
 | Entities | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentTool.kt`, `AgentToolBinding.kt`, `AgentToolEnvParam.kt` |
+| Turn timeout | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/config/HarnessConfig.kt`, `HarnessAgentWrapper.kt` |
+| Migrations | `harnax-admin/src/main/resources/db/migration/V4__refactor_tool_granularity.sql`, `V17__drop_tool_binding_enable_skip.sql`, `V18__add_tool_binding_unique_key.sql`, `V29__drop_custom_and_http_tool.sql`, `V40__tool_registry_platform_scoped.sql` (platform-level + identity = `name` + tool-level timeout removed) |
