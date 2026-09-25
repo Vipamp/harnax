@@ -107,31 +107,6 @@ export type LoginParams = {
 };
 
   /**
-   * @en-US Login response
-   * @zh-CN 登录响应
-   */
- export type LoginResult = {
-   code?: number;
-   message?: string;
-   data?: {
-      accessToken?: string;
-      tokenType?: string;
-      expiresIn?: number;
-     userInfo?: {
-       userId?: number;
-       username?: string;
-        nickname?: string;
-        avatar?: string;
-        email?: string;
-       phone?: string;
-        gender?: number;
-        isAdmin?: number;
-      };
-    };
-    timestamp?: number;
-  };
-
-  /**
    * @en-US Current user info
    * @zh-CN 当前用户信息
    */
@@ -145,11 +120,6 @@ export type LoginParams = {
     gender?: number;
     isAdmin?: number;
   };
-
- export type FakeCaptcha = {
-  code?: number;
-  status?: string;
- };
 
  /**
  * @en-US Captcha response
@@ -744,6 +714,8 @@ message?: string;
     modelType?: string;
     supportInternet?: number;
     supportReasoning?: number;
+    /** 0: no thinking, 1: optional, 2: required — always present on ModelResponse */
+    thinkingMode?: number;
     supportTool?: number;
     supportMcp?: number;
     supportVision?: number;

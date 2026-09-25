@@ -2,33 +2,6 @@
 /* eslint-disable */
 
 declare namespace API {
-  type CurrentUser = {
-    name?: string;
-    avatar?: string;
-    userid?: string;
-    email?: string;
-    signature?: string;
-    title?: string;
-    group?: string;
-    tags?: { key?: string; label?: string }[];
-    notifyCount?: number;
-    unreadCount?: number;
-    country?: string;
-    access?: string;
-    geographic?: {
-      province?: { label?: string; key?: string };
-      city?: { label?: string; key?: string };
-    };
-    address?: string;
-    phone?: string;
-  };
-
-  type LoginResult = {
-    status?: string;
-    type?: string;
-    currentAuthority?: string;
-  };
-
   type PageParams = {
     current?: number;
     pageSize?: number;
@@ -54,18 +27,6 @@ declare namespace API {
     /** 列表的内容总数 */
     total?: number;
     success?: boolean;
-  };
-
-  type FakeCaptcha = {
-    code?: number;
-    status?: string;
-  };
-
-  type LoginParams = {
-    username?: string;
-    password?: string;
-    autoLogin?: boolean;
-    type?: string;
   };
 
   type ErrorResponse = {
@@ -114,18 +75,6 @@ declare namespace API {
   };
 
   // 模型服务商相关类型
-  type ModelProviderItem = {
-    id: number;
-    type: string;
-    name: string;
-    description?: string;
-    apiKey?: string;
-    baseUrl?: string;
-    status: number;
-    createTime?: string;
-    updateTime?: string;
-  };
-
   type ModelProviderCreateRequest = {
     type: string;
     name: string;
@@ -145,34 +94,7 @@ declare namespace API {
     isPublic?: number;
   };
 
-  // 模型统计信息
-  type ModelStatsInfo = {
-    totalModels: number;
-    enabledModels: number;
-    disabledModels: number;
-  };
-
   // 模型相关类型
-  type ModelItem = {
-    id: number;
-    name: string;
-    modelName: string;
-    providerId: number;
-    providerName?: string;
-    description?: string;
-    modelType: string;
-    supportInternet: number;
-    supportReasoning: number;
-    thinkingMode?: number;
-    supportTool: number;
-    supportMcp: number;
-    supportVision: number;
-    price?: number;
-    status: number;
-    createTime?: string;
-    updateTime?: string;
-  };
-
   type ModelCreateRequest = {
     name: string;
     modelName: string;
@@ -243,33 +165,6 @@ declare namespace API {
     skillId: number;
     skillName: string;
     skillDescription?: string;
-  };
-
-  // Agent tool config (from AgentResponse.ToolItem)
-  type EnvBinding = {
-    envKey?: string;
-    envVarId?: number;
-    envVarName?: string;
-    envValue?: string;
-    customValue?: string;
-  };
-
-  type AgentToolConfig = {
-    toolId?: number;
-    toolName?: string;
-    toolDisplayName?: string;
-    toolDisplayNameZh?: string;
-    toolDescription?: string;
-    needConfirm?: boolean;
-    envBindings?: EnvBinding[];
-  };
-
-  // Agent MCP config (from AgentResponse.McpItem)
-  type AgentMcpConfig = {
-    mcpId?: number;
-    mcpName?: string;
-    mcpDescription?: string;
-    envBindings?: EnvBinding[];
   };
 
   type SessionCreateRequest = {

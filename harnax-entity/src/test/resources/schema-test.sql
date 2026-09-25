@@ -6,6 +6,7 @@
 -- ============================================
 CREATE TABLE IF NOT EXISTS `sys_user` (
     `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT '用户 ID',
+    `tenant_id` BIGINT(20) DEFAULT NULL COMMENT 'Tenant ID (primary tenant)',
     `username` VARCHAR(50) NOT NULL COMMENT '用户名',
     `password` VARCHAR(100) NOT NULL COMMENT '密码',
     `nickname` VARCHAR(50) NOT NULL COMMENT '昵称',
@@ -477,8 +478,6 @@ CREATE TABLE IF NOT EXISTS `user_tenant` (
     `role` VARCHAR(50) NOT NULL DEFAULT 'member' COMMENT 'Role (admin/member)',
     `status` TINYINT(2) DEFAULT 1 COMMENT 'Status (0:disabled, 1:enabled)',
     `joined_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT 'Join time',
-    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT 'Create time',
-    `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_user_tenant` (`user_id`, `tenant_id`),
     KEY `idx_user_id` (`user_id`),
@@ -758,3 +757,97 @@ CREATE TABLE IF NOT EXISTS `agent_mcp_binding` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_agent_mcp_binding_agent_id_mcp_id` (`agent_id`, `mcp_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='智能体-MCP 绑定表';
+
+-- ============================================
+-- 33. API Key (V1)
+-- ============================================
+-- `ApiKeyMapper` lives in this module, so the table has to be here for any test of it to run: without
+-- the CREATE, every statement in that mapper dies on "table doesn't exist".
+CREATE TABLE IF NOT EXISTS `api_key` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'ID',
+    `name` VARCHAR(128) NOT NULL COMMENT 'API Key name',
+    `key_type` VARCHAR(16) NOT NULL DEFAULT 'TEMPORARY' COMMENT 'Key type: PERMANENT, TEMPORARY or SYSTEM',
+    `user_id` BIGINT NULL COMMENT 'Associated user ID (for PERMANENT keys)',
+    `raw_key_encrypted` VARCHAR(256) NULL COMMENT 'AES-encrypted raw key (for PERMANENT/SYSTEM keys only)',
+    `service_name` VARCHAR(64) NULL COMMENT 'Service name (for SYSTEM keys, e.g. channel-service)',
+    `key_hash` VARCHAR(64) NOT NULL COMMENT 'SHA-256 hash of the raw key',
+    `key_prefix` VARCHAR(32) NOT NULL COMMENT 'Key prefix for display (e.g. hnx_sk_live_xxxx)',
+    `scopes` VARCHAR(512) NOT NULL COMMENT 'Comma-separated scopes (e.g. api:chat,api:session)',
+    `tenant_id` BIGINT NULL COMMENT 'Tenant ID',
+    `rate_limit` INT NULL DEFAULT 60 COMMENT 'Rate limit per minute',
+    `enabled` TINYINT(1) NOT NULL DEFAULT 1 COMMENT 'Whether enabled (0:disabled, 1:enabled)',
+    `expires_at` DATETIME NULL COMMENT 'Expiration time',
+    `creator` VARCHAR(64) NULL COMMENT 'Creator',
+    `active` INT NOT NULL DEFAULT 1 COMMENT 'Active status (0:deleted, 1:active)',
+    `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Create time',
+    `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `key_hash` (`key_hash`),
+    KEY `idx_name` (`name`),
+    KEY `idx_key_hash` (`key_hash`),
+    KEY `idx_enabled` (`enabled`),
+    KEY `idx_key_type` (`key_type`),
+    KEY `idx_user_id` (`user_id`),
+    KEY `idx_service_name` (`service_name`),
+    UNIQUE KEY `uk_user_permanent` (`user_id`, `key_type`),
+    UNIQUE KEY `uk_service_system` (`service_name`, `key_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='API Key table (supports PERMANENT / TEMPORARY / SYSTEM types)';
+
+-- ============================================
+-- 34. Environment variable (V1; V45 added the generated column, V46 re-scoped the unique key)
+-- ============================================
+-- `active_env_key` and the key shape are the whole point of mirroring this table rather than sketching
+-- it: the soft-delete collision AGENT-22 was about is a property of that generated column, so a
+-- baseline without it could not express the rule the mapper relies on.
+CREATE TABLE IF NOT EXISTS `env_variable` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'ID',
+    `tenant_id` BIGINT NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
+    `env_key` VARCHAR(200) NOT NULL COMMENT 'Environment variable key',
+    `env_value` TEXT NOT NULL COMMENT 'Environment variable value',
+    `description` VARCHAR(500) DEFAULT NULL COMMENT 'Description',
+    `sensitive` TINYINT(1) DEFAULT '0' COMMENT 'Sensitive flag (0: No, 1: Yes)',
+    `enabled` TINYINT(1) NOT NULL DEFAULT 1 COMMENT 'Enabled status (0: Disabled, 1: Enabled)',
+    `creator` VARCHAR(100) DEFAULT NULL COMMENT 'Creator',
+    `active` TINYINT(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
+    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
+    `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
+    `active_env_key` VARCHAR(200) GENERATED ALWAYS AS (IF(active = 1, `env_key`, NULL)) VIRTUAL,
+    PRIMARY KEY (`id`),
+    KEY `idx_creator` (`creator`),
+    KEY `idx_enabled` (`enabled`),
+    UNIQUE KEY `uk_env_tenant_creator_active_key` (`tenant_id`, `creator`, `active_env_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Environment Variable';
+
+-- ============================================
+-- 35. Mobile session (V1)
+-- ============================================
+CREATE TABLE IF NOT EXISTS `mp_session` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'ID',
+    `user_id` BIGINT NOT NULL COMMENT 'User ID (FK to sys_user)',
+    `session_name` VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'Session name',
+    `router_session_id` VARCHAR(128) NOT NULL DEFAULT '' COMMENT 'Corresponding router session ID',
+    `agent_id` BIGINT NOT NULL DEFAULT 0 COMMENT 'Associated Agent ID',
+    `status` TINYINT NOT NULL DEFAULT 1 COMMENT 'Status (0:archived, 1:active)',
+    `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
+    `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
+    PRIMARY KEY (`id`),
+    KEY `idx_mp_session_user_id` (`user_id`),
+    KEY `idx_mp_session_status` (`status`),
+    KEY `idx_mp_session_agent_id` (`agent_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Mobile chat sessions';
+
+-- ============================================
+-- 36. Mobile chat message (V1)
+-- ============================================
+CREATE TABLE IF NOT EXISTS `mp_chat_message` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'ID',
+    `session_id` BIGINT NOT NULL COMMENT 'Session ID (FK to mp_session)',
+    `role` VARCHAR(32) NOT NULL DEFAULT 'user' COMMENT 'Message role (user/assistant/system)',
+    `content` MEDIUMTEXT COMMENT 'Plain text content',
+    `segments_json` MEDIUMTEXT COMMENT 'Message segments (JSON array)',
+    `token_usage_json` TEXT COMMENT 'Token usage info (JSON object)',
+    `image_urls_json` TEXT COMMENT 'Image URLs (JSON array)',
+    `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
+    PRIMARY KEY (`id`),
+    KEY `idx_mp_chat_message_session_id` (`session_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Mobile chat messages';
