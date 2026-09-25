@@ -6,8 +6,12 @@ import com.agnetix.harnax.admin.dto.SysUserResponse
 import com.agnetix.harnax.admin.dto.SysUserUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.i18n.MessageUtil
+import com.agnetix.harnax.admin.security.SecurityUtils
 import com.agnetix.harnax.admin.service.SysUserService
+import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.entity.SysUser
+import com.agnetix.harnax.mapper.SysUserMapper
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -20,11 +24,14 @@ import org.mockito.ArgumentMatchers.anyString
 import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.verify
+import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
 import org.mockito.quality.Strictness
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
+import org.springframework.security.core.context.SecurityContextHolder
 import java.time.LocalDateTime
 
 /**
@@ -39,6 +46,9 @@ class SysUserControllerTest {
     private lateinit var sysUserService: SysUserService
 
     @Mock
+    private lateinit var sysUserMapper: SysUserMapper
+
+    @Mock
     private lateinit var messageUtil: MessageUtil
 
     @InjectMocks
@@ -46,11 +56,28 @@ class SysUserControllerTest {
 
     private lateinit var testUser: SysUser
     private lateinit var testResponse: SysUserResponse
+    private lateinit var adminUser: SysUser
+    private lateinit var memberUser: SysUser
 
     @BeforeEach
     fun setUp() {
         // MessageUtil 桩成回显消息码：断言只看键，不依赖 bundle 文案
         `when`(messageUtil.getMessage(anyString())).thenAnswer { invocation -> invocation.arguments[0] as String }
+        // SecurityUtils 通过静态 instance 委托到 sysUserMapper
+        SecurityUtils(sysUserMapper).init()
+        adminUser = SysUser().apply {
+            id = 1L
+            username = "admin"
+            isAdmin = 1
+        }
+        memberUser = SysUser().apply {
+            id = 2L
+            username = "zhangsan"
+            isAdmin = 0
+        }
+        // Every endpoint here answers only to a global admin, so the cases below that are about other
+        // behaviour start from an admin caller.
+        mockLoggedInUser(adminUser)
         testUser = SysUser().apply {
             id = 1L
             username = "zhangsan"
@@ -78,6 +105,17 @@ class SysUserControllerTest {
             createTime = testUser.createTime,
             updateTime = testUser.updateTime,
         )
+    }
+
+    @AfterEach
+    fun tearDown() {
+        SecurityContextHolder.clearContext()
+    }
+
+    private fun mockLoggedInUser(user: SysUser) {
+        SecurityContextHolder.getContext().authentication =
+            UsernamePasswordAuthenticationToken(user.username, null, emptyList())
+        `when`(sysUserMapper.selectByUsername(user.username)).thenReturn(user)
     }
 
     @Nested
@@ -449,6 +487,93 @@ class SysUserControllerTest {
 
             assertFalse(result.isSuccess())
             assertEquals("DB error", result.message)
+        }
+    }
+
+    @Nested
+    @DisplayName("Admin-only gate (AGENT-25)")
+    inner class AdminOnlyGate {
+
+        private fun assertRefused(call: () -> ResultVo<*>) {
+            val result = call()
+            assertFalse(result.isSuccess(), "a non-admin must not get a successful user read/write")
+            assertEquals(403, result.code)
+            assertEquals("error.user.admin_only", result.message)
+            verifyNoInteractions(sysUserService)
+        }
+
+        @Test
+        @DisplayName("pageSysUser - non-admin refused")
+        fun `pageSysUser should be refused for a non-admin`() {
+            mockLoggedInUser(memberUser)
+            assertRefused { controller.pageSysUser(1, 10, null, null, null) }
+        }
+
+        @Test
+        @DisplayName("getSysUser - non-admin refused")
+        fun `getSysUser should be refused for a non-admin`() {
+            mockLoggedInUser(memberUser)
+            assertRefused { controller.getSysUser(1L) }
+        }
+
+        @Test
+        @DisplayName("createUser - non-admin refused")
+        fun `createUser should be refused for a non-admin`() {
+            mockLoggedInUser(memberUser)
+            val request = SysUserCreateRequest(username = "lisi", password = "password123", nickname = "Li Si")
+            assertRefused { controller.createUser(request) }
+        }
+
+        @Test
+        @DisplayName("updateSysUser - non-admin refused")
+        fun `updateSysUser should be refused for a non-admin`() {
+            mockLoggedInUser(memberUser)
+            assertRefused { controller.updateSysUser(2L, SysUserUpdateRequest(nickname = "Self Promoted", isAdmin = 1)) }
+        }
+
+        @Test
+        @DisplayName("toggleSysUser - non-admin refused")
+        fun `toggleSysUser should be refused for a non-admin`() {
+            mockLoggedInUser(memberUser)
+            assertRefused { controller.toggleSysUser(2L, 0) }
+        }
+
+        @Test
+        @DisplayName("deleteSysUser - non-admin refused")
+        fun `deleteSysUser should be refused for a non-admin`() {
+            mockLoggedInUser(memberUser)
+            assertRefused { controller.deleteSysUser(3L) }
+        }
+
+        @Test
+        @DisplayName("check endpoints - non-admin refused")
+        fun `check endpoints should be refused for a non-admin`() {
+            mockLoggedInUser(memberUser)
+            assertRefused { controller.checkUsername("zhangsan") }
+            assertRefused { controller.checkPhone("13800138000") }
+            assertRefused { controller.checkEmail("zhangsan@example.com") }
+        }
+
+        @Test
+        @DisplayName("pageSysUser - a principal with no user row is refused")
+        fun `pageSysUser should be refused when the caller resolves to no user`() {
+            // Fail closed: a bearer of the platform's internal secret authenticates as
+            // `internal-service`, which is no SysUser at all.
+            SecurityContextHolder.getContext().authentication =
+                UsernamePasswordAuthenticationToken("internal-service", null, emptyList())
+            `when`(sysUserMapper.selectByUsername("internal-service")).thenReturn(null)
+            assertRefused { controller.pageSysUser(1, 10, null, null, null) }
+        }
+
+        @Test
+        @DisplayName("pageSysUser - the flag comes from the user row, not the caller's name")
+        fun `gate should read the persisted flag rather than the principal`() {
+            // Principal `admin` resolving to a non-admin row is the self-promotion shape: update copies
+            // isAdmin verbatim, so an open write endpoint here would undo the read gate.
+            SecurityContextHolder.getContext().authentication =
+                UsernamePasswordAuthenticationToken("admin", null, emptyList())
+            `when`(sysUserMapper.selectByUsername("admin")).thenReturn(memberUser)
+            assertRefused { controller.pageSysUser(1, 10, null, null, null) }
         }
     }
 }
