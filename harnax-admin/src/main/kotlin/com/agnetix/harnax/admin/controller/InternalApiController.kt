@@ -39,7 +39,6 @@ import com.agnetix.harnax.mapper.McpServerMapper
 import com.agnetix.harnax.mapper.ModelMapper
 import com.agnetix.harnax.mapper.ModelProviderMapper
 import com.agnetix.harnax.mapper.SessionMapper
-import com.agnetix.harnax.mapper.SkillMapper
 import com.agnetix.harnax.mapper.TeamMapper
 import com.agnetix.harnax.mapper.TeamMemberMapper
 import com.agnetix.harnax.mapper.TeamSkillBindingMapper
@@ -65,7 +64,6 @@ class InternalApiController(
     private val envVariableService: EnvVariableService,
     private val agentToolMapper: AgentToolMapper,
     private val mcpServerMapper: McpServerMapper,
-    private val skillMapper: SkillMapper,
     private val cliBindingMapper: AgentCliBindingMapper,
     private val cliMapper: CliMapper,
     private val mcpOAuthUserService: McpOAuthUserService,
@@ -747,7 +745,10 @@ class InternalApiController(
             val cliIds = cliBindings.map { it.cliId }.distinct()
             val clisById = cliMapper.selectByIds(cliIds).associateBy { it.id }
             val skillIds = clisById.values.mapNotNull { it.skillId }.distinct()
-            val skillById = if (skillIds.isEmpty()) emptyMap() else skillMapper.selectByIds(skillIds).associateBy { it.id }
+            // Same resolver, same tenant basis as the agent's own skills above: a `cli.skill_id` written
+            // before the save-time guard existed must not carry another tenant's SKILL.md inside the
+            // package that ships it.
+            val cliSkillById = skillBindingResolver.deliverable(skillIds, agentTenantId).associateBy { it.id }
             cliBindings.mapNotNull { binding ->
                 val cli = clisById[binding.cliId]
                 if (cli == null) {
@@ -769,10 +770,16 @@ class InternalApiController(
                         runtimeEnv = readStringMap(cli.runtimeEnv),
                         envBindings = mergeCliEnvBindings(binding.envBindings, cli.envParams, agentTenantId),
                         skill = cli.skillId?.let { skillId ->
-                            val skill = skillById[skillId]
+                            val skill = cliSkillById[skillId]
                             when {
                                 skill == null -> {
-                                    log.warn("CLI '{}' (id={}) points at skill {} which is gone", cli.name, cli.id, skillId)
+                                    log.warn(
+                                        "CLI '{}' (id={}) points at skill {} which is gone or outside agent tenant {}",
+                                        cli.name,
+                                        cli.id,
+                                        skillId,
+                                        agentTenantId,
+                                    )
                                     null
                                 }
                                 // The package registrar keeps this row in step with `cli.status` (I5),

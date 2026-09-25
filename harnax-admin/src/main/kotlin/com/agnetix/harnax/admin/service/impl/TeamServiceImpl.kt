@@ -20,7 +20,6 @@ import com.agnetix.harnax.entity.TeamSkillBinding
 import com.agnetix.harnax.mapper.AgentMapper
 import com.agnetix.harnax.mapper.ModelMapper
 import com.agnetix.harnax.mapper.SessionMapper
-import com.agnetix.harnax.mapper.SkillMapper
 import com.agnetix.harnax.mapper.TeamMapper
 import com.agnetix.harnax.mapper.TeamMemberMapper
 import com.agnetix.harnax.mapper.TeamSkillBindingMapper
@@ -48,7 +47,6 @@ class TeamServiceImpl(
     private val modelMapper: ModelMapper,
     private val modelService: ModelService,
     private val sessionMapper: SessionMapper,
-    private val skillMapper: SkillMapper,
     private val skillRepositoryService: SkillRepositoryService,
     private val skillBindingResolver: SkillBindingResolver,
 ) : TeamService {
@@ -223,7 +221,14 @@ class TeamServiceImpl(
     /** One batched read per page or detail call instead of one query per member. */
     private fun agentsOf(agentIds: List<Long>): Map<Long, Agent> = if (agentIds.isEmpty()) emptyMap() else agentMapper.selectByIds(agentIds).associateBy { it.id }
 
-    private fun skillsOf(skillIds: List<Long>): Map<Long, Skill> = if (skillIds.isEmpty()) emptyMap() else skillMapper.selectByIds(skillIds).associateBy { it.id }
+    /**
+     * Rows behind the lead's skill bindings, read with the same visibility rule a binding is saved under.
+     *
+     * `SkillMapper.selectByIds` carries no tenant condition, so a bare read here can name another tenant's
+     * skill on this page while the runtime — which asks this same resolver — never loads its `SKILL.md`.
+     * Going through the resolver is what keeps the page describing only what actually loads.
+     */
+    private fun skillsOf(skillIds: List<Long>): Map<Long, Skill> = skillBindingResolver.deliverable(skillIds, currentTenantId()).associateBy { it.id }
 
     /**
      * Whether the lead can actually run on this model.

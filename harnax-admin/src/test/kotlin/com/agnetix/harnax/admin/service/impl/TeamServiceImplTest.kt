@@ -19,7 +19,6 @@ import com.agnetix.harnax.entity.TeamSkillBinding
 import com.agnetix.harnax.mapper.AgentMapper
 import com.agnetix.harnax.mapper.ModelMapper
 import com.agnetix.harnax.mapper.SessionMapper
-import com.agnetix.harnax.mapper.SkillMapper
 import com.agnetix.harnax.mapper.TeamMapper
 import com.agnetix.harnax.mapper.TeamMemberMapper
 import com.agnetix.harnax.mapper.TeamSkillBindingMapper
@@ -87,9 +86,6 @@ class TeamServiceImplTest {
     private lateinit var sessionMapper: SessionMapper
 
     @Mock
-    private lateinit var skillMapper: SkillMapper
-
-    @Mock
     private lateinit var skillRepositoryService: SkillRepositoryService
 
     @Mock
@@ -124,7 +120,7 @@ class TeamServiceImplTest {
         }
         `when`(modelMapper.selectById(anyLong())).thenAnswer { models[it.getArgument<Long>(0)] }
         `when`(modelService.getVisibleModel(anyLong())).thenAnswer { models[it.getArgument<Long>(0)] }
-        `when`(skillMapper.selectByIds(any())).thenAnswer { invocation ->
+        `when`(skillBindingResolver.deliverable(any(), anyLong())).thenAnswer { invocation ->
             invocation.getArgument<List<Long>>(0).mapNotNull { skills[it] }
         }
         `when`(skillRepositoryService.getSkillRepository(anyLong())).thenAnswer { invocation ->
@@ -167,7 +163,6 @@ class TeamServiceImplTest {
             modelMapper = modelMapper,
             modelService = modelService,
             sessionMapper = sessionMapper,
-            skillMapper = skillMapper,
             skillRepositoryService = skillRepositoryService,
             skillBindingResolver = skillBindingResolver,
         )
@@ -770,6 +765,29 @@ class TeamServiceImplTest {
 
             assertEquals(listOf(100L, 101L), response.skillList.map { it.skillId })
             assertEquals("#101", response.skillList[1].skillName)
+        }
+
+        @Test
+        fun `the lead skills are read through the visibility resolver with the tenant it must respect`() {
+            `when`(teamSkillBindingMapper.selectByTeamId(TEAM_ID)).thenReturn(listOf(skillBinding(100L), skillBinding(101L)))
+
+            service.convertToResponse(team())
+
+            // `skillMapper.selectByIds` carries no tenant condition, so a binding row saved before the
+            // save-time guard existed would name another tenant's skill on this page.
+            verify(skillBindingResolver).deliverable(listOf(100L, 101L), TENANT)
+        }
+
+        @Test
+        fun `a bound skill the tenant may not receive is flagged instead of being described`() {
+            `when`(teamSkillBindingMapper.selectByTeamId(TEAM_ID)).thenReturn(listOf(skillBinding(100L), skillBinding(101L)))
+            `when`(skillBindingResolver.deliverable(listOf(100L, 101L), TENANT)).thenReturn(listOf(skills.getValue(100L)))
+
+            val response = service.convertToResponse(team())
+
+            assertEquals(listOf(true, false), response.skillList.map { it.skillAvailable })
+            assertEquals("#101", response.skillList[1].skillName)
+            assertNull(response.skillList[1].skillDescription)
         }
 
         @Test

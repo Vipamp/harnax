@@ -104,6 +104,11 @@ class InternalApiControllerTest {
     @Mock
     private lateinit var skillBindingMapper: AgentSkillBindingMapper
 
+    /**
+     * Not a controller dependency any more — every skill read goes through the resolver below. The cases
+     * still populate it because that is the plainest way to say which skill rows exist; the delegation in
+     * [stubSkillDelivery] hands those rows to the resolver.
+     */
     @Mock
     private lateinit var skillMapper: SkillMapper
 
@@ -1042,6 +1047,44 @@ class InternalApiControllerTest {
             // The drop itself belongs to SkillBindingResolverTest; what this layer can get wrong is
             // asking at all — a plain `skillMapper.selectByIds` here would deliver every bound row.
             verify(skillBindingResolver).deliverable(listOf(11L), 7L)
+        }
+
+        @Test
+        @DisplayName("CLI 自带技能也按 agent 的租户向解析器取行，不是裸查")
+        fun `getAgentSpec should scope a CLI skill to the agents tenant`() {
+            stubAgentWithSkills()
+            stubCli(7L, skillId = 32L, skillRow = skill(32L, "cli-skill", 1))
+            `when`(agentMapper.selectById(100L)).thenReturn(
+                Agent().apply {
+                    id = 100L
+                    name = "Skill Agent"
+                    systemPrompt = "You are a skill agent"
+                    modelId = 5L
+                    tenantId = 9L
+                },
+            )
+
+            controller.getAgentSpec("web-skill")
+
+            // A CLI's skill is the same kind of secret as an agent's own: a bare `selectByIds` here hands
+            // over the row whatever tenant it belongs to.
+            verify(skillBindingResolver).deliverable(listOf(32L), 9L)
+        }
+
+        @Test
+        @DisplayName("解析器不给行的 CLI 技能留空，包本身照常下发")
+        fun `getAgentSpec should deliver the CLI without a skill the tenant may not receive`() {
+            stubAgentWithSkills()
+            stubCli(7L, skillId = 32L, skillRow = skill(32L, "cli-skill", 1))
+            `when`(skillBindingResolver.deliverable(listOf(32L), 1L)).thenReturn(emptyList())
+
+            val cli = controller.getAgentSpec("web-skill").data?.cliDetails?.single()
+
+            assertNotNull(cli, "the CLI is the caller's own; a skill it cannot reach is not a reason to drop it")
+            assertNull(
+                cli?.skill,
+                "a skill outside this tenant must not travel inside the CLI that ships it",
+            )
         }
 
         @Test
