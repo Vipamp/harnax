@@ -5,8 +5,10 @@ import org.junit.jupiter.api.Order
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.TestMethodOrder
+import org.springframework.http.HttpMethod
 import kotlin.random.Random
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -149,6 +151,26 @@ class SkillCrudIT : BaseAdminIT() {
 
     @Test
     @Order(9)
+    fun `detail of another tenant's skill answers exactly like a missing id`() {
+        // AGENT-27: this read threw a tenant refusal, which the controller flattened into a 500 after
+        // confirming the skill exists — and a skill row carries its SKILL.md and resources.
+        val unknownId = 999_999_998L
+        val asOtherTenant = exchange(HttpMethod.GET, "/api/admin/skills/${locateSkillId()}", tenantId = 940_005L)
+        val hidden = parseBody(asOtherTenant)
+        val asMissingId = getJson("/api/admin/skills/$unknownId")
+
+        assertEquals(200, asOtherTenant.statusCode.value(), "an invisible skill must answer HTTP 200 with an envelope 404")
+        assertEquals(404, hidden["code"].asInt(), "another tenant's skill must not read as a success: $hidden")
+        assertTrue(hidden["data"] == null || hidden["data"].isNull, "a refusal must not carry the row")
+        assertEquals(asMissingId["message"].asText(), hidden["message"].asText(), "a foreign skill has to answer like a missing one")
+        assertNotEquals("error.skill.notfound", hidden["message"].asText(), "the refusal must be the bundle's text, not the key")
+
+        // The owning tenant still reads it, so nothing about the legitimate path changed
+        assertEquals(skillName, assertOk(getJson("/api/admin/skills/${locateSkillId()}"))["name"].asText())
+    }
+
+    @Test
+    @Order(10)
     fun `delete skill then detail lookup reports not found`() {
         assertOk(deleteJson("/api/admin/skills/${locateSkillId()}"))
 
@@ -164,7 +186,7 @@ class SkillCrudIT : BaseAdminIT() {
     }
 
     @Test
-    @Order(10)
+    @Order(11)
     fun `cleanup delete skill repository`() {
         assertOk(deleteJson("/api/admin/skill-repositories/${locateRepoId()}"))
         val node = getJson("/api/admin/skill-repositories/$repoId")

@@ -8,6 +8,7 @@ import org.junit.jupiter.api.TestMethodOrder
 import org.springframework.http.HttpMethod
 import kotlin.random.Random
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -166,6 +167,26 @@ class SkillRepositoryCrudIT : BaseAdminIT() {
 
     @Test
     @Order(14)
+    fun `detail of another tenant's repository answers exactly like a missing id`() {
+        // AGENT-27: this read threw a tenant refusal, which the controller flattened into a 500 after
+        // confirming the repository exists — and the repository row carries its archive source.
+        val unknownId = 999_999_998L
+        val asOtherTenant = exchange(HttpMethod.GET, "/api/admin/skill-repositories/${locateRepoId()}", tenantId = 940_004L)
+        val hidden = parseBody(asOtherTenant)
+        val asMissingId = getJson("/api/admin/skill-repositories/$unknownId")
+
+        assertEquals(200, asOtherTenant.statusCode.value(), "an invisible repository must answer HTTP 200 with an envelope 404")
+        assertEquals(404, hidden["code"].asInt(), "another tenant's repository must not read as a success: $hidden")
+        assertTrue(hidden["data"] == null || hidden["data"].isNull, "a refusal must not carry the row")
+        assertEquals(asMissingId["message"].asText(), hidden["message"].asText(), "a foreign repository has to answer like a missing one")
+        assertNotEquals("error.skill.repository.notfound", hidden["message"].asText(), "the refusal must be the bundle's text, not the key")
+
+        // The owning tenant still reads it, so nothing about the legitimate path changed
+        assertEquals(repoName, assertOk(getJson("/api/admin/skill-repositories/${locateRepoId()}"))["name"].asText())
+    }
+
+    @Test
+    @Order(15)
     fun `delete repository then detail reports not found`() {
         assertOk(deleteJson("/api/admin/skill-repositories/${locateRepoId()}"))
 

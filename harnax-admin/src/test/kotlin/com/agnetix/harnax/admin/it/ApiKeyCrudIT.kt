@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Order
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.TestMethodOrder
+import org.springframework.http.HttpMethod
 import kotlin.random.Random
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -131,5 +132,33 @@ class ApiKeyCrudIT : BaseAdminIT() {
             it["name"]?.asText() == keyName
         }
         assertTrue(record == null, "deleted key should not appear in page result")
+    }
+
+    @Test
+    @Order(11)
+    fun `detail of another user's key answers exactly like a missing id`() {
+        // AGENT-27: this read threw a permission refusal, which the controller flattened into a 500
+        // after confirming the key exists and who created it
+        val name = "it_apikey_foreign_$suffix"
+        val created = assertOk(
+            postJson("/api/admin/api-keys", mapOf("name" to name, "scopes" to "api:chat", "rateLimit" to 10)),
+        )
+        val id = created["id"].asLong()
+        val intruderToken = jwtUtil.generateToken(99998L, "it_apikey_intruder_$suffix", 1L, 0)
+        try {
+            val asIntruder = parseBody(exchange(HttpMethod.GET, "/api/admin/api-keys/$id", token = intruderToken))
+            assertEquals(404, asIntruder["code"].asInt(), "another user's key must not read as a success: $asIntruder")
+            assertTrue(asIntruder["data"] == null || asIntruder["data"].isNull, "a refusal must not carry the row")
+            val message = asIntruder["message"].asText()
+            assertTrue(message.isNotBlank() && message != "error.apikey.notfound", "message should resolve from the bundle: $message")
+
+            val asUnknownId = parseBody(exchange(HttpMethod.GET, "/api/admin/api-keys/999999999", token = intruderToken))
+            assertEquals(asUnknownId["message"].asText(), message, "a foreign row has to answer like a missing one")
+
+            // The owner still reads it, so nothing about the legitimate path changed
+            assertEquals(name, assertOk(getJson("/api/admin/api-keys/$id"))["name"].asText())
+        } finally {
+            deleteJson("/api/admin/api-keys/$id")
+        }
     }
 }

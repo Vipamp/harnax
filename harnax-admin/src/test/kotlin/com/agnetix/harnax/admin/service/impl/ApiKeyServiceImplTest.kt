@@ -1,11 +1,14 @@
 package com.agnetix.harnax.admin.service.impl
 
+import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.ApiKeyUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.entity.ApiKeyEntity
 import com.agnetix.harnax.mapper.ApiKeyMapper
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
@@ -24,6 +27,9 @@ import org.mockito.kotlin.any
 import org.mockito.kotlin.argThat
 import org.mockito.kotlin.never
 import org.mockito.quality.Strictness
+import org.springframework.mock.web.MockHttpServletRequest
+import org.springframework.web.context.request.RequestContextHolder
+import org.springframework.web.context.request.ServletRequestAttributes
 import java.time.LocalDateTime
 
 /**
@@ -45,6 +51,9 @@ class ApiKeyServiceImplTest {
 
     @Mock
     private lateinit var aesUtil: AesUtil
+
+    @Mock
+    private lateinit var messageUtil: MessageUtil
 
     @InjectMocks
     private lateinit var apiKeyService: ApiKeyServiceImpl
@@ -108,6 +117,28 @@ class ApiKeyServiceImplTest {
             createTime = LocalDateTime.now()
             updateTime = LocalDateTime.now()
         }
+
+        // MessageUtil echoes the key: assertions name the bundle key, never its locale text
+        `when`(messageUtil.getMessage(anyString())).thenAnswer { invocation -> invocation.arguments[0] as String }
+    }
+
+    @AfterEach
+    fun tearDown() {
+        TenantContext.clear()
+        RequestContextHolder.resetRequestAttributes()
+    }
+
+    /**
+     * Stands for a signed-in non-admin caller. `SecurityUtils.getCurrentUser()` still answers null
+     * here because it reads the user row through a Spring bean this test has no context for, so the
+     * admin bypass in the access check stays closed and the owner rules are the ones under test.
+     */
+    private fun loginAs(username: String) {
+        val request = MockHttpServletRequest()
+        request.addHeader("Authorization", "Bearer it-token")
+        RequestContextHolder.setRequestAttributes(ServletRequestAttributes(request))
+        `when`(jwtUtil.validateToken("it-token")).thenReturn(true)
+        `when`(jwtUtil.getUsernameFromToken("it-token")).thenReturn(username)
     }
 
     @Nested
@@ -394,9 +425,63 @@ class ApiKeyServiceImplTest {
         }
     }
 
-    /**
-     * 模拟 SecurityContext 的辅助方法
-     * 注意: 由于 SecurityUtils.getCurrentUser() 依赖 Spring Security Context，
-     * 在纯单元测试中无法完全模拟，因此用 LENIENT strictness 绕过
-     */
+    @Nested
+    @DisplayName("Get API Key access tests")
+    inner class GetApiKeyAccessTests {
+
+        private fun keyOwnedBy(
+            creator: String,
+            tenantId: Long,
+        ): ApiKeyEntity = ApiKeyEntity().apply {
+            id = 7L
+            name = "temp_$creator"
+            keyType = "TEMPORARY"
+            this.creator = creator
+            this.tenantId = tenantId
+            keyHash = "hash-$tenantId-$creator"
+            enabled = 1
+            active = 1
+        }
+
+        @Test
+        fun `getApiKey should answer as absent for another tenant's key`() {
+            TenantContext.setTenantId(2L)
+            `when`(apiKeyMapper.selectById(7L)).thenReturn(keyOwnedBy("someone", 1L))
+
+            assertNull(apiKeyService.getApiKey(7L))
+        }
+
+        @Test
+        fun `getApiKey should answer as absent for another user's key`() {
+            loginAs("intruder")
+            TenantContext.setTenantId(2L)
+            `when`(apiKeyMapper.selectById(7L)).thenReturn(keyOwnedBy("owner", 2L))
+
+            assertNull(apiKeyService.getApiKey(7L))
+        }
+
+        @Test
+        fun `getApiKey should return the caller's own key`() {
+            loginAs("owner")
+            TenantContext.setTenantId(2L)
+            `when`(apiKeyMapper.selectById(7L)).thenReturn(keyOwnedBy("owner", 2L))
+
+            assertEquals("temp_owner", apiKeyService.getApiKey(7L)?.name)
+        }
+
+        @Test
+        fun `deleteApiKey should name the access refusal through its i18n key`() {
+            // A write keeps refusing out loud — the caller has to know nothing happened. Only the
+            // sentence moves into the bundles, where the client can render it in the caller's language
+            loginAs("intruder")
+            TenantContext.setTenantId(2L)
+            `when`(apiKeyMapper.selectById(7L)).thenReturn(keyOwnedBy("owner", 2L))
+
+            val exception = assertThrows<RuntimeException> {
+                apiKeyService.deleteApiKey(7L)
+            }
+            assertEquals("error.apikey.no_permission", exception.message)
+            verify(apiKeyMapper, never()).deleteById(anyLong())
+        }
+    }
 }

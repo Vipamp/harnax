@@ -5,6 +5,7 @@ import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.SkillCreateRequest
 import com.agnetix.harnax.admin.dto.SkillUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.SkillRepositoryService
 import com.agnetix.harnax.admin.skill.SkillInstaller
 import com.agnetix.harnax.admin.skill.SkillSyncRecorder
@@ -91,6 +92,9 @@ class SkillServiceImplTest {
     @Mock
     private lateinit var syncRepositoryMapper: SkillRepositoryMapper
 
+    @Mock
+    private lateinit var messageUtil: MessageUtil
+
     private lateinit var testSkill: Skill
     private lateinit var normalRepo: SkillRepository
     private lateinit var builtinRepo: SkillRepository
@@ -144,6 +148,9 @@ class SkillServiceImplTest {
         // Mock JwtUtil
         `when`(jwtUtil.validateToken(anyString())).thenReturn(true)
         `when`(jwtUtil.getUsernameFromToken(anyString())).thenReturn("admin")
+
+        // MessageUtil echoes the key: assertions name the bundle key, never its locale text
+        `when`(messageUtil.getMessage(anyString())).thenAnswer { invocation -> invocation.arguments[0] as String }
     }
 
     @AfterEach
@@ -191,6 +198,7 @@ class SkillServiceImplTest {
         skillInstaller = createInstaller(),
         skillSyncRecorder = SkillSyncRecorder(syncRepositoryMapper),
         localTmpDir = "/tmp/harnax-skill-test",
+        messageUtil = messageUtil,
     )
 
     private fun createInstaller(): SkillInstaller = SkillInstaller(
@@ -284,18 +292,18 @@ class SkillServiceImplTest {
         }
 
         @Test
-        @DisplayName("getSkill - Throw BizException when skill belongs to another tenant")
-        fun `getSkill should throw BizException when skill belongs to another tenant`() {
+        @DisplayName("getSkill - Answer as absent for another tenant's skill")
+        fun `getSkill should answer as absent for another tenant skill`() {
             // Given
             TenantContext.setTenantId(2L)
             `when`(skillMapper.selectById(1L)).thenReturn(testSkill) // tenantId = 1L
             `when`(skillRepositoryService.getBuiltinRepository()).thenReturn(null)
 
             // When & Then
-            val exception = assertThrows<BizException> {
-                createService().getSkill(1L)
-            }
-            assertEquals("Skill belongs to another tenant", exception.message)
+            // A skill of another tenant reads as the same nothing an unknown id reads as. Throwing
+            // instead told the caller the row exists and whose it is, and the controller flattened
+            // that into a 500.
+            assertNull(createService().getSkill(1L))
         }
 
         @Test
@@ -694,6 +702,26 @@ class SkillServiceImplTest {
                 createService().updateSkill(1L, request)
             }
             assertEquals("Skill name already exists", exception.message)
+            verify(skillMapper, never()).updateById(any())
+        }
+
+        @Test
+        @DisplayName("updateSkill - Refuse another tenant's skill by its i18n key")
+        fun `updateSkill should name the tenant refusal through i18n`() {
+            // Given
+            TenantContext.setTenantId(2L)
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill) // tenantId = 1L
+            `when`(skillRepositoryService.getBuiltinRepository()).thenReturn(null)
+            val request = SkillUpdateRequest(description = "Try to overwrite")
+
+            // When & Then
+            // A write cannot read as "absent" the way the detail read does: the caller has to be told
+            // why nothing happened. What changes here is where the sentence comes from — the bundle,
+            // not a hardcoded English string the client could not translate.
+            val exception = assertThrows<BizException> {
+                createService().updateSkill(1L, request)
+            }
+            assertEquals("error.skill.no_permission", exception.message)
             verify(skillMapper, never()).updateById(any())
         }
 

@@ -16,18 +16,20 @@ import org.apache.ibatis.annotations.Param
  *   tenant-checks that repository first (`SkillServiceImpl.requireWritableRepo`,
  *   `SkillSourceServiceImpl.requireWritable`), so a tenant predicate here would only re-filter on a
  *   value already known to be the caller's own;
- * - Those service checks *throw* ("Skill belongs to another tenant"), which is what the API answers
- *   with. Filtering in SQL instead would turn the same request into an empty result and the answer
- *   into a plain "not found", erasing the difference between "not yours" and "does not exist".
+ * - The service decides per operation what an invisible row is worth: a detail read answers it as
+ *   absent, which the API returns as the same "not found" an unknown id gets, while a write throws
+ *   its named refusal so the caller learns why nothing happened. SQL cannot make that split, which
+ *   is why the predicate stays in the service.
  *
  * Internal callers (`InternalApiController` delivering agent config, `SkillAdaptorImpl` assembling
  * a skill at runtime) have no tenant context at all and depend on these being unscoped, as does the
  * builtin repository whose skills are shared across tenants.
  *
  * **Adding a call site?** Go through a service, or run the row you get back through the check that
- * owns it: `SkillServiceImpl.requireReadable` for a skill, `requireSameTenant` in
- * `SkillRepositoryServiceImpl` for the repository it hangs off. Calling these methods straight
- * from a new controller or service reopens cross-tenant reads of the full SKILL.md and resources.
+ * owns it: `SkillServiceImpl.readable` for a read and `requireReadable` for a write, with
+ * `SkillRepositoryServiceImpl.readable` and `requireSameTenant` for the repository it hangs off.
+ * Calling these methods straight from a new controller or service reopens cross-tenant reads of the
+ * full SKILL.md and resources.
  */
 @Mapper
 interface SkillMapper {

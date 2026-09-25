@@ -7,6 +7,7 @@ import com.agnetix.harnax.admin.dto.SkillRepositoryCreateRequest
 import com.agnetix.harnax.admin.dto.SkillRepositoryUpdateRequest
 import com.agnetix.harnax.admin.dto.SyncSkillResponse
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.SkillRepositoryService
 import com.agnetix.harnax.admin.skill.SkillInstaller
 import com.agnetix.harnax.admin.skill.SkillSourceConfigs
@@ -37,6 +38,7 @@ class SkillRepositoryServiceImpl(
     private val skillLoaderRegistry: SkillLoaderRegistry,
     private val skillInstaller: SkillInstaller,
     @Value($$"${local.tmp-dir}") private val localTmpDir: String?,
+    private val messageUtil: MessageUtil,
 ) : SkillRepositoryService {
 
     private val log = LoggerFactory.getLogger(SkillRepositoryServiceImpl::class.java)
@@ -75,13 +77,12 @@ class SkillRepositoryServiceImpl(
      * API already do. Left unguarded, the legacy detail endpoint answered one tenant with another
      * tenant's repository, including a Git URL that may carry an embedded token. The shared builtin
      * repository is exempt because every tenant legitimately sees it; a null context means an
-     * internal call.
+     * internal call. A row the caller may not read answers as absent, the same nothing an unknown id
+     * answers as.
      */
-    override fun getSkillRepository(id: Long): SkillRepository? = skillRepositoryMapper.selectById(id)?.also {
-        if (!BuiltinRepository.isBuiltin(it.name)) {
-            requireSameTenant(it.tenantId)
-        }
-    }
+    override fun getSkillRepository(id: Long): SkillRepository? = skillRepositoryMapper.selectById(id)?.takeIf { readable(it) }
+
+    private fun readable(repository: SkillRepository): Boolean = BuiltinRepository.isBuiltin(repository.name) || sameTenant(repository.tenantId)
 
     @Transactional(rollbackFor = [Exception::class])
     override fun createSkillRepository(request: SkillRepositoryCreateRequest): Boolean {
@@ -224,14 +225,16 @@ class SkillRepositoryServiceImpl(
         requireSameTenant(repository.tenantId)
     }
 
-    /**
-     * Write operations must target the caller's own tenant.
-     * A null context (internal/system invocation) skips the check.
-     */
+    /** A null context (internal/system invocation) sees everything, the way every other rule here does. */
+    private fun sameTenant(resourceTenantId: Long): Boolean {
+        val currentTenantId = TenantContext.getTenantId() ?: return true
+        return resourceTenantId == currentTenantId
+    }
+
+    /** Write operations must target the caller's own tenant, and have to say so out loud. */
     private fun requireSameTenant(resourceTenantId: Long) {
-        val currentTenantId = TenantContext.getTenantId() ?: return
-        if (resourceTenantId != currentTenantId) {
-            throw BizException("Skill repository belongs to another tenant")
+        if (!sameTenant(resourceTenantId)) {
+            throw BizException(messageUtil.getMessage("error.skill.repository.no_permission"))
         }
     }
 

@@ -4,6 +4,7 @@ import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.SkillRepositoryCreateRequest
 import com.agnetix.harnax.admin.dto.SkillRepositoryUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.skill.SkillInstaller
 import com.agnetix.harnax.admin.skill.loader.SkillLoadResult
 import com.agnetix.harnax.admin.util.JwtUtil
@@ -19,6 +20,7 @@ import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.ArgumentMatchers.anyLong
+import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
@@ -56,6 +58,9 @@ class SkillRepositoryServiceImplTest {
     @Mock
     private lateinit var skillInstaller: SkillInstaller
 
+    @Mock
+    private lateinit var messageUtil: MessageUtil
+
     private lateinit var service: SkillRepositoryServiceImpl
 
     private lateinit var testRepository: SkillRepository
@@ -69,6 +74,7 @@ class SkillRepositoryServiceImplTest {
             skillLoaderRegistry = skillLoaderRegistry,
             skillInstaller = skillInstaller,
             localTmpDir = "/tmp/harnax-test",
+            messageUtil = messageUtil,
         )
 
         // Creating a repository validates its Git config too now, and the registry is a mock: the
@@ -99,6 +105,9 @@ class SkillRepositoryServiceImplTest {
 
         `when`(jwtUtil.validateToken(any())).thenReturn(true)
         `when`(jwtUtil.getUsernameFromToken(any())).thenReturn("admin")
+
+        // MessageUtil echoes the key: assertions name the bundle key, never its locale text
+        `when`(messageUtil.getMessage(anyString())).thenAnswer { invocation -> invocation.arguments[0] as String }
     }
 
     @AfterEach
@@ -302,7 +311,7 @@ class SkillRepositoryServiceImplTest {
             val exception = assertThrows<BizException> {
                 service.updateSkillRepository(1L, request)
             }
-            assertTrue(exception.message!!.contains("another tenant"))
+            assertEquals("error.skill.repository.no_permission", exception.message)
             verify(skillRepositoryMapper, never()).updateById(any())
         }
 
@@ -458,15 +467,13 @@ class SkillRepositoryServiceImplTest {
 
         @Test
         fun `getSkillRepository should not answer with another tenant's repository`() {
-            // 旧版详情接口一直不做租户校验，一个租户能读到另一个租户的仓库，而 Git URL
-            // 里可能嵌着克隆用的 token
+            // The legacy detail endpoint used to answer one tenant with another tenant's repository,
+            // and its Git URL may carry a clone token. Refusing out loud leaked too: it said the row
+            // exists and who owns it. A foreign row now reads as the same nothing an unknown id does.
             TenantContext.setTenantId(99L)
             `when`(skillRepositoryMapper.selectById(1L)).thenReturn(testRepository)
 
-            val exception = assertThrows<BizException> {
-                service.getSkillRepository(1L)
-            }
-            assertTrue(exception.message!!.contains("another tenant"))
+            assertNull(service.getSkillRepository(1L))
         }
 
         @Test
@@ -506,6 +513,20 @@ class SkillRepositoryServiceImplTest {
             assertThrows<BizException> {
                 service.toggleSkillRepository(999L, 0)
             }
+        }
+
+        @Test
+        fun `toggleSkillRepository should name the tenant refusal through its i18n key`() {
+            // A write still says why it refused — only the sentence moves into the bundles, so the
+            // client can render it in the caller's language instead of hardcoded English
+            TenantContext.setTenantId(99L)
+            `when`(skillRepositoryMapper.selectById(1L)).thenReturn(testRepository)
+
+            val exception = assertThrows<BizException> {
+                service.toggleSkillRepository(1L, 0)
+            }
+            assertEquals("error.skill.repository.no_permission", exception.message)
+            verify(skillRepositoryMapper, never()).updateStatus(anyLong(), anyInt())
         }
 
         @Test
@@ -595,7 +616,9 @@ class SkillRepositoryServiceImplTest {
             val exception = assertThrows<BizException> {
                 service.fetchRemoteSkills(1L)
             }
-            assertTrue(exception.message!!.contains("another tenant"))
+            // The read this goes through answers a foreign row as absent, so the refusal is worded
+            // exactly like an id that was never issued: whose repository it is stays unconfirmed
+            assertTrue(exception.message!!.contains("not found"), exception.message ?: "no message")
         }
 
         @Test

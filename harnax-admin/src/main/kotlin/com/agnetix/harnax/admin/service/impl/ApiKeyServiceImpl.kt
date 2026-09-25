@@ -7,6 +7,7 @@ import com.agnetix.harnax.admin.dto.ApiKeyResponse
 import com.agnetix.harnax.admin.dto.ApiKeyUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.security.SecurityUtils
 import com.agnetix.harnax.admin.service.ApiKeyService
 import com.agnetix.harnax.admin.util.AesUtil
@@ -29,6 +30,7 @@ class ApiKeyServiceImpl(
     private val apiKeyMapper: ApiKeyMapper,
     private val jwtUtil: JwtUtil,
     private val aesUtil: AesUtil,
+    private val messageUtil: MessageUtil,
 ) : ApiKeyService {
 
     private val log = LoggerFactory.getLogger(ApiKeyServiceImpl::class.java)
@@ -51,11 +53,12 @@ class ApiKeyServiceImpl(
         return Page.fromPageInfo(apiKeyMapper.selectTemporaryKeys(keyword, enabled, creator, tenantId))
     }
 
-    override fun getApiKey(id: Long): ApiKeyEntity? {
-        val entity = apiKeyMapper.selectById(id) ?: return null
-        checkAccess(entity)
-        return entity
-    }
+    /**
+     * The detail read. A row the caller may not see answers as the same nothing an id that was never
+     * issued answers as; throwing here told the caller the key exists and whose it is, and the
+     * controller flattened that refusal into a 500.
+     */
+    override fun getApiKey(id: Long): ApiKeyEntity? = apiKeyMapper.selectById(id)?.takeIf { accessible(it) }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun createApiKey(request: ApiKeyCreateRequest): ApiKeyCreatedResponse {
@@ -296,15 +299,27 @@ class ApiKeyServiceImpl(
         return entity
     }
 
-    private fun checkAccess(entity: ApiKeyEntity) {
-        if (isAdmin()) return
-        val username = currentUsername()
-        if (entity.creator != username) {
-            throw RuntimeException("No permission to access this API Key")
-        }
+    /**
+     * Whether this caller may see the row at all: an admin sees every key, anyone else only their own
+     * inside their own tenant.
+     *
+     * The tenant test runs first because it needs no caller identity, so a row belonging to another
+     * tenant can be answered as absent without resolving who is asking.
+     */
+    private fun accessible(entity: ApiKeyEntity): Boolean {
+        if (isAdmin()) return true
         val currentTenantId = TenantContext.getTenantId()
-        if (currentTenantId != null && entity.tenantId != currentTenantId) {
-            throw RuntimeException("No permission to access this API Key")
+        if (currentTenantId != null && entity.tenantId != currentTenantId) return false
+        return entity.creator == currentUsername()
+    }
+
+    /**
+     * A write has to say why it refused, so this one keeps throwing. The detail read next to it answers
+     * as absent instead, because a refusal there would confirm that the key exists and who owns it.
+     */
+    private fun checkAccess(entity: ApiKeyEntity) {
+        if (!accessible(entity)) {
+            throw RuntimeException(messageUtil.getMessage("error.apikey.no_permission"))
         }
     }
 

@@ -8,6 +8,7 @@ import com.agnetix.harnax.admin.dto.SkillInstallResponse
 import com.agnetix.harnax.admin.dto.SkillResponse
 import com.agnetix.harnax.admin.dto.SkillUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.SkillRepositoryService
 import com.agnetix.harnax.admin.service.SkillService
 import com.agnetix.harnax.admin.skill.SkillInstaller
@@ -46,6 +47,7 @@ class SkillServiceImpl(
     private val skillInstaller: SkillInstaller,
     private val skillSyncRecorder: SkillSyncRecorder,
     @Value($$"${local.tmp-dir}") private val localTmpDir: String,
+    private val messageUtil: MessageUtil,
 ) : SkillService {
 
     private val log = LoggerFactory.getLogger(SkillServiceImpl::class.java)
@@ -82,8 +84,10 @@ class SkillServiceImpl(
         log.info("Querying skill details, id: {}", id)
 
         // The row carries the full SKILL.md and every bundled resource, so reading it across
-        // tenants would leak another tenant's skill content
-        return skillMapper.selectById(id)?.also { requireReadable(it) }
+        // tenants would leak another tenant's skill content. An unreadable row now answers as the
+        // same nothing an unknown id does: refusing out loud confirmed the skill exists and whose
+        // it is, and the controller turned that into a 500.
+        return skillMapper.selectById(id)?.takeIf { readable(it) }
     }
 
     @Transactional(rollbackFor = [Exception::class])
@@ -278,14 +282,20 @@ class SkillServiceImpl(
     }
 
     /**
-     * Tenant check for single-skill reads. A null context means an internal/system call.
-     * Skills of the shared builtin repository are readable by every tenant.
+     * Tenant rule for a single skill. A null context means an internal/system call, and skills of the
+     * shared builtin repository are readable by every tenant.
      */
+    private fun readable(skill: Skill): Boolean {
+        val currentTenantId = TenantContext.getTenantId() ?: return true
+        if (skill.tenantId == currentTenantId) return true
+        return skill.repositoryId == skillRepositoryService.getBuiltinRepository()?.id
+    }
+
+    /** The write paths have to say why they refused; the detail read answers as absent instead. */
     private fun requireReadable(skill: Skill) {
-        val currentTenantId = TenantContext.getTenantId() ?: return
-        if (skill.tenantId == currentTenantId) return
-        if (skill.repositoryId == skillRepositoryService.getBuiltinRepository()?.id) return
-        throw BizException("Skill belongs to another tenant")
+        if (!readable(skill)) {
+            throw BizException(messageUtil.getMessage("error.skill.no_permission"))
+        }
     }
 
     override fun getByNameAndRepo(repositoryId: Long, name: String): Skill? = skillMapper.selectByNameAndRepo(name, repositoryId)
