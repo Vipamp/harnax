@@ -29,6 +29,7 @@ import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.test.util.ReflectionTestUtils
 import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.context.request.ServletRequestAttributes
+import tools.jackson.module.kotlin.jacksonObjectMapper
 import java.time.LocalDateTime
 
 /**
@@ -115,7 +116,7 @@ class ChannelServiceImplTest {
         fun `page should return paginated results`() {
             // Given
             val channels = listOf(testChannel)
-            `when`(channelMapper.selectChannelList(null, null, null)).thenReturn(channels)
+            `when`(channelMapper.selectChannelList(null, null, null, 1L)).thenReturn(channels)
 
             // When
             val page = createService().page(null, null, null, 1, 10)
@@ -123,56 +124,72 @@ class ChannelServiceImplTest {
             // Then
             assertNotNull(page)
             assertTrue(page.total >= 0)
-            verify(channelMapper).selectChannelList(null, null, null)
+            verify(channelMapper).selectChannelList(null, null, null, 1L)
         }
 
         @Test
         @DisplayName("page - Filter by keyword")
         fun `page should filter by keyword`() {
             // Given
-            `when`(channelMapper.selectChannelList("Test", null, null)).thenReturn(listOf(testChannel))
+            `when`(channelMapper.selectChannelList("Test", null, null, 1L)).thenReturn(listOf(testChannel))
 
             // When
             val page = createService().page("Test", null, null, 1, 10)
 
             // Then
             assertNotNull(page)
-            verify(channelMapper).selectChannelList("Test", null, null)
+            verify(channelMapper).selectChannelList("Test", null, null, 1L)
         }
 
         @Test
         @DisplayName("page - Filter by type")
         fun `page should filter by type`() {
             // Given
-            `when`(channelMapper.selectChannelList(null, "wecom", null)).thenReturn(listOf(testChannel))
+            `when`(channelMapper.selectChannelList(null, "wecom", null, 1L)).thenReturn(listOf(testChannel))
 
             // When
             val page = createService().page(null, "wecom", null, 1, 10)
 
             // Then
             assertNotNull(page)
-            verify(channelMapper).selectChannelList(null, "wecom", null)
+            verify(channelMapper).selectChannelList(null, "wecom", null, 1L)
         }
 
         @Test
         @DisplayName("page - Filter by status")
         fun `page should filter by status`() {
             // Given
-            `when`(channelMapper.selectChannelList(null, null, 1)).thenReturn(listOf(testChannel))
+            `when`(channelMapper.selectChannelList(null, null, 1, 1L)).thenReturn(listOf(testChannel))
 
             // When
             val page = createService().page(null, null, 1, 1, 10)
 
             // Then
             assertNotNull(page)
-            verify(channelMapper).selectChannelList(null, null, 1)
+            verify(channelMapper).selectChannelList(null, null, 1, 1L)
+        }
+
+        @Test
+        @DisplayName("page - Scope the query to the caller's tenant")
+        fun `page should scope the query to the current tenant`() {
+            // Given
+            TenantContext.setTenantId(42L)
+            `when`(channelMapper.selectChannelList(null, null, null, 42L)).thenReturn(listOf(testChannel))
+
+            // When
+            createService().page(null, null, null, 1, 10)
+
+            // Then: the tenant has to travel on the query itself. A list that ignored it would show
+            // every workspace's channels — each carrying its `configJson` credentials — to whoever
+            // opened the page.
+            verify(channelMapper).selectChannelList(null, null, null, 42L)
         }
 
         @Test
         @DisplayName("page - Return empty page when no data")
         fun `page should return empty page when no data`() {
             // Given
-            `when`(channelMapper.selectChannelList(null, null, null)).thenReturn(emptyList())
+            `when`(channelMapper.selectChannelList(null, null, null, 1L)).thenReturn(emptyList())
 
             // When
             val page = createService().page(null, null, null, 1, 10)
@@ -670,7 +687,8 @@ class ChannelServiceImplTest {
         @Test
         @DisplayName("deleteChannel - Delete channel successfully")
         fun `deleteChannel should delete channel successfully`() {
-            // Given
+            // Given: the row belongs to the caller's tenant, which is what the delete now checks first.
+            `when`(channelMapper.selectById(1L)).thenReturn(testChannel)
             `when`(channelMapper.deleteById(1L)).thenReturn(1)
 
             // When
@@ -684,7 +702,8 @@ class ChannelServiceImplTest {
         @Test
         @DisplayName("deleteChannel - Return false when delete fails")
         fun `deleteChannel should return false when delete fails`() {
-            // Given
+            // Given: visible to the caller, yet the soft delete takes no row.
+            `when`(channelMapper.selectById(999L)).thenReturn(testChannel)
             `when`(channelMapper.deleteById(999L)).thenReturn(0)
 
             // When
@@ -783,6 +802,178 @@ class ChannelServiceImplTest {
 
             // Then
             assertEquals("Enterprise WeChat", result.typeDisplayName)
+        }
+    }
+
+    @Nested
+    @DisplayName("configJson Credential Masking Tests")
+    inner class ConfigJsonMaskingTests {
+
+        private val mapper = jacksonObjectMapper()
+
+        private val storedConfig = """{"appId":"cli_a1b2c3","appSecret":"super-secret-app-value"}"""
+
+        private fun feishuChannel(configJson: String): Channel = testChannel.apply {
+            type = "feishu"
+            communicationMode = "websocket"
+            this.configJson = configJson
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        private fun entriesOf(configJson: String?): Map<String, Any?> {
+            assertNotNull(configJson, "the blob is still sent, only its credentials are hidden")
+            return mapper.readValue(configJson, Map::class.java) as Map<String, Any?>
+        }
+
+        private fun savedConfig(): String {
+            val captor = argumentCaptor<Channel>()
+            verify(channelMapper).updateById(captor.capture())
+            return captor.firstValue.configJson ?: ""
+        }
+
+        @Test
+        @DisplayName("convertToResponse - credential keys are hidden, identifiers are not")
+        fun `convertToResponse should mask the credential keys of configJson`() {
+            val shown = entriesOf(createService().convertToResponse(feishuChannel(storedConfig)).configJson)
+
+            assertEquals("cli_a1b2c3", shown["appId"], "an app id identifies the app, it is not a secret")
+            val appSecret = shown["appSecret"].toString()
+            assertNotEquals("super-secret-app-value", appSecret, "a platform app secret must not travel to the browser in clear")
+            assertTrue(appSecret.contains("****"), "the field still has to read as one set value: $appSecret")
+        }
+
+        @Test
+        @DisplayName("convertToResponse - the scan-login token is hidden too")
+        fun `convertToResponse should mask a bot token no form field manages`() {
+            val config = """{"botToken":"ilink-bot-token-value","baseUrl":"https://ilink.example"}"""
+
+            val shown = entriesOf(createService().convertToResponse(feishuChannel(config)).configJson)
+
+            assertNotEquals("ilink-bot-token-value", shown["botToken"], "the WeChat bot token is the whole credential")
+            assertEquals("https://ilink.example", shown["baseUrl"])
+        }
+
+        @Test
+        @DisplayName("convertToResponse - the row keeps what it stored")
+        fun `convertToResponse should not touch the stored blob`() {
+            val channel = feishuChannel(storedConfig)
+
+            createService().convertToResponse(channel)
+
+            assertEquals(storedConfig, channel.configJson, "masking is a display rule, not a write")
+        }
+
+        @Test
+        @DisplayName("updateChannel - an echoed mask keeps the credential it stands for")
+        fun `updateChannel should keep the stored credential when the form echoes its mask`() {
+            val channel = feishuChannel(storedConfig)
+            `when`(channelMapper.selectById(1L)).thenReturn(channel)
+            `when`(channelMapper.updateById(any())).thenReturn(1)
+            val service = createService()
+            // What the edit form holds and sends back is exactly the blob the detail read showed it.
+            val echoed = service.convertToResponse(channel).configJson!!
+            assertNotEquals(storedConfig, echoed)
+
+            service.updateChannel(1L, ChannelUpdateRequest(configJson = echoed))
+
+            val saved = entriesOf(savedConfig())
+            assertEquals("super-secret-app-value", saved["appSecret"], "writing the mask back would replace the credential with its own display form")
+            assertEquals("cli_a1b2c3", saved["appId"])
+        }
+
+        @Test
+        @DisplayName("updateChannel - a typed value replaces the stored credential")
+        fun `updateChannel should store a freshly typed credential`() {
+            val channel = feishuChannel(storedConfig)
+            `when`(channelMapper.selectById(1L)).thenReturn(channel)
+            `when`(channelMapper.updateById(any())).thenReturn(1)
+
+            createService().updateChannel(1L, ChannelUpdateRequest(configJson = """{"appSecret":"a-brand-new-secret"}"""))
+
+            assertEquals("a-brand-new-secret", entriesOf(savedConfig())["appSecret"])
+        }
+
+        @Test
+        @DisplayName("updateChannel - an emptied field really empties")
+        fun `updateChannel should clear a credential the operator emptied`() {
+            val channel = feishuChannel(storedConfig)
+            `when`(channelMapper.selectById(1L)).thenReturn(channel)
+            `when`(channelMapper.updateById(any())).thenReturn(1)
+
+            createService().updateChannel(1L, ChannelUpdateRequest(configJson = """{"appId":"cli_a1b2c3"}"""))
+
+            assertFalse(entriesOf(savedConfig()).containsKey("appSecret"), "clearing a credential must not silently keep it")
+        }
+    }
+
+    @Nested
+    @DisplayName("Tenant Scope Tests")
+    inner class TenantScopeTests {
+
+        /** The same row, owned by somebody else's workspace. */
+        private fun foreignChannel(): Channel = testChannel.apply { tenantId = 2L }
+
+        @Test
+        @DisplayName("getChannel - A row of another tenant answers as missing")
+        fun `getChannel should answer another tenant row as missing`() {
+            // Given
+            TenantContext.setTenantId(1L)
+            `when`(channelMapper.selectById(1L)).thenReturn(foreignChannel())
+
+            // When
+            val result = createService().getChannel(1L)
+
+            // Then: the caller's tenant has to be a predicate on the read, or the list filter stays
+            // cosmetic and any row can be opened by guessing its id.
+            assertNull(result, "a channel outside the current tenant must not be readable by id")
+        }
+
+        @Test
+        @DisplayName("updateChannel - A row of another tenant is refused as a missing one")
+        fun `updateChannel should refuse another tenant row`() {
+            // Given
+            TenantContext.setTenantId(1L)
+            `when`(channelMapper.selectById(1L)).thenReturn(foreignChannel())
+
+            // When
+            val exception = assertThrows<RuntimeException> {
+                createService().updateChannel(1L, ChannelUpdateRequest(name = "Hijacked"))
+            }
+
+            // Then: the same message a nonexistent id produces, so probing ids cannot enumerate
+            // whose channels exist.
+            assertTrue(
+                exception.message!!.contains("Channel not found"),
+                "expected the absent-row refusal, got: ${exception.message}",
+            )
+            verify(channelMapper, never()).updateById(any())
+        }
+
+        @Test
+        @DisplayName("toggleChannelStatus - A row of another tenant is refused")
+        fun `toggleChannelStatus should refuse another tenant row`() {
+            // Given
+            TenantContext.setTenantId(1L)
+            `when`(channelMapper.selectById(1L)).thenReturn(foreignChannel())
+
+            // When & Then
+            val exception = assertThrows<RuntimeException> { createService().toggleChannelStatus(1L, 0) }
+            assertEquals("Channel not found", exception.message)
+            verify(channelMapper, never()).updateStatus(1L, 0)
+        }
+
+        @Test
+        @DisplayName("deleteChannel - A row of another tenant is refused")
+        fun `deleteChannel should refuse another tenant row`() {
+            // Given: the delete used to be a bare `deleteById`, so no read stood between the caller
+            // and another workspace's channel going away.
+            TenantContext.setTenantId(1L)
+            `when`(channelMapper.selectById(1L)).thenReturn(foreignChannel())
+
+            // When & Then
+            val exception = assertThrows<RuntimeException> { createService().deleteChannel(1L) }
+            assertEquals("Channel not found", exception.message)
+            verify(channelMapper, never()).deleteById(1L)
         }
     }
 }

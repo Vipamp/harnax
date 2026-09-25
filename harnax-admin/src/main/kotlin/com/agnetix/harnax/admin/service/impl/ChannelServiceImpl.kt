@@ -45,10 +45,26 @@ class ChannelServiceImpl(
         val safePageNum = pageNum.coerceAtLeast(1)
         val safePageSize = pageSize.coerceIn(1, 1000)
         PageHelper.startPage<Agent>(safePageNum, safePageSize)
-        return Page.fromPageInfo(channelMapper.selectChannelList(keyword, type, status))
+        return Page.fromPageInfo(channelMapper.selectChannelList(keyword, type, status, currentTenantId()))
     }
 
-    override fun getChannel(id: Long): Channel? = channelMapper.selectById(id)
+    /**
+     * The channel of the current tenant, and only that.
+     *
+     * [com.agnetix.harnax.admin.controller.ChannelController] renders a miss as the named envelope 404,
+     * so another workspace's row is indistinguishable from one that never existed. The mutating paths
+     * below read through here for the same reason: without it any id in the platform could be edited,
+     * disabled or deleted by a caller who never saw it in their own list.
+     */
+    override fun getChannel(id: Long): Channel? = channelMapper.selectById(id)?.takeIf { it.tenantId == currentTenantId() }
+
+    /**
+     * The tenant this request acts within — the exact expression [createChannel] stores, so a row is
+     * always readable by whoever was allowed to write it. `TenantInterceptor` fills the context from a
+     * verified `X-Tenant-ID`, and absent that header the request has no workspace to act within but the
+     * default one.
+     */
+    private fun currentTenantId(): Long = TenantContext.getTenantId() ?: DEFAULT_TENANT_ID
 
     @Transactional(rollbackFor = [Exception::class])
     override fun createChannel(request: ChannelCreateRequest): Boolean = try {
@@ -63,7 +79,7 @@ class ChannelServiceImpl(
             configJson = request.configJson
             description = request.description
             status = requireValidStatus(request.status ?: 1)
-            tenantId = TenantContext.getTenantId() ?: 1
+            tenantId = currentTenantId()
             callbackKey = generateCallbackKey(request.type)
             sessionId = generateSessionId()
             createTime = LocalDateTime.now()
@@ -78,8 +94,7 @@ class ChannelServiceImpl(
 
     @Transactional(rollbackFor = [Exception::class])
     override fun updateChannel(id: Long, request: ChannelUpdateRequest): Boolean = try {
-        val channel = channelMapper.selectById(id)
-            ?: throw RuntimeException("Channel not found")
+        val channel = getChannel(id) ?: throw RuntimeException("Channel not found")
 
         request.name?.let { channel.name = it }
         request.agentId?.let { channel.agentId = it }
@@ -100,7 +115,7 @@ class ChannelServiceImpl(
         request.enabled?.let { channel.enabled = it }
         request.configJson?.let {
             validateConfigJson(it)
-            channel.configJson = it
+            channel.configJson = keepStoredSecrets(it, channel.configJson)
         }
         request.description?.let { channel.description = it }
         request.status?.let { channel.status = requireValidStatus(it) }
@@ -114,7 +129,7 @@ class ChannelServiceImpl(
     }
 
     override fun toggleChannelStatus(id: Long, status: Int): Boolean {
-        channelMapper.selectById(id)
+        getChannel(id)
             ?: throw RuntimeException("Channel not found")
         // Anything but 0/1 here would store a value the runtime's `status = 1` filter can never
         // match and the list cannot even filter by.
@@ -128,12 +143,18 @@ class ChannelServiceImpl(
         return status
     }
 
-    override fun deleteChannel(id: Long): Boolean = channelMapper.deleteById(id) > 0
+    override fun deleteChannel(id: Long): Boolean {
+        getChannel(id) ?: throw RuntimeException("Channel not found")
+        return channelMapper.deleteById(id) > 0
+    }
 
     override fun getByCallbackKey(callbackKey: String): Channel? = channelMapper.selectByCallbackKey(callbackKey)
 
     override fun convertToResponse(channel: Channel): ChannelResponse {
-        val response = ChannelResponse.fromEntity(channel)
+        // AGENT-24: the blob holds the platform-side credentials, so what leaves here is the display
+        // form of each one. The edit form sends that form straight back and [updateChannel] reads it
+        // as "unchanged", which is what keeps a masked field editable.
+        val response = ChannelResponse.fromEntity(channel).copy(configJson = maskSecrets(channel.configJson))
 
         // Query agent name
         channel.agentId.let { agentId ->
@@ -203,6 +224,77 @@ class ChannelServiceImpl(
     }
 
     /**
+     * The blob as an edit form sees it: each credential key replaced by its display form.
+     */
+    private fun maskSecrets(configJson: String?): String? = rewriteSecrets(configJson, null) { typed, _ -> maskSecret(typed) }
+
+    /**
+     * The blob to store: a value that is exactly the display form of what this row already holds under
+     * the same key means "unchanged" and keeps that value, anything else goes in as typed.
+     *
+     * Recomputed from the stored row instead of pattern-matched, so a credential that happens to
+     * contain asterisks stays editable — the same rule `EnvVariableServiceImpl.isUnchangedMask` states
+     * for its own mask. A create has nothing stored, so a mask sent there is stored as typed and the
+     * channel fails loudly rather than silently keeping a value nobody typed.
+     */
+    private fun keepStoredSecrets(
+        incoming: String,
+        stored: String?,
+    ): String = rewriteSecrets(incoming, stored) { typed, held ->
+        if (held != null && maskSecret(held) == typed) held else typed
+    } ?: incoming
+
+    /**
+     * Apply [resolve] to every string this blob holds under a credential key.
+     *
+     * Returns [configJson] untouched when nothing resolved differently, so an edit that never touched a
+     * credential cannot reshuffle the blob the caller sent.
+     */
+    private fun rewriteSecrets(
+        configJson: String?,
+        stored: String?,
+        resolve: (
+            typed: String,
+            held: String?,
+        ) -> String,
+    ): String? {
+        val entries = parseConfig(configJson) ?: return configJson
+        val held = parseConfig(stored)
+        var changed = false
+        for (key in SECRET_CONFIG_KEYS) {
+            val typed = entries[key] as? String ?: continue
+            if (typed.isBlank()) continue
+            val resolved = resolve(typed, held?.get(key) as? String)
+            if (resolved != typed) {
+                entries[key] = resolved
+                changed = true
+            }
+        }
+        return if (changed) objectMapper.writeValueAsString(entries) else configJson
+    }
+
+    /** A blob nothing can read is not something to mask; the write path has already rejected it. */
+    @Suppress("UNCHECKED_CAST")
+    private fun parseConfig(configJson: String?): MutableMap<String, Any?>? {
+        if (configJson.isNullOrBlank()) return null
+        return try {
+            (objectMapper.readValue(configJson, Map::class.java) as Map<String, Any?>).toMutableMap()
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Enough of a credential to tell two values apart, never enough to use. Same shape as the
+     * environment-variable mask, so a hidden field reads the same way on every page.
+     */
+    private fun maskSecret(value: String): String = when {
+        value.length <= 4 -> FULL_MASK
+        value.length <= 8 -> "${value.take(1)}****${value.takeLast(1)}"
+        else -> "${value.take(3)}****${value.takeLast(2)}"
+    }
+
+    /**
      * Generate unique callback key
      */
     private fun generateCallbackKey(type: String?): String {
@@ -218,6 +310,22 @@ class ChannelServiceImpl(
 
     private companion object {
         const val WEBHOOK_MODE = "webhook"
+
+        /**
+         * The keys of `configJson` that hold a credential, as opposed to an identifier.
+         *
+         * This is the credential half of what the runtime reads out of the same blob
+         * (`ChannelEntityConverter` plus the iLink token the scan-login flow writes), and it has to stay
+         * in step: a key masked on the way out and not carried back on the way in would be overwritten
+         * by its own display form the first time anyone saved the channel.
+         */
+        val SECRET_CONFIG_KEYS = setOf("appSecret", "token", "encodingAesKey", "botToken", "webhookUrl")
+
+        /** What a credential too short to show anything safe displays instead. */
+        const val FULL_MASK = "******"
+
+        /** What a request carrying no `X-Tenant-ID` acts within — the `channel.tenant_id` default. */
+        const val DEFAULT_TENANT_ID = 1L
 
         /**
          * Modes each channel type can actually run, first entry being the default when the caller

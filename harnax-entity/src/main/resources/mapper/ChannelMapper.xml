@@ -141,6 +141,10 @@
         SELECT <include refid="BaseColumnList"/>
         FROM channel
         WHERE active = 1
+        <!-- The caller's workspace, not a filter it chooses: `channel.tenant_id` has been written on
+             every insert since the first version, so a list without this predicate shows one
+             workspace's channels — and their `configJson` credentials — to the rest of the platform. -->
+        AND tenant_id = #{tenantId}
         <if test='keyword != null and keyword != ""'>
             AND (name LIKE CONCAT('%', #{keyword}, '%')
                  OR description LIKE CONCAT('%', #{keyword}, '%'))

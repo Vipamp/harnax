@@ -133,6 +133,50 @@ class ChannelCrudIT : BaseAdminIT() {
 
     @Test
     @Order(6)
+    fun `config credentials read back masked and survive the edit form round trip`() {
+        val name = "it_chan_secret_$suffix"
+        val secret = "it-app-secret-$suffix"
+        val body = mapOf(
+            "name" to name,
+            "type" to "feishu",
+            "agentId" to ensureAgent(),
+            "communicationMode" to "websocket",
+            "configJson" to """{"appId":"cli-it-$suffix","appSecret":"$secret"}""",
+        )
+        assertOk(postJson("/api/admin/channels", body))
+        val record = findInPage("/api/admin/channels/page", "keyword=$name") {
+            it["name"]?.asText() == name
+        }
+        assertNotNull(record, "created channel should be found in page result")
+        val id = record["id"].asLong()
+        try {
+            // The complaint this closes is "being able to list channels means being able to export every
+            // credential", so the list is the surface to prove. A missing field would pass a bare
+            // does-not-contain check, so the blob itself has to still be there.
+            val listed = record["configJson"].asText()
+            assertEquals("cli-it-$suffix", json.readTree(listed)["appId"].asText(), "the list still carries the config")
+            assertFalse(listed.contains(secret), "the list must not carry the platform secret: $listed")
+
+            val shown = assertOk(getJson("/api/admin/channels/$id"))["configJson"].asText()
+            assertFalse(shown.contains(secret), "the detail must not carry the platform secret either: $shown")
+            assertEquals("cli-it-$suffix", json.readTree(shown)["appId"].asText(), "an identifier is not a credential")
+
+            // This is exactly what UpdateForm.tsx sends: the blob it was shown, merged, sent back whole.
+            assertOk(putJson("/api/admin/channels/update/$id", mapOf("configJson" to shown, "description" to "echoed")))
+            val stored = jdbc.queryForObject("SELECT config_json FROM channel WHERE id = ?", String::class.java, id)!!
+            assertTrue(stored.contains(secret), "an echoed mask must keep the credential it stands for: $stored")
+            assertEquals(
+                "echoed",
+                jdbc.queryForObject("SELECT description FROM channel WHERE id = ?", String::class.java, id),
+                "the rest of the same save must still land",
+            )
+        } finally {
+            deleteJson("/api/admin/channels/$id")
+        }
+    }
+
+    @Test
+    @Order(7)
     fun `toggle channel status off and on`() {
         assertOk(putJson("/api/admin/channels/toggle/${locateChannelId()}?status=0"))
         var data = assertOk(getJson("/api/admin/channels/$channelId"))
@@ -144,7 +188,7 @@ class ChannelCrudIT : BaseAdminIT() {
     }
 
     @Test
-    @Order(7)
+    @Order(8)
     fun `delete channel then detail reports not found`() {
         assertOk(deleteJson("/api/admin/channels/${locateChannelId()}"))
 

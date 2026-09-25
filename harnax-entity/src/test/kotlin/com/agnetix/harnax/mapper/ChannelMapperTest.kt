@@ -239,7 +239,7 @@ open class ChannelMapperTest {
         @DisplayName("selectChannelList - 查询所有通道列表")
         fun `selectChannelList should return all channels`() {
             // When
-            val channels = channelMapper.selectChannelList(null, null, null)
+            val channels = channelMapper.selectChannelList(null, null, null, 1L)
 
             // Then
             assertTrue(channels.isNotEmpty())
@@ -250,13 +250,25 @@ open class ChannelMapperTest {
         @DisplayName("selectChannelList - 按类型查询")
         fun `selectChannelList should filter by type`() {
             // When
-            val channels = channelMapper.selectChannelList(null, "wecom", null)
+            val channels = channelMapper.selectChannelList(null, "wecom", null, 1L)
 
             // Then
             assertTrue(channels.isNotEmpty())
             channels.forEach {
                 assertEquals("wecom", it.type)
             }
+        }
+
+        @Test
+        @DisplayName("selectChannelList - another tenant's list stays empty")
+        fun `selectChannelList should return nothing for a tenant that owns no row`() {
+            // The service passes the caller's tenant, but the sentence that keeps the channels of one
+            // workspace out of another's hands is a predicate in this SQL. A tenant that owns nothing
+            // has to answer nothing, including the seeded rows everybody else sees.
+            val foreign = channelMapper.selectChannelList(null, null, null, 940_003L)
+
+            assertTrue(foreign.isEmpty(), "a tenant that owns no channel must see none, got ${foreign.map { it.name }}")
+            assertTrue(channelMapper.selectChannelList(null, null, null, 1L).isNotEmpty(), "tenant 1 keeps its own rows")
         }
     }
 }

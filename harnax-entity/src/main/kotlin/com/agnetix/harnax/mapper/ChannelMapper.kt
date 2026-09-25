@@ -25,10 +25,18 @@ interface ChannelMapper {
 
     // ==================== Custom Query Methods ====================
 
+    /**
+     * The channels of one tenant, and only ever one tenant.
+     *
+     * [tenantId] is a required predicate rather than an optional `<if>`: the caller's workspace is not
+     * something a request may filter its way out of, and every other read of this table
+     * ([selectById] through the service) is scoped the same way.
+     */
     fun selectChannelList(
         @Param("keyword") keyword: String?,
         @Param("type") type: String?,
         @Param("status") status: Int?,
+        @Param("tenantId") tenantId: Long,
     ): List<Channel>
 
     fun selectByCallbackKey(@Param("callbackKey") callbackKey: String): Channel?
