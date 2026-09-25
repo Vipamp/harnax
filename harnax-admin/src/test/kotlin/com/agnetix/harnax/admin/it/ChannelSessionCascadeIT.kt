@@ -102,7 +102,7 @@ class ChannelSessionCascadeIT : BaseAdminIT() {
 
     @Test
     @Order(1)
-    @DisplayName("删渠道先让运行侧释放它的 chn- 会话，用的是渠道自己那个 id")
+    @DisplayName("deleting a channel releases its chn- session on the runtime side first, using the channel's own id")
     fun deleteReleasesTheChannelSession() {
         val id = createChannel("it_chan_cascade_release_$suffix")
         val sessionId = sessionIdOf(id)
@@ -120,7 +120,7 @@ class ChannelSessionCascadeIT : BaseAdminIT() {
 
     @Test
     @Order(2)
-    @DisplayName("运行侧拒绝释放时渠道行不动，原因回到调用方")
+    @DisplayName("when the runtime refuses the release the channel row stays put and the reason reaches the caller")
     fun refusalKeepsTheChannel() {
         val id = createChannel("it_chan_cascade_refuse_$suffix")
         val sessionId = sessionIdOf(id)
@@ -148,7 +148,7 @@ class ChannelSessionCascadeIT : BaseAdminIT() {
 
     @Test
     @Order(3)
-    @DisplayName("渠道是逻辑删除：行留着、active 翻 0、归属仍读得出")
+    @DisplayName("channel delete is logical: row stays, active flips to 0, ownership still reads back")
     fun channelRowIsDeactivatedNotErased() {
         val name = "it_chan_cascade_soft_$suffix"
         val id = createChannel(name)
@@ -171,7 +171,7 @@ class ChannelSessionCascadeIT : BaseAdminIT() {
 
     @Test
     @Order(4)
-    @DisplayName("删看不见的渠道不会惊动运行侧")
+    @DisplayName("deleting an invisible channel never disturbs the runtime side")
     fun invisibleChannelNeverReachesTheRuntime() {
         val id = createChannel("it_chan_cascade_hidden_$suffix", tenantId = otherTenant)
         fakeRouter.reset()
@@ -190,7 +190,7 @@ class ChannelSessionCascadeIT : BaseAdminIT() {
 
     @Test
     @Order(5)
-    @DisplayName("没有会话 id 的渠道照样删得掉")
+    @DisplayName("a channel with no session id still deletes")
     fun channelWithoutASessionIdStillDeletes() {
         val id = createChannel("it_chan_cascade_no_session_$suffix")
         // The column is NOT NULL and the entity field a non-null String, so "no session" is the empty

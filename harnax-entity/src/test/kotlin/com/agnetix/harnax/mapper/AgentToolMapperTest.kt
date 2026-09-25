@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test
 import org.mybatis.spring.boot.test.autoconfigure.MybatisTest
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
+import org.springframework.dao.DuplicateKeyException
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
@@ -97,7 +98,7 @@ open class AgentToolMapperTest {
         @Test
         @DisplayName("selectById - Do not return an inactive AgentTool")
         fun `selectById should not return inactive agent tool`() {
-            // 种子 id=6 是历史软删残留（active=0）；id=5 是 disabled-tool，只是 status=0，仍然可查
+            // Seed id=6 is a soft-deleted leftover (active=0); id=5 is disabled-tool, only status=0, so it stays readable
             assertNull(agentToolMapper.selectById(6L))
             assertNotNull(agentToolMapper.selectById(5L))
         }
@@ -234,7 +235,7 @@ open class AgentToolMapperTest {
         fun `insert should refuse a duplicate name`() {
             agentToolMapper.insert(syncedTool("identity_tool", "a-tool-box", "run"))
 
-            assertFailsWith<Exception> {
+            assertFailsWith<DuplicateKeyException>("expected uk_agent_tool_name to refuse the second row") {
                 agentToolMapper.insert(syncedTool("identity_tool", "b-tool-box", "run"))
             }
         }

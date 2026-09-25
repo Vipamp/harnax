@@ -49,7 +49,7 @@ class ModelProviderControllerTest {
 
     @BeforeEach
     fun setUp() {
-        // MessageUtil 桩成回显消息码：断言只看键，不依赖 bundle 文案
+        // Stub MessageUtil to echo the message code: assertions check the key only, not bundle text
         `when`(messageUtil.getMessage(anyString())).thenAnswer { invocation -> invocation.arguments[0] as String }
         testProvider = ModelProvider().apply {
             id = 1L
@@ -151,7 +151,7 @@ class ModelProviderControllerTest {
     inner class GetByIdEndpoint {
 
         @Test
-        @DisplayName("getModelProvider - 可见时返回详情")
+        @DisplayName("getModelProvider - returns the details when visible")
         fun `getModelProvider should return provider when found`() {
             `when`(modelProviderService.getVisibleModelProvider(1L)).thenReturn(testProvider)
             `when`(modelProviderService.convertToResponse(testProvider)).thenReturn(testResponse)
@@ -165,13 +165,13 @@ class ModelProviderControllerTest {
         }
 
         @Test
-        @DisplayName("getModelProvider - 读不到时返回具名 404")
+        @DisplayName("getModelProvider - returns a named 404 when the row cannot be read")
         fun `getModelProvider should report not found with a named 404`() {
             `when`(modelProviderService.getVisibleModelProvider(999L)).thenReturn(null)
 
             val result = controller.getModelProvider(999L)
 
-            assertFalse(result.isSuccess(), "读不到的行不能算成功响应")
+            assertFalse(result.isSuccess(), "a row that cannot be read must not count as a success response")
             assertEquals(404, result.code)
             assertEquals("error.model.provider.notfound", result.message)
             assertNull(result.data)

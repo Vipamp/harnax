@@ -21,11 +21,12 @@ interface AgentMapper {
 
     /**
      * Exact-name lookup within one tenant, the pre-insert / pre-rename guard for
-     * `uk_agent_tenant_active_name`.
+     * `uk_agent_tenant_active_name`. The tenant is mandatory: without it the lookup
+     * matches another tenant's row and refuses a name that is free in this tenant.
      */
     fun selectByName(
         @Param("name") name: String,
-        @Param("tenantId") tenantId: Long?,
+        @Param("tenantId") tenantId: Long,
     ): Agent?
 
     /**

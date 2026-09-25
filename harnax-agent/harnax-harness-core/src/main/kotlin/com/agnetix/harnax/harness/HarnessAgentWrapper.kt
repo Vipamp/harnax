@@ -78,7 +78,9 @@ class HarnessAgentWrapper(
     val sessionId: String,
     val userId: String? = null,
     /**
-     * Budget of one whole turn, batch and streaming alike; see [com.agnetix.harnax.harness.config.HarnessConfig.turnTimeoutSeconds].
+     * Timeout value shared by the batch and streaming paths; see
+     * [com.agnetix.harnax.harness.config.HarnessConfig.turnTimeoutSeconds]. It caps a whole batch turn,
+     * while on a stream it only bounds the silence between events.
      *
      * `0` or less means "no budget": a team wrapper gets its limits from the team layer instead, whose
      * budgets wrap this stream from the outside (`memberTurnTimeoutSeconds`, `confirmTimeoutSeconds`).
@@ -752,7 +754,10 @@ class HarnessAgentWrapper(
                     else -> ChatEventConverter.convert(agentEvent, dangerousTools)
                 }
             }
-            // The same budget the batch path applies, so a streaming turn cannot outlive a batch one.
+            // The same number the batch path uses, but not the same budget: Mono.timeout caps the whole
+            // call, Flux.timeout only watches for silence between elements. A stream that keeps emitting
+            // can therefore run longer than a batch turn would, and one tool that stays quiet for the
+            // whole budget kills a turn the batch path would have finished.
             // Deliberately before the output-file detection below: that step is a blocking `ls` in the
             // sandbox and is best-effort by contract, so it must not be able to consume the budget and
             // turn a finished answer into a timeout. A timeout surfaces at onErrorResume like any other

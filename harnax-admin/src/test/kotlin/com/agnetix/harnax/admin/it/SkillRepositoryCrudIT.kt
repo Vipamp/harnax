@@ -191,7 +191,7 @@ class SkillRepositoryCrudIT : BaseAdminIT() {
         assertOk(deleteJson("/api/admin/skill-repositories/${locateRepoId()}"))
 
         val node = getJson("/api/admin/skill-repositories/$repoId")
-        assertEquals(404, node["code"].asInt(), "读不到的行不该是成功响应")
+        assertEquals(404, node["code"].asInt(), "a row we cannot read must not answer as success")
         assertTrue(node["data"] == null || node["data"].isNull, "deleted repository should not be returned")
 
         val record = findInPage("/api/admin/skill-repositories/page", "name=$repoName") {

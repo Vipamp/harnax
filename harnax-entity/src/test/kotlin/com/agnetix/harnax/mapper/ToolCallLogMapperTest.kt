@@ -71,7 +71,7 @@ open class ToolCallLogMapperTest {
         }
 
         @Test
-        @DisplayName("insert - 团队主管的工具调用没有智能体归属")
+        @DisplayName("insert - a team lead's tool call carries no agent attribution")
         fun `insert should store a tool call with no agent`() {
             // A lead's tool calls are the loudest part of `tool_call_log` for a team, and `agent_id` is
             // nullable in the table: what has to hold is that MyBatis writes the absent id as SQL NULL

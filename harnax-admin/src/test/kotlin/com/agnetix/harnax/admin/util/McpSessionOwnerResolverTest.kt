@@ -124,7 +124,7 @@ class McpSessionOwnerResolverTest {
     }
 
     @Test
-    @DisplayName("creator 账号被停用就没有身份,花不掉别人的授权")
+    @DisplayName("a disabled creator account leaves no identity, so it cannot spend another's grant")
     fun `a disabled creator account leaves no identity`() {
         // `selectByUsername` cannot filter status - login runs the same query and has to tell
         // "account disabled" from "no such user" - so this is where the switch has to be honoured.
@@ -135,7 +135,7 @@ class McpSessionOwnerResolverTest {
     }
 
     @Test
-    @DisplayName("mp 会话的 creator 是 id:停用的账号同样不采用")
+    @DisplayName("an mp session's creator is an id: a disabled account is likewise not adopted")
     fun `a disabled account resolved by id leaves no identity`() {
         stubSession("42")
         whenever(sysUserMapper.selectByUsername("42")).thenReturn(null)

@@ -77,7 +77,7 @@ class AgentControllerTest {
             status = 1,
         )
 
-        // MessageUtil 桩成回显消息码：断言只看键，不依赖 bundle 文案
+        // Stub MessageUtil to echo the message code: assertions check the key only, not bundle text
         `when`(messageUtil.getMessage(anyString())).thenAnswer { invocation -> invocation.arguments[0] as String }
     }
 
@@ -154,13 +154,13 @@ class AgentControllerTest {
         }
 
         @Test
-        @DisplayName("getAgent - 不存在时返回具名 404")
+        @DisplayName("getAgent - returns a named 404 when missing")
         fun `getAgent should report not found when the agent is missing`() {
             `when`(agentService.getAgent(999L)).thenReturn(null)
 
             val result = controller.getAgent(999L)
 
-            assertFalse(result.isSuccess(), "一个读不到的智能体不能算成功响应")
+            assertFalse(result.isSuccess(), "an agent that cannot be read must not count as a success response")
             assertEquals(404, result.code)
             assertEquals("error.agent.notfound", result.message)
             assertNull(result.data)

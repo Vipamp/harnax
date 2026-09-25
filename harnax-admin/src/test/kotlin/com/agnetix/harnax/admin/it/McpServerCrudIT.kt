@@ -163,7 +163,7 @@ class McpServerCrudIT : BaseAdminIT() {
         assertOk(deleteJson("/api/admin/mcp/${locateMcpId()}"))
 
         val node = getJson("/api/admin/mcp/$mcpId")
-        assertEquals(404, node["code"].asInt(), "读不到的行不该是成功响应")
+        assertEquals(404, node["code"].asInt(), "a row we cannot read must not answer as success")
         assertTrue(node["data"] == null || node["data"].isNull, "deleted MCP server should not be returned")
 
         val record = findInPage("/api/admin/mcp/page", "keyword=$mcpName") {

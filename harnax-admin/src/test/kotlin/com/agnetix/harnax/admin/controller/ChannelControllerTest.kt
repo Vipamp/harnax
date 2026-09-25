@@ -49,7 +49,7 @@ class ChannelControllerTest {
 
     @BeforeEach
     fun setUp() {
-        // MessageUtil 桩成回显消息码：断言只看键，不依赖 bundle 文案
+        // Stub MessageUtil to echo the message code: assertions check the key only, not bundle text
         `when`(messageUtil.getMessage(anyString())).thenAnswer { invocation -> invocation.arguments[0] as String }
         testChannel = Channel().apply {
             id = 1L
@@ -153,13 +153,13 @@ class ChannelControllerTest {
         }
 
         @Test
-        @DisplayName("getChannel - 读不到时返回具名 404")
+        @DisplayName("getChannel - returns a named 404 when the row cannot be read")
         fun `getChannel should report not found with a named 404`() {
             `when`(channelService.getChannel(999L)).thenReturn(null)
 
             val result = controller.getChannel(999L)
 
-            assertFalse(result.isSuccess(), "读不到的行不能算成功响应")
+            assertFalse(result.isSuccess(), "a row that cannot be read must not count as a success response")
             assertEquals(404, result.code)
             assertEquals("error.channel.notfound", result.message)
             assertNull(result.data)

@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.service.impl
 
+import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.mapper.AgentCliBindingMapper
 import com.agnetix.harnax.mapper.AgentMapper
@@ -49,12 +50,17 @@ class AgentSessionRefreshService(
 
     /**
      * List sessions related to an agent: channel-bound sessions and web sessions.
+     *
+     * Reached with a bare agent id, so each row is scoped by its own `tenant_id` — otherwise
+     * probing someone else's agent names their channel and session titles. Same tenant rule as
+     * [com.agnetix.harnax.admin.service.impl.AgentServiceImpl.getAgent], which this read mirrors.
      */
     fun listRelatedSessions(agentId: Long): List<RelatedSessionInfo> {
         val result = mutableListOf<RelatedSessionInfo>()
+        val tenantId = currentTenantId()
 
         channelMapper.selectByAgentId(agentId).forEach { ch ->
-            if (ch.sessionId.isNotBlank()) {
+            if (ch.sessionId.isNotBlank() && ch.tenantId == tenantId) {
                 result.add(
                     RelatedSessionInfo(
                         sessionId = ch.sessionId,
@@ -66,7 +72,7 @@ class AgentSessionRefreshService(
         }
 
         sessionMapper.selectByAgentId(agentId).forEach { s ->
-            if (s.active == 1 && s.sessionId.isNotBlank()) {
+            if (s.active == 1 && s.sessionId.isNotBlank() && s.tenantId == tenantId) {
                 result.add(
                     RelatedSessionInfo(
                         sessionId = s.sessionId,
@@ -129,26 +135,28 @@ class AgentSessionRefreshService(
      * Agents that reference the given CLI. Used both for the "disable guard"
      * (a CLI bound to enabled agents cannot be disabled) and for listing the
      * sessions to refresh after a CLI configuration change.
+     *
+     * CLI packages carry no tenant, so the agent side is what scopes this read:
+     * naming another tenant's agents here would leak them through a platform id.
      */
-    fun listAgentsByCli(cliId: Long): List<RelatedAgentInfo> = cliBindingMapper.selectByCliId(cliId)
-        .map { it.agentId }
-        .distinct()
-        .mapNotNull { agentId ->
-            val agent = agentMapper.selectById(agentId) ?: return@mapNotNull null
-            RelatedAgentInfo(agentId = agent.id, agentName = agent.name, status = agent.status)
-        }
+    fun listAgentsByCli(cliId: Long): List<RelatedAgentInfo> = relatedAgents(cliBindingMapper.selectByCliId(cliId).map { it.agentId })
 
     /**
      * Agents that bind the given MCP server. Deleting the server drops these bindings without
      * asking, so the console names them in the confirm that comes before the second click.
      */
-    fun listAgentsByMcp(mcpId: Long): List<RelatedAgentInfo> = mcpBindingMapper.selectByMcpId(mcpId)
-        .map { it.agentId }
+    fun listAgentsByMcp(mcpId: Long): List<RelatedAgentInfo> = relatedAgents(mcpBindingMapper.selectByMcpId(mcpId).map { it.agentId })
+
+    private fun relatedAgents(agentIds: List<Long>): List<RelatedAgentInfo> = agentIds
         .distinct()
         .mapNotNull { agentId ->
-            val agent = agentMapper.selectById(agentId) ?: return@mapNotNull null
+            val agent = agentMapper.selectById(agentId)?.takeIf { it.tenantId == currentTenantId() }
+                ?: return@mapNotNull null
             RelatedAgentInfo(agentId = agent.id, agentName = agent.name, status = agent.status)
         }
+
+    /** Same fallback as [com.agnetix.harnax.admin.service.impl.AgentServiceImpl.getAgent]. */
+    private fun currentTenantId(): Long = TenantContext.getTenantId() ?: 1
 
     /**
      * Sessions of every agent bound to the given CLI, so a CLI change can be

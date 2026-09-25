@@ -206,7 +206,7 @@ class ModelCrudIT : BaseAdminIT() {
         assertOk(deleteJson("/api/admin/models/${locateModelId()}"))
 
         val node = getJson("/api/admin/models/$modelId")
-        assertEquals(404, node["code"].asInt(), "读不到的行不该是成功响应")
+        assertEquals(404, node["code"].asInt(), "a row we cannot read must not answer as success")
         assertTrue(node["data"] == null || node["data"].isNull, "deleted model should not be returned")
 
         // Cleanup prerequisite provider

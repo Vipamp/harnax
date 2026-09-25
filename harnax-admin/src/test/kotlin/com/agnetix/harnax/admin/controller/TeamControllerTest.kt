@@ -22,9 +22,10 @@ import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.quality.Strictness
 
 /**
- * TeamController 单元测试
+ * Unit tests for TeamController
  *
- * 团队域此前没有任何测试类，详情端点的 404 契约便无处可断；这里至少把「读到」和「读不到」两种回答钉住。
+ * The team domain had no test class at all, so the detail endpoint's 404 contract had nowhere to be asserted;
+ * this at least pins both answers: the row can be read, and it cannot.
  */
 @ExtendWith(MockitoExtension::class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -44,7 +45,7 @@ class TeamControllerTest {
 
     @BeforeEach
     fun setUp() {
-        // MessageUtil 桩成回显消息码：断言只看键，不依赖 bundle 文案
+        // Stub MessageUtil to echo the message code: assertions check the key only, not bundle text
         `when`(messageUtil.getMessage(anyString())).thenAnswer { invocation -> invocation.arguments[0] as String }
         testTeam = Team().apply {
             id = 1L
@@ -56,7 +57,7 @@ class TeamControllerTest {
     }
 
     @Test
-    @DisplayName("getTeam - 读得到时返回详情")
+    @DisplayName("getTeam - returns the details when the row can be read")
     fun `getTeam should return team when found`() {
         `when`(teamService.getTeam(1L)).thenReturn(testTeam)
         `when`(teamService.convertToResponse(testTeam)).thenReturn(testResponse)
@@ -69,13 +70,13 @@ class TeamControllerTest {
     }
 
     @Test
-    @DisplayName("getTeam - 读不到时返回具名 404")
+    @DisplayName("getTeam - returns a named 404 when the row cannot be read")
     fun `getTeam should report not found with a named 404`() {
         `when`(teamService.getTeam(999L)).thenReturn(null)
 
         val result = controller.getTeam(999L)
 
-        assertFalse(result.isSuccess(), "读不到的行不能算成功响应")
+        assertFalse(result.isSuccess(), "a row that cannot be read must not count as a success response")
         assertEquals(404, result.code)
         assertEquals("error.team.notfound", result.message)
         assertNull(result.data)

@@ -378,7 +378,7 @@ class MpSessionServiceTest {
         }
 
         @Test
-        @DisplayName("deleteSession - 运行侧未能释放时本地一行都不动")
+        @DisplayName("deleteSession - touches no local row when the runtime cannot release it")
         fun `deleteSession should keep every row when the runtime cannot release it`() {
             // Given
             `when`(mpSessionMapper.selectByIdAndUserId(100L, 1L)).thenReturn(testMpSession)
@@ -392,7 +392,7 @@ class MpSessionServiceTest {
             `when`(agentRuntimeClient.clearSession("mp-router-1"))
                 .thenReturn(ResultVo.error(500, "sandbox container is busy"))
 
-            // When & Then - 运行侧那句原因是用户要读到的内容；行留着，否则运行态成了谁也指认不了的东西
+            // When & Then - the runtime's reason is what the user should read; the row stays, otherwise the runtime state becomes something no one can point at
             val ex = assertThrows<BizException> {
                 mpSessionService.deleteSession(1L, 100L)
             }

@@ -143,7 +143,7 @@ class ModelProviderCrudIT : BaseAdminIT() {
         assertOk(deleteJson("/api/admin/model-providers/${locateProviderId()}"))
 
         val node = getJson("/api/admin/model-providers/$providerId")
-        assertEquals(404, node["code"].asInt(), "读不到的行不该是成功响应")
+        assertEquals(404, node["code"].asInt(), "a row we cannot read must not answer as success")
         assertTrue(node["data"] == null || node["data"].isNull, "deleted provider should not be returned")
     }
 }

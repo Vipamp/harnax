@@ -215,7 +215,7 @@ class TeamServiceImplTest {
 
         @Test
         fun `a private model of another user in this tenant may lead`() {
-            // 隔离粒度是租户：同租户的私有行对同租户可选，模型列表也是这么给的
+            // the isolation granularity is tenant: a private row in the same tenant is selectable within the same tenant, and the model list gives it the same way
             models[MODEL] = model(MODEL, "qwen3-max", isPublic = 0, creator = "other-user")
 
             assertTrue(service.createTeam(createRequest()))

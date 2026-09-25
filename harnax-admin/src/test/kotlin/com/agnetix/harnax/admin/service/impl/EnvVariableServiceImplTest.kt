@@ -221,9 +221,9 @@ class EnvVariableServiceImplTest {
         @Test
         @DisplayName("getEnvVariable - Another user's row of the same tenant reads as absent")
         fun `getEnvVariable should return null for another user row of the same tenant`() {
-            // 列表与下拉本来就只给调用者自己建的行，按 id 直读是唯一还跨得过这条线的地方：
-            // 非敏感值是原样回显的，同租户的同事猜到 id 就读走了名字和值。
-            // 隔离单位收成创建人，与「列表只显示当前用户的环境变量」是同一条口径。
+            // The list and dropdown already only give rows the caller created themselves; a direct read by id is the one place that still crosses that line:
+            // non-sensitive values are echoed verbatim, so a same-tenant coworker who guesses the id reads away the name and value.
+            // Collapsing the isolation unit to the creator is the same rule as "the list only shows the current user's env variables".
             TenantContext.setTenantId(1L)
             `when`(envVariableMapper.selectById(3L)).thenReturn(
                 EnvVariable().apply {
@@ -242,9 +242,9 @@ class EnvVariableServiceImplTest {
         @Test
         @DisplayName("getRowWithinTenant - Another user's row still resolves for a binding")
         fun `getRowWithinTenant should return another user row of the same tenant`() {
-            // 这一半是同一条隔离收口的代价：智能体按 id 存引用，共享智能体绑的是它属主建的行，
-            // 而编辑那个智能体的人不是属主。绑定的回填与保存判据因此按租户，不按创建人——
-            // 运行下发（getDecryptedValue）也是按租户，两侧同口径才不会出现「能跑不能存」。
+            // This half is the cost of the same isolation tightening: an agent stores its reference by id, and a shared agent binds a row its owner created,
+            // while the person editing that agent is not the owner. So the binding's backfill and save rule keys on tenant, not creator—
+            // runtime delivery (getDecryptedValue) also keys on tenant; both sides must use the same rule or you get "runs but cannot save".
             TenantContext.setTenantId(1L)
             `when`(envVariableMapper.selectById(3L)).thenReturn(
                 EnvVariable().apply {
@@ -258,7 +258,7 @@ class EnvVariableServiceImplTest {
             )
 
             assertEquals("CO_WORKER_KEY", createService().getRowWithinTenant(3L)?.envKey)
-            // 租户这一半照旧守住：桩一行别人租户的，缺席的答复必须仍然按租户给
+            // The tenant half still holds: stub a row of another tenant, and the absent answer must still be given per tenant
             `when`(envVariableMapper.selectById(2L)).thenReturn(
                 EnvVariable().apply {
                     id = 2L
@@ -394,8 +394,8 @@ class EnvVariableServiceImplTest {
         @Test
         @DisplayName("createEnvVariable - Refuse a key the caller already holds, naming it")
         fun `createEnvVariable should refuse a key the caller already holds`() {
-            // uk_env_tenant_creator_active_key 会把这撞成一句 SQL 错误，服务层先给可读的拒绝；
-            // 而 AGENT-23 的旧形状是连这句拒绝都被控制器的兜底串吞掉，只回 "Failed to create env variable"
+            // uk_env_tenant_creator_active_key would collide this into a single SQL error; the service layer gives a readable refusal first;
+            // and AGENT-23's old shape was that even this refusal got swallowed by the controller's catch-all string, returning only "Failed to create env variable"
             val clash = EnvVariable().apply {
                 id = 1L
                 tenantId = 1L
@@ -413,10 +413,11 @@ class EnvVariableServiceImplTest {
         }
 
         @Test
-        @DisplayName("createEnvVariable - A key another user holds stays free for this caller")
-        fun `createEnvVariable should accept a key another user holds`() {
-            // 按用户唯一的全部含义：同租户同事占了这个名字不再挡住这里。这条用例在只有租户条件时
-            // 也会绿，所以判据落在探测语句被问的是谁——按调用人，不按租户
+        @DisplayName("createEnvVariable - the clash probe is asked by caller, not by tenant")
+        fun `createEnvVariable should probe the clash by caller`() {
+            // This case only watches the arguments the service asks with, so it would stay green even
+            // if the SQL kept only the tenant condition. The per-creator scope itself is pinned at DB
+            // level by EnvVariableCrudIT's "the live key is scoped per creator inside one tenant".
             `when`(envVariableMapper.selectByKey("API_KEY", "admin", 1L)).thenReturn(null)
             `when`(envVariableMapper.insert(any())).thenReturn(1)
 
@@ -480,8 +481,8 @@ class EnvVariableServiceImplTest {
         @Test
         @DisplayName("updateEnvVariable - Refuse a rename onto a key the caller already holds")
         fun `updateEnvVariable should refuse a rename onto a key the caller already holds`() {
-            // 改名也是写入，撞的还是 uk_env_tenant_creator_active_key。旧形状里这句 SQL 错误
-            // 被服务的兜底串包成 "Failed to update env variable"，调用方看不出是哪个键
+            // A rename is also a write, and it still collides with uk_env_tenant_creator_active_key. In the old shape this SQL error
+            // got wrapped by the service's fallback into "Failed to update env variable", so the caller could not tell which key.
             TenantContext.setTenantId(1L)
             val held = EnvVariable().apply {
                 id = 5L
@@ -504,7 +505,7 @@ class EnvVariableServiceImplTest {
         @Test
         @DisplayName("updateEnvVariable - The row's own key is not a clash")
         fun `updateEnvVariable should not treat the stored key as a clash`() {
-            // 这一行自己占着那个名字：按名字查重而不排除自己，会把每一次"改值不改名"的保存撞死
+            // The row holds that name itself: a name check that does not exclude the row would reject every "change the value, keep the key" save
             TenantContext.setTenantId(1L)
             `when`(envVariableMapper.selectById(1L)).thenReturn(testEnvVariable)
             `when`(envVariableMapper.updateById(any())).thenReturn(1)
@@ -685,7 +686,7 @@ class EnvVariableServiceImplTest {
             val exception = assertThrows<BizException> {
                 createService().updateEnvVariable(999L, request)
             }
-            // 不再被兜底 catch 折成「Failed to update」：调用方要分得清「这行不是你的」和「库坏了」
+            // No longer folded into the fallback "Failed to update": the caller must tell "this row is not yours" apart from "the database broke"
             assertEquals("Env variable not found", exception.message)
             verify(envVariableMapper, never()).updateById(any())
         }
@@ -830,7 +831,7 @@ class EnvVariableServiceImplTest {
         @Test
         @DisplayName("deleteEnvVariable - Refuse another user's row as absent")
         fun `deleteEnvVariable should refuse another user row as absent`() {
-            // Given - 手写 creator 比对已删：作用域在 getEnvVariable 里，别人的行到这里就是「不存在」
+            // Given - the hand-written creator comparison is gone: ownership is enforced in getEnvVariable, so another user's row is "absent" here
             TenantContext.setTenantId(1L)
             val otherUserEnv = EnvVariable().apply {
                 id = 1L
@@ -917,7 +918,7 @@ class EnvVariableServiceImplTest {
         @Test
         @DisplayName("toggleEnabled - Refuse another user's row as absent")
         fun `toggleEnabled should refuse another user row as absent`() {
-            // Given - 开关和删除走同一个作用域读法，别人的行到这里就是「不存在」
+            // Given - the switch and the delete use the same scoped read, so another user's row is "absent" here
             TenantContext.setTenantId(1L)
             val otherUserEnv = EnvVariable().apply {
                 id = 1L
@@ -938,7 +939,7 @@ class EnvVariableServiceImplTest {
         @Test
         @DisplayName("toggleEnabled - Refuse to switch off a variable agents still bind")
         fun `toggleEnabled should refuse to disable a referenced variable`() {
-            // 停用与删除一样会把值抽走：绑定里存的是 envVarId，每次下发都要现取
+            // Disabling strips the value exactly like a delete: bindings store the envVarId, so every delivery reads it fresh
             TenantContext.setTenantId(1L)
             `when`(envVariableMapper.selectById(1L)).thenReturn(testEnvVariable)
             `when`(agentMapper.selectByEnvVarRef(1L, 1L)).thenReturn(

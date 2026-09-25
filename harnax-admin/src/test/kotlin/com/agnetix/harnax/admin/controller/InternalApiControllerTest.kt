@@ -988,7 +988,7 @@ class InternalApiControllerTest {
         }
 
         @Test
-        @DisplayName("停用的技能不进 skillDetails")
+        @DisplayName("a disabled skill never reaches skillDetails")
         fun `getAgentSpec should drop a disabled skill from both halves of the answer`() {
             // status = 0 有两个来源：运维在管理页手动停用，或重新导入时被 SkillContentScanner
             // 命中高危命令后降级待审核。两种情况下绑定关系都还在，闸门只能在这里生效
@@ -1029,7 +1029,7 @@ class InternalApiControllerTest {
         }
 
         @Test
-        @DisplayName("技能下发按 agent 的租户向绑定解析器取行，不是裸查")
+        @DisplayName("skill delivery resolves rows via the binding resolver scoped to the agent's tenant, not a bare query")
         fun `getAgentSpec should scope skill delivery to the agents tenant`() {
             stubAgentWithSkills(skill(11L, "own-skill", 1))
             `when`(agentMapper.selectById(100L)).thenReturn(
@@ -1050,7 +1050,7 @@ class InternalApiControllerTest {
         }
 
         @Test
-        @DisplayName("CLI 自带技能也按 agent 的租户向解析器取行，不是裸查")
+        @DisplayName("a CLI's bundled skill also resolves rows via the resolver scoped to the agent's tenant, not a bare query")
         fun `getAgentSpec should scope a CLI skill to the agents tenant`() {
             stubAgentWithSkills()
             stubCli(7L, skillId = 32L, skillRow = skill(32L, "cli-skill", 1))
@@ -1072,7 +1072,7 @@ class InternalApiControllerTest {
         }
 
         @Test
-        @DisplayName("解析器不给行的 CLI 技能留空，包本身照常下发")
+        @DisplayName("a CLI skill the resolver withholds stays empty while the package itself is still delivered")
         fun `getAgentSpec should deliver the CLI without a skill the tenant may not receive`() {
             stubAgentWithSkills()
             stubCli(7L, skillId = 32L, skillRow = skill(32L, "cli-skill", 1))
@@ -1415,11 +1415,12 @@ class InternalApiControllerTest {
     }
 
     /**
-     * 运行侧回收 CLI 产物（负载树 / 沙箱镜像 / 归档对象）唯一的判据来源：admin 登记的在用清单。
-     * 清单一旦少报一项，运行侧就会把在用的东西当成垃圾删掉，所以这里钉住两类条目的口径。
+     * The admin-registered in-use inventory is the runtime's only source of truth when reaping CLI artifacts
+     * (payload tree / sandbox image / archive object). Under-report a single entry and the runtime deletes
+     * something live as garbage, so both entry kinds are pinned here.
      */
     @Nested
-    @DisplayName("CLI 在用清单")
+    @DisplayName("CLI in-use inventory")
     inner class CliPackageInventoryTests {
 
         private fun cliPackage(
@@ -1447,7 +1448,7 @@ class InternalApiControllerTest {
         }
 
         @Test
-        @DisplayName("停用包仍在登记清单里，但不进任何 agent 的在用集合")
+        @DisplayName("a disabled package stays in the registered inventory but enters no agent's in-use set")
         fun `a disabled package stays registered yet leaves every agent set`() {
             val kubectl = cliPackage(21L, "kubectl", "1.30.0", 'a')
             val gh = cliPackage(22L, "gh", "2.50.0", 'c', status = 0)
@@ -1456,9 +1457,9 @@ class InternalApiControllerTest {
 
             val inventory = controller.getCliPackageInventory().data!!
 
-            // 负载树留着：重新启用只用回灌一次归档，不必重新下载
+            // Payload tree kept: re-enabling just replays the archive once, no re-download needed
             assertEquals(listOf("a".repeat(64), "c".repeat(64)), inventory.packageDigests)
-            // 镜像删掉：停用的 CLI 不该再有 agent 起得来
+            // Image dropped: no agent should be able to start a disabled CLI
             val set = inventory.agentCliSets.single()
             assertEquals(100L, set.agentId)
             assertEquals(listOf(21L), set.clis.map { it.id })
@@ -1467,7 +1468,7 @@ class InternalApiControllerTest {
         }
 
         @Test
-        @DisplayName("绑定指向已删除的包时跳过该项，集合空了的 agent 不再上报")
+        @DisplayName("a binding whose package was deleted is skipped, and an agent with an empty set is no longer reported")
         fun `a binding whose package is gone is skipped`() {
             `when`(cliMapper.selectCliList(null, null)).thenReturn(listOf(cliPackage(21L, "kubectl", "1.30.0", 'a')))
             `when`(cliBindingMapper.selectAll()).thenReturn(listOf(binding(100L, 22L)))
@@ -1479,7 +1480,7 @@ class InternalApiControllerTest {
         }
 
         @Test
-        @DisplayName("没有任何绑定时仍然下发登记清单")
+        @DisplayName("the registered inventory is still delivered when there are no bindings at all")
         fun `registered digests are reported without bindings`() {
             `when`(cliMapper.selectCliList(null, null))
                 .thenReturn(listOf(cliPackage(21L, "kubectl", "1.30.0", 'a'), cliPackage(22L, "gh", "2.50.0", 'c')))
@@ -1582,20 +1583,20 @@ class InternalApiControllerTest {
         }
 
         @Test
-        @DisplayName("getAgentSpec - 代码里已删除的工具不下发（行还在库里）")
+        @DisplayName("getAgentSpec - a tool removed from the code is not delivered (the row is still in the DB)")
         fun `getAgentSpec should hold back a tool the code no longer declares`() {
             stubWebSessionWithBindings(22L)
-            // 同步不删除任何行，所以库里留着这个工具；它已不在本次声明的名字集合里
+            // Sync deletes no rows, so the tool is still in the DB; it just is not in the name set declared this run
             `when`(agentToolMapper.selectByIds(listOf(22L))).thenReturn(listOf(stubTool(22L, "removedTool")))
             `when`(builtinToolAutoRegistrar.registeredToolNames()).thenReturn(setOf("getDate", "getDatetime"))
 
             val data = controller.getAgentSpec("web-tools").data
 
-            assertTrue(data?.toolDetails.isNullOrEmpty(), "未声明的工具不应进入下发")
+            assertTrue(data?.toolDetails.isNullOrEmpty(), "an undeclared tool must not make it into the delivery")
         }
 
         @Test
-        @DisplayName("getAgentSpec - 声明集合为空表示同步没跑，此时不做过滤")
+        @DisplayName("getAgentSpec - an empty declared set means the sync has not run, so nothing is filtered")
         fun `getAgentSpec should not filter when the sync has not run`() {
             stubWebSessionWithBindings(22L)
             `when`(agentToolMapper.selectByIds(listOf(22L))).thenReturn(listOf(stubTool(22L, "removedTool")))

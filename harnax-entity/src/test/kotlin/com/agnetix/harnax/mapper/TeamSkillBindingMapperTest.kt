@@ -19,10 +19,13 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
- * 主管技能绑定的读写：`team_skill_binding` 与 `agent_skill_binding` 形状相同，但实体测试库里只有团队这
- * 一份带 `UNIQUE(team_id, skill_id)`——agent 那份刻意留在 V33 之前的样子，好让
- * [AgentSkillBindingMapperTest] 用重复行去验 `COUNT(DISTINCT ...)`。
- * 这里验团队侧自己的一套：按团队取回、整表替换、删技能时清干净、重复绑定进不了库，以及技能列表读的那个分组计数。
+ * Reads and writes of the lead's skill bindings: `team_skill_binding` has the same shape as
+ * `agent_skill_binding`, but in the entity test database only the team copy carries
+ * `UNIQUE(team_id, skill_id)` — the agent copy is deliberately left as it was before V33 so
+ * [AgentSkillBindingMapperTest] can prove `COUNT(DISTINCT ...)` with duplicate rows.
+ * What this class pins is the team side on its own: fetching by team, replacing the whole set,
+ * clearing bindings when a skill goes, a repeat binding not reaching the database, and the grouped
+ * count the skill list reads.
  *
  * @author agnetix
  * @since 2026-09-20
@@ -108,10 +111,11 @@ open class TeamSkillBindingMapperTest {
     }
 
     @Test
-    @DisplayName("selectTeamBindingCounts - 每个技能一行，按团队计数")
+    @DisplayName("selectTeamBindingCounts - one row per skill, counted by team")
     fun countsTeamsPerSkill() {
-        // 本表的 UNIQUE(team_id, skill_id) 让"同团队重复绑同一技能"进不了库，所以这条验的是分组与计数，
-        // 不是 `DISTINCT` 本身——那个读法由 [AgentSkillBindingMapperTest] 用重复行验
+        // This table's UNIQUE(team_id, skill_id) already keeps a second binding of the same skill in the
+        // same team out, so the case pins the grouping and the counts — not `DISTINCT` itself, which
+        // [AgentSkillBindingMapperTest] proves with duplicate rows
         bind(21L, 100L, 101L)
         bind(22L, 100L)
 
@@ -121,7 +125,7 @@ open class TeamSkillBindingMapperTest {
     }
 
     @Test
-    @DisplayName("selectTeamBindingCounts - 未绑定的技能不出现在结果里")
+    @DisplayName("selectTeamBindingCounts - a skill nothing binds does not appear in the result")
     fun omitsUnboundSkillsFromCounts() {
         assertTrue(bindingMapper.selectTeamBindingCounts(listOf(999L)).isEmpty())
     }

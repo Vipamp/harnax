@@ -176,7 +176,7 @@ class SkillCrudIT : BaseAdminIT() {
 
         // Same contract as every other detail endpoint: a read that misses is a 404 with no data.
         val node = getJson("/api/admin/skills/$skillId")
-        assertEquals(404, node["code"].asInt(), "读不到的行不该是成功响应")
+        assertEquals(404, node["code"].asInt(), "a row we cannot read must not answer as success")
         assertTrue(node["data"] == null || node["data"].isNull)
 
         val record = findInPage("/api/admin/skills/page", "name=$skillName") {
@@ -190,7 +190,7 @@ class SkillCrudIT : BaseAdminIT() {
     fun `cleanup delete skill repository`() {
         assertOk(deleteJson("/api/admin/skill-repositories/${locateRepoId()}"))
         val node = getJson("/api/admin/skill-repositories/$repoId")
-        assertEquals(404, node["code"].asInt(), "读不到的行不该是成功响应")
+        assertEquals(404, node["code"].asInt(), "a row we cannot read must not answer as success")
         assertTrue(node["data"] == null || node["data"].isNull)
     }
 }

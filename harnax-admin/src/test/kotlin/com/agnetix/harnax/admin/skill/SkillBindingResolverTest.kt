@@ -139,7 +139,7 @@ class SkillBindingResolverTest {
     }
 
     @Test
-    @DisplayName("下发只给持有者租户的行，别租户的技能整篇不出门")
+    @DisplayName("delivery only gives rows of the holder's tenant, another tenant's skill leaves nothing of it")
     fun deliversOnlyTheHoldersTenant() {
         skill(1L, "本租户技能")
         skill(2L, "别租户技能", tenantId = TENANT + 1, repositoryId = 20L)
@@ -153,7 +153,7 @@ class SkillBindingResolverTest {
     }
 
     @Test
-    @DisplayName("下发同样豁免内置仓库：CLI 自带技能跨租户照样能到运行侧")
+    @DisplayName("delivery also exempts the built-in repository: CLI bundled skills still reach the runtime across tenants")
     fun deliversBuiltinRepositorySkillsToAnyTenant() {
         skill(1L, "cli 内置技能", tenantId = TENANT + 1, repositoryId = BUILTIN_REPO)
 
@@ -161,7 +161,7 @@ class SkillBindingResolverTest {
     }
 
     @Test
-    @DisplayName("没有绑定就不查库，下发回答空集合")
+    @DisplayName("no binding means no DB read, delivery answers an empty collection")
     fun skipsTheReadWhenNothingIsBound() {
         assertEquals(emptyList<Skill>(), resolver.deliverable(emptyList(), TENANT))
 

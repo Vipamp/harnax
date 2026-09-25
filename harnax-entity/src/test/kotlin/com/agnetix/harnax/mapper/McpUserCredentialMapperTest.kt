@@ -203,7 +203,7 @@ open class McpUserCredentialMapperTest {
         }
 
         @Test
-        @DisplayName("deleteByUserId - 删用户时清掉他在各租户下的全部凭据")
+        @DisplayName("deleteByUserId - deleting the user clears all of their credentials across tenants")
         fun `deleteByUserId should remove every credential of the user`() {
             insertCredential(26L, 108L, 208L)
             insertCredential(27L, 108L, 208L)
@@ -219,7 +219,7 @@ open class McpUserCredentialMapperTest {
         }
 
         @Test
-        @DisplayName("deleteByUserId - 没有凭据时返回 0 而不是报错")
+        @DisplayName("deleteByUserId - returns 0 instead of an error when nothing matched")
         fun `deleteByUserId should return zero when nothing matched`() {
             assertEquals(0, mcpUserCredentialMapper.deleteByUserId(999_998L))
         }

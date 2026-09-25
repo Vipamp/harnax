@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.service.impl
 
+import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.AgentCliBinding
@@ -71,6 +72,7 @@ class AgentSessionRefreshServiceTest {
 
     @AfterEach
     fun tearDown() {
+        TenantContext.clear()
         server.shutdown()
     }
 
@@ -166,6 +168,45 @@ class AgentSessionRefreshServiceTest {
 
             // Then
             assertTrue(result.isEmpty())
+        }
+
+        @Test
+        @DisplayName("listRelatedSessions - rows owned by another tenant never surface")
+        fun `listRelatedSessions should skip rows owned by another tenant`() {
+            // Given - the caller is tenant 1 and probes an agent that carries tenant-7 rows
+            TenantContext.setTenantId(1)
+            val ownChannel = Channel().apply {
+                name = "Own channel"
+                type = "wechat"
+                sessionId = "ch-own"
+                tenantId = 1
+            }
+            val foreignChannel = Channel().apply {
+                name = "Foreign channel"
+                type = "feishu"
+                sessionId = "ch-foreign"
+                tenantId = 7
+            }
+            val ownSession = Session().apply {
+                sessionId = "web-own"
+                title = "Own session"
+                active = 1
+                tenantId = 1
+            }
+            val foreignSession = Session().apply {
+                sessionId = "web-foreign"
+                title = "Foreign session"
+                active = 1
+                tenantId = 7
+            }
+            `when`(channelMapper.selectByAgentId(10L)).thenReturn(listOf(ownChannel, foreignChannel))
+            `when`(sessionMapper.selectByAgentId(10L)).thenReturn(listOf(ownSession, foreignSession))
+
+            // When
+            val result = createService().listRelatedSessions(10L)
+
+            // Then - the tenant-7 channel name and session title must not reach this caller
+            assertEquals(listOf("ch-own", "web-own"), result.map { it.sessionId })
         }
 
         @Test
@@ -389,6 +430,36 @@ class AgentSessionRefreshServiceTest {
         }
 
         @Test
+        @DisplayName("listAgentsByCli - agents owned by another tenant never surface")
+        fun `listAgentsByCli should skip agents owned by another tenant`() {
+            // Given - CLI packages are platform-level, so only the agent side can scope this read
+            TenantContext.setTenantId(1)
+            `when`(cliBindingMapper.selectByCliId(5L)).thenReturn(listOf(binding(10L), binding(11L)))
+            `when`(agentMapper.selectById(10L)).thenReturn(
+                Agent().apply {
+                    id = 10L
+                    name = "Own agent"
+                    status = 1
+                    tenantId = 1
+                },
+            )
+            `when`(agentMapper.selectById(11L)).thenReturn(
+                Agent().apply {
+                    id = 11L
+                    name = "Foreign agent"
+                    status = 1
+                    tenantId = 7
+                },
+            )
+
+            // When
+            val result = createService().listAgentsByCli(5L)
+
+            // Then
+            assertEquals(listOf(10L), result.map { it.agentId })
+        }
+
+        @Test
         @DisplayName("listAgentsByCli - 无绑定返回空列表")
         fun `listAgentsByCli should return empty list when no bindings`() {
             `when`(cliBindingMapper.selectByCliId(5L)).thenReturn(emptyList())
@@ -398,7 +469,7 @@ class AgentSessionRefreshServiceTest {
     }
 
     @Nested
-    @DisplayName("按MCP查询关联Agent测试")
+    @DisplayName("Related agents by MCP test")
     inner class ListAgentsByMcpTests {
 
         private fun binding(agentId: Long) = AgentMcpBinding().apply {
@@ -407,7 +478,7 @@ class AgentSessionRefreshServiceTest {
         }
 
         @Test
-        @DisplayName("listAgentsByMcp - 返回绑定该MCP的Agent信息")
+        @DisplayName("listAgentsByMcp - returns the agents that bind this MCP")
         fun `listAgentsByMcp should return agents binding the mcp`() {
             // Given
             `when`(mcpBindingMapper.selectByMcpId(7L)).thenReturn(listOf(binding(10L), binding(11L)))
@@ -438,9 +509,9 @@ class AgentSessionRefreshServiceTest {
         }
 
         @Test
-        @DisplayName("listAgentsByMcp - 去重相同Agent的多条绑定，无绑定时为空")
+        @DisplayName("listAgentsByMcp - dedupes repeated bindings, empty when none")
         fun `listAgentsByMcp should deduplicate agent ids`() {
-            // Given - 一张表里同一 agent 可以绑同一 MCP 的多条历史行
+            // Given - one agent can hold several history rows binding the same MCP
             `when`(mcpBindingMapper.selectByMcpId(7L)).thenReturn(listOf(binding(10L), binding(10L)))
             `when`(agentMapper.selectById(10L)).thenReturn(
                 Agent().apply {
@@ -454,6 +525,31 @@ class AgentSessionRefreshServiceTest {
             assertEquals(1, createService().listAgentsByMcp(7L).size)
             `when`(mcpBindingMapper.selectByMcpId(8L)).thenReturn(emptyList())
             assertTrue(createService().listAgentsByMcp(8L).isEmpty())
+        }
+
+        @Test
+        @DisplayName("listAgentsByMcp - agents owned by another tenant never surface")
+        fun `listAgentsByMcp should skip agents owned by another tenant`() {
+            TenantContext.setTenantId(1)
+            `when`(mcpBindingMapper.selectByMcpId(7L)).thenReturn(listOf(binding(10L), binding(11L)))
+            `when`(agentMapper.selectById(10L)).thenReturn(
+                Agent().apply {
+                    id = 10L
+                    name = "Own agent"
+                    status = 1
+                    tenantId = 1
+                },
+            )
+            `when`(agentMapper.selectById(11L)).thenReturn(
+                Agent().apply {
+                    id = 11L
+                    name = "Foreign agent"
+                    status = 1
+                    tenantId = 7
+                },
+            )
+
+            assertEquals(listOf(10L), createService().listAgentsByMcp(7L).map { it.agentId })
         }
     }
 

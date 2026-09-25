@@ -393,7 +393,7 @@ class SessionServiceImplTest {
                     modelId = 11L
                     status = 1
                     creator = "boss"
-                    // 公开团队：可见性守卫（is_public OR creator）在私有团队上会拒绝非创建者
+                    // public team: the visibility guard (is_public OR creator) would refuse a non-creator on a private team
                     isPublic = 1
                 },
             )
@@ -425,9 +425,9 @@ class SessionServiceImplTest {
         }
 
         @Test
-        @DisplayName("createSession - 别人的私有团队起不了会话")
+        @DisplayName("createSession - cannot start a session on another user's private team")
         fun `createSession should refuse a private team of another user`() {
-            // Given - 列表页看不到它（is_public=0 且 creator 不是自己），起会话也必须同样被挡
+            // Given - the list page cannot see it (is_public=0 and creator is not me), so starting a session must be blocked the same way
             val request = SessionCreateRequest(title = "Not Mine", teamId = 43L)
             `when`(sessionMapper.countByTitle("Not Mine")).thenReturn(0)
             `when`(teamMapper.selectById(43L)).thenReturn(
@@ -911,7 +911,7 @@ class SessionServiceImplTest {
         }
 
         @Test
-        @DisplayName("deleteSession - 先清该会话的产物，再删会话行")
+        @DisplayName("deleteSession - clears the session's artifacts first, then deletes the session row")
         fun `deleteSession should remove the session's artifacts before the row`() {
             // Given
             `when`(sessionMapper.selectById(1L)).thenReturn(testSession)
@@ -920,14 +920,14 @@ class SessionServiceImplTest {
             // When
             assertTrue(createService().deleteSession(1L))
 
-            // Then - 产物先走：对象删完才轮到行，数据库失败时留下的是"行指向缺失对象"，重试即可修复
+            // Then - artifacts go first: only after the objects are deleted does the row get its turn, so a database failure leaves "a row pointing at a missing object", which a retry can fix
             val order = inOrder(teamArtifactCleaner, sessionMapper)
             order.verify(teamArtifactCleaner).deleteForSession(testSession.sessionId)
             order.verify(sessionMapper).deleteById(1L)
         }
 
         @Test
-        @DisplayName("deleteSession - 运行侧释放排在本地两步之前")
+        @DisplayName("deleteSession - runtime release runs before both local steps")
         fun `deleteSession should release the runtime before anything local`() {
             // Given
             `when`(sessionMapper.selectById(1L)).thenReturn(testSession)
@@ -936,7 +936,7 @@ class SessionServiceImplTest {
             // When
             assertTrue(createService().deleteSession(1L))
 
-            // Then - 释放按 sessionId 指名，因为那是运行态的键；行 id 对它没有意义
+            // Then - the release is named by sessionId, because that is the runtime state's key; the row id means nothing to it
             val order = inOrder(agentRuntimeClient, teamArtifactCleaner, sessionMapper)
             order.verify(agentRuntimeClient).clearSession(testSession.sessionId)
             order.verify(teamArtifactCleaner).deleteForSession(testSession.sessionId)
@@ -944,20 +944,20 @@ class SessionServiceImplTest {
         }
 
         @Test
-        @DisplayName("deleteSession - 运行侧未能释放时保留会话")
+        @DisplayName("deleteSession - keeps the session when the runtime cannot release it")
         fun `deleteSession should keep the session when the runtime cannot release it`() {
             // Given
             `when`(sessionMapper.selectById(1L)).thenReturn(testSession)
             `when`(agentRuntimeClient.clearSession(testSession.sessionId))
                 .thenReturn(ResultVo.error(500, "sandbox container is busy"))
 
-            // When & Then - 留着会话行：行没了而运行态还在，剩下的就是一份谁也指认不了的状态，比留着更坏
+            // When & Then - keep the session row: if the row is gone while the runtime state remains, what is left is a state no one can point at, which is worse than keeping it
             val exception = assertThrows<BizException> {
                 createService().deleteSession(1L)
             }
             assertTrue(
                 exception.message!!.contains("sandbox container is busy"),
-                "运行侧那句原因才是用户要读到的，实际: ${exception.message}",
+                "the runtime's reason is what the user should read, actual: ${exception.message}",
             )
             verify(sessionMapper, never()).deleteById(anyLong())
             verify(teamArtifactCleaner, never()).deleteForSession(anyString())

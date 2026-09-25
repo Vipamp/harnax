@@ -1134,7 +1134,7 @@ class McpOAuthUserServiceImplTest {
         }
 
         @Test
-        @DisplayName("撤销留下 REVOKE/OK 的审计行，且不带会话")
+        @DisplayName("revocation leaves a REVOKE/OK audit row, without a session")
         fun `a revocation is audited as the callers own act`() {
             configured()
             storedGrant()
@@ -1154,7 +1154,7 @@ class McpOAuthUserServiceImplTest {
         }
 
         @Test
-        @DisplayName("上游拒绝撤销也留痕，因为本地已经清了")
+        @DisplayName("an upstream revocation refusal still leaves a trace, since the local side already cleared")
         fun `a refused upstream revocation is still audited`() {
             configured()
             storedGrant()

@@ -623,13 +623,13 @@ class McpServerServiceImplTest {
     }
 
     @Nested
-    @DisplayName("env_params 存储范围测试")
+    @DisplayName("env_params storage scope tests")
     inner class EnvParamStorageScopeTests {
 
         private val declared = listOf(ToolEnvParamEntry(envParamName = "API_KEY", defaultValue = "sk-1", secret = true))
 
         @Test
-        @DisplayName("createMcpServer - 网络型不落 env_params")
+        @DisplayName("createMcpServer - a network row does not store env_params")
         fun `createMcpServer should not store env params for a network row`() {
             val request = McpServerCreateRequest(
                 name = "Sse MCP",
@@ -651,7 +651,7 @@ class McpServerServiceImplTest {
         }
 
         @Test
-        @DisplayName("createMcpServer - stdio 型照声明存 env_params")
+        @DisplayName("createMcpServer - a stdio row stores env_params per its declaration")
         fun `createMcpServer should store env params on a stdio row`() {
             allowStdio()
             `when`(secretFieldEncryptor.serializeToolEnvParams(any(), anyOrNull())).thenReturn("stored-env")
@@ -672,7 +672,7 @@ class McpServerServiceImplTest {
         }
 
         @Test
-        @DisplayName("updateMcpServer - 网络型收到 env_params 时清列而不是存")
+        @DisplayName("updateMcpServer - clears the column instead of storing when a network row receives env_params")
         fun `updateMcpServer should retire the column for a network row carrying env params`() {
             // Given - a row an older create left with values on a transport that cannot use them
             val stored = McpServer().apply {
@@ -1283,7 +1283,7 @@ class McpServerServiceImplTest {
         }
 
         @Test
-        @DisplayName("getMcpServer - 别人的私有行仍可解析，绑定回显不该少一项")
+        @DisplayName("getMcpServer - another user's private row still resolves, the binding echo must not drop an entry")
         fun `getMcpServer should still resolve another user's private row`() {
             `when`(mcpServerMapper.selectById(1L)).thenReturn(row(creator = "other", isPublic = 0))
 
@@ -1293,7 +1293,7 @@ class McpServerServiceImplTest {
         }
 
         @Test
-        @DisplayName("getVisibleMcpServer - 同租户别人的私有行按不存在回答")
+        @DisplayName("getVisibleMcpServer - another user's private row in the same tenant answers as missing")
         fun `getVisibleMcpServer should answer missing for another user's private row`() {
             `when`(mcpServerMapper.selectById(1L)).thenReturn(row(creator = "other", isPublic = 0))
 
@@ -1301,7 +1301,7 @@ class McpServerServiceImplTest {
         }
 
         @Test
-        @DisplayName("getVisibleMcpServer - 沿用列表的 is_public OR creator")
+        @DisplayName("getVisibleMcpServer - reuses the list's is_public OR creator predicate")
         fun `getVisibleMcpServer should keep the list predicate`() {
             `when`(mcpServerMapper.selectById(1L)).thenReturn(row(creator = "other", isPublic = 1))
             assertNotNull(mcpServerService.getVisibleMcpServer(1L))
@@ -1311,7 +1311,7 @@ class McpServerServiceImplTest {
         }
 
         @Test
-        @DisplayName("改/删/启停/探测 - 共用同一个可见性判断")
+        @DisplayName("update/delete/toggle/probe - share one visibility check")
         fun `mutating and probing paths should refuse another user's private row`() {
             `when`(mcpServerMapper.selectById(1L)).thenReturn(row(creator = "other", isPublic = 0))
 
@@ -1341,7 +1341,7 @@ class McpServerServiceImplTest {
     inner class DisabledRowProbeTests {
 
         @Test
-        @DisplayName("listTools - 停用的行不去真连探测")
+        @DisplayName("listTools - a disabled row is never probed by an actual connection")
         fun `listTools should refuse a disabled row before connecting`() {
             val stored = McpServer().apply {
                 id = 1L

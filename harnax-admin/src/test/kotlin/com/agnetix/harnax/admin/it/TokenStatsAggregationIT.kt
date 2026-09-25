@@ -93,7 +93,7 @@ class TokenStatsAggregationIT : BaseAdminIT() {
     }
 
     @Test
-    @DisplayName("聚合统计按真实行求和，并把维度名字带回来")
+    @DisplayName("aggregation sums the real rows and carries the dimension names back")
     fun aggregationSumsSeededRows() {
         val data = assertOk(getJson("/api/admin/token-stats/aggregation?$window"))
         val overall = data["overall"]
@@ -121,7 +121,7 @@ class TokenStatsAggregationIT : BaseAdminIT() {
     }
 
     @Test
-    @DisplayName("按天的时间序列把消耗落到当天那一个点上")
+    @DisplayName("the day series lands the consumption on that one day point")
     fun daySeriesPlacesConsumptionOnItsDay() {
         val points = series("/api/admin/token-stats/time-series?granularity=day&$window")
         // One day requested, so exactly one point — and it has to carry the total rather than 0.
@@ -134,7 +134,7 @@ class TokenStatsAggregationIT : BaseAdminIT() {
     }
 
     @Test
-    @DisplayName("按小时的时间序列按小时截断")
+    @DisplayName("the hour series truncates to the hour")
     fun hourSeriesTruncatesToTheHour() {
         val byHour = series("/api/admin/token-stats/time-series?granularity=hour&$window")
             .associate { it["timePoint"].asText() to it["grandTotalToken"].asLong() }
@@ -146,7 +146,7 @@ class TokenStatsAggregationIT : BaseAdminIT() {
     }
 
     @Test
-    @DisplayName("三个维度的时间序列各自带上维度标识")
+    @DisplayName("each of the three dimension series carries its own dimension identity")
     fun dimensionSeriesCarryTheirDimension() {
         assertEquals(420L, singlePoint("/time-series/model", "dimensionId", modelId.toString())["grandTotalToken"].asLong())
         assertEquals(
@@ -158,7 +158,7 @@ class TokenStatsAggregationIT : BaseAdminIT() {
     }
 
     @Test
-    @DisplayName("按周的时间序列把消耗落到所属的周一")
+    @DisplayName("the week series lands the consumption on the Monday it belongs to")
     fun weekSeriesPlacesConsumptionOnItsMonday() {
         // 2020-03-05 is a Thursday, so the window belongs to the week starting Monday 2020-03-02.
         val points = series("/api/admin/token-stats/time-series?granularity=week&$window")
@@ -168,7 +168,7 @@ class TokenStatsAggregationIT : BaseAdminIT() {
     }
 
     @Test
-    @DisplayName("按月的时间序列把消耗落到所属月，其余月补零")
+    @DisplayName("the month series lands the consumption on its month and zero-fills the other months")
     fun monthSeriesPlacesConsumptionOnItsMonth() {
         val byMonth = series("/api/admin/token-stats/time-series?granularity=month&$quarter")
             .associate { it["timePoint"].asText() to it["grandTotalToken"].asLong() }
@@ -181,7 +181,7 @@ class TokenStatsAggregationIT : BaseAdminIT() {
     }
 
     @Test
-    @DisplayName("三个维度都支持按周与按月")
+    @DisplayName("all three dimensions support week and month")
     fun dimensionSeriesAnswerWeekAndMonth() {
         val dimensions = listOf(
             "/time-series/model" to "Stats Model",
@@ -206,7 +206,7 @@ class TokenStatsAggregationIT : BaseAdminIT() {
     }
 
     @Test
-    @DisplayName("没有端点触达的按小时维度语句在真库上能跑且分桶正确")
+    @DisplayName("the per-hour dimension statements no endpoint reaches run on the real database and bucket correctly")
     fun statementsNoEndpointReachesStillAggregate() {
         // The page only asks the dimension endpoints for one granularity at a time, and the hour rows would
         // add 24 points per dimension to the HTTP tests above. These three statements would otherwise stay

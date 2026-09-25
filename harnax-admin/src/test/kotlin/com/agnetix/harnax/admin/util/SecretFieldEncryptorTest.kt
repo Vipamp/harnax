@@ -163,7 +163,7 @@ class SecretFieldEncryptorTest {
         }
 
         @Test
-        @DisplayName("decryptToMap - 只丢掉解不开的那条，其余照常交付")
+        @DisplayName("decryptToMap - drops only the entry that cannot be opened, delivers the rest as usual")
         fun `decryptToMap should skip only the entry this key cannot open`() {
             // A rotated AES key leaves every old ciphertext unopenable. Dropping the batch together is
             // what made a server look like it had no headers at all; one bad row should cost one header.
@@ -329,7 +329,7 @@ class SecretFieldEncryptorTest {
         }
 
         @Test
-        @DisplayName("decryptToolEnvParamsToMap - 只跳过解不开的那条")
+        @DisplayName("decryptToolEnvParamsToMap - skips only the entry that cannot be opened")
         fun `decryptToolEnvParamsToMap should skip only the entry this key cannot open`() {
             // Same rule as the headers: the stdio process env keeps whatever this key can still open.
             val openable = aesUtil.encrypt("sk-still-works")

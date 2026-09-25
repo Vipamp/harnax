@@ -141,7 +141,7 @@ class SysUserCrudIT : BaseAdminIT() {
         assertOk(deleteJson("/api/admin/users/${locateUserId()}"))
 
         val node = getJson("/api/admin/users/$userId")
-        assertEquals(404, node["code"].asInt(), "读不到的行不该是成功响应")
+        assertEquals(404, node["code"].asInt(), "a row we cannot read must not answer as success")
         assertTrue(node["data"] == null || node["data"].isNull, "deleted user should not be returned")
 
         val record = findInPage("/api/admin/users/page", "keyword=$username") {

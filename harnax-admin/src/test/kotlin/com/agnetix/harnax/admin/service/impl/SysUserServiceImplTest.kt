@@ -841,7 +841,7 @@ class SysUserServiceImplTest {
         }
 
         @Test
-        @DisplayName("deleteUser - 用户行没删掉时不动凭据")
+        @DisplayName("deleteUser - leaves grants alone when the user row was not deleted")
         fun `deleteUser should leave grants alone when the user row was not deleted`() {
             // Given
             `when`(sysUserMapper.selectById(1L)).thenReturn(testUser)

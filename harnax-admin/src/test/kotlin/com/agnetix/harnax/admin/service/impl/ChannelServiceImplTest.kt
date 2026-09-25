@@ -728,7 +728,7 @@ class ChannelServiceImplTest {
         private val channelSessionId = "chn-11111111-2222-3333-4444-555555555555"
 
         @Test
-        @DisplayName("deleteChannel - 运行侧释放排在行写之前")
+        @DisplayName("deleteChannel - runtime release runs before the row write")
         fun `deleteChannel should release the runtime before writing the row`() {
             `when`(channelMapper.selectById(1L)).thenReturn(testChannel)
             `when`(channelMapper.deleteById(1L)).thenReturn(1)
@@ -744,7 +744,7 @@ class ChannelServiceImplTest {
         }
 
         @Test
-        @DisplayName("deleteChannel - 运行侧拒绝时行不动")
+        @DisplayName("deleteChannel - leaves the row when the runtime refuses")
         fun `deleteChannel should leave the row when the runtime refuses`() {
             `when`(channelMapper.selectById(1L)).thenReturn(testChannel)
             doThrow(BizException("The runtime could not release this session, so the deletion was refused: sandbox is busy"))
@@ -761,7 +761,7 @@ class ChannelServiceImplTest {
         }
 
         @Test
-        @DisplayName("deleteChannel - 看不见的渠道不会惊动运行侧")
+        @DisplayName("deleteChannel - a channel the caller cannot see never disturbs the runtime")
         fun `deleteChannel should not ask the runtime about a channel the caller cannot see`() {
             // Given: the tenant gate has to stay in front of the release, or any caller could probe the
             // runtime with a session id it does not own.
@@ -780,7 +780,7 @@ class ChannelServiceImplTest {
         }
 
         @Test
-        @DisplayName("deleteChannel - 没有会话 id 的渠道不发释放")
+        @DisplayName("deleteChannel - sends no release for a channel without a session id")
         fun `deleteChannel should send no release for a channel without a session id`() {
             `when`(channelMapper.selectById(1L)).thenReturn(testChannel.apply { sessionId = "" })
             `when`(channelMapper.deleteById(1L)).thenReturn(1)

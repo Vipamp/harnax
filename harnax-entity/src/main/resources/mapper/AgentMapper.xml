@@ -37,9 +37,7 @@
     <!-- selectByName: live rows only, the pair of uk_agent_tenant_active_name -->
     <select id="selectByName" resultMap="AgentResultMap">
         SELECT * FROM agent WHERE name = #{name} AND active = 1
-        <if test='tenantId != null'>
-            AND tenant_id = #{tenantId}
-        </if>
+        AND tenant_id = #{tenantId}
         LIMIT 1
     </select>
 

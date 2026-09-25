@@ -59,7 +59,7 @@ class TeamArtifactCleanerTest {
     }
 
     @Test
-    @DisplayName("deleteForSession - 没有产物时什么都不做")
+    @DisplayName("deleteForSession - does nothing when there are no artifacts")
     fun `deleteForSession should do nothing without artifacts`() {
         `when`(teamArtifactMapper.selectBySessionId(SESSION_ID)).thenReturn(emptyList())
         minioAvailable()
@@ -70,7 +70,7 @@ class TeamArtifactCleanerTest {
     }
 
     @Test
-    @DisplayName("deleteForSession - 每个产物先删对象再删行")
+    @DisplayName("deleteForSession - for each artifact deletes the object before the row")
     fun `deleteForSession should delete every object before its row`() {
         val first = artifact(1L, "team/root-a.bin")
         val second = artifact(2L, "team/root-b.bin")
@@ -90,7 +90,7 @@ class TeamArtifactCleanerTest {
     }
 
     @Test
-    @DisplayName("deleteForSession - MinIO 未配置时保留行，不半清理")
+    @DisplayName("deleteForSession - keeps the row when MinIO is not configured, no half cleanup")
     fun `deleteForSession should keep rows when MinIO is not configured`() {
         `when`(teamArtifactMapper.selectBySessionId(SESSION_ID)).thenReturn(listOf(artifact(1L, "team/a.bin")))
         `when`(minioClientProvider.ifAvailable).thenReturn(null)
@@ -101,7 +101,7 @@ class TeamArtifactCleanerTest {
     }
 
     @Test
-    @DisplayName("deleteForSession - 对象删不掉时保留它的行，而不是留下指向空对象的行")
+    @DisplayName("deleteForSession - keeps the row when its object cannot be deleted, rather than leaving a row pointing at a missing object")
     fun `deleteForSession should keep the row whose object could not be deleted`() {
         `when`(teamArtifactMapper.selectBySessionId(SESSION_ID)).thenReturn(listOf(artifact(1L, "team/stuck.bin")))
         `when`(minioClient.removeObject(any<RemoveObjectArgs>()))

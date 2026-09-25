@@ -78,8 +78,8 @@ class AgentToolCrudIT : BaseAdminIT() {
     @Order(6)
     fun `get detail of non-existent tool reports 404`() {
         val node = getJson("/api/admin/tools/99999999")
-        assertEquals(404, node["code"].asInt(), "查无此行不能是成功响应")
+        assertEquals(404, node["code"].asInt(), "a row that does not exist must not answer as success")
         assertTrue(node["data"] == null || node["data"].isNull)
-        assertFalse(node["message"].asText().isEmpty(), "404 要带上具名文案")
+        assertFalse(node["message"].asText().isEmpty(), "404 must carry a named message")
     }
 }

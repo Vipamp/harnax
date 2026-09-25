@@ -174,7 +174,7 @@ class EnvVariableCrudIT : BaseAdminIT() {
                 ),
             ),
         )
-        // 拒因是「这行不存在」，与查无此 id 的回答逐字相同：别人的行存在与否不是能问出来的东西
+        // The refusal says "this row does not exist", word for word the answer a missing id gives: whether another user's row exists is not askable
         assertEquals(
             messageOf(parseBody(exchange(HttpMethod.PUT, "/api/admin/env-variables/update/999999999", mapOf("envValue" to "x")))),
             messageOf(node),
@@ -192,7 +192,7 @@ class EnvVariableCrudIT : BaseAdminIT() {
         assertOk(deleteJson("/api/admin/env-variables/${locateEnvId()}"))
 
         val node = getJson("/api/admin/env-variables/$envId")
-        assertEquals(404, node["code"].asInt(), "读不到的行不该是成功响应")
+        assertEquals(404, node["code"].asInt(), "a row we cannot read must not answer as success")
         assertTrue(node["data"] == null || node["data"].isNull, "deleted env variable should not be returned")
     }
 
@@ -224,7 +224,7 @@ class EnvVariableCrudIT : BaseAdminIT() {
                     exchange(HttpMethod.POST, "/api/admin/env-variables", mapOf("envKey" to shared, "envValue" to "theirs-$suffix"), intruderToken),
                 ),
             )
-            // V46 之后键按创建者唯一：同租户里另一个人填同一个键不再算撞车
+            // Since V46 the key is unique per creator: a second person in the same tenant reusing it is no longer a clash
             assertOk(postJson("/api/admin/env-variables", mapOf("envKey" to shared, "envValue" to "mine-$suffix")))
 
             val rows = jdbc.queryForList(
@@ -331,9 +331,9 @@ class EnvVariableCrudIT : BaseAdminIT() {
         val key = "IT_ENV_PER_USER_$suffix"
         try {
             assertEquals(1, insertRow(tenant, key, 1, creator = "it_a"))
-            // 同租户第二个创建者填同一个键：V46 放宽的正是这一条
+            // A second creator in the same tenant using the same key: exactly the case V46 relaxed
             assertEquals(1, insertRow(tenant, key, 1, creator = "it_b"))
-            // 同一个人再填一次还是要撞
+            // The same creator inserting it twice still collides
             assertThrows<DuplicateKeyException> { insertRow(tenant, key, 1, creator = "it_a") }
             assertEquals(
                 2,

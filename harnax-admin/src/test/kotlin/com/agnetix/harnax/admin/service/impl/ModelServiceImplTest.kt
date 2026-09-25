@@ -644,7 +644,7 @@ class ModelServiceImplTest {
         @Test
         @DisplayName("deleteModel - Reject while agents and teams still point at it")
         fun `deleteModel should reject while agents and teams point at it`() {
-            // agent/team 上的 model_id 要到那条配置被真正使用才暴露，届时已经晚了
+            // a model_id on an agent/team only surfaces when that config is actually used, and by then it is too late
             `when`(modelMapper.selectById(1L)).thenReturn(testModel)
             `when`(modelMapper.selectUsageByModelId(1L)).thenReturn(
                 ModelUsage().apply {

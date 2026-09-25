@@ -454,8 +454,8 @@ class ModelProviderServiceImplTest {
         @Test
         @DisplayName("deleteModelProvider - A provider of only disabled models still cannot go")
         fun `deleteModelProvider should refuse while every model it has is disabled`() {
-            // Given - 停用中的模型仍被 agent 指着，服务商一走那行 model.provider_id 就没人应答了；
-            // 只有「停使用该服务商」才按在用的模型来判
+            // Given - a disabled model is still pointed at by an agent, and once the provider is gone that row's model.provider_id has no one to answer;
+            // only "disabling this provider" judges by in-use models
             `when`(modelProviderMapper.selectById(1L)).thenReturn(testProvider)
             `when`(modelMapper.countModelsByProviderId(1L)).thenReturn(1)
             `when`(modelMapper.countActiveModelsByProviderId(1L)).thenReturn(0)
@@ -509,7 +509,7 @@ class ModelProviderServiceImplTest {
         @Test
         @DisplayName("getModelStats - A public provider of another tenant has no stats to hand out")
         fun `getModelStats should refuse another tenant provider`() {
-            // Given - 公开只决定「别家能不能用」，统计数说的是归属方自己的模型清单
+            // Given - public only decides "whether others may use it"; the stats describe the owner's own model list
             val foreign = ModelProvider().apply {
                 id = 1L
                 tenantId = 2L

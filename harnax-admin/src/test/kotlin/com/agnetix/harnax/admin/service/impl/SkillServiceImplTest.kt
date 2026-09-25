@@ -1681,7 +1681,7 @@ class SkillServiceImplTest {
          * "0 agents" on the page and still be refused on the switch. Both numbers now travel together.
          */
         @Test
-        @DisplayName("convertToResponses - 只被主管绑定时团队数不为零")
+        @DisplayName("convertToResponses - team count is non-zero when only a lead binds it")
         fun `convertToResponses reports the team a lead binds this skill to`() {
             `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
             `when`(agentSkillBindingMapper.selectAgentBindingCounts(listOf(1L))).thenReturn(emptyList())

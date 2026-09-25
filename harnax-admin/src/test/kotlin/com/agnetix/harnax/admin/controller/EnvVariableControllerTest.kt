@@ -50,7 +50,7 @@ class EnvVariableControllerTest {
 
     @BeforeEach
     fun setUp() {
-        // MessageUtil 桩成回显消息码：断言只看键，不依赖 bundle 文案
+        // Stub MessageUtil to echo the message code: assertions check the key only, not bundle text
         `when`(messageUtil.getMessage(anyString())).thenAnswer { invocation -> invocation.arguments[0] as String }
         testEnv = EnvVariable().apply {
             id = 1L
@@ -191,13 +191,13 @@ class EnvVariableControllerTest {
         }
 
         @Test
-        @DisplayName("getById - 读不到时返回具名 404")
+        @DisplayName("getById - returns a named 404 when the row cannot be read")
         fun `getById should report not found with a named 404`() {
             `when`(envVariableService.getEnvVariable(999L)).thenReturn(null)
 
             val result = controller.getById(999L)
 
-            assertFalse(result.isSuccess(), "读不到的行不能算成功响应")
+            assertFalse(result.isSuccess(), "a row that cannot be read must not count as a success response")
             assertEquals(404, result.code)
             assertEquals("error.env.variable.notfound", result.message)
             assertNull(result.data)
@@ -249,7 +249,7 @@ class EnvVariableControllerTest {
         }
 
         @Test
-        @DisplayName("create - service 抛异常时原样回传拒因")
+        @DisplayName("create - returns the rejection reason verbatim when service throws")
         fun `create should return error on service exception`() {
             `when`(envVariableService.createEnvVariable(any()))
                 .thenThrow(BizException("Env key already exists"))
@@ -289,7 +289,7 @@ class EnvVariableControllerTest {
         }
 
         @Test
-        @DisplayName("update - service 抛异常时原样回传拒因")
+        @DisplayName("update - returns the rejection reason verbatim when service throws")
         fun `update should return error on service exception`() {
             `when`(envVariableService.updateEnvVariable(any(), any()))
                 .thenThrow(BizException("Env variable not found"))
@@ -380,7 +380,7 @@ class EnvVariableControllerTest {
         }
 
         @Test
-        @DisplayName("toggleEnabled - 守卫文案原样返回")
+        @DisplayName("toggleEnabled - returns the guard message verbatim")
         fun `toggleEnabled should pass the reference guard message through`() {
             `when`(envVariableService.toggleEnabled(1L, 0)).thenThrow(
                 BizException("Env variable 'GITHUB_TOKEN' is bound by 1 agent(s): customer-support. Rebind them first, then disable."),
@@ -393,7 +393,7 @@ class EnvVariableControllerTest {
         }
 
         @Test
-        @DisplayName("toggleEnabled - 数据库错误不透传原文")
+        @DisplayName("toggleEnabled - does not pass the raw database error through")
         fun `toggleEnabled should not leak a database failure in its own words`() {
             `when`(envVariableService.toggleEnabled(1L, 0)).thenThrow(
                 QueryTimeoutException("UPDATE env_variable SET enabled = 0 WHERE id = 1 timed out"),

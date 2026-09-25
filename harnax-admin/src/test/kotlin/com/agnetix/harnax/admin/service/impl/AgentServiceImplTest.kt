@@ -508,7 +508,7 @@ class AgentServiceImplTest {
         @Test
         @DisplayName("createAgent - Reject a name this tenant already has live")
         fun `createAgent should reject a name already taken`() {
-            // uk_agent_tenant_active_name 会把这撞成一串 SQL 错误，服务层要先给出可读的拒绝
+            // uk_agent_tenant_active_name would collide this into a chain of SQL errors; the service layer must give a readable refusal first
             val request = AgentCreateRequest(
                 name = "Test Agent",
                 description = "Duplicate description",
@@ -527,8 +527,8 @@ class AgentServiceImplTest {
         @Test
         @DisplayName("createAgent - Refuse a model the caller cannot see")
         fun `createAgent should refuse a model the caller cannot see`() {
-            // 引用哪个 modelId 至今无人校验：知道别租户某个私有模型的 id，就能在自己的智能体上
-            // 回显它的名字和价格。判据与读取侧、与团队主管模型同一条（本租户或 is_public）
+            // Which modelId is referenced went unvalidated: knowing the id of another tenant's private model lets your agent
+            // echo back its name and price. The rule matches the read side and the team lead model (own tenant or is_public)
             val request = AgentCreateRequest(
                 name = "Foreign Model Agent",
                 description = "Foreign model description",
@@ -547,7 +547,7 @@ class AgentServiceImplTest {
         @Test
         @DisplayName("createAgent - A public model of another tenant stays usable")
         fun `createAgent should accept a public model of another tenant`() {
-            // 收紧过头的那一半也要钉住：公开模型就是给所有租户用的，拒它会让平台级模型没人能用
+            // The over-tightened half must also be pinned: a public model is meant for all tenants, refusing it would leave platform-level models unusable
             val request = AgentCreateRequest(
                 name = "Shared Model Agent",
                 description = "Shared model description",
@@ -572,7 +572,7 @@ class AgentServiceImplTest {
         @Test
         @DisplayName("createAgent - Ask about the name under the caller's tenant only")
         fun `createAgent should look the name up under the caller tenant`() {
-            // 另一个租户的同名行不占这里的名字，所以这次查询必须带上租户
+            // A same-named row in another tenant does not occupy the name here, so this query must carry the tenant
             TenantContext.setTenantId(7L)
             try {
                 val request = AgentCreateRequest(
@@ -840,7 +840,7 @@ class AgentServiceImplTest {
         @Test
         @DisplayName("updateAgent - An edit that omits modelId never consults the model")
         fun `updateAgent should leave the stored model alone when the request omits it`() {
-            // 只改提示词的向导不该因为没带 modelId 就被判成"引用了不存在的模型"
+            // A prompt-only wizard edit must not be judged as "referencing a nonexistent model" just because it omits modelId
             val request = AgentUpdateRequest(systemPrompt = "Updated prompt")
             `when`(agentMapper.selectById(1L)).thenReturn(testAgent)
             `when`(agentMapper.updateById(any())).thenReturn(1)
@@ -1098,7 +1098,7 @@ class AgentServiceImplTest {
         @Test
         @DisplayName("updateAgent - Resending the stored name is not a collision")
         fun `updateAgent should not treat the unchanged name as a collision`() {
-            // 表单会把当前名字一并提交回来，按名字查一次就会撞上这一行自己
+            // The form submits the current name back along with it, so a name lookup would collide with this very row
             val request = AgentUpdateRequest(name = "Test Agent")
             `when`(agentMapper.selectById(1L)).thenReturn(testAgent)
             `when`(agentMapper.updateById(any())).thenReturn(1)
@@ -1275,7 +1275,7 @@ class AgentServiceImplTest {
         @Test
         @DisplayName("deleteAgent - Reject while sessions still resolve to it")
         fun `deleteAgent should reject while sessions still resolve to it`() {
-            // 会话在运行期按 id 解析 agent，留下这些会话就是让下一条消息去失败
+            // Sessions resolve the agent by id at runtime; leaving these sessions means the next message will fail
             `when`(agentMapper.selectById(1L)).thenReturn(testAgent)
             `when`(sessionMapper.countByAgentId(1L)).thenReturn(3)
             `when`(sessionMapper.countRunningByAgentId(1L)).thenReturn(1)
@@ -1303,7 +1303,7 @@ class AgentServiceImplTest {
             val exception = assertThrows<BizException> { agentService.deleteAgent(1L) }
 
             assertTrue(exception.message!!.contains("channel(s): Feishu bot"))
-            // selectByAgentId 只取 10 条，会话那一半因此必须走计数而不是列表
+            // selectByAgentId only fetches 10 rows, so the session half must go by count rather than by list
             assertFalse(exception.message!!.contains("session(s)"))
             verify(agentMapper, never()).deleteById(any())
         }
@@ -1327,7 +1327,7 @@ class AgentServiceImplTest {
 
             val message = exception.message!!
             assertTrue(message.contains("2 session(s)"))
-            // 全为已结束会话时不该出现进度那一小句
+            // When all sessions are already ended, the "in progress" clause should not appear
             assertFalse(message.contains("in progress"))
             assertTrue(message.contains("DingTalk bot"))
             assertTrue(message.contains(" and "))
@@ -1670,8 +1670,8 @@ class AgentServiceImplTest {
         @Test
         @DisplayName("updateAgent - Reject two bindings that fill the same key")
         fun `updateAgent should reject two bindings carrying the same env key`() {
-            // 键改成按用户唯一之后，同租户两个用户各有一个 OPENAI_KEY 是合法数据，而一个工具的两条
-            // 绑定可以各自指向一行。下发按名字装 map，后写的盖掉先写的——用谁的凭据全看数组顺序
+            // After the key became unique per user, two users in the same tenant each having an OPENAI_KEY is valid data, and two
+            // bindings of one tool may each point to a row. Delivery fills a map by name, later writes overwrite earlier ones—whoever's credential is used depends entirely on array order
             val theirs = EnvVariable().apply {
                 id = 8L
                 tenantId = 1L
@@ -1702,8 +1702,8 @@ class AgentServiceImplTest {
         @Test
         @DisplayName("updateAgent - A key repeated from one source stays bindable")
         fun `updateAgent should accept a key repeated with the same source`() {
-            // 表单是按服务自己声明的参数逐行建绑定的（McpConfigPanel），声明里写两遍同一个参数名就会
-            // 出现同键同值的两行。它们下发的是同一个值，拒掉等于让这类智能体永远存不进去
+            // The form builds bindings row by row from the parameters a service declares itself (McpConfigPanel); writing the same parameter name twice in the
+            // declaration yields two rows with the same key and value. They deliver the same value, so refusing them means such agents can never be saved
             val request = AgentUpdateRequest(
                 toolList = listOf(
                     ToolConfig(

@@ -92,7 +92,7 @@ open class ProcessLogMapperTest {
         }
 
         @Test
-        @DisplayName("insert - 团队主管的运行日志没有智能体归属")
+        @DisplayName("insert - a team lead's run log carries no agent attribution")
         fun `insert should store a process log with no agent`() {
             // A team lead's configuration is the `team` row, so its run has no agent to attribute the
             // line to. Recording that as agent 0 would hand every agent-dimension read a phantom agent.

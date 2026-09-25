@@ -58,6 +58,12 @@ class CliArtifactReaper(
         )
         if (trees > 0 || images > 0) {
             log.info("[cliReclaim] Reclaimed {} CLI payload tree(s) and {} CLI image(s)", trees, images)
+            // The other half of "why was this artifact kept" is which agent's set holds it.
+            log.debug(
+                "[cliReclaim] Kept the sets of {} agent(s): {}",
+                inventory.agentCliSets.size,
+                inventory.agentCliSets.joinToString { "agent ${it.agentId} (${it.clis.size} CLI(s))" },
+            )
         }
     }
 }

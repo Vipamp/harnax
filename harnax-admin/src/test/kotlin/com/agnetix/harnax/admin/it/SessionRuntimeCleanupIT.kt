@@ -62,7 +62,7 @@ class SessionRuntimeCleanupIT : BaseAdminIT() {
 
     @Test
     @Order(1)
-    @DisplayName("删除会话先让运行侧释放它，释放用的是会话自己的 id")
+    @DisplayName("deleting a session releases it on the runtime side first, using the session's own id")
     fun deleteReleasesRuntimeState() {
         val (id, sessionId) = createSession("it_runtime_delete_$suffix")
 
@@ -76,18 +76,18 @@ class SessionRuntimeCleanupIT : BaseAdminIT() {
 
     @Test
     @Order(2)
-    @DisplayName("运行侧未能释放时会话留着，原因回到调用方")
+    @DisplayName("when the runtime fails to release, the session stays and the reason reaches the caller")
     fun refusalKeepsTheSession() {
         val (id, sessionId) = createSession("it_runtime_refuse_$suffix")
         fakeRouter.refusal = "sandbox container is busy"
 
         val refused = deleteJson("/api/admin/sessions/$id")
-        assertTrue(refused["code"].asInt() != 200, "运行侧拒了，删除就不能成功: $refused")
+        assertTrue(refused["code"].asInt() != 200, "a runtime refusal must fail the delete: $refused")
         assertTrue(
             refused["message"].asText().contains("sandbox container is busy"),
-            "运行侧那句原因要回到调用方，实际: ${refused["message"].asText()}",
+            "the runtime's own reason must reach the caller, got: ${refused["message"].asText()}",
         )
-        assertEquals(listOf(sessionId), clearedSessions(), "释放确实试过一次，是它自己拒的")
+        assertEquals(listOf(sessionId), clearedSessions(), "the release was attempted once, and it is what refused")
 
         // Still there, still readable — and deletable once the runtime stops refusing.
         assertEquals(sessionId, assertOk(getJson("/api/admin/sessions/$id"))["sessionId"].asText())
@@ -98,21 +98,21 @@ class SessionRuntimeCleanupIT : BaseAdminIT() {
 
     @Test
     @Order(3)
-    @DisplayName("指不到会话时不去碰运行侧")
+    @DisplayName("when no session can be named, the runtime side stays untouched")
     fun unknownSessionNeverReachesTheRuntime() {
         val refused = deleteJson("/api/admin/sessions/999999999")
 
         // The ownership gate is admin's, and it has to hold before the release: asking the runtime about an
         // id this caller cannot name would hand it a probe of someone else's session.
-        assertTrue(clearedSessions().isEmpty(), "不该发出任何释放: ${clearedSessions()}")
-        assertTrue(refused["code"].asInt() != 200, "指不到会话就不能删: $refused")
+        assertTrue(clearedSessions().isEmpty(), "no release may go out at all: ${clearedSessions()}")
+        assertTrue(refused["code"].asInt() != 200, "a session that cannot be named cannot be deleted: $refused")
         assertEquals("Session not found", refused["message"].asText())
     }
 
     /** A row this service has let go of: the by-id read says so with a 404 and carries nothing. */
     private fun assertAbsent(id: Long) {
         val node = getJson("/api/admin/sessions/$id")
-        assertEquals(404, node["code"].asInt(), "读不到的会话不该算成功响应: $node")
-        assertTrue(node["data"] == null || node["data"].isNull, "删除后的会话不该再读得到: $node")
+        assertEquals(404, node["code"].asInt(), "a session we cannot read must not answer as success: $node")
+        assertTrue(node["data"] == null || node["data"].isNull, "a deleted session must not be readable any more: $node")
     }
 }

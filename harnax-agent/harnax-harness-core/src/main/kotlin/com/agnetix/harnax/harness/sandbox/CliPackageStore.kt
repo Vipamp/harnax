@@ -106,10 +106,16 @@ class CliPackageStore(
             val present = listOf(tree, marker).filter { Files.exists(it) }
             if (present.isEmpty() || present.any { lastModified(it).isAfter(cutoff) }) continue
             try {
-                tree.toFile().deleteRecursively()
+                val gone = tree.toFile().deleteRecursively()
+                // The marker goes even on a partial delete: without it the next materialize refetches
+                // what is left rather than handing out a half-removed tree.
                 Files.deleteIfExists(marker)
-                removed++
-                log.info("[cliCache] Evicted payload tree {}", digest.take(12))
+                if (gone) {
+                    removed++
+                    log.info("[cliCache] Evicted payload tree {}", digest.take(12))
+                } else {
+                    log.warn("[cliCache] Payload tree {} is only partly removed, retrying on the next sweep", digest.take(12))
+                }
             } catch (e: Exception) {
                 log.warn("[cliCache] Payload tree {} could not be removed: {}", digest.take(12), e.message)
             }
@@ -132,8 +138,11 @@ class CliPackageStore(
             val staging = cacheDir.resolve(name)
             try {
                 if (lastModified(staging).isAfter(cutoff)) continue
-                staging.toFile().deleteRecursively()
-                log.info("[cliCache] Removed interrupted staging directory {}", name)
+                if (staging.toFile().deleteRecursively()) {
+                    log.info("[cliCache] Removed interrupted staging directory {}", name)
+                } else {
+                    log.warn("[cliCache] Staging directory {} is only partly removed, retrying on the next sweep", name)
+                }
             } catch (e: Exception) {
                 log.warn("[cliCache] Staging directory {} could not be removed: {}", name, e.message)
             }

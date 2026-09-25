@@ -148,7 +148,7 @@ export const layout: RunTimeLayoutConfig = ({
       },
     },
     waterMarkProps: {
-      content: initialState?.currentUser?.name,
+      content: initialState?.currentUser?.nickname || initialState?.currentUser?.username,
     },
     footerRender: false,
     onPageChange: () => {

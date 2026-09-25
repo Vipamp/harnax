@@ -55,7 +55,7 @@ class McpServerControllerTest {
 
     @BeforeEach
     fun setUp() {
-        // MessageUtil 桩成回显消息码：断言只看键，不依赖 bundle 文案
+        // Stub MessageUtil to echo the message code: assertions check the key only, not bundle text
         `when`(messageUtil.getMessage(anyString())).thenAnswer { invocation -> invocation.arguments[0] as String }
         testMcpServer = McpServer().apply {
             id = 1L
@@ -154,13 +154,13 @@ class McpServerControllerTest {
         }
 
         @Test
-        @DisplayName("getMcpServer - 读不到时返回具名 404")
+        @DisplayName("getMcpServer - returns a named 404 when the row cannot be read")
         fun `getMcpServer should report not found with a named 404`() {
             `when`(mcpServerService.getVisibleMcpServer(999L)).thenReturn(null)
 
             val result = controller.getMcpServer(999L)
 
-            assertFalse(result.isSuccess(), "读不到的行不能算成功响应")
+            assertFalse(result.isSuccess(), "a row that cannot be read must not count as a success response")
             assertEquals(404, result.code)
             assertEquals("error.mcp.server.notfound", result.message)
             assertNull(result.data)
@@ -374,7 +374,7 @@ class McpServerControllerTest {
     inner class RelatedAgentsEndpoint {
 
         @Test
-        @DisplayName("relatedAgents - 返回绑定的 Agent 列表")
+        @DisplayName("relatedAgents - returns the bound agent list")
         fun `relatedAgents should return agent list`() {
             val agents = listOf(
                 RelatedAgentInfo(agentId = 100L, agentName = "Agent A", status = 1),
@@ -391,7 +391,7 @@ class McpServerControllerTest {
         }
 
         @Test
-        @DisplayName("relatedAgents - 无绑定时返回空列表")
+        @DisplayName("relatedAgents - returns an empty list when nothing is bound")
         fun `relatedAgents should return empty list when none bound`() {
             `when`(agentSessionRefreshService.listAgentsByMcp(1L)).thenReturn(emptyList())
 
@@ -404,7 +404,7 @@ class McpServerControllerTest {
         }
 
         @Test
-        @DisplayName("relatedAgents - service 抛异常时返回错误")
+        @DisplayName("relatedAgents - returns an error when the service throws")
         fun `relatedAgents should return error on service exception`() {
             `when`(agentSessionRefreshService.listAgentsByMcp(1L))
                 .thenThrow(RuntimeException("DB error"))

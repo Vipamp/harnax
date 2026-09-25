@@ -43,7 +43,7 @@ class ModelServiceImpl(
         pageNum: Int,
         pageSize: Int,
     ): Page<Model> {
-        // 获取当前租户与本页共用的可见性判据
+        // One tenant resolution shared by the page and the per-row visibility check
         val tenantId = currentTenantId()
 
         // 将标签字符串转为列表
@@ -87,7 +87,7 @@ class ModelServiceImpl(
     override fun createModel(request: ModelCreateRequest): Boolean {
         val tenantId = currentTenantId()
 
-        // 检查服务商是否存在，且本租户看得见它
+        // The provider must exist and be visible to this tenant
         val provider = modelProviderMapper.selectById(request.providerId)
             ?.takeIf { it.tenantId == tenantId || it.isPublic == 1 }
             ?: throw BizException(messageUtil.getMessage("error.model.provider.notfound"))
@@ -119,7 +119,7 @@ class ModelServiceImpl(
         model.price = request.price ?: 0.0
         model.isPublic = request.isPublic ?: 1
 
-        // 设置创建者与所属租户
+        // Stamp the creator and the owning tenant
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         model.creator = currentUsername
         model.tenantId = tenantId
@@ -129,7 +129,7 @@ class ModelServiceImpl(
     override fun updateModel(id: Long, request: ModelUpdateRequest): Boolean {
         val model = ownedModel(id)
 
-        // 如果修改了服务商，检查服务商是否存在且本租户看得见
+        // A changed provider must exist and be visible to this tenant
         if (request.providerId != null && request.providerId != model.providerId) {
             modelProviderMapper.selectById(request.providerId)
                 ?.takeIf { it.tenantId == model.tenantId || it.isPublic == 1 }

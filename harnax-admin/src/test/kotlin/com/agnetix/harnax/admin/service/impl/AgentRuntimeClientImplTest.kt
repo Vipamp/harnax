@@ -17,10 +17,10 @@ import org.mockito.quality.Strictness
 import java.util.concurrent.TimeUnit
 
 /**
- * AgentRuntimeClientImpl 单元测试
+ * AgentRuntimeClientImpl unit tests
  *
- * 用 MockWebServer 顶替 session-router 的 clear-session 代理：这条链上 admin 只发一次 DELETE，
- * 要证明的是它发对了路径、带上了内部 bearer，以及运行侧那句拒绝原样回到调用方手里。
+ * MockWebServer stands in for the session-router clear-session proxy: on this path admin sends a single DELETE,
+ * and what we prove is that it hits the right path, carries the internal bearer, and returns the runtime's refusal verbatim to the caller.
  *
  * @author agnetix
  * @since 2026-09-23
@@ -60,7 +60,7 @@ class AgentRuntimeClientImplTest {
         .setBody("""{"code":$code,"message":"$message","data":null,"timestamp":1704067200000}""")
 
     @Test
-    @DisplayName("clearSession - 向 router 的会话代理发一次 DELETE")
+    @DisplayName("clearSession - sends one DELETE to the router session proxy")
     fun `clearSession should delete the session through the router`() {
         // Given
         server.enqueue(vo(200, "success"))
@@ -77,9 +77,9 @@ class AgentRuntimeClientImplTest {
     }
 
     @Test
-    @DisplayName("clearSession - 请求带内部服务 token")
+    @DisplayName("clearSession - request carries the internal service token")
     fun `clearSession should carry the internal bearer`() {
-        // Given - router 的 UnifiedAuthFilter 认 typ=internal 的 bearer，也认 API Key，这里走前者
+        // Given - the router's UnifiedAuthFilter accepts a typ=internal bearer as well as an API Key; here it uses the former
         server.enqueue(vo(200, "success"))
 
         // When
@@ -89,14 +89,14 @@ class AgentRuntimeClientImplTest {
         val authorization = server.takeRequest(3, TimeUnit.SECONDS)!!.getHeader("Authorization")
         assertTrue(
             authorization != null && authorization.startsWith("Bearer "),
-            "缺少内部服务 token: $authorization",
+            "Missing internal service token: $authorization",
         )
     }
 
     @Test
-    @DisplayName("clearSession - router 说没绑定实例时按成功处理")
+    @DisplayName("clearSession - treats a not-bound-to-instance router reply as success")
     fun `clearSession should treat an unbound session as released`() {
-        // Given - 从未跑过的会话没有任何运行态可回收，router 就是这么答的
+        // Given - a session that never ran has no runtime state to reclaim, and that is exactly how the router answers
         server.enqueue(vo(200, "Session $SESSION_ID is not bound to any instance"))
 
         // When & Then
@@ -104,9 +104,9 @@ class AgentRuntimeClientImplTest {
     }
 
     @Test
-    @DisplayName("clearSession - 运行侧的业务拒绝原样带回原因")
+    @DisplayName("clearSession - relays the runtime's business refusal with its own reason")
     fun `clearSession should relay the runtime refusal with its own reason`() {
-        // Given - HTTP 200 + 非 200 code 是 router 失败的固定形状，句子在被删的那份状态里
+        // Given - HTTP 200 + non-200 code is the router's fixed failure shape, and the sentence lives in the deleted status
         server.enqueue(vo(500, "sandbox container is busy"))
 
         // When
@@ -118,9 +118,9 @@ class AgentRuntimeClientImplTest {
     }
 
     @Test
-    @DisplayName("clearSession - router 不可达时折成错误而不是抛出异常")
+    @DisplayName("clearSession - folds an unreachable router into an error instead of throwing")
     fun `clearSession should fold an unreachable router into an error`() {
-        // Given - 先起后关，拿到的是一个确实没有人再听着的端口
+        // Given - start then shut down, leaving a port that truly has no one listening anymore
         val dead = MockWebServer()
         dead.start()
         val deadPort = dead.port
@@ -129,28 +129,28 @@ class AgentRuntimeClientImplTest {
         // When
         val result = createService("http://localhost:$deadPort").clearSession(SESSION_ID)
 
-        // Then - 调用方要靠这个 code 决定"拒绝删除"，抛出去只会让删除变成 500 堆栈
-        assertTrue(result.code != 200, "不可达应当是一个业务码，实际: ${result.code}")
-        assertTrue(result.message.contains("router", ignoreCase = true), "原因要点明是哪一段断了，实际: ${result.message}")
+        // Then - the caller relies on this code to decide "refuse deletion"; throwing would only turn deletion into a 500 stack trace
+        assertTrue(result.code != 200, "Unreachable should be a business code, actual: ${result.code}")
+        assertTrue(result.message.contains("router", ignoreCase = true), "The reason must name which hop broke, actual: ${result.message}")
     }
 
     @Test
-    @DisplayName("clearSession - 空响应体按失败处理")
+    @DisplayName("clearSession - treats an empty response body as a failure")
     fun `clearSession should treat an empty answer as a failure`() {
-        // Given - 没有 ResultVo 就等于没人确认释放过
+        // Given - no ResultVo means no one confirmed the release
         server.enqueue(MockResponse().setResponseCode(204))
 
         // When
         val result = createService().clearSession(SESSION_ID)
 
         // Then
-        assertTrue(result.code != 200, "拿不到答复不能算释放成功，实际: ${result.code}")
+        assertTrue(result.code != 200, "No answer cannot count as a successful release, actual: ${result.code}")
     }
 
     @Test
-    @DisplayName("clearSession - 会话 id 里的斜杠不会变成第二段路径")
+    @DisplayName("clearSession - a slash in the session id never becomes a second path segment")
     fun `clearSession keeps a slash inside one path segment`() {
-        // Given - 路径是 admin 唯一一次指名要清哪份运行态；一个能加出一段的 id 就等于让它说出别的端点
+        // Given - the path is admin's one and only naming of which runtime state to clear; an id that can add a segment lets it name another endpoint
         server.enqueue(vo(200, "success"))
 
         // When
@@ -160,7 +160,7 @@ class AgentRuntimeClientImplTest {
         val path = server.takeRequest(3, TimeUnit.SECONDS)!!.path!!
         assertTrue(
             path.startsWith("/api/router/agent/session/web-1%2F") && !path.contains("//"),
-            "斜杠必须留在那一段里，实际: $path",
+            "The slash must stay inside that segment, actual: $path",
         )
     }
 }

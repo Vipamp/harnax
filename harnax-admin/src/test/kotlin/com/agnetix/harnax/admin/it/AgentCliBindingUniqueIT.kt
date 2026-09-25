@@ -31,7 +31,7 @@ class AgentCliBindingUniqueIT : BaseAdminIT() {
     )
 
     @Test
-    @DisplayName("同一 agent 重复绑同一 CLI 被数据库拒绝")
+    @DisplayName("duplicate binding of the same CLI for one agent is refused by the database")
     fun `a second binding of the same cli for one agent is refused`() {
         val agentId = 910_001L
         val cliId = 910_002L
@@ -45,7 +45,7 @@ class AgentCliBindingUniqueIT : BaseAdminIT() {
     }
 
     @Test
-    @DisplayName("两个 agent 绑同一 CLI 照常写入")
+    @DisplayName("two agents binding the same CLI both write fine")
     fun `two agents may bind the same cli`() {
         val cliId = 910_003L
         val agents = listOf(910_004L, 910_005L)

@@ -56,7 +56,7 @@ class ModelProviderServiceImpl(
     override fun createModelProvider(request: ModelProviderCreateRequest): Boolean {
         val tenantId = currentTenantId()
 
-        // 检查本租户下服务商名称是否已存在
+        // The provider name must be free inside this tenant
         if (modelProviderMapper.countByName(request.name, tenantId) > 0) {
             throw BizException(messageUtil.getMessage("error.model.provider.name_exists"))
         }
@@ -84,7 +84,7 @@ class ModelProviderServiceImpl(
     override fun updateModelProvider(id: Long, request: ModelProviderUpdateRequest): Boolean {
         val modelProvider = ownedProvider(id)
 
-        // 如果修改了名称，检查本租户下是否重复
+        // Only a rename can collide, and only inside this tenant
         if (!request.name.isNullOrBlank() && request.name != modelProvider.name) {
             if (modelProviderMapper.countByName(request.name, modelProvider.tenantId) > 0) {
                 throw BizException(messageUtil.getMessage("error.model.provider.name_exists"))
