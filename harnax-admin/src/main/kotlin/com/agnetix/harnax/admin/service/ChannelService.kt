@@ -58,7 +58,11 @@ interface ChannelService {
     fun toggleChannelStatus(id: Long, status: Int): Boolean
 
     /**
-     * Delete Channel
+     * Delete Channel, logically, together with the conversation it carries
+     *
+     * The runtime is asked to release the channel's `chn-{uuid}` session before any row is written, and a
+     * runtime that cannot let go fails the whole delete — the same `SessionRuntimeReleaser` contract a
+     * session delete runs on.
      *
      * @param id Channel ID
      * @return Delete result

@@ -26,6 +26,7 @@ import java.util.UUID
 class ChannelServiceImpl(
     private val channelMapper: ChannelMapper,
     private val agentService: AgentService,
+    private val sessionRuntimeReleaser: SessionRuntimeReleaser,
 ) : ChannelService {
 
     private val log = LoggerFactory.getLogger(ChannelServiceImpl::class.java)
@@ -143,8 +144,26 @@ class ChannelServiceImpl(
         return status
     }
 
+    /**
+     * Release the channel's conversation on the runtime, then take the row logically.
+     *
+     * The order is the whole point. A channel's conversation is the `chn-{uuid}` id minted here and
+     * stamped on this row, and it has no row of its own in `session` - the session API mints `web-` and
+     * `mp-` ids and nothing else writes that table - so the runtime is the only place the state lives
+     * and this call is the only thing that can let go of it. Until now nothing did: the row went away
+     * while the plans, chat state and sandbox container kept running under an id no page listed, and the
+     * router went on routing to it because a soft-deleted row still says whose session it was.
+     *
+     * A runtime that refuses therefore fails the delete before the row is written. The opposite order
+     * leaves exactly the state this call exists to clear, and one nobody can name any more - which is
+     * AGENT-08's rule for a session deletion, applied here. Nothing moves on a refusal, so retrying once
+     * the runtime answers is enough.
+     */
     override fun deleteChannel(id: Long): Boolean {
-        getChannel(id) ?: throw RuntimeException("Channel not found")
+        val channel = getChannel(id) ?: throw RuntimeException("Channel not found")
+        if (channel.sessionId.isNotBlank()) {
+            sessionRuntimeReleaser.release(channel.sessionId)
+        }
         return channelMapper.deleteById(id) > 0
     }
 

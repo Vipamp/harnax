@@ -3,7 +3,9 @@ package com.agnetix.harnax.admin.service.mp
 import com.agnetix.harnax.admin.dto.mp.MpCreateSessionRequest
 import com.agnetix.harnax.admin.dto.mp.MpUpdateSessionRequest
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.i18n.ErrorBundle
 import com.agnetix.harnax.admin.service.AgentRuntimeClient
+import com.agnetix.harnax.admin.service.impl.SessionRuntimeReleaser
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.MpSession
@@ -20,7 +22,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.ArgumentMatchers.anyLong
-import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.inOrder
 import org.mockito.Mockito.never
@@ -59,7 +60,6 @@ class MpSessionServiceTest {
     @Mock
     private lateinit var agentRuntimeClient: AgentRuntimeClient
 
-    @InjectMocks
     private lateinit var mpSessionService: MpSessionService
 
     private lateinit var testAgent: Agent
@@ -88,6 +88,16 @@ class MpSessionServiceTest {
         }
 
         `when`(mpChatMessageMapper.countBySessionId(anyLong())).thenReturn(0)
+
+        // The releaser is the real one so this test keeps proving what the service actually does: it asks
+        // the runtime, through the mocked client below, before it touches a single row.
+        mpSessionService = MpSessionService(
+            mpSessionMapper = mpSessionMapper,
+            mpChatMessageMapper = mpChatMessageMapper,
+            agentMapper = agentMapper,
+            sessionMapper = sessionMapper,
+            sessionRuntimeReleaser = SessionRuntimeReleaser(agentRuntimeClient, ErrorBundle.messageUtil()),
+        )
     }
 
     @Nested

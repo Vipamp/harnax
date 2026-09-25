@@ -42,7 +42,7 @@ class SessionServiceImpl(
     private val teamMemberMapper: TeamMemberMapper,
     private val teamSkillBindingMapper: TeamSkillBindingMapper,
     private val teamArtifactCleaner: TeamArtifactCleaner,
-    private val agentRuntimeClient: AgentRuntimeClient,
+    private val sessionRuntimeReleaser: SessionRuntimeReleaser,
     private val messageUtil: MessageUtil,
 ) : SessionService {
 
@@ -325,15 +325,11 @@ class SessionServiceImpl(
         val session = ownedSession(id)
             ?: throw BizException("Session not found")
 
-        // The row is the last thing to go, not the first. What a conversation leaves behind — the stored
-        // agent state, the plan notes, the sandbox container — lives in the runtime, and admin cannot reach
-        // any of it from here; only the instance holding the session can release it. A runtime that says it
-        // could not therefore means a session would go on living as state nobody can name any more, so the
-        // deletion is refused and the row stays.
-        val cleared = agentRuntimeClient.clearSession(session.sessionId)
-        if (!cleared.isSuccess()) {
-            throw BizException("Session could not be released by the runtime, so it was not deleted: ${cleared.message}")
-        }
+        // The row is the last thing to go, not the first: what a conversation leaves behind lives in the
+        // runtime, and a runtime that says it could not release it means the deletion is refused rather
+        // than half done. `SessionRuntimeReleaser` owns that rule, including why the refusal is an exception
+        // and not a flag.
+        sessionRuntimeReleaser.release(session.sessionId)
 
         // A team artifact is keyed by this session id and nothing else can reach it once the session is
         // gone, so the artifacts go first. Objects before rows: a later database failure then leaves a

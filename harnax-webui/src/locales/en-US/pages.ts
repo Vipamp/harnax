@@ -255,7 +255,7 @@ export default {
   'pages.channel.type.dingtalk': 'DingTalk',
   'pages.channel.type.http': 'HTTP',
   'pages.channel.delete.confirm.title': 'Confirm deletion?',
-  'pages.channel.delete.confirm.content': 'This operation cannot be undone. Existing sessions and sandboxes of this channel are not deleted.',
+  'pages.channel.delete.confirm.content': 'This operation cannot be undone. The session of this channel is deleted with it, and its runtime state and sandbox are released; if the runtime cannot release them, the deletion is refused.',
   'pages.channel.delete.confirm.ok': 'Confirm',
   'pages.channel.delete.confirm.cancel': 'Cancel',
   'pages.channel.table.name': 'Channel Name',
@@ -335,7 +335,7 @@ export default {
   'pages.channel.form.label.sessionId': 'Session ID',
   'pages.channel.tooltip.immutable': 'Immutable, auto-generated at creation',
   'pages.channel.label.immutable': 'IMMUTABLE',
-  'pages.channel.deleteConfirm': 'Are you sure to delete this channel?',
+  'pages.channel.deleteConfirm': 'Delete this channel? Its session and sandbox are released as well.',
   'pages.channel.sandbox.running': 'Running',
   'pages.channel.sandbox.inactive': 'Inactive',
 

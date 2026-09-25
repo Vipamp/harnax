@@ -58,14 +58,14 @@ interface ChannelMapper {
      * The owner recorded for this `chn-{uuid}` id, whether or not the channel is still active.
      *
      * No `active` predicate, on purpose — and [selectBySessionId] is left filtering rather than relaxed,
-     * because its other callers do want a deleted channel to be gone. `deleteById` is a soft delete, so
-     * the row keeps its `tenant_id` after the channel is deleted, while the session and sandbox behind it
-     * are documented as not being cleaned up. Answering the ownership question through an active-filtered
-     * read would make a deleted channel look like nobody's session, and the router passes what it cannot
-     * attribute to a tenant — so deleting a row would erase accountability for reading it, for as long as
-     * the router still routes to that session. A channel row always has an owner; this is the read that
-     * says who, so the "unknown means pass" default stays what it is supposed to cover: an id that was
-     * never a channel.
+     * because its other callers do want a deleted channel to be gone. `deleteById` is a soft delete, so the
+     * row keeps its `tenant_id` after the channel is deleted, and by then the runtime has already released
+     * the session and the sandbox behind it (see `ChannelServiceImpl.deleteChannel`, which refuses the
+     * delete until it has). Answering the ownership question through an active-filtered read would make a
+     * deleted channel look like nobody's session, and the router passes what it cannot attribute to a
+     * tenant — so deleting a row would erase accountability for reading it, for as long as the router still
+     * routes to that session. A channel row always has an owner; this is the read that says who, so the
+     * "unknown means pass" default stays what it is supposed to cover: an id that was never a channel.
      *
      * Null means no row exists for the id at all, which — `chn-` ids being minted and inserted with
      * their channel — is an id this admin never issued.
