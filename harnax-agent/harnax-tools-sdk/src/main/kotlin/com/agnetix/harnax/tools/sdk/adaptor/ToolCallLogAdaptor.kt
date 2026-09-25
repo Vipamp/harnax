@@ -11,7 +11,8 @@ fun interface ToolCallLogAdaptor {
 }
 
 data class ToolCallInfo(
-    val agentId: Long,
+    /** Null when no `agent` row stands behind the call — a team's lead. */
+    val agentId: Long?,
     val sessionId: String,
     val toolName: String,
     val args: Map<String, String>,

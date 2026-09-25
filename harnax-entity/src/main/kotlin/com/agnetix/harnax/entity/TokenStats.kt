@@ -15,7 +15,7 @@ class TokenStats : Serializable {
     var id: Long = 0
 
     @Schema(description = "Agent ID")
-    var agentId: Long = 0
+    var agentId: Long? = null
 
     @Schema(description = "Session ID")
     var sessionId: String = ""

@@ -14,7 +14,7 @@ class ProcessLogEntity : Serializable {
     var id: Long = 0
 
     @Schema(description = "Agent ID")
-    var agentId: Long = 0
+    var agentId: Long? = null
 
     @Schema(description = "Agent name")
     var agentName: String = ""

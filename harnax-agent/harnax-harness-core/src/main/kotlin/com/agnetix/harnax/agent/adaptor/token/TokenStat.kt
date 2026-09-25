@@ -7,7 +7,8 @@ package com.agnetix.harnax.agent.adaptor.token
  * @Project: harnax
  */
 class TokenStat(
-    val agentId: Long,
+    /** Null when no `agent` row stands behind the run — a team's lead. */
+    val agentId: Long?,
     val modelId: Long,
     val sessionId: String,
     val inputToken: Int,
@@ -22,7 +23,7 @@ class TokenStat(
 }
 
 class TokenStatBuilder {
-    private var agentId: Long = 0L
+    private var agentId: Long? = null
     private var modelId: Long = 0L
     private var sessionId: String = ""
     private var inputToken: Int = 0
@@ -30,7 +31,7 @@ class TokenStatBuilder {
     private var totalToken: Int = 0
     private var timestamp: Long = System.currentTimeMillis()
 
-    fun agentId(agentId: Long) = apply { this.agentId = agentId }
+    fun agentId(agentId: Long?) = apply { this.agentId = agentId }
     fun modelId(modelId: Long) = apply { this.modelId = modelId }
     fun sessionId(sessionId: String) = apply { this.sessionId = sessionId }
     fun inputToken(inputToken: Int) = apply { this.inputToken = inputToken }

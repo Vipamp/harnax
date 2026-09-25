@@ -359,7 +359,7 @@ class HarnessAgentLauncher(
                         if (toolBox != null) {
                             toolBox.init(
                                 toolCallLogAdaptor,
-                                SessionMetaContext(agentSpec.id, sessionId),
+                                SessionMetaContext(agentSpec.attributableAgentId, sessionId),
                                 userIdentifier,
                             )
                             agentBuilder.addTool(toolBox)
@@ -462,14 +462,14 @@ class HarnessAgentLauncher(
         val teamToolNames: Set<String> = when (teamRole) {
             is TeamRole.Lead -> {
                 val toolBox = TeamLeadToolBox(teamRole.orchestrator)
-                toolBox.init(toolCallLogAdaptor, SessionMetaContext(agentSpec.id, sessionId), userIdentifier)
+                toolBox.init(toolCallLogAdaptor, SessionMetaContext(agentSpec.attributableAgentId, sessionId), userIdentifier)
                 agentBuilder.addTool(toolBox)
                 TeamLeadToolBox.TOOL_NAMES
             }
 
             is TeamRole.Member -> {
                 val toolBox = TeamMemberToolBox(teamRole.orchestrator, teamRole.member.memberAgentId)
-                toolBox.init(toolCallLogAdaptor, SessionMetaContext(agentSpec.id, sessionId), userIdentifier)
+                toolBox.init(toolCallLogAdaptor, SessionMetaContext(agentSpec.attributableAgentId, sessionId), userIdentifier)
                 agentBuilder.addTool(toolBox)
                 TeamMemberToolBox.TOOL_NAMES
             }
@@ -483,7 +483,7 @@ class HarnessAgentLauncher(
         // No custom ConfirmToolsMiddleware needed.
         MIDDLEWARE_SET.forEach { middleware ->
             if (middleware is ProcessLogMiddleware) {
-                middleware.initial(processLogAdaptor, agentSpec.id, agentSpec.name, sessionId)
+                middleware.initial(processLogAdaptor, agentSpec.attributableAgentId, agentSpec.name, sessionId)
             }
             agentBuilder.addMiddleware(middleware)
         }
@@ -653,7 +653,7 @@ class HarnessAgentLauncher(
             mcpClients = mcpClients,
             dangerousTools = needConfirmedTools + dangerousInputTools,
             tokenStatBuilder = TokenStatBuilder()
-                .agentId(agentSpec.id)
+                .agentId(agentSpec.attributableAgentId)
                 .sessionId(sessionId)
                 .modelId(agentSpec.chatModelId),
             tokenStatAdaptor = tokenStatAdaptor,

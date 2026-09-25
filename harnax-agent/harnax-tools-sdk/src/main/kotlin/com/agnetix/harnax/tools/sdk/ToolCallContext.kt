@@ -9,7 +9,8 @@ package com.agnetix.harnax.tools.sdk
 interface ToolCallContext
 
 data class SessionMetaContext(
-    val agentId: Long,
+    /** Null when no `agent` row stands behind the run — a team's lead. See `AgentSpec.attributableAgentId`. */
+    val agentId: Long?,
     val sessionId: String,
 ) : ToolCallContext
 

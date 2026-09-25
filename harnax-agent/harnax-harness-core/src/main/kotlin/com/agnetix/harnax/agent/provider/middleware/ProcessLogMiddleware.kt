@@ -36,7 +36,7 @@ class ProcessLogMiddleware : MiddlewareBase {
 
     fun initial(
         adaptor: ProcessLogAdaptor,
-        agentId: Long,
+        agentId: Long?,
         agentName: String,
         sessionId: String,
     ) {

@@ -11,7 +11,8 @@ fun interface ProcessLogAdaptor {
 }
 
 data class ProcessLog(
-    val agentId: Long,
+    /** Null when no `agent` row stands behind the run — a team's lead. */
+    val agentId: Long?,
     val agentName: String,
     val sessionId: String,
     val message: String,
@@ -21,12 +22,12 @@ data class ProcessLog(
 ) {
     companion object {
         @JvmStatic
-        fun builder(agentId: Long, agentName: String, sessionId: String) = ProcessLogBuilder(agentId, agentName, sessionId)
+        fun builder(agentId: Long?, agentName: String, sessionId: String) = ProcessLogBuilder(agentId, agentName, sessionId)
     }
 }
 
 class ProcessLogBuilder(
-    private val agentId: Long,
+    private val agentId: Long?,
     private val agentName: String,
     private val sessionId: String,
 ) {

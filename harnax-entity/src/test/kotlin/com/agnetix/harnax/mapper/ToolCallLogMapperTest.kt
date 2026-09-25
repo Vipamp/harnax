@@ -69,5 +69,29 @@ open class ToolCallLogMapperTest {
             assertEquals(1, result)
             assertTrue(newLog.id > 0)
         }
+
+        @Test
+        @DisplayName("insert - 团队主管的工具调用没有智能体归属")
+        fun `insert should store a tool call with no agent`() {
+            // A lead's tool calls are the loudest part of `tool_call_log` for a team, and `agent_id` is
+            // nullable in the table: what has to hold is that MyBatis writes the absent id as SQL NULL
+            // rather than failing on an unknown JDBC type — hence a real insert against a real database.
+            val now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
+            val newLog = ToolCallLogEntity().apply {
+                agentId = null
+                sessionId = "team-lead-session"
+                toolName = "team::team_members"
+                args = "{}"
+                result = "[]"
+                success = 1
+                startTime = now
+                endTime = now
+                duration = 0L
+                ts = now
+            }
+
+            assertEquals(1, toolCallLogMapper.insert(newLog))
+            assertTrue(newLog.id > 0)
+        }
     }
 }

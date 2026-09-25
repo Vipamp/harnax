@@ -27,7 +27,21 @@ data class AgentSpec(
     val planSpec: PlanSpec,
 ) {
 
+    /**
+     * The `agent` row this run's statistics and logs belong to, or null when no agent row stands behind
+     * it.
+     *
+     * A team's lead is configured by the `team` row (design D1), so it carries [LEAD_ID] as its [id]
+     * just to give the runtime something to key on. `token_stats`, `tool_call_log` and `process_log`
+     * all keep a nullable `agent_id`, and a 0 there reads back as an agent no id resolves — so a lead
+     * is recorded as having none rather than as being agent 0.
+     */
+    val attributableAgentId: Long? get() = id.takeUnless { it == LEAD_ID }
+
     companion object {
+        /** [id] of a team lead, which has no `agent` row: see [attributableAgentId]. */
+        const val LEAD_ID = 0L
+
         @JvmStatic
         fun builder() = AgentSpecBuilder()
     }
