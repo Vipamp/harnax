@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.mockito.kotlin.any
@@ -22,8 +23,11 @@ import org.mockito.kotlin.whenever
 import java.io.ByteArrayInputStream
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
 import java.nio.file.attribute.PosixFilePermissions
 import java.security.MessageDigest
+import java.time.Duration
+import java.time.Instant
 
 /**
  * Unit tests for [CliPackageStore]: the cache is keyed by the digest admin registered, and an archive
@@ -242,5 +246,123 @@ class CliPackageStoreTest {
 
         verify(minioClient, never()).getObject(any<GetObjectArgs>())
         assertTrue(cacheFileNames().isEmpty())
+    }
+
+    /**
+     * CLI-04's cache half: the trees are rebuildable, so what makes removal safe is not age alone but
+     * "admin no longer registers this digest" *and* "no build asked for it recently". The second half is
+     * what protects a download or a `docker build` that is still running while this sweep happens.
+     */
+    @Nested
+    inner class Eviction {
+
+        private fun treeOf(
+            digest: String,
+            age: Duration,
+        ) {
+            val tree = Files.createDirectories(cacheDir.resolve(digest))
+            Files.writeString(tree.resolve("bin"), "payload")
+            val marker = cacheDir.resolve("$digest.complete")
+            Files.writeString(marker, digest)
+            backdate(tree, age)
+            backdate(marker, age)
+        }
+
+        private fun backdate(
+            path: Path,
+            age: Duration,
+        ) = Files.setLastModifiedTime(path, FileTime.from(Instant.now().minus(age)))
+
+        @Test
+        fun `a tree no registered package names is removed with its marker`() {
+            val gone = sha256("gone".toByteArray())
+            treeOf(gone, Duration.ofDays(2))
+
+            assertEquals(1, store.evictUnused(emptySet(), Duration.ofHours(6)))
+
+            assertFalse(Files.exists(cacheDir.resolve(gone)))
+            assertFalse(Files.exists(cacheDir.resolve("$gone.complete")))
+        }
+
+        /** A pruned package cannot be re-fetched any more, so a live agent is the only thing that matters. */
+        @Test
+        fun `a tree admin still registers is kept however old it is`() {
+            val live = sha256("live".toByteArray())
+            treeOf(live, Duration.ofDays(30))
+
+            assertEquals(0, store.evictUnused(setOf(live), Duration.ofHours(6)))
+
+            assertTrue(Files.exists(cacheDir.resolve(live)))
+            assertTrue(Files.exists(cacheDir.resolve("$live.complete")))
+        }
+
+        @Test
+        fun `an unreferenced tree inside the grace window is kept`() {
+            val inFlight = sha256("in-flight".toByteArray())
+            treeOf(inFlight, Duration.ofMinutes(5))
+
+            assertEquals(0, store.evictUnused(emptySet(), Duration.ofHours(6)))
+
+            assertTrue(Files.exists(cacheDir.resolve(inFlight)))
+        }
+
+        /**
+         * Reading the cache is a use: without the touch, a package an agent runs every day would age out
+         * on the first quiet week and that day's session would pay for a re-download.
+         */
+        @Test
+        fun `a cache hit counts as a use`() {
+            val archive = standardPackage()
+            val digest = sha256(archive)
+            serve(archive)
+            store.materialize(digest, objectKey)
+            backdate(cacheDir.resolve(digest), Duration.ofDays(2))
+            backdate(cacheDir.resolve("$digest.complete"), Duration.ofDays(2))
+
+            store.materialize(digest, objectKey)
+
+            assertEquals(0, store.evictUnused(emptySet(), Duration.ofHours(6)))
+            assertTrue(Files.exists(cacheDir.resolve(digest)))
+        }
+
+        @Test
+        fun `staging left by an interrupted run is removed once it is old`() {
+            val staleStaging = Files.createDirectories(cacheDir.resolve(".staging-killed"))
+            Files.writeString(staleStaging.resolve("package.zip"), "half a download")
+            Files.setLastModifiedTime(staleStaging, FileTime.from(Instant.now().minus(Duration.ofDays(2))))
+            val freshStaging = Files.createDirectories(cacheDir.resolve(".staging-running"))
+            Files.writeString(freshStaging.resolve("package.zip"), "downloading")
+
+            store.evictUnused(emptySet(), Duration.ofHours(6))
+
+            assertFalse(Files.exists(staleStaging))
+            assertTrue(Files.exists(freshStaging), "a staging dir this JVM is filling must survive")
+        }
+
+        /**
+         * The cache dir is operator-visible, so anything not shaped like this class's own output is left
+         * alone rather than deleted on a guess about what put it there.
+         */
+        @Test
+        fun `anything this class did not write is left alone`() {
+            Files.writeString(cacheDir.resolve("notes.txt"), "an operator's file")
+            Files.createDirectories(cacheDir.resolve("not-a-digest"))
+
+            assertEquals(0, store.evictUnused(emptySet(), Duration.ofHours(6)))
+
+            assertTrue(Files.exists(cacheDir.resolve("notes.txt")))
+            assertTrue(Files.exists(cacheDir.resolve("not-a-digest")))
+        }
+
+        @Test
+        fun `an orphan marker is removed with nothing left to rebuild`() {
+            val digest = sha256("orphan marker".toByteArray())
+            Files.writeString(cacheDir.resolve("$digest.complete"), digest)
+            Files.setLastModifiedTime(cacheDir.resolve("$digest.complete"), FileTime.from(Instant.now().minus(Duration.ofDays(2))))
+
+            assertEquals(1, store.evictUnused(emptySet(), Duration.ofHours(6)))
+
+            assertFalse(Files.exists(cacheDir.resolve("$digest.complete")))
+        }
     }
 }

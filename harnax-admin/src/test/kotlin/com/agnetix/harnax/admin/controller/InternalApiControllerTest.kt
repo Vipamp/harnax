@@ -1415,6 +1415,84 @@ class InternalApiControllerTest {
     }
 
     /**
+     * 运行侧回收 CLI 产物（负载树 / 沙箱镜像 / 归档对象）唯一的判据来源：admin 登记的在用清单。
+     * 清单一旦少报一项，运行侧就会把在用的东西当成垃圾删掉，所以这里钉住两类条目的口径。
+     */
+    @Nested
+    @DisplayName("CLI 在用清单")
+    inner class CliPackageInventoryTests {
+
+        private fun cliPackage(
+            id: Long,
+            name: String,
+            version: String,
+            digestSeed: Char,
+            status: Int = 1,
+        ) = Cli().apply {
+            this.id = id
+            this.name = name
+            this.version = version
+            packageDigest = "$digestSeed".repeat(64)
+            payloadDigest = "${digestSeed + 1}".repeat(64)
+            packageObject = "$name-$version.harnaxcli.zip"
+            this.status = status
+        }
+
+        private fun binding(
+            agentId: Long,
+            cliId: Long,
+        ) = AgentCliBinding().apply {
+            this.agentId = agentId
+            this.cliId = cliId
+        }
+
+        @Test
+        @DisplayName("停用包仍在登记清单里，但不进任何 agent 的在用集合")
+        fun `a disabled package stays registered yet leaves every agent set`() {
+            val kubectl = cliPackage(21L, "kubectl", "1.30.0", 'a')
+            val gh = cliPackage(22L, "gh", "2.50.0", 'c', status = 0)
+            `when`(cliMapper.selectCliList(null, null)).thenReturn(listOf(kubectl, gh))
+            `when`(cliBindingMapper.selectAll()).thenReturn(listOf(binding(100L, 21L), binding(100L, 22L)))
+
+            val inventory = controller.getCliPackageInventory().data!!
+
+            // 负载树留着：重新启用只用回灌一次归档，不必重新下载
+            assertEquals(listOf("a".repeat(64), "c".repeat(64)), inventory.packageDigests)
+            // 镜像删掉：停用的 CLI 不该再有 agent 起得来
+            val set = inventory.agentCliSets.single()
+            assertEquals(100L, set.agentId)
+            assertEquals(listOf(21L), set.clis.map { it.id })
+            assertEquals("1.30.0", set.clis.single().version)
+            assertEquals("b".repeat(64), set.clis.single().payloadDigest)
+        }
+
+        @Test
+        @DisplayName("绑定指向已删除的包时跳过该项，集合空了的 agent 不再上报")
+        fun `a binding whose package is gone is skipped`() {
+            `when`(cliMapper.selectCliList(null, null)).thenReturn(listOf(cliPackage(21L, "kubectl", "1.30.0", 'a')))
+            `when`(cliBindingMapper.selectAll()).thenReturn(listOf(binding(100L, 22L)))
+
+            val inventory = controller.getCliPackageInventory().data!!
+
+            assertEquals(emptyList<Any>(), inventory.agentCliSets)
+            assertEquals(listOf("a".repeat(64)), inventory.packageDigests)
+        }
+
+        @Test
+        @DisplayName("没有任何绑定时仍然下发登记清单")
+        fun `registered digests are reported without bindings`() {
+            `when`(cliMapper.selectCliList(null, null))
+                .thenReturn(listOf(cliPackage(21L, "kubectl", "1.30.0", 'a'), cliPackage(22L, "gh", "2.50.0", 'c')))
+            `when`(cliBindingMapper.selectAll()).thenReturn(emptyList())
+
+            val inventory = controller.getCliPackageInventory().data!!
+
+            assertEquals(listOf("a".repeat(64), "c".repeat(64)), inventory.packageDigests)
+            assertEquals(emptyList<Any>(), inventory.agentCliSets)
+        }
+    }
+
+    /**
      * 工具下发口径：必须工具（is_required=1）不写绑定表，只能在下发阶段追加，且已存在历史绑定时
      * 不能重复下发；`status` 必须随 ToolDetailDto 一起下发，否则 agent-service 侧转换实体时拿到的
      * 是默认值 1，管理员停用工具形同无效。

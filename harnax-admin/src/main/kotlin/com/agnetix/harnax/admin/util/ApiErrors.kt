@@ -49,7 +49,6 @@ object ApiErrors {
         "uk_skill_repo_active_name" to "A skill with this name already exists in the repository",
         "uk_mcp_server_tenant_active_name" to "An MCP server with this name already exists in your tenant",
         "uk_mcp_oauth_client_tenant_issuer_client" to "An OAuth client registration for this authorization server already exists, please run discovery again",
-        "uk_env_tenant_creator_active_key" to "You already hold an env variable with this key",
     )
 
     /**

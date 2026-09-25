@@ -1,5 +1,6 @@
 package com.agnetix.harnax.agent
 
+import com.agnetix.harnax.entity.dto.CliDetailDto
 import com.agnetix.harnax.tools.sdk.ToolSpec
 
 /**
@@ -132,6 +133,31 @@ data class CliSpec(
     val checkCommand: String = "",
     val runtimeEnv: Map<String, String> = emptyMap(),
     val envBindings: Map<String, String> = emptyMap(),
+)
+
+/**
+ * The one reading of admin's CLI rows as a [CliSpec].
+ *
+ * Both consumers must agree field for field: the agent spec path builds an image from these values, and the
+ * reclaim sweep recomputes each live CLI set's tag to know which images to keep. A second, independent
+ * reading would let the whitelist hash different material than the build did — which is how a sweep ends up
+ * deleting the image a live agent starts from.
+ */
+fun CliDetailDto.toCliSpec(): CliSpec = CliSpec(
+    cliId = id,
+    name = name,
+    version = version,
+    packageObject = packageObject,
+    packageDigest = packageDigest,
+    payloadDigest = payloadDigest,
+    depsApt = depsApt,
+    checkCommand = checkCommand,
+    runtimeEnv = runtimeEnv,
+    envBindings = envBindings.mapNotNull { binding ->
+        val key = binding["envKey"] ?: return@mapNotNull null
+        val value = binding["envValue"] ?: return@mapNotNull null
+        key to value
+    }.toMap(),
 )
 
 data class PlanSpec(

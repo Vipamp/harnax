@@ -9,6 +9,13 @@ interface AgentCliBindingMapper {
 
     fun selectByAgentId(@Param("agentId") agentId: Long): List<AgentCliBinding>
 
+    /**
+     * Every binding of every agent, in no particular order. The CLI inventory needs the whole table at
+     * once: the reclaim sweep decides which sandbox images still have a reason to exist, and one lookup
+     * per agent would only be the same answer fetched slower.
+     */
+    fun selectAll(): List<AgentCliBinding>
+
     /** Reverse lookup: which agents reference this CLI. */
     fun selectByCliId(@Param("cliId") cliId: Long): List<AgentCliBinding>
 

@@ -14,11 +14,14 @@ import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.AgentCliBinding
 import com.agnetix.harnax.entity.AgentMcpBinding
 import com.agnetix.harnax.entity.AgentToolBinding
+import com.agnetix.harnax.entity.Cli
 import com.agnetix.harnax.entity.Model
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.Team
+import com.agnetix.harnax.entity.dto.AgentCliSetDto
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
 import com.agnetix.harnax.entity.dto.CliDetailDto
+import com.agnetix.harnax.entity.dto.CliPackageInventoryResponse
 import com.agnetix.harnax.entity.dto.McpAccessTokenResponse
 import com.agnetix.harnax.entity.dto.McpDetailDto
 import com.agnetix.harnax.entity.dto.ModelConfigDto
@@ -323,6 +326,44 @@ class InternalApiController(
     } catch (e: Exception) {
         log.error("Failed to get team spec: sessionId={}", sessionId, e)
         ResultVo.error("Failed to get team spec: ${e.message}")
+    }
+
+    /**
+     * The CLI artifacts this platform still has a use for, as seen from the database.
+     *
+     * A sandbox host cannot tell one from the next: it holds payload trees, built images and — on admin's
+     * side — stored archives, and every one of them outlives the choice that produced it. Without this
+     * answer the only safe policy is to keep everything forever, which is how the CLI feature accumulates
+     * disk on a box nobody can clean. Cross-tenant on purpose, like the spec endpoints: a package is
+     * registrar-owned and an image tag says nothing about who selected it.
+     *
+     * Each agent's rows are the ones [imageFields] produces for its spec, so the whitelist names a CLI set
+     * by the same values the build path hashed: an inventory that disagreed with the spec about a package
+     * would name a tag no build produces, and the sweep would delete a live agent's image.
+     */
+    @GetMapping("/cli/inventory")
+    fun getCliPackageInventory(): ResultVo<CliPackageInventoryResponse> = try {
+        ResultVo.success(resolveCliInventory())
+    } catch (e: Exception) {
+        log.error("Failed to resolve CLI inventory", e)
+        ResultVo.error("Failed to resolve CLI inventory: ${e.message}")
+    }
+
+    private fun resolveCliInventory(): CliPackageInventoryResponse {
+        // `status` is the operator's kill switch, not a deletion: a disabled package is still registered,
+        // its archive is still in the bucket and its payload tree is still rebuildable, so the cache must
+        // not be told to drop it. Only the image of a CLI set that includes it has no reason to exist.
+        val live = cliMapper.selectCliList(null, null)
+        val byId = live.associateBy { it.id }
+        val agentCliSets = cliBindingMapper.selectAll().groupBy({ it.agentId }, { it.cliId })
+            .mapNotNull { (agentId, cliIds) ->
+                val clis = cliIds.mapNotNull { byId[it] }.filter { it.status != 0 }.map { imageFields(it) }
+                clis.takeIf { it.isNotEmpty() }?.let { AgentCliSetDto(agentId = agentId, clis = it) }
+            }
+        return CliPackageInventoryResponse(
+            packageDigests = live.map { it.packageDigest }.filter { it.isNotEmpty() },
+            agentCliSets = agentCliSets,
+        )
     }
 
     /** web/mp: session table → agent. */
@@ -758,15 +799,7 @@ class InternalApiController(
                     log.info("CLI '{}' (id={}) is disabled, skipping", cli.name, cli.id)
                     null
                 } else {
-                    CliDetailDto(
-                        id = cli.id,
-                        name = cli.name,
-                        version = cli.version,
-                        checkCommand = cli.checkCommand,
-                        packageObject = cli.packageObject,
-                        packageDigest = cli.packageDigest,
-                        payloadDigest = cli.payloadDigest,
-                        depsApt = readStringList(cli.depsApt),
+                    imageFields(cli).copy(
                         runtimeEnv = readStringMap(cli.runtimeEnv),
                         envBindings = mergeCliEnvBindings(binding.envBindings, cli.envParams, agentTenantId),
                         skill = cli.skillId?.let { skillId ->
@@ -938,6 +971,25 @@ class InternalApiController(
         skillmd = skill.skillmd,
         resources = skill.resources,
         version = skill.version,
+    )
+
+    /**
+     * The package columns a sandbox image is built from.
+     *
+     * One definition because two callers have to agree on it exactly: the agent spec uses these to build
+     * the image, and the CLI inventory uses them to decide which images still have a reason to exist. A
+     * second copy that ever drifted would name a tag no build produces, and the sweep would then delete
+     * the image of a live agent.
+     */
+    private fun imageFields(cli: Cli): CliDetailDto = CliDetailDto(
+        id = cli.id,
+        name = cli.name,
+        version = cli.version,
+        checkCommand = cli.checkCommand,
+        packageObject = cli.packageObject,
+        packageDigest = cli.packageDigest,
+        payloadDigest = cli.payloadDigest,
+        depsApt = readStringList(cli.depsApt),
     )
 
     /** Registrar-owned JSON columns: a malformed value delivers nothing rather than failing the call. */

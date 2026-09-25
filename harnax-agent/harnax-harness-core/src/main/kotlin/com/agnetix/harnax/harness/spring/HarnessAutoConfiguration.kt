@@ -72,6 +72,9 @@ class SandboxProperties {
 
     /** Idle budget of one keep-alive sandbox; see `SandboxConfig.keepAliveMaxIdleTimeMs`. */
     var keepAliveMaxIdleTimeMs: Long = 30 * 60 * 1000L
+
+    /** How recently a CLI payload tree was used, or an image built, for the reclaim sweep to keep it. */
+    var cliReclaimGraceMinutes: Long = 360
 }
 
 @ConfigurationProperties(prefix = "harness")
@@ -231,6 +234,7 @@ class HarnessAutoConfiguration {
             platformAdminUrl = sandboxProps.platformAdminUrl,
             platformInternalToken = sandboxProps.platformInternalToken,
             keepAliveMaxIdleTimeMs = sandboxProps.keepAliveMaxIdleTimeMs,
+            cliReclaimGraceMinutes = sandboxProps.cliReclaimGraceMinutes,
         ),
         enableWorkspaceContext = harnessProps.enableWorkspaceContext,
         enableMemoryHooks = harnessProps.enableMemoryHooks,

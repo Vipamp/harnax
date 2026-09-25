@@ -15,6 +15,11 @@
         SELECT * FROM agent_cli_binding WHERE agent_id = #{agentId} ORDER BY id
     </select>
 
+    <!-- Every binding at once, for the CLI inventory the runtime's reclaim sweep reads -->
+    <select id="selectAll" resultMap="AgentCliBindingResultMap">
+        SELECT * FROM agent_cli_binding ORDER BY agent_id, id
+    </select>
+
     <select id="selectByCliId" resultMap="AgentCliBindingResultMap">
         SELECT * FROM agent_cli_binding WHERE cli_id = #{cliId} ORDER BY id
     </select>

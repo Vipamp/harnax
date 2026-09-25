@@ -25,6 +25,10 @@ import io.agentscope.harness.agent.IsolationScope
  *   the idle reaper removes its container. The clock refreshes when a turn attaches the sandbox, not
  *   while it runs, so this must stay above the longest single turn (the member-turn timeout and the
  *   chat link timeout both sit well under the default).
+ * @param cliReclaimGraceMinutes how recently a CLI artifact has to have been touched to survive the
+ *   reclaim sweep: a payload tree used since then is kept, and so is an image built since then. That
+ *   covers the window in which a spec that is no longer registered still starts a session — an image is
+ *   built seconds before the container that needs it exists — so shortening it trades disk for a rebuild.
  */
 data class SandboxConfig(
     val enabled: Boolean = false,
@@ -37,4 +41,5 @@ data class SandboxConfig(
     val platformAdminUrl: String = "",
     val platformInternalToken: String = "",
     val keepAliveMaxIdleTimeMs: Long = 30 * 60 * 1000L,
+    val cliReclaimGraceMinutes: Long = 360,
 )

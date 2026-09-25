@@ -179,6 +179,9 @@ services:
       MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      # How long a CLI archive no `cli` row names survives in the package bucket. An upgrade leaves the
+      # previous digest stored with nothing pointing at it; this window is what makes it reclaimable.
+      HARNAX_CLI_ARCHIVE_RETENTION_DAYS: ${HARNAX_CLI_ARCHIVE_RETENTION_DAYS:-7}
       # JVM Configuration
       JAVA_OPTS: -Xms128m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication
       # Log Configuration
@@ -491,6 +494,14 @@ services:
       # `${platform.internalToken}` needs no line here — application.yml defaults it to
       # ADMIN_INTERNAL_API_SECRET, which this service already carries.
       SANDBOX_PLATFORM_ADMIN_URL: http://admin:8080
+      # CLI artifact reclaim: this host drops a cached package tree or a derived image once it is unused
+      # AND older than the grace window, checked against admin's inventory every interval.
+      # grace-minutes must stay above the interval, or a package an agent is about to start from is in
+      # range of the sweep. A sweep only reclaims what it can prove is unused; an unanswered inventory
+      # deletes nothing.
+      SANDBOX_CLI_RECLAIM_INTERVAL_MS: ${SANDBOX_CLI_RECLAIM_INTERVAL_MS:-3600000}
+      SANDBOX_CLI_RECLAIM_INITIAL_DELAY_MS: ${SANDBOX_CLI_RECLAIM_INITIAL_DELAY_MS:-600000}
+      SANDBOX_CLI_RECLAIM_GRACE_MINUTES: ${SANDBOX_CLI_RECLAIM_GRACE_MINUTES:-360}
       # Router Configuration
       ROUTER_SERVICE_URL: http://router:8081
       AGENT_INSTANCE_ID: ${AGENT_INSTANCE_ID:-agent-service-1}

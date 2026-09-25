@@ -3,6 +3,7 @@ package com.agnetix.harnax.agent.service.client
 import com.agnetix.harnax.agent.adaptor.mcp.McpAuthRequiredException
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
+import com.agnetix.harnax.entity.dto.CliPackageInventoryResponse
 import com.agnetix.harnax.entity.dto.McpAccessTokenResponse
 import com.agnetix.harnax.entity.dto.TeamSpecInfoResponse
 import org.slf4j.LoggerFactory
@@ -145,6 +146,34 @@ class AdminApiClient(
             response.data!!.lead.skillDetails.size,
             response.data!!.members.map { it.memberAgentId },
         )
+        return response.data!!
+    }
+
+    /**
+     * Fetch which CLI packages are registered and which sets agents actually run, so this host can reclaim
+     * the payload trees and images nothing names any more.
+     *
+     * Throwing when admin does not answer is the whole point of the shape: the answer is a deletion
+     * whitelist, and a missing one reads as "everything is unused". A silent empty list would let an admin
+     * outage delete every cached package on every host.
+     */
+    fun getCliPackageInventory(): CliPackageInventoryResponse {
+        val url = "$adminUrl/api/admin/internal/cli/inventory"
+        log.debug("[Agent→Admin] GET {} - fetching CLI package inventory", url)
+
+        val responseType = object : ParameterizedTypeReference<ResultVo<CliPackageInventoryResponse>>() {}
+        val response = try {
+            restTemplate.exchange(url, HttpMethod.GET, null, responseType).body
+        } catch (e: Exception) {
+            log.error("[Agent←Admin] Failed to get CLI package inventory: {}", e.message, e)
+            throw RuntimeException("Failed to get CLI package inventory from admin: ${e.message}", e)
+        }
+
+        if (response == null || response.code != 200 || response.data == null) {
+            val errorMsg = response?.message ?: "No response from admin"
+            log.error("[Agent←Admin] Error getting CLI package inventory: {}", errorMsg)
+            throw RuntimeException("Admin returned error: $errorMsg")
+        }
         return response.data!!
     }
 

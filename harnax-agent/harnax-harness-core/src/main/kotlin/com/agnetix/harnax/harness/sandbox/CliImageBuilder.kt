@@ -7,6 +7,8 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
+import java.time.Duration
+import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -24,7 +26,12 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class CliImageBuilder(
     private val baseImage: String,
-    private val packageStore: CliPackageStore,
+    /**
+     * The payload trees this host has cached for the packages it can build images from. Public because
+     * they are reclaimed on the same inventory the images are: a tree no registered package names is the
+     * one thing a rebuild cannot recover once admin drops the archive.
+     */
+    val packageStore: CliPackageStore,
     private val dockerExecutor: DockerCommandExecutor = DefaultDockerCommandExecutor(),
 ) {
 
@@ -48,7 +55,7 @@ class CliImageBuilder(
 
         validate(cliSpecs)
         val sorted = cliSpecs.sortedBy { it.cliId }
-        val tag = "harnax-sandbox:cli-${combinationHash(sorted)}"
+        val tag = tagOf(sorted)
 
         if (tag in knownImages) return tag
         if (imageExists(tag)) {
@@ -64,6 +71,82 @@ class CliImageBuilder(
             knownImages.add(tag)
         }
         return tag
+    }
+
+    /**
+     * The image tag one CLI set builds to.
+     *
+     * This is the only place the tag is assembled, because [evictUnusedImages] decides what to delete with
+     * it: a second copy of the formula that ever disagreed with the build path would remove the image a
+     * live agent is about to start from.
+     */
+    fun tagOf(cliSpecs: List<CliSpec>): String = "$TAG_PREFIX${combinationHash(cliSpecs.sortedBy { it.cliId })}"
+
+    /**
+     * Removes the sandbox images this host has built for CLI sets that no longer exist.
+     *
+     * One image per CLI combination, and a combination changes whenever an agent's CLI selection or one of
+     * its packages' payloads changes, so the set of images on disk is a history of choices nobody makes any
+     * more. Three things have to hold before one is dropped:
+     *
+     * - no live CLI set builds to this tag — the whitelist comes from admin's binding inventory, judged by
+     *   the same [tagOf] the build path uses;
+     * - no container references it, running or exited — `docker ps -a` covers the keep-alive sandboxes,
+     *   which are stopped rather than removed;
+     * - it was built outside [grace] — an image built seconds ago belongs to a session whose container is
+     *   not there yet, and whose spec may predate the binding change this whitelist reflects.
+     *
+     * Anything the daemon refuses to answer aborts the sweep rather than narrowing it: the deletion is the
+     * irreversible half, so `docker ps` failing means nothing is removed. Tags outside this platform's own
+     * namespace are never candidates, which is what keeps the base image out of reach.
+     *
+     * @param liveCliSets each agent's configured CLIs, as admin's inventory reports them
+     * @return how many images were removed
+     */
+    fun evictUnusedImages(
+        liveCliSets: List<List<CliSpec>>,
+        grace: Duration,
+    ): Int {
+        val referenced = dockerExecutor.execute(listOf("docker", "ps", "-a", "--format", "{{.Image}}"))
+        if (referenced.exitCode != 0) {
+            log.warn("[cliImage] Keeping every CLI image: docker could not list containers ({})", referenced.output.take(200))
+            return 0
+        }
+        val listings = dockerExecutor.execute(listOf("docker", "images", "--format", "{{.Repository}}:{{.Tag}}"))
+        if (listings.exitCode != 0) {
+            log.warn("[cliImage] Keeping every CLI image: docker could not list images ({})", listings.output.take(200))
+            return 0
+        }
+        val live = liveCliSets.map { tagOf(it) }.toSet()
+        val inUse = referenced.output.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        val cutoff = Instant.now().minus(grace)
+        var removed = 0
+        for (tag in listings.output.lineSequence().map { it.trim() }.filter { it.startsWith(TAG_PREFIX) }.toList()) {
+            if (tag in live || tag in inUse) continue
+            val built = buildTimeOf(tag)
+            if (built == null) {
+                log.warn("[cliImage] Keeping {}: its build time could not be read", tag)
+                continue
+            }
+            if (built.isAfter(cutoff)) continue
+            val rmi = dockerExecutor.execute(listOf("docker", "rmi", tag))
+            if (rmi.exitCode != 0) {
+                log.warn("[cliImage] {} could not be removed: {}", tag, rmi.output.take(200))
+                continue
+            }
+            // The cache would otherwise keep answering that an image this host no longer has is present,
+            // and the next agent would fail at `docker create` instead of rebuilding here.
+            knownImages.remove(tag)
+            removed++
+            log.info("[cliImage] Removed unused CLI image {}", tag)
+        }
+        return removed
+    }
+
+    private fun buildTimeOf(tag: String): Instant? {
+        val inspected = dockerExecutor.execute(listOf("docker", "image", "inspect", "--format", "{{.Created}}", tag))
+        if (inspected.exitCode != 0) return null
+        return runCatching { Instant.parse(inspected.output.trim()) }.getOrNull()
     }
 
     /**
@@ -214,5 +297,13 @@ class CliImageBuilder(
         dest: Path,
     ) {
         Files.copy(source, dest, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
+    }
+
+    companion object {
+        /**
+         * The namespace of every image this class builds. [evictUnusedImages] scopes itself to it, which is
+         * what keeps the base image — and everything else on this host — out of reach.
+         */
+        private const val TAG_PREFIX = "harnax-sandbox:cli-"
     }
 }

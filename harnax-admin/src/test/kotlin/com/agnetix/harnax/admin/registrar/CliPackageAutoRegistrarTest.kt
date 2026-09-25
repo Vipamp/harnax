@@ -13,9 +13,12 @@ import com.agnetix.harnax.mapper.SkillMapper
 import com.agnetix.harnax.mapper.SkillRepositoryMapper
 import com.agnetix.harnax.mapper.TeamSkillBindingMapper
 import io.minio.BucketExistsArgs
+import io.minio.ListObjectsArgs
 import io.minio.MinioClient
 import io.minio.PutObjectArgs
 import io.minio.RemoveObjectArgs
+import io.minio.Result
+import io.minio.messages.Item
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry
 import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -50,6 +53,7 @@ import org.springframework.transaction.TransactionStatus
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.file.attribute.FileTime
+import java.time.ZonedDateTime
 
 /**
  * CliPackageAutoRegistrar Unit Tests
@@ -124,7 +128,10 @@ class CliPackageAutoRegistrarTest {
 
     // ==================== fixtures ====================
 
-    private fun registrarAt(dir: File): CliPackageAutoRegistrar = CliPackageAutoRegistrar(
+    private fun registrarAt(
+        dir: File,
+        retentionDays: Long = ARCHIVE_RETENTION_DAYS,
+    ): CliPackageAutoRegistrar = CliPackageAutoRegistrar(
         cliMapper,
         skillMapper,
         skillRepositoryMapper,
@@ -136,6 +143,7 @@ class CliPackageAutoRegistrarTest {
         transactionManager,
         dir.path,
         BUCKET,
+        retentionDays,
     )
 
     private fun sync() = registrarAt(packageDir).syncCliPackages()
@@ -254,6 +262,31 @@ runtimeEnv:
     private fun capturedUploads(): List<Pair<String, String>> = argumentCaptor<PutObjectArgs>().apply { verify(minio, atLeastOnce()).putObject(capture()) }
         .allValues
         .map { it.bucket() to it.`object`() }
+
+    /** What the registrar asked the object store to delete, as object keys. */
+    private fun capturedDeletions(): List<String> = argumentCaptor<RemoveObjectArgs>().apply { verify(minio, atLeastOnce()).removeObject(capture()) }
+        .allValues
+        .map { it.`object`() }
+
+    private fun bucket(vararg entries: Result<Item>) {
+        `when`(minio.listObjects(any<ListObjectsArgs>())).thenReturn(entries.toList())
+    }
+
+    /** Which archives the `cli` table still names — the sweep's other input. */
+    private fun referenced(vararg keys: String) {
+        `when`(cliMapper.selectPackageObjects()).thenReturn(keys.toList())
+    }
+
+    /** One listing entry: the object key and when it was last written, as the object store reports them. */
+    private fun stored(
+        key: String,
+        daysOld: Long,
+    ): Item = mock(Item::class.java).apply {
+        `when`(objectName()).thenReturn(key)
+        `when`(lastModified()).thenReturn(ZonedDateTime.now().minusDays(daysOld))
+    }
+
+    private fun packageKey(digest: String) = "demo/$digest${CliPackageLayout.FILE_SUFFIX}"
 
     // ==================== tests ====================
 
@@ -740,6 +773,118 @@ runtimeEnv:
         }
     }
 
+    /**
+     * The third thing CLI-04 found accumulating: the archive an in-place upgrade left in the object store.
+     *
+     * [removeArchivesOf] only clears the archive of a row it deletes, so a package that stayed and merely
+     * changed digest left its previous object behind with no row naming it and no path that would ever
+     * remove it. The judgment here is the same one the runtime's sweeps use — an artifact nothing
+     * references any more, plus a grace window for one that is merely young — because a running
+     * agent-service can still be fetching the key the row it was started from no longer points at.
+     */
+    @Nested
+    inner class OrphanArchives {
+        @Test
+        fun `an archive no row names any more is removed once it is past the retention window`() {
+            writePackage("demo", "1.4.0")
+            `when`(cliMapper.selectByName("demo")).thenReturn(existingRow(packageDigest = LIVE_DIGEST))
+            referenced(packageKey(LIVE_DIGEST))
+            bucket(Result(stored(packageKey(LIVE_DIGEST), 30)), Result(stored(packageKey(ORPHAN_DIGEST), 30)))
+
+            sync()
+
+            assertEquals(listOf(packageKey(ORPHAN_DIGEST)), capturedDeletions())
+        }
+
+        @Test
+        fun `the archive a row names is kept however old it is`() {
+            writePackage("demo", "1.4.0")
+            `when`(cliMapper.selectByName("demo")).thenReturn(existingRow(packageDigest = LIVE_DIGEST))
+            referenced(packageKey(LIVE_DIGEST))
+            bucket(Result(stored(packageKey(LIVE_DIGEST), 365)))
+
+            sync()
+
+            verify(minio, never()).removeObject(any<RemoveObjectArgs>())
+        }
+
+        /**
+         * The window is what makes this safe to run at all: the key a row stopped naming may still be the
+         * one an instance fetched a moment ago and has not finished installing from.
+         */
+        @Test
+        fun `an unreferenced archive inside the retention window is left alone`() {
+            writePackage("demo", "1.4.0")
+            `when`(cliMapper.selectByName("demo")).thenReturn(existingRow(packageDigest = LIVE_DIGEST))
+            referenced(packageKey(LIVE_DIGEST))
+            bucket(Result(stored(packageKey(ORPHAN_DIGEST), 1)))
+
+            sync()
+
+            verify(minio, never()).removeObject(any<RemoveObjectArgs>())
+        }
+
+        /** A shorter configured window is what a deployment asks for, not a constant buried in the sweep. */
+        @Test
+        fun `the retention window is the configured one`() {
+            writePackage("demo", "1.4.0")
+            `when`(cliMapper.selectByName("demo")).thenReturn(existingRow(packageDigest = LIVE_DIGEST))
+            referenced(packageKey(LIVE_DIGEST))
+            bucket(Result(stored(packageKey(ORPHAN_DIGEST), 5)))
+
+            registrarAt(packageDir, retentionDays = 3).syncCliPackages()
+
+            assertEquals(listOf(packageKey(ORPHAN_DIGEST)), capturedDeletions())
+        }
+
+        /**
+         * The bucket is operator-visible storage, and only keys this class itself writes are its to
+         * reclaim: anything else in it — a hand-uploaded file, an object from a retired layout — survives.
+         */
+        @Test
+        fun `an object the registrar did not write is not its own to delete`() {
+            writePackage("demo", "1.4.0")
+            `when`(cliMapper.selectByName("demo")).thenReturn(existingRow(packageDigest = LIVE_DIGEST))
+            referenced(packageKey(LIVE_DIGEST))
+            bucket(
+                Result(stored("notes.txt", 30)),
+                Result(stored("demo/legacy${CliPackageLayout.FILE_SUFFIX}", 30)),
+                Result(stored("demo/${ORPHAN_DIGEST.uppercase()}${CliPackageLayout.FILE_SUFFIX}", 30)),
+            )
+
+            sync()
+
+            verify(minio, never()).removeObject(any<RemoveObjectArgs>())
+        }
+
+        /** An unreadable listing says nothing about what is referenced, so it must delete nothing. */
+        @Test
+        fun `a bucket that cannot be listed costs no deletion`() {
+            writePackage("demo", "1.4.0")
+            `when`(minio.listObjects(any<ListObjectsArgs>())).thenThrow(RuntimeException("connection refused"))
+
+            sync()
+
+            verify(minio, never()).removeObject(any<RemoveObjectArgs>())
+        }
+
+        /** One unreadable entry is that entry's bad luck, not a reason to leave the whole bucket unclaimed. */
+        @Test
+        fun `an entry whose metadata cannot be read is kept while the rest is still reclaimed`() {
+            writePackage("demo", "1.4.0")
+            `when`(cliMapper.selectByName("demo")).thenReturn(existingRow(packageDigest = LIVE_DIGEST))
+            referenced(packageKey(LIVE_DIGEST))
+            bucket(
+                Result(RuntimeException("truncated listing")),
+                Result(stored(packageKey(ORPHAN_DIGEST), 30)),
+            )
+
+            sync()
+
+            assertEquals(listOf(packageKey(ORPHAN_DIGEST)), capturedDeletions())
+        }
+    }
+
     @Nested
     inner class MissingInfrastructure {
         @Test
@@ -794,6 +939,9 @@ private data class PackageEntry(
 private const val REPO_ID = 7L
 private const val SKILL_ID = 99L
 private const val BUCKET = "harnax-cli-packages"
+private const val ARCHIVE_RETENTION_DAYS = 7L
+private val LIVE_DIGEST = "a".repeat(64)
+private val ORPHAN_DIGEST = "b".repeat(64)
 private const val ENVPARAMS_JSON = "[{\"envParamName\":\"DEMO_PROFILE\"}]"
 private val STALE_DIGEST = "e".repeat(64)
 private const val S_IFREG = 0x8000

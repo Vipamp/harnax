@@ -3,11 +3,11 @@ package com.agnetix.harnax.agent.service.runner
 import com.agnetix.harnax.agent.AgentSpec
 import com.agnetix.harnax.agent.ChatSpec
 import com.agnetix.harnax.agent.ChatSpecBuilder
-import com.agnetix.harnax.agent.CliSpec
 import com.agnetix.harnax.agent.McpSpec
 import com.agnetix.harnax.agent.SkillSpec
 import com.agnetix.harnax.agent.service.client.AdminApiClient
 import com.agnetix.harnax.agent.service.client.AgentSpecContextHolder
+import com.agnetix.harnax.agent.toCliSpec
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
 import com.agnetix.harnax.harness.team.TeamMemberSpec
 import com.agnetix.harnax.harness.team.TeamRuntimeSpec
@@ -243,24 +243,7 @@ class AgentSpecResolver(
 
         // ── CLI details (package coordinates for the sandbox image + env bindings) ──
         for (cli in specInfo.cliDetails) {
-            builder.addCliSpec(
-                CliSpec(
-                    cliId = cli.id,
-                    name = cli.name,
-                    version = cli.version,
-                    packageObject = cli.packageObject,
-                    packageDigest = cli.packageDigest,
-                    payloadDigest = cli.payloadDigest,
-                    depsApt = cli.depsApt,
-                    checkCommand = cli.checkCommand,
-                    runtimeEnv = cli.runtimeEnv,
-                    envBindings = cli.envBindings.mapNotNull { binding ->
-                        val key = binding["envKey"] ?: return@mapNotNull null
-                        val value = binding["envValue"] ?: return@mapNotNull null
-                        key to value
-                    }.toMap(),
-                ),
-            )
+            builder.addCliSpec(cli.toCliSpec())
         }
 
         // ── Tool details (full config from admin) ──

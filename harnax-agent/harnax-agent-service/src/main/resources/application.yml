@@ -75,6 +75,12 @@ harness:
     network: ${SANDBOX_NETWORK:}
     # Where CLI package payloads are unpacked and cached, keyed by the package digest.
     cli-package-cache-dir: ${SANDBOX_CLI_PACKAGE_CACHE_DIR:/tmp/harnax-agent/cli-packages}
+    # What is no longer in that directory and which images nothing runs any more is decided against admin's
+    # inventory, so these three only tune the sweep: a package an agent starts from must survive it, which is
+    # why the grace window sits well above the interval.
+    cli-reclaim-interval-ms: ${SANDBOX_CLI_RECLAIM_INTERVAL_MS:3600000}
+    cli-reclaim-initial-delay-ms: ${SANDBOX_CLI_RECLAIM_INITIAL_DELAY_MS:600000}
+    cli-reclaim-grace-minutes: ${SANDBOX_CLI_RECLAIM_GRACE_MINUTES:360}
     # Values a CLI package's `${platform.*}` slots resolve to. The URL must be one a sandbox container
     # can reach, and the token is admin's internal API secret — the same value the admin service holds.
     platform-admin-url: ${SANDBOX_PLATFORM_ADMIN_URL:}

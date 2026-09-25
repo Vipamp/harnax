@@ -21,12 +21,14 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * CliMapper locking-read tests.
+ * CliMapper database properties.
  *
- * The registrar takes the shipped skill's status from [CliMapper.selectByNameForUpdate], and the page's
- * toggle writes the same column through [CliMapper.updateStatus]. That convergence is a database property,
- * not a Kotlin one: it exists only while the read actually locks the row. A mocked mapper cannot see this,
- * so the assertions here run against MySQL and judge the statement, not the code around it.
+ * Two things that exist only in SQL and that a mocked mapper cannot see. The registrar takes the shipped
+ * skill's status from [CliMapper.selectByNameForUpdate] and the page's toggle writes the same column
+ * through [CliMapper.updateStatus]; that convergence holds only while the read actually locks the row.
+ * And [CliMapper.selectPackageObjects] is the whole input to the archive reclaim sweep, so which rows it
+ * answers — a disabled package in, a row that never stored an archive out — is decided by this file
+ * against MySQL rather than by a Kotlin filter that would pass even after the column stopped being read.
  */
 @Testcontainers
 @MybatisTest
@@ -116,6 +118,30 @@ open class CliMapperTest {
         }
     }
 
+    @Nested
+    @DisplayName("Archive inventory")
+    inner class ArchiveInventory {
+
+        /**
+         * The reclaim sweep's whole input, and the two halves of its judgment live in this one statement:
+         * a disabled package's archive is still a real archive (its kill switch is `status`, not the
+         * bytes), and a row with no key stored is a leftover of the retired CLI page, which never had an
+         * object in the bucket to reclaim.
+         */
+        @Test
+        fun `a stored key is reported whatever the row status and a row without one is not`() {
+            seedPackage("demo-archive-live", packageObject = "demo-archive-live/aaa.zip")
+            seedPackage("demo-archive-off", packageObject = "demo-archive-off/bbb.zip", status = 0)
+            seedPackage("demo-archive-none", packageObject = "")
+
+            val keys = cliMapper.selectPackageObjects()
+
+            assertTrue(keys.contains("demo-archive-live/aaa.zip"), keys.toString())
+            assertTrue(keys.contains("demo-archive-off/bbb.zip"), keys.toString())
+            assertTrue("" !in keys, keys.toString())
+        }
+    }
+
     /**
      * Inserts one package row and commits it on a connection of its own.
      *
@@ -123,16 +149,21 @@ open class CliMapperTest {
      * to the second connection below — and it would carry the insert's own row lock, which is exactly what
      * [RowLock] has to attribute to the locking read alone.
      */
-    private fun seedPackage(name: String): Long {
+    private fun seedPackage(
+        name: String,
+        packageObject: String = "$name/0.zip",
+        status: Int = 1,
+    ): Long {
         dataSource.connection.use { conn ->
             conn.autoCommit = true
             conn.prepareStatement(
                 "INSERT INTO cli (name, description, version, package_digest, package_object, status, active) " +
-                    "VALUES (?, '', '1.0.0', ?, ?, 1, 1)",
+                    "VALUES (?, '', '1.0.0', ?, ?, ?, 1)",
             ).use { ps ->
                 ps.setString(1, name)
                 ps.setString(2, "0".repeat(64))
-                ps.setString(3, "$name/0.zip")
+                ps.setString(3, packageObject)
+                ps.setInt(4, status)
                 ps.executeUpdate()
             }
             conn.prepareStatement("SELECT id FROM cli WHERE name = ?").use { ps ->

@@ -14,6 +14,7 @@ import com.agnetix.harnax.mapper.SkillMapper
 import com.agnetix.harnax.mapper.SkillRepositoryMapper
 import com.agnetix.harnax.mapper.TeamSkillBindingMapper
 import io.minio.BucketExistsArgs
+import io.minio.ListObjectsArgs
 import io.minio.MakeBucketArgs
 import io.minio.MinioClient
 import io.minio.PutObjectArgs
@@ -28,6 +29,8 @@ import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
 import tools.jackson.databind.ObjectMapper
 import java.io.File
+import java.time.Duration
+import java.time.Instant
 
 /**
  * The single lifecycle entry point for CLIs: a package that is in the directory is registered, one that
@@ -76,6 +79,7 @@ class CliPackageAutoRegistrar(
     transactionManager: PlatformTransactionManager,
     @Value("\${harnax.cli.package-dir:}") packageDir: String,
     @Value("\${minio.cli-package-bucket:harnax-cli-packages}") private val cliPackageBucket: String,
+    @Value("\${harnax.cli.archive-retention-days:7}") private val archiveRetentionDays: Long,
 ) {
     private val log = LoggerFactory.getLogger(CliPackageAutoRegistrar::class.java)
     private val objectMapper = ObjectMapper()
@@ -167,6 +171,7 @@ class CliPackageAutoRegistrar(
         )
 
         pruneMissingPackages(registered, failCount)
+        reclaimOrphanArchives()
     }
 
     /**
@@ -381,6 +386,73 @@ class CliPackageAutoRegistrar(
             stale.size,
             stale.map { "${it.name}(id=${it.id})" },
         )
+    }
+
+    /**
+     * Reclaims the archives no `cli` row names any more, i.e. what an in-place upgrade left behind.
+     *
+     * [removeArchivesOf] only sees a key when the row naming it is deleted, so a package that stayed and
+     * merely changed digest left its previous object in the bucket forever: nothing referenced it, and
+     * nothing else looked at it. This is the third and last accumulating artifact of CLI-04 — the runtime
+     * reclaims the payload tree and the sandbox image for the same selection, and each side can only see
+     * its own storage.
+     *
+     * Two things make a deletion here safe. The key has to be one this class writes (`<name>/<sha256>.harnaxcli.zip`),
+     * so an object the operator put in the bucket by hand is out of reach; and the object has to be older
+     * than [archiveRetentionDays], because a row that stopped naming a key seconds ago does not mean no
+     * running agent-service is still downloading it — the row is admin's view, not the fleet's.
+     *
+     * The listing is read in full before anything is deleted, so an object store that cannot answer costs
+     * no bytes at all. An entry whose own metadata cannot be read is kept on its own, since that is one bad
+     * listing row rather than a reason to leave the whole bucket unreclaimed.
+     */
+    private fun reclaimOrphanArchives() {
+        val client = minioClients.ifAvailable ?: return
+        val listing = try {
+            client.listObjects(ListObjectsArgs.builder().bucket(cliPackageBucket).recursive(true).build()).toList()
+        } catch (e: Exception) {
+            log.warn("[CliPackageAutoRegistrar] Keeping every stored archive: {} could not be listed ({})", cliPackageBucket, e.message)
+            return
+        }
+        val referenced = cliMapper.selectPackageObjects().toSet()
+        val cutoff = Instant.now().minus(Duration.ofDays(archiveRetentionDays))
+        var removed = 0
+        for (entry in listing) {
+            val item = try {
+                entry.get()
+            } catch (e: Exception) {
+                log.warn("[CliPackageAutoRegistrar] Keeping an archive whose listing entry could not be read: {}", e.message)
+                continue
+            }
+            val objectName = item.objectName()
+            val written = item.lastModified() ?: continue
+            if (!isPackageKey(objectName) || objectName in referenced) continue
+            if (written.toInstant().isAfter(cutoff)) continue
+            try {
+                client.removeObject(RemoveObjectArgs.builder().bucket(cliPackageBucket).`object`(objectName).build())
+                removed++
+                log.info("[CliPackageAutoRegistrar] Reclaimed stored archive {}", objectName)
+            } catch (e: Exception) {
+                log.warn("[CliPackageAutoRegistrar] Stored archive {} could not be removed: {}", objectName, e.message)
+            }
+        }
+        if (removed > 0) {
+            log.info("[CliPackageAutoRegistrar] Reclaimed {} unreferenced CLI archive(s) from {}", removed, cliPackageBucket)
+        }
+    }
+
+    /**
+     * Whether one object key is a package archive this class wrote.
+     *
+     * [CliPackageLayout.NAME_PATTERN] and [CliPackageLayout.DIGEST_PATTERN] are the same two patterns the
+     * upload path's key is built from, so this admits nothing the registrar could not have produced.
+     */
+    private fun isPackageKey(key: String): Boolean {
+        if (!key.endsWith(CliPackageLayout.FILE_SUFFIX)) return false
+        val slash = key.lastIndexOf('/')
+        if (slash <= 0) return false
+        val digest = key.substring(slash + 1).removeSuffix(CliPackageLayout.FILE_SUFFIX)
+        return CliPackageLayout.NAME_PATTERN.matches(key.substring(0, slash)) && CliPackageLayout.DIGEST_PATTERN.matches(digest)
     }
 
     /**

@@ -50,6 +50,15 @@ interface CliMapper {
     /** Every row including pruned-and-soft-deleted ones — the registrar diffs this against the directory */
     fun selectAll(): List<Cli>
 
+    /**
+     * The object key of every archive the package flow has stored.
+     *
+     * The reclaim sweep deletes what is missing from this answer, so it takes a disabled package's key too
+     * (`status` is a kill switch, not a deletion) and skips a row that never had an archive, which is what
+     * the `<> ''` condition is for.
+     */
+    fun selectPackageObjects(): List<String>
+
     /** Insert or update by `name`. Never touches `status`, which is the operator's kill switch. */
     fun upsertCliPackage(cli: Cli): Int
 

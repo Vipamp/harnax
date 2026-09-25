@@ -105,6 +105,14 @@
     </select>
 
     <!--
+        One column of every row, for the reclaim sweep that decides what an archive is still for. `status`
+        is deliberately not a condition: a disabled package's archive is still the bytes its row names.
+    -->
+    <select id="selectPackageObjects" resultType="string">
+        SELECT package_object FROM cli WHERE package_object &lt;&gt; ''
+    </select>
+
+    <!--
         Hard delete for the prune path only. A package that left the directory is gone, and keeping
         an active = 0 row would block the name forever (uk_cli_name), so a re-added package could
         never come back. No guard here because the caller hands over only ids it proved it wrote:

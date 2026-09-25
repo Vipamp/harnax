@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.mockito.kotlin.any
@@ -17,6 +18,8 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermission
 import java.nio.file.attribute.PosixFilePermissions
+import java.time.Duration
+import java.time.Instant
 
 /**
  * Unit tests for [CliImageBuilder].
@@ -399,4 +402,160 @@ class CliImageBuilderTest {
         cli: CliSpec,
         binaryName: String,
     ): Pair<String, Path> = cli.packageDigest to fakePayload(binaryName)
+
+    /**
+     * CLI-04's image half. The reclaimer asks four things of the daemon: which images exist, which ones
+     * containers still reference, when one candidate was built, and permission to remove it. The answers
+     * here are scripted per command, so each test only has to state the one it varies.
+     */
+    @Nested
+    inner class EvictImages {
+
+        private fun reclaimExecutor(
+            images: List<String>,
+            containers: List<String>? = emptyList(),
+            created: Map<String, String> = emptyMap(),
+            rmiExit: Int = 0,
+        ): ScriptedExecutor = ScriptedExecutor { cmd ->
+            when {
+                cmd.take(4) == listOf("docker", "ps", "-a", "--format") ->
+                    containers?.let { DockerCommandResult(0, it.joinToString("\n")) } ?: DockerCommandResult(1, "cannot connect")
+                cmd.take(3) == listOf("docker", "images", "--format") -> DockerCommandResult(0, images.joinToString("\n"))
+                cmd.getOrNull(1) == "image" && cmd.getOrNull(2) == "inspect" ->
+                    DockerCommandResult(0, created[cmd.last()] ?: Instant.now().minus(Duration.ofDays(3)).toString())
+                cmd.getOrNull(1) == "rmi" -> DockerCommandResult(rmiExit, "untagged")
+                else -> DockerCommandResult(0, "ok")
+            }
+        }
+
+        /**
+         * The pair that holds the whole feature up: the whitelist is computed by the same code path that
+         * builds images, so what `resolveImage` just produced is exactly what eviction must leave alone —
+         * and a different CLI set must be removable.
+         */
+        @Test
+        fun `the live CLI set protects the very tag resolveImage built`() {
+            val executor = ScriptedExecutor { cmd ->
+                when {
+                    cmd.take(3) == listOf("docker", "image", "inspect") -> DockerCommandResult(1, "not found")
+                    else -> DockerCommandResult(0, "ok")
+                }
+            }
+            val cliBuilder = builder(executor, payloadFor(kubectl, "kubectl"), payloadFor(gh, "gh"))
+            val built = cliBuilder.resolveImage(listOf(kubectl, gh))
+
+            val reclaim = reclaimExecutor(images = listOf(built))
+            val evicting = builder(reclaim)
+
+            assertEquals(0, evicting.evictUnusedImages(listOf(listOf(kubectl, gh)), Duration.ofHours(6)))
+            assertFalse(reclaim.commands.any { it.getOrNull(1) == "rmi" }, reclaim.commands.toString())
+
+            assertEquals(1, evicting.evictUnusedImages(listOf(listOf(kubectl)), Duration.ofHours(6)))
+            assertTrue(reclaim.commands.any { it == listOf("docker", "rmi", built) }, reclaim.commands.toString())
+        }
+
+        @Test
+        fun `an image a container still references is kept`() {
+            val staleTag = "harnax-sandbox:cli-0123456789ab"
+            val reclaim = reclaimExecutor(images = listOf(staleTag), containers = listOf(staleTag))
+
+            assertEquals(0, builder(reclaim).evictUnusedImages(emptyList(), Duration.ofHours(6)))
+            assertFalse(reclaim.commands.any { it.getOrNull(1) == "rmi" })
+        }
+
+        /**
+         * The keep-alive sandboxes are stopped rather than removed, and `docker ps -a` is what makes them
+         * count as references — the command shape is pinned by the matcher above, so this is about the
+         * judgement, not the plumbing.
+         */
+        @Test
+        fun `an image whose build time cannot be read is kept`() {
+            val tag = "harnax-sandbox:cli-0123456789ab"
+            val reclaim = ScriptedExecutor { cmd ->
+                when {
+                    cmd.take(4) == listOf("docker", "ps", "-a", "--format") -> DockerCommandResult(0, "")
+                    cmd.take(3) == listOf("docker", "images", "--format") -> DockerCommandResult(0, tag)
+                    else -> DockerCommandResult(1, "Error: No such image: $tag")
+                }
+            }
+
+            assertEquals(0, builder(reclaim).evictUnusedImages(emptyList(), Duration.ofHours(6)))
+            assertFalse(reclaim.commands.any { it.getOrNull(1) == "rmi" })
+        }
+
+        /**
+         * The sweep is scoped by tag so it can never reach the base image or anything else on this host:
+         * removing `python:3.11-slim` would stop every sandbox on the box, not just one stale CLI set.
+         */
+        @Test
+        fun `tags this platform did not build are never candidates`() {
+            val foreign = listOf(baseImage, "harnax-sandbox:latest", "redis:7-alpine", "harnax-cli:legacy")
+            val reclaim = reclaimExecutor(images = foreign)
+
+            assertEquals(0, builder(reclaim).evictUnusedImages(emptyList(), Duration.ofHours(6)))
+            assertFalse(reclaim.commands.any { it.getOrNull(1) == "rmi" }, reclaim.commands.toString())
+        }
+
+        @Test
+        fun `no container answer means no deletion`() {
+            val reclaim = reclaimExecutor(images = listOf("harnax-sandbox:cli-0123456789ab"), containers = null)
+
+            assertEquals(0, builder(reclaim).evictUnusedImages(emptyList(), Duration.ofHours(6)))
+            assertFalse(reclaim.commands.any { it.getOrNull(1) == "rmi" })
+        }
+
+        /**
+         * An image built moments ago belongs to a session that is starting: its container is not there
+         * yet, and the spec that asked for it may predate the binding change this whitelist reflects.
+         */
+        @Test
+        fun `a recently built image is kept`() {
+            val tag = "harnax-sandbox:cli-fedcba987654"
+            val reclaim = reclaimExecutor(
+                images = listOf(tag),
+                created = mapOf(tag to Instant.now().minus(Duration.ofMinutes(2)).toString()),
+            )
+
+            assertEquals(0, builder(reclaim).evictUnusedImages(emptyList(), Duration.ofHours(6)))
+            assertFalse(reclaim.commands.any { it.getOrNull(1) == "rmi" })
+        }
+
+        @Test
+        fun `a refused removal is not counted and does not abort the sweep`() {
+            val first = "harnax-sandbox:cli-000000000001"
+            val second = "harnax-sandbox:cli-000000000002"
+            val reclaim = reclaimExecutor(images = listOf(first, second), rmiExit = 1)
+
+            assertEquals(0, builder(reclaim).evictUnusedImages(emptyList(), Duration.ofHours(6)))
+
+            assertEquals(
+                listOf(listOf("docker", "rmi", first), listOf("docker", "rmi", second)),
+                reclaim.commands.filter { it.getOrNull(1) == "rmi" },
+            )
+        }
+
+        /**
+         * The in-process tag cache is what lets a repeat `resolveImage` skip `docker image inspect`. After
+         * the image is gone it must not keep answering that way, or the next agent gets a container create
+         * failure against an image that no longer exists.
+         */
+        @Test
+        fun `a removed tag leaves the known-image cache`() {
+            val probe = builder(reclaimExecutor(images = emptyList()))
+            val tag = "harnax-sandbox:cli-${probe.combinationHash(listOf(kubectl))}"
+            val reclaim = reclaimExecutor(images = listOf(tag))
+            val cliBuilder = builder(reclaim, payloadFor(kubectl, "kubectl"))
+            fun existenceProbes() = reclaim.commands.count { it.size == 4 && it.getOrNull(2) == "inspect" }
+
+            assertEquals(tag, cliBuilder.resolveImage(listOf(kubectl)))
+            val probesBefore = existenceProbes()
+            assertEquals(tag, cliBuilder.resolveImage(listOf(kubectl)))
+            assertEquals(probesBefore, existenceProbes(), "the cache was not warm to begin with")
+
+            assertEquals(1, cliBuilder.evictUnusedImages(emptyList(), Duration.ofHours(6)))
+
+            cliBuilder.resolveImage(listOf(kubectl))
+            assertTrue(existenceProbes() > probesBefore, "the builder still believes it has an image it removed")
+        }
+    }
 }

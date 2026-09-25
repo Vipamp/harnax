@@ -9,8 +9,11 @@ import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.nio.file.attribute.FileTime
 import java.security.DigestInputStream
 import java.security.MessageDigest
+import java.time.Duration
+import java.time.Instant
 
 /**
  * Keeps the payload of a CLI package on local disk, keyed by its [CliPackageLayout.packageDigest].
@@ -59,19 +62,105 @@ class CliPackageStore(
             )
         }
         val tree = cacheDir.resolve(packageDigest)
-        if (isComplete(packageDigest, tree)) return tree
+        if (isComplete(packageDigest, tree)) return tree.used()
 
         synchronized(locks.computeIfAbsent(packageDigest) { Any() }) {
-            if (isComplete(packageDigest, tree)) return tree
+            if (isComplete(packageDigest, tree)) return tree.used()
             downloadAndExtract(packageDigest, objectKey, tree)
             return tree
         }
     }
 
+    /**
+     * Drops the payload trees this host no longer needs.
+     *
+     * The cache only ever grows: a package that gets a new version leaves its old digest behind, and one
+     * that leaves admin's directory altogether takes its archive with it, so the tree can never be rebuilt
+     * and is just disk. Both halves of the judgement matter. Unreferenced alone would delete a tree a
+     * download or a `docker build` is reading right now, and old alone would delete a package that is still
+     * registered — it would come back, but only after that session paid for a fresh download.
+     *
+     * Anything in the directory this class did not write is left alone.
+     *
+     * @param inUse the `packageDigest` of every package admin still registers
+     * @param grace how recently a tree has to have been used to survive
+     * @return how many payload trees were removed
+     */
+    fun evictUnused(
+        inUse: Set<String>,
+        grace: Duration,
+    ): Int {
+        if (!Files.isDirectory(cacheDir)) return 0
+        val cutoff = Instant.now().minus(grace)
+        val entries = Files.list(cacheDir).use { it.toList() }.map { it.fileName.toString() }.toSet()
+        var removed = 0
+        // Markers are scanned too: an orphan marker names a tree this host never finished publishing.
+        val candidates = (
+            entries.filter { CliPackageLayout.DIGEST_PATTERN.matches(it) } +
+                entries.filter { it.endsWith(MARKER_SUFFIX) }.map { it.removeSuffix(MARKER_SUFFIX) }
+            ).distinct()
+        for (digest in candidates) {
+            if (digest in inUse) continue
+            val tree = cacheDir.resolve(digest)
+            val marker = cacheDir.resolve("$digest$MARKER_SUFFIX")
+            val present = listOf(tree, marker).filter { Files.exists(it) }
+            if (present.isEmpty() || present.any { lastModified(it).isAfter(cutoff) }) continue
+            try {
+                tree.toFile().deleteRecursively()
+                Files.deleteIfExists(marker)
+                removed++
+                log.info("[cliCache] Evicted payload tree {}", digest.take(12))
+            } catch (e: Exception) {
+                log.warn("[cliCache] Payload tree {} could not be removed: {}", digest.take(12), e.message)
+            }
+        }
+        evictStaging(entries, cutoff)
+        return removed
+    }
+
+    /**
+     * Removes staging directories left by a run that was killed mid-download.
+     *
+     * A failed [downloadAndExtract] cleans its own staging in a `finally`; only a killed JVM leaves one
+     * behind, and nothing else ever looks at it again. Fresh ones belong to a download in progress.
+     */
+    private fun evictStaging(
+        entries: Set<String>,
+        cutoff: Instant,
+    ) {
+        for (name in entries.filter { it.startsWith(STAGING_PREFIX) }) {
+            val staging = cacheDir.resolve(name)
+            try {
+                if (lastModified(staging).isAfter(cutoff)) continue
+                staging.toFile().deleteRecursively()
+                log.info("[cliCache] Removed interrupted staging directory {}", name)
+            } catch (e: Exception) {
+                log.warn("[cliCache] Staging directory {} could not be removed: {}", name, e.message)
+            }
+        }
+    }
+
+    private fun lastModified(path: Path): Instant = try {
+        Files.getLastModifiedTime(path).toInstant()
+    } catch (e: Exception) {
+        // An unreadable timestamp reads as "just used": the sweep runs again on the next start.
+        Instant.now()
+    }
+
+    /** Reading the cache is a use, and eviction measures idleness from this moment. */
+    private fun Path.used(): Path {
+        try {
+            Files.setLastModifiedTime(this, FileTime.from(Instant.now()))
+        } catch (e: Exception) {
+            log.debug("[cliCache] Could not record a use of {}: {}", this, e.message)
+        }
+        return this
+    }
+
     private fun isComplete(
         packageDigest: String,
         tree: Path,
-    ): Boolean = Files.isDirectory(tree) && Files.exists(cacheDir.resolve("$packageDigest.complete"))
+    ): Boolean = Files.isDirectory(tree) && Files.exists(cacheDir.resolve("$packageDigest$MARKER_SUFFIX"))
 
     private fun downloadAndExtract(
         packageDigest: String,
@@ -81,7 +170,7 @@ class CliPackageStore(
         Files.createDirectories(cacheDir)
         // Inside cacheDir, so the finished tree can be moved into place atomically — a temp dir on
         // another filesystem would turn that move into a copy and half-built trees into a real risk.
-        val staging = Files.createTempDirectory(cacheDir, ".staging-")
+        val staging = Files.createTempDirectory(cacheDir, STAGING_PREFIX)
         try {
             val archive = staging.resolve("package.zip")
             val sha256 = MessageDigest.getInstance("SHA-256")
@@ -112,12 +201,20 @@ class CliPackageStore(
             } catch (e: AtomicMoveNotSupportedException) {
                 Files.move(payload, tree)
             }
-            Files.writeString(cacheDir.resolve("$packageDigest.complete"), packageDigest)
+            Files.writeString(cacheDir.resolve("$packageDigest$MARKER_SUFFIX"), packageDigest)
             log.info("Materialized CLI package payload: digest={}, files={}, path={}", packageDigest.take(12), written, tree)
         } finally {
             // The tree appears through the atomic move or not at all, so a failed attempt leaves nothing
             // behind but this staging directory.
             staging.toFile().deleteRecursively()
         }
+    }
+
+    companion object {
+        /** Written next to a finished tree; its absence is what makes a tree an interrupted run. */
+        private const val MARKER_SUFFIX = ".complete"
+
+        /** Prefix of the temporary directory a download unpacks into before the atomic move. */
+        private const val STAGING_PREFIX = ".staging-"
     }
 }

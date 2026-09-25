@@ -155,3 +155,8 @@ harnax:
     # prunes rows whose package disappeared. Publishing a CLI is now dropping a file in here, so it
     # is a mounted volume rather than something built into the image.
     package-dir: ${HARNAX_CLI_PACKAGE_DIR:/home/harnax/cli-packages}
+    # How long an archive the `cli` table no longer names survives in MinIO. An in-place upgrade swaps the
+    # digest and leaves the previous object behind with no row pointing at it, and the window is what makes
+    # that reclaimable rather than dangerous: an instance started before the upgrade may still be fetching
+    # the old key.
+    archive-retention-days: ${HARNAX_CLI_ARCHIVE_RETENTION_DAYS:7}
