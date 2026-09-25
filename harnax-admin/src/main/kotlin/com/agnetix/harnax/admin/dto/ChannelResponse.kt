@@ -30,12 +30,13 @@ data class ChannelResponse(
     @Schema(description = "Agent name")
     var agentName: String? = null,
 
-    @Schema(description = "Callback key (used to generate callback URL)")
-    val callbackKey: String? = null,
-
     @Schema(description = "Immutable session ID (UUID)")
     val sessionId: String? = null,
 
+    /**
+     * Derived server-side from the stored callback key. The key itself is deliberately absent: it is
+     * the only thing the callback endpoint checks, and the URL is the form an operator can use.
+     */
     @Schema(description = "Callback URL")
     var callbackUrl: String? = null,
 
@@ -89,7 +90,6 @@ data class ChannelResponse(
             type = channel.type,
             typeDisplayName = getTypeDisplayName(channel.type),
             agentId = channel.agentId,
-            callbackKey = channel.callbackKey,
             sessionId = channel.sessionId,
             communicationMode = channel.communicationMode,
             permissionMode = channel.permissionMode,

@@ -446,7 +446,6 @@ declare namespace API {
     typeDisplayName?: string;
     agentId: number;
     agentName?: string;
-    callbackKey?: string;
     sessionId?: string;
     communicationMode?: string;
     enabled?: number;

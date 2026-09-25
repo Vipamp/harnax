@@ -75,7 +75,6 @@ class ChannelControllerTest {
             type = "wecom",
             typeDisplayName = "Enterprise WeChat",
             agentId = 100L,
-            callbackKey = "cb-key-abc",
             sessionId = "chn-uuid-123",
             status = 1,
         )

@@ -5,8 +5,11 @@ import org.junit.jupiter.api.Order
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.TestMethodOrder
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.jdbc.core.JdbcTemplate
 import kotlin.random.Random
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -19,6 +22,9 @@ import kotlin.test.assertTrue
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation::class)
 class ChannelCrudIT : BaseAdminIT() {
+
+    @Autowired
+    private lateinit var jdbc: JdbcTemplate
 
     private val suffix = Random.nextInt(100000, 999999)
     private val agentName = "it_chan_agent_$suffix"
@@ -68,18 +74,39 @@ class ChannelCrudIT : BaseAdminIT() {
     @Order(2)
     fun `page query finds created channel`() {
         assertTrue(locateChannelId() > 0)
+
+        val record = findInPage("/api/admin/channels/page", "keyword=$channelName") {
+            it["name"]?.asText() == channelName
+        }
+        // The key alone is everything `POST /api/channel/callback/{key}` checks, and nothing on the
+        // list page needs it, so a list read should not be a way to collect usable credentials.
+        assertFalse(record!!.has("callbackKey"), "the list must not carry the callback credential")
     }
 
     @Test
     @Order(3)
-    fun `get detail returns created channel`() {
+    fun `get detail returns created channel without its callback credential`() {
         val data = assertOk(getJson("/api/admin/channels/${locateChannelId()}"))
         assertEquals(channelName, data["name"].asText())
         assertEquals("http", data["type"].asText())
         assertEquals(agentId, data["agentId"].asLong())
         assertEquals("webhook", data["communicationMode"].asText())
-        assertTrue(data["callbackKey"].asText().isNotBlank(), "callbackKey should be generated")
         assertTrue(data["sessionId"].asText().isNotBlank(), "sessionId should be generated")
+        // What the operator pastes into the platform console is the URL, and the service builds that
+        // URL from the stored key, so the bare field is just a second way to spend the credential.
+        assertFalse(data.has("callbackKey"), "the response must not carry the callback credential")
+        assertTrue(data["callbackUrl"].asText().isNotBlank(), "webhook channels still need the callback URL")
+        // Redacting the field must not stop the key being generated — a channel with no key cannot be
+        // addressed by its own callback.
+        val storedKey = jdbc.queryForObject(
+            "SELECT callback_key FROM channel WHERE id = ?",
+            String::class.java,
+            channelId,
+        )!!
+        assertTrue(
+            storedKey.startsWith("http-") && storedKey.length > "http-".length,
+            "the key is still generated and stored: $storedKey",
+        )
     }
 
     @Test
