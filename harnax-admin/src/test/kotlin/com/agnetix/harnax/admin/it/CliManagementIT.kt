@@ -141,6 +141,15 @@ class CliManagementIT : BaseAdminIT() {
         val envParams = data["envParams"]
         assertEquals(1, envParams.size())
         assertEquals("IT_TOKEN", envParams[0]["envParamName"].asText())
+
+        // These plugin.yaml columns existed only in the library; the detail endpoint is their one exit (CLI-05②)
+        assertEquals("d".repeat(64), data["payloadDigest"].asText())
+        assertEquals("curl", data["depsApt"][0].asText())
+        assertEquals("\${platform.adminUrl}", data["runtimeEnv"]["IT_URL"].asText())
+        // The page shape deliberately carries none of them, so reading them really does need this endpoint
+        assertNull(record["payloadDigest"])
+        assertNull(record["depsApt"])
+        assertNull(record["runtimeEnv"])
     }
 
     @Test

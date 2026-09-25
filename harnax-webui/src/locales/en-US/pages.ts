@@ -1032,6 +1032,11 @@ export default {
     '{count} agent(s) bind this CLI ({names}). Their sandboxes lose the command and its skill stops loading.',
   'pages.cli.refresh.hint':
     'CLI "{name}" changed. Select the sessions to apply the new configuration immediately; unselected sessions pick it up within ~30 minutes.',
+  'pages.cli.detailOpen': 'Click to see what this package declares',
+  'pages.cli.detail.empty': 'No package detail available',
+  'pages.cli.detail.imageFingerprint': 'Image Fingerprint',
+  'pages.cli.detail.aptDeps': 'apt Dependencies',
+  'pages.cli.detail.runtimeEnv': 'Runtime Env Slots',
   'pages.env.title': 'Env Variables',
   'pages.env.create': 'Create Env Variable',
   'pages.env.create.subtitle': 'Add a new environment variable',

@@ -333,4 +333,57 @@ class CliServiceImplTest {
             assertEquals("sup****oken", response.envParams?.single()?.defaultValue)
         }
     }
+
+    @Nested
+    @DisplayName("Detail Response Tests")
+    inner class DetailResponseTests {
+
+        /**
+         * `depsApt` / `runtimeEnv` / `payloadDigest` exist in the library and nowhere else, so an
+         * operator cannot tell what a package will install or which image fingerprint it produces
+         * without leaving the page (CLI-05).
+         */
+        @Test
+        @DisplayName("convertToDetailResponse - carries the manifest columns the table has no room for")
+        fun detailShouldCarryPackageInternals() {
+            `when`(skillMapper.selectById(100L)).thenReturn(shippedSkill)
+
+            val response = service().convertToDetailResponse(testCli)
+
+            assertEquals(testCli.payloadDigest, response.payloadDigest)
+            assertEquals(listOf("curl"), response.depsApt)
+            assertEquals(mapOf("HARNAX_URL" to "\${platform.adminUrl}"), response.runtimeEnv)
+        }
+
+        @Test
+        @DisplayName("convertToDetailResponse - a package that declares neither shows neither")
+        fun detailShouldTolerateAnEmptyManifest() {
+            testCli.depsApt = null
+            testCli.runtimeEnv = null
+            `when`(skillMapper.selectById(100L)).thenReturn(shippedSkill)
+
+            val response = service().convertToDetailResponse(testCli)
+
+            assertNull(response.depsApt)
+            assertNull(response.runtimeEnv)
+            assertEquals(testCli.payloadDigest, response.payloadDigest)
+        }
+
+        /**
+         * The page shape staying without these three keys is what makes the detail endpoint the only
+         * way to read them — the drawer below has to ask for them per row instead of every list row
+         * shipping a manifest nobody renders.
+         */
+        @Test
+        @DisplayName("convertToResponse - the page shape carries none of the detail-only columns")
+        fun pageShouldNotCarryPackageInternals() {
+            `when`(skillMapper.selectById(100L)).thenReturn(shippedSkill)
+
+            val response = service().convertToResponse(testCli)
+
+            assertNull(response.payloadDigest)
+            assertNull(response.depsApt)
+            assertNull(response.runtimeEnv)
+        }
+    }
 }

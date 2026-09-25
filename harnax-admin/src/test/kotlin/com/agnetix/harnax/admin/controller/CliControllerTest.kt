@@ -142,7 +142,7 @@ class CliControllerTest {
         @DisplayName("getCli - 存在时返回详情")
         fun `getCli should return cli when found`() {
             `when`(cliService.getCli(1L)).thenReturn(testCli)
-            `when`(cliService.convertToResponse(testCli)).thenReturn(testResponse)
+            `when`(cliService.convertToDetailResponse(testCli)).thenReturn(testResponse)
 
             val result = controller.getCli(1L)
 
@@ -150,6 +150,8 @@ class CliControllerTest {
             assertNotNull(result.data)
             assertEquals("harnax-cli", result.data?.name)
             assertEquals("1.30.0", result.data?.version)
+            // Only the detail shape carries the manifest columns, so the page shape must not be used here
+            verify(cliService).convertToDetailResponse(testCli)
         }
 
         @Test

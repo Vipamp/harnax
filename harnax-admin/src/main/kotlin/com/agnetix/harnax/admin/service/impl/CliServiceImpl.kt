@@ -114,11 +114,47 @@ class CliServiceImpl(
         )
     }
 
+    /**
+     * The drawer's shape. [CliResponse.payloadDigest] / [CliResponse.depsApt] / [CliResponse.runtimeEnv]
+     * are left null by the page on purpose, so this is the only route that answers with them.
+     */
+    override fun convertToDetailResponse(cli: Cli): CliResponse = convertToResponse(cli).copy(
+        payloadDigest = cli.payloadDigest.takeIf { it.isNotBlank() },
+        depsApt = readManifest(cli.depsApt, DEPS_APT_TYPE),
+        runtimeEnv = readManifest(cli.runtimeEnv, RUNTIME_ENV_TYPE),
+    )
+
+    /**
+     * Reads one of the two manifest JSON columns, tolerating a value that does not parse.
+     *
+     * `CliPackageAutoRegistrar` is the only writer and it always writes JSON it just produced, so an
+     * unreadable column means a row that did not come from a package. Failing the whole detail read for
+     * it would hide the rest of the row from the operator who now needs to see it.
+     */
+    private fun <T> readManifest(
+        json: String?,
+        type: TypeReference<T>,
+    ): T? {
+        if (json.isNullOrBlank()) return null
+        return try {
+            objectMapper.readValue(json, type)
+        } catch (e: Exception) {
+            log.warn("A CLI manifest column is unreadable, so the detail view shows it empty: {}", e.message)
+            null
+        }
+    }
+
     companion object {
         private const val ENABLED = 1
         private const val DISABLED = 0
 
         /** The `skill.resources` column: `relativePath -> file content`, the shape the scanner reads. */
         private val RESOURCES_TYPE = object : TypeReference<Map<String, String>>() {}
+
+        /** The `cli.deps_apt` column: the `apt` list of `plugin.yaml`. */
+        private val DEPS_APT_TYPE = object : TypeReference<List<String>>() {}
+
+        /** The `cli.runtime_env` column: `slot -> platform expression`, the slots filled per container. */
+        private val RUNTIME_ENV_TYPE = object : TypeReference<Map<String, String>>() {}
     }
 }

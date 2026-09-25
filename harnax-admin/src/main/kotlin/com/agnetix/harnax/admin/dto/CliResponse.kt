@@ -12,6 +12,10 @@ import java.time.LocalDateTime
  * [packageDigest] is what the page shows as the package summary: it is the identity of the exact
  * archive that was registered, so two operators can tell whether they are looking at the same build.
  * [skill] is the `SKILL.md` that came inside it, which is the only skill a CLI ever has.
+ *
+ * [payloadDigest], [depsApt] and [runtimeEnv] are the rest of what `plugin.yaml` declared. The list
+ * shape leaves all three null — Jackson drops nulls from the envelope, so a page row carries no key
+ * for them and `GET /api/admin/clis/{id}` is the only way to read them.
  */
 @Schema(description = "CLI response object")
 data class CliResponse(
@@ -27,8 +31,14 @@ data class CliResponse(
     val checkCommand: String? = null,
     @Schema(description = "sha256 of the registered package archive")
     val packageDigest: String? = null,
+    @Schema(description = "Canonical sha256 of payload plus deps — the sandbox image fingerprint (detail only)")
+    val payloadDigest: String? = null,
     @Schema(description = "Environment variable declarations (masked for secret values)")
     val envParams: List<ToolEnvParamEntry>? = null,
+    @Schema(description = "apt packages the platform installs alongside the payload (detail only)")
+    val depsApt: List<String>? = null,
+    @Schema(description = "Env slots the platform fills at container creation (detail only)")
+    val runtimeEnv: Map<String, String>? = null,
     @Schema(description = "The skill shipped inside the package")
     val skill: SkillItem? = null,
     @Schema(description = "Status (0:disabled, 1:enabled)", example = "1")

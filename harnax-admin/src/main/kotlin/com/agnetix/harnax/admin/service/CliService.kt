@@ -19,5 +19,13 @@ interface CliService {
 
     fun toggleCliStatus(id: Long, status: Int): Boolean
 
+    /**
+     * The shape a page row is answered with: what the table renders and nothing more.
+     */
     fun convertToResponse(cli: Cli): CliResponse
+
+    /**
+     * [convertToResponse] plus the `plugin.yaml` columns that only a detail view has room for.
+     */
+    fun convertToDetailResponse(cli: Cli): CliResponse
 }

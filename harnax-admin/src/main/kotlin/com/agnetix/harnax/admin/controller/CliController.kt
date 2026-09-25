@@ -63,7 +63,7 @@ class CliController(
     ): ResultVo<CliResponse> = try {
         val cli = cliService.getCli(id)
             ?: return ResultVo.error(404, messageUtil.getMessage("error.cli.notfound"))
-        ResultVo.success(cliService.convertToResponse(cli))
+        ResultVo.success(cliService.convertToDetailResponse(cli))
     } catch (e: Exception) {
         log.error("Failed to get CLI details", e)
         ResultVo.error(e.message ?: "Failed to get CLI details")

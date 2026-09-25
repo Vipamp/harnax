@@ -640,6 +640,19 @@ message?: string;
   };
 
   /**
+   * The rest of what plugin.yaml declared. A page row carries none of these three keys, so the detail
+   * drawer is the only reader of them and has to ask `GET /api/admin/clis/{id}` for them.
+   */
+  export type CliDetail = CliItem & {
+    /** Canonical sha256 of payload plus deps — the sandbox image fingerprint */
+    payloadDigest?: string;
+    /** apt packages the platform installs alongside the payload */
+    depsApt?: string[];
+    /** Env slots the platform fills at container creation */
+    runtimeEnv?: Record<string, string>;
+  };
+
+  /**
    * @zh-CN 绑定了某 CLI 的智能体（启停前展示影响范围）
    */
   export type CliRelatedAgent = {

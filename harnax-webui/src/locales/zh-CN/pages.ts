@@ -1029,6 +1029,11 @@ export default {
     '有 {count} 个智能体绑定了它（{names}）。停用后这些智能体的沙箱不再有该命令，其自带技能也不再加载。',
   'pages.cli.refresh.hint':
     'CLI「{name}」配置已变更。勾选需要立即应用新配置的会话；未勾选的会话约 30 分钟内自动生效。',
+  'pages.cli.detailOpen': '点击查看这个包声明的内容',
+  'pages.cli.detail.empty': '暂无包详情',
+  'pages.cli.detail.imageFingerprint': '镜像指纹',
+  'pages.cli.detail.aptDeps': '系统依赖',
+  'pages.cli.detail.runtimeEnv': '运行时注入',
 
   // 环境变量管理
   'pages.env.title': '环境变量管理',

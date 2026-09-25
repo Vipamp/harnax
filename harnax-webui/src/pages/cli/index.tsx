@@ -9,6 +9,7 @@ import { getCliPage, getCliRelatedAgents, toggleCliStatus } from '@/services/ant
 import StatusSwitch from '@/components/StatusSwitch';
 import EnvParamsPopover from '@/components/EnvParamsPopover';
 import AgentRefreshModal from '@/pages/agent/components/AgentRefreshModal';
+import CliDetailDrawer from './components/CliDetailDrawer';
 
 const { Text } = Typography;
 
@@ -27,6 +28,7 @@ const CliManagement: React.FC = () => {
   const [pageSize, setPageSize] = useState<number>(10);
   const [keyword, setKeyword] = useState<string>('');
   const [refreshTarget, setRefreshTarget] = useState<API.CliItem | undefined>();
+  const [detailTarget, setDetailTarget] = useState<API.CliItem | undefined>();
 
   const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
   const filtersRef = useRef({ keyword: '' });
@@ -157,11 +159,18 @@ const CliManagement: React.FC = () => {
       key: 'name',
       width: 200,
       ellipsis: true,
-      render: (text: string) => (
-        <Text strong style={{ fontFamily: 'monospace' }}>
-          <CodeOutlined style={{ marginRight: 6, color: 'var(--vip-primary)' }} />
-          {text}
-        </Text>
+      render: (text: string, record: API.CliItem) => (
+        <Tooltip
+          title={intl.formatMessage({
+            id: 'pages.cli.detailOpen',
+            defaultMessage: 'Click to see what this package declares',
+          })}
+        >
+          <Text strong style={{ fontFamily: 'monospace', cursor: 'pointer' }} onClick={() => setDetailTarget(record)}>
+            <CodeOutlined style={{ marginRight: 6, color: 'var(--vip-primary)' }} />
+            {text}
+          </Text>
+        </Tooltip>
       ),
     },
     {
@@ -312,6 +321,12 @@ const CliManagement: React.FC = () => {
         agentId={refreshTarget?.id}
         agentName={refreshTarget?.name}
         onClose={() => setRefreshTarget(undefined)}
+      />
+
+      <CliDetailDrawer
+        cliId={detailTarget?.id}
+        cliName={detailTarget?.name}
+        onClose={() => setDetailTarget(undefined)}
       />
     </PageContainer>
   );

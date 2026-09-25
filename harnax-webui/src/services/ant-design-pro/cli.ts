@@ -21,6 +21,14 @@ export async function getCliPage(
   });
 }
 
+/** GET /api/admin/clis/${id} — the only route answering with the manifest columns (image fingerprint, apt deps, runtime env slots). */
+export async function getCliDetail(id: number, options?: { [key: string]: any }) {
+  return request(`/api/admin/clis/${id}`, {
+    method: 'GET',
+    ...(options || {}),
+  });
+}
+
 /** 切换 CLI 状态 PUT /api/admin/clis/toggle/${id} */
 export async function toggleCliStatus(
   id: number,
