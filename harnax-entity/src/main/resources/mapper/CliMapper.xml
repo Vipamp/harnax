@@ -36,6 +36,14 @@
         SELECT * FROM cli WHERE name = #{name} LIMIT 1
     </select>
 
+    <!--
+        Same row selectByName looks up, locked for the calling transaction. The WHERE clause is a copy on
+        purpose: the lookup must not answer differently depending on whether the caller asked for a lock.
+    -->
+    <select id="selectByNameForUpdate" resultMap="CliResultMap">
+        SELECT * FROM cli WHERE name = #{name} LIMIT 1 FOR UPDATE
+    </select>
+
     <!-- selectBySkillIds: packages shipping one of the given skills -->
     <select id="selectBySkillIds" resultMap="CliResultMap">
         SELECT * FROM cli WHERE active = 1 AND skill_id IN

@@ -24,6 +24,16 @@ interface CliMapper {
     fun selectByName(@Param("name") name: String): Cli?
 
     /**
+     * [selectByName] with the row locked for the current transaction.
+     *
+     * The registrar decides the shipped skill's status from this row, and `toggleCliStatus` writes the same
+     * column from a page. Reading it before the transaction opens leaves a window where the switch moves in
+     * between the read and the write, and the two rows then disagree until the next restart; inside the
+     * transaction, `updateStatus` has to wait for the lock this read takes.
+     */
+    fun selectByNameForUpdate(@Param("name") name: String): Cli?
+
+    /**
      * Packages shipping one of [skillIds] through `cli.skill_id`.
      *
      * The third holder a skill can have, and the one the binding tables do not show: a shipped skill

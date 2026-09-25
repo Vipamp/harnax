@@ -213,8 +213,11 @@ class CliPackageAutoRegistrar(
                     "managed skill repository '${BuiltinRepository.CLI_SKILLS}' is missing — cannot register the shipped skill",
                 )
             // The operator's kill switch survives this run: a disabled CLI keeps its skill disabled even
-            // though the package body just changed underneath it (I5).
-            val skillId = upsertSkill(repository, manifest.name, manifest.version, parsed, existing?.status ?: ENABLED)
+            // though the package body just changed underneath it (I5). Read under the row's lock rather than
+            // from `existing` above — `toggleCliStatus` writes that same column, and the locked read makes
+            // it block until this transaction commits, so the `cli` row and its skill cannot disagree.
+            val locked = cliMapper.selectByNameForUpdate(manifest.name)
+            val skillId = upsertSkill(repository, manifest.name, manifest.version, parsed, locked?.status ?: ENABLED)
 
             cliMapper.upsertCliPackage(
                 Cli().apply {

@@ -385,6 +385,7 @@ runtimeEnv:
         @Test
         fun `a disabled cli takes its skill down with it and never re-arms either`() {
             `when`(cliMapper.selectByName("demo")).thenReturn(existingRow(status = 0))
+            `when`(cliMapper.selectByNameForUpdate("demo")).thenReturn(existingRow(status = 0))
             val stored =
                 Skill().apply {
                     id = SKILL_ID
@@ -403,6 +404,7 @@ runtimeEnv:
         @Test
         fun `a skill already in step with the cli is left without a status write`() {
             `when`(cliMapper.selectByName("demo")).thenReturn(existingRow(status = 1))
+            `when`(cliMapper.selectByNameForUpdate("demo")).thenReturn(existingRow(status = 1))
             val stored =
                 Skill().apply {
                     id = SKILL_ID
@@ -415,6 +417,34 @@ runtimeEnv:
             sync()
 
             verify(skillMapper, never()).updateStatus(anyLong(), anyInt())
+        }
+
+        /**
+         * The kill switch the shipped skill follows is the one read under the row's lock.
+         *
+         * `toggleCliStatus` writes `cli.status` and the shipped skill's status in one request, while this
+         * path's first read happens before its own transaction opens. A toggle landing in that window made
+         * the skill follow the stale value, and the two rows then disagreed until the next restart. The
+         * plain read still answers enabled here on purpose: what is pinned is that the locked row wins, not
+         * that the earlier read stopped being consulted — it still decides the upload.
+         */
+        @Test
+        fun `a kill switch flipped after the plain read is what the shipped skill follows`() {
+            `when`(cliMapper.selectByName("demo")).thenReturn(existingRow(status = 1))
+            `when`(cliMapper.selectByNameForUpdate("demo")).thenReturn(existingRow(status = 0))
+            val stored =
+                Skill().apply {
+                    id = SKILL_ID
+                    name = "demo"
+                    repositoryId = REPO_ID
+                    status = 1
+                }
+            `when`(skillMapper.selectByNameAndRepo("demo", REPO_ID)).thenReturn(stored)
+            writePackage("demo", "1.4.0")
+            sync()
+
+            verify(skillMapper, times(1)).updateStatus(SKILL_ID, 0)
+            verify(skillMapper, never()).updateStatus(SKILL_ID, 1)
         }
 
         @Test
@@ -452,6 +482,25 @@ runtimeEnv:
             order.verify(cliMapper).upsertCliPackage(any())
             order.verify(transactionManager).commit(any())
             verify(transactionManager, never()).rollback(any())
+        }
+
+        /**
+         * The row whose `status` the shipped skill follows is read after the transaction opens.
+         *
+         * `SELECT … FOR UPDATE` only holds anything while the transaction still runs, so this ordering is
+         * what closes the window against `toggleCliStatus`: the toggle's `updateStatus` waits for the row's
+         * lock, and by the time it lands the skill row already carries the status it read.
+         */
+        @Test
+        fun `the cli row the kill switch is taken from is read inside the transaction`() {
+            writePackage("demo", "1.4.0")
+            sync()
+
+            val order = inOrder(transactionManager, cliMapper, skillMapper)
+            order.verify(transactionManager).getTransaction(any())
+            order.verify(cliMapper).selectByNameForUpdate("demo")
+            order.verify(skillMapper).insert(any())
+            order.verify(transactionManager).commit(any())
         }
 
         @Test
