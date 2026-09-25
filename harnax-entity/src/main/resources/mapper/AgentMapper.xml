@@ -95,10 +95,15 @@
         ORDER BY create_time DESC
     </select>
 
-    <!-- selectByEnvVarRef: agents whose binding snapshot still points at an env variable -->
+    <!--
+      selectByEnvVarRef: agents of one tenant whose binding snapshot still points at an env variable.
+      The three binding tables carry no tenant_id column, so the scoping predicate lives here, on the
+      agent rows this answers with; the caller passes the tenant the request acts within.
+    -->
     <select id="selectByEnvVarRef" resultMap="AgentResultMap">
         SELECT * FROM agent
         WHERE active = 1
+        AND tenant_id = #{tenantId}
         AND id IN (
         SELECT agent_id FROM agent_tool_binding
         <include refid="envVarRefCondition"/>

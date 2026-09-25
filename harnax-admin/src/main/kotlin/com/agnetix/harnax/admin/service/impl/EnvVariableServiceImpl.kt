@@ -6,6 +6,7 @@ import com.agnetix.harnax.admin.dto.EnvVariableResponse
 import com.agnetix.harnax.admin.dto.EnvVariableUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.security.SecurityUtils
 import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.util.AesUtil
@@ -16,6 +17,7 @@ import com.agnetix.harnax.mapper.AgentMapper
 import com.agnetix.harnax.mapper.EnvVariableMapper
 import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
+import org.springframework.dao.DuplicateKeyException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
@@ -26,6 +28,7 @@ class EnvVariableServiceImpl(
     private val jwtUtil: JwtUtil,
     private val aesUtil: AesUtil,
     private val agentMapper: AgentMapper,
+    private val messageUtil: MessageUtil,
 ) : EnvVariableService {
 
     private val log = LoggerFactory.getLogger(EnvVariableServiceImpl::class.java)
@@ -89,7 +92,7 @@ class EnvVariableServiceImpl(
         // `uk_env_tenant_creator_active_key` would raise - and asked of the caller's own rows only,
         // which is what that key covers: two users of one tenant may hold the same key.
         if (envVariableMapper.selectByKey(envVariable.envKey, envVariable.creator, envVariable.tenantId) != null) {
-            throw BizException("Env variable key '${envVariable.envKey}' already exists")
+            throw BizException(keyClashMessage(envVariable.envKey))
         }
 
         // Encrypt value if sensitive
@@ -101,10 +104,27 @@ class EnvVariableServiceImpl(
         true
     } catch (e: BizException) {
         throw e
+    } catch (e: DuplicateKeyException) {
+        // The pre-check cannot see a writer that commits between itself and this insert, so the key is
+        // the second way in. It answers with the same sentence, and the SQL text - index name and all -
+        // stays in the log instead of travelling to the operator.
+        log.error("Failed to create env variable: key clash raced the pre-check", e)
+        throw BizException(keyClashMessage(request.envKey), e)
     } catch (e: Exception) {
         log.error("Failed to create env variable", e)
         throw RuntimeException("Failed to create env variable")
     }
+
+    /**
+     * The one sentence both key-clash paths answer with.
+     *
+     * The lookup and the unique key see the same rule, so they have to read the same way; the generic
+     * fallback this replaces told the operator nothing about which key was refused, and the raw
+     * `DuplicateKeyException` text would have quoted the index. Quoting the key itself leaks nothing:
+     * `uk_env_tenant_creator_active_key` scopes it to this caller, so the row in question is one the
+     * caller typed - see `EnvVariableController`, which hands this message out verbatim.
+     */
+    private fun keyClashMessage(envKey: String?): String = messageUtil.getMessage(KEY_CLASH_CODE, envKey ?: "")
 
     @Transactional(rollbackFor = [Exception::class])
     override fun updateEnvVariable(id: Long, request: EnvVariableUpdateRequest): Boolean = try {
@@ -119,7 +139,7 @@ class EnvVariableServiceImpl(
             if (envKey != envVariable.envKey &&
                 envVariableMapper.selectByKey(envKey, envVariable.creator, envVariable.tenantId) != null
             ) {
-                throw BizException("Env variable key '$envKey' already exists")
+                throw BizException(keyClashMessage(envKey))
             }
             envVariable.envKey = envKey
         }
@@ -156,6 +176,12 @@ class EnvVariableServiceImpl(
         true
     } catch (e: BizException) {
         throw e
+    } catch (e: DuplicateKeyException) {
+        // A rename the pre-check could not see taken before this write. `env_key` is the only unique
+        // column of this table, so the request carries the key the clash is about and both paths name
+        // the same one.
+        log.error("Failed to update env variable: key clash raced the pre-check", e)
+        throw BizException(keyClashMessage(request.envKey), e)
     } catch (e: Exception) {
         log.error("Failed to update env variable", e)
         throw RuntimeException("Failed to update env variable")
@@ -174,9 +200,14 @@ class EnvVariableServiceImpl(
      * A binding that references a variable stores the id and nothing else, and delivery resolves the
      * value through it every time, so both actions empty every agent that points at it - with no
      * error, because the resolve simply yields nothing.
+     *
+     * Asked within this request's tenant: the three binding tables carry no `tenant_id` column, so the
+     * scoping predicate belongs on the `agent` rows the lookup answers with - see
+     * [com.agnetix.harnax.mapper.AgentMapper.selectByEnvVarRef]. Without it the refusal read a foreign
+     * tenant's agent names out to the caller and counted them into the block.
      */
     private fun assertNotReferencedByAgents(id: Long, envKey: String?, then: String) {
-        val referring = agentMapper.selectByEnvVarRef(id)
+        val referring = agentMapper.selectByEnvVarRef(id, currentTenantId())
         if (referring.isEmpty()) return
         val shown = referring.take(MAX_REFERRING_AGENTS).joinToString(", ") { it.name } +
             if (referring.size > MAX_REFERRING_AGENTS) " …" else ""
@@ -311,6 +342,9 @@ class EnvVariableServiceImpl(
     private companion object {
         /** What a value that must not be shown displays as: a short value and an unreadable one alike. */
         const val FULL_MASK = "******"
+
+        /** Both key-clash paths answer with this code; the text lives in the three error bundles. */
+        const val KEY_CLASH_CODE = "error.env.variable.key.exists"
 
         /** Enough to point at the offenders; the count in the message is the full one. */
         const val MAX_REFERRING_AGENTS = 5

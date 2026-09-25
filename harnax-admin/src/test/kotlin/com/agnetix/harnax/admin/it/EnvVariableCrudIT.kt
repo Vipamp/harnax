@@ -144,11 +144,20 @@ class EnvVariableCrudIT : BaseAdminIT() {
     fun `a key the caller already holds is refused by name`() {
         val body = mapOf("envKey" to envKey, "envValue" to "another-value")
         val node = assertErr(postJson("/api/admin/env-variables", body))
-        // 服务层先按名字查过再写，所以这里读到的是「哪个键撞了」，不是 SQL 约束的原文。
+        val message = messageOf(node)
+
+        // The service checks the key before writing and now also folds the racing insert's
+        // DuplicateKeyException into the same sentence, so what reaches the operator names the clash
+        // instead of quoting the index, and is not one of the two shapes that used to answer here:
+        // the controller's fallback and the message code an unset bundle key echoes as.
+        assertTrue(message.contains(envKey), "the refusal should name the key it refused: $node")
+        assertTrue(message != "Failed to create env variable", "the refusal must not be the generic fallback: $message")
         assertTrue(
-            node["message"].asText().contains(envKey),
-            "the refusal should name the key it refused: $node",
+            !message.contains("error.env.variable."),
+            "the refusal has to be a resolved message, not an echoed message code: $message",
         )
+        assertTrue(!message.contains("Duplicate entry"), "no SQL text may travel: $message")
+        assertTrue(!message.contains("uk_env_"), "no index name may travel: $message")
     }
 
     @Test
@@ -338,5 +347,61 @@ class EnvVariableCrudIT : BaseAdminIT() {
         } finally {
             jdbc.update("DELETE FROM env_variable WHERE tenant_id = ?", tenant)
         }
+    }
+
+    @Test
+    @Order(17)
+    fun `the refusal to delete names only the agents of the callers own tenant`() {
+        // An agent of another tenant cannot bind this variable through the API - the save resolves the
+        // pointer inside the agent's own tenant - so the foreign row is seeded directly. It stands for
+        // a binding written before that guard existed, and the refusal has to stop reading its name out
+        // to the caller.
+        val foreignTenant = 930_005L
+        val mine = "it_env_ref_mine_$suffix"
+        val theirs = "it_env_ref_theirs_$suffix"
+        val key = "IT_ENV_REF_$suffix"
+        val cliId = jdbc.queryForList("SELECT id FROM cli ORDER BY id LIMIT 1").firstOrNull()?.get("id") as? Long ?: 0L
+
+        assertOk(postJson("/api/admin/env-variables", mapOf("envKey" to key, "envValue" to "v-$suffix")))
+        val created = findInPage("/api/admin/env-variables/page", "keyword=$key") { it["envKey"]?.asText() == key }
+        assertNotNull(created, "the env variable this case binds should exist")
+        val id = created["id"].asLong()
+        val bindings = """[{"envKey":"$key","envVarId":$id}]"""
+        try {
+            insertSeededAgent(1L, mine)
+            insertSeededAgent(foreignTenant, theirs)
+            jdbc.update(
+                "INSERT INTO agent_cli_binding (agent_id, cli_id, env_bindings) " +
+                    "SELECT id, ?, ? FROM agent WHERE name IN (?, ?)",
+                cliId,
+                bindings,
+                mine,
+                theirs,
+            )
+
+            val node = assertErr(deleteJson("/api/admin/env-variables/$id"))
+            val message = messageOf(node)
+
+            assertTrue(message.contains(mine), "the refusal should still name the caller's own agent: $node")
+            assertTrue(message.contains("1 agent(s)"), "the count must cover this tenant only: $message")
+            assertTrue(!message.contains(theirs), "another tenant's agent name must not travel: $message")
+        } finally {
+            jdbc.update("DELETE FROM agent_cli_binding WHERE env_bindings = ?", bindings)
+            jdbc.update("DELETE FROM agent WHERE name IN (?, ?)", mine, theirs)
+            jdbc.update("DELETE FROM env_variable WHERE env_key = ?", key)
+        }
+    }
+
+    /** Direct insert: agent creation through the API runs in the caller's tenant, and this case needs two. */
+    private fun insertSeededAgent(
+        tenantId: Long,
+        name: String,
+    ) {
+        jdbc.update(
+            "INSERT INTO agent (tenant_id, name, description, system_prompt, model_id, owner, status, is_public, creator, active) " +
+                "VALUES (?, ?, 'IT reference guard', 'x', 1, 'admin', 1, 0, 'admin', 1)",
+            tenantId,
+            name,
+        )
     }
 }

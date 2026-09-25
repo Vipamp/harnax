@@ -1117,10 +1117,12 @@ class InternalApiControllerTest {
         /**
          * @param bindingEnv agent 侧显式绑定的 JSON，null 表示当前 agent 表单什么都没采集
          * @param declaredEnv CLI 自身的声明 JSON
+         * @param agentTenantId tenant stamped on the holder agent row, which is what a reference resolves through
          */
         private fun stubCliEnv(
             bindingEnv: String?,
             declaredEnv: String?,
+            agentTenantId: Long = 1L,
         ) {
             val session = Session().apply {
                 sessionId = "web-cli-env"
@@ -1136,6 +1138,7 @@ class InternalApiControllerTest {
                     name = "CLI Env Agent"
                     systemPrompt = "x"
                     modelId = 5L
+                    tenantId = agentTenantId
                 },
             )
             `when`(cliBindingMapper.selectByAgentId(100L)).thenReturn(
@@ -1209,6 +1212,79 @@ class InternalApiControllerTest {
                 .thenReturn(mapOf("GH_TOKEN" to ""))
 
             assertEquals(mapOf<String, String>(), deliveredEnv())
+        }
+
+        @Test
+        @DisplayName("a slot whose variable no longer resolves is filled by the package default")
+        fun `getAgentSpec should top up an unresolvable reference from the package default`() {
+            // Two causes of "no value" are reachable on a live row set: the referenced variable is gone
+            // (id 77) and the row is there but its stored text will not open (id 78). A reference stores
+            // the pointer only, so both leave the slot empty, and an empty slot on a package that
+            // declares that name answers with the declared default - which is the ruled priority.
+            val binding = """[{"envKey":"GH_TOKEN","envVarId":77},{"envKey":"GH_HOST","envVarId":78}]"""
+            val declared = """
+                [{"envParamName":"GH_TOKEN","defaultValue":"ENC_B64","secret":true},
+                 {"envParamName":"GH_HOST","defaultValue":"github.com","secret":false}]
+            """.trimIndent()
+            stubCliEnv(binding, declared)
+            `when`(envVariableService.getDecryptedValue(77L, 1L)).thenReturn(null)
+            `when`(envVariableService.getDecryptedValue(78L, 1L)).thenReturn(null)
+            `when`(secretFieldEncryptor.decryptToolEnvParamsToMap(declared))
+                .thenReturn(mapOf("GH_TOKEN" to "ghp_default", "GH_HOST" to "github.com"))
+
+            assertEquals(
+                mapOf("GH_TOKEN" to "ghp_default", "GH_HOST" to "github.com"),
+                deliveredEnv(),
+                "a slot that resolves to nothing must fall to the package default of the same name",
+            )
+        }
+
+        @Test
+        @DisplayName("a reference that resolves keeps its own value over the declared default")
+        fun `getAgentSpec should keep the bound value over the package default`() {
+            val binding = """[{"envKey":"GH_TOKEN","envVarId":77}]"""
+            val declared = """[{"envParamName":"GH_TOKEN","defaultValue":"ENC_B64","secret":true}]"""
+            stubCliEnv(binding, declared)
+            `when`(envVariableService.getDecryptedValue(77L, 1L)).thenReturn("ghp_agent")
+            `when`(secretFieldEncryptor.decryptToolEnvParamsToMap(declared))
+                .thenReturn(mapOf("GH_TOKEN" to "ghp_default"))
+
+            assertEquals(mapOf("GH_TOKEN" to "ghp_agent"), deliveredEnv())
+        }
+
+        @Test
+        @DisplayName("one slot that will not resolve takes neither the CLI nor its siblings down")
+        fun `getAgentSpec should degrade a single unresolvable slot instead of failing`() {
+            val binding = """[{"envKey":"GH_TOKEN","envVarId":77},{"envKey":"GH_HOST","customValue":"ghes.internal"}]"""
+            val declared = """
+                [{"envParamName":"GH_TOKEN","defaultValue":"ENC_B64","secret":true},
+                 {"envParamName":"GH_HOST","defaultValue":"github.com","secret":false}]
+            """.trimIndent()
+            stubCliEnv(binding, declared)
+            `when`(envVariableService.getDecryptedValue(77L, 1L)).thenReturn(null)
+            `when`(secretFieldEncryptor.decryptToolEnvParamsToMap(declared))
+                .thenReturn(mapOf("GH_TOKEN" to "ghp_default", "GH_HOST" to "github.com"))
+
+            val data = controller.getAgentSpec("web-cli-env").data
+            assertEquals(7L, data?.cliDetails?.single()?.id, "the CLI itself still travels")
+            assertEquals(
+                mapOf("GH_TOKEN" to "ghp_default", "GH_HOST" to "ghes.internal"),
+                deliveredEnv(),
+            )
+        }
+
+        @Test
+        @DisplayName("a reference resolves within the holder agent's tenant and nowhere else")
+        fun `getAgentSpec should resolve a reference inside the agents tenant`() {
+            val binding = """[{"envKey":"GH_TOKEN","envVarId":77}]"""
+            val declared = """[{"envParamName":"GH_TOKEN","defaultValue":"ENC_B64","secret":true}]"""
+            stubCliEnv(binding, declared, agentTenantId = 42L)
+            `when`(envVariableService.getDecryptedValue(77L, 42L)).thenReturn("ghp_agent")
+            `when`(secretFieldEncryptor.decryptToolEnvParamsToMap(declared))
+                .thenReturn(mapOf("GH_TOKEN" to "ghp_default"))
+
+            assertEquals(mapOf("GH_TOKEN" to "ghp_agent"), deliveredEnv())
+            verify(envVariableService).getDecryptedValue(77L, 42L)
         }
     }
 

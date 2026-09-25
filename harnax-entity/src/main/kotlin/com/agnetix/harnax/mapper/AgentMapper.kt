@@ -59,10 +59,18 @@ interface AgentMapper {
     ): List<Agent>
 
     /**
-     * Agents whose tool / MCP / CLI binding snapshot still carries this `envVarId`.
+     * Agents of [tenantId] whose tool / MCP / CLI binding snapshot still carries this `envVarId`.
      *
      * A reference is the only thing a binding stores for a global variable, and delivery follows it
      * live, so deleting the variable silently empties every agent pointing at it.
+     *
+     * [tenantId] is a hard parameter with no default: the three binding tables carry no `tenant_id`
+     * column, so the predicate belongs on the `agent` rows this answers with, and this project has no
+     * MyBatis tenant interceptor - isolation exists only where a SQL statement states it. Without it
+     * the delete refusal named another tenant's agents to the caller.
      */
-    fun selectByEnvVarRef(@Param("envVarId") envVarId: Long): List<Agent>
+    fun selectByEnvVarRef(
+        @Param("envVarId") envVarId: Long,
+        @Param("tenantId") tenantId: Long,
+    ): List<Agent>
 }

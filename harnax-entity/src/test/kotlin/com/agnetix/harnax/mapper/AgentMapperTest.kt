@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test
 import org.mybatis.spring.boot.test.autoconfigure.MybatisTest
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
@@ -51,6 +52,10 @@ open class AgentMapperTest {
 
     @Autowired
     private lateinit var agentMapper: AgentMapper
+
+    /** Seeds the binding snapshot tables, which this class reaches only through SQL. */
+    @Autowired
+    private lateinit var jdbc: JdbcTemplate
 
     private fun insertAgent(
         name: String,
@@ -276,6 +281,57 @@ open class AgentMapperTest {
             assertEquals(listOf("Tenant A Agent"), owned)
             // 不传租户时整个条件不拼上，预置的租户 2 行也照样可见
             assertTrue(unfiltered.containsAll(listOf("Tenant A Agent", "Tenant B Agent", "Tenant2 Agent")))
+        }
+    }
+
+    @Nested
+    @DisplayName("selectByEnvVarRef - tenant scoping")
+    inner class SelectByEnvVarRefTests {
+
+        private val envVarId = 4_711L
+
+        /** Binds one of the three snapshot tables, since the reference lives in the JSON column. */
+        private fun bind(
+            table: String,
+            column: String,
+            agentId: Long,
+            targetId: Long,
+        ) {
+            jdbc.update(
+                "INSERT INTO $table (agent_id, $column, env_bindings) VALUES (?, ?, ?)",
+                agentId,
+                targetId,
+                """[{"envKey":"OPENAI_KEY","envVarId":$envVarId}]""",
+            )
+        }
+
+        @Test
+        @DisplayName("selectByEnvVarRef - reports only the agents of the tenant asked for")
+        fun `selectByEnvVarRef should report only the agents of the given tenant`() {
+            // Given: four tenants each hold an agent that binds the very same env variable, one
+            // through every one of the three snapshot tables the statement UNIONs.
+            val mine = insertAgent("EnvRef Tenant A", 6101L).id
+            val theirsTool = insertAgent("EnvRef Tenant B", 6102L).id
+            val theirsMcp = insertAgent("EnvRef Tenant C", 6103L).id
+            val theirsCli = insertAgent("EnvRef Tenant D", 6104L).id
+            bind("agent_tool_binding", "tool_id", mine, 501L)
+            bind("agent_tool_binding", "tool_id", theirsTool, 502L)
+            bind("agent_mcp_binding", "mcp_id", theirsMcp, 503L)
+            bind("agent_cli_binding", "cli_id", theirsCli, 504L)
+
+            // When: asked as each of the two tenants.
+            val referring = agentMapper.selectByEnvVarRef(envVarId, 6101L).map { it.name }
+            val askedAsOtherTenant = agentMapper.selectByEnvVarRef(envVarId, 6102L).map { it.name }
+
+            // Then: the caller of this query refuses a delete by naming the agents that still bind
+            // the variable, so an unscoped answer reads another tenant's agent names to someone who
+            // has no business hearing them.
+            assertEquals(listOf("EnvRef Tenant A"), referring, "the reference lookup must answer within one tenant")
+            assertEquals(
+                listOf("EnvRef Tenant B"),
+                askedAsOtherTenant,
+                "the predicate has to filter both ways, not just happen to answer one row",
+            )
         }
     }
 }

@@ -4,6 +4,7 @@ import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.EnvVariableCreateRequest
 import com.agnetix.harnax.admin.dto.EnvVariableUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.entity.Agent
@@ -30,10 +31,13 @@ import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.quality.Strictness
+import org.springframework.context.support.ReloadableResourceBundleMessageSource
+import org.springframework.dao.DuplicateKeyException
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.context.request.ServletRequestAttributes
 import java.time.LocalDateTime
+import java.util.Locale
 
 /**
  * EnvVariableServiceImpl Unit Tests
@@ -58,6 +62,9 @@ class EnvVariableServiceImplTest {
 
     @Mock
     private lateinit var agentMapper: AgentMapper
+
+    @Mock
+    private lateinit var messageUtil: MessageUtil
 
     private lateinit var testEnvVariable: EnvVariable
 
@@ -85,6 +92,13 @@ class EnvVariableServiceImplTest {
         // Mock JwtUtil
         `when`(jwtUtil.validateToken(anyString())).thenReturn(true)
         `when`(jwtUtil.getUsernameFromToken(anyString())).thenReturn("admin")
+
+        // MessageUtil echoes the code: assertions here name the bundle key, never one locale's text.
+        // The text itself is proven against the real bundles by `KeyClashReasonTests`.
+        `when`(messageUtil.getMessage(anyString())).thenAnswer { invocation -> invocation.arguments[0] as String }
+        `when`(messageUtil.getMessage(anyString(), any())).thenAnswer { invocation ->
+            "${invocation.arguments[0]}:${invocation.arguments[1]}"
+        }
     }
 
     @AfterEach
@@ -98,6 +112,7 @@ class EnvVariableServiceImplTest {
         jwtUtil = jwtUtil,
         aesUtil = aesUtil,
         agentMapper = agentMapper,
+        messageUtil = messageUtil,
     )
 
     @Nested
@@ -743,7 +758,7 @@ class EnvVariableServiceImplTest {
             // Given: the binding stores only the id, so deleting the row would silently empty the agent
             TenantContext.setTenantId(1L)
             `when`(envVariableMapper.selectById(1L)).thenReturn(testEnvVariable)
-            `when`(agentMapper.selectByEnvVarRef(1L)).thenReturn(
+            `when`(agentMapper.selectByEnvVarRef(1L, 1L)).thenReturn(
                 listOf(
                     Agent().apply {
                         id = 11L
@@ -759,6 +774,43 @@ class EnvVariableServiceImplTest {
             assertTrue(exception.message!!.contains("1 agent(s)"), "message should carry the count")
             assertTrue(exception.message!!.contains("customer-support"), "message should name the offender")
             verify(envVariableMapper, never()).deleteById(anyLong())
+        }
+
+        @Test
+        @DisplayName("deleteEnvVariable - asks the reference lookup of the tenant in play")
+        fun `deleteEnvVariable should ask the reference lookup within the callers tenant`() {
+            // The three binding tables carry no tenant column, so the only thing keeping another
+            // tenant's agent names out of this refusal is the tenant the lookup is asked with. 7 rather
+            // than the default 1, so a call that never forwards the tenant cannot pass for it.
+            TenantContext.setTenantId(7L)
+            `when`(envVariableMapper.selectById(1L)).thenReturn(
+                EnvVariable().apply {
+                    id = 1L
+                    tenantId = 7L
+                    envKey = "API_KEY"
+                    envValue = "sk-plain-value"
+                    sensitive = 0
+                    enabled = 1
+                    creator = "admin"
+                    active = 1
+                },
+            )
+            `when`(agentMapper.selectByEnvVarRef(1L, 7L)).thenReturn(
+                listOf(
+                    Agent().apply {
+                        id = 11L
+                        name = "customer-support"
+                    },
+                ),
+            )
+
+            val exception = assertThrows<RuntimeException> { createService().deleteEnvVariable(1L) }
+
+            assertTrue(
+                exception.message!!.contains("customer-support"),
+                "the answer of the tenant-scoped lookup has to reach the refusal: ${exception.message}",
+            )
+            verify(agentMapper).selectByEnvVarRef(1L, 7L)
         }
 
         @Test
@@ -889,7 +941,7 @@ class EnvVariableServiceImplTest {
             // 停用与删除一样会把值抽走：绑定里存的是 envVarId，每次下发都要现取
             TenantContext.setTenantId(1L)
             `when`(envVariableMapper.selectById(1L)).thenReturn(testEnvVariable)
-            `when`(agentMapper.selectByEnvVarRef(1L)).thenReturn(
+            `when`(agentMapper.selectByEnvVarRef(1L, 1L)).thenReturn(
                 listOf(
                     Agent().apply {
                         id = 11L
@@ -914,7 +966,7 @@ class EnvVariableServiceImplTest {
             // 被引用只挡住「把值抽走」的方向，重新启用是补回来
             TenantContext.setTenantId(1L)
             `when`(envVariableMapper.selectById(1L)).thenReturn(testEnvVariable)
-            `when`(agentMapper.selectByEnvVarRef(1L)).thenReturn(
+            `when`(agentMapper.selectByEnvVarRef(1L, 1L)).thenReturn(
                 listOf(
                     Agent().apply {
                         id = 11L
@@ -1197,4 +1249,109 @@ class EnvVariableServiceImplTest {
             assertNull(createService().getDecryptedValue(2L, 1L))
         }
     }
+
+    @Nested
+    @DisplayName("Key Clash Reason Tests")
+    inner class KeyClashReasonTests {
+
+        /** What the pre-check refusal and the racing insert refusal have to agree on, word for word. */
+        private fun clashOf(action: () -> Unit): String? = runCatching(action).exceptionOrNull()?.message
+
+        @Test
+        @DisplayName("createEnvVariable - a clash the pre-check cannot see answers by name")
+        fun `createEnvVariable should name a key clash raised by the database`() {
+            // Given: the pre-check passed, and a concurrent transaction won the key first, so the
+            // answer arrives as a DuplicateKeyException quoting the index and the statement.
+            val request = EnvVariableCreateRequest(envKey = "API_KEY", envValue = "v")
+            `when`(envVariableMapper.selectByKey("API_KEY", "admin", 1L)).thenReturn(null)
+            `when`(envVariableMapper.insert(any())).thenThrow(DuplicateKeyException(SQL_CLASH_DETAIL))
+
+            val exception = assertThrows<BizException> { createService().createEnvVariable(request) }
+            val message = exception.message!!
+
+            assertTrue(
+                message.startsWith(KEY_CLASH_CODE),
+                "the refusal has to come from the message bundle, got: $message",
+            )
+            assertTrue(
+                message.contains("API_KEY"),
+                "the refusal should name the key it clashed on, got: $message",
+            )
+            assertFalse(message.contains("Duplicate entry"), "no SQL text may travel: $message")
+            assertFalse(message.contains("uk_env_tenant_creator_active_key"), "no index name may travel: $message")
+        }
+
+        @Test
+        @DisplayName("createEnvVariable - the pre-check and the racing insert answer with one sentence")
+        fun `createEnvVariable should answer both clash paths with the same refusal`() {
+            val request = EnvVariableCreateRequest(envKey = "API_KEY", envValue = "v")
+            val held = EnvVariable().apply {
+                id = 1L
+                tenantId = 1L
+                envKey = "API_KEY"
+                creator = "admin"
+                active = 1
+            }
+
+            `when`(envVariableMapper.selectByKey("API_KEY", "admin", 1L)).thenReturn(held)
+            val preCheck = clashOf { createService().createEnvVariable(request) }
+
+            `when`(envVariableMapper.selectByKey("API_KEY", "admin", 1L)).thenReturn(null)
+            `when`(envVariableMapper.insert(any())).thenThrow(DuplicateKeyException(SQL_CLASH_DETAIL))
+            val raced = clashOf { createService().createEnvVariable(request) }
+
+            assertNotNull(preCheck)
+            assertNotNull(raced)
+            assertEquals(preCheck, raced, "an operator must not be able to tell the two paths apart")
+        }
+
+        @Test
+        @DisplayName("updateEnvVariable - a rename clashing under a concurrent writer answers by name")
+        fun `updateEnvVariable should name a key clash raised by the database`() {
+            // Given: the rename passed its own lookup, and the row was taken between the check and the
+            // write, which is the second way this endpoint can meet the unique key.
+            `when`(envVariableMapper.selectById(1L)).thenReturn(testEnvVariable)
+            `when`(envVariableMapper.selectByKey("TAKEN", "admin", 1L)).thenReturn(null)
+            `when`(envVariableMapper.updateById(any())).thenThrow(DuplicateKeyException(SQL_CLASH_DETAIL))
+
+            val exception = assertThrows<BizException> {
+                createService().updateEnvVariable(1L, EnvVariableUpdateRequest(envKey = "TAKEN"))
+            }
+            val message = exception.message!!
+
+            assertTrue(message.startsWith(KEY_CLASH_CODE), "the refusal has to come from the bundle, got: $message")
+            assertTrue(message.contains("TAKEN"), "the refusal should name the key it clashed on, got: $message")
+            assertFalse(message.contains("Duplicate entry"), "no SQL text may travel: $message")
+        }
+
+        @Test
+        @DisplayName("the key-clash reason is carried by every error bundle")
+        fun `key clash reason should resolve from the default en and zh bundles`() {
+            // Missing key is not a loud failure here: `useCodeAsDefaultMessage` makes the bundle answer
+            // with the key itself, so the caller would read `error.env.variable.key.exists` on screen.
+            val source = ReloadableResourceBundleMessageSource().apply {
+                setBasename("classpath:i18n/messages_error")
+                setDefaultEncoding("UTF-8")
+                setUseCodeAsDefaultMessage(true)
+                setFallbackToSystemLocale(false)
+            }
+
+            val texts = listOf(
+                "default" to source.getMessage(KEY_CLASH_CODE, arrayOf("API_KEY"), Locale.ROOT),
+                "en" to source.getMessage(KEY_CLASH_CODE, arrayOf("API_KEY"), Locale.ENGLISH),
+                "zh_CN" to source.getMessage(KEY_CLASH_CODE, arrayOf("API_KEY"), Locale.SIMPLIFIED_CHINESE),
+            )
+            texts.forEach { (label, text) ->
+                assertNotEquals(KEY_CLASH_CODE, text, "the $label bundle carries no $KEY_CLASH_CODE yet")
+                assertTrue(text.contains("API_KEY"), "the $label bundle must name the clashed key, got: $text")
+            }
+            assertNotEquals(texts[1].second, texts[2].second, "the Chinese bundle must carry its own text")
+        }
+    }
 }
+
+private const val KEY_CLASH_CODE = "error.env.variable.key.exists"
+
+/** The text a real MySQL 8 puts in the exception when `uk_env_tenant_creator_active_key` refuses a row. */
+private const val SQL_CLASH_DETAIL =
+    "Duplicate entry '1-admin-API_KEY' for key 'env_variable.uk_env_tenant_creator_active_key'"

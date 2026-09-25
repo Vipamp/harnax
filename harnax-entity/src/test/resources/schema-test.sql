@@ -727,3 +727,34 @@ CREATE TABLE IF NOT EXISTS `agent_cli_binding` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_agent_cli_binding_agent_id_cli_id` (`agent_id`, `cli_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='智能体-CLI 绑定表';
+
+-- ============================================
+-- 31. Agent-tool binding (V7; V17 dropped enable_skip, V18 added UNIQUE(agent_id, tool_id))
+-- ============================================
+-- `AgentMapper.selectByEnvVarRef` UNIONs this table with the two above, so the baseline needs it:
+-- without it the statement fails on "table doesn't exist" and no mapper test can reach the query.
+CREATE TABLE IF NOT EXISTS `agent_tool_binding` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'ID',
+    `agent_id` BIGINT NOT NULL COMMENT 'FK to agent.id',
+    `tool_id` BIGINT NOT NULL COMMENT 'FK to agent_tool.id',
+    `need_confirm` TINYINT DEFAULT 0 COMMENT 'Whether the runtime asks the user before calling',
+    `env_bindings` TEXT DEFAULT NULL COMMENT 'JSON array of env binding snapshots',
+    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_agent_tool_binding_agent_id_tool_id` (`agent_id`, `tool_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='智能体-工具绑定表';
+
+-- ============================================
+-- 32. Agent-MCP binding (V7; V20 dropped enable_skip, V19 added UNIQUE(agent_id, mcp_id))
+-- ============================================
+CREATE TABLE IF NOT EXISTS `agent_mcp_binding` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'ID',
+    `agent_id` BIGINT NOT NULL COMMENT 'FK to agent.id',
+    `mcp_id` BIGINT NOT NULL COMMENT 'FK to mcp_server.id',
+    `env_bindings` TEXT DEFAULT NULL COMMENT 'JSON array of env binding snapshots',
+    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_agent_mcp_binding_agent_id_mcp_id` (`agent_id`, `mcp_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='智能体-MCP 绑定表';
