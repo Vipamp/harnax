@@ -4,6 +4,7 @@ import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.SessionChatUpdateRequest
 import com.agnetix.harnax.admin.dto.SessionCreateRequest
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.i18n.ErrorBundle
 import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.AgentRuntimeClient
 import com.agnetix.harnax.admin.service.AgentService
@@ -189,7 +190,7 @@ class SessionServiceImplTest {
         teamMemberMapper = teamMemberMapper,
         teamSkillBindingMapper = teamSkillBindingMapper,
         teamArtifactCleaner = teamArtifactCleaner,
-        agentRuntimeClient = agentRuntimeClient,
+        sessionRuntimeReleaser = SessionRuntimeReleaser(agentRuntimeClient, ErrorBundle.messageUtil()),
         messageUtil = messageUtil,
     )
 

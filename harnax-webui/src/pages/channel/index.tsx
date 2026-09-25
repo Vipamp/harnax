@@ -196,7 +196,7 @@ const ChannelManagement: React.FC = () => {
   const handleRemove = async (id: number) => {
     Modal.confirm({
       title: intl.formatMessage({ id: 'pages.channel.delete.confirm.title', defaultMessage: 'Confirm deletion?' }),
-      content: intl.formatMessage({ id: 'pages.channel.delete.confirm.content', defaultMessage: 'This operation cannot be undone. Existing sessions and sandboxes of this channel are not deleted.' }),
+      content: intl.formatMessage({ id: 'pages.channel.delete.confirm.content', defaultMessage: 'This operation cannot be undone. The session of this channel is deleted with it, and its runtime state and sandbox are released; if the runtime cannot release them, the deletion is refused.' }),
       okText: intl.formatMessage({ id: 'pages.channel.delete.confirm.ok', defaultMessage: 'Confirm' }),
       cancelText: intl.formatMessage({ id: 'pages.channel.delete.confirm.cancel', defaultMessage: 'Cancel' }),
       okButtonProps: { danger: true },
@@ -382,7 +382,7 @@ const ChannelManagement: React.FC = () => {
             }} />
             <DeleteButton 
               onConfirm={() => handleRemove(record.id!)}
-              confirmTitle={intl.formatMessage({ id: 'pages.channel.deleteConfirm', defaultMessage: 'Are you sure to delete this channel?' })}
+              confirmTitle={intl.formatMessage({ id: 'pages.channel.deleteConfirm', defaultMessage: 'Delete this channel? Its session and sandbox are released as well.' })}
             />
           </Space>
         ) : null;

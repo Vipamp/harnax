@@ -3,6 +3,7 @@ package com.agnetix.harnax.admin.service.impl
 import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.ChannelCreateRequest
 import com.agnetix.harnax.admin.dto.ChannelUpdateRequest
+import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.AgentService
 import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.Channel
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.Mock
+import org.mockito.Mockito.inOrder
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
@@ -49,6 +51,9 @@ class ChannelServiceImplTest {
 
     @Mock
     private lateinit var agentService: AgentService
+
+    @Mock
+    private lateinit var sessionRuntimeReleaser: SessionRuntimeReleaser
 
     private lateinit var testChannel: Channel
     private lateinit var testAgent: Agent
@@ -101,6 +106,7 @@ class ChannelServiceImplTest {
         val service = ChannelServiceImpl(
             channelMapper = channelMapper,
             agentService = agentService,
+            sessionRuntimeReleaser = sessionRuntimeReleaser,
         )
         // baseUrl is injected via @Value, set it manually
         ReflectionTestUtils.setField(service, "baseUrl", "http://localhost:8080")
@@ -712,6 +718,80 @@ class ChannelServiceImplTest {
             // Then
             assertFalse(result)
             verify(channelMapper).deleteById(999L)
+        }
+    }
+
+    @Nested
+    @DisplayName("Delete Cascade Tests")
+    inner class DeleteCascadeTests {
+
+        private val channelSessionId = "chn-11111111-2222-3333-4444-555555555555"
+
+        @Test
+        @DisplayName("deleteChannel - 运行侧释放排在行写之前")
+        fun `deleteChannel should release the runtime before writing the row`() {
+            `when`(channelMapper.selectById(1L)).thenReturn(testChannel)
+            `when`(channelMapper.deleteById(1L)).thenReturn(1)
+
+            // When
+            assertTrue(createService().deleteChannel(1L))
+
+            // Then - release first, with the channel's own session id, then the row: the release is the
+            // one step nothing local can undo, so it has to be the step that can still veto the rest.
+            val order = inOrder(sessionRuntimeReleaser, channelMapper)
+            order.verify(sessionRuntimeReleaser).release(channelSessionId)
+            order.verify(channelMapper).deleteById(1L)
+        }
+
+        @Test
+        @DisplayName("deleteChannel - 运行侧拒绝时行不动")
+        fun `deleteChannel should leave the row when the runtime refuses`() {
+            `when`(channelMapper.selectById(1L)).thenReturn(testChannel)
+            doThrow(BizException("The runtime could not release this session, so the deletion was refused: sandbox is busy"))
+                .`when`(sessionRuntimeReleaser).release(any())
+
+            // When & Then - the deletion is the recoverable half of the split: nothing moved, so the
+            // operator can try again once the runtime answers.
+            val exception = assertThrows<BizException> { createService().deleteChannel(1L) }
+            assertTrue(
+                exception.message!!.contains("sandbox is busy"),
+                "the refusal has to reach the caller, got: ${exception.message}",
+            )
+            verify(channelMapper, never()).deleteById(1L)
+        }
+
+        @Test
+        @DisplayName("deleteChannel - 看不见的渠道不会惊动运行侧")
+        fun `deleteChannel should not ask the runtime about a channel the caller cannot see`() {
+            // Given: the tenant gate has to stay in front of the release, or any caller could probe the
+            // runtime with a session id it does not own.
+            TenantContext.setTenantId(1L)
+            `when`(channelMapper.selectById(1L)).thenReturn(testChannel.apply { tenantId = 2L })
+
+            // When & Then: the same sentence an absent row produces, so a refusal cannot enumerate whose
+            // channel the id was.
+            val exception = assertThrows<RuntimeException> { createService().deleteChannel(1L) }
+            assertTrue(
+                exception.message!!.contains("Channel not found"),
+                "expected the absent-row refusal, got: ${exception.message}",
+            )
+            verify(sessionRuntimeReleaser, never()).release(any())
+            verify(channelMapper, never()).deleteById(1L)
+        }
+
+        @Test
+        @DisplayName("deleteChannel - 没有会话 id 的渠道不发释放")
+        fun `deleteChannel should send no release for a channel without a session id`() {
+            `when`(channelMapper.selectById(1L)).thenReturn(testChannel.apply { sessionId = "" })
+            `when`(channelMapper.deleteById(1L)).thenReturn(1)
+
+            // When
+            assertTrue(createService().deleteChannel(1L))
+
+            // Then: nothing was ever minted under an empty id, so there is nothing to let go of — but an
+            // empty release call would still leave the router answering for a session that is not one.
+            verify(sessionRuntimeReleaser, never()).release(any())
+            verify(channelMapper).deleteById(1L)
         }
     }
 
