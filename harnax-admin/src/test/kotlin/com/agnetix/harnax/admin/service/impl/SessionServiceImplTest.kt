@@ -4,6 +4,7 @@ import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.SessionChatUpdateRequest
 import com.agnetix.harnax.admin.dto.SessionCreateRequest
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.AgentRuntimeClient
 import com.agnetix.harnax.admin.service.AgentService
 import com.agnetix.harnax.admin.service.McpServerService
@@ -109,6 +110,9 @@ class SessionServiceImplTest {
     @Mock
     private lateinit var agentRuntimeClient: AgentRuntimeClient
 
+    @Mock
+    private lateinit var messageUtil: MessageUtil
+
     private lateinit var testSession: Session
     private lateinit var testAgent: Agent
 
@@ -154,6 +158,9 @@ class SessionServiceImplTest {
         mockRequest.addHeader("Authorization", "Bearer mock-token")
         RequestContextHolder.setRequestAttributes(ServletRequestAttributes(mockRequest))
 
+        // MessageUtil echoes the key: assertions name the bundle key, never its locale text
+        `when`(messageUtil.getMessage(anyString())).thenAnswer { invocation -> invocation.arguments[0] as String }
+
         // Mock JwtUtil
         `when`(jwtUtil.validateToken(anyString())).thenReturn(true)
         `when`(jwtUtil.getUsernameFromToken(anyString())).thenReturn("admin")
@@ -183,6 +190,7 @@ class SessionServiceImplTest {
         teamSkillBindingMapper = teamSkillBindingMapper,
         teamArtifactCleaner = teamArtifactCleaner,
         agentRuntimeClient = agentRuntimeClient,
+        messageUtil = messageUtil,
     )
 
     private fun mcpBinding(
@@ -652,7 +660,7 @@ class SessionServiceImplTest {
         @DisplayName("getSessionChatConfig - Query enabled session by sessionId successfully")
         fun `getSessionChatConfig should return enabled session by sessionId`() {
             // Given
-            `when`(sessionMapper.selectBySessionIdAndStatus("web-session-1", 1)).thenReturn(testSession)
+            `when`(sessionMapper.selectBySessionId("web-session-1")).thenReturn(testSession)
 
             // When
             val result = createService().getSessionChatConfig("web-session-1")
@@ -660,20 +668,48 @@ class SessionServiceImplTest {
             // Then
             assertNotNull(result)
             assertEquals("Test Session", result?.title)
-            verify(sessionMapper).selectBySessionIdAndStatus("web-session-1", 1)
         }
 
         @Test
-        @DisplayName("getSessionChatConfig - Return null when session not found or disabled")
-        fun `getSessionChatConfig should return null when session not found or disabled`() {
+        @DisplayName("getSessionChatConfig - Return null when no row resolves")
+        fun `getSessionChatConfig should return null when session not found`() {
             // Given
-            `when`(sessionMapper.selectBySessionIdAndStatus("not-exist", 1)).thenReturn(null)
+            `when`(sessionMapper.selectBySessionId("not-exist")).thenReturn(null)
 
             // When
             val result = createService().getSessionChatConfig("not-exist")
 
             // Then
             assertNull(result)
+        }
+
+        @Test
+        @DisplayName("getSessionChatConfig - Another tenant's session reads as absent")
+        fun `getSessionChatConfig should return null for another tenant session`() {
+            // Given — the by-id read of the same controller already refuses this shape (ownedSession)
+            testSession.tenantId = 940_004L
+            `when`(sessionMapper.selectBySessionId("web-session-1")).thenReturn(testSession)
+
+            // When
+            val result = createService().getSessionChatConfig("web-session-1")
+
+            // Then
+            assertNull(result, "a session of another workspace must answer as the absent one it is to this caller")
+        }
+
+        @Test
+        @DisplayName("getSessionChatConfig - A disabled session is named as disabled")
+        fun `getSessionChatConfig should report a disabled session as disabled`() {
+            // Given — disabling is `status = 0`; deleting is `active = 0`. Only the second is absent.
+            testSession.status = 0
+            `when`(sessionMapper.selectBySessionId("web-session-1")).thenReturn(testSession)
+
+            // When & Then
+            val exception = assertThrows<BizException> {
+                createService().getSessionChatConfig("web-session-1")
+            }
+            assertEquals(403, exception.code, "a disabled session is not a missing one")
+            assertEquals("error.session.disabled", exception.message)
         }
     }
 
@@ -692,7 +728,7 @@ class SessionServiceImplTest {
                 permissionMode = "BYPASS",
             )
 
-            `when`(sessionMapper.selectBySessionIdAndStatus("web-session-1", 1)).thenReturn(testSession)
+            `when`(sessionMapper.selectBySessionId("web-session-1")).thenReturn(testSession)
             `when`(sessionMapper.updateById(any())).thenReturn(1)
 
             // When
@@ -719,7 +755,7 @@ class SessionServiceImplTest {
                 permissionMode = null,
             )
 
-            `when`(sessionMapper.selectBySessionIdAndStatus("web-session-1", 1)).thenReturn(testSession)
+            `when`(sessionMapper.selectBySessionId("web-session-1")).thenReturn(testSession)
             `when`(sessionMapper.updateById(any())).thenReturn(1)
 
             // When
@@ -737,18 +773,54 @@ class SessionServiceImplTest {
         }
 
         @Test
-        @DisplayName("updateSessionChatConfig - Throw BizException when session not found")
+        @DisplayName("updateSessionChatConfig - An unreadable sessionId answers as the named 404")
         fun `updateSessionChatConfig should throw BizException when session not found`() {
             // Given
             val request = SessionChatUpdateRequest(enableThink = true)
 
-            `when`(sessionMapper.selectBySessionIdAndStatus("not-exist", 1)).thenReturn(null)
+            `when`(sessionMapper.selectBySessionId("not-exist")).thenReturn(null)
 
             // When & Then
             val exception = assertThrows<BizException> {
                 createService().updateSessionChatConfig("not-exist", request)
             }
-            assertEquals("Session not found or disabled", exception.message)
+            assertEquals(404, exception.code)
+            assertEquals("error.session.notfound", exception.message)
+            verify(sessionMapper, never()).updateById(any())
+        }
+
+        @Test
+        @DisplayName("updateSessionChatConfig - A disabled session is named as disabled")
+        fun `updateSessionChatConfig should refuse a disabled session`() {
+            // Given
+            val request = SessionChatUpdateRequest(enableThink = true)
+            testSession.status = 0
+            `when`(sessionMapper.selectBySessionId("web-session-1")).thenReturn(testSession)
+
+            // When & Then
+            val exception = assertThrows<BizException> {
+                createService().updateSessionChatConfig("web-session-1", request)
+            }
+            assertEquals(403, exception.code)
+            assertEquals("error.session.disabled", exception.message)
+            verify(sessionMapper, never()).updateById(any())
+        }
+
+        @Test
+        @DisplayName("updateSessionChatConfig - Another tenant's session is refused as absent")
+        fun `updateSessionChatConfig should refuse another tenant session`() {
+            // Given
+            val request = SessionChatUpdateRequest(enableThink = true)
+            testSession.tenantId = 940_004L
+            `when`(sessionMapper.selectBySessionId("web-session-1")).thenReturn(testSession)
+
+            // When & Then — the same two lines an unknown sessionId produces, so the refusal cannot be
+            // used to check whether a leaked id belongs to someone else
+            val exception = assertThrows<BizException> {
+                createService().updateSessionChatConfig("web-session-1", request)
+            }
+            assertEquals(404, exception.code)
+            assertEquals("error.session.notfound", exception.message)
             verify(sessionMapper, never()).updateById(any())
         }
 
@@ -758,7 +830,7 @@ class SessionServiceImplTest {
             // Given
             val request = SessionChatUpdateRequest(enableThink = true)
 
-            `when`(sessionMapper.selectBySessionIdAndStatus("web-session-1", 1)).thenReturn(testSession)
+            `when`(sessionMapper.selectBySessionId("web-session-1")).thenReturn(testSession)
             `when`(sessionMapper.updateById(any())).thenReturn(0)
 
             // When & Then

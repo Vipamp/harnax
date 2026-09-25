@@ -41,6 +41,16 @@ interface SessionMapper {
 
     fun selectBySessionIdAndStatus(@Param("sessionId") sessionId: String, @Param("status") status: Int): Session?
 
+    /**
+     * The row that has not been deleted, whatever its status.
+     *
+     * `selectBySessionIdAndStatus` above cannot answer this: it filters on status, so a session that was
+     * only disabled reads as absent. The chat-config endpoints need both questions apart because
+     * `status` (disabled) and `active` (deleted) are separate columns and a caller of a disabled
+     * conversation is told something different from a caller of a deleted one.
+     */
+    fun selectBySessionId(@Param("sessionId") sessionId: String): Session?
+
     fun selectByAgentId(@Param("agentId") agentId: Long): List<Session>
 
     /**

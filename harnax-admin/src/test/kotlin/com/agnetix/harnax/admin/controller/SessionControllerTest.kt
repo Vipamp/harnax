@@ -341,6 +341,21 @@ class SessionControllerTest {
             // 该 endpoint 使用 e.toString() 作为消息
             assertTrue(result.message.contains("DB error"))
         }
+
+        @Test
+        @DisplayName("getSessionConfig - a disabled session keeps the code the service named")
+        fun `getSessionConfig should relay a business code instead of flattening it`() {
+            `when`(sessionService.getSessionChatConfig("web-abc123"))
+                .thenThrow(BizException(403, "error.session.disabled"))
+
+            val result = controller.getSessionConfig("web-abc123")
+
+            // The generic catch below answers 500 with the exception's class name, which would make a
+            // disabled conversation look like a server fault — so the business code has to survive.
+            assertEquals(403, result.code)
+            assertEquals("error.session.disabled", result.message)
+            assertNull(result.data)
+        }
     }
 
     @Nested
@@ -369,6 +384,19 @@ class SessionControllerTest {
 
             assertFalse(result.isSuccess())
             assertTrue(result.message.contains("Session not found"))
+        }
+
+        @Test
+        @DisplayName("updateSessionConfig - an unreadable sessionId answers the same 404 as the read")
+        fun `updateSessionConfig should relay the named 404 of an unreadable session`() {
+            val request = SessionChatUpdateRequest(enableThink = true)
+            `when`(sessionService.updateSessionChatConfig(any(), any()))
+                .thenThrow(BizException(404, "error.session.notfound"))
+
+            val result = controller.updateSessionConfig("web-hijacked", request)
+
+            assertEquals(404, result.code)
+            assertEquals("error.session.notfound", result.message)
         }
     }
 

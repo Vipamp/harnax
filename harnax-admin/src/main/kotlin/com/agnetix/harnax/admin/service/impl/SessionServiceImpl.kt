@@ -6,6 +6,7 @@ import com.agnetix.harnax.admin.dto.SessionChatUpdateRequest
 import com.agnetix.harnax.admin.dto.SessionCreateRequest
 import com.agnetix.harnax.admin.dto.SessionResponse
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.*
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.UserContextUtil
@@ -42,6 +43,7 @@ class SessionServiceImpl(
     private val teamSkillBindingMapper: TeamSkillBindingMapper,
     private val teamArtifactCleaner: TeamArtifactCleaner,
     private val agentRuntimeClient: AgentRuntimeClient,
+    private val messageUtil: MessageUtil,
 ) : SessionService {
 
     private val log = LoggerFactory.getLogger(SessionServiceImpl::class.java)
@@ -253,20 +255,33 @@ class SessionServiceImpl(
         return sessionMapper.updateById(session) > 0
     }
 
+    /**
+     * The row behind `/{sessionId}/config`, read the way [ownedSession] reads a by-id row.
+     *
+     * The status-filtered statement this used to call carries neither a tenant nor a creator condition,
+     * so a sessionId leaking from a channel binding, a runtime log or a team artifact path let any signed
+     * in caller read another workspace's model, system prompt and permission mode. A miss and a foreign
+     * row answer alike — the same shape as the by-id endpoint next door.
+     */
     override fun getSessionChatConfig(sessionId: String): Session? {
         log.info("Getting session configuration, sessionId: {}", sessionId)
 
-        // Query session by sessionId (status enabled)
-        return sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
+        val session = sessionMapper.selectBySessionId(sessionId)?.takeIf { it.tenantId == currentTenantId() }
+            ?: return null
+        // Disabling and deleting are two columns (`status` / `active`) and only the second one makes a
+        // session absent, so a conversation that is merely switched off is named as such.
+        if (session.status != 1) {
+            throw BizException(403, messageUtil.getMessage("error.session.disabled"))
+        }
+        return session
     }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun updateSessionChatConfig(sessionId: String, request: SessionChatUpdateRequest) {
         log.info("Updating session configuration, sessionId: {}", sessionId)
 
-        // Query session by sessionId (status enabled)
-        val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
-            ?: throw BizException("Session not found or disabled")
+        val session = getSessionChatConfig(sessionId)
+            ?: throw BizException(404, messageUtil.getMessage("error.session.notfound"))
 
         // Update configuration fields (only update non-null fields)
         request.enableThink?.let {

@@ -57,6 +57,14 @@
         SELECT * FROM session WHERE session_id = #{sessionId} AND status = #{status} AND active = 1 LIMIT 1
     </select>
 
+    <!-- selectBySessionId
+         Deliberately status-agnostic, which `selectBySessionIdAndStatus` cannot be: disabling a session
+         and deleting it are separate columns (`status` / `active`), and the caller of a disabled
+         conversation is told something different from the caller of a deleted one. -->
+    <select id="selectBySessionId" resultMap="SessionResultMap">
+        SELECT * FROM session WHERE session_id = #{sessionId} AND active = 1 LIMIT 1
+    </select>
+
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO session (

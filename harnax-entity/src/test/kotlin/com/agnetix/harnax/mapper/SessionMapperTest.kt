@@ -289,4 +289,51 @@ open class SessionMapperTest {
             }
         }
     }
+
+    @Nested
+    @DisplayName("selectBySessionId - disabled and deleted are separate columns")
+    inner class SelectBySessionIdTests {
+
+        private fun sessionNamed(
+            sessionId: String,
+            status: Int,
+        ): Session = Session().apply {
+            this.sessionId = sessionId
+            agentId = 1L
+            title = "it_select_by_session_id"
+            creator = "admin"
+            this.status = status
+            active = 1
+            createTime = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
+            updateTime = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
+        }
+
+        @Test
+        @DisplayName("selectBySessionId - reads a disabled row the status-filtered statement drops")
+        fun `selectBySessionId should read a disabled session`() {
+            // Given — `status = 0` is a disabled session that was never deleted
+            sessionMapper.insert(sessionNamed("session-disabled-only", 0))
+
+            // When & Then
+            assertNotNull(sessionMapper.selectBySessionId("session-disabled-only"), "a disabled session is still there to read")
+            assertNull(
+                sessionMapper.selectBySessionIdAndStatus("session-disabled-only", 1),
+                "the status-filtered statement cannot tell a disabled session from an absent one — the reason both exist",
+            )
+        }
+
+        @Test
+        @DisplayName("selectBySessionId - returns null once the session is deleted")
+        fun `selectBySessionId should not read a deleted session`() {
+            // Given
+            val session = sessionNamed("session-deleted", 1)
+            sessionMapper.insert(session)
+
+            // When — deletion only flips `active`, it leaves `status` alone
+            sessionMapper.deleteById(session.id)
+
+            // Then
+            assertNull(sessionMapper.selectBySessionId("session-deleted"), "a deleted session must stop resolving by session id")
+        }
+    }
 }

@@ -1,6 +1,7 @@
 package com.agnetix.harnax.admin.controller
 
 import com.agnetix.harnax.admin.dto.*
+import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.SessionService
 import com.agnetix.harnax.common.dto.ResultVo
@@ -115,6 +116,11 @@ class SessionController(
         val sessionChatConfig = sessionService.getSessionChatConfig(sessionId)
             ?: return ResultVo.error(404, messageUtil.getMessage("error.session.notfound"))
         ResultVo.success(sessionService.convertToResponse(sessionChatConfig))
+    } catch (e: BizException) {
+        // A disabled session and an unreadable one are named apart on purpose (AGENT-26); the catch below
+        // would flatten both into a 500 carrying the exception's class name.
+        log.warn("Failed to read session chat config, sessionId: {}, code: {}", sessionId, e.code)
+        ResultVo.error(e.code, e.message ?: messageUtil.getMessage("error.session.notfound"))
     } catch (e: Exception) {
         ResultVo.error(e.toString())
     }
@@ -127,6 +133,9 @@ class SessionController(
     ): ResultVo<Void> = try {
         sessionService.updateSessionChatConfig(sessionId, request)
         ResultVo.success()
+    } catch (e: BizException) {
+        log.warn("Failed to update session chat config, sessionId: {}, code: {}", sessionId, e.code)
+        ResultVo.error(e.code, e.message ?: "Failed to update session configuration")
     } catch (e: Exception) {
         ResultVo.error(e.toString())
     }
