@@ -365,6 +365,18 @@
 - **④ webui 仍只到产物级，本机不可闭合**：`http://localhost/` 返回 301 指向 `https://localhost/`，`https://localhost/` 返回 200 `text/html` 508 B；壳里引的四份资源全部 200 且类型正确——`umi.32230015.js` 1,667,123 B、`umi.a1f33685.css` 69,996 B、`scripts/loading.js` 与 `preload_helper.431d55d7.js` 各 5,258 B，`last-modified` 统一是 `Sat, 26 Sep 2026 07:53:06 GMT`，即本轮部署的那一次构建（两份 5,258 B 同 etag 不是 fallback：nginx 的 etag 只编码 mtime 与长度，实测两者 sha256 不同）。渲染层进不去的原因不变：证书无 SAN（`openssl x509 -text` 无 Subject Alternative Name 扩展），浏览器与无头 Chromium 两条路都被证书闸门挡住，本机也不再有 Playwright。
 - **本轮之后的缺口**：只剩需要拍板的四条（§9.8「有意没做」末段）与 webui 渲染层这一项环境级证据。本轮落点为三个新测试类、`CliManagementIT` 的一处新增（含把 `seedPackage` 改得能带自己的 digest）、`MigrationDataEffectIT` 的两条时间戳断言，以及本节。
 
+### 9.11 第三十二轮：清空原库后全量重打包部署，空库上的建库与运行侧取证（2026-09-26，无代码改动）
+
+按裁定「直接删除 `data/mysql`、连带对象与缓存层一起清」执行一次冷启到底：`docker-compose down -v` 撤下 11 个容器并删掉 7 个具名卷（`redis-data`／`minio-data`／`admin-skills` 加四个 `*-logs`），再删 `docker-new/data/mysql`（251M，未留档；上一代留档目录 `data/mysql.bak-20260916` 原样未动）。
+
+- **重建链**：`bash docker-new/deploy-all.sh` 23:11:39 → 23:53:48，墙钟 42 分 09 秒，`DEPLOY_EXIT=0`，`set -e` 全程无中断。链内顺序即脚本顺序：`mvn clean package -Dmaven.test.skip=true` → webui `npm install && npm run build` → 产物进 `docker-new/dist`（admin 与 channel-service 取 `-exec.jar`）→ CLI 货架重建（`harnax-1.0.0.harnaxcli.zip` 3,564,196 B、`lark-cli-1.0.96.harnaxcli.zip` 14,132,636 B）→ 默认沙箱镜像 → 六个 `--no-cache` 服务镜像 → `down` → `up -d --scale scheduler=2`。11 个容器全部 `Started`，`mysql`／`redis`／`minio`／`frontend`／`mcp-server` 报 `Healthy`；四个 JVM 服务各只有一条 `Tomcat started on port`，即无重启。
+- **空库建库计数**：`sql/init-databases.sql` 建出 5 个库；`harnax_admin` 一条 `Successfully applied 50 migrations ... now at version v50 (execution time 00:02.230s)`；`harnax_router` 1 条迁移到 v1；`harnax_scheduler` 到 v2，Quartz 2.5.2 以 `LocalDataSourceJobStore` 集群模式起来、两实例各带自己的 `instanceId`，`housekeeping sweep (every 300s)` 与 `task reconcile sweep (every 60s)` 两个登记都在。启动登记两条汇总：`[CliPackageAutoRegistrar] Sync complete: 2 registered, 0 failed`（包对象写进新建的 MinIO，键形如 `harnax-cli-packages/lark-cli/a7b6004f….harnaxcli.zip`），`[BuiltinToolAutoRegistrar] Sync complete: 2 succeeded, 0 failed; 3 tool name(s) declared`。
+- **运行侧读路径**：`POST /api/admin/auth/cli-login`（免验证码那条通道）用 admin 出 token，claims 里 `tenantId=1`、`isAdmin=1`。十一处列表端点全 200，行数与空库自洽：`agents`／`models`／`model-providers`／`sessions`／`channels` 0 行，`clis` 2、`skills` 2（每个包随货一条技能）、`tools` 3、`users` 1、`mcp` 0、`agent-tasks` 0。前端 80 → 301 → `https://localhost/` 200；`router` 与 `channel-service` 的 liveness 各回 `{"status":"UP"}`，`admin` 与 `agent-service` 的 liveness 在鉴权闸门之后，401 就是它们健康门接受的形状（compose 的 `test` 显式写「200 或 401」）。
+- **三条如实更正与限制**：
+  1. 「`28082/actuator/health` 返回 200」不成立——`agent-service` 没有 actuator 端点，那个 200 是 `GlobalExceptionHandler` 把 `NoResourceFoundException` 包成的 401 体，本轮全栈唯一一条 `ERROR` 日志就是这次探针自己打出来的；它的探活路径是 `/api/agent/health`。
+  2. chat 链路本轮不能端到端验：清库把模型服务商与其密钥一并清掉，空库里既无模型也无 agent，重跑要先由运营重新填凭据；沙箱容器创建挂在这条之后，同样未验。
+  3. 空库这一跑不补「迁移的数据效果」——V43／V44／V47／V48／V49 的 `UPDATE` 在这里仍然对零行执行，那一维的证据仍是 §9.10 的 `MigrationDataEffectIT`。此外 `docker-compose ps` 与 `docker exec` 属禁用通道，上面的容器状态是从 `up` 输出与日志推出来的，不是 `ps` 直读。
+
 ## 10. 关键文件索引
 
 | 关注点 | 文件 |
