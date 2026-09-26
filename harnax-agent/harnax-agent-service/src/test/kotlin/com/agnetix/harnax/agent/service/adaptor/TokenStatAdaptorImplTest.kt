@@ -10,6 +10,8 @@ import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
 import org.mockito.kotlin.any
+import java.time.Instant
+import java.time.ZoneId
 
 /**
  * Unit tests for TokenStatAdaptorImpl.
@@ -37,6 +39,7 @@ class TokenStatAdaptorImplTest {
     private fun stat(
         agentId: Long?,
         tenantId: Long?,
+        timestamp: Long = 1_700_000_000_000L,
     ) = TokenStat(
         agentId = agentId,
         tenantId = tenantId,
@@ -45,7 +48,7 @@ class TokenStatAdaptorImplTest {
         inputToken = 10,
         outputToken = 5,
         totalToken = 15,
-        timestamp = 1_700_000_000_000L,
+        timestamp = timestamp,
     )
 
     @Test
@@ -76,5 +79,17 @@ class TokenStatAdaptorImplTest {
         val row = inserted.single()
         assertEquals(null, row.agentId)
         assertEquals(5L, row.tenantId)
+    }
+
+    @Test
+    @DisplayName("the row is stamped with its own call, not with the write")
+    fun saveTokenStatStoresTheCallMoment() {
+        // One seed serves every turn of a keep-alive session, so a row that took the write's clock instead
+        // of the call's would pile a whole session into the first turn's bucket of every time series.
+        val call = Instant.now().minusSeconds(3_600)
+        adaptor.saveTokenStat(stat(agentId = 11L, tenantId = 5L, timestamp = call.toEpochMilli()))
+
+        val stored = inserted.single().ts.atZone(ZoneId.systemDefault()).toInstant()
+        assertEquals(call.epochSecond, stored.epochSecond, "the row must carry the second its call happened")
     }
 }
