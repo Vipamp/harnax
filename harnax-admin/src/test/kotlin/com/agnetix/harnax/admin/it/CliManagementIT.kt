@@ -53,6 +53,9 @@ class CliManagementIT : BaseAdminIT() {
     /** `agent_cli_binding` 没有外键，这一行只需要指向本 CLI 就够。 */
     private val boundAgentId = 900_000_000L + suffix
 
+    /** Must match `admin.internal-api.secret` in `application-it.yml`, as in [InternalApiIT]. */
+    private val internalSecret = "it-internal-api-secret-0123456789abcdef"
+
     // Deliberately not `packageDigest`/`skillId`: inside `Cli().apply {}` those names resolve to the
     // entity's own properties, so the seed would assign the default to itself and pass silently.
     private val pkgDigest = "c".repeat(64)
@@ -76,7 +79,10 @@ class CliManagementIT : BaseAdminIT() {
      *
      * 手动 mapper 插入而非启动登记器：IT 环境没有包目录也没有对象存储，而这里要验证的是 SQL 本身。
      */
-    private fun seedPackage(name: String): Cli {
+    private fun seedPackage(
+        name: String,
+        digest: String = pkgDigest,
+    ): Cli {
         val repository = skillRepositoryMapper.selectBuiltinRepository(BuiltinRepository.CLI_SKILLS)
         assertNotNull(repository, "the managed CLI skill repository must exist")
         val skill = Skill().apply {
@@ -97,7 +103,8 @@ class CliManagementIT : BaseAdminIT() {
         val row = packageRow().apply {
             this.name = name
             skillId = skill.id
-            packageObject = "$name/$pkgDigest.harnaxcli.zip"
+            packageDigest = digest
+            packageObject = "$name/$digest.harnaxcli.zip"
         }
         cliMapper.upsertCliPackage(row)
         return assertNotNull(cliMapper.selectByName(name), "the registered row should be readable back by name")
@@ -300,6 +307,48 @@ class CliManagementIT : BaseAdminIT() {
 
         agentCliBindingMapper.deleteByAgentId(boundAgentId)
         agentCliBindingMapper.deleteByAgentId(boundAgentId + 1)
+    }
+
+    /**
+     * The whitelist the runtime's reclaim sweeps delete by, read out of the database it is built from.
+     *
+     * `InternalApiControllerTest` stubs the two mappers this endpoint composes, so the SQL is what no test
+     * has seen: `selectCliList` answers with `SELECT *` through a resultMap, and a column that failed to
+     * map would come back empty — and an empty `packageDigest` is dropped from the list, which a host reads
+     * as "unused" and deletes. The same silent narrowing renames an image tag, and a tag that is not on the
+     * whitelist is a live agent's sandbox removed.
+     */
+    @Test
+    @Order(10)
+    fun `the reclaim inventory carries the rows the sweeps delete by`() {
+        val live = seedPackage("it_cli_inv_on_$suffix", digest = "e".repeat(64))
+        val switchedOff = seedPackage("it_cli_inv_off_$suffix", digest = "f".repeat(64))
+        assertOk(putJson("/api/admin/clis/toggle/${switchedOff.id}?status=0"))
+        val agentId = boundAgentId + 20
+        agentCliBindingMapper.batchInsert(listOf(bindingOf(agentId, live.id), bindingOf(agentId, switchedOff.id)))
+
+        val data = assertOk(
+            parseBody(exchange(HttpMethod.GET, "/api/admin/internal/cli/inventory", token = internalSecret)),
+        )
+        val digests = data["packageDigests"].map { it.asText() }
+        val switchedOffDigest = requireNotNull(switchedOff.packageDigest)
+        // The kill switch is not a deletion: the archive and the payload tree survive it, so the cache must
+        // not be told to drop them — a re-enable would have to refetch bytes nobody can rewrite.
+        assertTrue(switchedOffDigest in digests, "a disabled package is still a registered package")
+        assertTrue(requireNotNull(live.packageDigest) in digests)
+
+        val cliSet = data["agentCliSets"].first { it["agentId"].asLong() == agentId }
+        assertEquals(
+            listOf(live.id),
+            cliSet["clis"].map { it["id"].asLong() },
+            "a switched-off CLI has no image to protect",
+        )
+        val cli = cliSet["clis"].single()
+        // The tag hashes exactly these values, so each one has to reach the wire as the row holds it.
+        assertEquals(live.version, cli["version"].asText())
+        assertEquals(live.payloadDigest, cli["payloadDigest"].asText())
+
+        agentCliBindingMapper.deleteByAgentId(agentId)
     }
 
     private fun bindingOf(
