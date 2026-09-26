@@ -17,6 +17,7 @@ import com.agnetix.harnax.agent.adaptor.model.ModelHelper
 import com.agnetix.harnax.agent.adaptor.token.TokenStatBuilder
 import com.agnetix.harnax.agent.provider.MIDDLEWARE_SET
 import com.agnetix.harnax.agent.provider.middleware.ProcessLogMiddleware
+import com.agnetix.harnax.agent.provider.middleware.TokenStatsMiddleware
 import com.agnetix.harnax.agent.session.SessionConfig
 import com.agnetix.harnax.agent.session.SessionLoader
 import com.agnetix.harnax.common.mcp.McpConfigDecryptor
@@ -487,6 +488,17 @@ class HarnessAgentLauncher(
         // Dangerous-tool interception is fully handled by the built-in PermissionEngine
         // (ASK/ALLOW/DENY rules configured below via PermissionContextState).
         // No custom ConfirmToolsMiddleware needed.
+        // One seed for the whole run: every `token_stats` row of this agent's run is built from it, so it
+        // is made here rather than per call.
+        val tokenStatBuilder = TokenStatBuilder()
+            .agentId(agentSpec.attributableAgentId)
+            .tenantId(agentSpec.tenantId)
+            .sessionId(sessionId)
+            .modelId(agentSpec.chatModelId)
+        // Deliberately a fresh instance per build, and not an entry of MIDDLEWARE_SET: that set is one
+        // shared object whose `initial()` every build rewrites, which is how two concurrent sessions
+        // could end up paying for each other's tokens.
+        agentBuilder.addMiddleware(TokenStatsMiddleware(tokenStatAdaptor, tokenStatBuilder))
         MIDDLEWARE_SET.forEach { middleware ->
             if (middleware is ProcessLogMiddleware) {
                 middleware.initial(
@@ -664,12 +676,6 @@ class HarnessAgentLauncher(
             harnessAgent = agent,
             mcpClients = mcpClients,
             dangerousTools = needConfirmedTools + dangerousInputTools,
-            tokenStatBuilder = TokenStatBuilder()
-                .agentId(agentSpec.attributableAgentId)
-                .tenantId(agentSpec.tenantId)
-                .sessionId(sessionId)
-                .modelId(agentSpec.chatModelId),
-            tokenStatAdaptor = tokenStatAdaptor,
             sessionId = sessionId,
             keepAliveSandboxManager = keepAliveSandboxManager,
             keepAliveSnapshotSpec = snapshotSpec,

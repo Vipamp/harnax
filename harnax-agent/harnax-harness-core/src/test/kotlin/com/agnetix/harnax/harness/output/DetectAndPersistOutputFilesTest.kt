@@ -1,7 +1,5 @@
 package com.agnetix.harnax.harness.output
 
-import com.agnetix.harnax.agent.adaptor.TokenStatAdaptor
-import com.agnetix.harnax.agent.adaptor.token.TokenStatBuilder
 import com.agnetix.harnax.harness.HarnessAgentWrapper
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
 import io.agentscope.harness.agent.HarnessAgent
@@ -35,14 +33,10 @@ class DetectAndPersistOutputFilesTest {
         store: OutputFileStore? = null,
     ): HarnessAgentWrapper {
         val harnessAgent = mock<HarnessAgent>()
-        val tokenStatBuilder = mock<TokenStatBuilder>()
-        val tokenStatAdaptor = mock<TokenStatAdaptor>()
 
         return HarnessAgentWrapper(
             harnessAgent = harnessAgent,
             dangerousTools = emptySet(),
-            tokenStatBuilder = tokenStatBuilder,
-            tokenStatAdaptor = tokenStatAdaptor,
             sessionId = sessionId,
             keepAliveSandboxManager = sandboxManager,
             outputFileDetector = detector,

@@ -1,7 +1,5 @@
 package com.agnetix.harnax.harness
 
-import com.agnetix.harnax.agent.adaptor.TokenStatAdaptor
-import com.agnetix.harnax.agent.adaptor.token.TokenStatBuilder
 import com.agnetix.harnax.agent.chat.MsgExtractHelper
 import com.agnetix.harnax.agent.protocol.ChatEvent
 import com.agnetix.harnax.agent.protocol.ChatEventConverter
@@ -75,8 +73,6 @@ class HarnessAgentWrapper(
      */
     val mcpClients: List<McpClientWrapper> = emptyList(),
     val dangerousTools: Set<String>,
-    val tokenStatBuilder: TokenStatBuilder,
-    val tokenStatAdaptor: TokenStatAdaptor,
     val sessionId: String,
     val userId: String? = null,
     /**
@@ -767,7 +763,6 @@ class HarnessAgentWrapper(
             .let { stream ->
                 if (turnTimeoutSeconds > 0) stream.timeout(Duration.ofSeconds(turnTimeoutSeconds)) else stream
             }
-            .doOnNext { extracted(it) }
             .doFinally { persistKeepAliveSnapshot(ctxResult) }
             // Output files are detected as the stream completes, the way the batch path in call()
             // does it. Deferred so the work happens per subscription, moved off the emitting thread
@@ -830,17 +825,6 @@ class HarnessAgentWrapper(
                 .mediaType("image/png")
                 .build(),
         ).build()
-    }
-
-    private fun extracted(it: ChatEvent) {
-        if (it.tokenUsage != null) {
-            tokenStatAdaptor.saveTokenStat(
-                tokenStatBuilder.inputToken(it.tokenUsage!!.inputTokens)
-                    .outputToken(it.tokenUsage!!.outputTokens)
-                    .totalToken(it.tokenUsage!!.totalTokens)
-                    .build(),
-            )
-        }
     }
 
     /**

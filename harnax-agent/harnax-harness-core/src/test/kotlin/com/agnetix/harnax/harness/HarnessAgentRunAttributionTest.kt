@@ -10,6 +10,7 @@ import com.agnetix.harnax.agent.adaptor.ProcessLogAdaptor
 import com.agnetix.harnax.agent.adaptor.SkillAdaptor
 import com.agnetix.harnax.agent.adaptor.TokenStatAdaptor
 import com.agnetix.harnax.agent.adaptor.model.OpenAIChatModelConfig
+import com.agnetix.harnax.agent.provider.middleware.TokenStatsMiddleware
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
 import com.agnetix.harnax.harness.team.TeamOrchestrator
 import com.agnetix.harnax.harness.team.TeamRuntimeSpec
@@ -33,8 +34,8 @@ import java.nio.file.Path
  * `agent_id` columns of the statistics and log tables must receive, since a 0 there reads as an agent
  * whose id nothing resolves and whom every agent-dimension count then adds.
  *
- * Asserted on the wrapper's own `tokenStatBuilder`, because that is the object
- * `HarnessAgentWrapper` persists per turn: it is the row, not a step towards it.
+ * Asserted on the seed the assembled agent's recorder carries, because that middleware is what writes the
+ * row: the attribution is read where it is consumed, not on a copy an object hands along.
  */
 class HarnessAgentRunAttributionTest {
 
@@ -82,13 +83,18 @@ class HarnessAgentRunAttributionTest {
         return orchestrator
     }
 
-    private fun leadStat() = launcher().createTeamLead(
-        orchestrator = leadOrchestrator(),
-        agentSpec = spec(0L),
-        sessionId = "web-team",
-        chatSpec = ChatSpec.builder().build(),
-        userIdentifier = UserIdentifier(userId = 1L),
-    ).tokenStatBuilder.build()
+    /** The seed of the recorder the built agent runs — the object that writes its `token_stats` rows. */
+    private fun seed(wrapper: HarnessAgentWrapper) = wrapper.harnessAgent.delegate.middlewares.filterIsInstance<TokenStatsMiddleware>().single().tokenStatBuilder
+
+    private fun leadStat() = seed(
+        launcher().createTeamLead(
+            orchestrator = leadOrchestrator(),
+            agentSpec = spec(0L),
+            sessionId = "web-team",
+            chatSpec = ChatSpec.builder().build(),
+            userIdentifier = UserIdentifier(userId = 1L),
+        ),
+    ).build()
 
     @Nested
     @DisplayName("Lead run")
@@ -112,12 +118,14 @@ class HarnessAgentRunAttributionTest {
         @Test
         @DisplayName("an agent that exists is still the one its consumption belongs to")
         fun `single agent token stat keeps its agent id`() {
-            val stat = launcher().createSingleAgent(
-                agentSpec = spec(12L),
-                sessionId = "web-12",
-                chatSpec = ChatSpec.builder().build(),
-                userIdentifier = UserIdentifier(userId = 1L),
-            ).tokenStatBuilder.build()
+            val stat = seed(
+                launcher().createSingleAgent(
+                    agentSpec = spec(12L),
+                    sessionId = "web-12",
+                    chatSpec = ChatSpec.builder().build(),
+                    userIdentifier = UserIdentifier(userId = 1L),
+                ),
+            ).build()
 
             assertEquals(12L, stat.agentId)
         }
