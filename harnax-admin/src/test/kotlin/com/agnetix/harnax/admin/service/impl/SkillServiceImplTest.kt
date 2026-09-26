@@ -208,6 +208,15 @@ class SkillServiceImplTest {
         teamSkillBindingMapper = teamSkillBindingMapper,
     )
 
+    /**
+     * Makes the caller's own token claim [tenantId] while the request keeps carrying no `X-Tenant-ID`
+     * header — the shape a CLI request arrives in. This is the request the skills domain used to answer
+     * with tenant 1 for, while every other admin service answered with the claimed tenant.
+     */
+    private fun callerTokenClaimsTenant(tenantId: Long) {
+        `when`(jwtUtil.getTenantIdFromToken("mock-token")).thenReturn(tenantId)
+    }
+
     @Nested
     @DisplayName("Page Query Tests")
     inner class PageQueryTests {
@@ -1835,6 +1844,63 @@ class SkillServiceImplTest {
             assertTrue(exception.message!!.contains("team"), exception.message)
             verify(skillMapper, never()).deleteById(anyLong())
             verify(syncRepositoryMapper, never()).deleteById(anyLong())
+        }
+    }
+
+    /**
+     * The tenant a request acts within when it sends no `X-Tenant-ID` header, resolved by the chain every
+     * other admin service already shares.
+     *
+     * The skills domain used to answer this with tenant 1, so a CLI caller belonging to tenant 3 listed
+     * tenant 1's skills and wrote its own skills into tenant 1 — where its next request could not find
+     * them. Both halves have to move together: the write is only reachable by the read that looks for it.
+     */
+    @Nested
+    @DisplayName("Tenant of a header-less request")
+    inner class HeaderlessRequestTenantTests {
+
+        @Test
+        @DisplayName("page - lists within the tenant the caller's account names, not within tenant 1")
+        fun `page should list within the caller tenant when no header is sent`() {
+            callerTokenClaimsTenant(3L)
+            `when`(skillMapper.selectSkillList(null, null, null, "admin", 3L)).thenReturn(listOf(testSkill))
+
+            val page = createService().page(null, null, null, 1, 10)
+
+            assertEquals("code-review", page.records.single().name)
+            verify(skillMapper).selectSkillList(null, null, null, "admin", 3L)
+        }
+
+        @Test
+        @DisplayName("createSkill - stamps the tenant the caller's account names on the row")
+        fun `createSkill should stamp the caller tenant when no header is sent`() {
+            callerTokenClaimsTenant(3L)
+            // The caller's own repository: the row and the workspace it is written into agree
+            val ownRepo = SkillRepository().apply {
+                id = 5L
+                tenantId = 3L
+                name = "tenant-three-skills"
+                sourceType = "GIT"
+                isPublic = 0
+                creator = "admin"
+                active = 1
+            }
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(ownRepo)
+            `when`(skillMapper.selectByNameAndRepo("own-tenant-skill", 5L)).thenReturn(null)
+            `when`(skillMapper.insert(any())).thenReturn(1)
+
+            val request = SkillCreateRequest(
+                name = "own-tenant-skill",
+                repositoryId = 5L,
+                description = "Anything",
+                skillmd = "# Anything",
+            )
+            assertTrue(createService().createSkill(request))
+
+            val captor = argumentCaptor<Skill>()
+            verify(skillMapper).insert(captor.capture())
+            // A skill written into tenant 1 is one the list above never shows again
+            assertEquals(3L, captor.firstValue.tenantId)
         }
     }
 }

@@ -142,6 +142,90 @@ class SkillSourceServiceImplTest {
         RequestContextHolder.resetRequestAttributes()
     }
 
+    /**
+     * Makes the caller's own token claim [tenantId] while the request keeps carrying no `X-Tenant-ID`
+     * header — the shape a CLI request arrives in. This is the request the `skill-sources` domain used to
+     * answer with tenant 1 for, while every other admin service answered with the claimed tenant.
+     */
+    private fun callerTokenClaimsTenant(tenantId: Long) {
+        `when`(jwtUtil.getTenantIdFromToken("mock-token")).thenReturn(tenantId)
+    }
+
+    /**
+     * The tenant a header-less request acts within, now the chain every other admin service shares.
+     *
+     * Four sites, two kinds: the list reads that decide what the caller sees, and the create paths whose
+     * single resolution feeds both the name probe and the ownership stamp. A create answering 1 while the
+     * list answers 3 stores a source nobody can find again.
+     */
+    @Nested
+    @DisplayName("Tenant of a header-less request")
+    inner class HeaderlessRequestTenantTests {
+
+        @Test
+        @DisplayName("page - lists within the tenant the caller's account names, not within tenant 1")
+        fun `page should list within the caller tenant when no header is sent`() {
+            callerTokenClaimsTenant(3L)
+            `when`(
+                skillRepositoryMapper.selectRepositoryList(null, null, "admin", 3L, "builtin-cli-skills", null),
+            ).thenReturn(listOf(testRepository))
+
+            val page = skillSourceService.page(null, null, null, 1, 10)
+
+            assertEquals("test-git-repo", page.records.single().name)
+            verify(skillRepositoryMapper).selectRepositoryList(null, null, "admin", 3L, "builtin-cli-skills", null)
+        }
+
+        @Test
+        @DisplayName("listActive - reads the caller's tenant, not the default one")
+        fun `listActive should read the caller tenant when no header is sent`() {
+            callerTokenClaimsTenant(3L)
+            `when`(skillRepositoryMapper.selectActiveRepositories(eq(3L))).thenReturn(listOf(testRepository))
+
+            val result = skillSourceService.listActive()
+
+            assertEquals(1, result.size)
+            verify(skillRepositoryMapper).selectActiveRepositories(eq(3L))
+        }
+
+        @Test
+        @DisplayName("createSkillSource - probes and stamps the caller's own tenant")
+        fun `createSkillSource should probe and stamp the caller tenant when no header is sent`() {
+            callerTokenClaimsTenant(3L)
+            val request = SkillSourceCreateRequest(
+                name = "tenant-three-source",
+                sourceType = "GIT",
+                sourceConfig = mapOf("url" to "https://github.com/t3/skills"),
+            )
+            `when`(skillRepositoryMapper.selectByName(eq("tenant-three-source"), eq(3L))).thenReturn(null)
+            `when`(skillRepositoryMapper.insert(any())).thenReturn(1)
+
+            skillSourceService.createSkillSource(request)
+
+            // The probe before the write and the one inside the transaction both take the resolved value
+            verify(skillRepositoryMapper, Mockito.atLeastOnce()).selectByName(eq("tenant-three-source"), eq(3L))
+            val captor = argumentCaptor<SkillRepository>()
+            verify(skillRepositoryMapper).insert(captor.capture())
+            assertEquals(3L, captor.firstValue.tenantId)
+        }
+
+        @Test
+        @DisplayName("uploadAndInstall - probes and stamps the caller's own tenant")
+        fun `uploadAndInstall should probe and stamp the caller tenant when no header is sent`() {
+            callerTokenClaimsTenant(3L)
+            `when`(skillRepositoryMapper.selectByName(eq("tenant-three-zip"), eq(3L))).thenReturn(null)
+            `when`(skillRepositoryMapper.insert(any())).thenReturn(1)
+
+            val zip = java.nio.file.Files.createTempFile("tenant-three-upload-", ".zip")
+            skillSourceService.uploadAndInstall(zip.toString(), "tenant-three.zip", "tenant-three-zip")
+
+            verify(skillRepositoryMapper, Mockito.atLeastOnce()).selectByName(eq("tenant-three-zip"), eq(3L))
+            val captor = argumentCaptor<SkillRepository>()
+            verify(skillRepositoryMapper).insert(captor.capture())
+            assertEquals(3L, captor.firstValue.tenantId)
+        }
+    }
+
     private fun enabledSkillCount(
         repositoryId: Long,
         enabled: Int,

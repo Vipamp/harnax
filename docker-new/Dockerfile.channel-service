@@ -16,8 +16,8 @@ RUN addgroup -S harnax && adduser -S harnax -G harnax
 
 WORKDIR /app
 
-# Copy JAR file from docker-new/dist/channel-service/
-COPY docker-new/dist/channel-service/harnax-channel-service-*.jar app.jar
+# Copy JAR file from docker-new/dist/channel-service/ (executable fat jar has -exec classifier)
+COPY docker-new/dist/channel-service/harnax-channel-service-*-exec.jar app.jar
 
 # Create log directory and set permissions
 RUN mkdir -p /app/logs && chown -R harnax:harnax /app

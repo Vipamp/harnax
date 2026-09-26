@@ -141,6 +141,11 @@ var channelCreateCmd = &cobra.Command{
 		if v, _ := cmd.Flags().GetString("type"); v != "" {
 			body["type"] = v
 		}
+		// ChannelCreateRequest is @NotNull on agentId: a channel without the agent it fronts is
+		// refused, so the flag has to reach the body.
+		if v, _ := cmd.Flags().GetInt64("agent-id"); v > 0 {
+			body["agentId"] = v
+		}
 		if v, _ := cmd.Flags().GetString("config"); v != "" {
 			var parsed any
 			if err := json.Unmarshal([]byte(v), &parsed); err != nil {
@@ -258,9 +263,11 @@ func init() {
 
 	channelCreateCmd.Flags().String("name", "", "Channel name (required)")
 	channelCreateCmd.Flags().String("type", "", "Channel type (required)")
+	channelCreateCmd.Flags().Int64("agent-id", 0, "Associated agent ID (required)")
 	channelCreateCmd.Flags().String("config", "", "Channel config as JSON string")
 	channelCreateCmd.MarkFlagRequired("name")
 	channelCreateCmd.MarkFlagRequired("type")
+	channelCreateCmd.MarkFlagRequired("agent-id")
 
 	channelUpdateCmd.Flags().String("name", "", "Channel name")
 	channelUpdateCmd.Flags().String("config", "", "Channel config as JSON string")

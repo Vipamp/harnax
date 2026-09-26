@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"strconv"
+	"strings"
 
 	"github.com/agnetix/harnax-cli/internal/client"
 	"github.com/agnetix/harnax-cli/internal/output"
@@ -129,20 +130,45 @@ var agentCreateCmd = &cobra.Command{
 	Use:   "create",
 	Short: "Create an agent",
 	Run: func(cmd *cobra.Command, args []string) {
+		// AgentCreateRequest marks four fields required: name is @NotBlank, description, systemPrompt and
+		// modelId are @NotNull, and createAgent stores them verbatim. Sending only the flags the caller
+		// happened to type meant the request went out incomplete and came back as a 400 naming one field.
+		// MarkFlagRequired still refuses an absent flag first; this catches the flag typed empty
+		// (`--name ""`), which the server refuses just as hard, and reports all the gaps in one message.
+		// --description is required rather than defaulted to "": @NotNull only rejects null, so an empty
+		// string would sail through and store a description no view of the agent can explain.
+		name, _ := cmd.Flags().GetString("name")
+		description, _ := cmd.Flags().GetString("description")
+		systemPrompt, _ := cmd.Flags().GetString("system-prompt")
+		modelID, _ := cmd.Flags().GetInt64("model-id")
+
+		var missing []string
+		if strings.TrimSpace(name) == "" {
+			missing = append(missing, "--name")
+		}
+		if strings.TrimSpace(description) == "" {
+			missing = append(missing, "--description")
+		}
+		if strings.TrimSpace(systemPrompt) == "" {
+			missing = append(missing, "--system-prompt")
+		}
+		if modelID <= 0 {
+			missing = append(missing, "--model-id")
+		}
+		if len(missing) > 0 {
+			exitError("missing required flags: " + strings.Join(missing, ", "))
+		}
+
 		c, err := newAdminClient()
 		if err != nil {
 			exitError(err.Error())
 		}
 
-		body := map[string]any{}
-		if v, _ := cmd.Flags().GetString("name"); cmd.Flags().Changed("name") {
-			body["name"] = v
-		}
-		if v, _ := cmd.Flags().GetInt64("model-id"); cmd.Flags().Changed("model-id") {
-			body["modelId"] = v
-		}
-		if v, _ := cmd.Flags().GetString("system-prompt"); cmd.Flags().Changed("system-prompt") {
-			body["systemPrompt"] = v
+		body := map[string]any{
+			"name":         name,
+			"description":  description,
+			"systemPrompt": systemPrompt,
+			"modelId":      modelID,
 		}
 
 		result, err := c.Create(context.Background(), agentBasePath, body)
@@ -241,9 +267,11 @@ func init() {
 	agentListCmd.Flags().Int("size", 10, "Page size")
 
 	agentCreateCmd.Flags().String("name", "", "Agent name")
+	agentCreateCmd.Flags().String("description", "", "Agent description")
 	agentCreateCmd.Flags().Int64("model-id", 0, "Model ID")
 	agentCreateCmd.Flags().String("system-prompt", "", "System prompt")
 	agentCreateCmd.MarkFlagRequired("name")
+	agentCreateCmd.MarkFlagRequired("description")
 	agentCreateCmd.MarkFlagRequired("model-id")
 	agentCreateCmd.MarkFlagRequired("system-prompt")
 

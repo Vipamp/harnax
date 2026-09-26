@@ -132,10 +132,11 @@ harnax agent get <id>
 ### 创建 Agent
 
 ```bash
-harnax agent create --name <name> --model-id <id> --system-prompt <prompt>
+harnax agent create --name <name> --description <desc> --model-id <id> --system-prompt <prompt>
 ```
 
 - `--name`（必需）：Agent 名称
+- `--description`（必需）：Agent 描述
 - `--model-id`（必需）：关联的模型 ID
 - `--system-prompt`（必需）：系统提示词
 
@@ -182,11 +183,12 @@ harnax model get <id>
 ### 创建模型
 
 ```bash
-harnax model create --name <name> --provider-id <id> --model-type <type> \
+harnax model create --name <name> --model-name <technical-name> --provider-id <id> --model-type <type> \
   [--support-internet] [--support-reasoning] [--support-tool] [--support-mcp] [--support-vision]
 ```
 
 - `--name`（必需）：模型名称
+- `--model-name`（必需）：模型技术名称（调用时使用的名字）
 - `--provider-id`（必需）：提供商 ID
 - `--model-type`（必需）：模型类型
 - `--support-*`：布尔 flag，标记模型能力
@@ -461,7 +463,7 @@ permission-mode 可选值：DEFAULT、BYPASS、ACCEPT_EDITS、EXPLORE、DONT_ASK
 ```bash
 harnax channel list [--keyword <keyword>] [--type <type>] [--status <0|1>] [--page <n>] [--size <n>]
 harnax channel get <id>
-harnax channel create --name <name> --type <type> [--config '<json>']
+harnax channel create --name <name> --type <type> --agent-id <id> [--config '<json>']
 harnax channel update <id> [--name <name>] [--config '<json>']
 harnax channel delete <id>
 harnax channel toggle <id>
@@ -508,8 +510,8 @@ harnax task list [--name <name>] [--agent-id <id>] [--task-status <status>] [--p
 
 ```bash
 harnax task get <id>
-harnax task create --name <name> --agent-id <id> [--cron <expression>] [--input <input>]
-harnax task update <id> [--name <name>] [--cron <expression>] [--input <input>]
+harnax task create --name <name> --agent-id <id> --cron <expression> --prompt <prompt>
+harnax task update <id> [--name <name>] [--cron <expression>] [--prompt <prompt>]
 harnax task delete <id>
 harnax task toggle <id> --status <0|1>
 ```
@@ -558,7 +560,7 @@ harnax api-key permanent
 ```bash
 harnax tenant list [--name <name>] [--status <0|1>] [--page <n>] [--size <n>]
 harnax tenant get <id>
-harnax tenant create --name <name> [--description <desc>]
+harnax tenant create --name <name> --admin-user-id <id> [--description <desc>]
 harnax tenant delete <id>
 harnax tenant toggle <id> --status <0|1>
 ```
@@ -577,7 +579,7 @@ harnax tenant update-role <tenant-id> <user-id> --role <role>  # 更新用户角
 ```bash
 harnax user list [--keyword <keyword>] [--status <0|1>] [--page <n>] [--size <n>]
 harnax user get <id>
-harnax user create --username <username> --password <password> [--phone <phone>] [--email <email>]
+harnax user create --username <username> --password <password> --nickname <nickname> [--phone <phone>] [--email <email>]
 harnax user update <id> [--username <username>] [--phone <phone>] [--email <email>]
 harnax user delete <id>
 harnax user toggle <id>
@@ -648,7 +650,7 @@ harnax model list
 harnax tool available
 
 # 创建 Agent
-harnax agent create --name "代码助手" --model-id 10 --system-prompt "你是一个专业的代码助手"
+harnax agent create --name "代码助手" --description "代码审查与重构助手" --model-id 10 --system-prompt "你是一个专业的代码助手"
 
 # 查看创建结果
 harnax agent get <返回的id>

@@ -63,6 +63,7 @@ class ProcessLogAdaptorImpl(
     private fun convertToEntity(processLog: ProcessLog): ProcessLogEntity {
         val entity = ProcessLogEntity()
         entity.agentId = processLog.agentId
+        entity.tenantId = processLog.tenantId
         entity.agentName = processLog.agentName
         entity.sessionId = processLog.sessionId
         entity.message = processLog.message

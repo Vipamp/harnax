@@ -223,12 +223,23 @@ class HarnessAgentBuilder {
 
         override fun skillExists(skillName: String): Boolean = this.skills.any { it.name == skillName }
 
-        override fun getRepositoryInfo(): AgentSkillRepositoryInfo = AgentSkillRepositoryInfo("in-memory", "memory", false)
+        override fun getRepositoryInfo(): AgentSkillRepositoryInfo = AgentSkillRepositoryInfo(IN_MEMORY_SKILL_SOURCE, "memory", false)
 
-        override fun getSource(): String = "in-memory"
+        override fun getSource(): String = IN_MEMORY_SKILL_SOURCE
 
         override fun setWriteable(writeable: Boolean) {}
 
         override fun isWriteable(): Boolean = false
+    }
+
+    companion object {
+        /**
+         * Source of [InMemorySkillRepository], the only repository holding what Admin delivered.
+         *
+         * A caller that needs the delivered skills — [HarnessAgentWrapper], which writes them into the
+         * sandbox — selects them by this marker rather than by "every repository present", because the
+         * harness merges its own workspace repository on top of the installed ones.
+         */
+        const val IN_MEMORY_SKILL_SOURCE = "in-memory"
     }
 }

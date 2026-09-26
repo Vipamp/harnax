@@ -2,6 +2,7 @@ package com.agnetix.harnax.admin.service.impl
 
 import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.util.AesUtil
+import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.AgentCliBinding
 import com.agnetix.harnax.entity.AgentMcpBinding
@@ -59,6 +60,9 @@ class AgentSessionRefreshServiceTest {
     @Mock
     private lateinit var mcpBindingMapper: AgentMcpBindingMapper
 
+    @Mock
+    private lateinit var jwtUtil: JwtUtil
+
     /** 使用真实 AesUtil 加解密 SYSTEM key */
     private val aesUtil = AesUtil("test-secret-key-for-unit-tests!!")
 
@@ -84,6 +88,7 @@ class AgentSessionRefreshServiceTest {
         cliBindingMapper,
         mcpBindingMapper,
         aesUtil,
+        jwtUtil,
         routerUrl,
     )
 

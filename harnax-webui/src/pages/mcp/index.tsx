@@ -294,19 +294,36 @@ const McpManagement: React.FC = () => {
     loadDataWithFilters(1);
   };
 
-  /** Agents still binding this server, or an empty list when admin cannot be asked — a warning, not a guard. */
-  const relatedAgents = async (id: number): Promise<API.McpRelatedAgent[]> => {
+  /**
+   * Agents still binding this server, or `failed` when admin could not be asked. Falling back to an empty
+   * list here would drop the delete dialog down to the generic irreversible warning and hide the fact that
+   * the blast radius was never read.
+   */
+  const relatedAgents = async (id: number): Promise<{ agents: API.McpRelatedAgent[] } | { failed: true }> => {
     try {
-      const res = await getMcpRelatedAgents(id);
-      return res.code === 200 ? res.data || [] : [];
+      // skipErrorHandler: the caller owns the single error message for this read, and has to be able to
+      // tell a failure apart from an empty result.
+      const res = await getMcpRelatedAgents(id, { skipErrorHandler: true });
+      return res.code === 200 ? { agents: res.data || [] } : { failed: true };
     } catch {
-      return [];
+      return { failed: true };
     }
   };
 
   /** 删除 MCP */
   const handleRemove = async (id: number) => {
-    const agents = await relatedAgents(id);
+    const result = await relatedAgents(id);
+    if ('failed' in result) {
+      // No dialog at all: the delete stays un-offered until admin can say who depends on this server.
+      messageApi.error(
+        intl.formatMessage({
+          id: 'pages.message.loadFailedRetry',
+          defaultMessage: 'Failed to load the related list, please retry',
+        }),
+      );
+      return;
+    }
+    const agents = result.agents;
     Modal.confirm({
       title: intl.formatMessage({ id: 'pages.message.mcpDeleteConfirm', defaultMessage: 'Are you sure to delete this MCP service?' }),
       content: agents.length

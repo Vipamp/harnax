@@ -17,6 +17,9 @@ class TokenStats : Serializable {
     @Schema(description = "Agent ID")
     var agentId: Long? = null
 
+    @Schema(description = "Owning tenant; NULL means the run was never attributed, and no tenant-scoped read returns such a row")
+    var tenantId: Long? = null
+
     @Schema(description = "Session ID")
     var sessionId: String = ""
 

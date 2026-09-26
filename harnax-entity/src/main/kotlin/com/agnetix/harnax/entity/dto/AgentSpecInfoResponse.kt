@@ -26,6 +26,12 @@ data class AgentSpecInfoResponse(
     @Schema(description = "Agent ID")
     val agentId: Long,
 
+    @Schema(
+        description = "Tenant owning the agent, read from the agent row — never from a request header. " +
+            "Null on a spec from before V50, and the runtime then records its rows unattributed rather than guessing",
+    )
+    val tenantId: Long? = null,
+
     @Schema(description = "Agent name")
     val agentName: String,
 

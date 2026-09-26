@@ -44,6 +44,13 @@ open class TokenStatsMapperTest {
             .withPassword("test")
             .withInitScript("schema-test.sql")
 
+        /**
+         * The seeded rows belong to tenant 1, so this class works in its own tenant: a read scoped to it
+         * cannot be satisfied by anything the fixture inserted, and a read scoped to tenant 1 cannot be
+         * satisfied by anything a case here inserted.
+         */
+        private const val TENANT_ID = 7L
+
         @JvmStatic
         @DynamicPropertySource
         fun properties(registry: DynamicPropertyRegistry) {
@@ -67,6 +74,7 @@ open class TokenStatsMapperTest {
 
     private fun stat(sessionId: String, ts: LocalDateTime) = TokenStats().apply {
         this.sessionId = sessionId
+        tenantId = TENANT_ID
         chatModelId = 1L
         inputToken = 10L
         outputToken = 5L
@@ -89,7 +97,7 @@ open class TokenStatsMapperTest {
             assertTrue(stats.id > 0, "the generated key still comes back")
 
             val (start, end) = around(ts)
-            val bucket = tokenStatsMapper.aggregateByAgent(start, end)!!.single()!!
+            val bucket = tokenStatsMapper.aggregateByAgent(start, end, TENANT_ID)!!.single()!!
             assertNull(bucket["agentId"], "an agent-less row must not report an agent: $bucket")
             assertNull(bucket["agentName"], "there is no agent row to name: $bucket")
             assertEquals(15L, (bucket["grandTotalToken"] as Number).toLong(), "its tokens still count: $bucket")
@@ -102,7 +110,7 @@ open class TokenStatsMapperTest {
             assertEquals(1, tokenStatsMapper.insert(stat("it-lead-overall", ts).apply { agentId = null }))
 
             val (start, end) = around(ts)
-            val overall = tokenStatsMapper.getOverallStats(start, end)!!
+            val overall = tokenStatsMapper.getOverallStats(start, end, TENANT_ID)!!
             assertEquals(0L, (overall["agentCount"] as Number).toLong(), "no agent row backs this consumption: $overall")
             assertEquals(1L, (overall["sessionCount"] as Number).toLong())
             assertEquals(15L, (overall["grandTotalToken"] as Number).toLong())
@@ -117,9 +125,41 @@ open class TokenStatsMapperTest {
             assertEquals(1, tokenStatsMapper.insert(stat("it-agent-kept", ts).apply { agentId = 7L }))
 
             val (start, end) = around(ts)
-            val bucket = tokenStatsMapper.aggregateByAgent(start, end)!!.single()!!
+            val bucket = tokenStatsMapper.aggregateByAgent(start, end, TENANT_ID)!!.single()!!
             assertEquals(7L, (bucket["agentId"] as Number).toLong(), "an id that is there still reports: $bucket")
             assertEquals(15L, (bucket["grandTotalToken"] as Number).toLong())
+        }
+    }
+
+    @Nested
+    @DisplayName("Tenant scoping")
+    inner class TenantScopeTests {
+
+        @Test
+        @DisplayName("aggregateByAgent - one tenant's window never totals another tenant's consumption")
+        fun `aggregateByAgent should keep each tenant in its own bucket`() {
+            val ts = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
+            val neighbour = TENANT_ID + 1
+            assertEquals(1, tokenStatsMapper.insert(stat("it-scope-own", ts).apply { agentId = null }))
+            assertEquals(
+                1,
+                tokenStatsMapper.insert(
+                    stat("it-scope-neighbour", ts).apply {
+                        agentId = null
+                        tenantId = neighbour
+                    },
+                ),
+            )
+
+            val (start, end) = around(ts)
+            val own = tokenStatsMapper.aggregateByAgent(start, end, TENANT_ID)!!.single()!!
+            assertEquals(15L, (own["grandTotalToken"] as Number).toLong(), "only this tenant's row may count: $own")
+
+            val theirs = tokenStatsMapper.aggregateByAgent(start, end, neighbour)!!.single()!!
+            assertEquals(15L, (theirs["grandTotalToken"] as Number).toLong(), "the neighbour sees its own row: $theirs")
+
+            val nobody = tokenStatsMapper.aggregateByAgent(start, end, TENANT_ID + 2)
+            assertTrue(nobody.isNullOrEmpty(), "a tenant with no rows gets no bucket at all: $nobody")
         }
     }
 }

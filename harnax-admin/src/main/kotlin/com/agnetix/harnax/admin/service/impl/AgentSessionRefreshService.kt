@@ -1,7 +1,8 @@
 package com.agnetix.harnax.admin.service.impl
 
-import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.util.AesUtil
+import com.agnetix.harnax.admin.util.JwtUtil
+import com.agnetix.harnax.admin.util.TenantResolver
 import com.agnetix.harnax.mapper.AgentCliBindingMapper
 import com.agnetix.harnax.mapper.AgentMapper
 import com.agnetix.harnax.mapper.AgentMcpBindingMapper
@@ -34,6 +35,7 @@ class AgentSessionRefreshService(
     private val cliBindingMapper: AgentCliBindingMapper,
     private val mcpBindingMapper: AgentMcpBindingMapper,
     private val aesUtil: AesUtil,
+    private val jwtUtil: JwtUtil,
     @Value("\${harnax.router.url:http://localhost:8081}")
     private val routerUrl: String,
 ) {
@@ -155,8 +157,11 @@ class AgentSessionRefreshService(
             RelatedAgentInfo(agentId = agent.id, agentName = agent.name, status = agent.status)
         }
 
-    /** Same fallback as [com.agnetix.harnax.admin.service.impl.AgentServiceImpl.getAgent]. */
-    private fun currentTenantId(): Long = TenantContext.getTenantId() ?: 1
+    /**
+     * The tenant this request acts within — the same chain [AgentServiceImpl] reads, so a related-agent
+     * list here and the agent detail there cannot disagree about whose workspace the request is in.
+     */
+    private fun currentTenantId(): Long = TenantResolver.resolve(jwtUtil)
 
     /**
      * Sessions of every agent bound to the given CLI, so a CLI change can be

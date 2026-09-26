@@ -87,7 +87,7 @@ harnax logout
 ```bash
 harnax agent list [--name X] [--status N] [--page N] [--size N]
 harnax agent get <id>
-harnax agent create --name X --model-id X --system-prompt X
+harnax agent create --name X --description X --model-id X --system-prompt X
 harnax agent update <id> [--name X] [--model-id X] [--system-prompt X]
 harnax agent delete <id>
 harnax agent toggle <id>
@@ -98,7 +98,7 @@ harnax agent toggle <id>
 ```bash
 harnax model list [--name X] [--provider-id X] [--model-type X] [--status N]
 harnax model get <id>
-harnax model create --name X --provider-id X --model-type X
+harnax model create --name X --model-name X --provider-id X --model-type X
 harnax model update <id> [--name X]
 harnax model delete <id>
 harnax model toggle <id>
@@ -182,7 +182,7 @@ harnax session config update <session-id> [--enable-think] [--enable-search] [--
 ```bash
 harnax channel list [--keyword X] [--type X] [--status N]
 harnax channel get <id>
-harnax channel create --name X --type X [--config X]
+harnax channel create --name X --type X --agent-id X [--config X]
 harnax channel update <id> [--name X] [--config X]
 harnax channel delete <id>
 harnax channel toggle <id>
@@ -204,8 +204,8 @@ harnax env-var toggle <id>
 ```bash
 harnax task list [--name X] [--agent-id X] [--task-status X]
 harnax task get <id>
-harnax task create --name X --agent-id X [--cron X] [--input X]
-harnax task update <id> [--name X] [--cron X] [--input X]
+harnax task create --name X --agent-id X --cron X --prompt X
+harnax task update <id> [--name X] [--cron X] [--prompt X]
 harnax task delete <id>
 harnax task toggle <id> --status N
 harnax task start <id>
@@ -232,7 +232,7 @@ harnax api-key permanent
 ```bash
 harnax tenant list [--name X] [--status N]
 harnax tenant get <id>
-harnax tenant create --name X [--description X]
+harnax tenant create --name X --admin-user-id X [--description X]
 harnax tenant delete <id>
 harnax tenant toggle <id> --status N
 harnax tenant users <id>
@@ -246,7 +246,7 @@ harnax tenant update-role <tenant-id> <user-id> --role X
 ```bash
 harnax user list [--keyword X] [--status N]
 harnax user get <id>
-harnax user create --username X --password X [--phone X] [--email X]
+harnax user create --username X --password X --nickname X [--phone X] [--email X]
 harnax user update <id> [--username X] [--phone X] [--email X]
 harnax user delete <id>
 harnax user toggle <id>
@@ -319,7 +319,7 @@ harnax agent get 1 --output json | jq '.data.modelId'
 harnax model list
 
 # 2. 创建 Agent
-harnax agent create --name "代码助手" --model-id 10 --system-prompt "你是一个专业的代码助手"
+harnax agent create --name "代码助手" --description "代码审查与重构助手" --model-id 10 --system-prompt "你是一个专业的代码助手"
 
 # 3. 查看可用工具
 harnax tool available

@@ -524,9 +524,13 @@ services:
       # Second line of defence for stdio MCP servers: this is the runtime that would spawn the
       # process. Admin holds such rows back from delivery as well; both have to be on to run one.
       HARNAX_MCP_STDIO_ENABLED: ${HARNAX_MCP_STDIO_ENABLED:-false}
-      # Budget of one agent turn, batch and streaming alike. Team leads and members are bounded by
-      # harness.team.* instead, so this does not apply to them.
+      # Budget of one agent turn, batch and streaming alike. A turn inside a team is not bound by this,
+      # it gets the key below.
       HARNAX_TURN_TIMEOUT_SECONDS: ${HARNAX_TURN_TIMEOUT_SECONDS:-300}
+      # Budget of one team turn. Has to stay above harness.team.member-turn-timeout-seconds (900) and
+      # confirm-timeout-seconds (600), otherwise this is the limit that fires and the whole run dies
+      # where a failed delegation should have come back to the lead.
+      HARNAX_TEAM_TURN_TIMEOUT_SECONDS: ${HARNAX_TEAM_TURN_TIMEOUT_SECONDS:-1800}
     ports:
       - "28082:8082"
     volumes:

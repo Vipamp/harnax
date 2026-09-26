@@ -359,7 +359,7 @@ class HarnessAgentLauncher(
                         if (toolBox != null) {
                             toolBox.init(
                                 toolCallLogAdaptor,
-                                SessionMetaContext(agentSpec.attributableAgentId, sessionId),
+                                SessionMetaContext(agentSpec.attributableAgentId, sessionId, agentSpec.tenantId),
                                 userIdentifier,
                             )
                             agentBuilder.addTool(toolBox)
@@ -429,11 +429,13 @@ class HarnessAgentLauncher(
 
         // ----- Skills -----
         // A lead loads its skills the same way a member does: they are part of the team's own
-        // configuration (design D5), and their text is what a skill mostly is. What a lead cannot do is
-        // carry a skill's files — it has no sandbox to project them into — so a skill that ships any is
-        // loaded for its instructions and reported for the rest, rather than dropped. The absent files
-        // cannot strand the model on a `<files-root>` path the way a member's can: `disableShellTool()`
-        // above makes the harness resolve to ShellPathPolicy.noShell(), which never renders that prefix.
+        // configuration (design D5), and their text is what a skill mostly is. Its files are projected
+        // into the session's container like any other agent's — what a lead cannot do is open them, since
+        // `disableFilesystemTools()` and `disableShellTool()` below take away both ways of reaching a
+        // workspace. So a skill that ships files is loaded for its instructions and reported for the rest,
+        // rather than dropped. Nothing strands the model on a `<files-root>` path the way a member can be:
+        // `disableShellTool()` makes the harness resolve to ShellPathPolicy.noShell(), which never renders
+        // that prefix.
         agentSpec.skills.forEach {
             // A miss means the row was deleted between delivery and build, or it holds something
             // `AgentSkill` refuses (see SkillAdaptorImpl). Either way the loader has already logged
@@ -443,7 +445,8 @@ class HarnessAgentLauncher(
                 agentBuilder.addSkill(skill)
                 if (isLead && skill.resources.isNotEmpty()) {
                     log.warn(
-                        "Skill '{}' (id={}) is loaded for lead '{}' without its {} file(s) {}: a lead has no filesystem or shell tool to reach them",
+                        "Skill '{}' (id={}) is loaded for lead '{}' and its {} file(s) {} are projected into the " +
+                            "container, but a lead has no filesystem or shell tool to open them",
                         it.skillName,
                         it.skillId,
                         agentSpec.name,
@@ -459,17 +462,20 @@ class HarnessAgentLauncher(
         // ----- Team tools -----
         // Registered after the tool sweep, so nothing on the ordinary path removes them: that sweep only
         // walks ToolBoxes known to the registry, and these are built here.
+        // One context for both roles: what a box logs is this run's attribution, and the spec it came
+        // from already carries the run's own tenant (V50).
+        val teamSessionMeta = SessionMetaContext(agentSpec.attributableAgentId, sessionId, agentSpec.tenantId)
         val teamToolNames: Set<String> = when (teamRole) {
             is TeamRole.Lead -> {
                 val toolBox = TeamLeadToolBox(teamRole.orchestrator)
-                toolBox.init(toolCallLogAdaptor, SessionMetaContext(agentSpec.attributableAgentId, sessionId), userIdentifier)
+                toolBox.init(toolCallLogAdaptor, teamSessionMeta, userIdentifier)
                 agentBuilder.addTool(toolBox)
                 TeamLeadToolBox.TOOL_NAMES
             }
 
             is TeamRole.Member -> {
                 val toolBox = TeamMemberToolBox(teamRole.orchestrator, teamRole.member.memberAgentId)
-                toolBox.init(toolCallLogAdaptor, SessionMetaContext(agentSpec.attributableAgentId, sessionId), userIdentifier)
+                toolBox.init(toolCallLogAdaptor, teamSessionMeta, userIdentifier)
                 agentBuilder.addTool(toolBox)
                 TeamMemberToolBox.TOOL_NAMES
             }
@@ -483,7 +489,13 @@ class HarnessAgentLauncher(
         // No custom ConfirmToolsMiddleware needed.
         MIDDLEWARE_SET.forEach { middleware ->
             if (middleware is ProcessLogMiddleware) {
-                middleware.initial(processLogAdaptor, agentSpec.attributableAgentId, agentSpec.name, sessionId)
+                middleware.initial(
+                    processLogAdaptor,
+                    agentSpec.attributableAgentId,
+                    agentSpec.name,
+                    sessionId,
+                    agentSpec.tenantId,
+                )
             }
             agentBuilder.addMiddleware(middleware)
         }
@@ -654,6 +666,7 @@ class HarnessAgentLauncher(
             dangerousTools = needConfirmedTools + dangerousInputTools,
             tokenStatBuilder = TokenStatBuilder()
                 .agentId(agentSpec.attributableAgentId)
+                .tenantId(agentSpec.tenantId)
                 .sessionId(sessionId)
                 .modelId(agentSpec.chatModelId),
             tokenStatAdaptor = tokenStatAdaptor,
@@ -669,11 +682,37 @@ class HarnessAgentLauncher(
             outputFileDetector = if (teamRole is TeamRole.Member) null else outputFileDetector,
             outputFileStore = if (teamRole is TeamRole.Member) null else outputFileStore,
             teamOrchestrator = (teamRole as? TeamRole.Lead)?.orchestrator,
-            // A team wrapper gets no turn budget of its own: the team layer's own limits wrap this
-            // stream from the outside, and inside a team a long silence is normal (a member running a
-            // long tool, a lead parked on a confirmation) rather than a stuck turn.
-            turnTimeoutSeconds = if (teamRole == null) harnessConfig.turnTimeoutSeconds else 0L,
+            // A team turn gets the team's own budget rather than no budget. The silence it has to
+            // tolerate is real and bounded elsewhere: a member can run one tool for
+            // `memberTurnTimeoutSeconds` without the root stream seeing an event (it forwards what the
+            // member emits, so a quiet member is a quiet root), and a parked confirmation heartbeats
+            // every `confirmHeartbeatSeconds`. That is why this number sits above both of them — see
+            // `TeamConfig.turnTimeoutSeconds`.
+            turnTimeoutSeconds = turnBudget(teamRole),
         )
+    }
+
+    /**
+     * The turn budget for one wrapper: the lone-agent one, or the team one for either team role.
+     *
+     * A member wrapper gets the same number and never trips it — [TeamOrchestrator] wraps a member's
+     * stream with the tighter `TeamConfig.memberTurnTimeoutSeconds` from outside. Say so when an
+     * operator has configured the two the wrong way round, because then this is the limit that fires,
+     * and what comes back is a dead conversation rather than the failed delegation the lead could have
+     * worked around.
+     */
+    internal fun turnBudget(teamRole: TeamRole?): Long {
+        if (teamRole == null) return harnessConfig.turnTimeoutSeconds
+        val team = harnessConfig.team
+        if (team.turnTimeoutSeconds <= team.memberTurnTimeoutSeconds) {
+            log.warn(
+                "harness.team.turn-timeout-seconds = {} is not above member-turn-timeout-seconds = {}, " +
+                    "so a member that runs one long tool kills the whole run instead of failing its delegation",
+                team.turnTimeoutSeconds,
+                team.memberTurnTimeoutSeconds,
+            )
+        }
+        return team.turnTimeoutSeconds
     }
 
     /**

@@ -62,6 +62,7 @@ class TokenStatAdaptorImpl(
     private fun convertToEntity(tokenStat: TokenStat): TokenStats {
         val tokenStats = TokenStats()
         tokenStats.agentId = tokenStat.agentId
+        tokenStats.tenantId = tokenStat.tenantId
         tokenStats.chatModelId = tokenStat.modelId
         tokenStats.sessionId = tokenStat.sessionId
         tokenStats.inputToken = tokenStat.inputToken.toLong()

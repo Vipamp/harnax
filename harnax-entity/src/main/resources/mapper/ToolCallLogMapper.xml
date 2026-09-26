@@ -4,12 +4,15 @@
 
     <!-- Append-only: `insert` is the only statement this mapper has a caller for. Rows are kept even
          after the agent or session they name is gone, so no select/update/delete belongs here -->
+    <!-- `tenant_id` is stamped on the way in (V50): it is knowable only from the AgentSpec the run was
+         handed, so a later round could not recover it for a row written in between. A call logged with no
+         tenant resolved stays NULL and belongs to no tenant's counts. -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO tool_call_log (
-        agent_id, session_id, tool_name, args, result, success, start_time, end_time, duration, ts
+        agent_id, tenant_id, session_id, tool_name, args, result, success, start_time, end_time, duration, ts
         ) VALUES (
-        #{agentId}, #{sessionId}, #{toolName}, #{args}, #{result}, #{success}, #{startTime}, #{endTime}, #{duration},
-        #{ts}
+        #{agentId}, #{tenantId}, #{sessionId}, #{toolName}, #{args}, #{result}, #{success}, #{startTime}, #{endTime},
+        #{duration}, #{ts}
         )
     </insert>
 </mapper>

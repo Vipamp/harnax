@@ -116,6 +116,75 @@ class SkillRepositoryServiceImplTest {
         RequestContextHolder.resetRequestAttributes()
     }
 
+    /**
+     * Makes the caller's own token claim [tenantId] while the request keeps carrying no `X-Tenant-ID`
+     * header — the shape a CLI request arrives in. This is the request the skill-repository service used
+     * to answer with tenant 1 for, while every other admin service answered with the claimed tenant.
+     */
+    private fun callerTokenClaimsTenant(tenantId: Long) {
+        `when`(jwtUtil.getTenantIdFromToken("mock-token")).thenReturn(tenantId)
+    }
+
+    /**
+     * The tenant a header-less request acts within, now the chain every other admin service shares.
+     *
+     * The three sites below are one request's read filter, its name probe and its ownership stamp, so
+     * they have to agree: a collision checked against tenant 1 while the row is created in tenant 3 (or
+     * the other way round) lets two repositories of the same name into one workspace, and a list filtered
+     * by another tenant never shows the row the create just wrote.
+     */
+    @Nested
+    @DisplayName("Tenant of a header-less request")
+    inner class HeaderlessRequestTenantTests {
+
+        @Test
+        @DisplayName("page - lists within the tenant the caller's account names, not within tenant 1")
+        fun `page should list within the caller tenant when no header is sent`() {
+            callerTokenClaimsTenant(3L)
+            `when`(
+                skillRepositoryMapper.selectRepositoryList(null, null, "admin", 3L, "builtin-cli-skills"),
+            ).thenReturn(listOf(testRepository))
+
+            val page = service.page(null, null, 1, 10)
+
+            assertEquals("test-repo", page.records.single().name)
+            verify(skillRepositoryMapper).selectRepositoryList(null, null, "admin", 3L, "builtin-cli-skills")
+        }
+
+        @Test
+        @DisplayName("getActiveRepositories - reads the caller's tenant, not the default one")
+        fun `getActiveRepositories should read the caller tenant when no header is sent`() {
+            callerTokenClaimsTenant(3L)
+            `when`(skillRepositoryMapper.selectActiveRepositories(eq(3L))).thenReturn(listOf(testRepository))
+
+            val result = service.getActiveRepositories()
+
+            assertEquals(1, result.size)
+            verify(skillRepositoryMapper).selectActiveRepositories(eq(3L))
+        }
+
+        @Test
+        @DisplayName("createSkillRepository - probes and stamps the caller's own tenant")
+        fun `createSkillRepository should probe and stamp the caller tenant when no header is sent`() {
+            callerTokenClaimsTenant(3L)
+            val request = SkillRepositoryCreateRequest(
+                name = "tenant-three-repo",
+                url = "https://github.com/t3/skills",
+                branch = "main",
+            )
+            `when`(skillRepositoryMapper.selectByName(eq("tenant-three-repo"), eq(3L))).thenReturn(null)
+            `when`(skillRepositoryMapper.insert(any())).thenReturn(1)
+
+            assertTrue(service.createSkillRepository(request))
+
+            // The probe and the stamp take the same value: one resolution, one workspace
+            verify(skillRepositoryMapper).selectByName(eq("tenant-three-repo"), eq(3L))
+            val captor = argumentCaptor<SkillRepository>()
+            verify(skillRepositoryMapper).insert(captor.capture())
+            assertEquals(3L, captor.firstValue.tenantId)
+        }
+    }
+
     @Nested
     @DisplayName("Create Repository Tests")
     inner class CreateRepositoryTests {

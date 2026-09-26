@@ -170,6 +170,11 @@ var modelCreateCmd = &cobra.Command{
 		if v, _ := cmd.Flags().GetString("name"); cmd.Flags().Changed("name") {
 			body["name"] = v
 		}
+		// modelName has no default on ModelCreateRequest, so the binding itself refuses a body
+		// without it ("Request parameter format error") - it has to be in the payload.
+		if v, _ := cmd.Flags().GetString("model-name"); cmd.Flags().Changed("model-name") {
+			body["modelName"] = v
+		}
 		if v, _ := cmd.Flags().GetInt64("provider-id"); cmd.Flags().Changed("provider-id") {
 			body["providerId"] = v
 		}
@@ -315,6 +320,7 @@ func init() {
 	modelListCmd.Flags().Int("size", 10, "Page size")
 
 	modelCreateCmd.Flags().String("name", "", "Model name")
+	modelCreateCmd.Flags().String("model-name", "", "Model technical name")
 	modelCreateCmd.Flags().Int64("provider-id", 0, "Provider ID")
 	modelCreateCmd.Flags().String("model-type", "", "Model type")
 	modelCreateCmd.Flags().Bool("support-internet", false, "Support internet access")
@@ -323,6 +329,7 @@ func init() {
 	modelCreateCmd.Flags().Bool("support-mcp", false, "Support MCP")
 	modelCreateCmd.Flags().Bool("support-vision", false, "Support vision")
 	modelCreateCmd.MarkFlagRequired("name")
+	modelCreateCmd.MarkFlagRequired("model-name")
 	modelCreateCmd.MarkFlagRequired("provider-id")
 	modelCreateCmd.MarkFlagRequired("model-type")
 

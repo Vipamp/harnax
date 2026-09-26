@@ -143,6 +143,12 @@ var tenantCreateCmd = &cobra.Command{
 		if cmd.Flags().Changed("name") {
 			body["name"], _ = cmd.Flags().GetString("name")
 		}
+		// adminUserId is a non-null parameter of CreateTenantRequest: a body without it is refused
+		// during binding and never reaches the service.
+		if cmd.Flags().Changed("admin-user-id") {
+			v, _ := cmd.Flags().GetInt64("admin-user-id")
+			body["adminUserId"] = v
+		}
 		if cmd.Flags().Changed("description") {
 			body["description"], _ = cmd.Flags().GetString("description")
 		}
@@ -326,8 +332,10 @@ func init() {
 	tenantListCmd.Flags().Int("size", 20, "Page size")
 
 	tenantCreateCmd.Flags().String("name", "", "Tenant name")
+	tenantCreateCmd.Flags().Int64("admin-user-id", 0, "Tenant administrator user ID")
 	tenantCreateCmd.Flags().String("description", "", "Tenant description")
 	tenantCreateCmd.MarkFlagRequired("name")
+	tenantCreateCmd.MarkFlagRequired("admin-user-id")
 
 	tenantToggleCmd.Flags().Int("status", 0, "Status value")
 	tenantToggleCmd.MarkFlagRequired("status")

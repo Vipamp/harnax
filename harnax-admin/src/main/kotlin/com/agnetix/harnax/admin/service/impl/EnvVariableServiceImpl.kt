@@ -1,16 +1,15 @@
 package com.agnetix.harnax.admin.service.impl
 
-import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.EnvVariableCreateRequest
 import com.agnetix.harnax.admin.dto.EnvVariableResponse
 import com.agnetix.harnax.admin.dto.EnvVariableUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.i18n.MessageUtil
-import com.agnetix.harnax.admin.security.SecurityUtils
 import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.admin.util.JwtUtil
+import com.agnetix.harnax.admin.util.TenantResolver
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.EnvVariable
 import com.agnetix.harnax.mapper.AgentMapper
@@ -60,20 +59,11 @@ class EnvVariableServiceImpl(
     /**
      * The tenant this request acts within.
      *
-     * Copy of `McpServerServiceImpl.currentTenantId`, for the same reason: `TenantInterceptor` only
-     * populates the ThreadLocal when an `X-Tenant-ID` header arrives with it, so a header-less
-     * request would otherwise create rows inside tenant 1 — a workspace the caller may not belong to
-     * — and default the update/delete/toggle permission checks there too.
+     * Resolved by [TenantResolver] — the same chain every other admin service now reads through, so one
+     * request cannot resolve one tenant here and another one there. See that resolver for why a header-less
+     * request must not fall straight to tenant 1.
      */
-    private fun currentTenantId(): Long = TenantContext.getTenantId() ?: tenantFromToken() ?: tenantFromUserRecord() ?: DEFAULT_TENANT_ID
-
-    private fun tenantFromToken(): Long? = UserContextUtil.getToken()?.let { token ->
-        runCatching { jwtUtil.getTenantIdFromToken(token) }.getOrNull()?.takeIf { it > 0 }
-    }
-
-    private fun tenantFromUserRecord(): Long? = runCatching {
-        SecurityUtils.getCurrentUser()?.tenantId?.takeIf { it > 0 }
-    }.getOrNull()
+    private fun currentTenantId(): Long = TenantResolver.resolve(jwtUtil)
 
     @Transactional(rollbackFor = [Exception::class])
     override fun createEnvVariable(request: EnvVariableCreateRequest): Boolean = try {
@@ -348,8 +338,5 @@ class EnvVariableServiceImpl(
 
         /** Enough to point at the offenders; the count in the message is the full one. */
         const val MAX_REFERRING_AGENTS = 5
-
-        /** Last resort only — see [currentTenantId]. */
-        const val DEFAULT_TENANT_ID = 1L
     }
 }

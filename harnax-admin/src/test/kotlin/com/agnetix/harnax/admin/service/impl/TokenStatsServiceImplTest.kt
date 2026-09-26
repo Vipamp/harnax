@@ -1,13 +1,12 @@
 package com.agnetix.harnax.admin.service.impl
 
-import com.agnetix.harnax.entity.TokenStats
 import com.agnetix.harnax.mapper.TokenStatsMapper
 import org.junit.jupiter.api.Assertions.*
-import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.Mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
@@ -34,22 +33,8 @@ class TokenStatsServiceImplTest {
     @Mock
     private lateinit var tokenStatsMapper: TokenStatsMapper
 
-    private lateinit var testTokenStats: TokenStats
-
-    @BeforeEach
-    fun setUp() {
-        testTokenStats = TokenStats().apply {
-            id = 1L
-            agentId = 100L
-            sessionId = "web-session-1"
-            chatModelId = 1L
-            inputToken = 100L
-            outputToken = 200L
-            totalToken = 300L
-            fee = BigDecimal("0.15")
-            ts = LocalDateTime.now()
-        }
-    }
+    /** Not tenant 1: every stub names this tenant, so a service that read the default workspace instead would match nothing. */
+    private val tenantId = 7L
 
     private fun createService(): TokenStatsServiceImpl = TokenStatsServiceImpl(
         tokenStatsMapper = tokenStatsMapper,
@@ -75,39 +60,6 @@ class TokenStatsServiceImplTest {
         )
         row.putAll(extra)
         return row
-    }
-
-    @Nested
-    @DisplayName("Save Token Stats Tests")
-    inner class SaveTokenStatsTests {
-
-        @Test
-        @DisplayName("saveTokenStats - Save token consumption record successfully")
-        fun `saveTokenStats should save token stats successfully`() {
-            // Given
-            `when`(tokenStatsMapper.insert(testTokenStats)).thenReturn(1)
-
-            // When
-            val result = createService().saveTokenStats(testTokenStats)
-
-            // Then
-            assertTrue(result)
-            verify(tokenStatsMapper).insert(testTokenStats)
-        }
-
-        @Test
-        @DisplayName("saveTokenStats - Return false when insert fails")
-        fun `saveTokenStats should return false when insert fails`() {
-            // Given
-            `when`(tokenStatsMapper.insert(testTokenStats)).thenReturn(0)
-
-            // When
-            val result = createService().saveTokenStats(testTokenStats)
-
-            // Then
-            assertFalse(result)
-            verify(tokenStatsMapper).insert(testTokenStats)
-        }
     }
 
     @Nested
@@ -156,13 +108,13 @@ class TokenStatsServiceImplTest {
                 "totalFee" to 0.85,
             )
 
-            `when`(tokenStatsMapper.getOverallStats(startTime, endTime)).thenReturn(overallMap)
-            `when`(tokenStatsMapper.aggregateByModel(startTime, endTime)).thenReturn(mutableListOf(modelRow))
-            `when`(tokenStatsMapper.aggregateBySession(startTime, endTime)).thenReturn(mutableListOf(sessionRow))
-            `when`(tokenStatsMapper.aggregateByAgent(startTime, endTime)).thenReturn(mutableListOf(agentRow))
+            `when`(tokenStatsMapper.getOverallStats(startTime, endTime, tenantId)).thenReturn(overallMap)
+            `when`(tokenStatsMapper.aggregateByModel(startTime, endTime, tenantId)).thenReturn(mutableListOf(modelRow))
+            `when`(tokenStatsMapper.aggregateBySession(startTime, endTime, tenantId)).thenReturn(mutableListOf(sessionRow))
+            `when`(tokenStatsMapper.aggregateByAgent(startTime, endTime, tenantId)).thenReturn(mutableListOf(agentRow))
 
             // When
-            val result = createService().getAggregationStats(startTime, endTime)
+            val result = createService().getAggregationStats(startTime, endTime, tenantId)
 
             // Then
             assertNotNull(result)
@@ -184,10 +136,10 @@ class TokenStatsServiceImplTest {
             assertEquals(100L, result.agentStats?.get(0)?.agentId)
             assertEquals("Test Agent", result.agentStats?.get(0)?.agentName)
 
-            verify(tokenStatsMapper).getOverallStats(startTime, endTime)
-            verify(tokenStatsMapper).aggregateByModel(startTime, endTime)
-            verify(tokenStatsMapper).aggregateBySession(startTime, endTime)
-            verify(tokenStatsMapper).aggregateByAgent(startTime, endTime)
+            verify(tokenStatsMapper).getOverallStats(startTime, endTime, tenantId)
+            verify(tokenStatsMapper).aggregateByModel(startTime, endTime, tenantId)
+            verify(tokenStatsMapper).aggregateBySession(startTime, endTime, tenantId)
+            verify(tokenStatsMapper).aggregateByAgent(startTime, endTime, tenantId)
         }
 
         @Test
@@ -197,13 +149,13 @@ class TokenStatsServiceImplTest {
             val startTime = "2026-01-01 00:00:00"
             val endTime = "2026-01-31 23:59:59"
 
-            `when`(tokenStatsMapper.getOverallStats(startTime, endTime)).thenReturn(null)
-            `when`(tokenStatsMapper.aggregateByModel(startTime, endTime)).thenReturn(mutableListOf())
-            `when`(tokenStatsMapper.aggregateBySession(startTime, endTime)).thenReturn(mutableListOf())
-            `when`(tokenStatsMapper.aggregateByAgent(startTime, endTime)).thenReturn(mutableListOf())
+            `when`(tokenStatsMapper.getOverallStats(startTime, endTime, tenantId)).thenReturn(null)
+            `when`(tokenStatsMapper.aggregateByModel(startTime, endTime, tenantId)).thenReturn(mutableListOf())
+            `when`(tokenStatsMapper.aggregateBySession(startTime, endTime, tenantId)).thenReturn(mutableListOf())
+            `when`(tokenStatsMapper.aggregateByAgent(startTime, endTime, tenantId)).thenReturn(mutableListOf())
 
             // When
-            val result = createService().getAggregationStats(startTime, endTime)
+            val result = createService().getAggregationStats(startTime, endTime, tenantId)
 
             // Then
             assertNotNull(result)
@@ -228,10 +180,10 @@ class TokenStatsServiceImplTest {
             val endTime = "2026-01-01 02:00:00"
             val dataRow = timeSeriesRow(LocalDateTime.of(2026, 1, 1, 0, 0, 0))
 
-            `when`(tokenStatsMapper.getTimeSeriesByHour(startTime, endTime)).thenReturn(mutableListOf(dataRow))
+            `when`(tokenStatsMapper.getTimeSeriesByHour(startTime, endTime, tenantId)).thenReturn(mutableListOf(dataRow))
 
             // When
-            val result = createService().getTimeSeriesData(startTime, endTime, "hour")
+            val result = createService().getTimeSeriesData(startTime, endTime, "hour", tenantId)
 
             // Then
             assertNotNull(result.timeSeriesData)
@@ -242,7 +194,7 @@ class TokenStatsServiceImplTest {
             // Filled points have zero values
             assertEquals(0L, result.timeSeriesData?.get(1)?.totalInputToken)
             assertEquals(0L, result.timeSeriesData?.get(2)?.grandTotalToken)
-            verify(tokenStatsMapper).getTimeSeriesByHour(startTime, endTime)
+            verify(tokenStatsMapper).getTimeSeriesByHour(startTime, endTime, tenantId)
         }
 
         @Test
@@ -252,10 +204,10 @@ class TokenStatsServiceImplTest {
             val startTime = "2026-01-01 00:00:00"
             val endTime = "2026-01-03 00:00:00"
 
-            `when`(tokenStatsMapper.getTimeSeriesByDay(startTime, endTime)).thenReturn(mutableListOf())
+            `when`(tokenStatsMapper.getTimeSeriesByDay(startTime, endTime, tenantId)).thenReturn(mutableListOf())
 
             // When
-            val result = createService().getTimeSeriesData(startTime, endTime, "day")
+            val result = createService().getTimeSeriesData(startTime, endTime, "day", tenantId)
 
             // Then
             assertNotNull(result.timeSeriesData)
@@ -266,7 +218,7 @@ class TokenStatsServiceImplTest {
                 assertEquals(0L, it.totalOutputToken)
                 assertEquals(0L, it.grandTotalToken)
             }
-            verify(tokenStatsMapper).getTimeSeriesByDay(startTime, endTime)
+            verify(tokenStatsMapper).getTimeSeriesByDay(startTime, endTime, tenantId)
         }
 
         @Test
@@ -283,10 +235,10 @@ class TokenStatsServiceImplTest {
                 fee = BigDecimal("0.4"),
             )
 
-            `when`(tokenStatsMapper.getTimeSeriesByMonth(startTime, endTime)).thenReturn(mutableListOf(dataRow))
+            `when`(tokenStatsMapper.getTimeSeriesByMonth(startTime, endTime, tenantId)).thenReturn(mutableListOf(dataRow))
 
             // When
-            val result = createService().getTimeSeriesData(startTime, endTime, "month")
+            val result = createService().getTimeSeriesData(startTime, endTime, "month", tenantId)
 
             // Then - point count alone hid the bug, the row has to land on its own month
             val months = result.timeSeriesData!!
@@ -297,7 +249,7 @@ class TokenStatsServiceImplTest {
             assertEquals(40L, months[2].totalInputToken)
             assertEquals(60L, months[2].totalOutputToken)
             assertEquals(100L, months[2].grandTotalToken)
-            verify(tokenStatsMapper).getTimeSeriesByMonth(startTime, endTime)
+            verify(tokenStatsMapper).getTimeSeriesByMonth(startTime, endTime, tenantId)
         }
 
         @Test
@@ -314,10 +266,10 @@ class TokenStatsServiceImplTest {
                 fee = BigDecimal("0.4"),
             )
 
-            `when`(tokenStatsMapper.getTimeSeriesByWeek(startTime, endTime)).thenReturn(mutableListOf(dataRow))
+            `when`(tokenStatsMapper.getTimeSeriesByWeek(startTime, endTime, tenantId)).thenReturn(mutableListOf(dataRow))
 
             // When
-            val result = createService().getTimeSeriesData(startTime, endTime, "week")
+            val result = createService().getTimeSeriesData(startTime, endTime, "week", tenantId)
 
             // Then
             val weeks = result.timeSeriesData!!
@@ -326,8 +278,8 @@ class TokenStatsServiceImplTest {
             assertEquals(0L, weeks[0].grandTotalToken)
             assertEquals("2026-01-12 00:00:00", weeks[1].timePoint)
             assertEquals(100L, weeks[1].grandTotalToken)
-            verify(tokenStatsMapper).getTimeSeriesByWeek(startTime, endTime)
-            verify(tokenStatsMapper, never()).getTimeSeriesByDay(anyOrNull(), anyOrNull())
+            verify(tokenStatsMapper).getTimeSeriesByWeek(startTime, endTime, tenantId)
+            verify(tokenStatsMapper, never()).getTimeSeriesByDay(anyOrNull(), anyOrNull(), anyLong())
         }
 
         @Test
@@ -337,15 +289,15 @@ class TokenStatsServiceImplTest {
             val startTime = "2026-01-01 00:00:00"
             val endTime = "2026-01-01 00:00:00"
 
-            `when`(tokenStatsMapper.getTimeSeriesByDay(startTime, endTime)).thenReturn(mutableListOf())
+            `when`(tokenStatsMapper.getTimeSeriesByDay(startTime, endTime, tenantId)).thenReturn(mutableListOf())
 
             // When
-            val result = createService().getTimeSeriesData(startTime, endTime, "quarter")
+            val result = createService().getTimeSeriesData(startTime, endTime, "quarter", tenantId)
 
             // Then
             assertNotNull(result.timeSeriesData)
             assertEquals(1, result.timeSeriesData?.size)
-            verify(tokenStatsMapper).getTimeSeriesByDay(startTime, endTime)
+            verify(tokenStatsMapper).getTimeSeriesByDay(startTime, endTime, tenantId)
         }
     }
 
@@ -364,10 +316,10 @@ class TokenStatsServiceImplTest {
                 extra = mapOf("modelId" to 1L, "modelName" to "gpt-4"),
             )
 
-            `when`(tokenStatsMapper.getModelTimeSeriesByHour(startTime, endTime)).thenReturn(mutableListOf(dataRow))
+            `when`(tokenStatsMapper.getModelTimeSeriesByHour(startTime, endTime, tenantId)).thenReturn(mutableListOf(dataRow))
 
             // When
-            val result = createService().getModelTimeSeriesData(startTime, endTime, "hour")
+            val result = createService().getModelTimeSeriesData(startTime, endTime, "hour", tenantId)
 
             // Then
             assertNotNull(result.timeSeriesData)
@@ -380,7 +332,7 @@ class TokenStatsServiceImplTest {
             // Filled point keeps dimension info
             assertEquals("gpt-4", result.timeSeriesData?.get(1)?.dimensionName)
             assertEquals(0L, result.timeSeriesData?.get(1)?.totalInputToken)
-            verify(tokenStatsMapper).getModelTimeSeriesByHour(startTime, endTime)
+            verify(tokenStatsMapper).getModelTimeSeriesByHour(startTime, endTime, tenantId)
         }
 
         @Test
@@ -394,10 +346,10 @@ class TokenStatsServiceImplTest {
                 extra = mapOf("modelId" to 1L, "modelName" to null),
             )
 
-            `when`(tokenStatsMapper.getModelTimeSeriesByHour(startTime, endTime)).thenReturn(mutableListOf(dataRow))
+            `when`(tokenStatsMapper.getModelTimeSeriesByHour(startTime, endTime, tenantId)).thenReturn(mutableListOf(dataRow))
 
             // When
-            val result = createService().getModelTimeSeriesData(startTime, endTime, "hour")
+            val result = createService().getModelTimeSeriesData(startTime, endTime, "hour", tenantId)
 
             // Then - the zero-filled second bucket copies the dimension and must not blow up on it
             val hours = result.timeSeriesData!!
@@ -414,16 +366,16 @@ class TokenStatsServiceImplTest {
             val startTime = "2026-01-01 00:00:00"
             val endTime = "2026-01-01 00:00:00"
 
-            `when`(tokenStatsMapper.getModelTimeSeriesByDay(startTime, endTime)).thenReturn(mutableListOf())
+            `when`(tokenStatsMapper.getModelTimeSeriesByDay(startTime, endTime, tenantId)).thenReturn(mutableListOf())
 
             // When
-            val result = createService().getModelTimeSeriesData(startTime, endTime, "day")
+            val result = createService().getModelTimeSeriesData(startTime, endTime, "day", tenantId)
 
             // Then
             assertNotNull(result.timeSeriesData)
             // No data means no dimension groups, result is empty
             assertTrue(result.timeSeriesData?.isEmpty() == true)
-            verify(tokenStatsMapper).getModelTimeSeriesByDay(startTime, endTime)
+            verify(tokenStatsMapper).getModelTimeSeriesByDay(startTime, endTime, tenantId)
         }
 
         @Test
@@ -437,10 +389,10 @@ class TokenStatsServiceImplTest {
                 extra = mapOf("modelId" to 1L, "modelName" to "gpt-4"),
             )
 
-            `when`(tokenStatsMapper.getModelTimeSeriesByMonth(startTime, endTime)).thenReturn(mutableListOf(dataRow))
+            `when`(tokenStatsMapper.getModelTimeSeriesByMonth(startTime, endTime, tenantId)).thenReturn(mutableListOf(dataRow))
 
             // When
-            val result = createService().getModelTimeSeriesData(startTime, endTime, "month")
+            val result = createService().getModelTimeSeriesData(startTime, endTime, "month", tenantId)
 
             // Then - January carries the row, February is a zero point that keeps the dimension
             val months = result.timeSeriesData!!
@@ -450,7 +402,7 @@ class TokenStatsServiceImplTest {
             assertEquals("2026-02-01 00:00:00", months[1].timePoint)
             assertEquals(0L, months[1].totalInputToken)
             assertEquals("gpt-4", months[1].dimensionName)
-            verify(tokenStatsMapper).getModelTimeSeriesByMonth(startTime, endTime)
+            verify(tokenStatsMapper).getModelTimeSeriesByMonth(startTime, endTime, tenantId)
         }
 
         @Test
@@ -464,10 +416,10 @@ class TokenStatsServiceImplTest {
                 extra = mapOf("modelId" to 1L, "modelName" to "gpt-4"),
             )
 
-            `when`(tokenStatsMapper.getModelTimeSeriesByWeek(startTime, endTime)).thenReturn(mutableListOf(dataRow))
+            `when`(tokenStatsMapper.getModelTimeSeriesByWeek(startTime, endTime, tenantId)).thenReturn(mutableListOf(dataRow))
 
             // When
-            val result = createService().getModelTimeSeriesData(startTime, endTime, "week")
+            val result = createService().getModelTimeSeriesData(startTime, endTime, "week", tenantId)
 
             // Then
             val weeks = result.timeSeriesData!!
@@ -475,8 +427,8 @@ class TokenStatsServiceImplTest {
             assertEquals("2026-01-05 00:00:00", weeks[0].timePoint)
             assertEquals(10L, weeks[0].totalInputToken)
             assertEquals("gpt-4", weeks[0].dimensionName)
-            verify(tokenStatsMapper).getModelTimeSeriesByWeek(startTime, endTime)
-            verify(tokenStatsMapper, never()).getModelTimeSeriesByDay(anyOrNull(), anyOrNull())
+            verify(tokenStatsMapper).getModelTimeSeriesByWeek(startTime, endTime, tenantId)
+            verify(tokenStatsMapper, never()).getModelTimeSeriesByDay(anyOrNull(), anyOrNull(), anyLong())
         }
     }
 
@@ -495,17 +447,17 @@ class TokenStatsServiceImplTest {
                 extra = mapOf("agentId" to 100L, "agentName" to "Test Agent"),
             )
 
-            `when`(tokenStatsMapper.getAgentTimeSeriesByDay(startTime, endTime)).thenReturn(mutableListOf(dataRow))
+            `when`(tokenStatsMapper.getAgentTimeSeriesByDay(startTime, endTime, tenantId)).thenReturn(mutableListOf(dataRow))
 
             // When
-            val result = createService().getAgentTimeSeriesData(startTime, endTime, "day")
+            val result = createService().getAgentTimeSeriesData(startTime, endTime, "day", tenantId)
 
             // Then
             assertNotNull(result.timeSeriesData)
             assertEquals(2, result.timeSeriesData?.size)
             assertEquals("100", result.timeSeriesData?.get(0)?.dimensionId)
             assertEquals("Test Agent", result.timeSeriesData?.get(0)?.dimensionName)
-            verify(tokenStatsMapper).getAgentTimeSeriesByDay(startTime, endTime)
+            verify(tokenStatsMapper).getAgentTimeSeriesByDay(startTime, endTime, tenantId)
         }
 
         @Test
@@ -515,15 +467,15 @@ class TokenStatsServiceImplTest {
             val startTime = "2026-01-01 00:00:00"
             val endTime = "2026-01-01 00:00:00"
 
-            `when`(tokenStatsMapper.getAgentTimeSeriesByHour(startTime, endTime)).thenReturn(mutableListOf())
+            `when`(tokenStatsMapper.getAgentTimeSeriesByHour(startTime, endTime, tenantId)).thenReturn(mutableListOf())
 
             // When
-            val result = createService().getAgentTimeSeriesData(startTime, endTime, "hour")
+            val result = createService().getAgentTimeSeriesData(startTime, endTime, "hour", tenantId)
 
             // Then
             assertNotNull(result.timeSeriesData)
             assertTrue(result.timeSeriesData?.isEmpty() == true)
-            verify(tokenStatsMapper).getAgentTimeSeriesByHour(startTime, endTime)
+            verify(tokenStatsMapper).getAgentTimeSeriesByHour(startTime, endTime, tenantId)
         }
 
         @Test
@@ -537,10 +489,10 @@ class TokenStatsServiceImplTest {
                 extra = mapOf("agentId" to 100L, "agentName" to "Test Agent"),
             )
 
-            `when`(tokenStatsMapper.getAgentTimeSeriesByMonth(startTime, endTime)).thenReturn(mutableListOf(dataRow))
+            `when`(tokenStatsMapper.getAgentTimeSeriesByMonth(startTime, endTime, tenantId)).thenReturn(mutableListOf(dataRow))
 
             // When
-            val result = createService().getAgentTimeSeriesData(startTime, endTime, "month")
+            val result = createService().getAgentTimeSeriesData(startTime, endTime, "month", tenantId)
 
             // Then
             val months = result.timeSeriesData!!
@@ -549,7 +501,7 @@ class TokenStatsServiceImplTest {
             assertEquals("2026-02-01 00:00:00", months[1].timePoint)
             assertEquals(10L, months[1].totalInputToken)
             assertEquals("Test Agent", months[1].dimensionName)
-            verify(tokenStatsMapper).getAgentTimeSeriesByMonth(startTime, endTime)
+            verify(tokenStatsMapper).getAgentTimeSeriesByMonth(startTime, endTime, tenantId)
         }
 
         @Test
@@ -563,16 +515,16 @@ class TokenStatsServiceImplTest {
                 extra = mapOf("agentId" to 100L, "agentName" to "Test Agent"),
             )
 
-            `when`(tokenStatsMapper.getAgentTimeSeriesByWeek(startTime, endTime)).thenReturn(mutableListOf(dataRow))
+            `when`(tokenStatsMapper.getAgentTimeSeriesByWeek(startTime, endTime, tenantId)).thenReturn(mutableListOf(dataRow))
 
             // When
-            val result = createService().getAgentTimeSeriesData(startTime, endTime, "week")
+            val result = createService().getAgentTimeSeriesData(startTime, endTime, "week", tenantId)
 
             // Then
             assertEquals(1, result.timeSeriesData?.size)
             assertEquals(10L, result.timeSeriesData?.get(0)?.totalInputToken)
-            verify(tokenStatsMapper).getAgentTimeSeriesByWeek(startTime, endTime)
-            verify(tokenStatsMapper, never()).getAgentTimeSeriesByDay(anyOrNull(), anyOrNull())
+            verify(tokenStatsMapper).getAgentTimeSeriesByWeek(startTime, endTime, tenantId)
+            verify(tokenStatsMapper, never()).getAgentTimeSeriesByDay(anyOrNull(), anyOrNull(), anyLong())
         }
 
         @Test
@@ -590,11 +542,11 @@ class TokenStatsServiceImplTest {
                 extra = mapOf("agentId" to 200L, "agentName" to "Agent B"),
             )
 
-            `when`(tokenStatsMapper.getAgentTimeSeriesByDay(startTime, endTime))
+            `when`(tokenStatsMapper.getAgentTimeSeriesByDay(startTime, endTime, tenantId))
                 .thenReturn(mutableListOf(agent1Row, agent2Row))
 
             // When
-            val result = createService().getAgentTimeSeriesData(startTime, endTime, "day")
+            val result = createService().getAgentTimeSeriesData(startTime, endTime, "day", tenantId)
 
             // Then
             assertNotNull(result.timeSeriesData)
@@ -620,10 +572,10 @@ class TokenStatsServiceImplTest {
                 extra = mapOf("sessionId" to "web-session-1", "sessionTitle" to "Test Session"),
             )
 
-            `when`(tokenStatsMapper.getSessionTimeSeriesByDay(startTime, endTime)).thenReturn(mutableListOf(dataRow))
+            `when`(tokenStatsMapper.getSessionTimeSeriesByDay(startTime, endTime, tenantId)).thenReturn(mutableListOf(dataRow))
 
             // When
-            val result = createService().getSessionTimeSeriesData(startTime, endTime, "day")
+            val result = createService().getSessionTimeSeriesData(startTime, endTime, "day", tenantId)
 
             // Then
             assertNotNull(result.timeSeriesData)
@@ -631,7 +583,7 @@ class TokenStatsServiceImplTest {
             assertEquals("web-session-1", result.timeSeriesData?.get(0)?.dimensionId)
             assertEquals("Test Session", result.timeSeriesData?.get(0)?.dimensionName)
             assertEquals(10L, result.timeSeriesData?.get(0)?.totalInputToken)
-            verify(tokenStatsMapper).getSessionTimeSeriesByDay(startTime, endTime)
+            verify(tokenStatsMapper).getSessionTimeSeriesByDay(startTime, endTime, tenantId)
         }
 
         @Test
@@ -641,13 +593,13 @@ class TokenStatsServiceImplTest {
             val startTime = "2026-01-01 00:00:00"
             val endTime = "2026-01-01 00:00:00"
 
-            `when`(tokenStatsMapper.getSessionTimeSeriesByHour(startTime, endTime)).thenReturn(mutableListOf())
+            `when`(tokenStatsMapper.getSessionTimeSeriesByHour(startTime, endTime, tenantId)).thenReturn(mutableListOf())
 
             // When
-            createService().getSessionTimeSeriesData(startTime, endTime, "hour")
+            createService().getSessionTimeSeriesData(startTime, endTime, "hour", tenantId)
 
             // Then
-            verify(tokenStatsMapper).getSessionTimeSeriesByHour(startTime, endTime)
+            verify(tokenStatsMapper).getSessionTimeSeriesByHour(startTime, endTime, tenantId)
         }
 
         @Test
@@ -661,10 +613,10 @@ class TokenStatsServiceImplTest {
                 extra = mapOf("sessionId" to "web-session-1", "sessionTitle" to "Test Session"),
             )
 
-            `when`(tokenStatsMapper.getSessionTimeSeriesByMonth(startTime, endTime)).thenReturn(mutableListOf(dataRow))
+            `when`(tokenStatsMapper.getSessionTimeSeriesByMonth(startTime, endTime, tenantId)).thenReturn(mutableListOf(dataRow))
 
             // When
-            val result = createService().getSessionTimeSeriesData(startTime, endTime, "month")
+            val result = createService().getSessionTimeSeriesData(startTime, endTime, "month", tenantId)
 
             // Then
             val months = result.timeSeriesData!!
@@ -673,7 +625,7 @@ class TokenStatsServiceImplTest {
             assertEquals("2026-02-01 00:00:00", months[1].timePoint)
             assertEquals(0L, months[1].totalInputToken)
             assertEquals("web-session-1", months[1].dimensionId)
-            verify(tokenStatsMapper).getSessionTimeSeriesByMonth(startTime, endTime)
+            verify(tokenStatsMapper).getSessionTimeSeriesByMonth(startTime, endTime, tenantId)
         }
 
         @Test
@@ -687,16 +639,16 @@ class TokenStatsServiceImplTest {
                 extra = mapOf("sessionId" to "web-session-1", "sessionTitle" to "Test Session"),
             )
 
-            `when`(tokenStatsMapper.getSessionTimeSeriesByWeek(startTime, endTime)).thenReturn(mutableListOf(dataRow))
+            `when`(tokenStatsMapper.getSessionTimeSeriesByWeek(startTime, endTime, tenantId)).thenReturn(mutableListOf(dataRow))
 
             // When
-            val result = createService().getSessionTimeSeriesData(startTime, endTime, "week")
+            val result = createService().getSessionTimeSeriesData(startTime, endTime, "week", tenantId)
 
             // Then
             assertEquals(1, result.timeSeriesData?.size)
             assertEquals(10L, result.timeSeriesData?.get(0)?.totalInputToken)
-            verify(tokenStatsMapper).getSessionTimeSeriesByWeek(startTime, endTime)
-            verify(tokenStatsMapper, never()).getSessionTimeSeriesByDay(anyOrNull(), anyOrNull())
+            verify(tokenStatsMapper).getSessionTimeSeriesByWeek(startTime, endTime, tenantId)
+            verify(tokenStatsMapper, never()).getSessionTimeSeriesByDay(anyOrNull(), anyOrNull(), anyLong())
         }
 
         @Test
@@ -706,10 +658,10 @@ class TokenStatsServiceImplTest {
             val startTime = "2026-01-01 00:00:00"
             val endTime = "2026-01-03 00:00:00"
 
-            `when`(tokenStatsMapper.getSessionTimeSeriesByDay(startTime, endTime)).thenReturn(mutableListOf())
+            `when`(tokenStatsMapper.getSessionTimeSeriesByDay(startTime, endTime, tenantId)).thenReturn(mutableListOf())
 
             // When
-            val result = createService().getSessionTimeSeriesData(startTime, endTime, "day")
+            val result = createService().getSessionTimeSeriesData(startTime, endTime, "day", tenantId)
 
             // Then
             assertNotNull(result.timeSeriesData)

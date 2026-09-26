@@ -64,6 +64,7 @@ class ToolCallLogAdaptorImpl(
     private fun convertToEntity(toolCallInfo: ToolCallInfo): ToolCallLogEntity {
         val entity = ToolCallLogEntity()
         entity.agentId = toolCallInfo.agentId
+        entity.tenantId = toolCallInfo.tenantId
         entity.sessionId = toolCallInfo.sessionId
         entity.toolName = toolCallInfo.toolName
 

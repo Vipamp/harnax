@@ -12,6 +12,17 @@ import com.agnetix.harnax.tools.sdk.ToolSpec
  */
 data class AgentSpec(
     val id: Long,
+
+    /**
+     * The tenant owning this agent, delivered by admin from the agent (or team) row.
+     *
+     * It exists for the three tables V50 attributed: a token, tool-call or process row is only knowable
+     * as one tenant's at the moment it is written, and this is the only place the runtime can read it
+     * from. Null means admin sent no tenant at all — a spec built by an older admin — and the write side
+     * then stores NULL rather than guessing a workspace the run may not belong to.
+     */
+    val tenantId: Long? = null,
+
     val name: String,
     val description: String,
     val maxIterNum: Int,
@@ -50,6 +61,7 @@ data class AgentSpec(
 
 class AgentSpecBuilder {
     private var id: Long = -1
+    private var tenantId: Long? = null
     private var name: String = "AscopeAgent"
     private var description: String = "I am a AI assistant, I can help you to do anything you want."
     private var maxIterNum: Int = 10
@@ -66,6 +78,7 @@ class AgentSpecBuilder {
     private var planSpec: PlanSpec = PlanSpec(false)
 
     fun id(id: Long) = apply { this.id = id }
+    fun tenantId(tenantId: Long?) = apply { this.tenantId = tenantId }
     fun name(name: String) = apply { this.name = name }
     fun description(description: String) = apply { this.description = description }
     fun maxIterNum(maxIterNum: Int) = apply { this.maxIterNum = maxIterNum }
@@ -89,6 +102,7 @@ class AgentSpecBuilder {
 
         return AgentSpec(
             id = id,
+            tenantId = tenantId,
             name = name,
             description = description,
             maxIterNum = maxIterNum,

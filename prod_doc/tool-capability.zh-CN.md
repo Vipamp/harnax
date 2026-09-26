@@ -339,15 +339,16 @@ fun executeCommand(
 
 超时不属于工具的属性：`@ToolMeta` 没有 `timeoutSeconds`，`agent_tool` 也没有同名列（V40 一并移除——旧值进了实体却没有任何读侧，从来只是装饰）。
 
-真正生效的是**整轮预算**，由 `HarnessConfig.turnTimeoutSeconds` 决定：
+真正生效的是**整轮预算**，单体智能体由 `HarnessConfig.turnTimeoutSeconds` 决定，团队的一个回合由 `TeamConfig.turnTimeoutSeconds` 决定：
 
 | 项 | 位置 | 说明 |
 |---|---|---|
-| 配置 | `harness.turn-timeout-seconds` / `HARNAX_TURN_TIMEOUT_SECONDS` | 默认 300 秒，由 `HarnessProperties` 绑定进 `HarnessConfig` |
+| 配置（单体） | `harness.turn-timeout-seconds` / `HARNAX_TURN_TIMEOUT_SECONDS` | 默认 300 秒，由 `HarnessProperties` 绑定进 `HarnessConfig` |
+| 配置（团队） | `harness.team.turn-timeout-seconds` / `HARNAX_TEAM_TURN_TIMEOUT_SECONDS` | 默认 1800 秒，主管与成员的一个回合都用它，绑定进 `TeamConfig` |
 | 批量路径 | `HarnessAgentWrapper.call` | 作用在整次 `harnessAgent.call` 上 |
 | 流式路径 | `HarnessAgentWrapper.callStreamInternal` | 同一个值；刻意放在输出文件探测之前，让探测这一步不占用预算。超时与其它流错误一样落到 `onErrorResume`，转成 `ErrorChatEvent` |
 
-> 单次工具调用没有独立超时：一批工具连着跑，共享这一份整轮预算。团队场景里主管在委派之间的等待可能很长，需要时调大 `turn-timeout-seconds`（团队自己的 `memberTurnTimeoutSeconds` / `confirmTimeoutSeconds` 是另一组预算，见 `multi-agent-team-design`）。
+> 单次工具调用没有独立超时：一批工具连着跑，共享这一份整轮预算。团队的一个回合可以安静得更久——成员跑一个长工具时根流不发事件，成员的确认等待另有 `confirm-heartbeat-seconds` 每 30 秒发一次保活——所以团队用上面那份更大的预算，并且必须高于 `member-turn-timeout-seconds`（900）与 `confirm-timeout-seconds`（600）：低于它们时先触发的就是整轮预算，一次本应作为「委派失败」交回主管的长运行会把整条会话切断。装配侧发现配反了会打一条 WARN，但仍按配置生效（见 `multi-agent-team-design`）。
 
 ## 7. 数据模型
 

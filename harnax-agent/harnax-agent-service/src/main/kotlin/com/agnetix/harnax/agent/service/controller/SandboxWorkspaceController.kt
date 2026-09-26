@@ -43,6 +43,43 @@ class SandboxWorkspaceController(
 
         /** Maximum path depth to prevent abuse. */
         const val MAX_PATH_DEPTH = 20
+
+        /**
+         * Bound for the `docker cp` waits. These run on user-facing HTTP request paths, so a wedged
+         * daemon must not hold the request thread forever — a timeout is reported as an error response.
+         */
+        const val CP_TIMEOUT_MS = 60_000L
+
+        /** Bound for the read-only `docker inspect` behind the status endpoint. */
+        const val INSPECT_TIMEOUT_MS = 10_000L
+
+        /** How long to wait for a force-destroyed process to die before giving up on the wait. */
+        const val DEATH_GRACE_MS = 2_000L
+    }
+
+    /**
+     * Signals that a Docker CLI process did not finish within its budget and was force-destroyed.
+     *
+     * Distinct from a process that ran and exited non-zero (e.g. a container that simply does not
+     * exist): a timeout means the daemon is unresponsive, so callers must NOT read it as a definitive
+     * "not found"/"not running" answer.
+     */
+    private class DockerCommandTimeout(message: String) : RuntimeException(message)
+
+    /**
+     * Waits at most [timeoutMs] for [process]. On expiry force-destroys it, waits briefly for death,
+     * and returns false — so the calling request thread is released rather than parked on an
+     * uninterruptible `Process.waitFor()`.
+     */
+    private fun awaitProcess(
+        process: Process,
+        timeoutMs: Long,
+    ): Boolean {
+        if (process.waitFor(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)) return true
+        process.destroyForcibly()
+        val died = process.waitFor(DEATH_GRACE_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+        log.warn("Docker process did not finish within {} ms; force-destroyed (died={})", timeoutMs, died)
+        return false
     }
 
     /**
@@ -179,7 +216,10 @@ class SandboxWorkspaceController(
                 val process = ProcessBuilder("docker", "cp", tempFile.absolutePath, "$containerName:$targetPath")
                     .redirectErrorStream(true)
                     .start()
-                val exitCode = process.waitFor()
+                if (!awaitProcess(process, CP_TIMEOUT_MS)) {
+                    return ResultVo.error(504, "Upload timed out: docker cp did not complete within ${CP_TIMEOUT_MS}ms")
+                }
+                val exitCode = process.exitValue()
 
                 if (exitCode != 0) {
                     val error = process.inputStream.bufferedReader().readText()
@@ -233,7 +273,11 @@ class SandboxWorkspaceController(
                 val process = ProcessBuilder("docker", "cp", "$containerName:$safePath", tempFile.absolutePath)
                     .redirectErrorStream(true)
                     .start()
-                val exitCode = process.waitFor()
+                if (!awaitProcess(process, CP_TIMEOUT_MS)) {
+                    tempFile.delete()
+                    return ResponseEntity.status(504).body(mapOf("error" to "Download timed out: docker cp did not complete within ${CP_TIMEOUT_MS}ms"))
+                }
+                val exitCode = process.exitValue()
 
                 if (exitCode != 0) {
                     val error = process.inputStream.bufferedReader().readText()
@@ -273,24 +317,29 @@ class SandboxWorkspaceController(
             val ids = sessionIds.split(",").map { it.trim() }.filter { it.isNotBlank() }.take(50)
             log.info("[SandboxWorkspaceController] Getting sandbox status for ${ids.size} sessions: $ids")
             val result = mutableMapOf<String, Any>()
-            for (id in ids) {
-                val containerName = "agentscope-sandbox-$id"
-                // Read-only check against the ACTUAL Docker container state.
-                // We must NOT call resolveSandbox()/attachToExisting() here: those would
-                // restart a stopped container as a side effect of a mere status query,
-                // which made a manually stopped sandbox keep showing up as "Running".
-                // A container is active ONLY when it is actually running.
-                val state = inspectContainerState(containerName)
-                if (state != null && state.running) {
-                    result[id] = mapOf(
-                        "active" to true,
-                        "containerName" to containerName,
-                        "image" to state.image,
-                    )
-                } else {
-                    // Container stopped or does not exist -> inactive
-                    result[id] = mapOf("active" to false)
+            try {
+                for (id in ids) {
+                    val containerName = "agentscope-sandbox-$id"
+                    // Read-only check against the ACTUAL Docker container state.
+                    // We must NOT call resolveSandbox()/attachToExisting() here: those would
+                    // restart a stopped container as a side effect of a mere status query,
+                    // which made a manually stopped sandbox keep showing up as "Running".
+                    // A container is active ONLY when it is actually running.
+                    val state = inspectContainerState(containerName)
+                    if (state != null && state.running) {
+                        result[id] = mapOf(
+                            "active" to true,
+                            "containerName" to containerName,
+                            "image" to state.image,
+                        )
+                    } else {
+                        // Container stopped or does not exist -> inactive
+                        result[id] = mapOf("active" to false)
+                    }
                 }
+            } catch (e: DockerCommandTimeout) {
+                log.warn("[SandboxWorkspaceController] Sandbox status unavailable: {}", e.message)
+                return ResultVo.error(504, "Sandbox status unavailable: ${e.message}")
             }
             val response: ResultVo<Any> = ResultVo.success(result as Any)
             log.info("[SandboxWorkspaceController] Returning response: code=${response.code}, data=${response.data}")
@@ -320,7 +369,9 @@ class SandboxWorkspaceController(
         )
             .redirectErrorStream(true)
             .start()
-        process.waitFor()
+        if (!awaitProcess(process, INSPECT_TIMEOUT_MS)) {
+            throw DockerCommandTimeout("docker inspect did not answer within ${INSPECT_TIMEOUT_MS}ms")
+        }
         val output = process.inputStream.bufferedReader().readText().trim()
         if (output.contains("|")) {
             val parts = output.split("|", limit = 2)
@@ -328,6 +379,8 @@ class SandboxWorkspaceController(
         } else {
             null
         }
+    } catch (e: DockerCommandTimeout) {
+        throw e
     } catch (e: Exception) {
         log.debug("[SandboxWorkspaceController] docker inspect failed for $containerName: ${e.message}")
         null

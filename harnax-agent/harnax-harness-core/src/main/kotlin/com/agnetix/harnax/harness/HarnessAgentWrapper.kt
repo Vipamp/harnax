@@ -16,6 +16,7 @@ import com.agnetix.harnax.common.error.HarnaxException
 import com.agnetix.harnax.harness.output.OutputFileDetector
 import com.agnetix.harnax.harness.output.OutputFileStore
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
+import com.agnetix.harnax.harness.skill.SandboxSkillProjector
 import com.agnetix.harnax.harness.team.TeamOrchestrator
 import io.agentscope.core.agent.RuntimeContext
 import io.agentscope.core.event.AgentEventType
@@ -37,6 +38,7 @@ import io.agentscope.core.message.ToolResultBlock
 import io.agentscope.core.message.ToolUseBlock
 import io.agentscope.core.permission.PermissionContextState
 import io.agentscope.core.permission.PermissionMode
+import io.agentscope.core.skill.AgentSkill
 import io.agentscope.core.state.AgentState
 import io.agentscope.core.state.Task
 import io.agentscope.core.tool.mcp.McpClientWrapper
@@ -82,10 +84,10 @@ class HarnessAgentWrapper(
      * [com.agnetix.harnax.harness.config.HarnessConfig.turnTimeoutSeconds]. It caps a whole batch turn,
      * while on a stream it only bounds the silence between events.
      *
-     * `0` or less means "no budget": a team wrapper gets its limits from the team layer instead, whose
-     * budgets wrap this stream from the outside (`memberTurnTimeoutSeconds`, `confirmTimeoutSeconds`).
-     * A limit in here would fire first — a member running one long tool, or a lead waiting on its
-     * members, is silent rather than stuck.
+     * A lone agent gets that value; a turn inside a team gets the larger
+     * [com.agnetix.harnax.harness.config.TeamConfig.turnTimeoutSeconds], because a team turn is silent
+     * where a lone agent's is not — see `HarnessAgentLauncher.turnBudget`. `0` or less still means "no
+     * budget", which is how an operator turns the limit off, not what the runtime hands a team.
      */
     val turnTimeoutSeconds: Long = 300,
     val keepAliveSandboxManager: KeepAliveSandboxManager? = null,
@@ -1004,6 +1006,66 @@ class HarnessAgentWrapper(
         }
     }
 
+    /**
+     * Writes Admin's skills onto the container's workspace. Lazy because a wrapper that never gets a
+     * keep-alive sandbox has nothing to project into.
+     */
+    private val skillProjector: SandboxSkillProjector by lazy { SandboxSkillProjector(sandboxWorkspaceRoot) }
+
+    /**
+     * Converges the delivered skills onto [sandbox]'s workspace, so a model told to follow a skill can
+     * open the files it refers to instead of only reading its text.
+     *
+     * A no-op when this agent was given no skills — the container is then left completely untouched, not
+     * even given a skills directory. Otherwise [SandboxSkillProjector] decides which files to write, and
+     * it never throws: a container hiccup costs this turn its skill files, not its reply. That posture is
+     * deliberate and lives with the projector.
+     *
+     * Internal as a test seam: a test hands it a fake [io.agentscope.harness.agent.sandbox.Sandbox] that
+     * records the `exec` calls and asserts on the resulting layout.
+     */
+    internal fun projectSkills(sandbox: io.agentscope.harness.agent.sandbox.Sandbox) {
+        try {
+            val skills = deliveredSkills()
+            if (skills.isEmpty()) return
+            skillProjector.project(sandbox, skills)
+        } catch (e: Exception) {
+            // Only the projector's own construction can get here — `project` swallows what happens while
+            // it writes. Same posture either way: this turn keeps its answer.
+            log.warn("[skills] Skill projection was skipped for session={}: {}", sessionId, e.message)
+        }
+    }
+
+    /**
+     * The skills Admin delivered for this agent.
+     *
+     * Read back out of the built [HarnessAgent] rather than from a holder or a mapper, and narrowed to the
+     * repositories [HarnessAgentBuilder] installed: those hold exactly `AgentSpecInfoResponse.skillDetails`
+     * — tenant-filtered by Admin, `skillmd` plus its `resources` — reduced to an `AgentSkill`. The
+     * framework merges its own workspace repository on top of them, so filtering by source is what keeps
+     * this to the authorised set.
+     *
+     * Deliberately not a skill-table read: `SkillMapper.selectByIds` has no tenant clause and has leaked
+     * twice in this repository, so a skill missing from the delivery stays missing.
+     *
+     * Merged by name, last one winning, which is how the harness itself resolves a name clash between two
+     * repositories — the projection must not disagree with the prompt about which skill a name means.
+     */
+    private fun deliveredSkills(): List<AgentSkill> = try {
+        val byName = LinkedHashMap<String, AgentSkill>()
+        harnessAgent.skillRepositories
+            .filter { it.source == HarnessAgentBuilder.IN_MEMORY_SKILL_SOURCE }
+            .forEach { repository ->
+                repository.allSkills.forEach { skill -> byName[skill.name.orEmpty()] = skill }
+            }
+        byName.values.toList()
+    } catch (e: Exception) {
+        // Same posture as the projection itself: skill files are an enhancement to a turn Admin
+        // already authorised, so a repository that throws must not end the turn.
+        log.warn("[skills] Could not collect the delivered skills for session={}: {}", sessionId, e.message)
+        emptyList()
+    }
+
     private fun buildRuntimeContext(): RuntimeContextResult {
         val ctxBuilder = RuntimeContext.builder()
             .sessionId(sessionId)
@@ -1019,6 +1081,11 @@ class HarnessAgentWrapper(
                 env = sandboxEnv,
             )
             keepAliveSandbox = sandbox
+
+            // The only window with a live handle on this session's container before the agent runs — and
+            // an empty WorkspaceSpec above means nothing else would put a file in it. Both the blocking
+            // and the streaming path come through here, so skills reach a reused container on every turn.
+            projectSkills(sandbox)
 
             val clientOptions = DockerSandboxClientOptions()
                 .image(sandboxImage)

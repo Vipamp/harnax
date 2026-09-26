@@ -33,6 +33,7 @@ class TokenStatsAggregationIT : BaseAdminIT() {
     private val modelId = 930_002L
     private val providerId = 930_003L
     private val sessionId = "token-stats-it-session"
+    private val neighbourSessionId = "token-stats-it-neighbour-session"
 
     private val window = "startTime=2020-03-05+00:00:00&endTime=2020-03-05+23:59:59"
     private val from = "2020-03-05 00:00:00"
@@ -62,11 +63,16 @@ class TokenStatsAggregationIT : BaseAdminIT() {
         )
         insertStats("2020-03-05 10:15:00", 100L, 50L)
         insertStats("2020-03-05 11:40:00", 200L, 70L)
+        // Another tenant's consumption, same window and same model/agent rows. Every total asserted below
+        // stays at 420 only while the aggregation filters by tenant; drop that predicate and each of them
+        // gains this row's 999 tokens.
+        insertStats("2020-03-05 12:00:00", 500L, 499L, tenantId = NEIGHBOUR_TENANT_ID, sessionId = neighbourSessionId)
     }
 
     @AfterEach
     fun clearRows() {
         jdbc.update("DELETE FROM token_stats WHERE session_id = ?", sessionId)
+        jdbc.update("DELETE FROM token_stats WHERE session_id = ?", neighbourSessionId)
         jdbc.update("DELETE FROM session WHERE session_id = ?", sessionId)
         jdbc.update("DELETE FROM agent WHERE id = ?", agentId)
         jdbc.update("DELETE FROM `model` WHERE id = ?", modelId)
@@ -77,10 +83,13 @@ class TokenStatsAggregationIT : BaseAdminIT() {
         ts: String,
         input: Long,
         output: Long,
+        tenantId: Long = TENANT_ID,
+        sessionId: String = this@TokenStatsAggregationIT.sessionId,
     ) {
         jdbc.update(
-            "INSERT INTO token_stats (agent_id, session_id, chat_model_id, input_token, output_token, total_token, fee, ts) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO token_stats (tenant_id, agent_id, session_id, chat_model_id, input_token, output_token, total_token, fee, ts) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            tenantId,
             agentId,
             sessionId,
             modelId,
@@ -211,9 +220,9 @@ class TokenStatsAggregationIT : BaseAdminIT() {
         // The page only asks the dimension endpoints for one granularity at a time, and the hour rows would
         // add 24 points per dimension to the HTTP tests above. These three statements would otherwise stay
         // unexecuted, so they run against the real database here.
-        assertBucket("model/hour", tokenStatsMapper.getModelTimeSeriesByHour(from, to), LocalDateTime.of(2020, 3, 5, 10, 0), 2)
-        assertBucket("agent/hour", tokenStatsMapper.getAgentTimeSeriesByHour(from, to), LocalDateTime.of(2020, 3, 5, 10, 0), 2)
-        assertBucket("session/hour", tokenStatsMapper.getSessionTimeSeriesByHour(from, to), LocalDateTime.of(2020, 3, 5, 10, 0), 2)
+        assertBucket("model/hour", tokenStatsMapper.getModelTimeSeriesByHour(from, to, TENANT_ID), LocalDateTime.of(2020, 3, 5, 10, 0), 2)
+        assertBucket("agent/hour", tokenStatsMapper.getAgentTimeSeriesByHour(from, to, TENANT_ID), LocalDateTime.of(2020, 3, 5, 10, 0), 2)
+        assertBucket("session/hour", tokenStatsMapper.getSessionTimeSeriesByHour(from, to, TENANT_ID), LocalDateTime.of(2020, 3, 5, 10, 0), 2)
     }
 
     private fun singlePoint(
@@ -245,5 +254,13 @@ class TokenStatsAggregationIT : BaseAdminIT() {
         )
         assertEquals(expectedFirstPoint, timePoint, "$label first bucket")
         assertEquals(420L, series.sumOf { (it["grandTotalToken"] as Number).toLong() }, "$label grand total")
+    }
+
+    private companion object {
+        /** The workspace `admin` belongs to, so this is what every endpoint above resolves. */
+        const val TENANT_ID = 1L
+
+        /** A tenant nothing else in this class belongs to — its rows must stay invisible to the reads. */
+        const val NEIGHBOUR_TENANT_ID = 930_930L
     }
 }

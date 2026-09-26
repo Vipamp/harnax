@@ -36,6 +36,7 @@ export default {
   'pages.common.items': 'items',
   'pages.common.expand': 'Expand',
   'pages.common.back': 'Back',
+  'pages.common.retry': 'Retry',
 
   // Common Messages
   'pages.message.deleteConfirm': 'Are you sure to delete?',
@@ -56,6 +57,7 @@ export default {
   'pages.message.emailAlreadyExists': 'Email already exists',
   'pages.message.phoneAlreadyExists': 'Phone number already exists',
   'pages.message.loadFailed': 'Failed to load data',
+  'pages.message.loadFailedRetry': 'Failed to load the related list, please retry',
   'pages.gender.female': 'Female',
   'pages.gender.male': 'Male',
   'pages.gender.unknown': 'Unknown',

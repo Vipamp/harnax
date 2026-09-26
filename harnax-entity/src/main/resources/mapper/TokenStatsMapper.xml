@@ -6,6 +6,7 @@
     <resultMap id="TokenStatsResultMap" type="com.agnetix.harnax.entity.TokenStats">
         <id column="id" property="id"/>
         <result column="agent_id" property="agentId"/>
+        <result column="tenant_id" property="tenantId"/>
         <result column="session_id" property="sessionId"/>
         <result column="chat_model_id" property="chatModelId"/>
         <result column="input_token" property="inputToken"/>
@@ -20,9 +21,9 @@
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO token_stats (
-        agent_id, session_id, chat_model_id, input_token, output_token, total_token, fee, ts
+        agent_id, tenant_id, session_id, chat_model_id, input_token, output_token, total_token, fee, ts
         ) VALUES (
-        #{agentId}, #{sessionId}, #{chatModelId}, #{inputToken}, #{outputToken}, #{totalToken}, #{fee}, #{ts}
+        #{agentId}, #{tenantId}, #{sessionId}, #{chatModelId}, #{inputToken}, #{outputToken}, #{totalToken}, #{fee}, #{ts}
         )
     </insert>
 
@@ -37,7 +38,17 @@
       drops the row and the chart comes back all zeros.
     -->
 
-    <sql id="timeWindow">
+    <!--
+      Every aggregation below includes this fragment, so it is the one place the tenant filter lives.
+
+      The tenant predicate carries no `<if>`: a missing tenant has to read as nothing, not as everything.
+      `tenantId` is a non-null parameter, so a caller that cannot resolve one gets no rows rather than the
+      whole workspace; an optional `<if>` would make the leak the default and the isolation the special
+      case. A row whose own `tenant_id` is NULL (V50: a run nothing attributed it to) matches no value and
+      stays out of every tenant's totals, which is what it is worth.
+    -->
+    <sql id="tenantAndTimeWindow">
+        AND ${alias}.tenant_id = #{tenantId}
         <if test="startTime != null and startTime != ''">
             AND ${alias}.ts &gt;= #{startTime}
         </if>
@@ -76,7 +87,7 @@
         COUNT(DISTINCT chat_model_id) AS modelCount
         FROM token_stats t
         WHERE 1 = 1
-        <include refid="timeWindow">
+        <include refid="tenantAndTimeWindow">
             <property name="alias" value="t"/>
         </include>
     </select>
@@ -94,7 +105,7 @@
         LEFT JOIN `model` m ON m.id = t.chat_model_id
         LEFT JOIN model_provider p ON p.id = m.provider_id
         WHERE 1 = 1
-        <include refid="timeWindow">
+        <include refid="tenantAndTimeWindow">
             <property name="alias" value="t"/>
         </include>
         GROUP BY t.chat_model_id, m.name, p.name
@@ -110,7 +121,7 @@
         FROM token_stats t
         LEFT JOIN session s ON s.session_id = t.session_id
         WHERE 1 = 1
-        <include refid="timeWindow">
+        <include refid="tenantAndTimeWindow">
             <property name="alias" value="t"/>
         </include>
         GROUP BY t.session_id, s.title
@@ -126,7 +137,7 @@
         FROM token_stats t
         LEFT JOIN agent a ON a.id = t.agent_id
         WHERE 1 = 1
-        <include refid="timeWindow">
+        <include refid="tenantAndTimeWindow">
             <property name="alias" value="t"/>
         </include>
         GROUP BY t.agent_id, a.name
@@ -145,7 +156,7 @@
         </include>
         FROM token_stats t
         WHERE 1 = 1
-        <include refid="timeWindow">
+        <include refid="tenantAndTimeWindow">
             <property name="alias" value="t"/>
         </include>
         GROUP BY timePoint
@@ -162,7 +173,7 @@
         </include>
         FROM token_stats t
         WHERE 1 = 1
-        <include refid="timeWindow">
+        <include refid="tenantAndTimeWindow">
             <property name="alias" value="t"/>
         </include>
         GROUP BY timePoint
@@ -179,7 +190,7 @@
         </include>
         FROM token_stats t
         WHERE 1 = 1
-        <include refid="timeWindow">
+        <include refid="tenantAndTimeWindow">
             <property name="alias" value="t"/>
         </include>
         GROUP BY timePoint
@@ -196,7 +207,7 @@
         </include>
         FROM token_stats t
         WHERE 1 = 1
-        <include refid="timeWindow">
+        <include refid="tenantAndTimeWindow">
             <property name="alias" value="t"/>
         </include>
         GROUP BY timePoint
@@ -217,7 +228,7 @@
         FROM token_stats t
         LEFT JOIN `model` m ON m.id = t.chat_model_id
         WHERE 1 = 1
-        <include refid="timeWindow">
+        <include refid="tenantAndTimeWindow">
             <property name="alias" value="t"/>
         </include>
         GROUP BY timePoint, t.chat_model_id, m.name
@@ -236,7 +247,7 @@
         FROM token_stats t
         LEFT JOIN `model` m ON m.id = t.chat_model_id
         WHERE 1 = 1
-        <include refid="timeWindow">
+        <include refid="tenantAndTimeWindow">
             <property name="alias" value="t"/>
         </include>
         GROUP BY timePoint, t.chat_model_id, m.name
@@ -255,7 +266,7 @@
         FROM token_stats t
         LEFT JOIN `model` m ON m.id = t.chat_model_id
         WHERE 1 = 1
-        <include refid="timeWindow">
+        <include refid="tenantAndTimeWindow">
             <property name="alias" value="t"/>
         </include>
         GROUP BY timePoint, t.chat_model_id, m.name
@@ -274,7 +285,7 @@
         FROM token_stats t
         LEFT JOIN `model` m ON m.id = t.chat_model_id
         WHERE 1 = 1
-        <include refid="timeWindow">
+        <include refid="tenantAndTimeWindow">
             <property name="alias" value="t"/>
         </include>
         GROUP BY timePoint, t.chat_model_id, m.name
@@ -295,7 +306,7 @@
         FROM token_stats t
         LEFT JOIN agent a ON a.id = t.agent_id
         WHERE 1 = 1
-        <include refid="timeWindow">
+        <include refid="tenantAndTimeWindow">
             <property name="alias" value="t"/>
         </include>
         GROUP BY timePoint, t.agent_id, a.name
@@ -314,7 +325,7 @@
         FROM token_stats t
         LEFT JOIN agent a ON a.id = t.agent_id
         WHERE 1 = 1
-        <include refid="timeWindow">
+        <include refid="tenantAndTimeWindow">
             <property name="alias" value="t"/>
         </include>
         GROUP BY timePoint, t.agent_id, a.name
@@ -333,7 +344,7 @@
         FROM token_stats t
         LEFT JOIN agent a ON a.id = t.agent_id
         WHERE 1 = 1
-        <include refid="timeWindow">
+        <include refid="tenantAndTimeWindow">
             <property name="alias" value="t"/>
         </include>
         GROUP BY timePoint, t.agent_id, a.name
@@ -352,7 +363,7 @@
         FROM token_stats t
         LEFT JOIN agent a ON a.id = t.agent_id
         WHERE 1 = 1
-        <include refid="timeWindow">
+        <include refid="tenantAndTimeWindow">
             <property name="alias" value="t"/>
         </include>
         GROUP BY timePoint, t.agent_id, a.name
@@ -373,7 +384,7 @@
         FROM token_stats t
         LEFT JOIN session s ON s.session_id = t.session_id
         WHERE 1 = 1
-        <include refid="timeWindow">
+        <include refid="tenantAndTimeWindow">
             <property name="alias" value="t"/>
         </include>
         GROUP BY timePoint, t.session_id, s.title
@@ -392,7 +403,7 @@
         FROM token_stats t
         LEFT JOIN session s ON s.session_id = t.session_id
         WHERE 1 = 1
-        <include refid="timeWindow">
+        <include refid="tenantAndTimeWindow">
             <property name="alias" value="t"/>
         </include>
         GROUP BY timePoint, t.session_id, s.title
@@ -411,7 +422,7 @@
         FROM token_stats t
         LEFT JOIN session s ON s.session_id = t.session_id
         WHERE 1 = 1
-        <include refid="timeWindow">
+        <include refid="tenantAndTimeWindow">
             <property name="alias" value="t"/>
         </include>
         GROUP BY timePoint, t.session_id, s.title
@@ -430,7 +441,7 @@
         FROM token_stats t
         LEFT JOIN session s ON s.session_id = t.session_id
         WHERE 1 = 1
-        <include refid="timeWindow">
+        <include refid="tenantAndTimeWindow">
             <property name="alias" value="t"/>
         </include>
         GROUP BY timePoint, t.session_id, s.title

@@ -36,6 +36,7 @@ export default {
   'pages.common.items': '个',
   'pages.common.expand': '展开',
   'pages.common.back': '返回',
+  'pages.common.retry': '重试',
 
   // 通用消息
   'pages.message.deleteConfirm': '确认删除吗？',
@@ -66,6 +67,7 @@ export default {
   'pages.user.management.tenant.development': '用户租户管理功能开发中',
   'pages.message.deleting': '正在删除',
   'pages.message.loadFailed': '加载数据失败',
+  'pages.message.loadFailedRetry': '加载关联信息失败，请重试',
   'pages.common.pagination.total': '共 {total} 条',
   'pages.user.management.tenant.loadFailed': '加载用户租户列表失败',
   'pages.user.management.tenant.addSuccess': '添加成功',

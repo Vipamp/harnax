@@ -1,6 +1,5 @@
 package com.agnetix.harnax.admin.service.impl
 
-import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.AgentCreateRequest
 import com.agnetix.harnax.admin.dto.AgentResponse
 import com.agnetix.harnax.admin.dto.AgentUpdateRequest
@@ -13,6 +12,7 @@ import com.agnetix.harnax.admin.service.*
 import com.agnetix.harnax.admin.skill.SkillBindingResolver
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.SecretFieldEncryptor
+import com.agnetix.harnax.admin.util.TenantResolver
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.AgentCliBinding
@@ -518,7 +518,11 @@ class AgentServiceImpl(
         return resolvable
     }
 
-    private fun currentTenantId(): Long = TenantContext.getTenantId() ?: 1
+    /**
+     * The tenant this request acts within. [TenantResolver] holds the chain and the reason a request
+     * without `X-Tenant-ID` is read as the caller's own tenant rather than as tenant 1.
+     */
+    private fun currentTenantId(): Long = TenantResolver.resolve(jwtUtil)
 
     /**
      * Save skill bindings: delete old + insert new.

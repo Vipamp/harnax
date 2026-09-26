@@ -128,18 +128,35 @@ const TeamManagement: React.FC = () => {
     }
   };
 
-  /** Sessions still binding this team, or an empty list when admin cannot be asked — a warning, not a guard. */
-  const relatedSessions = async (id: number) => {
+  /**
+   * Sessions still binding this team, or `failed` when admin could not be asked. Only the count is read
+   * here. An empty list is the answer that opens the delete dialog with the "nothing depends on it"
+   * wording, so a failure must never be reported as one.
+   */
+  const relatedSessions = async (id: number): Promise<{ sessions: unknown[] } | { failed: true }> => {
     try {
-      const res = await getTeamRelatedSessions(id);
-      return res.code === 200 ? res.data || [] : [];
+      // skipErrorHandler: the caller shows the one error message for this read and has to tell a failure
+      // apart from a genuinely empty list.
+      const res = await getTeamRelatedSessions(id, { skipErrorHandler: true });
+      return res.code === 200 ? { sessions: res.data || [] } : { failed: true };
     } catch {
-      return [];
+      return { failed: true };
     }
   };
 
   const handleDelete = async (record: API.TeamItem) => {
-    const sessions = await relatedSessions(record.id);
+    const result = await relatedSessions(record.id);
+    if ('failed' in result) {
+      // No dialog offered: until admin answers, the page cannot say whether the delete would even be refused.
+      messageApi.error(
+        intl.formatMessage({
+          id: 'pages.message.loadFailedRetry',
+          defaultMessage: 'Failed to load the related list, please retry',
+        }),
+      );
+      return;
+    }
+    const sessions = result.sessions;
     Modal.confirm({
       title: intl.formatMessage({
         id: 'pages.team.deleteConfirm',

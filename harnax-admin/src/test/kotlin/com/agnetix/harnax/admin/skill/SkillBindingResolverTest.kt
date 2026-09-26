@@ -4,6 +4,7 @@ import com.agnetix.harnax.admin.constant.BuiltinRepository
 import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.SkillRepositoryService
+import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.SkillRepository
 import com.agnetix.harnax.mapper.SkillMapper
@@ -22,6 +23,9 @@ import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
 import org.mockito.quality.Strictness
+import org.springframework.mock.web.MockHttpServletRequest
+import org.springframework.web.context.request.RequestContextHolder
+import org.springframework.web.context.request.ServletRequestAttributes
 
 /**
  * The four write-time skill guards, in one place because two owners bind skills now: an agent and a
@@ -39,6 +43,9 @@ class SkillBindingResolverTest {
     @Mock
     private lateinit var skillRepositoryService: SkillRepositoryService
 
+    @Mock
+    private lateinit var jwtUtil: JwtUtil
+
     private val skills = mutableMapOf<Long, Skill>()
     private lateinit var resolver: SkillBindingResolver
 
@@ -50,12 +57,24 @@ class SkillBindingResolverTest {
         }
         `when`(skillRepositoryService.getBuiltinRepository())
             .thenReturn(SkillRepository().apply { id = BUILTIN_REPO })
-        resolver = SkillBindingResolver(skillMapper, skillRepositoryService)
+        resolver = SkillBindingResolver(jwtUtil, skillMapper, skillRepositoryService)
     }
 
     @AfterEach
     fun tearDown() {
         TenantContext.clear()
+        RequestContextHolder.resetRequestAttributes()
+    }
+
+    /**
+     * Makes the caller's token claim [tenantId] while the request carries no `X-Tenant-ID` header — the
+     * shape a CLI request arrives in, and the one `TenantResolver` reads the claim for.
+     */
+    private fun requestWhoseTokenClaimsTenant(tenantId: Long) {
+        val request = MockHttpServletRequest()
+        request.addHeader("Authorization", "Bearer $TOKEN")
+        RequestContextHolder.setRequestAttributes(ServletRequestAttributes(request))
+        `when`(jwtUtil.getTenantIdFromToken(TOKEN)).thenReturn(tenantId)
     }
 
     private fun skill(
@@ -139,6 +158,24 @@ class SkillBindingResolverTest {
     }
 
     @Test
+    @DisplayName("无 X-Tenant-ID 头时按 token 声明的租户绑：自己刚建的行不再被说越租户")
+    fun bindsByTheTenantTheTokenClaimsWhenNoHeaderArrives() {
+        // The write side stamped the new skill with the tenant its token claims; this guard used to filter
+        // at tenant 1 for the same request and refuse the caller's own row.
+        TenantContext.clear()
+        requestWhoseTokenClaimsTenant(3L)
+        skill(1L, "本租户技能", tenantId = 3L)
+        skill(2L, "别租户技能", tenantId = 4L)
+
+        assertEquals(listOf(1L), resolver.resolveBindable(listOf(1L)).map { it.id })
+
+        // Converging the read did not loosen the predicate: another tenant's row is still named and refused
+        val error = assertThrows<BizException> { resolver.resolveBindable(listOf(2L)) }
+
+        assertEquals("Skill is missing, deleted, or outside your tenant: 2", error.message)
+    }
+
+    @Test
     @DisplayName("delivery only gives rows of the holder's tenant, another tenant's skill leaves nothing of it")
     fun deliversOnlyTheHoldersTenant() {
         skill(1L, "本租户技能")
@@ -174,3 +211,6 @@ class SkillBindingResolverTest {
 
 private const val TENANT = 7L
 private const val BUILTIN_REPO = 99L
+
+/** The bearer value the mock request carries; its claim is what [TenantResolver] reads with no header. */
+private const val TOKEN = "binding-test-token"

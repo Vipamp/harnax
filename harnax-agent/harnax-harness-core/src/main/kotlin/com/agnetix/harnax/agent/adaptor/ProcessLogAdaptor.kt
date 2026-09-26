@@ -19,10 +19,21 @@ data class ProcessLog(
     val type: LogType,
     val throwable: Throwable? = null,
     val timestamp: Long,
+
+    /**
+     * Tenant owning the run, from `AgentSpec.tenantId` — what `process_log.tenant_id` gets (V50). Null
+     * stores the line unattributed rather than guessing a workspace for it.
+     */
+    val tenantId: Long? = null,
 ) {
     companion object {
         @JvmStatic
-        fun builder(agentId: Long?, agentName: String, sessionId: String) = ProcessLogBuilder(agentId, agentName, sessionId)
+        fun builder(
+            agentId: Long?,
+            agentName: String,
+            sessionId: String,
+            tenantId: Long? = null,
+        ) = ProcessLogBuilder(agentId, agentName, sessionId, tenantId)
     }
 }
 
@@ -30,6 +41,7 @@ class ProcessLogBuilder(
     private val agentId: Long?,
     private val agentName: String,
     private val sessionId: String,
+    private val tenantId: Long? = null,
 ) {
     private var message: String = ""
     private var type: LogType = LogType.INFO
@@ -63,6 +75,7 @@ class ProcessLogBuilder(
         type = type,
         throwable = throwable,
         timestamp = timestamp,
+        tenantId = tenantId,
     )
 }
 

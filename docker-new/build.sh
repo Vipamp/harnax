@@ -118,7 +118,7 @@ mvn clean package -pl harnax-channel/harnax-channel-service -am -Dmaven.test.ski
 
 echo "Copying JAR to docker-new/dist/channel-service/..."
 mkdir -p docker-new/dist/channel-service
-cp harnax-channel/harnax-channel-service/target/harnax-channel-service-*.jar docker-new/dist/channel-service/
+cp harnax-channel/harnax-channel-service/target/harnax-channel-service-*-exec.jar docker-new/dist/channel-service/
 echo "Channel-service JAR built successfully."
 echo ""
 

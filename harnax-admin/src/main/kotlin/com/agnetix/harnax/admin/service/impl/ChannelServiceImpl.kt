@@ -1,12 +1,13 @@
 package com.agnetix.harnax.admin.service.impl
 
-import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.ChannelCreateRequest
 import com.agnetix.harnax.admin.dto.ChannelResponse
 import com.agnetix.harnax.admin.dto.ChannelUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.service.AgentService
 import com.agnetix.harnax.admin.service.ChannelService
+import com.agnetix.harnax.admin.util.JwtUtil
+import com.agnetix.harnax.admin.util.TenantResolver
 import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.Channel
 import com.agnetix.harnax.mapper.ChannelMapper
@@ -27,6 +28,7 @@ class ChannelServiceImpl(
     private val channelMapper: ChannelMapper,
     private val agentService: AgentService,
     private val sessionRuntimeReleaser: SessionRuntimeReleaser,
+    private val jwtUtil: JwtUtil,
 ) : ChannelService {
 
     private val log = LoggerFactory.getLogger(ChannelServiceImpl::class.java)
@@ -61,11 +63,10 @@ class ChannelServiceImpl(
 
     /**
      * The tenant this request acts within — the exact expression [createChannel] stores, so a row is
-     * always readable by whoever was allowed to write it. `TenantInterceptor` fills the context from a
-     * verified `X-Tenant-ID`, and absent that header the request has no workspace to act within but the
-     * default one.
+     * always readable by whoever was allowed to write it. The chain lives in [TenantResolver]: the
+     * verified `X-Tenant-ID` first, then the caller's own tenant, and only as a last resort the default.
      */
-    private fun currentTenantId(): Long = TenantContext.getTenantId() ?: DEFAULT_TENANT_ID
+    private fun currentTenantId(): Long = TenantResolver.resolve(jwtUtil)
 
     @Transactional(rollbackFor = [Exception::class])
     override fun createChannel(request: ChannelCreateRequest): Boolean = try {
@@ -342,9 +343,6 @@ class ChannelServiceImpl(
 
         /** What a credential too short to show anything safe displays instead. */
         const val FULL_MASK = "******"
-
-        /** What a request carrying no `X-Tenant-ID` acts within — the `channel.tenant_id` default. */
-        const val DEFAULT_TENANT_ID = 1L
 
         /**
          * Modes each channel type can actually run, first entry being the default when the caller

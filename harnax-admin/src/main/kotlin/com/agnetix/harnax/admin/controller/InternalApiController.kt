@@ -852,6 +852,11 @@ class InternalApiController(
 
         return AgentSpecInfoResponse(
             agentId = agentId,
+            // The holder's own tenant (agent row, or the team row for a lead) — same rule as the env
+            // bindings below: taken from the database, never from the request, which carries none. The
+            // runtime stamps it onto `token_stats` / `tool_call_log` / `process_log` so consumption
+            // lands in the workspace that paid for it (V50).
+            tenantId = agentTenantId,
             agentName = agentName,
             description = description,
             systemPrompt = systemPrompt,

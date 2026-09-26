@@ -1,6 +1,5 @@
 package com.agnetix.harnax.admin.service.impl
 
-import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.ModelCreateRequest
 import com.agnetix.harnax.admin.dto.ModelResponse
 import com.agnetix.harnax.admin.dto.ModelUpdateRequest
@@ -9,6 +8,7 @@ import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.ModelService
 import com.agnetix.harnax.admin.util.JwtUtil
+import com.agnetix.harnax.admin.util.TenantResolver
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.Model
 import com.agnetix.harnax.mapper.ModelMapper
@@ -82,7 +82,11 @@ class ModelServiceImpl(
     private fun ownedModel(id: Long): Model = modelMapper.selectById(id)?.takeIf { it.tenantId == currentTenantId() }
         ?: throw BizException(messageUtil.getMessage("error.model.notfound"))
 
-    private fun currentTenantId(): Long = TenantContext.getTenantId() ?: 1
+    /**
+     * The tenant this request acts within. [TenantResolver] holds the chain and the reason a request
+     * without `X-Tenant-ID` is read as the caller's own tenant rather than as tenant 1.
+     */
+    private fun currentTenantId(): Long = TenantResolver.resolve(jwtUtil)
 
     override fun createModel(request: ModelCreateRequest): Boolean {
         val tenantId = currentTenantId()

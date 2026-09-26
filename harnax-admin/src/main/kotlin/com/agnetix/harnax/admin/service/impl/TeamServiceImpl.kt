@@ -11,6 +11,7 @@ import com.agnetix.harnax.admin.service.SkillRepositoryService
 import com.agnetix.harnax.admin.service.TeamService
 import com.agnetix.harnax.admin.skill.SkillBindingResolver
 import com.agnetix.harnax.admin.util.JwtUtil
+import com.agnetix.harnax.admin.util.TenantResolver
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.Skill
@@ -325,7 +326,11 @@ class TeamServiceImpl(
         )
     }
 
-    private fun currentTenantId(): Long = TenantContext.getTenantId() ?: 1
+    /**
+     * The tenant this request acts within. [TenantResolver] holds the chain and the reason a request
+     * without `X-Tenant-ID` is read as the caller's own tenant rather than as tenant 1.
+     */
+    private fun currentTenantId(): Long = TenantResolver.resolve(jwtUtil)
 
     /**
      * `is_public OR creator`, the same rule the list query applies. Checking only the tenant left the

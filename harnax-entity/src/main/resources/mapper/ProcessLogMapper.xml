@@ -6,6 +6,7 @@
     <resultMap id="ProcessLogEntityResultMap" type="com.agnetix.harnax.entity.ProcessLogEntity">
         <id column="id" property="id"/>
         <result column="agent_id" property="agentId"/>
+        <result column="tenant_id" property="tenantId"/>
         <result column="agent_name" property="agentName"/>
         <result column="session_id" property="sessionId"/>
         <result column="message" property="message"/>
@@ -26,16 +27,19 @@
         DELETE FROM process_log WHERE id = #{id}
     </delete>
 
-    <!-- insert -->
+    <!-- insert: the only statement with a production caller (`ProcessLogAdaptorImpl`). `tenant_id` can
+         only be written here — the runtime is where the tenant is known, and a row that arrives without
+         one stays NULL and out of the tenant-scoped reads rather than being guessed at (V50). -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO process_log (
-        agent_id, agent_name, session_id, message, log_type, stack_trace, ts
+        agent_id, tenant_id, agent_name, session_id, message, log_type, stack_trace, ts
         ) VALUES (
-        #{agentId}, #{agentName}, #{sessionId}, #{message}, #{logType}, #{stackTrace}, #{ts}
+        #{agentId}, #{tenantId}, #{agentName}, #{sessionId}, #{message}, #{logType}, #{stackTrace}, #{ts}
         )
     </insert>
 
-    <!-- updateById -->
+    <!-- updateById: `tenant_id` is deliberately absent. Attribution records who ran, not a field an
+         editor owns, so no update may move a row to another tenant. -->
     <update id="updateById">
         UPDATE process_log SET
         agent_id = #{agentId},

@@ -224,7 +224,7 @@ class AgentServiceImplTest {
         // The skill guards now live in the shared SkillBindingResolver (a team's lead goes through the
         // same rules). Delegating keeps the guard assertions below honest about the real rules instead
         // of the stub's return value.
-        val realResolver = SkillBindingResolver(skillMapper, skillRepositoryService)
+        val realResolver = SkillBindingResolver(jwtUtil, skillMapper, skillRepositoryService)
         `when`(skillBindingResolver.resolveBindable(any())).thenAnswer { invocation ->
             realResolver.resolveBindable(invocation.getArgument<List<Long>>(0))
         }

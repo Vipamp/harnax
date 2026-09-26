@@ -120,7 +120,7 @@ case $SERVICE in
 
         echo "📋 步骤 2/4: 复制 jar 包..."
         mkdir -p docker-new/dist/channel-service
-        cp harnax-channel/harnax-channel-service/target/harnax-channel-service-*.jar docker-new/dist/channel-service/
+        cp harnax-channel/harnax-channel-service/target/harnax-channel-service-*-exec.jar docker-new/dist/channel-service/
 
         echo "🐳 步骤 3/4: 构建 Docker 镜像..."
         docker rmi -f harnax-channel-service:latest 2>/dev/null || true

@@ -339,15 +339,16 @@ fun executeCommand(
 
 Timeout is not a property of a tool: `@ToolMeta` has no `timeoutSeconds`, and neither does `agent_tool` (both removed in V40 — the old value made it into the entity but had no reader, so it was decoration from the start).
 
-What actually applies is the **whole-turn budget**, decided by `HarnessConfig.turnTimeoutSeconds`:
+What actually applies is the **whole-turn budget**, decided by `HarnessConfig.turnTimeoutSeconds` for a lone agent and by `TeamConfig.turnTimeoutSeconds` for a team turn:
 
 | Item | Location | Notes |
 |---|---|---|
-| Config | `harness.turn-timeout-seconds` / `HARNAX_TURN_TIMEOUT_SECONDS` | Defaults to 300 seconds; bound by `HarnessProperties` into `HarnessConfig` |
+| Config (lone agent) | `harness.turn-timeout-seconds` / `HARNAX_TURN_TIMEOUT_SECONDS` | Defaults to 300 seconds; bound by `HarnessProperties` into `HarnessConfig` |
+| Config (team) | `harness.team.turn-timeout-seconds` / `HARNAX_TEAM_TURN_TIMEOUT_SECONDS` | Defaults to 1800 seconds; one turn of a lead or a member uses it. Bound by `TeamProperties` into `TeamConfig` |
 | Batch path | `HarnessAgentWrapper.call` | Applies to the whole `harnessAgent.call` |
 | Streaming path | `HarnessAgentWrapper.callStreamInternal` | The same value; deliberately placed before the output-file probe so that probe does not consume budget. A timeout lands in `onErrorResume` like any other stream error and becomes an `ErrorChatEvent` |
 
-> A single tool call has no timeout of its own: a batch of tool calls shares this one turn budget. In a team the lead may wait a long time between delegations, so raise `turn-timeout-seconds` when needed (the team's own `memberTurnTimeoutSeconds` / `confirmTimeoutSeconds` are a separate budget — see `multi-agent-team-design`).
+> A single tool call has no timeout of its own: a batch of tool calls shares this one turn budget. A team turn may stay silent longer — a member running one long tool emits nothing on the root stream, while a parked confirmation heartbeats every `confirm-heartbeat-seconds` — so it gets the larger budget above, and that number has to stay above `member-turn-timeout-seconds` (900) and `confirm-timeout-seconds` (600). Below them the turn budget fires first, and a run that should have come back to the lead as a failed delegation cuts the whole conversation instead. Assembly logs a WARN when the two are configured the wrong way round but still honours the value (see `multi-agent-team-design`).
 
 ## 7. Data Model
 

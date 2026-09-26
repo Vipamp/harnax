@@ -14,6 +14,7 @@ import com.agnetix.harnax.admin.skill.SkillSourceConfigs
 import com.agnetix.harnax.admin.skill.SkillSourcePolicy
 import com.agnetix.harnax.admin.skill.loader.SkillLoaderRegistry
 import com.agnetix.harnax.admin.util.JwtUtil
+import com.agnetix.harnax.admin.util.TenantResolver
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.SkillRepository
 import com.agnetix.harnax.mapper.SkillMapper
@@ -58,7 +59,7 @@ class SkillRepositoryServiceImpl(
             status,
         )
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-        val tenantId = TenantContext.getTenantId() ?: 1
+        val tenantId = currentTenantId()
         val safePageNum = pageNum.coerceAtLeast(1)
         val safePageSize = pageSize.coerceIn(1, 1000)
         PageHelper.startPage<SkillRepository>(safePageNum, safePageSize)
@@ -68,9 +69,21 @@ class SkillRepositoryServiceImpl(
     }
 
     override fun getActiveRepositories(): List<SkillRepository> {
-        val tenantId = TenantContext.getTenantId() ?: 1
+        val tenantId = currentTenantId()
         return skillRepositoryMapper.selectActiveRepositories(tenantId)
     }
+
+    /**
+     * The tenant this request acts within. [TenantResolver] holds the chain and the reason a request
+     * without `X-Tenant-ID` is read as the caller's own tenant rather than as tenant 1 — the same answer
+     * the other admin services give, and the value [createSkillRepository] stores, so a repository stays
+     * inside the workspace its creator belongs to.
+     *
+     * [sameTenant] below keeps reading the raw [TenantContext]: there a null means "an internal call with
+     * no tenant to gate by", which resolving to a concrete id would silently turn into a check against
+     * the default workspace.
+     */
+    private fun currentTenantId(): Long = TenantResolver.resolve(jwtUtil)
 
     /**
      * Reads honour the tenant boundary, the way `fetchRemoteSkills` below and the `skill-sources`
@@ -97,8 +110,10 @@ class SkillRepositoryServiceImpl(
         val initialStatus = request.status
         SkillSourcePolicy.requireStatus(initialStatus)
 
+        // Resolved once: the name probe below and the stamp further down have to speak about the same
+        // tenant, or a collision would be looked for in one workspace and the row created in another
+        val tenantId = currentTenantId()
         // Check if repository name already exists
-        val tenantId = TenantContext.getTenantId() ?: 1
         val existRepository = skillRepositoryMapper.selectByName(name, tenantId)
         if (existRepository != null) {
             throw BizException("Repository name already exists")

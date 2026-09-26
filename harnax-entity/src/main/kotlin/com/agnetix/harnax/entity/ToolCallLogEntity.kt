@@ -16,6 +16,9 @@ class ToolCallLogEntity : Serializable {
     @Schema(description = "Agent ID")
     var agentId: Long? = null
 
+    @Schema(description = "Owning tenant; NULL for a run that was never attributed")
+    var tenantId: Long? = null
+
     @Schema(description = "Session ID")
     var sessionId: String = ""
 

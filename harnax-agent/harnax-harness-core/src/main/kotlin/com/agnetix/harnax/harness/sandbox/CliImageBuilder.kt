@@ -129,7 +129,7 @@ class CliImageBuilder(
                 continue
             }
             if (built.isAfter(cutoff)) continue
-            val rmi = dockerExecutor.execute(listOf("docker", "rmi", tag))
+            val rmi = dockerExecutor.execute(listOf("docker", "rmi", tag), DockerCommandExecutor.RMI_TIMEOUT_MS)
             if (rmi.exitCode != 0) {
                 log.warn("[cliImage] {} could not be removed: {}", tag, rmi.output.take(200))
                 continue
@@ -231,6 +231,7 @@ class CliImageBuilder(
 
             val result = dockerExecutor.execute(
                 listOf("docker", "build", "-t", tag, "-f", dockerfile.toString(), context.toString()),
+                DockerCommandExecutor.BUILD_TIMEOUT_MS,
             )
             if (result.exitCode != 0) {
                 throw IllegalStateException(
@@ -243,9 +244,10 @@ class CliImageBuilder(
                 if (cli.checkCommand.isBlank()) continue
                 val check = dockerExecutor.execute(
                     listOf("docker", "run", "--rm", "--entrypoint", "/bin/sh", tag, "-c", cli.checkCommand),
+                    DockerCommandExecutor.CHECK_TIMEOUT_MS,
                 )
                 if (check.exitCode != 0) {
-                    dockerExecutor.execute(listOf("docker", "rmi", "-f", tag))
+                    dockerExecutor.execute(listOf("docker", "rmi", "-f", tag), DockerCommandExecutor.RMI_TIMEOUT_MS)
                     throw IllegalStateException(
                         "CLI '${cli.name}' check command failed in image $tag: ${check.output.takeLast(500)}",
                     )

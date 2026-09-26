@@ -84,9 +84,9 @@ class HarnessProperties {
     var enableSessionPersistence: Boolean = true
 
     /**
-     * Budget of one whole turn, bound from `harness.turn-timeout-seconds` and set from
-     * `HARNAX_TURN_TIMEOUT_SECONDS`. It is the batch and streaming call budget alike; raise it for
-     * runs that legitimately wait long, such as a team lead sitting between delegations.
+     * Budget of one whole turn of a lone agent, bound from `harness.turn-timeout-seconds` and set from
+     * `HARNAX_TURN_TIMEOUT_SECONDS`. It is the batch and streaming call budget alike, and a team turn is
+     * not one — see [TeamProperties.turnTimeoutSeconds].
      */
     var turnTimeoutSeconds: Long = 300
 
@@ -109,6 +109,13 @@ class TeamProperties {
     var memberTurnTimeoutSeconds: Long = 900
     var confirmTimeoutSeconds: Long = 600
     var maxArtifactBytes: Long = 20L * 1024 * 1024
+
+    /**
+     * Budget of one team turn, bound from `harness.team.turn-timeout-seconds`. It has to stay above
+     * `memberTurnTimeoutSeconds` and `confirmTimeoutSeconds`, or this fires where a failed delegation
+     * should have been reported to the lead instead.
+     */
+    var turnTimeoutSeconds: Long = 1_800
 }
 
 @ConfigurationProperties(prefix = "harness.output-detection")
@@ -246,6 +253,7 @@ class HarnessAutoConfiguration {
             memberTurnTimeoutSeconds = teamProps.memberTurnTimeoutSeconds,
             confirmTimeoutSeconds = teamProps.confirmTimeoutSeconds,
             maxArtifactBytes = teamProps.maxArtifactBytes,
+            turnTimeoutSeconds = teamProps.turnTimeoutSeconds,
         ),
     )
 

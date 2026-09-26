@@ -1,17 +1,16 @@
 package com.agnetix.harnax.admin.service.impl
 
-import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.McpOAuthConfig
 import com.agnetix.harnax.admin.dto.McpServerCreateRequest
 import com.agnetix.harnax.admin.dto.McpServerResponse
 import com.agnetix.harnax.admin.dto.McpServerUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.exception.BizException
-import com.agnetix.harnax.admin.security.SecurityUtils
 import com.agnetix.harnax.admin.service.McpServerService
 import com.agnetix.harnax.admin.service.McpStdioPolicy
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.SecretFieldEncryptor
+import com.agnetix.harnax.admin.util.TenantResolver
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.agent.adaptor.mcp.McpHelper
 import com.agnetix.harnax.entity.Agent
@@ -102,29 +101,11 @@ class McpServerServiceImpl(
     /**
      * The tenant this request acts within.
      *
-     * `X-Tenant-ID` stays first because switching workspace is the point of it, and
-     * [com.agnetix.harnax.admin.interceptor.TenantInterceptor] verifies the caller belongs to that
-     * tenant. What must not happen is a request with *no* header landing in tenant 1 by default:
-     * that writes rows into a workspace the caller may not belong to and reads everyone's. So the
-     * tenant the token itself carries is the fallback, and 1 remains only for a token issued before
-     * the claim existed.
+     * This was the original of the chain every admin service now shares; the rules — why `X-Tenant-ID`
+     * stays first, why a header-less request must not land in tenant 1, and what the token and the account
+     * row contribute — are written once in [TenantResolver].
      */
-    private fun currentTenantId(): Long = TenantContext.getTenantId() ?: tenantFromToken() ?: tenantFromUserRecord() ?: DEFAULT_TENANT_ID
-
-    /**
-     * The tenant the account itself carries, read from its row rather than from anything the request
-     * sends. A token issued before the claim existed still belongs to somebody who has a tenant, and
-     * defaulting that person's writes into tenant 1 would mix one workspace's rows into another's.
-     */
-    private fun tenantFromUserRecord(): Long? = runCatching {
-        SecurityUtils.getCurrentUser()?.tenantId?.takeIf { it > 0 }
-    }.getOrNull()
-
-    private fun tenantFromToken(): Long? = UserContextUtil.getToken()?.let { token ->
-        // A claim that states 0 is refused rather than trusted: ids start at 1, and acting as
-        // "tenant 0" would list nobody's rows while writing new ones into a tenant that does not exist.
-        runCatching { jwtUtil.getTenantIdFromToken(token) }.getOrNull()?.takeIf { it > 0 }
-    }
+    private fun currentTenantId(): Long = TenantResolver.resolve(jwtUtil)
 
     @Transactional(rollbackFor = [Exception::class])
     override fun createMcpServer(request: McpServerCreateRequest): Boolean {
@@ -482,10 +463,5 @@ class McpServerServiceImpl(
             )
         }
         return McpHelper.listTools(mcpServer, secretFieldEncryptor::decryptToMap, secretFieldEncryptor::decryptToolEnvParamsToMap)
-    }
-
-    companion object {
-        /** Fallback for a token that carries no tenant claim; not a workspace anyone may write into by default. */
-        private const val DEFAULT_TENANT_ID = 1L
     }
 }

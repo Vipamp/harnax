@@ -39,9 +39,12 @@ class ProcessLogMiddleware : MiddlewareBase {
         agentId: Long?,
         agentName: String,
         sessionId: String,
+        tenantId: Long? = null,
     ) {
         this.adaptor = adaptor
-        this.builder = ProcessLogBuilder(agentId, agentName, sessionId)
+        // One builder for the whole run: `agentId` and `tenantId` are the run's attribution and never
+        // change mid-stream, so they are set here rather than on each of the emit sites below (V50).
+        this.builder = ProcessLogBuilder(agentId, agentName, sessionId, tenantId)
     }
 
     override fun onAgent(

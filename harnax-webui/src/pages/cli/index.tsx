@@ -107,18 +107,37 @@ const CliManagement: React.FC = () => {
     }
   };
 
-  /** Agents still binding this CLI, or an empty list when admin cannot be asked — a warning, not a guard. */
-  const relatedAgents = async (id: number) => {
+  /**
+   * Agents still binding this CLI, or `failed` when admin could not be asked. A failed read is never
+   * reported as an empty one: "no agents" is the answer that lets a toggle run with no confirmation.
+   */
+  const relatedAgents = async (id: number): Promise<{ agents: API.CliRelatedAgent[] } | { failed: true }> => {
     try {
-      const res = await getCliRelatedAgents(id);
-      return res.code === 200 ? res.data || [] : [];
+      // skipErrorHandler: the caller shows the one error surface this read needs, and it has to be able
+      // to tell "failed" apart from "empty" — the global handler swallows both into undefined.
+      const res = await getCliRelatedAgents(id, { skipErrorHandler: true });
+      return res.code === 200 ? { agents: res.data || [] } : { failed: true };
     } catch {
-      return [];
+      return { failed: true };
     }
   };
 
   const handleToggle = async (record: API.CliItem, newStatus: number) => {
-    const agents: API.CliRelatedAgent[] = await relatedAgents(record.id!);
+    const result = await relatedAgents(record.id!);
+    if ('failed' in result) {
+      // Blocked, not proceeded: nothing was sent to admin, and StatusSwitch reads its checked state off
+      // the row data, so the switch stays where it was.
+      Modal.error({
+        title: intl.formatMessage({ id: 'pages.cli.toggleBlocked', defaultMessage: 'Cannot change CLI status' }),
+        content: intl.formatMessage({
+          id: 'pages.message.loadFailedRetry',
+          defaultMessage: 'Failed to load the related list, please retry',
+        }),
+        okText: intl.formatMessage({ id: 'pages.common.confirm', defaultMessage: 'Confirm' }),
+      });
+      return;
+    }
+    const agents = result.agents;
     if (agents.length === 0) {
       await applyToggle(record, newStatus);
       return;

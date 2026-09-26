@@ -597,11 +597,12 @@ throw BizException(messageUtil.getMessage("error.validation.required", "username
 ### 11.4 租户上下文
 
 ```kotlin
-val tenantId = TenantContext.getTenantId() ?: 1
+private fun currentTenantId(): Long = TenantResolver.resolve(jwtUtil)
 ```
 
 - 请求进入时由 `TenantInterceptor` 从 `X-Tenant-ID` 请求头取值，非全局管理员还要查 `user_tenant` 校验该用户确实属于这个租户，通过后才写入 `TenantContext`
-- 请求头缺失时该拦截器直接放行且不写入任何值，`currentTenantId()` 因此落到字面量 1——无头调用（内部 API、移动端）不能依赖它做归属判定
+- 请求头缺失时该拦截器直接放行且不写入任何值，回落顺序由 `TenantResolver` 统一给出：Token 的 `tenantId` 声明 → 调用者 `sys_user` 行的租户 → 字面量 1。前两步只会把请求带到**调用者自己**的租户，不会把他带进不属于他的工作区；只有既无请求头、又无 Token 声明也无账号可查（内部 API、定时任务）才落到 1
+- 服务里保留 `currentTenantId()` 这个私有方法名作为调用点口径，实现一律走 `TenantResolver`，不要再写第二套兜底
 - 请求结束自动清理，禁止在线程池/异步任务中直接透传
 
 ## 十二、安全规范

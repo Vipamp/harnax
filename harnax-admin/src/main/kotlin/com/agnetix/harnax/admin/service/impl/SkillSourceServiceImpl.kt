@@ -15,6 +15,7 @@ import com.agnetix.harnax.admin.skill.loader.SkillLoader
 import com.agnetix.harnax.admin.skill.loader.SkillLoaderRegistry
 import com.agnetix.harnax.admin.util.ApiErrors
 import com.agnetix.harnax.admin.util.JwtUtil
+import com.agnetix.harnax.admin.util.TenantResolver
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.SkillRepository
 import com.agnetix.harnax.mapper.SkillMapper
@@ -50,7 +51,7 @@ class SkillSourceServiceImpl(
         pageSize: Int,
     ): Page<SkillSourceResponse> {
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-        val tenantId = TenantContext.getTenantId() ?: 1
+        val tenantId = currentTenantId()
         val safePageNum = pageNum.coerceAtLeast(1)
         val safePageSize = pageSize.coerceIn(1, 1000)
         PageHelper.startPage<SkillRepository>(safePageNum, safePageSize)
@@ -75,10 +76,22 @@ class SkillSourceServiceImpl(
 
     /**
      * `selectActiveRepositories` already folds in the shared builtin repository, so the caller does
-     * not have to add it. A null tenant means an internal call, where the default tenant is the
-     * only sensible scope, matching the legacy endpoint.
+     * not have to add it. The scope is the one [currentTenantId] answers with — the same value the
+     * legacy `SkillRepositoryService.getActiveRepositories` filters by, so the two endpoints cannot
+     * disagree about which sources this caller has.
      */
-    override fun listActive(): List<SkillRepository> = skillRepositoryMapper.selectActiveRepositories(TenantContext.getTenantId() ?: 1)
+    override fun listActive(): List<SkillRepository> = skillRepositoryMapper.selectActiveRepositories(currentTenantId())
+
+    /**
+     * The tenant this request acts within. [TenantResolver] holds the chain and the reason a request
+     * without `X-Tenant-ID` is read as the caller's own tenant rather than as tenant 1 — the same answer
+     * the other admin services give, and the value both create paths below stamp, so a source a caller
+     * wrote is a source their own list shows.
+     *
+     * [requireReadable] keeps reading the raw [TenantContext]: there a null means "an internal call with
+     * no tenant to gate by", which a concrete id would turn into a check against the default workspace.
+     */
+    private fun currentTenantId(): Long = TenantResolver.resolve(jwtUtil)
 
     /**
      * Creates the source and installs its skills.
@@ -89,7 +102,9 @@ class SkillSourceServiceImpl(
     override fun createSkillSource(request: SkillSourceCreateRequest): SkillSourceInstallResponse {
         log.info("Creating skill source, name: {}, type: {}", request.name, request.sourceType)
 
-        val tenantId = TenantContext.getTenantId() ?: 1
+        // Resolved once: the name probes and the stamp below all speak about the same tenant, or a
+        // collision would be looked for in one workspace and the source created in another
+        val tenantId = currentTenantId()
         val name = SkillSourcePolicy.requireUsableName(request.name, "Source")
         // Checked before the name probe and long before the fetch: an out-of-range value fits the
         // TINYINT column, but every reader tests `status == 1`, so `status = 7` would create a
@@ -334,7 +349,8 @@ class SkillSourceServiceImpl(
     override fun uploadAndInstall(zipPath: String, originalFilename: String, name: String): SkillSourceInstallResponse {
         log.info("Installing skill from ZIP upload: {}", originalFilename)
 
-        val tenantId = TenantContext.getTenantId() ?: 1
+        // Same single resolution as createSkillSource: the name probe and the stamp have to agree
+        val tenantId = currentTenantId()
         val sourceName = SkillSourcePolicy.requireUsableName(name, "Source")
         if (skillRepositoryMapper.selectByName(sourceName, tenantId) != null) {
             throw BizException("Source name already exists")

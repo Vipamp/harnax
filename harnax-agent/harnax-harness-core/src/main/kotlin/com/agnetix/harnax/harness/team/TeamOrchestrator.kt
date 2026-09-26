@@ -11,6 +11,7 @@ import com.agnetix.harnax.agent.protocol.withSource
 import com.agnetix.harnax.entity.TeamArtifact
 import com.agnetix.harnax.harness.HarnessAgentWrapper
 import com.agnetix.harnax.harness.config.TeamConfig
+import com.agnetix.harnax.harness.sandbox.SandboxFileWriter
 import io.agentscope.core.event.ConfirmResult
 import io.agentscope.core.message.Msg
 import io.agentscope.core.message.MsgRole
@@ -19,7 +20,6 @@ import org.slf4j.LoggerFactory
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Sinks
 import java.time.Duration
-import java.util.Base64
 import java.util.UUID
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
@@ -534,7 +534,7 @@ class TeamOrchestrator(
     ): String {
         val gateway = artifactGateway
             ?: return "产物存储未启用（MinIO 未配置），无法发布文件。不要用公共链接或宿主目录代替。"
-        val relative = safeRelativePath(path)
+        val relative = SandboxFileWriter.safeRelativePath(path)
             ?: return "只能发布自己工作区内的文件，且路径不能包含 ..：$path"
         val sandbox = sandboxProvider(run.childSessionId)
             ?: return "当前没有运行中的沙箱，无法读取 $relative。"
@@ -576,7 +576,7 @@ class TeamOrchestrator(
         // admin authorized for the root session, never from the model.
         val artifact = gateway.findOwned(fileId, spec.tenantId, spec.rootSessionId)
             ?: return "找不到属于本会话的产物 fileId=$fileId。"
-        val relative = safeRelativePath(destPath)
+        val relative = SandboxFileWriter.safeRelativePath(destPath)
             ?: return "只能写入自己工作区内的路径，且不能包含 ..：$destPath"
         if (artifact.sizeBytes > config.maxArtifactBytes) {
             return "产物 ${artifact.fileName} 超过大小上限 ${config.maxArtifactBytes} 字节，未下载。"
@@ -586,7 +586,7 @@ class TeamOrchestrator(
         val sandbox = sandboxProvider(run.childSessionId)
             ?: return "当前没有运行中的沙箱，无法写入 $relative。"
         return try {
-            sandboxWrite(sandbox, "$sandboxWorkspaceRoot/$relative", bytes)
+            SandboxFileWriter.write(sandbox, "$sandboxWorkspaceRoot/$relative", bytes)
             "已获取 ${artifact.fileName}（${artifact.sizeBytes} 字节）到 $relative。"
         } catch (e: Exception) {
             log.error("[team] Fetch failed: run={}, fileId={}", run.childRunId, fileId, e)
@@ -702,20 +702,6 @@ class TeamOrchestrator(
         }
     }
 
-    /**
-     * Normalizes a model-supplied path to one inside the workspace, rejecting traversal and absolute paths.
-     *
-     * The result is interpolated into single-quoted `exec` arguments, so anything that is not a literal
-     * character there — a quote, `$`, a backtick, a newline — has to go, not just `..`.
-     */
-    private fun safeRelativePath(path: String): String? {
-        val cleaned = path.trim().removePrefix("./").trimStart('/')
-        if (cleaned.isEmpty() || !SAFE_PATH.matches(cleaned)) return null
-        val segments = cleaned.split('/')
-        if (segments.any { it == ".." || it == "." || it.isBlank() }) return null
-        return segments.joinToString("/")
-    }
-
     private fun sandboxSize(
         sandbox: Sandbox,
         absolute: String,
@@ -730,50 +716,23 @@ class TeamOrchestrator(
         null
     }
 
+    /**
+     * Reads one whole file out of the sandbox through [SandboxFileWriter], or null when it is missing or
+     * unreadable.
+     *
+     * The writer logs the reason at debug — to it a missing file is a normal answer — while here a null
+     * makes a tool call fail, so it gets the one WARN the caller needs to see.
+     */
     private fun sandboxRead(
         sandbox: Sandbox,
         absolute: String,
-    ): ByteArray? = try {
-        val out = sandbox.exec(null, "base64 '$absolute'", 60).stdout().trim()
-        if (out.isEmpty()) null else Base64.getMimeDecoder().decode(out)
-    } catch (e: Exception) {
-        log.warn("[team] Sandbox read failed for {}: {}", absolute, e.message)
-        null
-    }
-
-    /**
-     * Writes bytes into the sandbox. `exec` has no stdin, so the payload goes in as base64 chunks; each
-     * chunk stays well inside one `ARG_MAX`, and the target is only replaced once the last chunk landed.
-     */
-    private fun sandboxWrite(
-        sandbox: Sandbox,
-        absolute: String,
-        data: ByteArray,
-    ) {
-        val encoded = Base64.getEncoder().encodeToString(data)
-        val temp = "$absolute.tmp-${UUID.randomUUID()}"
-        sandbox.exec(null, "mkdir -p \$(dirname '$absolute')", 15)
-        try {
-            encoded.chunked(BASE64_CHUNK).forEach { chunk ->
-                val result = sandbox.exec(null, "printf %s '$chunk' >> '$temp'", 30)
-                check(result.exitCode() == 0) { "写入 $absolute 失败：${result.stderr().take(200)}" }
-            }
-            val move = sandbox.exec(null, "base64 -d '$temp' > '$absolute' && rm -f '$temp'", 60)
-            check(move.exitCode() == 0) { "解码写入 $absolute 失败：${move.stderr().take(200)}" }
-        } catch (e: Exception) {
-            runCatching { sandbox.exec(null, "rm -f '$temp'", 15) }
-            throw e
-        }
+    ): ByteArray? = SandboxFileWriter.read(sandbox, absolute).also {
+        if (it == null) log.warn("[team] Sandbox read failed for {}", absolute)
     }
 
     private fun guessMimeType(fileName: String): String = MIME_BY_EXTENSION[fileName.substringAfterLast('.', "").lowercase()] ?: "application/octet-stream"
 
     companion object {
-        private const val BASE64_CHUNK = 64 * 1024
-
-        /** The only characters that stay literal inside a single-quoted shell argument. */
-        private val SAFE_PATH = Regex("""[\p{L}\p{N}._\- /]+""")
-
         /** A member that keeps asking after this many rounds is stuck; stop rather than loop forever. */
         private const val MAX_CONFIRM_ROUNDS = 5
 

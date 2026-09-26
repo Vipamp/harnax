@@ -17,6 +17,7 @@ import com.agnetix.harnax.admin.skill.SkillSourcePolicy
 import com.agnetix.harnax.admin.skill.SkillSyncRecorder
 import com.agnetix.harnax.admin.skill.loader.SkillLoaderRegistry
 import com.agnetix.harnax.admin.util.JwtUtil
+import com.agnetix.harnax.admin.util.TenantResolver
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.SkillRepository
@@ -68,7 +69,7 @@ class SkillServiceImpl(
             status,
         )
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-        val tenantId = TenantContext.getTenantId() ?: 1
+        val tenantId = currentTenantId()
         val safePageNum = pageNum.coerceAtLeast(1)
         val safePageSize = pageSize.coerceIn(1, 1000)
         // Built-in CLI skills belong to the seeding tenant but must be listable everywhere,
@@ -89,6 +90,18 @@ class SkillServiceImpl(
         // it is, and the controller turned that into a 500.
         return skillMapper.selectById(id)?.takeIf { readable(it) }
     }
+
+    /**
+     * The tenant this request acts within. [TenantResolver] holds the chain and the reason a request
+     * without `X-Tenant-ID` is read as the caller's own tenant rather than as tenant 1 — the same answer
+     * the other admin services give, so a skill written by one call is found by the next.
+     *
+     * The visibility predicates below ([readable], [requireWritableRepo]) deliberately keep reading the
+     * raw [TenantContext] instead: there a null means "an internal call with no tenant to gate by", and
+     * resolving it to a concrete tenant would turn that into a membership check against the default
+     * workspace. This helper only replaces the two places that had to answer with *some* id.
+     */
+    private fun currentTenantId(): Long = TenantResolver.resolve(jwtUtil)
 
     @Transactional(rollbackFor = [Exception::class])
     override fun createSkill(request: SkillCreateRequest): Boolean {
@@ -131,7 +144,7 @@ class SkillServiceImpl(
         skill.isPublic = repository.isPublic
 
         // Set tenant ID
-        skill.tenantId = TenantContext.getTenantId() ?: 1
+        skill.tenantId = currentTenantId()
 
         // Set creator
         skill.creator = UserContextUtil.getCurrentUsername(jwtUtil) ?: ""

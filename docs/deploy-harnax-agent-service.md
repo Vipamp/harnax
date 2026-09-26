@@ -130,7 +130,8 @@
 | `HARNESS_ENABLE_MEMORY_HOOKS` | `false` | 记忆钩子 |
 | `HARNESS_ENABLE_SESSION_PERSISTENCE` | `true` | 会话持久化 |
 | `HARNAX_MCP_STDIO_ENABLED` | `false` | **stdio 类型 MCP 服务的开关**，同一个变量同时决定 admin 的 `harnax.mcp.stdio-enabled`。详见下一节 |
-| `HARNAX_TURN_TIMEOUT_SECONDS` | `300` | 单个回合预算（秒），批量与流式共用。**团队不适用**：主管与成员由 `harness.team.member-turn-timeout-seconds`（默认 900）与确认等待预算限定，装配时对团队 wrapper 关掉这项 |
+| `HARNAX_TURN_TIMEOUT_SECONDS` | `300` | 单个回合预算（秒），批量与流式共用，只作用于单体智能体。团队回合改用下一项 |
+| `HARNAX_TEAM_TURN_TIMEOUT_SECONDS` | `1800` | 团队一个回合的预算（秒），主管与成员都用它。必须高于 `harness.team.member-turn-timeout-seconds`（默认 900）与 `confirm-timeout-seconds`（默认 600）：低于它们时，先触发的就是这一项，一个只是跑得久的成员会连整条会话一起被切断，而不是把「这次委派失败」交回主管处理。装配时若发现配反了会打一条 WARN |
 | `ROUTER_SERVICE_URL` | `http://localhost:8081` | router 地址 |
 | `ADMIN_SERVICE_URL` | `http://localhost:8080` | admin 地址 |
 | `LOG_LEVEL` | `INFO` | 本服务包级别日志 |

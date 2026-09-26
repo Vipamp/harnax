@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useIntl } from '@umijs/max';
-import { Modal, Checkbox, Tag, Typography, Empty, Spin, message } from 'antd';
+import { Modal, Checkbox, Tag, Typography, Empty, Spin, Button, message } from 'antd';
 import { SyncOutlined } from '@ant-design/icons';
 import { getAgentRelatedSessions, refreshAgentSessions } from '@/services/ant-design-pro/agent';
 import { getCliRelatedSessions } from '@/services/ant-design-pro/cli';
@@ -39,31 +39,43 @@ const AgentRefreshModal: React.FC<AgentRefreshModalProps> = ({ visible, source =
   const [refreshing, setRefreshing] = useState(false);
   const [sessions, setSessions] = useState<RelatedSession[]>([]);
   const [checked, setChecked] = useState<string[]>([]);
+  /** A failed read is its own state: rendering it as the empty list would claim "nothing depends on this". */
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [messageApi, contextHolder] = message.useMessage();
 
   useEffect(() => {
     if (visible && agentId) {
       setLoading(true);
+      setLoadFailed(false);
       setSessions([]);
       setChecked([]);
+      // skipErrorHandler: the modal shows the reason in place of the list, so the global toast would only
+      // add a second surface for the same failure — and the handler resolves the call to undefined, which
+      // the then-branch cannot tell apart from "admin answered with nothing".
       const fetch =
         source === 'cli'
-          ? getCliRelatedSessions(agentId)
+          ? getCliRelatedSessions(agentId, { skipErrorHandler: true })
           : source === 'team'
-            ? getTeamRelatedSessions(agentId)
-            : getAgentRelatedSessions(agentId);
+            ? getTeamRelatedSessions(agentId, { skipErrorHandler: true })
+            : getAgentRelatedSessions(agentId, { skipErrorHandler: true });
       fetch
         .then((res) => {
-          if (res.code === 200 && res.data) {
-            setSessions(res.data);
+          if (res?.code === 200) {
+            const list = (res.data || []) as RelatedSession[];
+            setSessions(list);
             // 默认全选，用户可取消不需要刷新的
-            setChecked(res.data.map((s: RelatedSession) => s.sessionId));
+            setChecked(list.map((s) => s.sessionId));
+          } else {
+            setLoadFailed(true);
           }
         })
-        .catch(() => {})
+        .catch(() => {
+          setLoadFailed(true);
+        })
         .finally(() => setLoading(false));
     }
-  }, [visible, agentId, source]);
+  }, [visible, agentId, source, reloadKey]);
 
   const handleRefresh = async () => {
     if (checked.length === 0) {
@@ -158,6 +170,19 @@ const AgentRefreshModal: React.FC<AgentRefreshModalProps> = ({ visible, source =
         {loading ? (
           <div style={{ textAlign: 'center', padding: 24 }}>
             <Spin />
+          </div>
+        ) : loadFailed ? (
+          <div style={{ textAlign: 'center', padding: '8px 0 16px' }}>
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={intl.formatMessage({
+                id: 'pages.message.loadFailedRetry',
+                defaultMessage: 'Failed to load the related list, please retry',
+              })}
+            />
+            <Button size="small" onClick={() => setReloadKey((k) => k + 1)}>
+              {intl.formatMessage({ id: 'pages.common.retry', defaultMessage: 'Retry' })}
+            </Button>
           </div>
         ) : sessions.length === 0 ? (
           <Empty

@@ -5,6 +5,7 @@ import com.agnetix.harnax.admin.dto.ChannelCreateRequest
 import com.agnetix.harnax.admin.dto.ChannelUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.AgentService
+import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.Channel
 import com.agnetix.harnax.mapper.ChannelMapper
@@ -54,6 +55,9 @@ class ChannelServiceImplTest {
 
     @Mock
     private lateinit var sessionRuntimeReleaser: SessionRuntimeReleaser
+
+    @Mock
+    private lateinit var jwtUtil: JwtUtil
 
     private lateinit var testChannel: Channel
     private lateinit var testAgent: Agent
@@ -107,6 +111,7 @@ class ChannelServiceImplTest {
             channelMapper = channelMapper,
             agentService = agentService,
             sessionRuntimeReleaser = sessionRuntimeReleaser,
+            jwtUtil = jwtUtil,
         )
         // baseUrl is injected via @Value, set it manually
         ReflectionTestUtils.setField(service, "baseUrl", "http://localhost:8080")
@@ -145,6 +150,22 @@ class ChannelServiceImplTest {
             // Then
             assertNotNull(page)
             verify(channelMapper).selectChannelList("Test", null, null, 1L)
+        }
+
+        @Test
+        @DisplayName("page - Without the header, act within the tenant the caller's own token claims")
+        fun `page should act within the token's tenant when no header arrived`() {
+            // Given - this service used to answer `TenantContext.getTenantId() ?: 1`, so a client that
+            // sends no X-Tenant-ID (the CLI never does) listed tenant 1's channels while the env-variable
+            // and MCP services listed that same caller's own rows. One chain now, so one answer.
+            `when`(jwtUtil.getTenantIdFromToken("mock-token")).thenReturn(3L)
+            `when`(channelMapper.selectChannelList(null, null, null, 3L)).thenReturn(emptyList())
+
+            // When
+            createService().page(null, null, null, 1, 10)
+
+            // Then
+            verify(channelMapper).selectChannelList(null, null, null, 3L)
         }
 
         @Test

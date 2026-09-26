@@ -14,6 +14,7 @@ import com.agnetix.harnax.agent.adaptor.SkillAdaptor
 import com.agnetix.harnax.agent.adaptor.TokenStatAdaptor
 import com.agnetix.harnax.agent.adaptor.model.OpenAIChatModelConfig
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
+import com.agnetix.harnax.harness.sandbox.VirtualSandbox
 import com.agnetix.harnax.harness.team.TeamOrchestrator
 import com.agnetix.harnax.harness.team.TeamRuntimeSpec
 import com.agnetix.harnax.tools.sdk.UserIdentifier
@@ -35,9 +36,11 @@ import ch.qos.logback.classic.Logger as LogbackLogger
  * must let them through like any other agent's. Asserted on the built agent because which repositories
  * answer `load_skill` at model time is a property of that agent, not of the builder on the way there.
  *
- * The other half of D5 is what a lead cannot do: it has no sandbox, so a skill's files have nowhere to go.
- * Those files are dropped while the instructions stay, and the operator is told — a silent drop is how a
- * team looks like it has a capability it cannot use.
+ * A lead gets a keep-alive container like any other agent, so its skill's files are projected into it —
+ * see [HarnessAgentWrapper.projectSkills]. What it has no way to do is *run* them: `disableShellTool()`
+ * leaves it with no shell and the harness with no `<files-root>` to advertise, and the launcher reports
+ * exactly that. Both halves are asserted here, because the file landing on disk and the warning about
+ * being unable to execute it are the same decision seen from two sides.
  */
 class HarnessAgentLauncherLeadSkillTest {
 
@@ -124,6 +127,12 @@ class HarnessAgentLauncherLeadSkillTest {
 
     private fun inMemorySkills(agent: HarnessAgentWrapper) = agent.harnessAgent.skillRepositories.filter { it.source == "in-memory" }
 
+    /** What the wrapper would write into the session's container before the agent runs. */
+    private fun projectSkills(agent: HarnessAgentWrapper): VirtualSandbox = VirtualSandbox().also { agent.projectSkills(it) }
+
+    /** The projected files, without the projector's own bookkeeping file. */
+    private fun skillFiles(sandbox: VirtualSandbox) = sandbox.files.filterKeys { !it.endsWith("/.harnax-skills.json") }
+
     @Test
     fun `the lead loads the skill the team binds`(@TempDir workspace: Path) {
         val (agent, warnings) = buildLeadReportingWarnings(workspace, skill("report-style", "# house style"))
@@ -134,12 +143,18 @@ class HarnessAgentLauncherLeadSkillTest {
         // Nothing was given up, so nothing should be reported: an alarm on every lead build teaches
         // nobody to read it.
         assertTrue(warnings.none { it.contains("report-style") }, "unexpected warning: $warnings")
+
+        assertEquals(
+            mapOf("/workspace/skills/report-style/SKILL.md" to "# house style"),
+            skillFiles(projectSkills(agent)),
+            "the skill text is delivered, so its file should be too",
+        )
     }
 
     @Test
-    fun `a skill carrying files still reaches the lead as text, with the files reported`(@TempDir workspace: Path) {
-        // The lead has no sandbox to project a skill's files into, so a script-type skill loses the
-        // scripts and keeps its instructions; dropping the whole skill would take the text too.
+    fun `a skill carrying files reaches the lead's container, with its missing shell reported`(@TempDir workspace: Path) {
+        // The files are projected like any member's; what a lead cannot do is execute them, and the
+        // launcher says so rather than letting the team look like it has a capability it cannot use.
         val (agent, warnings) = buildLeadReportingWarnings(
             workspace,
             skill("report-style", "# house style", mapOf("scripts/run.sh" to "#!/bin/sh")),
@@ -147,7 +162,16 @@ class HarnessAgentLauncherLeadSkillTest {
 
         val delivered = inMemorySkills(agent)
         assertEquals("# house style", delivered.single().getSkill("report-style").skillContent)
+
+        assertEquals(
+            mapOf(
+                "/workspace/skills/report-style/SKILL.md" to "# house style",
+                "/workspace/skills/report-style/scripts/run.sh" to "#!/bin/sh",
+            ),
+            skillFiles(projectSkills(agent)),
+        )
+
         val reported = warnings.single { it.contains("report-style") }
-        assertTrue(reported.contains("scripts/run.sh"), "the dropped file is not named: $reported")
+        assertTrue(reported.contains("scripts/run.sh"), "the unusable file is not named: $reported")
     }
 }

@@ -1,6 +1,5 @@
 package com.agnetix.harnax.admin.service.impl
 
-import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.SessionChatUpdateRequest
 import com.agnetix.harnax.admin.dto.SessionCreateRequest
@@ -9,6 +8,7 @@ import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.*
 import com.agnetix.harnax.admin.util.JwtUtil
+import com.agnetix.harnax.admin.util.TenantResolver
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.Session
 import com.agnetix.harnax.mapper.AgentMcpBindingMapper
@@ -68,7 +68,11 @@ class SessionServiceImpl(
         return Page.fromPageInfo(sessionMapper.selectSessionList(keyword, status, currentUsername, currentTenantId()))
     }
 
-    private fun currentTenantId(): Long = TenantContext.getTenantId() ?: 1
+    /**
+     * The tenant this request acts within. [TenantResolver] holds the chain and the reason a request
+     * without `X-Tenant-ID` is read as the caller's own tenant rather than as tenant 1.
+     */
+    private fun currentTenantId(): Long = TenantResolver.resolve(jwtUtil)
 
     /**
      * The mapper's single-row statements carry no tenant condition and the tenant interceptor is

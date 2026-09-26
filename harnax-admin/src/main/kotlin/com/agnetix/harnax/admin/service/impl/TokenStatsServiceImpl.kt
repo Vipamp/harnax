@@ -3,11 +3,9 @@ package com.agnetix.harnax.admin.service.impl
 import com.agnetix.harnax.admin.dto.OverallStats
 import com.agnetix.harnax.admin.dto.TokenStatsAggregationResponse
 import com.agnetix.harnax.admin.service.TokenStatsService
-import com.agnetix.harnax.entity.TokenStats
 import com.agnetix.harnax.mapper.TokenStatsMapper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -29,28 +27,18 @@ class TokenStatsServiceImpl(
 
     private val log = LoggerFactory.getLogger(TokenStatsServiceImpl::class.java)
 
-    @Transactional(rollbackFor = [Exception::class])
-    override fun saveTokenStats(tokenStats: TokenStats): Boolean {
+    override fun getAggregationStats(startTime: String, endTime: String, tenantId: Long): TokenStatsAggregationResponse {
         log.info(
-            "Saving Token consumption record, agentId: {}, sessionId: {}, chatModelId: {}, totalToken: {}",
-            tokenStats.agentId,
-            tokenStats.sessionId,
-            tokenStats.chatModelId,
-            tokenStats.totalToken,
+            "Fetching Token aggregation statistics, startTime: {}, endTime: {}, tenantId: {}",
+            startTime,
+            endTime,
+            tenantId,
         )
-
-        val success = this.tokenStatsMapper.insert(tokenStats) > 0
-        log.info("Token consumption record saved {}", if (success) "successfully" else "failed")
-        return success
-    }
-
-    override fun getAggregationStats(startTime: String, endTime: String): TokenStatsAggregationResponse {
-        log.info("Fetching Token aggregation statistics, startTime: {}, endTime: {}", startTime, endTime)
 
         val response = TokenStatsAggregationResponse()
 
         // Get overall statistics
-        val overallMap = tokenStatsMapper.getOverallStats(startTime, endTime)
+        val overallMap = tokenStatsMapper.getOverallStats(startTime, endTime, tenantId)
         if (overallMap != null) {
             response.overall = TokenStatsAggregationResponse.mapToOverallStats(overallMap as Map<String, Any?>)
         } else {
@@ -58,16 +46,16 @@ class TokenStatsServiceImpl(
         }
 
         // Aggregate by model
-        val modelData = tokenStatsMapper.aggregateByModel(startTime, endTime)
+        val modelData = tokenStatsMapper.aggregateByModel(startTime, endTime, tenantId)
         response.modelStats = modelData!!.map { TokenStatsAggregationResponse.mapToModelStats(it as Map<String, Any?>) }
 
         // Aggregate by session
-        val sessionData = tokenStatsMapper.aggregateBySession(startTime, endTime)
+        val sessionData = tokenStatsMapper.aggregateBySession(startTime, endTime, tenantId)
         response.sessionStats =
             sessionData!!.map { TokenStatsAggregationResponse.mapToSessionStats(it as Map<String, Any?>) }
 
         // Aggregate by agent
-        val agentData = tokenStatsMapper.aggregateByAgent(startTime, endTime)
+        val agentData = tokenStatsMapper.aggregateByAgent(startTime, endTime, tenantId)
         response.agentStats = agentData!!.map { TokenStatsAggregationResponse.mapToAgentStats(it as Map<String, Any?>) }
 
         log.info("Token aggregation statistics retrieval completed")
@@ -78,21 +66,23 @@ class TokenStatsServiceImpl(
         startTime: String,
         endTime: String,
         granularity: String,
+        tenantId: Long,
     ): TokenStatsAggregationResponse {
         log.info(
-            "Fetching Token time series data, startTime: {}, endTime: {}, granularity: {}",
+            "Fetching Token time series data, startTime: {}, endTime: {}, granularity: {}, tenantId: {}",
             startTime,
             endTime,
             granularity,
+            tenantId,
         )
 
         val response = TokenStatsAggregationResponse()
 
         val timeSeriesData = when (granularity) {
-            "hour" -> tokenStatsMapper.getTimeSeriesByHour(startTime, endTime)
-            "week" -> tokenStatsMapper.getTimeSeriesByWeek(startTime, endTime)
-            "month" -> tokenStatsMapper.getTimeSeriesByMonth(startTime, endTime)
-            else -> tokenStatsMapper.getTimeSeriesByDay(startTime, endTime)
+            "hour" -> tokenStatsMapper.getTimeSeriesByHour(startTime, endTime, tenantId)
+            "week" -> tokenStatsMapper.getTimeSeriesByWeek(startTime, endTime, tenantId)
+            "month" -> tokenStatsMapper.getTimeSeriesByMonth(startTime, endTime, tenantId)
+            else -> tokenStatsMapper.getTimeSeriesByDay(startTime, endTime, tenantId)
         }
 
         // Every bucket in the window gets a point; the ones without traffic report 0
@@ -108,27 +98,48 @@ class TokenStatsServiceImpl(
         startTime: String,
         endTime: String,
         granularity: String,
+        tenantId: Long,
     ): TokenStatsAggregationResponse {
-        log.info("Fetching model time series data, startTime: {}, endTime: {}, granularity: {}", startTime, endTime, granularity)
-        return getDimensionTimeSeriesData(startTime, endTime, granularity, "model")
+        log.info(
+            "Fetching model time series data, startTime: {}, endTime: {}, granularity: {}, tenantId: {}",
+            startTime,
+            endTime,
+            granularity,
+            tenantId,
+        )
+        return getDimensionTimeSeriesData(startTime, endTime, granularity, "model", tenantId)
     }
 
     override fun getAgentTimeSeriesData(
         startTime: String,
         endTime: String,
         granularity: String,
+        tenantId: Long,
     ): TokenStatsAggregationResponse {
-        log.info("Fetching agent time series data, startTime: {}, endTime: {}, granularity: {}", startTime, endTime, granularity)
-        return getDimensionTimeSeriesData(startTime, endTime, granularity, "agent")
+        log.info(
+            "Fetching agent time series data, startTime: {}, endTime: {}, granularity: {}, tenantId: {}",
+            startTime,
+            endTime,
+            granularity,
+            tenantId,
+        )
+        return getDimensionTimeSeriesData(startTime, endTime, granularity, "agent", tenantId)
     }
 
     override fun getSessionTimeSeriesData(
         startTime: String,
         endTime: String,
         granularity: String,
+        tenantId: Long,
     ): TokenStatsAggregationResponse {
-        log.info("Fetching session time series data, startTime: {}, endTime: {}, granularity: {}", startTime, endTime, granularity)
-        return getDimensionTimeSeriesData(startTime, endTime, granularity, "session")
+        log.info(
+            "Fetching session time series data, startTime: {}, endTime: {}, granularity: {}, tenantId: {}",
+            startTime,
+            endTime,
+            granularity,
+            tenantId,
+        )
+        return getDimensionTimeSeriesData(startTime, endTime, granularity, "session", tenantId)
     }
 
     /**
@@ -139,29 +150,30 @@ class TokenStatsServiceImpl(
         endTime: String,
         granularity: String,
         dimensionType: String,
+        tenantId: Long,
     ): TokenStatsAggregationResponse {
         val response = TokenStatsAggregationResponse()
 
         val timeSeriesData = when (dimensionType) {
             "model" -> when (granularity) {
-                "hour" -> tokenStatsMapper.getModelTimeSeriesByHour(startTime, endTime)
-                "week" -> tokenStatsMapper.getModelTimeSeriesByWeek(startTime, endTime)
-                "month" -> tokenStatsMapper.getModelTimeSeriesByMonth(startTime, endTime)
-                else -> tokenStatsMapper.getModelTimeSeriesByDay(startTime, endTime)
+                "hour" -> tokenStatsMapper.getModelTimeSeriesByHour(startTime, endTime, tenantId)
+                "week" -> tokenStatsMapper.getModelTimeSeriesByWeek(startTime, endTime, tenantId)
+                "month" -> tokenStatsMapper.getModelTimeSeriesByMonth(startTime, endTime, tenantId)
+                else -> tokenStatsMapper.getModelTimeSeriesByDay(startTime, endTime, tenantId)
             }
 
             "agent" -> when (granularity) {
-                "hour" -> tokenStatsMapper.getAgentTimeSeriesByHour(startTime, endTime)
-                "week" -> tokenStatsMapper.getAgentTimeSeriesByWeek(startTime, endTime)
-                "month" -> tokenStatsMapper.getAgentTimeSeriesByMonth(startTime, endTime)
-                else -> tokenStatsMapper.getAgentTimeSeriesByDay(startTime, endTime)
+                "hour" -> tokenStatsMapper.getAgentTimeSeriesByHour(startTime, endTime, tenantId)
+                "week" -> tokenStatsMapper.getAgentTimeSeriesByWeek(startTime, endTime, tenantId)
+                "month" -> tokenStatsMapper.getAgentTimeSeriesByMonth(startTime, endTime, tenantId)
+                else -> tokenStatsMapper.getAgentTimeSeriesByDay(startTime, endTime, tenantId)
             }
 
             "session" -> when (granularity) {
-                "hour" -> tokenStatsMapper.getSessionTimeSeriesByHour(startTime, endTime)
-                "week" -> tokenStatsMapper.getSessionTimeSeriesByWeek(startTime, endTime)
-                "month" -> tokenStatsMapper.getSessionTimeSeriesByMonth(startTime, endTime)
-                else -> tokenStatsMapper.getSessionTimeSeriesByDay(startTime, endTime)
+                "hour" -> tokenStatsMapper.getSessionTimeSeriesByHour(startTime, endTime, tenantId)
+                "week" -> tokenStatsMapper.getSessionTimeSeriesByWeek(startTime, endTime, tenantId)
+                "month" -> tokenStatsMapper.getSessionTimeSeriesByMonth(startTime, endTime, tenantId)
+                else -> tokenStatsMapper.getSessionTimeSeriesByDay(startTime, endTime, tenantId)
             }
 
             else -> emptyList()

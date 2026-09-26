@@ -102,6 +102,7 @@ abstract class ToolBox {
             startTime = startTime,
             endTime = endTime,
             duration = duration,
+            tenantId = meta.tenantId,
         )
 
         try {
@@ -138,6 +139,7 @@ abstract class ToolBox {
             startTime = startTime,
             endTime = endTime,
             duration = duration,
+            tenantId = meta.tenantId,
         )
 
         try {

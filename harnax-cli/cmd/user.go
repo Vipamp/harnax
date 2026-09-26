@@ -144,6 +144,11 @@ var userCreateCmd = &cobra.Command{
 		if cmd.Flags().Changed("password") {
 			body["password"], _ = cmd.Flags().GetString("password")
 		}
+		// nickname is a non-null parameter of SysUserCreateRequest, so the body has to carry it:
+		// without it the request never reaches the service.
+		if cmd.Flags().Changed("nickname") {
+			body["nickname"], _ = cmd.Flags().GetString("nickname")
+		}
 		if cmd.Flags().Changed("phone") {
 			body["phone"], _ = cmd.Flags().GetString("phone")
 		}
@@ -235,10 +240,12 @@ func init() {
 
 	userCreateCmd.Flags().String("username", "", "Username")
 	userCreateCmd.Flags().String("password", "", "Password")
+	userCreateCmd.Flags().String("nickname", "", "Nickname")
 	userCreateCmd.Flags().String("phone", "", "Phone number")
 	userCreateCmd.Flags().String("email", "", "Email address")
 	userCreateCmd.MarkFlagRequired("username")
 	userCreateCmd.MarkFlagRequired("password")
+	userCreateCmd.MarkFlagRequired("nickname")
 
 	userUpdateCmd.Flags().String("username", "", "Username")
 	userUpdateCmd.Flags().String("phone", "", "Phone number")

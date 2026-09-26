@@ -155,8 +155,10 @@ var taskCreateCmd = &cobra.Command{
 		if cmd.Flags().Changed("cron") {
 			body["cronExpression"], _ = cmd.Flags().GetString("cron")
 		}
-		if cmd.Flags().Changed("input") {
-			body["input"], _ = cmd.Flags().GetString("input")
+		// The scheduler contract calls this `prompt` and refuses a blank one, along with a blank
+		// cronExpression; the `input` key this command used to post is not in the DTO at all.
+		if cmd.Flags().Changed("prompt") {
+			body["prompt"], _ = cmd.Flags().GetString("prompt")
 		}
 
 		_, err = c.Create(ctx, taskPath, body)
@@ -185,8 +187,8 @@ var taskUpdateCmd = &cobra.Command{
 		if cmd.Flags().Changed("cron") {
 			body["cronExpression"], _ = cmd.Flags().GetString("cron")
 		}
-		if cmd.Flags().Changed("input") {
-			body["input"], _ = cmd.Flags().GetString("input")
+		if cmd.Flags().Changed("prompt") {
+			body["prompt"], _ = cmd.Flags().GetString("prompt")
 		}
 
 		_, err = c.Update(ctx, taskPath, args[0], body)
@@ -387,13 +389,15 @@ func init() {
 	taskCreateCmd.Flags().String("name", "", "Task name")
 	taskCreateCmd.Flags().Int64("agent-id", 0, "Agent ID")
 	taskCreateCmd.Flags().String("cron", "", "Cron expression")
-	taskCreateCmd.Flags().String("input", "", "Task input")
+	taskCreateCmd.Flags().String("prompt", "", "Task prompt")
 	taskCreateCmd.MarkFlagRequired("name")
 	taskCreateCmd.MarkFlagRequired("agent-id")
+	taskCreateCmd.MarkFlagRequired("cron")
+	taskCreateCmd.MarkFlagRequired("prompt")
 
 	taskUpdateCmd.Flags().String("name", "", "Task name")
 	taskUpdateCmd.Flags().String("cron", "", "Cron expression")
-	taskUpdateCmd.Flags().String("input", "", "Task input")
+	taskUpdateCmd.Flags().String("prompt", "", "Task prompt")
 
 	taskToggleCmd.Flags().Int("status", 0, "Task status value")
 	taskToggleCmd.MarkFlagRequired("status")

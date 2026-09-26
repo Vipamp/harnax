@@ -1,9 +1,10 @@
 package com.agnetix.harnax.admin.skill
 
 import com.agnetix.harnax.admin.constant.BuiltinRepository
-import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.SkillRepositoryService
+import com.agnetix.harnax.admin.util.JwtUtil
+import com.agnetix.harnax.admin.util.TenantResolver
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.mapper.SkillMapper
 import org.slf4j.LoggerFactory
@@ -20,6 +21,7 @@ import org.springframework.stereotype.Component
  */
 @Component
 class SkillBindingResolver(
+    private val jwtUtil: JwtUtil,
     private val skillMapper: SkillMapper,
     private val skillRepositoryService: SkillRepositoryService,
 ) {
@@ -67,11 +69,22 @@ class SkillBindingResolver(
         return boundSkills
     }
 
+    /**
+     * The tenant this request acts within. [TenantResolver] holds the chain and the reason a request
+     * without `X-Tenant-ID` is read as the caller's own tenant rather than as tenant 1 — the same answer
+     * [com.agnetix.harnax.admin.service.impl.SkillServiceImpl] gives when it stamps a new skill row, so
+     * the skill a caller just created is the skill this guard finds.
+     *
+     * It only widens the lookup to the tenant the caller already owns; [deliverableWithin] keeps its
+     * exact-match predicate and the builtin repository stays the single exemption it was.
+     */
+    private fun currentTenantId(): Long = TenantResolver.resolve(jwtUtil)
+
     private fun resolveExisting(
         skillIds: List<Long>,
         builtinRepositoryId: Long?,
     ): List<Skill> {
-        val tenantId = TenantContext.getTenantId() ?: 1
+        val tenantId = currentTenantId()
         val resolvable = deliverableWithin(skillIds, tenantId, builtinRepositoryId)
         val missing = skillIds - resolvable.map { it.id }.toSet()
         if (missing.isNotEmpty()) {

@@ -221,6 +221,9 @@ class AgentSpecResolver(
     private fun buildAgentSpec(specInfo: AgentSpecInfoResponse, sessionId: String): AgentSpec {
         val builder = AgentSpec.builder()
             .id(specInfo.agentId)
+            // Admin read it off the agent (or team) row; it is the only source of the tenant for the
+            // token/tool-call/process rows this run writes, and the runtime has no DB lookup for it (V50).
+            .tenantId(specInfo.tenantId)
             .name(specInfo.agentName)
             .description(specInfo.description)
             .systemPrompt(specInfo.systemPrompt)

@@ -193,6 +193,22 @@
                         </goals>
                     </execution>
                 </executions>
+                <configuration>
+                    <!-- repackage always runs; nothing here to disable -->
+                    <skip>false</skip>
+                    <!--
+                        The fat jar goes out as `*-exec.jar` so the plain
+                        `harnax-channel-service-1.0.0-SNAPSHOT.jar` stays plain.
+                        Without the classifier, repackage replaces that artifact in the same
+                        session and before failsafe, Maven then puts the fat jar (not
+                        target/classes) on the IT fork classpath, and a Boot fat jar keeps the
+                        module's classes under BOOT-INF/classes where a plain classloader cannot
+                        see them. Same precedent as `harnax-admin`. Deployment scripts copy the
+                        `-exec` jar (docker-new/build.sh, deploy-all.sh, deploy-service.sh,
+                        Dockerfile.channel-service).
+                    -->
+                    <classifier>exec</classifier>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.jetbrains.kotlin</groupId>

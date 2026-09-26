@@ -40,7 +40,7 @@ cp harnax-agent/harnax-agent-service/target/harnax-agent-service-*.jar docker-ne
 echo "  ✓ harnax-agent-service"
 
 mkdir -p docker-new/dist/channel-service/
-cp harnax-channel/harnax-channel-service/target/harnax-channel-service-*.jar docker-new/dist/channel-service/
+cp harnax-channel/harnax-channel-service/target/harnax-channel-service-*-exec.jar docker-new/dist/channel-service/
 echo "  ✓ harnax-channel-service"
 
 mkdir -p docker-new/dist/router/

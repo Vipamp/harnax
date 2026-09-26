@@ -2,7 +2,7 @@
 -- 用于 Mapper 层集成测试
 
 -- ============================================
--- 1. 用户表
+-- 1. 用户表 (V1; V49 added the generated column and its unique key)
 -- ============================================
 CREATE TABLE IF NOT EXISTS `sys_user` (
     `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT '用户 ID',
@@ -20,8 +20,17 @@ CREATE TABLE IF NOT EXISTS `sys_user` (
     `last_login_time` DATETIME DEFAULT NULL COMMENT '最近一次登陆时间，初始为 NULL',
     `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    -- V49 uniqueness guard: one live account per name, because `selectByUsername`'s `LIMIT 1` is what
+    -- picks the account a request is served as. The generated column turns NULL once active = 0, so a
+    -- retired username can be registered again. It replaces `uk_username (username)`, a key production
+    -- never had (the same over-tightening V23 removed here for `mcp_server`) and that also refused a
+    -- live row next to a deleted one, the very case V49 exists to allow.
+    `active_username` VARCHAR(50) GENERATED ALWAYS AS (IF(active = 1, `username`, NULL)) VIRTUAL,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_username` (`username`),
+    UNIQUE KEY `uk_active_username` (`active_username`),
+    KEY `idx_tenant_id` (`tenant_id`),
+    -- baseline-only: production's `sys_user` carries PK, idx_tenant_id and `uk_active_username` and
+    -- nothing else, so these two are fixture hygiene rather than a rule any test may rely on.
     UNIQUE KEY `uk_email` (`email`),
     UNIQUE KEY `uk_phone` (`phone`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
@@ -360,17 +369,19 @@ CREATE TABLE IF NOT EXISTS `process_log` (
   `log_type` VARCHAR(20) DEFAULT 'INFO' COMMENT '日志类型 (INFO/WARN/ERROR)',
   `stack_trace` TEXT DEFAULT NULL COMMENT '异常堆栈信息',
   `ts` DATETIME DEFAULT NULL COMMENT '时间戳',
+  `tenant_id` BIGINT DEFAULT NULL COMMENT 'Tenant ID',
   PRIMARY KEY (`id`),
   KEY `idx_agent_id` (`agent_id`),
   KEY `idx_session_id` (`session_id`),
   KEY `idx_log_type` (`log_type`),
-  KEY `idx_ts` (`ts`)
+  KEY `idx_ts` (`ts`),
+  KEY `idx_tenant_ts` (`tenant_id`, `ts`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='处理日志表';
 
-INSERT INTO `process_log` (`agent_id`, `agent_name`, `session_id`, `message`, `log_type`, `stack_trace`, `ts`) VALUES
-(1, 'Test Agent 1', 'session-001', '开始处理请求', 'INFO', NULL, '2026-04-25 10:00:00'),
-(1, 'Test Agent 1', 'session-001', '处理完成', 'INFO', NULL, '2026-04-25 10:00:05'),
-(2, 'Test Agent 2', 'session-002', '发生错误：超时', 'ERROR', 'java.util.concurrent.TimeoutException', '2026-04-25 11:00:00');
+INSERT INTO `process_log` (`agent_id`, `agent_name`, `session_id`, `message`, `log_type`, `stack_trace`, `ts`, `tenant_id`) VALUES
+(1, 'Test Agent 1', 'session-001', '开始处理请求', 'INFO', NULL, '2026-04-25 10:00:00', 1),
+(1, 'Test Agent 1', 'session-001', '处理完成', 'INFO', NULL, '2026-04-25 10:00:05', 1),
+(2, 'Test Agent 2', 'session-002', '发生错误：超时', 'ERROR', 'java.util.concurrent.TimeoutException', '2026-04-25 11:00:00', 1);
 
 -- ============================================
 -- 14. 工具调用日志表
@@ -387,17 +398,19 @@ CREATE TABLE IF NOT EXISTS `tool_call_log` (
   `end_time` DATETIME DEFAULT NULL COMMENT '结束时间戳',
   `duration` BIGINT DEFAULT 0 COMMENT '执行耗时（毫秒）',
   `ts` DATETIME DEFAULT NULL COMMENT '时间戳',
+  `tenant_id` BIGINT DEFAULT NULL COMMENT 'Tenant ID',
   PRIMARY KEY (`id`),
   KEY `idx_agent_id` (`agent_id`),
   KEY `idx_session_id` (`session_id`),
   KEY `idx_tool_name` (`tool_name`),
-  KEY `idx_ts` (`ts`)
+  KEY `idx_ts` (`ts`),
+  KEY `idx_tenant_ts` (`tenant_id`, `ts`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工具调用日志表';
 
-INSERT INTO `tool_call_log` (`agent_id`, `session_id`, `tool_name`, `args`, `result`, `success`, `start_time`, `end_time`, `duration`, `ts`) VALUES
-(1, 'session-001', 'web-search', '{"query":"AI latest news"}', '{"results":[]}', 1, '2026-04-25 10:00:01', '2026-04-25 10:00:03', 2000, '2026-04-25 10:00:03'),
-(1, 'session-001', 'code-review', '{"code":"print(1)"}', '{"issues":[]}', 1, '2026-04-25 10:00:04', '2026-04-25 10:00:05', 1000, '2026-04-25 10:00:05'),
-(2, 'session-002', 'web-search', '{"query":"test"}', '{"error":"timeout"}', 0, '2026-04-25 11:00:00', '2026-04-25 11:00:30', 30000, '2026-04-25 11:00:30');
+INSERT INTO `tool_call_log` (`agent_id`, `session_id`, `tool_name`, `args`, `result`, `success`, `start_time`, `end_time`, `duration`, `ts`, `tenant_id`) VALUES
+(1, 'session-001', 'web-search', '{"query":"AI latest news"}', '{"results":[]}', 1, '2026-04-25 10:00:01', '2026-04-25 10:00:03', 2000, '2026-04-25 10:00:03', 1),
+(1, 'session-001', 'code-review', '{"code":"print(1)"}', '{"issues":[]}', 1, '2026-04-25 10:00:04', '2026-04-25 10:00:05', 1000, '2026-04-25 10:00:05', 1),
+(2, 'session-002', 'web-search', '{"query":"test"}', '{"error":"timeout"}', 0, '2026-04-25 11:00:00', '2026-04-25 11:00:30', 30000, '2026-04-25 11:00:30', 1);
 
 -- ============================================
 -- 15. Token 统计表
@@ -405,6 +418,9 @@ INSERT INTO `tool_call_log` (`agent_id`, `session_id`, `tool_name`, `args`, `res
 -- Mirrors `V1__init_schema.sql` and the resultMap in `TokenStatsMapper.xml`: those column names are
 -- what the insert writes, so a rename has to land here too or the mapper tests fail on
 -- `BadSqlGrammar` instead of on the change that caused it.
+-- `tenant_id` (V50) is the one column here that a read depends on rather than a name: every aggregation
+-- statement carries `t.tenant_id = #{tenantId}` unconditionally, so a row left at NULL is attributed to
+-- nobody and shows in no tenant's totals. That is the point — see the head comment of V50.
 CREATE TABLE IF NOT EXISTS `token_stats` (
     `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '统计 ID',
     `agent_id` BIGINT DEFAULT NULL COMMENT '智能体 ID',
@@ -415,19 +431,21 @@ CREATE TABLE IF NOT EXISTS `token_stats` (
     `total_token` BIGINT DEFAULT 0 COMMENT '总 token 数',
     `ts` DATETIME DEFAULT NULL COMMENT '统计时间',
     `fee` DECIMAL(10, 0) DEFAULT NULL COMMENT '费用',
+    `tenant_id` BIGINT DEFAULT NULL COMMENT 'Tenant ID',
     PRIMARY KEY (`id`),
     KEY `idx_token_stats_agent_id` (`agent_id`),
     KEY `idx_token_stats_session_id` (`session_id`),
     KEY `idx_token_stats_chat_model_id` (`chat_model_id`),
-    KEY `idx_token_stats_ts` (`ts`)
+    KEY `idx_token_stats_ts` (`ts`),
+    KEY `idx_tenant_ts` (`tenant_id`, `ts`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Token 统计表';
 
-INSERT INTO `token_stats` (`session_id`, `agent_id`, `chat_model_id`, `input_token`, `output_token`, `total_token`, `fee`, `ts`) VALUES
-('session-001', 1, 1, 100, 50, 150, 1, '2025-01-01 10:00:00'),
-('session-001', 1, 1, 200, 100, 300, 2, '2025-01-02 10:00:00'),
-('session-002', 1, 1, 150, 75, 225, 1, '2025-01-03 10:00:00'),
-('session-003', 2, 2, 300, 150, 450, 3, '2025-01-04 10:00:00'),
-('session-004', 3, 3, 250, 120, 370, 1, '2025-01-05 10:00:00');
+INSERT INTO `token_stats` (`session_id`, `agent_id`, `chat_model_id`, `input_token`, `output_token`, `total_token`, `fee`, `ts`, `tenant_id`) VALUES
+('session-001', 1, 1, 100, 50, 150, 1, '2025-01-01 10:00:00', 1),
+('session-001', 1, 1, 200, 100, 300, 2, '2025-01-02 10:00:00', 1),
+('session-002', 1, 1, 150, 75, 225, 1, '2025-01-03 10:00:00', 1),
+('session-003', 2, 2, 300, 150, 450, 3, '2025-01-04 10:00:00', 1),
+('session-004', 3, 3, 250, 120, 370, 1, '2025-01-05 10:00:00', 1);
 
 -- ============================================
 -- 16. Token 黑名单表
