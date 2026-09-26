@@ -15,7 +15,6 @@ import com.agnetix.harnax.agent.adaptor.mcp.McpHelper
 import com.agnetix.harnax.agent.adaptor.model.ModelErrorCode
 import com.agnetix.harnax.agent.adaptor.model.ModelHelper
 import com.agnetix.harnax.agent.adaptor.token.TokenStatBuilder
-import com.agnetix.harnax.agent.provider.MIDDLEWARE_SET
 import com.agnetix.harnax.agent.provider.middleware.ProcessLogMiddleware
 import com.agnetix.harnax.agent.provider.middleware.TokenStatsMiddleware
 import com.agnetix.harnax.agent.session.SessionConfig
@@ -495,22 +494,23 @@ class HarnessAgentLauncher(
             .tenantId(agentSpec.tenantId)
             .sessionId(sessionId)
             .modelId(agentSpec.chatModelId)
-        // Deliberately a fresh instance per build, and not an entry of MIDDLEWARE_SET: that set is one
-        // shared object whose `initial()` every build rewrites, which is how two concurrent sessions
-        // could end up paying for each other's tokens.
+        // Deliberately a fresh instance per build: a shared one holds one seed that every build rewrites,
+        // which is how two concurrent sessions could end up paying for each other's tokens.
         agentBuilder.addMiddleware(TokenStatsMiddleware(tokenStatAdaptor, tokenStatBuilder))
-        MIDDLEWARE_SET.forEach { middleware ->
-            if (middleware is ProcessLogMiddleware) {
-                middleware.initial(
-                    processLogAdaptor,
-                    agentSpec.attributableAgentId,
-                    agentSpec.name,
-                    sessionId,
-                    agentSpec.tenantId,
-                )
-            }
-            agentBuilder.addMiddleware(middleware)
-        }
+        // Same reason, same shape (AGENT-30): this middleware holds the run's attribution in a field that
+        // `initial()` overwrites, so one shared instance makes the last build win. A team is exactly that
+        // sequence — its members are assembled on the first delegation, after the lead was built long ago
+        // — so the lead's own turns would keep logging `process_log` rows against whichever member was
+        // built last, under the member's session, agent and tenant.
+        val processLogMiddleware = ProcessLogMiddleware()
+        processLogMiddleware.initial(
+            processLogAdaptor,
+            agentSpec.attributableAgentId,
+            agentSpec.name,
+            sessionId,
+            agentSpec.tenantId,
+        )
+        agentBuilder.addMiddleware(processLogMiddleware)
 
         // ----- Memory -----
         // HarnessAgent always uses InMemoryMemory internally; no explicit memory configuration needed.

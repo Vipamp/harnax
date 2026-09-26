@@ -335,14 +335,9 @@ harnax-harness-core/src/main/kotlin/com/agnetix/harnax/
 │   │   ├── MessageLogConverter.kt            # Msg → MessageLog 转换器
 │   │   └── MsgExtractHelper.kt               # Msg 内容提取工具
 │   ├── provider/
-│   │   ├── ProviderConsts.kt                 # TOOL_SET / HOOK_SET 常量
-│   │   ├── hook/
-│   │   │   ├── ConfirmToolsHook.kt           # 工具确认钩子
-│   │   │   └── ProcessLogHook.kt             # 过程日志钩子
-│   │   └── tool/
-│   │       ├── InterToolboxes.kt             # 内置工具箱集合
-│   │       ├── ToolBox.kt                    # 工具箱抽象
-│   │       └── ToolCallContext.kt             # 工具调用上下文
+│   │   └── middleware/
+│   │       ├── ProcessLogMiddleware.kt       # 过程日志中间件（每次装配新建）
+│   │       └── TokenStatsMiddleware.kt       # Token 统计中间件（每次装配新建）
 │   └── session/
 │       ├── SessionConfig.kt                  # Session 配置（MysqlSessionConfig）
 │       └── SessionLoader.kt                  # Session 加载器

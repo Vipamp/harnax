@@ -47,15 +47,10 @@ harnax-agent/harnax-harness-core/
     │   │   ├── MessageLog.kt
     │   │   ├── MessageLogConverter.kt
     │   │   └── MsgExtractHelper.kt
-    │   ├── provider/                  # 中间件与工具
-    │   │   ├── ProviderConsts.kt
-    │   │   ├── middleware/
-    │   │   │   ├── ProcessLogMiddleware.kt
-    │   │   │   └── ConfirmToolsMiddleware.kt
-    │   │   └── tool/
-    │   │       ├── ToolBox.kt
-    │   │       ├── InterToolboxes.kt
-    │   │       └── ToolCallContext.kt
+    │   ├── provider/                  # 中间件（每次装配新建实例）
+    │   │   └── middleware/
+    │   │       ├── ProcessLogMiddleware.kt
+    │   │       └── TokenStatsMiddleware.kt
     │   └── session/                   # 会话持久化
     │       ├── SessionConfig.kt
     │       ├── SessionLoader.kt
@@ -233,28 +228,33 @@ agentscope 2.0.0 将 `Hook` 替换为 `MiddlewareBase`，采用洋葱模型（on
 - `onActing`：工具调用前记录输入参数
 - `doOnError`：异常时记录 ERROR 日志
 
-### 6.2 ConfirmToolsMiddleware
+### 6.2 TokenStatsMiddleware
 
-**拦截点**：`onReasoning`
+**拦截点**：`onModelCall`
 
-**行为**：在推理阶段后检查是否调用了危险工具。实际危险工具拦截由框架内置的 `PermissionEngine` 处理，该中间件保留用于自定义推理前后逻辑。
+**行为**：每次模型调用产生 usage 时立即落一行 `token_stats`（流式与非流式共用这一条路径）。归属（agentId/tenantId/sessionId/modelId）来自本次运行的 `TokenStatBuilder`。
 
-### 6.3 全局中间件常量（ProviderConsts.kt）
+**危险工具拦截**：由框架内置 `PermissionEngine`（ASK/ALLOW/DENY 规则）承担，无自定义确认中间件。
+
+### 6.3 中间件实例的作用域
+
+中间件与 `TokenStatBuilder` 一样按「一次装配一个实例」创建，不存在全局共享常量：
 
 ```kotlin
-val MIDDLEWARE_SET: Set<MiddlewareBase> = setOf(
-    ProcessLogMiddleware(),
-    ConfirmToolsMiddleware(),
-)
-
-val TOOL_SET = setOf(
-    TimeToolBox(),
-)
+// HarnessAgentLauncher：每次 build 新建
+agentBuilder.addMiddleware(TokenStatsMiddleware(tokenStatAdaptor, tokenStatBuilder))
+val processLogMiddleware = ProcessLogMiddleware()
+processLogMiddleware.initial(processLogAdaptor, agentSpec.attributableAgentId, agentSpec.name, sessionId, agentSpec.tenantId)
+agentBuilder.addMiddleware(processLogMiddleware)
 ```
+
+共享单例只在单个 Agent 的场合看不出问题，但它持有的归属是字段、由 `initial()` 覆盖写：一次 build 改写后，先前 build 出来的 Agent 也在用新归属。团队正是这个时序——成员在首次委派时才装配，此时主管早已 build 完成——于是主管的 `process_log` 会记到最后装配的那个成员名下（成员会话、成员 agent、成员租户）。
 
 ---
 
 ## 7. 工具系统（ToolBox）
+
+> 本节描述的类不在本模块：抽象基类与上下文在 `harnax-tools-sdk`，`TimeToolBox` 在 `harnax-tools-external/harnax-tools-buildin`。本模块经 `ToolRegistry` 消费它们。
 
 ### 7.1 ToolBox 抽象基类
 
