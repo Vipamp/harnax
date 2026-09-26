@@ -147,9 +147,6 @@ export const layout: RunTimeLayoutConfig = ({
         return <AvatarDropdown>{avatarChildren}</AvatarDropdown>;
       },
     },
-    waterMarkProps: {
-      content: initialState?.currentUser?.nickname || initialState?.currentUser?.username,
-    },
     footerRender: false,
     onPageChange: () => {
       const { location } = history;
