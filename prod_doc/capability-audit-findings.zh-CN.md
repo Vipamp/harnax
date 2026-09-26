@@ -334,6 +334,18 @@
 
 本轮落点只在账本：`prod_doc/capability-audit-findings.zh-CN.md` 的 §7 三行、§9 处置表 agent 行的「落地版本」与「状态」两格、§9.6 末改写为一行历史指向、新开本节。无代码、无迁移、无测试改动，故不重跑构建——第二十七轮的 harness-core 322 项与 agent-service reactor 12 模块计数仍是当前基线。
 
+### 9.8 第二十九轮：已提交状态的全量复验与完成度盘点（2026-09-26，无代码改动）
+
+按「都确认修复完了么」在已提交状态（`c423b2c8`、工作树干净）当场重跑两条反应堆，并回代码逐条复核本轮点名的锚点。上一小节末尾那句「仍是当前基线」由本节取代。
+
+- **admin 这条链**：`mvn -o -pl harnax-admin -am -Pintegration-test verify` exit 0（6 分 10 秒）。逐模块 common 15／auth 97／entity 246／tools-sdk 34／agent-utils 19／tools-buildin 24（2 skip 为既有）；admin surefire **2150 项 0 失败 0 错误**，failsafe **40 个类 327 项 0 失败 0 错误**。与第二十四轮基线（39 类 324 项）的差就是第二十六轮新增的 `TokenStatsTurnRowsIT` 3 项，日志里 `Running com.agnetix.harnax.admin.it.TokenStatsTurnRowsIT` → `Tests run: 3, Failures: 0` 单独一行可查；`entity` 那 246 项是 Testcontainers 真实 MySQL 8，V41～V50 在这批里由 Flyway 建库跑过。
+- **运行侧这条链**：`mvn -o -pl harnax-agent/harnax-harness-core,harnax-agent/harnax-agent-service -am test` exit 0（5 分 18 秒），12 模块全 SUCCESS：protocol 103／harness-core **322**／agent-service **184**，全部 0 失败 0 错误 0 跳过。第二十七轮那条回归 `HarnessAgentProcessLogAttributionTest` 在这一跑里 `Running` 且 `Tests run: 2, Failures: 0`。
+- **回代码复核实物**（不引用本节任何一句结论）：`harnax-entity/src/main/resources/mapper/TokenStatsMapper.xml` 的 `<select>` 20 条对 `tenantAndTimeWindow` include 20 次，谓词是 `AND ${alias}.tenant_id = #{tenantId}` 且刻意不带 `<if>`；`ProcessLogMapper.xml`／`ToolCallLogMapper.xml` 的 insert 列集合含 `tenant_id`；`HarnessAgentLauncher.kt:499/505` 两个中间件均为每次装配新建；`ProviderConsts.kt` 已不在 `git ls-files` 里；`ChannelMapper.xml:147` 的列表语句带 `AND tenant_id = #{tenantId}`，`ChannelServiceImpl.kt:177,264` 是掩码读出 +「送来的串等于本行掩码即保留真值」的写回判定；`AgentServiceImpl.kt:507` 仍只比租户（按裁定留在待拍板）；`mcp_oauth_client` 全仓无删除入口（MCP-02 未做，属认证域跳过）。
+- **完成度三态**：
+  - **做完了**——tools／skills／CLI／team 四域清零，agent 29 项落地 + AGENT-09 按裁定接受结案，MCP 落地 9 项。
+  - **有意没做**——MCP 认证／授权整片（MCP-01 剩余写入与读接口、MCP-02、MCP-03、MCP-05、MCP-09 残余、MCP-11②、MCP-12、MCP-13 接键那一半）按 2026-09-23 与第二十四轮裁定跳过；另有四条待拍板：MCP-11③ 悬空 `mcp_id` 要不要换名称快照、`resolveBindableMcpServers` 补不补可见性、§7 末行主管每轮建并保活容器（要先定 webui 文件面板去留）、内部密钥可打业务 API（`Authorization: Bearer <ADMIN_INTERNAL_API_SECRET>` 能读业务列表端点；本机取证要读 `.env` 密钥，按策略未做）。
+  - **未验**——迁移的数据效果（V43 改名分支／V44 归属回填／V47 渠道回填／V48 哨兵清洗／V49 加键，本机均无可观察存量）；CLI 三处产物回收与归档回收只有单元／桩层证据；团队回合 1800 秒截断无运行期证据；webui 只到构建级（本机浏览器进不去自签前端）；Go CLI 本轮未跑（该目录不允许执行命令）；`harnax-router`／`harnax-session-router`／`harnax-scheduler`／`harnax-channel-service` 本轮未重跑——这四条链自第二十四轮后没有代码改动，计数以 §9.3 记的全量反应堆为准。
+
 ## 10. 关键文件索引
 
 | 关注点 | 文件 |
