@@ -1,421 +1,437 @@
-# Harnax Multi-agent Team Design and Trade-offs (English)
+# Harnax Multi-agent Team Design (English)
 
-> For the Chinese version, see [multi-agent-team-design.zh-CN.md](./multi-agent-team-design.zh-CN.md).
+> Chinese version: [multi-agent-team-design.zh-CN.md](./multi-agent-team-design.zh-CN.md).
 >
-> Decision date: 2026-09-18. This document consolidates the product boundaries, target design, alternatives, and trade-offs confirmed in this round of discussion. It does not mean the feature has been implemented.
-> The current deliverable is a design document only: no Team tables, management pages, team runtime endpoints, or team file tools have been added; runtime prototype validation has not been completed.
-> The user's final choice is: **an independent Team, reuse of existing Agents, an orchestration-only lead, execution by members, independent member sandboxes, MinIO artifact handoff, process visibility, and human confirmation**. The earlier shared-sandbox and lead-toggle proposals are no longer the basis for implementation.
->
-> **Amendment 2026-09-20 (D1/D2 changed)**: the lead no longer references an existing Agent. The Team carries the lead's own configuration — the fields of the agent wizard's "Basic information" step (name, description, system prompt, model) are now team configuration, and `team.instructions` has been merged into that system prompt. The lead may additionally configure Skills only; Tool, MCP, and CLI are gone. Member semantics are unchanged. The affected sections below have been rewritten accordingly; implementation details live in [Team-owned lead configuration design](../docs/superpowers/specs/2026-09-20-team-own-lead-config-design.md).
+> This document describes the current implementation: the team configuration model, the page flows, the assembly chain, sandboxes, artifact handover, events and confirmations. Every statement maps to Kotlin or TypeScript in this repository; the file index at the end lists the entry points.
 
-## 1. Goals and Design Principles
+## 1. Goal and Reuse Boundary
 
-The goal is to support configurable multi-agent collaboration with as few changes to existing code as practical: users assemble a team and give its lead a goal; the lead assigns concrete tasks to members.
+The product shape of multi-agent collaboration is: a user assembles a team, states a goal to the lead, the lead delegates concrete work to members, reviews what they report and summarizes the answer.
 
-“Minimal code changes” has explicit boundaries:
+The implementation makes a team a standalone configuration and reuses the existing agent infrastructure as far as possible:
 
-- Reuse existing Agent definitions, configuration delivery, model and tool assembly, session routing, sandbox management, and MinIO infrastructure.
-- The team carries exactly one set of its own configuration — the lead's model, prompt, and Skills. Members' capabilities stay entirely on their own Agents: assembling a team never duplicates a second set of Tool, MCP, CLI, or credentials, and introduces no new workflow engine or remote Agent service-discovery system.
-- Do not reduce code at the expense of member capabilities, by expanding the lead's permissions, or by bypassing human confirmation.
-- Existing Agent configurations and standalone usage remain unchanged. This does not mean that all existing code can remain untouched.
+- A team carries only the lead's own configuration: model, system prompt and skills. A member's capabilities stay in its own `agent` row; joining a team copies no second set of tools, MCP servers, CLI packages or credentials.
+- Configuration delivery, model and tool assembly, session routing, sandbox management and MinIO object storage are the existing implementations; the team adds its own resolution branch and its own tools.
+- Lead and members run inside the same agent-service instance. Members use their own session state and their own sandbox, created on demand; the lead creates no execution sandbox.
+- No workflow engine and no remote agent discovery service were introduced, and a team opens no second event channel.
+- Ordinary agents keep their configuration UI and their standalone usage: the team's role restrictions apply to the instance a team run assembles.
 
-## 2. Boundaries Between Final Decisions and Engineering Recommendations
+## 2. Product Boundaries
 
-| ID | Conclusion | Status |
-|------|------|------|
-| D1 | Team is an independent team configuration, not a new Agent type or a toggle on the lead Agent; it is also **the host of the lead's configuration** (model, prompt, and Skills live on the Team) | Confirmed (amended 2026-09-20) |
-| D2 | **Members** reference existing Agents, and the same Agent can be reused in several Teams; **the lead references no Agent at all** — the `agent` table holds only "Agents you can converse with" and "Agents acting as team members" | Confirmed (amended 2026-09-20) |
-| D3 | The lead only decomposes tasks, delegates, coordinates, reviews results, reassigns work, and produces the final summary; members perform concrete execution | Confirmed |
-| D4 | Team-role restrictions apply only to the current runtime instance and do not modify the original Agent's persisted configuration | Confirmed |
-| D5 | The lead and members run within the same agent-service instance; members use independent session state and independent sandboxes created on demand, while the lead creates no execution sandbox | Confirmed; independent sandboxes replace the earlier shared approach |
-| D6 | Members publish and retrieve non-overwritable file artifacts through MinIO rather than sharing a complete writable workspace | Confirmed |
-| D7 | Member execution is visible, and actions requiring confirmation are presented to the user; after approval, the corresponding member resumes before control returns to the lead | Confirmed; no silent degradation |
-| D8 | Prefer reusing AgentScope's native delegation mechanism, with member factories assembling each member's full capabilities; do not mix two delegation protocols | Recommended integration approach; prototype validation required |
-| D9 | For the first release, single-level, sequential, foreground delegation is recommended, starting with the Web UI; parallel background tasks, nested teams, A2A, and a workflow canvas should not ship at the same time | Scope recommendation, not a delivered capability or a reason to revoke D7 |
+| Subject | Statement |
+|----|-----------|
+| The team object | A team is its own configuration object: not a kind of `agent` row, and not a switch on some agent. |
+| Where the lead comes from | The lead *is* configuration the team carries: `team.system_prompt`, `team.model_id` plus team-level skill bindings. No `agent` row stands for the lead; `agent` has exactly two roles — conversable on its own, or a member of some team. |
+| Bindings on a team | `team_skill_binding` is the only binding table a team owns. Tool, MCP and CLI are never configured on a team, and the lead's three sections are empty by assembly. |
+| Where members come from | Members reference existing agents. One agent can sit in several teams and still be used standalone; each member is assembled with its own configuration. |
+| Division of work | The lead decomposes, delegates, reviews, re-delegates and summarizes. Concrete execution — research, code, file handling, report writing — belongs to members. |
+| Reach of the team role | The team role affects only the instance this run assembles; the `agent` row's persisted configuration is untouched. |
+| Sandboxes and artifacts | Each member executes in its own sandbox and hands files over through MinIO artifacts; members share no workspace. The lead has neither a sandbox nor a workspace. |
+| Where a decision lands | A member's execution is visible, actions needing approval go to the user, and the user's decision reaches the member run that asked. |
+| Delegation shape | Delegation is foreground, sequential and single-level: one `team_delegate` call blocks until the member reports back, and one member runs one task at a time. |
 
-D9 is intended to control engineering scope. Any later addition of parallelism or new entry points requires separate acceptance checks for concurrency correlation, confirmation, cancellation, and identity propagation. A UI that allows Team selection does not justify claiming support across all channels.
+Sequential delegation is an invariant the assembly and the runtime enforce together: `TeamOrchestrator` claims a member by its id (`busyMembers`), and a second concurrent delegation to the same member is refused with readable text the model can act on instead of a silent queue.
 
-## 3. Product Model: Agents Are Conversable Units and Members; the Team Owns Its Lead
+## 3. Objects, Data and Sessions
 
-### 3.1 Three Types of Objects
+### 3.1 The Three Objects
 
-| Object | What it stores | What it does not store |
-|------|--------|----------|
-| Agent | Model, prompt, Tool, MCP, Skill, and CLI configurations | No agent row ever stands in for a team lead; no duplicate capability configuration just because it joins a team |
-| Team | Name, description, **the lead's configuration (system prompt, model) and the lead's Skill bindings**, enabled/disabled state, and ownership information | No Tool, MCP, or CLI; no reference to any agent as its lead |
-| Team Member | Team reference, member Agent reference, and description of its responsibilities in that team | No copies of the member's model, tools, credentials, or skills |
+| Object | Holds | Does not hold |
+|--------|-------|---------------|
+| Agent | model, prompt, tools, MCP, skills, CLI configuration | the role of any team's lead; no second capability set for being a member |
+| Team | name, description, the lead's system prompt and model, status and ownership, the lead's skill bindings | tools, MCP, CLI; a reference to some agent as its lead |
+| Team member | the team reference, the member agent reference, what that agent is responsible for in this team | the member's model, tools, credentials, skills |
 
-A "member" still references an existing Agent, while a "lead" is now a set of columns on the Team itself and maps to no agent row. The same Agent can serve as a member of several Teams and still be used on its own.
+The responsibility note (`delegation_description`) starts from the agent's own description, is editable per team and is never written back to `agent.description`.
 
-### 3.2 Data Placement
+### 3.2 Tables and Columns
 
-`team`, `team_member`, `team_artifact`, and `session.team_id` shipped with V32. The final shape after the 2026-09-20 amendment is Flyway V34:
+The DDL lives in `harnax-admin/src/main/resources/db/migration/`; the current shape is:
 
-| Data location | Required information |
-|------|----------|
-| `team` | `id`, `tenant_id`, name, description, **`system_prompt`, `model_id`**, status, creator, and timestamps; no longer `lead_agent_id` or `instructions` |
-| `team_skill_binding` | `team_id`, `skill_id`, combination unique; no `env_bindings` column (per-skill environment variables have no consumer) |
-| `team_member` | `team_id`, `member_agent_id`, `delegation_description`; the team/member combination is unique |
-| Session | `agent_id` and `team_id` are mutually exclusive: a team session stores NULL `agent_id`, a non-null `team_id`, and takes its name/prompt/model snapshots from the Team row |
-| Member run record | Root session, current root run, member reference, child-run and child-session identifiers, status, and associated file references |
-| File artifact metadata | File ID, owning tenant and root session, producing child run, original filename, type, size, and internal storage location |
+| Target | Content |
+|--------|---------|
+| `team` | `id`, `tenant_id`, `name`, `description`, `system_prompt`, `model_id`, `status`, `is_public`, `creator`, `active`, timestamps |
+| `team_skill_binding` | `team_id` + `skill_id`, unique as a pair. No environment column: per-skill environment values have no consumer on either side |
+| `team_member` | `team_id` + `member_agent_id` (unique as a pair), `delegation_description` |
+| `team_artifact` | `file_id` (UUID, unique), `tenant_id`, `session_id` (root team session), `team_id`, `member_agent_id`, `child_session_id`, `file_name`, `mime_type`, `size_bytes`, `object_key` |
+| `session` | `agent_id` is nullable; a team session has `agent_id` NULL and a non-null `team_id` |
 
-Member run records and file metadata should preferably fit existing storage extension points. This document does not require a separate new database table for every logical object.
+`team.name` uniqueness is enforced in the service per tenant (`TeamMapper.selectByName`), not by a database key: rows are logically deleted (`active = 0`), and a unique key would make the name of a deleted team impossible to reuse forever.
 
-The session's `teamId` determines entry into team mode, and a NULL `agent_id` states plainly that this is not an Agent's session: an ordinary entry point never starts a team automatically, and a team session is never resolved through some `agentId`. The server resolves the lead's configuration from the Team row; clients never submit a lead identity.
+`team_artifact.team_id` and `child_session_id` are written at publish time; ownership and authorization resolve on `tenant_id` + `session_id`, so those two columns stay a lead for manual investigation.
 
-### 3.3 Permissions and Validity
+Attribution of a run comes from that run's own spec: for the lead, `AgentSpec.attributableAgentId` is null (its `id` is the lead sentinel 0 and the property reads that back as absence); for a member it is the member's own `agent.id`. So a lead's rows in `token_stats`, `tool_call_log` and `process_log` carry no agent attribution while a member's rows attribute to the member, and `process_log` attribution is written into the middleware each instance builds — building a member does not change where the lead's later rows go.
 
-- When creating, editing, or starting a Team, validate the status and ownership of the Team itself, plus the tenant, usage permission, status, and existence of each member. The model of the lead is checked at save time for existence, picker-equivalent visibility (`is_public` or created by the current user), enabled status, and a chat type — tenancy is not the rule, so a shared public model stays usable. Runtime gets no second chance to “switch to another model”. A model disabled after the team was saved raises no alarm and does not block the conversation: delivery only looks up whether the model row exists, and no second enabled check runs anywhere (an ordinary agent behaves the same), so the team keeps running on it. Only a deleted model fails, and it fails at delivery when its configuration can no longer be resolved.
-- Select at least one member; members must be unique. The lead is no longer an Agent reference, so there is no "lead cannot also be a member" check to make.
-- Visibility of a Team does not grant the right to use any private Agent within it. Team configuration must not bypass members' own access controls.
-- Under the recommended single-level scope for the first release, members acting as executors do not load their own team relationships and cannot spawn further subteams. There is no need to build an arbitrary DAG executor for this.
-- If a Team or Agent becomes invalid, return an explicit error at startup or before the next delegation. Do not silently omit members or switch to the lead's model.
-- Team visibility is `is_public OR creator`, the same rule the list query applies: reading, editing, deleting, enabling/disabling and starting a team session by id all use it, so another user in the same tenant sees a private team as non-existent (`Team not found`).
-- The deletion entry point is the session, not the team: while a team still has sessions (`active = 1`) deleting it is **refused**, and the refusal names those sessions — they have to be deleted one by one first. Deleting a session also reclaims that session's team artifacts: the MinIO object goes first, then the `team_artifact` row; an object that cannot be deleted keeps its row, and with MinIO unconfigured the whole batch is kept. This makes "team_id still set, team already gone" unreachable.
-- Keep the resolved configuration fixed throughout a run and its confirmation/resume cycle. Do not switch members, tools, or parameters while waiting for user approval. Configuration activation and cache invalidation must be validated during implementation.
+### 3.3 Session Typing and the Team Entry
 
-## 4. Assembling and Using Teams in the UI
+There are two kinds of session, told apart by `session.team_id`:
 
-Add an independent “Team Management” entry to the admin console. Assemble teams with a two-step wizard, not a drag-and-drop graph. Step 1 is exactly the “Basic Information” screen of the existing Agent wizard; step 2 is the member roster.
+- Non-null: a team session. `agent_id` is NULL, and title, description, system prompt, owner and model are snapshotted from the `team` row at creation for display.
+- Null: an ordinary agent session.
+
+The `session_id` prefix tells them apart not at all: a team chat opened from the web is still an ordinary `web-` id. The runtime asks admin (`GET /sessions/{sessionId}/team`, which reads the session row's `team_id`) and picks its resolution endpoint accordingly. `chn-` and `task-` conversations have no `session` row and therefore can never be team sessions.
+
+A team session resolves its lead by `team_id`, so a client cannot submit a lead identity; `SessionServiceImpl.updateSession` refuses to attach an `agentId` to a team session, and `team_id` is written only at creation — the update statement never touches it.
+
+### 3.4 Validation, Visibility and Lifecycle
+
+Saving a team (`TeamServiceImpl.createTeam` / `updateTeam`) checks:
+
+- The name is unique within the tenant.
+- The lead's model exists, is available to this tenant (own row or `is_public`), is enabled and is of type chat. The runtime adds no second gate: delivery only asks whether the model row resolves, so switching a model off after saving does not stop a team from running on it; deleting the model row makes the lead fail at build time when no model configuration can be found.
+- At least one member, member ids present and not repeated; each member must exist, share the tenant, be enabled and be visible under the caller's own read rule (`is_public` or created by them). Seeing a team does not hand out its private agents.
+- The lead's skills pass the same selectable range and write-time checks as on the agent side (`SkillBindingResolver.resolveBindable`): missing, disabled, built-in CLI repository source and name collisions are all refused.
+- On update, omitting `members` leaves the roster alone; `skillIds` null leaves the lead's skills alone and an empty list clears them. The skill set is resolved before anything is written.
+
+Team visibility is `is_public OR creator`, the same rule the list query applies: read, edit, delete, enable and disable all go through `requireVisibleTeam`, and another user in the same tenant gets `Team not found` for a private team.
+
+`deleteTeam` refuses while the team still has sessions (`active = 1`) and names them — up to 5 ids, the rest collapsed into an ellipsis — so those sessions have to be deleted one by one first. Deleting a session is also what cleans its team artifacts (`TeamArtifactCleaner`). A state where `session.team_id` still points at a deleted team is therefore unreachable.
+
+Runtime resolution (`InternalApiController.resolveTeamSpec`) does not degrade silently: a missing team, a disabled team, a team whose tenant differs from the session's, an empty roster, or a member agent that is gone or disabled makes the whole resolution throw. A team session never starts on a partial roster.
+
+After a team's configuration changes, an already cached runtime instance keeps serving from the spec it was built with. The team list's related-sessions entry lists the team's sessions, and together with `agents/refresh-sessions` it pushes the REFRESH command so the next message re-resolves from admin and rebuilds the lead and each member.
+
+## 4. The Team Pages
+
+### 4.1 Team Management
+
+`harnax-webui/src/pages/team/index.tsx` is a standalone entry: paginated list, name search, create, edit, enable/disable switch, related sessions and delete. The row offers no "start chat" — a team session is created on the session page, see "Creating a team session vs. a single-agent session".
+
+Deletion follows the same rule as the service: the backend refuses while sessions exist and the frontend surfaces the reason, session ids included.
+
+### 4.2 The Two-Step Wizard
+
+Create and edit share `TeamWizard.tsx`, two steps:
 
 ```text
-Step 1 · Basic information and skills                          [Next]
-Team name     [Research Report Team]
-Description   [Collects sources, analyzes data, and generates reports]
-System prompt [You are the lead of this collaboration…]        ← the lead's entire prompt, old team instructions folded in
-Model         [qwen3-max]
-Skills        [Source research spec] [Report writing spec]      ← Skills only; no Tool, MCP, or CLI
+Step 1 · Basics and skills                        [Next]
+Team name   [Research report team]
+Description [Collects material, analyses it, writes the report]
+System prompt [You are the lead of this collaboration…]   ← the lead's whole prompt
+Model       [qwen3-max]
+Public      [on/off]
+Skills      [Research standards] [Report writing standards] ← Skill only, no Tool/MCP/CLI
 
-Step 2 · Team members                                          [Add member]
-Researcher      Responsibilities: Gather material and provide sources
-Data analyst    Responsibilities: Analyze data and extract conclusions
-Report writer   Responsibilities: Write reports from material and conclusions
-                                          [Back] [Cancel] [Save]
+Step 2 · Members                                [Add member]
+Researcher    Responsibility: gather material and cite sources
+Analyst       Responsibility: analyse data, distill findings
+Writer        Responsibility: turn material and findings into a report
+                                              [Back] [Cancel] [Save]
 ```
 
-### 4.1 Configuration Interaction
+Details:
 
-1. Step 1 collects the team name, description, system prompt, and model, plus any skills. Description and system prompt are required, matching step 1 of the Agent wizard.
-2. Skill eligibility and write-time validation follow the same rules as the Agent side: missing, disabled, builtin-CLI-repository origin, and name conflicts are all rejected on save.
-3. Step 2 adds members. Responsibility descriptions default to the Agent description and can be adjusted for the team without writing back to the original description.
-4. Tool, MCP, and CLI are configured only on each member's own Agent page; the Team accepts none of those three fields, and the runtime keeps a separate lead guard.
-5. Validate members and permissions on save. Independent sandboxes do not require members to have matching CLI versions or environment variables.
-6. Editing a team reuses the same wizard and pre-fills the current configuration.
+1. Name, description, system prompt and model are required in step 1, matching step 1 of the agent wizard; skill picking reuses the agent side's `SkillConfigPanel` with the same source filtering and the same pre-submit checks (`findSkillIssue` / `describeConfigIssue`).
+2. The model picker lists only usable models. If the lead's model has since been disabled, deleted or switched to a non-chat type, edit mode prepends the current value as a disabled option with a reason, so a save refusal does not point at a bare id.
+3. Members are handled by `MembersField.tsx`: the selectable range is the agents the caller may use, and the responsibility note starts from the agent's description.
+4. Unavailable members and skills stay visible in edit mode, flagged: the runtime simply does not load them, and hiding the row from the page would keep a bad binding invisible.
+5. The wizard has no tool, MCP or CLI fields — the capability boundary is a property of the configuration shape, and the assembly guard is the second line.
+6. Members are identified by stable server ids; display names and responsibility notes are for reading and for delegation decisions.
 
-Team members use stable server-side identifiers. Display names and responsibility descriptions support reading and delegation decisions; potentially duplicate display names must not serve as unique runtime keys.
+### 4.3 Creating a Team Session vs. a Single-Agent Session
 
-### 4.2 Conversation Interaction
+In the session page's "new session" dialog (`SettingsModal.tsx`), the executor picker is grouped into Agents and Teams with values like `agent:12` or `team:3`. Choosing a team submits `teamId` and no `agentId`, and `SessionServiceImpl.createSession` checks that the team exists, shares the tenant, is visible to the caller, is enabled and has at least one member before creating the team session.
 
-- The team list provides “Edit” and “Start Conversation” actions; starting a conversation creates a new session bound to that Team.
-- The existing entry point for selecting an Agent and chatting with it independently remains unchanged. Do not silently switch an existing ordinary session into team mode midway through the conversation.
-- The conversation area shows the lead's assignments, member status, displayable execution text, tool calls, file artifacts, and the final summary.
-- Member activity folds inside the lead's own delegation tool card, separate from the lead's final answer and no longer a parallel bubble. “Process visibility” does not mean displaying credentials or requiring models to reveal internal chain-of-thought. Card shape, run-closure signals, and reload replay rules are defined in §9.4.
-- Human confirmation clearly shows the member, action, and parameters. Final files are provided through authenticated and authorized attachment access in the Web UI.
-- New copy follows the existing Chinese/English internationalization approach. Separate child-session chat windows are not introduced for teams at this stage.
+The ordinary agent-session path is unchanged, and there is no way to switch an existing plain session into team mode.
 
-## 5. Capability Boundaries for Leads and Members
+The session list and header branch on `session.teamId`: a team session carries a Team tag, its toolbar gains an artifacts entry opening `TeamArtifactsDrawer`, and the detail panel (`DetailModal.tsx`) labels the associated object "Team Lead", reads the lead's name and description off the team, and leaves the agent-only blocks out.
 
-| Capability | Team lead | Team member | Original Agent used independently |
-|------|----------|----------|------------------|
-| Model and prompt | **Configured on the Team itself**, augmented with the lead role and member roster block | Its own model, augmented with the current responsibilities and task instructions | Existing behavior preserved |
-| Skill | Loaded: SKILL.md text and its resource content reach the lead's context and skill-reading tool; **anything script-backed or requiring on-disk execution is not executable**, and each degradation is named at load time | Loaded according to its own Agent configuration | Existing behavior preserved |
-| Business Tool and MCP | Not loaded or connected (the Team accepts neither field either) | Loaded according to its own Agent configuration | Existing behavior preserved |
-| CLI, Shell, and execution sandbox | Not provided; with no shell the lead has no workspace | Its own configuration and permission constraints retained | Existing behavior preserved |
-| Delegation, progress, and task coordination | May use this Team's orchestration capabilities | Further delegation is not exposed under the recommended single-level first-release scope | Existing behavior preserved |
-| File artifacts | Receives and passes references; selects files for final delivery | Publishes, retrieves, and processes files in its own sandbox | Existing behavior preserved |
+### 4.4 What a Team Session Shows
 
-Lead permission restrictions must be enforced through assembly and runtime validation, not a prompt that says “do not execute tasks yourself.” Existing mandatory tools, framework-default Shell, dynamic subagents, and skill loading must also pass through the team-role policy so that default registration paths cannot reintroduce capabilities.
+There is one SSE stream and one conversation thread:
 
-This does not change the “mandatory tools” rule for ordinary Agents: a team lead has no agent row, so there is no binding to narrow or delete. Its empty Tool/MCP/CLI set is the consequence of the Team not accepting those fields; the runtime guard is only the second line.
+- The lead's turn stays one continuously appended bubble; on a team session that bubble carries the lead's name (taken from the session's snapshot name, shown only when `teamId` is set) so it reads against the members inside the cards.
+- A member's run renders inside the `team_delegate` tool card that delegated it, not as a sibling bubble.
+- The confirmation entry sits inline in the member run that asked.
+- The artifact list lives in the drawer, downloadable by `fileId`, with the reference copyable so it can be pasted back to the lead or a member.
 
-The lead still needs to understand member reports, judge whether the goal has been met, and summarize the response. “Orchestration only” does not mean merely forwarding messages mechanically. Concrete work such as processing material, querying databases, and generating files is delegated to members.
+## 5. What the Lead and a Member May Do
+
+Assembly happens in one place, `HarnessAgentLauncher.createAgentBase`, and `TeamRole` picks the branch. The role is passed in by the runtime, so configuration cannot talk an instance into the other role.
+
+| Capability | Team lead | Team member | Ordinary agent |
+|------------|-----------|-------------|----------------|
+| Model and prompt | the team row's model; `team.system_prompt` plus the lead block (roster and working rules) | its own model and prompt, plus the member file rule and this task brief | unchanged |
+| Session switches | deep thinking, web search, planning and permission mode from the session row | its own model configuration; permission mode from the root session | unchanged |
+| Business tools | not assembled, and platform-required tools are not appended | assembled from its own configuration, including required tools and per-method grant trimming | unchanged |
+| Meta tool | off (`enableMetaTool` is not delivered), so tools cannot be acquired at runtime | per its own configuration | per its own configuration |
+| MCP | not connected (the delivered list is empty and assembly refuses again) | connected per its own configuration, with the same per-user OAuth and stdio rules as any agent | unchanged |
+| Skills | skill content loads through the same path as any agent; the files a skill ships are neither readable nor executable for a lead, and assembly logs that by name | loaded per its own configuration | unchanged |
+| CLI and sandbox image | no CLI configuration; no sandbox and no filesystem assembled at all | image resolved from its own CLI set (default image when it has none), sandbox assembled per its own configuration | unchanged |
+| Filesystem and shell tools | `disableFilesystemTools()` + `disableShellTool()` | kept | kept |
+| Framework subagents | off via `disableSubagents()`, so no second delegation path escapes the team | assembled like an ordinary agent, so it may use subagents inside its own session and sandbox | available |
+| Team tools | `team_members`, `team_delegate`, `team_artifacts` | `team_artifact_publish`, `team_artifact_fetch`, `team_artifacts` | none |
+| Output-file detection | detector and store assembled as usual (there is no workspace to scan) | not assembled: a member's files leave the sandbox only through publish | unchanged |
+| Turn budget | `harness.team.turn-timeout-seconds` | the same number (the tighter member-turn timeout is what applies) | `harness.turn-timeout-seconds` |
+
+All three team tools get ALLOW rules in `PermissionContextState`, alongside plan, todo and the other framework tools, so the permission engine never asks the user about them; what needs confirmation is a member's own business tool.
+
+The lead's prompt block (`leadOrchestrationPrompt`) states the roster, how to delegate, that files travel only as `fileId` references, and that failures are reported as such. It describes the boundary; it is not the boundary: a lead has no business tools, no MCP, no shell and no sandbox, so a lead that ignores the text still has nothing to execute with.
+
+The "required tools" rule for ordinary agents is untouched: a lead has no `agent` row and therefore no binding to tighten or delete, and its empty tool/MCP/CLI sections follow from a team carrying no such configuration.
 
 ## 6. Configuration Delivery and Member Loading
 
-### 6.1 Target Flow
+### 6.1 The Assembly Chain
 
 ```text
-Web UI creates a Team session
-    ↓ Root sessionId follows the existing router
-agent-service obtains the team runtime configuration
-    ↓ admin validates the Team and members: the lead's configuration comes from the Team row and team_skill_binding, each member's from its own agent row
-Assemble the lead + member factories (no member runtime instances created yet)
-    ↓ The lead delegates according to responsibilities
-Create a child-run identifier → lazily create a runtime instance from the member configuration
-    ↓ Child-session state + that member's own Tool / MCP / Skill / CLI
-Create an independent sandbox on demand and execute the task
-    ↓ Results, file references, events, and confirmation requests
-The lead reviews results, delegates further, or summarizes → return to the user over the existing SSE channel
+Web UI creates a team session (submits teamId only)
+    ↓ the root sessionId routes as it always does
+agent-service: AgentSpecResolver.isTeamSession(sessionId)
+    ↓ admin reads session.team_id; team sessions resolve via /team-spec, others via /agent-spec
+TeamOrchestrator is built together with the lead (no member exists yet)
+    ↓ the lead calls team_delegate
+the member run is created lazily by member id (child session + its own model/tools/MCP/skills/CLI/sandbox)
+    ↓ member events reach the root SSE stamped with their source; a confirmation parks the run
+the member's text and published artifacts become the delegation's return value → the lead continues or summarizes
 ```
 
-### 6.2 Separate Configuration from Instances
+### 6.2 What `/team-spec` Delivers
 
-- Members reuse Agent configuration definitions, not another ordinary session's runtime instance, chat history, or sandbox. The lead's configuration exists only on the Team row and `team_skill_binding`; what the runtime receives is a lead spec shaped exactly like an Agent's, with `agentId` fixed at 0 and `agentName` set to the team name.
-- admin delivers full member configurations. It must not supply only `modelId` and `toolId` and assume that the lead's adapter can resolve every member.
-- A factory captures the corresponding member configuration and trusted runtime scope. The existing `AgentSpecContextHolder` is a `ThreadLocal` used during synchronous creation; do not assume it still exists during lazy creation, and never allow members to read the lead's configuration.
-- Do not pass arbitrary derived child-session IDs directly to the existing admin entry point that resolves `web-`, `mp-`, `chn-`, and `task-` prefixes. Child runs derive from the team configuration already authorized for the root session.
-- Child-session identifiers must be opaque, safe identifiers accepted by state storage and sandbox management, not slash-delimited paths taken directly from event source strings.
-- Lazy factory creation does not mean “automatically destroyed after every call.” The first delegation creates a child session; an explicit continuation of the same delegation reuses it. Whether a new task or retry reuses a session must be explicit in the run record, not guessed solely from the member Agent ID.
+`GET /api/internal/team-spec/{sessionId}` returns a `TeamSpecInfoResponse`: `teamId`, `tenantId`, `teamName`, `lead` (one complete `AgentSpecInfoResponse`) and `members` (one complete spec each, in assembly order).
 
-### 6.3 AgentScope Integration Choice
+- The lead's spec is synthesized by `specForTeam`: prompt, model and tenant come from the `team` row, skills from `team_skill_binding`, and the tool / MCP / CLI / required-tool lists are passed empty explicitly, with `agentId` = 0 and `agentName` = the team name. The four binding reads of `buildAgentSpecResponse` are parameters, so team and agent share one serialization path.
+- A member's spec comes from `specForAgent` in the same shape an ordinary session gets: model, tools, MCP, skills and CLI in full, so nothing depends on the lead's adaptors interpreting another agent's bindings.
+- `/agent-spec` throws for a session whose `team_id` is set, and `/team-spec` refuses every other session. Each endpoint recognizes only its own entry, which removes the room to guess.
+- A member's child session id is never sent to admin: it has no `session` row and no prefix-based entry point knows it, so member configuration is always derived from the team spec that was authorized for the root session.
 
-Prioritize validating native `SubagentsMiddleware`, `SubagentEntry`, and `SubagentFactory` with parent-run context. Use factories to assemble full member capabilities while retaining native delegation. Do not build a custom scheduling engine or substitute a declarative subset of parent tools for member configurations.
+`AgentSpecResolver.resolveTeam` turns that response into a `TeamRuntimeSpec`: the lead's `AgentSpec` / `ChatSpec` and one `TeamMemberSpec` per member (each carrying `specInfo`, that member's own admin response). The model, MCP, tool and skill adaptors read `AgentSpecContextHolder` (a ThreadLocal for the synchronous build phase), so each build installs its own spec first and clears it afterwards: `leadSpecInfo` around the lead, `member.specInfo` inside the member factory.
 
-This is a recommended integration point, not a validated, drop-in adapter. Middleware initialization, tool registration, the task repository, actual child-session identifiers, the Harness lifecycle, confirmation/resume, and cleanup all need correct handling. Calling `addMiddleware` alone does not establish that every tool is ready, and returning only a bare ReAct delegate must not bypass the Harness sandbox lifecycle.
+### 6.3 Delegation Mechanism and Member Assembly
 
-Team mode registers only configured members and disables default general-purpose subagents and dynamic workspace member discovery in that mode. Ordinary Agent mode is not changed as a side effect.
+Members are not AgentScope native subagents. The SDK's built-in subagent path inherits the parent toolkit and always adds a general-purpose entry, while a team needs a member carrying its own model, tools, MCP, skills, CLI and sandbox; so a member is built by `launcher.createTeamMember` through the same assembly an ordinary agent goes through, and the lead additionally disables framework subagents to avoid leaving a second delegation path outside the team's management.
 
-### 6.4 User Identity and MCP
+The lead's orchestration surface is a ToolBox (`TeamLeadToolBox`), not a prompt convention:
 
-- Child Agents execute on behalf of the authenticated user of the root session. They must not impersonate the current user using the Team creator's or member Agent creator's OAuth authorization.
-- A member may load only MCP configured for that member and authorized for use. The lead neither connects to members' MCP nor receives their credentials.
-- MCP token exchange remains in admin, which resolves identity from a trusted session. Do not add a caller-supplied `userId` parameter to token exchange.
-- Child runs must distinguish the “child-session identifier for state/sandbox” from the “root-session identifier to which authorization belongs.” Unknown child IDs cannot be used directly as the existing OAuth exchange `sessionId`; team integration must retain and validate the relationship between the root session and member runs.
-- The current token exchange method validates the session user, tenant, and user authorization, but not team membership. Team member/MCP scope validation is a new requirement, not a capability already provided by the existing endpoint.
-- Retain the established policy of disabled stdio, per-user authorization, and runtime-side token injection. Independent member sandboxes do not justify re-enabling stdio or injecting MinIO or Docker management credentials into them.
+- `team_members` returns the roster as text.
+- `team_delegate(member_agent_id, task, file_ids)` performs one delegation and blocks until the member reports; the return value is text the lead reads. An id outside the roster, an empty task, a busy member, an exhausted budget and a stopped team each come back as a readable refusal the model can act on, instead of an exception that ends the turn.
+- `team_artifacts` lists the artifacts published in this session.
 
-For the current state, see [MCP Management](./mcp-management.en-US.md) and [MCP Outbound Authorization Design](./mcp-authorization-design.en-US.md).
+The member-side `TeamMemberToolBox` is bound to a member id and resolves its run through `orchestrator.currentRunOf(memberAgentId)`: delegation is foreground, so a member has at most one unfinished run, which is how a member tool knows whose run it is without the framework carrying a team identity. Reached outside a delegation, the tools answer that no delegation is in progress.
 
-## 7. Sandbox Alternatives and Final Choice
+The task brief (`buildTaskBrief`) carries the team name, this member's responsibility in this team, the task text, the `fileId`s to handle and the delivery requirement. A member sees neither the user nor the root conversation, which is why the brief has to state the goal and the acceptance criteria.
 
-| Dimension | One sandbox shared by members | Independent member sandboxes (selected) |
-|------|------------------|----------------------|
-| Resources and startup | One container; lower resource usage | Multiple containers; higher startup and memory costs |
-| CLI and dependencies | Must be unified; versions and environments may conflict | Each member retains its own CLI, dependencies, and configuration |
-| File collaboration | Direct reads and writes in the same directory make handoff convenient | Explicit artifact publication and retrieval required |
-| Credential boundary | Shell can access the shared environment; separate directories do not provide security isolation | Stronger member-level isolation, still affected by mounts, networking, and container privileges |
-| Parallel execution | Prone to file overwrites, port contention, and shared-state changes | Less file and process interference; better suited to future parallelism |
-| Failure impact | A damaged environment affects all members | Usually limited to the corresponding member |
-| Snapshots and reclamation | One workspace; fewer lifecycles | Multiple states and snapshots; more lifecycle management |
-| Integration cost | Requires dedicated adaptation for shared objects, credentials, and reference lifecycles | Closer to existing session-based sandbox management, but still requires child-run identifiers and artifact handoff |
+### 6.4 Child Session Ids, Lazy Creation and Reuse
 
-**Independent sandboxes are the final choice.** The earlier recommendation to share a sandbox primarily sought lower resource costs, but the fewest resources do not necessarily mean the fewest code changes. Independent sandboxes better serve the goal of preserving each member's Agent capabilities.
+`TeamSessions` owns the spelling of a member's child session id: `team-<rootSessionId>-m<memberAgentId>`. It keys the state store, the sandbox container and a workspace path segment, so the runtime that creates it and the history replay that reads it back have to share this one definition; the id contains no slash and is never taken from an event source string.
 
-The constraints are:
+- A member's agent instance is built on the first delegation to it (`memberWrapper`), outside the map lock, because building makes network calls (model configuration, MCP handshakes).
+- Within the same root session, later delegations to that member reuse the instance and the same child-session state, continuing its own conversation. Reuse is by member instance, not a guess from the member's agent id.
+- When a run becomes untrustworthy (execution error, stopped by the user, repeated confirmations, abandoned while waiting) the member's instance is `evict`ed: `interrupt` latches and a turn abandoned at a confirmation leaves a tool call waiting for an answer nobody will give. That poison sits on the in-memory instance, not on the persisted child session, so the next delegation reads the same history into a fresh agent.
+- A new root call taking over the event stream (`openEventStream`) cancels leftover waits, drops members still claimed and clears the run ledger and the delegation counter: a client that disappeared can leave a delegation thread parked on a confirmation, and that thread holds the member's agent.
+- While the previous root call still owns the stream (one of its members is waiting for a confirmation), a new request is refused with `RESOURCE_LOCKED` rather than pulling those events into an unrelated response.
 
-1. The lead only orchestrates and creates no execution sandbox. Filesystem capabilities must not fall back to execution on the host.
-2. Create a container only when a member actually needs a filesystem or Shell execution environment. Model-only or remote MCP calls need not start Docker for this reason. Whether existing warm-up and workspace hooks permit genuinely lazy creation remains a validation item.
-3. The logical isolation scope comprises the tenant, root team session, and member child run. If the underlying layer still accepts only one sessionId, map this scope to a unique child-session ID, not just an `agentId` or `teamId`.
-4. Explicit continuation of the same child session can restore its own workspace and snapshot. Different users, different root sessions, and different concurrent tasks of the same member must not accidentally share a container.
-5. Stopping the root run cascades cancellation to members. Containers, MCP clients, task records, and snapshots all fall under lifecycle management; do not rely on incidental cache expiration for cleanup.
-6. Independent containers are not a promise of complete isolation. Do not mount the host Docker socket or other members' workspaces, or share members' secret environments. Retain deployment-level network and resource restrictions.
+### 6.5 User Identity and MCP
 
-## 8. File Sharing: MinIO Artifact Handoff
+- A member executes as the authenticated user of the root session: `createTeamMember` passes `authSessionId` as the root session id on purpose, because an OAuth grant belongs to whoever opened the root session and admin resolves the identity from that id. A child session id is unknown to admin.
+- The MCP details in a team spec come only from each member's own agent and tenant (admin filters by the agent's tenant); the lead receives none of the members' credentials.
+- A team run has no caller-supplied `userId` parameter; identity comes from the trusted session plus the JWT.
+- The stdio ban, per-user authorization and runtime token injection stay on the ordinary path: a member having its own sandbox does not reopen stdio, and MinIO or Docker administration credentials are not injected into a member container.
 
-### 8.1 Why Not Share the Entire Workspace
+## 7. Sandboxes
 
-| Approach | Benefits | Costs or issues | Choice |
-|------|------|------------|------|
-| Same writable directory or shared volume | Direct reads and writes; low transfer cost | Concurrent overwrites, overlapping permissions, and workspace coupling weaken independent sandboxes | Not selected |
-| Handoff of the entire workspace or sandbox snapshot | Can reconstruct a complete environment | Large and may carry credentials; snapshots are for recovery, not business-file sharing | Not selected |
-| Put all file content into prompts | Convenient for small text | Large files are expensive or exceed limits; binary files cannot be handed off directly | Small text summaries only |
-| MinIO non-overwritable artifacts + file references | Supports authorization and traceability; suitable for independent sandboxes | Upload/download latency; metadata and lifecycle management required | Selected |
+A team runs as "no sandbox for the lead, one per member":
 
-The team file area is a “logical artifact collection isolated by tenant and root session.” It does not require a new object-storage service or mean mounting the same disk in every container.
+1. The lead assembles no filesystem at all: both the sandbox branch and the snapshot branch carry a `!isLead` condition, and `disableFilesystemTools()` plus `disableShellTool()` close the framework's own two entrances. Filesystem capability never falls back to host execution.
+2. A member assembles a sandbox from its own configuration: the image is resolved from its own CLI set (the default image when it has none), environment values come from its own CLI packages and bindings, the isolation scope is `harness.sandbox.isolation-scope`, and snapshots use the same mechanism as any other session. With `harness.sandbox.enabled=false` and MinIO configured, the runtime falls back to `RemoteFilesystemSpec` with `IsolationScope.SESSION`, so members still get per-session file space.
+3. The isolation scope is tenant, root team session and member child run. The underlying container and workspace accept one session id, so the child session id maps that scope rather than an `agentId` or a `teamId`. Different users, different root sessions and the same member in different root sessions never land in one container.
+4. Continuing the same child session restores that member's own workspace and snapshot; a member's files leave the sandbox only through publish, and nothing on the host scans a member workspace.
+5. Lifecycle: the `STOP_SANDBOX` command destroys the root session's container and, via `launcher.memberSessionIds(sessionId)`, every member child-session container this root owns in the state store; `TeamOrchestrator.stop(destroySandboxes = true)` uses the same handle. MCP clients close with the member instance's `release()`.
+6. Separate containers are one layer, not a total-isolation promise: no host Docker socket, no shared member workspaces, and network plus resource limits come from the deployment's sandbox configuration.
 
-### 8.2 Two New Logical Actions
+## 8. Artifact Handover
 
-| Action | Input and behavior | Output |
-|------|------------|------|
-| Publish file | Read a specified file from the current member's permitted workspace, upload it to MinIO, and register artifact metadata | `fileId`, filename, type, size, and producer association |
-| Retrieve file | Validate that the current child run may access the root session's artifact, then download the specified `fileId` to this member's workspace | A local file reference for this member |
+### 8.1 Publish and Fetch
 
-These two actions are not implemented. Their names describe business semantics, not published tool names or HTTP endpoints. Prefer reusing existing file-storage primitives, but do not treat existing `persist/retrieve` operations as complete interfaces with team permissions and cross-sandbox write capabilities.
+Both actions are member-side tools whose scope the server resolves; the model supplies only a path and a `fileId`:
+
+| Action | Input | Behavior and output |
+|--------|-------|---------------------|
+| `team_artifact_publish` | `path`, relative to the workspace | reads the file from the current child run's sandbox, uploads to MinIO, registers a `team_artifact` row, returns a `fileId` |
+| `team_artifact_fetch` | `file_id` + `dest_path` | checks the artifact belongs to this team session, downloads it and writes it into the member's own sandbox |
+| `team_artifacts` | none | lists artifacts published in this root session with size and producing member |
+
+A typical handover: the researcher publishes `data.csv` and gets `fileId=A`; the lead writes A into the task for the analyst; the analyst fetches A, produces findings and publishes `fileId=B`; the writer fetches B, produces `report.md` and publishes C; the lead reviews C and delivers it to the user as the final file reference.
+
+The lead passes references and summaries only and never downloads a file: it has no workspace and no tool that could read one. Verifying file content stays a delegation to a member.
+
+### 8.2 Storage, References and Invariants
+
+- Storage: `MinioTeamArtifactGateway`, in the output bucket under a fixed key shape `team-artifacts/<tenantId>/<rootSessionId>/<fileId>`. The `team-artifacts` prefix is outside the session types the general output-file route whitelists, so that route cannot name a team object even by accident.
+- Every publish mints a new UUID `fileId`, so an earlier artifact cannot be overwritten and same-name files coexist; which version reaches the next member is the lead's decision. `mime_type` is inferred from the extension table, falling back to `application/octet-stream`.
+- A reference is returned only after the upload landed and the row registered; a failed registration removes the object and rethrows, so nothing addressable stays on the server with no owner and no way to clean it.
+- Reads resolve ownership first, `findOwned(fileId, tenantId, rootSessionId)`: tenant and root session come from the trusted `TeamRuntimeSpec` of this run, and a `fileId` proves nothing by itself. A model cannot name a bucket or an object key.
+- Publishing is limited to a regular file inside the current member's workspace: `SandboxFileWriter.safeRelativePath` rejects traversal and `..`; the size check `sandboxSize` rules out directories with `-f` and symlinks with `! -L`, and requires the `readlink -f` target to stay under `$sandboxWorkspaceRoot/`. Fetching writes only to a relative path inside the member's own workspace.
+- The size cap `harness.team.max-artifact-bytes` (20 MiB by default) is checked on both publish and fetch.
+- Only explicitly named files are published: never a whole workspace, environment values, secrets or a snapshot.
+- With MinIO disabled the `TeamArtifactGateway` bean does not exist. The team still delegates, and all three artifact tools answer with text that names the cause ("artifact storage is not enabled, MinIO is not configured", including "do not substitute a public link or a host directory"). A failed listing also returns its error text rather than an empty list — an empty list reads to the model as "nobody produced a file".
+
+### 8.3 The User's Download Entry
+
+`TeamArtifactController` serves `GET /api/admin/team-artifacts?sessionId=` and `GET /api/admin/team-artifacts/{fileId}?sessionId=`, registered only when `minio.enabled=true`. Object-level authorization is `ownedTeamSession`: the `sessionId` must match `[a-zA-Z0-9_-]{1,128}`, the session must exist and be active, its `team_id` must be set, and its `creator` must be the current user; the listing additionally filters rows whose own `tenant_id` differs from the session's. A download's object key always comes from the `team_artifact` row; `fileId` must match the UUID shape, and a `fileId` belonging to another session or tenant answers 404 rather than 403 (this endpoint must not confirm that someone else's reference exists). The file name in `Content-Disposition` is stripped of quotes, CR, LF and semicolons, and an unparseable MIME type falls back to `application/octet-stream`.
+
+A member's run cannot reach this endpoint at all — it holds no admin credential — so fetching an artifact into a sandbox stays a server-side read inside agent-service.
+
+### 8.4 Cleanup
+
+Deleting a session is the only action that makes artifacts stop being reachable. `TeamArtifactCleaner.deleteForSession` removes the MinIO object first and the `team_artifact` row second: object storage has no transaction, and the reverse order would leave objects no row names, which nothing can find again. With this order a database failure leaves a row pointing at nothing, which a retry repairs (MinIO treats a repeated delete as a no-op). An object that cannot be deleted keeps its row and is logged, so the gap stays visible instead of turning into a broken download. When MinIO is not configured the rows are kept and a warning is logged: the objects are still there, and dropping their rows would leave them somewhere nobody can find.
+
+A team cannot be deleted while it has sessions, so the combination "team gone, artifacts still keyed to a session" does not occur.
+
+## 9. Events, Confirmation and Failure
+
+### 9.1 One Root Stream, Stamped Provenance
+
+Externally there is still one SSE stream, the root session's: `DefaultAgentRunner.withMemberEvents` opens the `TeamOrchestrator` member stream at subscribe time, strictly before subscribing the lead's stream, and merges both into one response. Routing and stickiness work on the root sessionId; a delegation creates no external routing request of its own.
+
+Provenance is `ChatEvent.source` (`EventSource`): `teamId`, `teamName`, `memberAgentId`, `memberAgentName`, `childRunId`, `childSessionId`. Member events are forwarded one by one in `collectTurn` with `withSource(run.source)`; `EndEventChatEvent` is filtered out server-side and never reaches the client.
+
+`childRunId` identifies one delegation (a UUID) and tells two delegations to the same member apart; neither a display name nor an `agentId` is the test. Tool argument and result buffers are per member run, so a `toolCallId` only has to be matchable inside one run.
+
+A member's text reaches the lead's context only as the delegation's return value; it is never concatenated into the lead's answer. Token statistics are attributed per instance, so the lead's rows and each member's rows are counted separately.
+
+### 9.2 The Confirmation Loop
 
 ```text
-Researcher sandbox: generate data.csv
-    ↓ Publish; obtain fileId=A
-MinIO team-session artifact collection
-    ↓ The lead passes task instructions and A to the analyst
-Analyst sandbox: retrieve A, analyze it, and produce conclusions
-    ↓ Publish; obtain fileId=B
-Writer sandbox: retrieve B and generate report.md
-    ↓ Publish; obtain fileId=C
-The lead reviews the result and delivers C to the user as the final attachment reference
+A member's tool hits an ASK rule
+    ↓ ToolConfirmEvent is emitted with that run's source (the delegation card opens the entry inline)
+The user approves or denies (the frontend answers by childRunId, one decision per round)
+    ↓ admin/router route the request back to the same instance by the root sessionId
+TeamOrchestrator.answerConfirmation(childRunId, approved) completes that run's wait
+    ↓ the member continues inside the same delegation, output still on the original root stream
+The lead receives the member's state and result and carries on
 ```
 
-### 8.3 Mandatory File Boundaries
+Points:
 
-- A `fileId` is a reference, not an authorization credential. Retrieval, preview, and user download must all validate the tenant, root-session permissions, and run ownership.
-- Models cannot specify arbitrary MinIO bucket/objectKey values. The server resolves storage locations from authorized metadata.
-- Publication may read only files within the current member's permitted directories; retrieval may write only to that member's own workspace. Reject path traversal and symlink escapes, and limit file sizes and transfer resource consumption.
-- Every publication generates a new file ID without overwriting previous artifacts. Files with the same name may coexist; the lead explicitly selects the version to pass to subsequent members.
-- Publish only explicitly selected artifacts. Do not automatically upload the entire workspace, environment variables, keys, or full snapshots. Secret files should not enter publishable directories or result prompts.
-- Return a usable reference only after the upload completes and readable metadata is registered. Failed publication must not return a file ID that appears successful.
-- Persist file references and ownership so they are not lost when a sandbox is reclaimed. Link artifact cleanup to session retention policies to avoid unlimited permanent accumulation.
-- If MinIO is unavailable, explicitly report artifact-handoff failure. Do not silently switch to public temporary links, host directories, or passing large files through prompts.
+- The answer goes to `/api/router/agent/confirm` with `childRunId`; when `ConfirmAgentRequest` leaves that field empty the request is the session's own confirmation, otherwise it is handed to the team orchestrator. A successful answer returns one End event and nothing else: the resumed output comes back on the stream that is still open, so the answer carries no content of its own.
+- Several pending tools in one wait are decided together (`toolResults.all { it.confirmed }`), so a mixed answer denies the run rather than executing tools the user left unchecked.
+- A decision is delivered exactly once: the future is taken with `pending.getAndSet(null)`, a duplicate submission gets `ALREADY_ANSWERED`, no wait gets `NO_PENDING`, an id this orchestrator does not hold gets `NOT_IN_THIS_TEAM`, a stopped root run gets `STOPPED`. All four refusals come back as readable text, and the tool never executes.
+- The wait loops in 30-second slices, the length being `HarnessConfig.TeamConfig.confirmHeartbeatSeconds` at its data-class default: the `TeamConfig` assembly never passes that field and `harness.team` has no key for it, so there is nothing to tune from configuration. Every unanswered slice emits a `KeepAliveChatEvent` carrying only a source — no content, no usage — which every consumer drops. The heartbeat answers two idle timeouts, and both of those are configuration keys: session-router's `router.proxy.stream-idle-timeout-seconds` (120 by default) and channel-service's `channel.proxy.stream-idle-timeout-ms` (180000 by default), while a legitimate wait can last far longer than either.
+- Closing the window (`harness.team.confirm-timeout-seconds`, 600 by default), an interrupted thread, or a stop before anyone answers all end as "not completed": the tool did not run, a wait is never read as approval, and the member task returns to the lead as a failure text, after at most `MAX_CONFIRM_ROUNDS` (5) repeated requests.
+- While a member run waits, the previous root call keeps owning the event stream and `openEventStream` returns null for anyone else. A user message sent at that moment is answered by `DefaultAgentRunner` with a single `RESOURCE_LOCKED` (plus one warn log): the new call neither takes that wait over nor releases it, which is the same rule section 6.4 states. The wait is dropped at the moment a later root call actually opens the stream — that `openEventStream` cancels the delegation still waiting and `evict`s the member instance parked on a confirmation, so a later answer for that same `childRunId` gets `NOT_IN_THIS_TEAM` and the UI says the confirmation has lapsed. A pending card is not replayed from the run's persisted state.
+- A team session does not open a second concurrent round while a member run is unreturned (ownership of the event stream is unique), and where the lead's own confirmation may pop a modal and pause reading the stream, a member's must be answered inline.
+- Auto-approval, stripping confirmation-requiring tools off a member, blanket auto-denial, or letting the lead perform the dangerous action are none of them this loop. An entry point with no interactive capability needs its own confirmation policy before it can take a team.
 
-The lead passes only references and summaries, without downloading files to a lead sandbox. Any necessary inspection of file contents is still delegated to members.
+### 9.3 Stop, Failure and Budgets
 
-### 8.4 Limits on Reusing the Existing Attachment Path
+- Member failures are always reported as text and never disguised. `runTask` ends in failure on: an `ErrorEvent` from the member, the user stopping mid-execution, repeated confirmation requests, a confirmation that timed out or was cancelled, a member producing neither text nor artifacts, and the delegation itself throwing. Each carries the part that did complete; after a failure the member instance is `evict`ed and its claim released.
+- Outside `failReport`, those endings return as a normal value (the `team_delegate` result carries no failure marker); the visible consequence is under "What the frontend shows".
+- Stop: `stopExecution` calls `orchestrator.stop()` before interrupting the lead. A delegation blocks a tool thread *of the lead*, so interrupting only the lead would leave a member running (or still parked on a confirmation); `stop()` releases those waits without approving them, sets `stopped` so further delegation is refused, and interrupts what is executing. `STOP_SANDBOX` additionally destroys member sandboxes and invalidates the cached instance. External side effects already sent by a shell or an MCP call are not rolled back by cancelling.
+- Budgets: `harness.team.max-delegations` (20) is counted and enforced by the runtime, and the refusal text tells the lead to summarize what it has; `member-turn-timeout-seconds` (900) wraps a member's stream from outside; `turn-timeout-seconds` (1800) is the root turn budget and should exceed the former — when it does not, assembly logs which layer will fire. The artifact size cap is covered above.
+- After a process restart or a run landing on another instance, snapshots and workspaces can be restored while in-flight delegations are not replayed: an interrupted run ends as interrupted, and a user or the lead starts it again.
 
-The current `OutputFileStore` provides MinIO file write/read primitives, but the existing download Controller checks only login status for web/task files and lacks team-session-level ownership validation. **Team artifacts must not simply be placed where the old access rules can read them and then be claimed to be isolated.** Implementation must add object-level authorization to the corresponding download entry point, or use a protected storage scope inaccessible through the old entry point and provide an authenticated and authorized entry point.
+### 9.4 What the Frontend Shows
 
-Reusing infrastructure does not mean reusing all of its default permissions. Existing sandbox snapshots are for workspace recovery, not team artifacts. Final file delivery starts with the Web UI; this does not expand channel file-delivery capabilities.
+Presentation answers only "who said this and how far it got" and leaves the provenance contract, the confirmation loop and the lifecycle semantics alone. The shared logic is in `harnax-webui/src/pages/session/components/teamRun.ts`, and the live stream and the replay use the same tests.
 
-## 9. Events, Confirmation, and Failure Handling
+- One member run is one bubble state (grouped by `childRunId`) rendered inside the `team_delegate` tool card that delegated it. The join is decided when the message is created, not at render time: live takes the earliest card this member emitted and no run has claimed (`openDelegateCards`), replay scans that turn's cards in order (`claimDelegateCard`); both key on member id and call order and never on timestamps, so the order seen live is the order seen after a reload.
+- A run that claims no card still becomes its own bubble: a refused delegation, a lead turn with no recorded call in the persisted history, or an unreadable roster — none of them may lose a member's output from the screen. The lead's bubble is not split at the delegation point, which would separate a `team_delegate` card from its own result event.
+- The close signal is the lead's `team_delegate` result event: the tool call id locates the card, the member id is read from its arguments (`parseDelegateCall`), and the matching run closes. When a card returns a result that no run claimed, its id is dropped from the pending queue, otherwise it would take the next delegation's place for that member. Three fallbacks close everything else: the lead's turn ending, the lead's error, and the root stream breaking — a run still open at that point is put in a terminal state.
+- Only one member run per member is open at a time and delegation blocks, which is what keeps the card-to-run mapping unique.
+- Four states: `running`, `awaiting_confirm`, `done`, `failed`. "Waiting for confirmation" is the UI entry of the confirmation loop (`answerConfirmation`'s wait) and the card stays expanded while it holds. The fold control *is* the `team_delegate` card header: it expands automatically while a run is executing or awaiting confirmation, collapses once closed, and a manual click wins over the automatic state (the override is per card and clears on session switch). Even collapsed, the header shows who got the card; a card holding several runs shows "name +N". Expanded, each run has its own title line — member name, team, status, tool count, duration — with its own text, tool cards and confirmation entry below.
+- "Done" means "this delegation closed and no failure event arrived while it ran". Only the member's own `ErrorEvent` path renders `failed`; being stopped mid-execution, repeated confirmations, a timed-out wait, an empty answer and a throwing run all close as normal delegations and render as done. A replay carries no lifecycle information, so after a reload a member run starts out as `done`.
+- Tool-level state does show where a round was cut: a call whose result log never appears in the replay, and a call still without a result when a live stream closes, is rendered as interrupted — except cards in the confirmation state, which already have a state of their own.
+- The task text of a member run comes from the lead's `team_delegate` arguments (neither a member's events nor its persisted logs carry it), remembered per member by most recent call, and is used on the title line only when the run stands alone as its own bubble.
 
-### 9.1 Keep One Root Session and Preserve Child-Run Provenance
+### 9.5 History Replay
 
-Externally, continue using the root session's SSE channel and sticky routing. Members execute within the same instance; do not create a separate external routing request for each delegation.
+`DefaultAgentRunner.loadHistory` wraps the ordinary history read in `TeamHistoryReplay.merge`:
 
-Team events must at least support correlation with the root run, member, child run, and relevant tool calls. Explicit fields or server-side mappings are acceptable, but `agentId`, display names, or SDK `source` strings alone cannot distinguish multiple tasks by the same member. Tool-argument and result buffers must also account for child-run scope rather than assume that every `toolCallId` is globally unique.
+1. `launcher.memberSessionIds(rootSessionId)` finds member child sessions in the state store by the prefix `team-<root>-m`. An ordinary session pays this step too, since only this call can answer "are there member sessions", and the read then returns immediately.
+2. The roster comes from admin's `getTeamSpec(rootSessionId)`, and each child session gets an `EventSource` with every field filled. Names follow the current roster rather than a snapshot — after a member is renamed the user should see the name it has now. No run id was ever persisted, so replay uses the child session id as `childRunId`.
+3. Each member child session's persisted messages are read, keeping only the `ASSISTANT` and `TOOL` roles: a member's user message is the lead's brief and it is already in the lead's turn.
+4. Interleaving moves by whole turns. The lead's turn (an assistant message plus the tool results right after it) is the insertion block, and member logs move a full turn at a time, landing before the block they were produced under. Sorting all logs by timestamp would slide one member's message between another member's call and its result, and that tool card would never close. A member run that outlived the lead's last persisted message is still appended at the end.
+5. The child session id does not distinguish delegations, so runs are cut by contiguity: member logs continuing the same child session join the current run, and a lead log in between starts a new one. However many member runs were visible live, that many are visible after a reload.
+6. The degraded paths affect only the team part: an unreadable roster, empty child sessions or empty member logs all return the lead's history alone, and a team whose history cannot be fully read does not make the session unopenable. A member removed from the team follows the same degradation — its child session is out of the roster, so its logs do not surface and the delegation remains only as the `team_delegate` result text inside the lead's bubble.
+7. Persisted tool logs carry no tool call id, so replay mints one per message (`${msgId}-t${seq}`); claiming only needs it stable within that message, uniqueness across sessions is not required. Several calls in one turn first collect their results by source, then pair them one by one by name.
 
-Only member reports and artifact references become input to the lead. Do not concatenate every chunk of member streaming text directly into the lead's final answer. Member execution logs, user-visible text, and token statistics should identify their source; avoid double-counting when aggregating costs for the root session.
+## 10. Configuration and Module Responsibilities
 
-### 9.2 End-to-End Human Confirmation
+Runtime configuration lives under `harness.team.*`; the defaults are `TeamConfig`:
 
-```text
-A member requests confirmation
-    ↓ Record the root session, child run, tool call, and parameters awaiting confirmation
-The frontend displays the member and action; the user approves or rejects
-    ↓ The server validates the user, ownership, pending state, and one-time decision
-Return the decision to the original child run, not the lead's own tool list
-    ↓ The member executes or handles rejection and produces a result
-The lead continues after receiving the member's status and result
-```
+| Key | Default | Purpose |
+|-----|---------|---------|
+| `max-delegations` | 20 | delegations allowed in one root run |
+| `member-turn-timeout-seconds` | 900 | one member turn |
+| `turn-timeout-seconds` | 1800 | the team's root turn budget, expected above the former |
+| `confirm-timeout-seconds` | 600 | how long one member confirmation waits |
+| `max-artifact-bytes` | 20 MiB | publish and fetch cap for one artifact |
 
-Waiting for confirmation must not count as task success. Rejection, expiration, cancellation, and duplicate submissions require explicit handling and must not cause tools to execute more than once. Preserve the original runtime context while waiting. A timeout, disconnection, or process exit must not imply approval or allow the task to resume as completed.
+`TeamConfig` also carries `confirmHeartbeatSeconds` (30), which is absent from that table on purpose: `harness.team`
+has no key for it and the `TeamConfig` assembly never passes it, so the value is the data class's default and the
+root-stream heartbeat while a confirmation waits is fixed at 30-second slices.
 
-The root stream must not go silent while it waits. Session-router declares a stream idle after 120 seconds with no event and channel-service after 180 seconds, while a human answer can take minutes, so silence would tear down a run that was still able to continue. The runtime publishes a `KeepAliveEvent` on the root SSE every `harness.team.confirm-heartbeat-seconds` (30 by default): it carries the child run's source and nothing else, and every consumer ignores it as neither output nor end.
+| Module | Team responsibilities |
+|--------|-----------------------|
+| `harnax-entity` | `Team`, `TeamMember`, `TeamSkillBinding`, `TeamArtifact`, nullable `Session.agentId` plus `teamId`; `TeamSpecInfoResponse` and the mappers |
+| `harnax-admin` | team CRUD and validation, session typing and snapshots, `/team-spec` and `/sessions/{id}/team`, artifact metadata and authorized download, artifact cleanup on session deletion |
+| `harnax-agent-service` | team session detection and spec resolution, orchestrator and lead construction, the member factory and thread context, stream merging, confirmation dispatch, stop, history merging |
+| `harnax-harness-core` | role-based assembly (lead/member), team tools, the orchestrator, child session ids, the artifact gateway, sandbox and statistics attribution |
+| `harnax-protocol` | `EventSource` fields, `withSource`, `KeepAliveChatEvent`, `childRunId` on the confirm request |
+| `harnax-webui` | team list and two-step wizard, executor choice, member runs inside delegation cards, inline confirmation, the artifact drawer, lead labeling |
+| `harnax-session-router` | sticky routing by root sessionId and the stream idle timeout (a team adds no external routing dimension; `childRunId` travels on the request) |
+| channel / scheduler / client | handle provenance and heartbeats where their protocols consume events; the team entry today is the web session |
 
-A heartbeat only protects a stream that is still connected. When a waiting stream is cut (timeout, closed tab, process exit), the tools still awaiting a decision survive only as ASKING records in the persisted state, so the next request must replay that confirmation card with its original arguments; returning an unactionable error instead kills the session — every later message reports the same pause, and confirming reports that nothing is pending.
+Deployment stays on `docker-new` and a team introduces no new service. Member sandboxes add demand for containers, images and object storage, so capacity limits, lifecycle and deployment notes are maintained together with the sandbox and MinIO configurations.
 
-The following are not acceptable substitutes for D7: automatic approval, removing tools that require confirmation from members, automatically rejecting every request, or having the lead execute all dangerous actions. Any non-interactive entry point that adopts Teams must define its confirmation policy separately; it is not supported by default.
+## 11. Explicitly Not Done
 
-### 9.3 Lifecycle and Budgets
+| Out of scope | Current shape |
+|--------------|---------------|
+| A team as a kind of agent, or a team switch on an agent | a team is its own configuration object and its lead's configuration lives on the `team` row |
+| A hidden `agent` row standing in for the lead | the lead's spec is synthesized by `specForTeam`; `agent` has only the conversable and the member role |
+| Tool, MCP or CLI bindings on a team | a team owns only `team_skill_binding`; those three exist solely on member agents |
+| The lead executing business work with tools, MCP, shell or a sandbox | assembly withholds them outright; the prompt only explains that |
+| A shared writable workspace, or one sandbox shared by members | one sandbox per member, files only via MinIO artifacts |
+| Passing business files through a workspace snapshot or by pasting file content | snapshots restore workspaces; files travel as `fileId` references |
+| Parallel, background, nested or cross-team delegation inside a team | foreground, sequential, single-level; concurrent delegation to one member is refused |
+| Group-chat negotiation, workflow canvases, A2A, remote agent discovery | not implemented and not on any existing code path |
+| Auto-approval, blanket auto-denial, the lead performing dangerous actions instead | the loop requires the user's decision to reach the member run |
+| A separate sub-session chat window per member | member output renders inside the lead's delegation card, on one session |
+| Turning an existing plain session into team mode | a team session is only ever created |
+| Channel delivery (DingTalk, WeChat, scheduled tasks) as a team entry | `chn-` and `task-` conversations have no `session` row, so team detection never covers them |
 
-- When a member fails, return an explicit failure status, usable results, and published file references to the lead. The lead decides whether to reassign the work; do not return false success.
-- When the user stops the root run, stop executing members, prevent subsequent delegation, and close runtime resources. Cancellation cannot roll back external side effects already issued through Shell/MCP.
-- Explicitly bound total delegations, member iterations, runtime, active containers, and file-transfer volume. Specific thresholds will be determined through implementation and validation; this design does not invent default numbers.
-- If the foreground sequential-delegation recommendation is adopted, enforce concurrency limits and disable automatic timeout-to-background transitions at runtime, not merely in the lead's prompt.
-- After a process crash or routing migration, available snapshots do not mean in-flight tasks can resume without loss. The first release must not automatically replay tool calls with side effects. Mark runs as interrupted and allow controlled re-initiation; validate confirmation recovery and sandbox recovery separately.
+## 12. File Index
 
-### 9.4 How Member Messages Are Shown and Replayed in the Session Page
-
-Presentation only answers "who said this". It does not change the provenance contract of §9.1, the confirmation loop of §9.2, or the lifecycle semantics of §9.3.
-
-**One provenance contract serves both live and reload.** Live events carry `ChatEvent.source`. Persisted history carries no source, and a member's conversation is stored in its own child session, so replay resolves the root session's Team roster and stamps each member child session with an `EventSource` whose fields match the live one — team, member, child run, child session. Names come from the current roster rather than the snapshot taken at the time: when a member is renamed later, the user should see who it is now. No run identifier was ever persisted, so the child session identifier stands in for it during replay — it says which member a run belongs to, but a member child session is reused across delegations, so on its own it cannot say which delegation a run came from or which card it belongs in. The frontend still must not infer ownership from display names or `agentId`: that something is a member run is decided solely by the child run identifier, while which delegation it nests in is claimed separately, by call order (below).
-
-**Member runs render inside the lead's delegation card.** The lead's answer for a turn still stays one continuously appended bubble; a member no longer gets its own bubble beside it but renders inside the `team_delegate` tool card it was delegated from. Ownership is settled when the message is created rather than searched for at render time: live takes the earliest card that member has emitted and no run has claimed yet, in FIFO order, and replay scans the cards already present in that turn in order. Both paths key on the member identifier and call order, never on timestamps, so the timeline seen live is the same one seen after reopening. A member run that claims no card stays a bubble of its own — a rejected delegation, a lead turn that left no recorded call in history, or the roster-unreadable fallback must never make member output disappear from the screen. The lead bubble is still not split at the delegation point — splitting it would separate the `team_delegate` tool card from its own result event, leaving tool state unable to resolve.
-
-**The lead's delegation result is the only signal that closes a member run.** The server filters out the member's end event, so the frontend never receives "child run finished". Closure comes from the lead's `team_delegate` result event: the tool call identifier links it to that delegation, and the member identifier in its arguments locates the card and the run inside it. Because only one open run per member is allowed and delegation is foreground-blocking, the mapping stays unique. A card whose result came back but that no run claimed — the delegation was rejected, or it failed outright — has to be released from the pending set; left in place it would steal the slot of that member's next delegation. Three fallbacks remain: lead end, lead error, and root-stream teardown must all move any still-open member run to a terminal state. "No more events" is not "done"; an interruption has to render as an interruption.
-
-**Closure is not success.** The lead decides whether to reassign or wrap up from the delegation's return value, so apart from the one path where the member emits its own error event, every other failure ending (stopped by the user mid-run, aborted after repeated confirmations, confirmation wait timed out, member returned nothing, member run threw) comes back to the lead as an ordinary tool result. The `team_delegate` result event carries no failure marker, and those runs render as done. "Done" therefore currently means exactly "this delegation closed, and no failure event was seen while it ran". Making it honest needs either a failed state on the delegation result or a source-stamped closure event at the end of a member run; both change the event stream channels consume and the tool result the model sees, so the decision is deferred. Replay carries no lifecycle information at all, so a member run reopened from history always renders as done; the tool cards from that turn that never got a result, though, render as interrupted — the tool-level state shows where the turn was cut even when the run-level state cannot.
-
-**Folding: the delegation card stays collapsed unless one of its runs is live.** The fold control is the `team_delegate` card's own header — there is no separate member bubble header any more. Collapsed, the header still has to say who the delegation went to: the member name shows at the right of the card header, and a card holding several runs reads "name +N". Expanded, each run inside it has its own summary line — member name, team, status, tool count, elapsed time — followed by its own text and tool cards, confirmation entry point included. The task first line is not repeated there; it already sits in that same card's delegation arguments, and only a run that claimed no card and stands as its own bubble shows it in its header. A card auto-expands while one of its runs is working or waiting for confirmation and collapses once closed; a manual toggle overrides the automatic state, applies to that one card, and clears on session switch. All four statuses stay visible — working, waiting for confirmation, done, failed — and "waiting for confirmation" is the entry point into §9.2, so the card stays open while it waits instead of hiding the decision behind a fold.
-
-**History replay merges child sessions without a migration.** Reading history keeps the lead session as the backbone, recovers member messages by the child-session naming rule, retains only member displayable text and tool calls, and interleaves them. Both interleaving and run grouping work a whole turn at a time rather than a flat timestamp sort. Splitting a lead assistant message from its own tool results breaks the pairing the frontend relies on; and since two members may run concurrently, sorting their messages together would let one member's log land between another member's tool call and its result, leaving a card that never resolves. The insertion unit is therefore one lead turn (an assistant message plus the tool results that follow it): member logs land after the turn that produced them and before the lead's next turn, and the frontend claims them into that turn's `team_delegate` cards in call order, which reproduces the live order — deterministic because delegation is foreground-blocking. Persisted tool logs carry no tool call identifier, so replay gives every card a synthetic one numbered within its own message; the claim only needs it stable inside one message, never unique across sessions. Because the child session identifier does not distinguish one delegation from the next, replay groups by contiguity: member logs sharing the previous log's child session join the current run, and a lead log in between starts a new one, so the number of member runs seen live is the number seen after reopening, each nested in its own card. The task first line comes from the lead's persisted delegation arguments, since the member's task brief is not part of the merged timeline, and it is read in scan order: the arguments are persisted before the member runs, so scanning the lead turn records that member's latest delegated task and the member runs that follow take it — where it is used only on the header of a run that ends up standing as its own bubble. No per-member task queue is kept — a delegation without task text, or a member that produced no logs at all, would shift such a queue out of step with the runs, while overwriting on the second delegation lines up with the member's own logs exactly. A turn may hold several tool calls, and replay has to pair each one with its own same-source result log by name; absorbing only the first leaves the rest spinning as "calling" forever. The same rule governs tool-level interruption: a call that matches no result in replay, or that still had no result when the live stream closed (lead end, lead error, root-stream teardown), settles as "interrupted" — except a card waiting for confirmation, which already has its own state and must not be overwritten. Member logs newer than the lead's last persisted message (an interruption, or a lead that never summarized them) are appended at the end instead of disappearing. When the roster cannot be read or a member child session has no content, the response falls back to lead-only history; incomplete team history must never make the session unopenable. A member removed from the team takes that same fallback, so its member runs stop appearing and the delegation survives only as `team_delegate` result text inside the lead's bubble. The cost of not migrating sits in recovering the member child sessions: every session identifier is listed and then filtered by prefix, and "does this session have member child sessions" can only be answered by that step, so every history read pays one full session scan — ordinary sessions included, which simply return after the scan without fetching the roster or reading any member session. If that scan becomes hot, query by prefix instead of adding a second index over sessions.
-
-**The lead label appears only in team sessions.** The lead's name comes from the agent name already returned by session configuration and is shown on bubbles only when the session is bound to a team, so it can be read against the member runs nested in delegation cards; when it is absent nothing renders, and no new field or request is introduced for it.
-
-## 10. Comparison and Trade-off History
-
-### 10.1 Collaboration Paradigms
-
-| Approach | Where it fits | Main cost | Conclusion in this round |
-|------|--------|----------|----------|
-| Lead-driven delegation | The lead dynamically assigns specialist members; matches the goal | An extra layer of model calls; budgets and result review required | Selected |
-| Fixed pipeline or graph | Deterministic ordering and reproducibility | Additional workflow configuration and runtime semantics | Not selected for the first release; this is not a claim that the SDK has no related capabilities |
-| Group-chat negotiation | Discussion from multiple perspectives | More complex message broadcasting, turn ordering, and termination control | Not selected |
-| Cross-service Agent/A2A | Independent deployment and cross-system reuse | Remote identity, discovery, task protocols, and failure handling expand the scope | Not selected; not prohibited for the future |
-
-### 10.2 Team Modeling
-
-| Approach | Benefit | Problem | Conclusion |
-|------|------|------|------|
-| Add a team toggle and member bindings to Agent | Less data modeling and fewer pages | Team is not an independent object; ordinary and team-leading usage are coupled | Withdrawn |
-| Bind Team one-to-one to a lead; accessing the lead accesses the team | Reuses the existing entry point | Difficult to distinguish the same lead's ordinary sessions and different team compositions | Withdrawn |
-| Independent Team + lead references an existing Agent + explicit team sessions | Zero duplicate maintenance of the lead's capabilities | A team cannot exist without a ready-made Agent; "configure a team" becomes "configure an Agent first, then pick it" | Selected 2026-09-18, superseded 2026-09-20 by the next row |
-| **Team carries its own lead configuration (model, prompt, Skills)** | The team is a self-contained object and step 1 of the wizard configures the lead outright; `agent` keeps exactly two identities, conversable and member | The delivery side must synthesize a spec for the lead; a session's `agent_id` must become nullable | **Selected** (2026-09-20) |
-| Team owns one hidden `agent` row as its lead | Runtime stays completely unchanged, and `session.agent_id` needs no change either | Introduces a phantom agent: every list and selector query must remember to filter it, names and workspace keys need collision care, and direct edit/delete need extra guards | Rejected after evaluation — trades a one-time cost for a permanent trap |
-| Team additionally stores Tool, MCP, and CLI bindings | Fully self-contained team configuration | Duplicate, drift-prone maintenance alongside member Agent capabilities, and the lead should not execute anyway | Not selected; the team carries only the lead's model, prompt, and Skills |
-
-A parent-child binding table can itself represent many-to-many reuse. Choosing an independent Team is a product boundary, not a consequence of a supposed rule that “a binding table can belong to only one team.”
-
-### 10.3 AgentScope Integration
-
-| Integration approach | Benefits | Limitations | Conclusion |
-|------|------|------|------|
-| Native declarative subagents | Reuses native capabilities with a few declarations | Inherits the parent's toolkit/skill and other settings by default; cannot directly represent independent member configurations, and an empty tool list must not be treated as zero permissions | Not the primary approach |
-| Attach the union of member tools/MCP to the lead | Easy to select subsets from the parent set | Expands lead capabilities and mixes credential boundaries; prompts are not permission boundaries | Explicitly rejected |
-| Native delegation + full member factories | Reuses delegation while retaining each member's own configuration | Requires adaptation for scope, Harness lifecycle, confirmation, and cancellation | Recommended primary approach; validation required |
-| Agent-as-tool | Easy to invoke specialist Agents as tools; the SDK also supports session state | Not equivalent to Harness task, sandbox, and confirmation semantics | Do not mix with the primary approach; do not claim it lacks session capabilities |
-| A fully custom orchestration engine | Flexible control | Rebuilds state, events, scheduling, and recovery; conflicts with the minimal-change goal | Not selected |
-
-### 10.4 Lead, Visibility, and File Strategies
-
-| Decision branch | Final trade-off and rationale |
-|------|----------------|
-| Lead executes directly or only assigns work | Only assigns, reviews, and summarizes; restrict capabilities at runtime while preserving standalone behavior of the original Agent |
-| Shared or independent sandboxes | Independent; preserve member environments and reduce interference, accepting higher container costs |
-| Shared directory or artifact handoff | MinIO file references; accept transfer costs for explicit permissions and traceable versions |
-| Final answer only or visible member activity | Visible activity; requires event ownership and frontend presentation, so zero frontend changes cannot be claimed |
-| Display confirmation events or support full approval/resume | Full end-to-end handling; forwarding events does not mean the original child run can resume |
-| Minimize code at all costs or preserve full member capabilities | Minimize changes while preserving capabilities and security boundaries, not by substituting tool subsets or automatic degradation for apparent simplicity |
-
-### 10.5 Corrected Technical Assessments
-
-- Having no configured business members does not mean the SDK has no subagent tools. The local 2.0.2 source adds a default `general-purpose` member.
-- `AgentEvent.source` is a string, not the old `EventSource` object. Nonexistent `source.agentId/depth/path` properties cannot be read directly.
-- `persistSession=false` does not mean every call automatically clears all instances and state. Continued conversations, caching, and recovery must follow actual runtime semantics.
-- Local child confirmation requests being able to propagate upward does not mean confirmation decisions can already be routed back to the correct child. `RemoteAskPolicy` is not an implementation of the local end-to-end flow.
-- Independent session state or different workspace paths do not imply independent Docker sandboxes. Actual filesystem and container ownership must be explicitly validated.
-- A member model failure must not silently switch execution to the lead's model on the grounds that “the framework supports fallback.”
-
-## 11. Change Surface and Reuse Boundaries
-
-| Module | Proposed additions or adjustments | Preserved boundary |
-|------|--------------|----------|
-| `harnax-entity` / admin | Team (including the lead's model, prompt, and skill bindings), membership relationships, session-Team association, permission checks, and team configuration delivery | Members remain owned solely by their existing Agent and capability bindings; the lead is owned solely by the Team, and no agent row represents a lead any more |
-| `harnax-agent-service` | Correlation between root team runs and child runs, member configuration scopes, and routing of confirmation and stop actions | Preserve ordinary Agent entry points and behavior |
-| `harnax-harness-core` | Lead/member role assembly, native delegation integration point, independent sandbox lifecycle, and artifact actions | Reuse model, Tool, MCP, Skill, CLI, and sandbox components wherever practical |
-| `harnax-protocol` / consumers | Team event provenance, child-run confirmation correlation, and file references | Continue using the root SSE channel without confusing existing event meanings |
-| `harnax-webui` | Team management, team-session creation, member activity, and confirmation cards | Do not duplicate existing Agent configuration entry points |
-| File storage / admin downloads | Artifact metadata, team-scoped authorization, publication/retrieval, and protected downloads | Reuse MinIO; do not mistake old login checks for object-level permissions |
-| `harnax-session-router` | Verify forwarding of new request/event fields and retain root session routing | No separate external route per member or introduction of A2A |
-| channel / scheduler / client | Evaluate compatibility at actual entry points and protocol consumers | Do not claim automatic Team support in the first release or change established channel-file and OAuth policies |
-
-Deployment continues to use `docker-new`; this round introduces no new services. Independent sandboxes increase resource requirements for containers, images, snapshots, and file transfers. Actual implementation must update capacity limits, lifecycle handling, and deployment instructions together, not just UI documentation.
-
-## 12. Prototype Validation and Acceptance Gates
-
-All items below are pending engineering validation, not test results from this documentation delivery.
-
-| ID | Validation point | Acceptance criteria |
-|------|--------|----------|
-| V1 | Independent Teams and ordinary sessions | The same Agent can be used independently and referenced by multiple Teams as a member; ordinary sessions do not accidentally start teams; a Team no longer has to create a lead Agent first in order to exist |
-| V2 | Lead capability restrictions | The final tool set contains no business Tool, MCP, or Shell capabilities and none leaked through default paths; no execution sandbox is created; the Skills the Team configures for the lead are visible as text, while their scripts and resource files are not executable and each degradation is named at load time |
-| V3 | Full member assembly | Different models, Tool, MCP, Skill, CLI, and environments take effect independently; the lead can delegate without possessing member capabilities |
-| V4 | Lazy creation and configuration context | No reliance on expired ThreadLocal context; no reuse of the lead's ToolBox, logging identity, or secret parameters |
-| V5 | Independent containers and snapshots | Two members' environments do not interfere; containers are not mixed across tenants, sessions, or repeated tasks, and continuation restores correctly |
-| V6 | Artifact handoff | End-to-end flow from A publishing, to B retrieving and processing, to final Web UI download; unauthorized access, out-of-bounds paths, and bypass through the old download entry point are rejected |
-| V7 | Event correlation | Multiple tasks by the same member, identical tool names, or repeated local call IDs do not mix streams or merge incorrectly; costs are not double-counted |
-| V8 | Human confirmation | User approval/rejection affects only the original child run; duplicate, expired, or post-cancellation confirmation does not replay tools; the lead then continues correctly |
-| V9 | Stop and failure | Stopping the root stops members and prevents new delegation; timeouts do not unexpectedly move execution to the background; resources can be cleaned up, and failures are not disguised as success |
-| V10 | MCP identity | Correct root user, tenant, and member MCP scope; unknown child IDs do not trigger incorrect token exchange; no switch to the member creator's identity and no enabling of stdio |
-| V11 | Existing-feature regression | Ordinary Agent tools, models, MCP, file output, confirmation, and session routing are unchanged by team-role restrictions |
-| V12 | Capacity and recovery | Active containers, delegations, and file budgets are bounded; process interruption does not automatically replay operations with side effects, and snapshots alone are not claimed to provide lossless recovery |
-
-Recommended validation order: first build a minimal prototype with a lead and two members to validate factories, independent sandboxes, events, and human confirmation; then implement Team management and complete file handoff; finally perform regression and deployment acceptance checks. If the D8 integration point does not work, revise the engineering approach first rather than silently reducing the confirmed D1–D7 requirements.
-
-## 13. Current-State Evidence and Reading References
-
-The following source locations were checked in this round; they do not mean Team has been implemented there. Line numbers change as code evolves, so use the symbols in the files as the reference.
-
-| Location | Existing fact and integration point for this design |
-|------|------------------------|
-| `agent-scope.version` in the [root pom.xml](../pom.xml) | Currently uses AgentScope 2.0.2 |
-| [Agent](../harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Agent.kt) and [Session](../harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Session.kt) | Session already carries `teamId` (V32); from V34 a team session leaves `agent_id` NULL. The DDL already permits NULL — what has to change is the entity's property type |
-| `saveSkillBindings` in [AgentServiceImpl](../harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AgentServiceImpl.kt) | The four write-time skill guards (missing, disabled, builtin-CLI-repository origin, name conflict) are exactly what the lead's skills should reuse: extract shared validation instead of writing a second copy on the Team side |
-| `getAgentSpec/buildAgentSpecResponse` in [InternalApiController](../harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt) | Resolves by external session prefix and delivers the full capabilities of a single Agent |
-| [AgentSpecResolver](../harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/AgentSpecResolver.kt) and [AgentSpecContextHolder](../harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/client/AgentSpecContextHolder.kt) | Configuration resolution and synchronous ThreadLocal creation context; lazy member creation needs its own scope |
-| `createAgentBase` in [HarnessAgentLauncher](../harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt) | Existing model, MCP, Tool, Skill, CLI, permission, and sandbox assembly does not mean it can be copied directly and safely for members |
-| `callStreamInternal` in [HarnessAgentWrapper](../harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentWrapper.kt) and [ChatEventConverter](../harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/ChatEventConverter.kt) | Current confirmation lists and tool buffers have no team child-run correlation |
-| [McpSessionOwnerResolver](../harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/McpSessionOwnerResolver.kt) and `accessToken` in [McpOAuthUserServiceImpl](../harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/McpOAuthUserServiceImpl.kt) | Existing identity resolution, tenant, and user-authorization logic; arbitrary child IDs are not accepted, and Team membership is not validated |
-| [OutputFileStore](../harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/output/OutputFileStore.kt) and [OutputFileController](../harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/OutputFileController.kt) | Existing attachment-storage primitives, but no team publication/retrieval or session-scoped download authorization |
-
-SDK assessments are based on the locally available `agentscope-2.0.2-sources.jar` and `agentscope-harness-2.0.2-sources.jar`. Key symbols include `HarnessAgentBuilderSupport.buildStaticSubagentEntries/allowlistedInheritedToolkit`, `SubagentsMiddleware`, `AgentSpawnTool`, `AgentEvent`, and `SubAgentTool`. These are source-review evidence, not runtime test records.
-
-Related documents: [Lead vs. Sub-agent Architecture Trade-offs](./multi-agent-leader-subagent-design.en-US.md), [Tool Integration Design](./tool-integration-design.en-US.md), [Tool Capabilities](./tool-capability.en-US.md), [Skill Management](./skill-management.en-US.md), and [Session Routing](./session-routing.en-US.md).
+| Path | Content |
+|------|---------|
+| `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Team.kt` | the team row, host of the lead's configuration |
+| `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/TeamMember.kt` | member reference and per-team responsibility note |
+| `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/TeamSkillBinding.kt` | the lead's skill bindings |
+| `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/TeamArtifact.kt` | artifact metadata and reference semantics |
+| `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Session.kt` | nullable `agentId` and `teamId` |
+| `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/dto/TeamSpecInfoResponse.kt` | the delivered team spec shape |
+| `harnax-admin/src/main/resources/db/migration/V32__add_team_tables.sql` | team, member, artifact and the session link |
+| `harnax-admin/src/main/resources/db/migration/V34__team_owns_lead_config.sql` | lead configuration on the team row and `team_skill_binding` |
+| `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/TeamController.kt` | team CRUD, enable/disable, related sessions |
+| `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/TeamServiceImpl.kt` | save-time validation, visibility, delete refusal |
+| `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt` | `/team-spec`, `/sessions/{id}/team`, `specForTeam`, `buildAgentSpecResponse` |
+| `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/SessionServiceImpl.kt` | team session creation, snapshots, refusing an agent on a team session |
+| `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/TeamArtifactController.kt` | artifact listing and authorized download |
+| `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/TeamArtifactCleaner.kt` | artifact cleanup on session deletion |
+| `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/team/TeamRuntimeSpec.kt` | trusted team runtime configuration, child session spelling, the lead's prompt block |
+| `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/team/TeamRole.kt` | lead and member roles |
+| `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/team/TeamToolBoxes.kt` | the lead's three team tools and the member's three artifact tools |
+| `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/team/TeamOrchestrator.kt` | delegation, member instances and the run ledger, confirmation waits and heartbeats, publish and fetch, stop and budgets |
+| `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/team/TeamArtifactGateway.kt` | the MinIO artifact gateway and its key rule |
+| `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt` | `createTeamLead`, `createTeamMember`, the per-role assembly, `memberSessionIds` |
+| `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/config/HarnessConfig.kt` | `TeamConfig` defaults |
+| `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/spring/HarnessAutoConfiguration.kt` | `harness.team.*` binding and the `teamArtifactGateway` bean |
+| `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/AgentSpec.kt` | `attributableAgentId` (a lead has no agent attribution) |
+| `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/AgentSpecResolver.kt` | `isTeamSession`, `resolveTeam` |
+| `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt` | `buildTeamAgent`, stream merging, confirmation dispatch, stop, the history entry |
+| `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/TeamHistoryReplay.kt` | finding member child sessions, stamping provenance, interleaving by turn |
+| `harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/ChatEvent.kt` | `EventSource` fields and `withSource` |
+| `harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/AgentRequest.kt` | `childRunId` on the confirm request |
+| `harnax-webui/src/pages/team/index.tsx` | the team management page |
+| `harnax-webui/src/pages/team/components/TeamWizard.tsx` | the two-step wizard and unavailable markers |
+| `harnax-webui/src/pages/team/components/MembersField.tsx` | member picking and responsibility notes |
+| `harnax-webui/src/pages/session/components/SettingsModal.tsx` | grouped executor choice, team session creation |
+| `harnax-webui/src/pages/session/components/teamRun.ts` | card claiming, delegate-argument parsing, run status tests |
+| `harnax-webui/src/pages/session/components/ChatWindow.tsx` | member run rendering, inline confirmation, folding, replay claiming |
+| `harnax-webui/src/pages/session/components/TeamArtifactsDrawer.tsx` | artifact list and download |
+| `harnax-webui/src/pages/session/components/DetailModal.tsx` | the session detail's team branch |
+| `harnax-webui/src/services/ant-design-pro/team.ts` | team and artifact API wrappers |
+| `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/service/AgentServiceClient.kt` | the root stream idle timeout the heartbeat answers |
+| `harnax-channel/harnax-channel-service/src/main/kotlin/com/agnetix/harnax/channel/service/client/RouterClient.kt` | the channel-side stream idle timeout |

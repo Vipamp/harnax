@@ -1,753 +1,511 @@
-# Harnax MCP 服务实体管理流程（中文）
+# Harnax MCP 服务管理设计
 
-> 英文版本见 [mcp-management.en-US.md](./mcp-management.en-US.md)
+> 本文是 MCP 管理域的完整设计文档：数据模型、Admin 管理面（CRUD、密钥、授权服务器发现、按用户授权、令牌换发）、智能体绑定与配置下发、运行侧装配，以及这个域认可的边界。
 >
-> 工具体系整体设计见 [tool-integration-design.zh-CN.md](./tool-integration-design.zh-CN.md)，工具注解与注册机制见 [tool-capability.zh-CN.md](./tool-capability.zh-CN.md)，技能（Skill）体系见 [skill-management.zh-CN.md](./skill-management.zh-CN.md)。本文覆盖 MCP 服务的数据模型、Admin 管理、绑定下发与运行时装配全链路，文末附历次代码检查的修复记录。
->
-> 对上游 MCP 服务的认证，本文的**运行时装配**仍然只有服务级静态凭证这一种生效方式；按用户的 OAuth 2.1 授权是独立设计，见 [mcp-authorization-design.zh-CN.md](./mcp-authorization-design.zh-CN.md)（未实施部分以该文档第 12 节状态表为准）。该设计的 P2-1 已落地（数据模型与管理侧校验：`mcp_server` 多了 `auth_type` / `oauth_config` 两列，创建与更新会校验、详情会回显，见 §7.5），P2-2 也已落地（授权服务器发现与客户端登记两个管理接口，见 §3.5），这一层的管理面前端同样已补齐（表单配 `authType` / `oauthConfig`、详情页的发现与登记客户端，见 §7.8）。`McpDetailDto` 尚未带出这两个字段，运行时也就还没有任何一条按人换 token 的链路。
+> 英文版本见 [mcp-management.en-US.md](./mcp-management.en-US.md)。
 
-## 1. 概述
+## 1. 概述与分层
 
-MCP（Model Context Protocol）服务是 Agent 的外部工具来源之一，与内置工具并列。MCP 实体管理与工具体系**只共享同一套分层**，不共享生命周期：内置工具由 `BuiltinToolAutoRegistrar` 在启动时按代码收敛，MCP 服务则全部由页面与 API 手工维护，增删改查就是它的完整生命周期。分层如下：
+MCP（Model Context Protocol）服务是 Agent 的外部工具来源之一，与内置工具并列。两者只共享分层方式，不共享生命周期：MCP 服务全部由管理面（页面与 API）维护，增删改查就是它的完整生命周期，没有任何启动期的自动收敛。
 
-- **harnax-entity**：`McpServer` / `AgentMcpBinding` 实体与 Mapper；
-- **harnax-admin**：MCP 服务的 CRUD、密钥加密存储、掩码回显、连通性测试、绑定管理与配置下发；
-- **harnax-agent-service / harness-core**：运行时按智能体配置装配 MCP 客户端。
+| 模块 | 在这个域里负责什么 |
+|------|------------------|
+| `harnax-entity` | `McpServer` / `AgentMcpBinding` / 三张 OAuth 表的实体、Mapper 与 XML，以及跨服务线格式 `McpDetailDto`、`McpAccessTokenResponse` |
+| `harnax-admin` | MCP 服务 CRUD、密钥加密与掩码、认证方式校验、授权服务器发现与客户端登记、按用户授权与令牌换发、连通性探测、绑定解析与配置下发 |
+| `harnax-common` | 跨模块解密 SPI `McpConfigDecryptor` 的定义 |
+| `harnax-agent/harnax-harness-core` | 运行时装配：按智能体配置逐台建 MCP 客户端、stdio 二次防御、客户端随 agent 一起释放 |
+| `harnax-agent/harnax-agent-utils` | 客户端构建 `McpHelper` 与三种传输配置 `McpConfig`，令牌回调接口 `McpAccessTokenSource` |
+| `harnax-agent/harnax-agent-service` | 配置适配器（从 admin 下发的 spec 取 MCP 配置）与令牌源实现（向 admin 换 token 并缓存） |
+| `harnax-webui` | MCP 列表 / 详情 / 表单，OAuth 面板与授权落地页 |
+
+两条链路构成这个域的主线：
+
+- **按用户授权**：授权服务器发现与客户端登记由管理员各做一次（每个 (租户, 授权服务器) 一条注册），同意由每个用户对自己的每台 OAuth 类服务各做一次；access / refresh token 只以 AES 密文存在 admin 侧的 `mcp_user_credential`。
+- **运行侧注入**：运行侧（agent-service / harness-core）不持有 AES 密钥、不持有任何 refresh token，只知道「这台服务走 OAuth」；每次出站请求按 (会话, 服务) 向 admin 换一枚 access token。令牌身份在建 agent 实例时确定并绑在令牌源上，此后这个实例服务的任何调用都只用这一种身份。
 
 ## 2. 数据模型
+
+表结构以 `harnax-admin/src/main/resources/db/migration/` 下的迁移脚本为准，叠加到该目录下编号最高的那一个为止。列名与缺省值取迁移叠加后的最终形态。
 
 ### 2.1 mcp_server（MCP 服务主表）
 
 实体：`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/McpServer.kt`
 
-| 字段 | 说明 |
-|------|------|
-| `name` / `description` | 服务名与描述。服务名**租户内唯一**（迁移 `V23__add_mcp_server_name_unique_key.sql`：生成列 `active_name` + `uk_mcp_server_tenant_active_name (tenant_id, active_name)`）。V23 之前生产库里 `mcp_server` 根本没有名称唯一键（只有 `KEY idx_tenant_id`），查重全指望应用层的**全局** `selectByName`：并发能建出两条同名行，别租户占用的名字自己又不能用 |
-| `type` | 传输类型：`stdio` / `sse` / `streamablehttp`（默认） |
-| `command` | 执行命令（仅 stdio 类型使用） |
-| `url` | 服务地址（sse / streamablehttp 类型使用） |
-| `headers` | HTTP 请求头 JSON，格式 `[{"key":"Authorization","value":"...","secret":true}]`；`secret=true` 条目的 value 以 **AES-256-GCM 加密**存储。只能承载**服务级静态凭证**（整租户共用一份、不过期），按用户的授权见 mcp-authorization-design |
-| `envParams` | 环境参数 JSON（stdio 类型的进程环境变量），格式同 `ToolEnvParamEntry`，secret 条目加密存储；与 `headers` 共用同一套掩码回写规则（见 3.3） |
-| `authType` | 上游认证方式（迁移 `V25`）：`NONE` / `STATIC_HEADER` / `BASIC` / `OAUTH2`，常量表在 `McpAuthTypes`。管理侧只收 `SUPPORTED = NONE / STATIC_HEADER / OAUTH2`——`BASIC` 有列没运行时（枚举值留着是给 P4 用，现在传就报错「not wired into the runtime yet」），未知值同样拒收，理由是**入库即下发**，运行时收到认不得的分支比收到 `NONE` 更难查。`NONE` 与 `STATIC_HEADER` 走同一代码路径（都是读 `headers`），区别只在给管理员一个可读的标注 |
-| `oauthConfig` | OAuth 非敏感配置 JSON（`V25`），由 `admin/dto/McpOAuthConfig.kt` 序列化：`authorizationServer`（留空则由 MCP 服务自身的 RFC 9728 元数据发现，见 3.5）、`scopes`、`audience`、`resourceIndicator`（是否发 RFC 8707 `resource` 参数）。**故意做成类型化 DTO 而不是自由 JSON**：客户端密钥与 token 在这上面没有字段可写，才不会被误写进这列——这列会以明文回给前端表单。仅 `authType=OAUTH2` 合法，切走 OAuth 时管理侧把它清成 null |
-| `status` | 启用状态（0 禁用 / 1 启用）。禁用的服务在 admin 组装 spec 时就被整行扣下（连同它那条绑定的 `env_bindings`，否则它解析出的值仍会进 `ToolEnvContext`）；`McpDetailDto` 仍带 `status`，运行侧再挡一道，防旧版 admin 下发 |
-| `isPublic` | 公开状态（0 私有 / 1 公开），实体、创建请求与列缺省（迁移 `V22`）均为 1。列表可见性口径为 `is_public = 1 OR creator = 当前用户`，再叠加租户过滤（见下） |
-| `creator` / `tenantId` | 创建人与租户。`tenantId` 由创建时的 `TenantContext` 写入并出现在 insert / resultMap 中；列表查询在传入 `tenantId` 时追加 `AND tenant_id = #{tenantId}`，与 CLI、技能同口径——`is_public` 只在租户内共享，跨租户的公开服务不再出现在别人列表里。**单行读写同样受租户约束**：`getMcpServer(id)` 取到行后比对当前租户，不属于自己就当不存在，`updateMcpServer` / `toggleMcpServerStatus` / `deleteMcpServer` 都从它进入。这一层是必须的——仓内不设 MyBatis 租户拦截器（不重写任何 SQL），`selectById` 的 SQL 里也没有租户条件，只靠列过滤的话猜到自增 id 就能改删别租户的服务 |
-| `active` | 逻辑删除标记（0 已删除 / 1 有效） |
+| 列 | 形态与含义 |
+|----|-----------|
+| `id` | 自增主键 |
+| `tenant_id` | 归属租户，缺省 1；创建时由请求上下文写入（`TenantResolver`） |
+| `name` | 服务名，`varchar(100)`，租户内唯一（见 `active_name`） |
+| `description` | 描述，`text` |
+| `type` | 传输类型：`stdio` / `sse` / `streamablehttp`，列是 `varchar(20) NOT NULL` 且**没有 DEFAULT**，`streamablehttp` 只作为实体属性的默认值存在 |
+| `command` | 执行命令，`varchar(500)`，只有 stdio 类型使用 |
+| `url` | 服务地址，`varchar(500)`，`sse` / `streamablehttp` 使用 |
+| `auth_type` | 上游认证方式：`NONE` / `STATIC_HEADER` / `BASIC` / `OAUTH2`，`NOT NULL DEFAULT 'NONE'` |
+| `oauth_config` | OAuth 非敏感配置 JSON，`text`，可空；形态由 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/McpOAuthConfig.kt` 决定 |
+| `status` | 启用状态：0 禁用 / 1 启用 |
+| `is_public` | 可见性：0 私有 / 1 公开，列缺省 1 |
+| `creator` | 创建人（用户名） |
+| `active` | 逻辑删除：0 已删除 / 1 有效 |
+| `headers` | HTTP 请求头条目 JSON 数组，`secret=true` 条目的 value 以 AES-256-GCM 密文存储 |
+| `env_params` | 环境参数条目 JSON 数组，stdio 进程的环境变量，secret 条目同样密文存储 |
+| `active_name` | `VARCHAR(100) GENERATED ALWAYS AS (IF(active = 1, name, NULL)) VIRTUAL` |
+| `create_time` / `update_time` | 时间戳；`update_time` 带 `ON UPDATE CURRENT_TIMESTAMP`，更新路径另外显式刷新 |
 
-### 2.2 agent_mcp_binding（智能体-MCP 绑定表）
+约束与口径：
 
-实体：`AgentMcpBinding.kt`
+- 主键 `PRIMARY KEY (id)`；`UNIQUE KEY uk_mcp_server_tenant_active_name (tenant_id, active_name)`。唯一性只在租户内、只覆盖有效行——生成列在 `active = 0` 时变 NULL，MySQL 的唯一索引忽略 NULL，因此删掉一台服务后同名可以再用。
+- `headers` / `oauth_config` / `env_params` 这类 TEXT 列没有单列索引。
+- `auth_type` 有意不回填：`NONE` 与 `STATIC_HEADER` 走同一条代码路径（都读 `headers`），差别只是给管理员一个可读标注，因此一行带着 `headers` 值并不构成任一意图的证据（`headers` 也放路由类头），标成哪个由管理员显式决定。
+- `McpServer` 实体的属性全部可空带默认值（`type` 默认 `streamablehttp`、`authType` 默认 `NONE`、`status` / `isPublic` / `active` 默认 1）。其中 `type` 的缺省**只存在于实体属性**：那一列是 `NOT NULL` 而没有 DEFAULT，所以值一定要由走实体的写入路径给出；`authType` 的 `NONE` 则与 `V25` 给的列缺省同义，两边任一都读得出同一个意思。
 
-- `agentId` / `mcpId`：绑定关系，`(agent_id, mcp_id)` 为唯一键（迁移 `V19__add_mcp_binding_unique_key.sql`，建键前先折叠历史重复行、保留最后写入的那条）；应用层 `saveMcpBindings` 也会 `distinctBy { mcpId }` 去重，与工具侧同构；
-- `envBindings`：环境变量绑定 JSON 快照（envKey + `envVarId` 或 `customValue`），**注意该通道只注入 `ToolEnvContext` 供 ToolBox 工具读取，不注入 MCP 客户端本身**（见第 6 节）。
+### 2.2 agent_mcp_binding（智能体-MCP 绑定）
 
-表上曾有 `enable_skip`（`"true"` / `"false"` 字符串），含义是「查不到 `mcp_server` 行时要不要跳过」。它名不副实：服务连不上时 `McpHelper.createMcpClient` 与 `registerMcpClient().block()` 直接外抛，开关救不回来；而它真正覆盖的那一路（配置记录缺失）与工具侧一样，跳过与否只是「打 warn 还是抛错」的差别，没有用户真正需要的选择。因此整条链路已删除该列（迁移 `V20__drop_mcp_binding_enable_skip.sql`）、`McpSpec.skipIfMissing` 与 `AGENT_MCP_NOT_FOUND` 错误码：配置缺失一律告警跳过，与工具侧 V17 后的行为一致。
+实体：`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentMcpBinding.kt`
 
-### 2.3 McpDetailDto（内部 API 下发载体）
+| 列 | 含义 |
+|----|------|
+| `id` | 自增主键 |
+| `agent_id` | 指向 `agent.id` |
+| `mcp_id` | 指向 `mcp_server.id` |
+| `env_bindings` | 环境变量绑定 JSON 快照（`envKey` + `envVarId` 或 `customValue`） |
+| `create_time` / `update_time` | 时间戳 |
 
-实体：`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/dto/McpDetailDto.kt`
+约束：`UNIQUE KEY uk_agent_mcp_binding_agent_id_mcp_id (agent_id, mcp_id)`，`agent_id` 是它的最左前缀。应用层 `saveMcpBindings` 在写入前按 `mcpId` 去重，一次保存重写全集。
 
-Admin 内部 API 下发给 agent-service 的完整 MCP 配置（含服务级 `status`），免去 agent-service 直查 `mcp_server` 表。其中 `headers` / `envParams` 为**下发前解密的明文 JSON 对象**（`{"KEY":"value"}` 形态），因为 AES 密钥只在 admin 侧，接收端 `PlaintextMcpConfigDecryptor` 只做解析不再解密。
+这张表上没有「跳过缺失配置」之类的开关：配置解析不到时运行侧一律告警并跳过，与工具侧同口径；`env_bindings` 是这个域里唯一的按绑定配置项（见「环境参数与密钥的两条通道」）。
 
-这一层已带 `authType`（第十八轮 P3：运行时必须知道「怎么认证」，否则 OAuth 服务与静态头服务无从区分，按人的令牌也没有注入点）；`oauthConfig` **仍不下发**——里面的 `authorizationServer` / `scopes` 只服务于管理面的发现与授权 URL 拼装，运行时只需要知道自己该走 OAuth 这一条分支，凭据由 `POST /internal/mcp/access-token` 现换。
+### 2.3 mcp_oauth_client（租户 × 授权服务器的客户端注册）
 
-### 2.4 V26 的三张 OAuth 表（客户端与凭据已接入，审计待接入）
+实体：`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/McpOauthClient.kt`
 
-迁移 `V26__add_mcp_oauth_tables.sql` 建了三张表，字段与取舍逐条记在 mcp-authorization-design §5.2–5.4，这里只登记它们各自接到了哪一步：
+一行代表「这个租户在这台授权服务器上的客户端身份」，同一授权服务器后面的多台 MCP 服务共用它。
 
-- `mcp_oauth_client`：租户 × 授权服务器的客户端注册（一行一个 `client_id`，同一 AS 后的多个 MCP 服务共用），`client_secret_enc` 存密文。**已由 P2-2 接入**：发现与登记两个接口写这张表，规则见 §3.5；
-- `mcp_user_credential`：用户 × MCP 服务的授权结果，access / refresh token 的唯一藏身处。**已由 P2-3 接入**：换发成功写密文并置 `ACTIVE`，撤销把两个密文列写回 NULL 并置 `REVOKED`，规则见 §3.6；
-- `mcp_call_log`：只追加的审计，记结果与耗时，不记请求体与 `Authorization`；写入方是 P2-4 的换发接口，**还没有任何代码写它**。
+| 列 | 含义 |
+|----|------|
+| `id` / `tenant_id` | 主键与租户 |
+| `issuer` | 授权服务器标识，`varchar(255) COLLATE utf8mb4_bin` |
+| `client_id` | `varchar(255) NOT NULL`；发现落库的新行写空串，含义是「端点已知、客户端未登记」 |
+| `client_secret_enc` | 客户端密钥密文，`text`；公开客户端（仅 PKCE）为 NULL |
+| `registration_source` | `MANUAL` / `DCR` / `ID_METADATA`，当前写入路径只有 `MANUAL` |
+| `authorization_endpoint` / `token_endpoint` / `registration_endpoint` / `revocation_endpoint` | 发现快照，`varchar(500)`；`registration_endpoint` 为 NULL 表示不支持 DCR，`revocation_endpoint` 为 NULL 表示撤销只清本地 |
+| `scopes_supported` | 发现快照，逗号分隔 |
+| `callback_url` | 登记在授权服务器上的精确 `redirect_uri`，`varchar(500) COLLATE utf8mb4_bin` |
+| `active` + `active_client_id` | `active_client_id VARCHAR(255) GENERATED ALWAYS AS (IF(active = 1, client_id, NULL)) VIRTUAL` |
+| `creator` / `create_time` / `update_time` | 常规列 |
 
-前两张的实体与 Mapper 已就位并被 `McpOauthClientMapperTest` / `McpUserCredentialMapperTest` 覆盖，`mcp_call_log` 的 Mapper 只有 `insert`（append-only 的口径就体现在「没有别的方法可调」）。删除服务时这条级联也在：`deleteMcpServer` 连带删掉那张表里属于该服务的行——行没了就没有可呈现的对象，留着密文纯属多余的爆炸半径。`mcp_oauth_client` 在这条路上**有意不动**：一行代表的是「这个租户在这个授权服务器上的客户端身份」，同一 AS 后面的其他 MCP 服务还在用它。
+约束：`UNIQUE KEY uk_mcp_oauth_client_tenant_issuer_client (tenant_id, issuer, active_client_id)`、`KEY idx_mcp_oauth_client_tenant_issuer (tenant_id, issuer)`。两个 URL 身份列用 `utf8mb4_bin`，因为 `iss` 与 `redirect_uri` 按规范是逐字节比较的字符串；大小写不敏感的比较会让一台服务器复用另一台的注册。
 
-## 3. Admin 管理流程
+`selectByTenantAndIssuer` 带 `ORDER BY id LIMIT 1`，让并发发现落在同一行上，而不是为同一授权服务器注册两个客户端。这张表不随 MCP 服务删除而清理（见「停用与删除是两件事」）。
 
-实现：`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/McpServerController.kt` + `service/impl/McpServerServiceImpl.kt`，前缀 `/api/admin/mcp`。
+### 2.4 mcp_user_credential（用户 × MCP 服务的授权结果）
 
-### 3.1 接口清单
+实体：`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/McpUserCredential.kt`
+
+| 列 | 含义 |
+|----|------|
+| `id` / `tenant_id` | 主键与租户 |
+| `user_id` | `sys_user.id`，不是用户名：改名既不会孤立授权，也不会把它转交给接手这个名字的人 |
+| `mcp_id` | `mcp_server.id` |
+| `access_token_enc` / `refresh_token_enc` | 两个 token 的 AES 密文；撤销时两列写回 NULL，refresh 密文从不离开 admin 进程 |
+| `access_expires_at` | access token 过期时间；过期视作「没有可用令牌」 |
+| `scopes` | 实际授予的 scope，可以窄于请求的 |
+| `status` | `ACTIVE` / `NEEDS_CONSENT` / `REVOKED` |
+| `last_error` | 抹掉敏感片段后的失败原因，不含 token 片段 |
+| `last_refreshed_at` | 最近一次刷新成功时间 |
+| `create_time` / `update_time` | 时间戳 |
+
+约束：`UNIQUE KEY uk_mcp_user_credential_tenant_user_mcp (tenant_id, user_id, mcp_id)`、`KEY idx_mcp_user_credential_mcp (mcp_id)`。
+
+这张表没有逻辑删除列：授权行就地更新（撤销清密文并置 `REVOKED`，用户再次同意时同一行复用）。就地改写之外只有两条按外部键整批物理删的路：删除 MCP 服务时按 `mcp_id` 清掉这台服务的全部授权（`deleteByMcpId`），删除用户账号时按 `user_id` 清掉他在任何服务上的授权（`deleteByUserId`，调用点是 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/SysUserServiceImpl.kt` 的删除路径——那一边的 `sys_user` 行只是逻辑删除，而这些密文的归属人已签不进去、也没有页面点得到撤销）。软删除的行会继续占住 `(tenant_id, user_id, mcp_id)`，把重新授权的插入挡掉。
+
+### 2.5 mcp_call_log（只追加的审计）
+
+实体：`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/McpCallLog.kt`
+
+`action` 取 `ISSUE` / `REFRESH` / `REVOKE` / `CALL`，`outcome` 取 `OK` / `AUTH_FAILED` / `NEEDS_CONSENT` / `ERROR`；行上有租户、用户（会话属主解析不出来时为 NULL）、MCP 服务、会话、工具名（令牌签发时为 NULL）、耗时。
+
+这张表刻意不记请求体、响应体与 `Authorization`：读它的人不一定是令牌属主。`McpCallLogMapper` 只提供 `insert`——append-only 的口径就体现在没有别的方法可调。
+
+写入方是 `McpOAuthUserServiceImpl` 的一个私有 `audit(...)`，每次授权决定落一行：换发拿到可用令牌（`ISSUE` / `OK`）、判定需要重新同意（`ISSUE` / `NEEDS_CONSENT`）、刷新成功（`REFRESH` / `OK`）、刷新遇到可重试故障（`REFRESH` / `ERROR`）、用户撤销（`REVOKE` / `OK`）。从管理页做出的决定（撤销）`session_id` 为 NULL，会话换发的带上那个会话。写审计失败只记一条 warn，不会让那次换发或撤销失败。
+
+### 2.6 跨服务线格式
+
+- `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/dto/McpDetailDto.kt`：admin 内部 API 下发的完整 MCP 配置，字段为 `id` / `name` / `description` / `type` / `command` / `url` / `authType` / `headers` / `envParams` / `status`。`headers` 与 `envParams` 是**下发前解密的明文 JSON 对象**（`{"KEY":"value"}` 形态）。`authType` 必须随之下发，否则运行时分不清 OAuth 服务与静态头服务；`oauthConfig` 不下发——其中的 `authorizationServer` / `scopes` 只服务于管理面，运行时只需要知道自己该走 OAuth 这条分支。
+- `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/dto/McpAccessTokenResponse.kt`：`accessToken` / `tokenType` / `expiresAtEpochSecond`。放在 `harnax-entity` 而不是 admin 的 dto 包，因为它是两个服务之间的线格式。这是唯一一个携带令牌明文出 admin 的响应体，只回答内部 API；`expiresAtEpochSecond` 用 Unix 秒而不是日期时间，因为两侧各按自己的时钟判断且不一定同一时区；为 NULL 表示授权服务器没说有效期。
+
+## 3. Admin 管理面
+
+实现入口：`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/McpServerController.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/McpOAuthController.kt`，两者共用前缀 `/api/admin/mcp`、同一套 `ResultVo` 返回体与 `ApiErrors` 错误口径，全部接口都要过 JWT。
+
+### 3.1 MCP 服务 CRUD 接口
 
 | 接口 | 方法 | 说明 |
 |------|------|------|
-| `/page` | GET | 分页查询（keyword / status / type 过滤，并带当前租户的 `tenant_id` 过滤） |
-| `/{id}` | GET | 服务详情（secret 字段掩码回显） |
-| `/`（根路径） | POST | 创建 MCP 服务 |
-| `/update/{id}` | PUT | 更新 MCP 服务 |
-| `/toggle/{id}` | PUT | 启用 / 禁用 |
-| `/{id}` | DELETE | 逻辑删除（`active=0`），并在同一事务内物理清理该服务的全部 `agent_mcp_binding` 绑定 |
-| `/{id}/connectivity-test` | POST | 连通性测试（内部调用 listTools） |
-| `/{id}/list_tools` | GET | 实时连接 MCP 服务拉取工具列表（名称 + 参数 Schema） |
-| `/{id}/oauth/discover` | POST | 发现授权服务器并落库端点（见 3.5） |
-| `/{id}/oauth/client` | POST | 手工登记 / 修改该授权服务器上的客户端凭据（见 3.5） |
-| `/{id}/oauth/authorize-url` | GET | 给当前用户生成授权跳转地址，可带 `scope` 覆盖（见 3.6） |
-| `/oauth/exchange` | POST | 换票：接前端落地页送来的 `code` / `state` / `error`，**带 JWT**，凭据写给调用者本人（见 3.6） |
-| `/{id}/oauth/status` | GET | 当前用户在这台服务上的授权状态（见 3.6） |
-| `/{id}/oauth/revoke` | POST | 撤销当前用户的授权（见 3.6） |
+| `/api/admin/mcp/page` | GET | 分页查询，支持 `keyword` / `status` / `type` 过滤，`pageSize` 取 1..1000 |
+| `/api/admin/mcp/{id}` | GET | 详情，secret 字段掩码回显 |
+| `/api/admin/mcp` | POST | 创建 |
+| `/api/admin/mcp/update/{id}` | PUT | 更新，省略的字段保持原值 |
+| `/api/admin/mcp/toggle/{id}` | PUT | 启用 / 禁用 |
+| `/api/admin/mcp/{id}/related-agents` | GET | 引用该服务的智能体列表 |
+| `/api/admin/mcp/{id}` | DELETE | 逻辑删除并级联清理绑定与用户授权 |
+| `/api/admin/mcp/{id}/connectivity-test` | POST | 连通性测试 |
+| `/api/admin/mcp/{id}/list_tools` | GET | 实时连接拉取工具列表 |
 
-OAuth 接口全在 `McpOAuthController`，与 MCP 服务 CRUD 共用 `/api/admin/mcp` 前缀和同一套 `ResultVo` + `ApiErrors` 错误口径，也就是**六个接口都要过 JWT**。第十四轮之前这里还挂着第七个 `McpOAuthCallbackController`（`GET /oauth/callback`，回 HTML、免鉴权），它已被换票接口取代并删除，理由见 §7.13。
+### 3.2 OAuth 接口
 
-### 3.2 创建 / 更新校验与加密
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/api/admin/mcp/{id}/oauth/discover` | POST | 发现授权服务器并落库端点 |
+| `/api/admin/mcp/{id}/oauth/client` | POST | 登记 / 修改该授权服务器上的客户端凭据 |
+| `/api/admin/mcp/{id}/oauth/authorize-url` | GET | 为当前用户生成授权跳转地址，可带 `scope` 覆盖 |
+| `/api/admin/mcp/oauth/exchange` | POST | 换票：接收前端落地页送来的 `code` / `state` / `error`，凭据写给调用者本人 |
+| `/api/admin/mcp/{id}/oauth/status` | GET | 当前用户在这台服务上的授权状态 |
+| `/api/admin/mcp/{id}/oauth/revoke` | POST | 撤销当前用户的授权 |
+| `/api/admin/internal/mcp/access-token` | POST | 运行侧换发：入参只有 `sessionId` + `mcpId` |
 
-1. **名称唯一性**：`selectByName(name, tenantId)` 在**当前租户内**查重，重名抛 `BizException`；数据库侧由 `V23` 的 `uk_mcp_server_tenant_active_name (tenant_id, active_name)` 兜底（并发创建撞的是索引，`ApiErrors` 把该索引名映射成人话而不是吐 SQL）；
-2. **type 与字段联动校验**（`validateTypeAndFields`）：`stdio` 必填 `command`；`sse` / `streamablehttp` 必填 `url`；其他 type 拒绝；
-3. **密钥加密**：`headers` 经 `SecretFieldEncryptor.serializeWithEncryption`、`envParams` 经 `serializeToolEnvParams` 加密后序列化落库（仅 `secret=true` 条目加密）；
-4. **掩码回写**：更新时 `headers` / `envParams` 仅在请求携带时重新序列化，且都会把**本行现有的那列 JSON**一并传进去——详情接口回显的是掩码，表单原样提交回来时必须沿用库里密文而不是把掩码加密一遍（见 3.3 与 7.3）；
-5. **缺省值**：创建时 `type` 缺省 `streamablehttp`（与实体、DDL 一致），`status` / `isPublic` 请求缺省取 1，`is_public` 的列缺省也已由 `V22` 改为 1，绕过应用直接 INSERT 时行为一致；
-6. **更新语义**：`McpServerUpdateRequest` 的 `name` / `description` / `type` / `command` / `url` / `status` / `isPublic` 全部可空，**省略即保持原值**（`updateMcpServer` 逐字段 `?.let` 覆盖），非空时由 `updateMcpServer` 写入，`updateById` 的 SET 列表包含 `status` 列并显式刷新 `update_time`。列表页的启停开关走 `/toggle/{id}`，由独立的 `updateStatus` 语句完成；
-7. **租户**：创建时写入 `TenantContext` 的当前租户（无请求上下文时取默认租户 1）；此前 insert 语句根本不写 `tenant_id`，所有行都留在缺省租户，因此启用列表过滤的同一批迁移（`V22`）先按创建人归属回填了一次 `tenant_id`。`/{id}` 系列接口（详情 / 更新 / 启停 / 删除）先经 `getMcpServer` 取行并比对当前租户，别租户的 id 一律按「不存在」处理。
-8. **认证方式**（`resolveAuthType` / `validateAuthType` / `writeOAuthConfig`，随 P2-1 落地）：`authType` 缺省 `NONE`，取值必须在 `McpAuthTypes.SUPPORTED` 内，`BASIC` 与未知值都拒（前者是「列有、运行时不认」的假开关）；`OAUTH2` 不许配 `type=stdio`；`oauthConfig` 只在 `OAUTH2` 下合法，非 OAuth 却带配置是报错而不是静默丢弃，`authorizationServer` 必须是 http(s)；更新时这几道校验跑在**合并后的行**上（请求没带的字段按库中原值算），且在 `updateById` 之前，改 `type` 把服务改成 stdio 同样会被拒；离开 `OAUTH2` 时 `oauth_config` 清成 null，**并连带删掉 `mcp_user_credential` 里这台服务的全部行**——读状态与撤销都要经 `requireOAuthServer`，而它拒绝一台不再是 `OAUTH2` 的服务，留下的密文对它的持有人来说既看不见也撤不掉（与 §3.6 第 8 条「撤销是用户唯一的出路」是同一件事的两头）；上游那份不去呈递，按各自的有效期自然过期，与删除服务时那一刀同口径（`deleteMcpServer` 也删这张表，`mcp_oauth_client` 两处都不动，因为同租户可能还有别的服务共用那条注册）。清理的条件是「这次请求把 OAuth 关掉了」，不是「这行现在是 OAuth」：早于 `V25` 的行 `authType` 是 null，把它当成「刚离开」就会去删一张与此无关的表。逐条断言在 `McpServerServiceImplTest.AuthTypeTests`（12 个，编号 MCS-13～MCS-24，见 `docs/unit-test-cases.md` §5.3）。
+内部换发接口挂在 `InternalApiController`，在 `InternalApiAuthFilter` 之后，浏览器打不到。它的入参**没有用户字段**：会话是运行侧唯一持有的身份，属主由 admin 反查，因此调用方无法点名要花谁的授权。
 
-### 3.3 掩码回显
+### 3.3 单行访问的租户与可见性守卫
 
-`McpServerResponse.fromEntity` 解密 secret 条目后掩码：长度 > 7 显示「前 3 位 + `****` + 后 4 位」，否则显示 `******`；解密失败也显示 `******`。前端永不接触明文密钥。
+`McpServerServiceImpl` 提供两个读取口：
 
-掩码是**双向约定**：既然前端看到的只有掩码，未改动的字段原样提交回来时也是掩码，写库侧必须认得它。`serializeWithEncryption` / `serializeToolEnvParams` 用 `value.contains("****")` 判定掩码（`******` 本身含 `****`，两种形态一起覆盖），命中即按 `key` / `envParamName` 从本行现有 JSON 里取回密文原样保留；取不到（条目被改名、或库里就没有）就抛 `BizException` 要求重填，绝不把掩码当明文加密。
+- `getMcpServer(id)`：取行后比对当前租户（`TenantResolver.resolve(jwtUtil)`），不属于当前租户就当不存在。列表查询按租户过滤，如果单行读不校验，这个过滤就成了装饰——猜到自增 id 就能打开、改删别租户的行。仓内不设 MyBatis 租户拦截器，`selectById` 的 SQL 里也没有租户条件，所以这一层必须写在服务里。
+- `getVisibleMcpServer(id)`：在租户守卫之上再加一条 `is_public = 1 OR creator = 当前用户名`，与列表的可见性口径一致。写路径与探测路径（更新、启停、删除、`list_tools` / 连通性测试、以及全部 OAuth 入口）都从它进入，拒绝时统一回答「MCP server not found」。
 
-这条约定原本是「JSON 条目列表」专用的。`mcp_oauth_client.client_secret_enc` 是**单列**密钥、也要在页面上回显掩码，于是同一套判定被提成 `SecretFieldEncryptor.resolveSecret(provided, storedEncrypted)`：`null` 即保持库中原值，掩码即沿用库中密文（库里没有密文就报「请重填」而不是把掩码加密），空白串即显式清空（公开客户端 + PKCE 的正常形态），其余按新值加密。三种「不改」的形态各有意。
+只做名字解析的读路径（智能体表单渲染绑定上的服务名、会话能力列表）留在 `getMcpServer`：那里展示的是「这个智能体已经配了什么」，在页面上藏掉别人的私有服务只会让一条有效绑定从表单里静默消失，而不是拒绝一次操作。
 
-### 3.4 加解密基础设施
+列表查询 `selectMcpServerList` 同时接受当前用户名与租户 id：`is_public = 1 OR creator = #{creator}`，再叠加 `tenant_id` 过滤。也就是说公开含义是**租户内共享**。
 
-- `SecretFieldEncryptor`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/`）：实现 `McpConfigDecryptor` 接口（定义在 `harnax-common`），基于 `AesUtil`（AES-256-GCM）；
-- `McpConfigDecryptor`（`harnax-common/src/main/kotlin/com/agnetix/harnax/common/mcp/`）：跨模块解密 SPI，提供 `decryptToMap`（headers）与 `decryptToolEnvParamsToMap`（envParams）两个方法。
+### 3.4 创建与更新
 
-### 3.5 OAuth 发现与客户端登记（P2-2）
+创建（`createMcpServer`）按顺序做：
 
-实现：`admin/controller/McpOAuthController.kt` + `service/impl/McpOAuthServiceImpl.kt`，出站请求集中在 `admin/util/RemoteJsonFetcher.kt`。这一层只做「管理员每个 (租户, 授权服务器) 做一次」的配置动作：发现端点、落一条 `mcp_oauth_client`、登记客户端凭据。**它不换取任何 token，运行时也还没有一条按人注入的路**（那是 P3）。规则：
+1. 在当前租户内按名查重（`selectByName(name, tenantId)`），命中抛 `BizException`；数据库侧由 `uk_mcp_server_tenant_active_name` 兜底，并发撞索引时 `ApiErrors` 按索引名映射成人话。
+2. `type` 相关：stdio 准入闸门（见「配置开关与部署参数」）、`validateTypeAndFields`（stdio 必填 `command`，`sse` / `streamablehttp` 必填 `url`，其他取值拒收）。
+3. 认证方式：`resolveAuthType`（缺省 `NONE`，只收 `McpAuthTypes.SUPPORTED`）、`validateAuthType`（`OAUTH2` 不许配 stdio）、`writeOAuthConfig`（见「认证方式与 OAuth 配置列」）。
+4. 密钥序列化：`headers` 走 `SecretFieldEncryptor.serializeWithEncryption`；`envParams` 只有在 `type` 是 stdio 时才写，否则写 NULL——只有会拉起进程的传输有东西放进进程环境，给网络行存一份只会留下谁也读不到的值。
+5. `tenantId` 取当前租户，`creator` 取当前用户名，`status` / `isPublic` 请求缺省为 1。
 
-1. **准入门槛**：两个接口都先经 `McpServerService.getMcpServer(id)` 取行——租户守卫在那里（§7.4 的第四轮），别租户的 id 按「不存在」回答；再要求 `authType == OAUTH2` 且 `url` 是非空 http(s)。所有地址先 `trim()` 再判（库里存了带空格的值也不能让 `URI.create` 抛原生异常），并对着目标列的宽度判长（`issuer` 255、其余 URL 500）：MySQL 对超宽值要么抛 1406 要么在非严格模式静默截断，而截断一个身份列的结果是「一行再也对不上 token 的注册」。把 `authType` 选成 OAuth 只是让这两个接口可用，服务本身照旧按 `headers` 连接。
-2. **issuer 的解析顺序**（RFC 9728 优先，全部失败才报错）：① `oauthConfig.authorizationServer`（管理员手填，来源标 `CONFIG`）；② MCP 服务地址推导出的 protected-resource 元数据，三个候选：路径插入式 `origin/.well-known/oauth-protected-resource/mcp/path`、路径后缀式 `origin/mcp/path/.well-known/oauth-protected-resource`、主机根；③ 直接 GET 一次 MCP 地址，从响应的 `WWW-Authenticate` 里正则取 `resource_metadata` 指针（带引号与不带引号都读，引号是惯例不是规范；来源标 `RESOURCE_METADATA`）——有些服务器只在挑战里说。取 `authorization_servers` 的**第一个**（多于一个时打 info 日志）。手填与「文档说的」过同一道校验，且 issuer 比一般 URL 更严：不许带 userinfo、query、fragment（这三段都不会进元数据 URL，存下来就是谁也确认不了的一个值），结尾斜杠先去掉（复用注册按字节匹配，留斜杠等于凭空多出一个授权服务器）。文档是不可信输入，不允许把用户导向 `file://`。
-3. **AS 元数据四个候选**：`.well-known/oauth-authorization-server` 与 `.well-known/openid-configuration` 各按插入式 / 后缀式试一遍（后者最后，因为是老服务器和多数 OIDC 库实际提供的那个）。必须同时有 `authorization_endpoint` 与 `token_endpoint` 才算命中，且这两个值本身也要过 http(s) + 宽度校验——它们是 P2-3 要跳转、也要 POST `code` + `client_secret` 的地址（P2-4 起还要 POST 刷新请求），存进去就等于把攻击面搬进库里。`registration_endpoint` / `revocation_endpoint` 这类可选端点遇到不可用的值则**丢弃并记 warn**（缺一个可选能力不是失败，留一个坏地址才是）。文档自己声明的 `issuer` 与所查 issuer **精确不等**就拒绝（RFC 8414 要求相等，否则一切换 token 都在 issuer 校验上失败，而没人会想到是这一行存错）；文档**根本不声明 issuer** 时按来源区分：issuer 是管理员手填的就接受（有人背书，这也是唯一的逃生口），是文档广告来的就拒绝——那条链路上没有任何人确认过这个地址。
-4. **失败必须响**：所有候选的失败原因用 `;` 拼进一条 `BizException` 消息（`Cannot locate the authorization server for <url>: ...` / `No usable authorization server metadata for <issuer>: ...`），总长截到 600 字符——这些串会原样出现在 API 响应体里，而每条都可能裹一句上游自己的消息。报错里的地址一律先抹掉 userinfo。没有任何一条路会「降级成静态头继续跑」——半发现的服务器如果看起来算「配好了」，运行时就可能拿未认证的请求替某个用户去调外部系统。
-5. **一个 (tenant, issuer) 一行**：`selectByTenantAndIssuer` 命中就只刷新端点，`client_id` / `client_secret_enc` / `callback_url` 一律从载入的那行带过去——`updateById` 的 SET 列表无条件（§7.5 第 2 条），不携带等于下次发现顺手把客户端注销掉。没命中才 insert，此时 `client_id` 留**空串**，含义是「端点已知、客户端还没登记」，authorize-url 那条路对它报错（P2-3 已实现，发起与换 token 两处都拒，见 §3.6 第 1 条）。`registration_endpoint` / `revocation_endpoint` 发现到 null 也照写 null：那正是「AS 撤掉了 DCR」需要被记下来的时刻。
-6. **issuer 回写只动一列**：只要 issuer 不是从 `oauthConfig` 来的（②③），发现成功后用 `McpServerMapper.updateOAuthConfig(id, json)` 把结果写回 `mcp_server.oauth_config`。此前这里是 `updateById(整行)`，而它的 SET 是无条件的：发现要拿着几分钟前读出的那一行去覆盖 status / headers / name，等于把别人正在做的编辑吞掉（一旦哪天读出来的行是解密视图，还会连密文一起毁）。发现只拥有 `oauth_config` 这一列，就只写这一列（外加 `update_time = NOW()`，这一行确实被改过；`McpServerMapperTest` 断言的是其余各列一动不动）。
-7. **callback_url 缺省**：新行写 `${app.frontend-base-url}/mcp/oauth/callback`——那是**前端路由**（授权落地页，§3.6 第 3 条），不是本服务的接口；`app.frontend-base-url` 未配置时退回 `app.base-url`（生产由 nginx 同域名代理两者，退回就是对的；开发下 SPA 在 :8000 而 admin 在 :8080，必须显式配）。`McpOAuthClientRequest.callbackUrl` 可显式覆盖，覆盖前同样过 http(s) + 宽度校验。AS 按字节比对的就是这一列存着的值，所以**改了那两个环境变量并不会让老行跟着变**：登记时写进去的那一条要重新保存一次（页面上会给出不一致的告警）。第十四轮之前这一列的缺省是 `${app.base-url}/api/admin/mcp/oauth/callback`，指向一个已经删掉的免鉴权接口。
-8. **登记客户端**：`client_id` 必填（在任何写入**之前**校验，不留半行）；`clientSecret` 走 §3.3 末尾的 `resolveSecret` 三态；`registration_source` 目前两条路都写 `MANUAL`（DCR 是 P4）。手工登记时若那行还没有端点，会补一次发现——端点是真正要跳过去的地址，不允许空着。这条路径会对库里存着的 issuer **重跑一遍校验**（那一列可能被手改过、也可能是老版本写的），因为它就是要往那个地址挂 `client_secret`。
-9. **`oauth_config` 读不出来就中止**：空列是「还没配」，非空却解析不出来是数据漂移——而发现会重写这一列。按默认值继续的后果是把管理员填的 scopes 覆盖成空列表，还在响应里报「发现成功」。同一条规则也管住了 MCP 编辑：表单不带 `authorizationServer` 时更新会保住库里已发现的 issuer（否则一次改 scopes 就会注销掉那次的发现结果），但显式给了一个不可用的值仍然拒。
-10. **回显不带密钥**：`McpOAuthDiscoveryResponse` 只回 `clientSecretPresent` 布尔，明文 secret 不出 admin；同时回 `issuerSource`（让页面说清「这是发现的还是你填的」）与 `unknownScopes`（请求的 scopes 里 AS 不认识的部分——拼错否则要等用户登完录被 400 才发现，这里报错是免费的）。这个 DTO 被两个接口共用，刻意不再造一个「client 响应」。
-11. **出站护栏（`RemoteJsonFetcher`）**：admin 里别处也发得出 HTTP（`McpServerServiceImpl.listTools`、channel、registry），这个组件管的是**目标地址来自管理员输入或上游文档**的那一条路，因此协议白名单与地址底线都收在这里：只接 http(s) 且必须有 host、拒掉云元数据目标（link-local / 任意本地 / 组播地址与 `metadata.google.internal` 这类主机名，在建连接之前就拒；环回与私网**有意**放行，自建 AS 就住在那里面，本项目的 docker-compose 就是）、`Redirect.NEVER`（302 不跟，用例用一个计数器证明）、连接 5s / 请求 10s 超时、响应体 64KB 上限**加**一条真正的读取截止（`ofInputStream` 的排空发生在本线程，请求超时管不到；慢慢滴字节的地址要另有一道界）、body 读失败也包成 `RemoteFetchException`（否则一个断连接会让整个发现崩掉而不是试下一个候选）、只有 JSON **对象**才算元数据（数组与标量同 HTML 一样是「这里没东西」）、`WWW-Authenticate` 可能拆成多个头，全部拼回来（指针只在其中一个里时不能读丢）。这些护栏是一道地板不是一整套策略：地址在这里判过一次，连接时还会被重新解析，DNS 重绑定不在能力范围内。P2-3 给它加了 `postForm`——带着 `code` / `client_secret` / 令牌的表单 POST 也从这一个出口走，于是换 token 与撤销同样继承上面这些协议、地址、重定向、超时与体积规则；同文件顶层的 `normalizeIssuer` 是发现与授权共用的那一条 issuer 规范化，两处各写一份的话，管理员多打一个结尾斜杠就会「配了一行、授权时一行都找不到」。
+更新（`updateMcpServer`）的语义点：
 
-顺带修掉一个**已上线但失效的配置**：`base-url` 此前挂在 `admin:` 下，而读它的是 `@Value("\${app.base-url:...}")`（`ChannelServiceImpl` 与部署文档都是这个 key），于是 `APP_BASE_URL` 从未生效过——渠道回调一直退回 `http://localhost:8080`。`application.yml` 已把它移到顶层 `app.base-url`，否则 OAuth 的 `redirect_uri` 会原样继承同一个缺陷。测试：`McpOAuthServiceImplTest` 49 个（issuer 解析 14 / 元数据 11 / 发现落库 11 / 客户端凭据 11，第八轮补的都在「地址与文档能说到什么程度才算可用」上；第十四轮多出「浏览器该回到哪」2 条，钉的是 `frontend-base-url` 配了就听它的、没配才退回 `base-url`）、`RemoteJsonFetcherTest` 16 个（真起 JDK `HttpServer`，覆盖 html 与数组 body / 超大响应 / 401 挑战（含拆成两个头）/ 重定向不跟 / 元数据地址与主机名 / userinfo 抹除 / 失败响应的体 / 表单 POST 的编码）、`SecretFieldEncryptorTest` 新增 `ResolveSecretTests` 6 个、`McpServerServiceImplTest.AuthTypeTests` 12 个（含「编辑不擦掉发现的 issuer」）、`McpServerMapperTest` 里两条 `updateOAuthConfig`（证明只动那一列、已删行不动）。
+- 先过 `requireVisibleServer(id)`，并在任何字段被覆盖之前记下这行原本是不是 `OAUTH2`——方法末尾要判断「这次请求是否把 OAuth 关掉了」，而那时 `auth_type` 已经被改写过。
+- `name` / `description` / `type` / `command` / `url` / `authType` / `isPublic` / `status` / `oauthConfig` / `headers` / `envParams` 全部可空，**省略即保持原值**；`name` 给了空串会被拒。
+- 改 `type` 时清掉上一传输留下的参数：切到 stdio 会把 `url` 写成空串、`headers` 置 NULL；切到网络传输会把 `command` 写成空串、`envParams` 置 NULL。`updateById` 写整行，所以这些值确实落库。留着会让详情页显示一个该传输根本不会读到的字段。
+- 换入 `oauthConfig` 时，请求没带 `authorizationServer` 而库里已有（发现写回的）就保留库里那个；只改一次 scope 不应该注销掉整次发现结果。显式给了一个不可用的值仍然拒。
+- `authType` 一旦不是 `OAUTH2`，`oauthConfig` 清成 NULL，不给一个不做 OAuth 的服务留下会被继续渲染的配置。
+- 校验跑在**合并后的行**上、且在 `updateById` 之前：把 `type` 改成 stdio 会撞同一道 `validateAuthType` 与 stdio 准入闸门，`BASIC` 这类值同样进不来。
+- `update_time` 显式刷新（`updateById` 写实体上的这一列，留在载入值会让列表的更新时间排序冻结）。
+- 更新成功后按情况清理用户授权，见「停用与删除是两件事」。
 
-### 3.6 授权码 + PKCE 与凭据存取（P2-3）
+### 3.5 密钥存储与掩码回写
 
-实现：`admin/controller/McpOAuthController.kt`（四个 JSON 接口：发起、换票、状态、撤销）+ `service/impl/McpOAuthUserServiceImpl.kt`，待授权状态在 `admin/util/McpOAuthStateStore.kt`，出站仍走 `RemoteJsonFetcher.postForm`。这一层做的是「每个真人对自己的每个 MCP 服务各做一次」的动作：发起同意、把 AS 送回浏览器的那次结果换成凭据、看状态、撤销。**它不把 token 注到运行时**（P3），也不替会话换发（P2-4）。规则：
+加密基础设施：
 
-1. **准入门槛**：`authorize-url` / `status` / `revoke` 都先经 `McpServerService.getMcpServer(id)`（租户守卫在第四轮就装在那）再要求 `authType == OAUTH2`，然后要求**取得出当前用户**——授权是逐人的，`UserContextUtil` 拿不到 userId 就报错，绝不沿用 `currentTenantId()` 那种「回落到租户 1」的口径。配置解析不出 issuer、注册行不存在、或那行的 `client_id` 还是发现留下的空串占位（§3.5 第 5 条），发起与换 token 两处都拒：带着 `client_id=` 去撞 AS 只会让人家的错误页替我们说话。换票接口过的是同一道用户门槛，但它**没有 `{id}` 可挑**：要授权哪台服务只能由 `state` 认出来的那条 pending 说（第 3 条）。
-2. **`state` 里钉住这次同意的全部前提**：一条 `PendingAuthorization` 存 (租户, 用户, mcpId, issuer, code_verifier, redirect_uri, resource, 请求的 scopes)，TTL 5 分钟、全局上限 500 条、每人另有 5 条上限（`countFor(userId)` 在生成 verifier 与 state **之前**先数一遍，被拒的那次什么材料都不留）、`consume` 取走即失效（先摘再判过期，空串与不存在同答案）。存内存而不是存表：code 本身就是一次性、分钟级的东西。两条后果写明白——**admin 重启会打断正在同意的那一次**，以及**多副本必须做粘性路由**（换票落到没收过这次 `authorize-url` 的副本上，用户只能看到「请求未知或已过期」）；两种上限都是显式拒绝并各回一句实话，不是静默丢弃——500 条是**所有人共用**的预算，没有每人一条挡在前面，一个带脚本的登录用户就能把它填满，让其他人在整个 TTL 里都发起不了授权（第十五轮补的这条，见 §7.14）。这里钉住的 `userId` 第十四轮起**不再用来认定身份**，它的作用是回答「这次同意该记到谁名下」，并让换票时拿它跟调用者比一次——比对不通过就拒（第 3 条），所以把 `authorize-url` 转发给别人点，别人点完也拿不到发起者的凭据。
-3. **换票靠 JWT，`state` 只是防 CSRF 的一次性令牌**：AS 的重定向落到**前端页面**（`harnax-webui/src/pages/mcp/oauth-callback.tsx`，路由 `/mcp/oauth/callback`），由它带着浏览器里已有的 JWT `POST /api/admin/mcp/oauth/exchange`。于是身份来自 Spring Security 的认证上下文，`state` 被降级成「这条 pending 是不是你发起的」的凭据：先取调用者身份（取不到就报错，**pending 原样留着**——没有身份的人连烧掉别人 `state` 的能力都没有），`consume` 紧跟着在**任何分支之前**先把这枚令牌烧掉（被 AS 拒了的那次授权同样结束，一个还活着的 `state` 等于一份可以反复试的铸令牌请求），随后**在读请求体说的任何话之前**先比归属：pending 的归属与调用者不符就回一句「这是在别的会话里发起的」并**只 warn 出 mcpId 与两个 userId**——不记 code、不记 verifier，那些是要发去 token endpoint 的东西。这道比对必须排在「AS 报了什么」之前：否则知道别人 `state` 的人 POST 一个自造的 `error` 就能替对方取消那次在途的授权，而那条 warn 对这件事一句话都不会说（第十五轮修的，见 §7.14）。反过来，AS 真报了 `error` 时**即使 pending 已经过期也照样把上游的理由回给页面**：那种情形下什么都没存、也没什么可烧，上游的原话比一句「请求未知或已过期」有用。这一条比对就是钓同意的探测器：有人把链接转给别人点，受害者那边看到的是失败页，攻击者这边什么也没多出来。本服务不再接收 AS 的浏览器重定向，`SecurityConfig` 与 `JwtAuthenticationFilter` 为回调开的那两处放行已随之删除。
-4. **参数怎么拼**：`redirect_uri` 取注册行里那条，不从当前请求推导（AS 按字节比对，那行才是管理员登记的地址）；`scope` 入参覆盖服务端配置并去重，宽过 `mcp_user_credential.scopes` 的 512 就**拒**（截断等于替用户记下一份没人同意过的清单）；`resource` 只在 `oauthConfig.resourceIndicator` 为真且 `url` 非空时带；`audience` 配了才带；PKCE **无条件 `S256`**，不给 AS 元数据里那句「我支持哪些 challenge」留降级路（决定与理由见 mcp-authorization-design §6.2）。
-5. **换 token 与它的校验**：换票先把服务行按 `pending.mcpId` 经 `McpServerService.getMcpServer` 重读一遍——这一路是带身份的，所以走的就是别处那道租户守卫（调用者看不见这台服务直接按「不存在」回答），读完再断言 `server.tenantId` 仍等于 `state` 里钉的租户；行没了、换了租户、不再是 `OAUTH2`、或 `url` 已与 `state` 钉住的 `resource` 不一致，都不换（code 是给旧地址换的，存下来是一把开不了门的钥匙）。表单带 `grant_type` / `code` / `redirect_uri` / `client_id` / `code_verifier`，有 secret 就按 RFC 6749 §4.1.3 放体里；非 2xx 用上游的 `error` / `error_description` 拼一句话（截 200 字符、抹 userinfo），200 但不是 JSON 对象同样算失败；没有 `access_token` 就不算授权成功。**上游那句话能不能被读到，取决于出站层解不解析失败响应的体**——第十三轮之前 `RemoteJsonFetcher` 只在 2xx 时解析，这句拼话实际恒为「HTTP 400」，见 §7.12 第 1 条。落库前比两件事：`iss`（响应级与 JWT 声明级各比一次）与发现的 issuer **字节相等**，`aud` 必须含本次的 `resource`。JWT 声明是**解出不验签**的——这里不消费 token 内容，它只被原样转发给 MCP 服务；opaque token 解不出来时**记日志而不是当成通过**。
-6. **存储语义**：两个令牌各走 `AesUtil` 加密成 `access_token_enc` / `refresh_token_enc`；新一次换发**整体替换** refresh token（留着上一次的就等于留一条没人刚同意过的铸令牌路子）；`scopes` 优先记实际授予的、没有才记请求的，**授予的清单宽过 512 就整份不记**（`scopes=null`，`last_error` 说明「有多长、列能存多少、所以没记」）——第 4 条那条「宁拒不断」在请求侧成立是因为调用方能改窄参数，回答侧没人能改 AS 的决定，截断只会留下一条谁都没授权的半截 scope；`status=ACTIVE`、`last_error` 除上述情形外清空、`last_refreshed_at` 打点；已有行走 `updateById`（这张表没有软删，SET 无条件，正好让撤销能把密文写回 NULL）；新行走 `insert`，撞 `uk_mcp_user_credential_tenant_user_mcp`（同一用户同一服务的两次授权并发落库）时接住 `DuplicateKeyException`，把这次的 token 更新到先落库的那一行，而不是把一次真实发生的授权报成数据库失败。**换票回答里的 `scopes` 就是这一列记下的那份**，不是 AS 回答里那个原始字段：RFC 6749 §5.1 让 `scope` 可选，AS 授的就是请求的时可以不回，照它那份空清单回答会让落地页显示零条、几秒后详情页的 `status` 读同一列却显示两条（第十五轮修的，见 §7.14）。请求的 scope 比授予的多只 warn，不失败。
-7. **状态怎么读**：查询条件恒为 (租户, 用户, mcpId)，看不到别人的行；`REVOKED` 不复活；`accessExpiresAt` 过期就**不算可用**（刷新要到 P2-4，页面不能显示一份运行时花不掉的授权）；没有过期时间的行按可用读；`lastError` 原样回显（它本来就只可能是脱敏后的一句话）。
-8. **撤销**：本地一定清（置 `REVOKED` + 两个密文写回 NULL，连 `last_error` 一起清），上游只在注册登记过 `revocation_endpoint` 时发一次 RFC 7009，`token_type_hint` 优先 `refresh_token`；上游连不上或被拒都不让整个操作失败。**六种情况各回一句实话，且互不顶包**（详见 mcp-authorization-design §6.4）：上游接受、上游拒绝、没有撤销端点（那句 RFC 7009 的话只能说给「AS 确实不支持撤销」）、密文解不开（换过 AES 密钥，「解不开」不能说成「没有令牌」也不能说成「上游拒了」）、注册行已删（说不出这条授权属于哪家 AS，同时给出 `POST /api/admin/mcp/{id}/oauth/discover` 这条路）、库里本来就没剩令牌。数据库异常经 `ApiErrors` 收敛，不吐表名。
-9. **不出现令牌的地方**：响应 DTO、日志、`last_error` 都没有 token 材料，日志说的是「记下了哪些 scope、expiresIn 多少、有没有 refresh」——scope 名不是凭据（`status` 接口本来就把它们回给浏览器），但令牌本体一个字节都不进日志；`McpOAuthExchangeResponse` 只有 `authorized` / `message` / `scopes` / `accessExpiresAt` 四个字段，**没有任何一个字段装得下 token**，而凭据的落库位置就是那一列密文——把它回给浏览器是一次没有消费者的泄漏。换票的**拒绝也是一句人话而不是一个 HTTP 状态**：`code` 已经被花掉，页面重试不了，只能把上游的理由（`error` / `error_description` 原样拼一句、截 200 字符）连同「请重新发起」显示出来。原来那句「上游 `error_description` 要经 `HtmlUtils.htmlEscape` 才上页面」的防护换成了「走 JSON + React 文本节点」，与 `McpServerServiceImpl.listTools` 带回来的上游字符串同一口径；落地页在**发起请求之前**就把 `?code=&state=` 从地址栏抹掉（`history.replace`），值只停在 effect 里的一个局部对象上、立刻发出去，既不写 localStorage 也不进第三方脚本。
-10. **测试**：`McpOAuthUserServiceImplTest` 62（发起 13 / 换票 32 / 状态 7 / 撤销 10；第十四轮把「回调」那 22 条改成「换票」组，多出来的是换票模型才有的分支：归属不符、无登录上下文、`state` 认不出来时不再查任何库、回来的 `state` 没有 `code`、上游原话按预算截断、响应体不含令牌材料、目标服务由 pending 决定；第十五轮再加 4 条——每人占不满那 500 条的共用预算、自造的 `error` 取消不了别人的在途授权、`state` 过期后上游的理由照样回显、AS 省掉可选的 `scope` 时回答里报的是记下的那份；第十三轮补的出站真 HTTP 用例仍在 `RemoteJsonFetcherTest`（16），见 §7.12 第 1 条。打桩部分：出站全在 `RemoteJsonFetcher` 打桩，`McpOAuthStateStore` 用真件——要钉的就是发出去的 challenge 与换回来的 verifier 是同一个、`state` 只够用一次）、`McpOAuthStateStoreTest` 7（多出「每人计数只数本人、且先把过期的扫掉」）、`McpServerServiceImplTest.AuthTypeTests` 12（第十五轮的两条钉「离开 `OAUTH2` 才清凭据，没离开或从来不是 OAuth 的服务一次都不查这张表」）、`McpOAuthControllerTest` 由 13 扩到 16（新增的三条守换票接口对外的错误语义）；原 `McpOAuthCallbackControllerTest` 4 条随被删的控制器一起删除。**还没跑过真实 AS**：mcp-authorization-design §10 那行「用 Keycloak 走通发现 → 授权 → 存 → 撤销」的验收没完成，尤其各家实现对 `resource` 参数的实际反应还没有过实测；新的 `redirect_uri` 形状（指向前端路由）同样一条都没实测过，见 §7.13 与 §7.14。
+- `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/SecretFieldEncryptor.kt`：基于 `AesUtil`（AES-256-GCM），实现 `harnax-common/src/main/kotlin/com/agnetix/harnax/common/mcp/McpConfigDecryptor.kt` 定义的跨模块解密 SPI。
+- 条目形态：`headers` 是 `McpConfigEntry`（`key` / `value` / `secret`），`envParams` 是 `ToolEnvParamEntry`（`envParamName` / `description` / `required` / `secret` / `defaultValue`）。后者沿用工具参数条目的形状，值写在 `defaultValue` 里，因此 `secret` 条目的加密、掩码回显与回写识别都作用在 `defaultValue` 这一项上（`SecretFieldEncryptor.storedEnvSecrets` 按 `envParamName` 建索引取回密文）。两种条目都只有 `secret = true` 的项加密。
 
-## 4. 智能体绑定与配置下发
+回显（`McpServerResponse.fromEntity`）：解密 secret 条目后掩码——长度大于 7 显示「前 3 位 + `****` + 后 4 位」，其余以及解密失败显示 `******`。前端不接触明文密钥。
 
-1. **绑定保存**：智能体配置保存时 `AgentServiceImpl.saveMcpBindings` 先删后插 `agent_mcp_binding`，同一请求内重复的 `mcpId` 由 `distinctBy` 去重、数据库侧再靠 `(agent_id, mcp_id)` 唯一键兜底；写入前先用一次 `McpServerMapper.selectByIds` 批量校验这批 id（私有 `resolveBindableMcpServers`）——解析不到有效服务（已删、不存在、或属于别的租户）就抛 `BizException` 拒绝整个请求，而不是留下一条运行时被 `?: continue` 静默跳过的绑定行（那种失败只在日志里，页面看起来是「配了但工具不见了」）；**已停用的服务同样拒绝**，理由与技能侧一致：下发现在也把它整行扣下，绑上只是存一个 agent 永远够不到的工具，而页面会一直显示「已配置」。`envBindings` 通过 `serializeEnvBindings` 写入快照——引用全局环境变量（`envVarId`）时**只存指针**（`envVarId` + 解析出的 `envVarName`），值一个字节都不落这一列：客户端带回来的是展示值（敏感变量即 `******`），存下来会变成「变量被删后兜底出一串星号」，而服务端解出明文再存等于把密钥写进一张会回显给表单的表；自定义值存 `customValue`。引用在保存时由 `assertEnvBindingsBindable` 校验，工具 / MCP / CLI 三条绑定路径共用同一道（解析不到、跨租户、已停用都拒），因为 `getDecryptedValue` 下发时是按 id 现取的那一步。反向清理：删除 MCP 服务会连带删除其全部绑定，避免残留指向已删服务的行；
-2. **配置下发**：agent-service 请求智能体配置时，`InternalApiController.buildAgentSpecResponse` 下发两份数据：
-   - `mcpDetails`：完整 `McpDetailDto` 列表（`headers` / `envParams` 为下发前解密的明文对象，`status` 一并带出）。绑定行的 `mcpId` 先去重，再用一次 `McpServerMapper.selectByIds` 批量取服务（与工具侧同款，不再有每绑定一次的 N+1）；查不到行的绑定、以及行不属于本 agent 所在租户的绑定，都打 warn 后剔除——`selectByIds` 本身没有租户条件（内部调用没有可信的 `X-Tenant-ID` 可注入），比对基准取 `agent.tenant_id`。在这一批之上再扣两道：**stdio 行**（`harnax.mcp.stdio-enabled` 为 false 时，判据来自 `McpStdioPolicy.isStdio`）与 **`status = 0` 的服务**，两道都打 info 日志。这与 `skill.status == 0` / `cli.status == 0` 的过滤同构，也是 `HarnessAgentLauncher` 那道判断的管理侧镜像；
-   - legacy `mcpList` JSON：由**通过上述全部扣留的那批绑定**重建（服务行已删除、stdio、已停用的绑定都不进这里，否则它们的 `env_bindings` 会跟着进 `ToolEnvContext`，与 `mcpDetails` 自相矛盾——同名键还会静默覆盖一个启用工具自己绑定的值），`env_bindings` 已通过 `resolveEnvBindingsJson` 解析为明文（`envVarId` 取全局变量**最新**解密值，失败回退快照值）。
+掩码是双向约定。既然前端只看到掩码，未改动的字段原样提交回来时也是掩码，写库侧必须认得：`serializeWithEncryption` / `serializeToolEnvParams` 用 `value.contains("****")` 判定（`******` 本身含 `****`，两种形态一起覆盖），命中就按 `key` / `envParamName` 从**本行现有的那列 JSON** 里取回密文原样保留；取不到（条目被改名，或库里就没有）抛 `BizException` 要求重填，绝不把掩码当明文加密。
 
-## 5. 运行时装配流程（agent-service）
+单列密钥（`mcp_oauth_client.client_secret_enc`）同样要回显掩码，走同一套判定的提公版本 `SecretFieldEncryptor.resolveSecret(provided, storedEncrypted)`，三态各有含义：`null` 保持库中原值；掩码沿用库中密文（库里没有密文就要求重填）；空白串显式清空（公开客户端 + PKCE 的正常形态）。
+
+### 3.6 认证方式与 OAuth 配置列
+
+`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/McpAuthTypes.kt` 是常量真源，两个进程都读它：admin 决定存什么、下发什么，运行侧按它分支选择静态头还是按用户令牌。
+
+- `NONE`：无上游凭证，行为等同「静态头为空」。
+- `STATIC_HEADER`：`headers` 那一列，一份整租户共用的静态凭证，只是多一个可读标注。
+- `BASIC`：有列、有常量，运行时没有对应分支，因此管理侧拒收，报错文案直说它「stored by V25 but not wired into the runtime yet」。
+- `OAUTH2`：按用户的授权，运行时按 (服务, 人) 换令牌。
+
+拒收未知值而不当作 `NONE` 处理，理由是**入库即下发**：运行时收到认不得的分支比收到 `NONE` 更难查。
+
+`oauthConfig` 由 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/McpOAuthConfig.kt` 序列化，字段为 `authorizationServer`（留空则由 MCP 服务自身的 RFC 9728 元数据发现）、`scopes`（默认空列表）、`audience`（为要求该参数的授权服务器保留）、`resourceIndicator`（默认 true，决定是否按 RFC 8707 带 `resource`，让令牌绑到这台 MCP 服务）。它做成类型化 DTO 而不是自由 JSON：客户端密钥与 token 在这上面没有字段可写，才不会被误写进这列——这列会以明文回给前端表单。`SecretFieldEncryptor` 不碰这一列，因此写入路径对「非 OAuth 服务却带配置」是报错而不是静默丢弃；`authorizationServer` 给了值就必须是可请求的 http(s) 地址（`URI.create(trim())` 解析、scheme 为 http/https、host 非空），因为发现流程会去请求它。
+
+`OAUTH2` 与 `type = stdio` 互斥：OAuth 的令牌挂在 HTTP 请求头上，stdio 没有请求可挂，配错了只会静默地以未认证方式连出去。
+
+### 3.7 授权服务器发现与客户端登记
+
+实现：`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/McpOAuthServiceImpl.kt`，出站请求集中在 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/RemoteJsonFetcher.kt`。这一层做的是「每个 (租户, 授权服务器) 一次」的配置动作，不换取任何 token。
+
+1. **准入门槛**：两个接口都先经 `McpServerService.getVisibleMcpServer(id)`（租户与可见性守卫都在那里），再要求 `authType == OAUTH2` 且 `url` 是非空 http(s)。把 `authType` 选成 OAuth 只是让这两个接口可用，服务本身仍然按 `headers` 连接。
+2. **issuer 解析顺序**（全部失败才报错）：① `oauthConfig.authorizationServer`（管理员手填，来源标 `CONFIG`）；② 从 MCP 服务地址推导 protected-resource 元数据，候选包括路径插入式 `origin/.well-known/oauth-protected-resource/<path>`、路径后缀式 `origin/<path>/.well-known/oauth-protected-resource`、主机根；③ 直接 GET 一次 MCP 地址，从响应的 `WWW-Authenticate` 里取 `resource_metadata` 指针（带引号与不带引号都读，多个头会拼回来）。取 `authorization_servers` 的第一个，多于一个时记日志。
+3. **issuer 的严格校验**：先 `trim()` 再判，比一般 URL 更严——不许带 userinfo、query、fragment（这三段不会进元数据地址，存下来就是一个谁也确认不了的值）；结尾斜杠由 `normalizeIssuer` 去掉，因为注册按字节匹配，留斜杠等于凭空多出一台授权服务器。手填值与文档值过同一道校验，并且都对目标列宽度判长（`issuer` 255、其余 URL 500）。
+4. **AS 元数据候选**：`.well-known/oauth-authorization-server` 与 `.well-known/openid-configuration` 各按插入式 / 后缀式试（OIDC 式的那一个放最后试，它是授权服务器与 OIDC 库实际提供的文档地址）。必须同时有 `authorization_endpoint` 与 `token_endpoint` 才算命中，且这两个值本身也要过 http(s) 与列宽校验——它们是要跳转、也要 POST `code` 与 `client_secret` 的地址。`registration_endpoint` / `revocation_endpoint` 这类可选端点遇到不可用值丢弃并记 warn，缺一个可选能力不算失败。
+5. **issuer 一致性**：文档声明的 `issuer` 与被查的 issuer 精确不等就拒绝（RFC 8414 要求相等，否则一切换 token 就失败在 issuer 校验上）。文档不声明 issuer 时按来源区分：手填的接受（有人背书，也是唯一逃生口），文档广告来的拒绝。
+6. **失败必须响**：所有候选的失败原因拼进一条 `BizException` 消息并截断长度，报错里的地址一律先经 `redactUrl` 抹掉 userinfo。没有任何一条路会降级成静态头继续跑——半发现的服务器如果看起来算「配好了」，运行时就可能拿未认证的请求替某个用户去调外部系统。
+7. **一个 (租户, issuer) 一行**：`selectByTenantAndIssuer` 命中就只刷新端点，`client_id` / `client_secret_enc` / `callback_url` 从载入的那行带过去（`updateById` 的 SET 是无条件的，不携带等于下次发现顺手把客户端注销掉）。没命中才插入，此时 `client_id` 写空串。可选端点发现到 null 也照写 null——那正是「授权服务器撤掉了 DCR」需要被记下来的时刻。
+8. **issuer 回写只动一列**：issuer 不是从 `oauthConfig` 来的，发现成功后用 `McpServerMapper.updateOAuthConfig(id, json)` 把结果写回 `mcp_server.oauth_config`（外加 `update_time`）。这里不写整行——整行覆盖会拿几分钟前读出的值盖掉别人正在做的编辑。
+9. **callback_url 缺省**：新行写 `${app.frontend-base-url}/mcp/oauth/callback`，那是**前端路由**（授权落地页）；`app.frontend-base-url` 未配置时退回 `app.base-url`。授权服务器按字节比对的就是这一列存着的值，改环境变量不会让已有行跟着变，登记过的那条要重新保存一次。`McpOAuthClientRequest.callbackUrl` 可显式覆盖，覆盖前过 http(s) 与列宽校验。
+10. **登记客户端**：`client_id` 在任何写入之前校验非空（不留半行）；`clientSecret` 走 `resolveSecret` 三态；`registration_source` 写 `MANUAL`。库里那行还没有端点时补一次发现——端点是真正要跳过去的地址，不允许空着；这条路径会对库里存的 issuer 重跑一遍校验，因为它就是要往那个地址挂 `client_secret`。
+11. **`oauth_config` 读不出来就中止**：空列是「还没配」，非空却解析不出来是数据漂移，而发现会重写这一列。按默认值继续的后果是把管理员填的 scopes 覆盖成空列表还报「发现成功」。
+12. **回显不带密钥**：`McpOAuthDiscoveryResponse` 只回 `clientSecretPresent` 布尔，另回 `issuerSource`（说清 issuer 是发现的还是填的）与 `unknownScopes`（请求 scopes 里授权服务器不认识的部分——拼错否则要等用户登完才被拒）。这个 DTO 被两个接口共用。
+13. **出站护栏（`RemoteJsonFetcher`）**：目标地址来自管理员输入或上游文档的请求只能从这里出去——只接 http(s) 且必须有 host；拒掉云元数据目标（link-local、任意本地、组播与 `metadata.google.internal` 这类主机名，在建连接之前）；环回与私网有意放行（自建授权服务器就住在那里面）；`Redirect.NEVER`；连接 5s / 请求 10s 超时；响应体 64KB 上限加一条读取截止；body 读失败也包成 `RemoteFetchException`（否则一个断连接会让整个发现崩掉而不是试下一个候选）；只有 JSON 对象才算元数据。`postForm` 让换 token 与撤销的表单 POST 走同一道护栏而不是另起一个客户端。这些护栏是地板不是全套策略：地址在这里判过一次，连接时还会被重新解析，DNS 重绑定不在能力范围内。
+
+### 3.8 按用户授权：发起、换票、状态、撤销
+
+实现：`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/McpOAuthUserServiceImpl.kt`，待授权状态在 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/McpOAuthStateStore.kt`，出站走 `RemoteJsonFetcher.postForm`。
+
+1. **准入门槛**：`authorize-url` / `status` / `revoke` 都先经可见性与租户守卫并要求 `authType == OAUTH2`，再要求取得出当前用户——授权是逐人的，拿不到 userId 就报错，不回落到「租户 1」。配置解析不出 issuer、注册行不存在、或那行的 `client_id` 还是发现留下的空串占位，发起与换 token 两处都拒：带着 `client_id=` 去撞授权服务器只会让人家的错误页替我们说话。
+2. **`state` 钉住这次同意的全部前提**：一条 `PendingAuthorization` 存 (租户, 用户, mcpId, issuer, `code_verifier`, `redirect_uri`, resource, 请求的 scopes)，TTL 5 分钟、全局上限 500 条、每人上限 5 条（`countFor(userId)` 在生成 verifier 与 state 之前先数，被拒的那次什么材料都不留），`consume` 取走即失效（先摘再判过期，空串与不存在同答案）。存内存而不存表，因为 code 本身就是一次性、分钟级的东西。两条后果：admin 重启会打断正在同意的那一次；多副本需要粘性路由，否则换票落到没收过这次请求的副本上只会得到「请求未知或已过期」。两种上限都是显式拒绝并各回一句原因，不是静默丢弃——500 条是所有人共用的预算，没有每人一条挡在前面，一个登录用户就能把它填满。
+3. **换票的身份来自调用者的 JWT**：`POST /oauth/exchange` 带 JWT，凭据写给调用者本人。判定顺序是固定的：先 `consume(state)`（无论结果如何 `state` 只用一次），再比归属——`state` 里记的 userId 与调用者不符时**拒绝并上报**，因为那正是同意钓鱼的形状（一个拿到了别人 `state` 的调用者本来可以用自己的 `error` 报文取消那次进行中的授权）；`state` 不属于当前用户时它不是身份来源，而是一次要记下来的事件。授权服务器带 `error` 时，即使 `state` 已经过期也要把对方给的原因回答给页面——那时什么都没存、也没东西可烧，而上游的原因比「未知请求」有价值。`code` 为空同样明确拒绝。
+4. **换 token 前的复核**（集中在一个私有助手里）：服务行仍对当前用户可见且仍属于发起时的租户、`url` 仍等于 `state` 钉住的 resource（这一步只在 pending 带了 resource 时才判——`pending.resource != null` 是它的前置条件，`resourceIndicator` 关着或当时没拼出 resource 就整条跳过；同意是对那个地址给的，中途改过地址的 code 存下来就是一枚用不上的凭据）、按发起时的 issuer 找注册行（不是按现在的 `oauth_config`）、`client_id` 非空、token endpoint 已知。token 请求以表单 POST 发出，`grant_type=authorization_code` + `code` + `redirect_uri` + `client_id` + `code_verifier`，带得上客户端密钥就一并放 body（RFC 6749 允许 body 或 basic auth，选 body 因为所有实现都吃、且不需要第二条代码路径）；解不开存储的客户端密钥时明确报错要求重新保存，而不是裸奔去撞端点换回一个 `invalid_client`。响应要有 `access_token`，并按 `validateAgainstIssuer` 校 `iss` 与实际授予的 scope。授予的 scope 串宽过 `scopes` 列（512）时**整串不记**，只在 `last_error` 里说明被截了什么——截断的列表读起来像「这就是授予的范围」，而最后那一项是谁也没授予过的片段。
+5. **授权请求参数**：`response_type=code`、`client_id`、`redirect_uri`（注册行里那一条）、`state`、`code_challenge` 与 `code_challenge_method=S256`、非空时 `scope`（空格连接）、按需 RFC 8707 的 `resource`（= 服务 `url`，受 `resourceIndicator` 控制）与 `audience`。请求的 scope 宽过列上限时在生成任何材料之前拒绝；`scopes_supported` 里不认识的项给一条 warn。响应回 `authorizeUrl` / `issuer` / `scopes` / `expiresIn`（= pending 的 TTL 秒数）。
+6. **落地页**：授权服务器把浏览器送回前端路由 `/mcp/oauth/callback`（`harnax-webui/src/pages/mcp/oauth-callback.tsx`，`layout: false`，排在通配 404 之前），页面接 query、调用带 JWT 的换票接口、只回一句话。未登录跳转对落地页丢掉 search，避免 `code` 与 `state` 进登录页地址栏。
+7. **状态**：`status` 读 (租户, 用户, 服务) 那一行，回答 `authorized` 的条件是 `status == ACTIVE` 且 `access_expires_at` 未过期（列没值时视为未过期），带出 `status`、过期时间与 `last_error`，不回任何令牌材料。
+8. **撤销**：没有授权行时直接回答「已撤销、无上游动作」。有行时总是清本地（`clearLocally`），并在注册行有 `revocation_endpoint` 时按 RFC 7009 向上 POST——优先呈递 refresh token（access token 几分钟内自己就死了，refresh token 才会持续 mint 新的，合规服务器撤掉 refresh 即撤掉整个授权）。解不开密文时当作「没有可呈递的令牌」处理，本地那一份照样清掉：这个调用是用户唯一的出路，而密文解不开意味着密钥换过、不是同意失效。回答由 `when` 的六个分支各给一句话：解析不出注册行 / 注册登记里没有撤销端点 / 有密文但解不开 / 行里两个密文都是 NULL / 上游接受 / 上游拒绝（`revoked` 恒为 true，`upstreamRevoked` 说明上游那半）。授权设计文档里撤销那一节列的就是这六条。
+
+### 3.9 令牌换发（内部接口）
+
+`POST /api/admin/internal/mcp/access-token`，入参 `McpAccessTokenRequest(sessionId, mcpId)`，返回 `McpAccessTokenResponse`。`sessionId` 空白直接 400。
+
+`McpOAuthUserService.accessToken(sessionId, mcpId)` 的规则：
+
+1. 服务行按 id 直读 mapper，而不是经 `McpServerService`：那个守卫比的是**请求头里的租户**，而 agent-service 的内部调用没有这样的头；给这个答案定范围的是服务行自己的租户，也正是授权存进去时用的那个键。`authType != OAUTH2` 直接报错（这台服务没有按用户的令牌可发）。
+2. 用 `McpSessionOwnerResolver` 把会话反查成 `sys_user.id` + 租户。反查不到就是没有身份：记 `NEEDS_CONSENT` 审计并回 401。
+3. 属主租户与服务租户不一致时回 403。下发只会把智能体同租户的服务发给它，因此这一条正常情况下不可达，但它必须留着：授权行按**服务**的租户为键，缺了这道判断，租户 B 的会话就能花掉租户 A 对某台服务的授权。
+4. 授权行不存在回 401；`status == REVOKED` 也回 401，但**不把状态改写成 `NEEDS_CONSENT`**——那会抹掉这一行唯一还记录着的事实：这个人是主动撤销的。两种情况的密文都保持原样：`revoke` 还需要存储的内容去通知授权服务器。
+5. 存储的 access token 仍在有效期内（且密文解得开）就原样给出，并把有效期换算成 epoch 秒——admin 内部的比较都是本地语义，而调用者是另一个进程、不保证同一时区。过期时间落在提前量（`REFRESH_SKEW_SECONDS`）之内即视为需要刷新：一次在长运行中途因令牌过期而失败的调用读起来像「这台 MCP 服务坏了」，用户没法把它和真的故障区分开。没有有效期记录的行会一直用着，直到某处拒绝它。
+6. 刷新在按 `credential.id` 取的条带锁里做，锁内**重读**那一行：可能刚有人刷过同一枚授权，刷第二次会烧掉那次轮换回来的 refresh token。表单是 `grant_type=refresh_token` + `refresh_token` + `client_id`（+ 可解开的 `client_secret`）。
+7. 两类失败分开：授权已经没了、只有用户能救的（没有 refresh token、密文解不开、上游拒收）走 `NEEDS_CONSENT`——写状态、记审计、回 **401** 并附上「请重新授权」；这一次请求里任何关于授权的事实都没变、只是重试问题（网络不可达、密钥换过导致客户端密钥解不开）走 `transientFailure`——保持原状态、只写 `last_error`、记审计、回 **503** 并把原因带上。两个码不能混：混了就会因为网络问题把用户送去同意页。
+8. 每次决定向 `mcp_call_log` 追加一行（`ISSUE` / `REFRESH` + 结果 + 耗时），不落令牌内容。
+
+### 3.10 连通性测试与工具列表
+
+`listTools(id)` 是 admin 里唯一一条会用库里配置真去连接的路径（`connectivityTest` 也走它），因此它的门槛最严：
+
+1. `requireVisibleServer(id)`——租户与可见性；
+2. `status == 0` 直接拒绝，提示先启用；一个被运维关掉的行在这里也不能被打通；
+3. stdio 闸门：这一条会真的在 admin 容器里 spawn 存储的命令，所以闸门必须同时落在这里，否则开关的含义只是「不下发」而不是「不运行」；
+4. `authType == OAUTH2` 明确拒绝：这道检查需要某个人的令牌，而管理侧探测没有「用户」可花——授权属于会话属主，不属于点击测试的人；用点击者自己的授权列工具还会让工具集随人而变，那不是连通性检查声称要显示的东西。要端到端验证 OAuth 走详情页的授权面板。
+
+通过后调 `McpHelper.listTools(mcpServer, decryptToMap, decryptToolEnvParamsToMap)`，`initialize()` 与 `tools/list` 各 10 秒上限，客户端在 finally 里关闭（一次点击一个客户端，stdio 那种还是一个进程）。
+
+### 3.11 停用与删除是两件事
+
+| 动作 | 数据效果 | 运行效果 |
+|------|---------|---------|
+| 停用（`status = 0`） | 行、绑定、授权全部留着；详情页仍可编辑 | 下发时整行被扣下，运行侧再挡一道，因此**一次出网都没有**；`list_tools` / 连通性测试也拒绝 |
+| 删除（`active = 0`） | 行逻辑删除，同事务内物理删该服务的 `agent_mcp_binding` 行与 `mcp_user_credential` 行 | 绑定消失，下发解析不到，按缺失处理 |
+
+停用的语义是「不碰密文、不碰授权」：管理员关掉一台服务不该让它的用户重新授权一轮。删除的语义是「没有可呈现的对象」：行没了授权就没有对应物，留着密文纯属多余的爆炸半径。两条路径都**不动** `mcp_oauth_client`——那一行代表的是这个租户在那台授权服务器上的客户端身份，同一台服务器后面的别的 MCP 服务还在用它。
+
+删除与授权清理都只在写命中之后执行：如果这一行刚被别人删掉、`updateById` / `deleteById` 没匹配到任何东西，就不能按「本次请求关掉了 OAuth」去删与它无关的授权行。
+
+两处会连带清授权，都在更新路径，且按下面这个先后顺序判：
+
+- 服务仍然是 `OAUTH2` 但请求带了一个不同的 `url`：这是更新路径上的第一个 `if`（`oauthResourceMoved`），命中就走不到下一条。授权是按 resource 领的（RFC 8707），换地址后每个已存令牌都会在上游被拒，而 `status` 列还写着「已授权」。清掉它们把用户推回重新授权，比留一个永久的、说不出原因的故障好。
+- 这次请求把 `authType` 从 `OAUTH2` 改走：上一条没命中时才判（挂在它的 `else if` 上）。`oauth_config` 清 NULL，并删掉这台服务的全部用户授权行（读状态与撤销都要过 `authType == OAUTH2` 这道门槛，一台已离开 OAuth 的服务会被它们拒掉，留下的密文对持有人既看不见也撤不掉）。
+
+上游那份授权不去呈递：各按自己的有效期自然过期，与删除服务时同一口径。
+
+## 4. 绑定与配置下发
+
+### 4.1 绑定保存
+
+`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AgentServiceImpl.kt` 的 `saveMcpBindings` 是「整批重写」：先 `deleteByAgentId`，再把这次表单里的 `mcpList` 按 `mcpId` 去重后批量插入，空列表就是把绑定清空。一条绑定要落库，得过三道判断：
+
+| 判断 | 规则 | 拒绝话术 |
+|------|------|---------|
+| 服务行可解析 | `McpServerMapper.selectByIds`（已排除 `active = 0`）后再按当前请求租户过滤，解析不到的 id 收集齐了一次性拒绝 | `MCP server is missing, deleted, or outside your tenant: …` |
+| 服务行启用中 | `status != 1` 的行收集齐了一次性拒绝 | `MCP server is disabled, enable it before binding: …` |
+| 声明的必填参数有值 | 该服务 `env_params` 中每一项 `required = true` 都要有绑定值 | `MCP server '…' requires env params that are left without a value: …` |
+
+保存时拒绝而不是静默收下，是因为下发自带静默逻辑：解析不到的绑定只留一行日志，智能体就此少一个工具而无人察觉。这一列需要服务行的 `env_params` 才能查必填项，所以 `resolveBindableMcpServers` 返回行而不是 id。停用的服务因此根本绑不上——下发也会扣住它，绑上只是存一个永远到不了运行时的对象。
+
+环境参数引用的检查与工具 / CLI 两条绑定共用 `assertEnvBindingsBindable`，它只在保存这条路上跑，拒两种形状：
+
+- 同一个 `envKey` 绑到多个来源（指针与字面值混用，或指向两个不同变量）。下发按绑定行逐行产出 `{envKey, envValue}`，运行侧把这些对折进一个以名字为键的 map，因此最终哪个凭据到达工具取决于行序。键的唯一性按 (租户, 创建人) 划分，两个人各持有一个 `OPENAI_KEY` 是常态，一个被共享的智能体就会碰上这件事。同名且同源的重复被保留：参数表把同一个名字声明两遍的服务产出的就是这两行，两行解析到同一件事。
+- 引用取不到值。指针用 `EnvVariableService.getRowWithinTenant(id)` 校验，比较的是**租户**作用域而不是控制台的创建人作用域，否则共同编辑一个智能体的协作者会拒掉真能送到运行时的指针。
+
+引用真正取值在下发，那道闸是 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/EnvVariableServiceImpl.kt` 的 `getDecryptedValue(id, agentTenantId)`，它把四种情况统一回答成 null：行不存在、租户不符、`enabled != 1`、解密抛异常（这一种另记一条 warn）。也就是说「停用一个变量」是在这里生效的，保存侧对前三种状态先拒一次，为的是让表单上看到的「已填」与运行时拿到的「有值」是同一件事。
+
+`env_bindings` 快照对引用只存指针：`envVarId` 加服务端解析出的 `envVarName`，不存任何值。请求体在这个字段上带回来的是读接口的展示值（敏感变量是掩码串），存进快照就等于把掩码变成变量消失后工具收到的回退值；由服务端把值解出来再存则是把明文密钥写进这一列。字面输入按 `customValue` 原样存。
+
+必填判断里「参数自带的默认值算不算已填」取决于这个默认值在运行时是否真的会到达工具：MCP 与 CLI 传 `defaultValueCounts = true`，内置工具传 `false`（内置工具的下发只带绑定值，工具自己声明的默认值进不了 `ToolEnvContext`）。
+
+### 4.2 下发解析与三道扣留
+
+`InternalApiController` 构造智能体 spec 时的 MCP 段：
+
+1. 绑定行来自 `AgentMcpBindingMapper.selectByAgentId(agentId)`，`mcpId` 去重；
+2. 服务行用 `McpServerMapper.selectByIds` 批量取，随后按**智能体所属租户**过滤：`selectByIds` 没有租户条件，内部调用也没有可信的租户头，因此智能体自己的租户是唯一可比的基准；
+3. 三道扣留：解析不到（已删或跨租户）、`stdio` 且 `harnax.mcp.stdio-enabled = false`、`status = 0`。被扣下的服务**同时从 `mcpDetails` 与 `mcpList` 两半里消失**——这是「禁用行真的不出网」的关键：`mcpList` 的 `env_bindings` 会解析进 `ToolEnvContext`，留着它，被禁用服务解析出的值仍会到达每个工具，同名键还会静默覆盖启用工具绑定的值；
+4. 扣留各记一条日志（缺失 warn、stdio warn、禁用 info），三类 mcpId 分得很清；
+5. `mcpDetails` 由通过扣留的那些行构造，`headers` / `envParams` 经 `plainConfigJson` / `plainToolEnvJson` **解密成明文 JSON 对象**再下发；解析结果为空但存储列不是空数组时另记一条 warn，避免把「解不出来」显示成「没配」。
+
+`mcpList` 的形态是 `[{id, env_bindings:[{envKey, envValue}]}]`，由通过扣留的那批绑定重建；它承载的是环境参数解析结果，不是服务配置。
+
+### 4.3 明文下发的边界
+
+AES 密钥只在 admin 侧（`SecretFieldEncryptor`），agent-service 不持有它，因此解密必须发生在出口。接收端 `PlaintextMcpConfigDecryptor`（`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/mcp/PlaintextMcpConfigDecryptor.kt`）只做解析，不碰任何密钥：正常进来的是平文 JSON 对象，它按 `Map<String,String>` 读出来交给客户端。存储形态的那个数组（`[{"key","value","secret"}]` 与 `[{"envParamName","defaultValue","secret"}]`）它也照样收下而不是拒掉——库里那一行就是这个形状，收到它说明某条下发路径没有做解密那一步，于是带 `secret` 的条目会以谁也变不回明文的密文交出去，它就记一条点名到键的 warn 说这件事：除此之外「一个 header 都没有」和「没配任何 header」在界面上长得一模一样。解析抛异常的载荷同样只 warn 后回空 map，且 warn 里只有载荷长度与首字符，没有内容本身。运行侧的配置唯一来源就是这份下发内容（`AgentSpecContextHolder`），没有查库回退：库里那行是密文，本服务没有密钥，直查数据库只会把解不开的密文喂给客户端。
+
+## 5. 运行侧装配
+
+### 5.1 流程
 
 ```
 AgentSpecResolver.buildAgentSpec()
-    ├─ mcpDetails → McpSpec(mcpId)
+    ├─ mcpDetails → AgentSpec.mcpServices（每台一个 McpSpec(mcpId, isAsync = true)）
     └─ mcpList 的 env_bindings → 并入 ToolEnvContext（供 ToolBox 工具读取）
             ▼
 HarnessAgentLauncher.createAgentBase()
-    遍历 agentSpec.mcpServices：
+    遍历 agentSpec.mcpServices（team lead 拿到空列表：MCP 是成员侧关注点）：
     ├─ McpConfigAdaptorImpl.getConfig(mcpId)
-    │     唯一来源：AgentSpecContextHolder 中 admin 预下发的 mcpDetails（DTO → 实体转换，含 status）
-    │     没有查库回退：库里那行是密文，本服务没有 AES 密钥（见 §7.15 第 4 条）
-    ├─ 配置存在 + status == 0 → 打 info 日志后跳过（不创建客户端、也不报缺失）
-    │     admin 正常情况下已扣下禁用行（§4），这一道只防两侧版本不一致
-    ├─ 配置存在 + type == stdio 且 harness.mcp-stdio-enabled == false → 打 warn 后跳过
-    │     （同一开关下 admin 也不会下发；能到这里说明两侧配置不同，而本容器跑在没有隔离的宿主上）
-    ├─ 配置存在 + status == 1 → McpHelper.createMcpClient(
-    │        mcpConfig, isAsync,
-    │        mcpConfigDecryptor?.decryptToMap,            // headers 解析/解密
-    │        mcpConfigDecryptor?.decryptToolEnvParamsToMap // envParams 解析/解密
-    │     )
-    │        └─ 建客户端抛异常 → 打 warn 后跳过这一台，其余照常装配；已建出的半成品立即 close
-    └─ 配置缺失 → 打 warn 后跳过（不再有开关，也不再抛 AGENT_MCP_NOT_FOUND）
+    │     唯一来源 = 本次下发的 mcpDetails；DTO → 实体转换（含 authType 与 status）
+    │     取不到 → warn 后跳过这一台
+    ├─ status == 0 → info 后跳过（不建客户端，也不报缺失）
+    ├─ type == stdio 且 harness.mcp-stdio-enabled == false → warn 后跳过
+    ├─ authType == OAUTH2 → mcpTokenSourceFactory.forUser(authSessionId, userId)
+    │     返回 null（会话没有用户身份 / 没有令牌源实现）→ warn 后跳过这一台
+    │     拿到源就先预热一次令牌，在正在建 agent 的这个线程上
+    ├─ McpHelper.createMcpClient(mcpConfig, isAsync, decryptToMap, decryptToolEnvParamsToMap, tokenSource)
+    │     └─ 建客户端或注册失败 → warn、关掉半成品、继续装配其余
+    └─ agentBuilder.addMcp(client)，客户端同时收进 HarnessAgentWrapper.mcpClients
             ▼
-McpHelper.buildMcpConfig() 按 type 分派：
-    ├─ stdio          → StdioMcpConfig(command, env = envResolver(envParams))
-    ├─ sse            → SseHttpMcpConfig(url, headers = configResolver(headers))
-    └─ streamablehttp → StreamableHttpMcpConfig(url, headers = configResolver(headers))
-            ▼
-McpClientBuilder 构建客户端（buildSync / buildAsync）→ agentBuilder.addMcp(...)
-            ▼
-这一轮建出的客户端列表随 agent 一起存进 HarnessAgentWrapper.mcpClients
-缓存淘汰 / 会话销毁 → wrapper.release()：先逐个 close 客户端，再 close agent
-（`HarnessAgent.close()` 不释放 MCP 客户端，见 §7.15 第 1 条）
+装载数少于绑定数时汇总一条 warn：外部只看得见「这个 agent 没有 MCP 工具」
 ```
 
-其他运行时入口：
+`AgentSpec.mcpServices` 里每台服务只放一个 id 和 `isAsync`。后者是构建方式的选择（异步构建走 `buildAsync()` 再限时等待），当前唯一的赋值点就是它的声明默认值 `true`，没有任何下发路径去改它。只带 id 是有意的：这台服务的传输、地址、请求头、认证方式全部经本次下发的 `mcpDetails` 取，运行侧因此没有第二处能保存一条与 admin 的决定不同的记录。
 
-- `McpHelper.listTools`：Admin 连通性测试 / list_tools 接口使用，`initialize()` 阻塞超时 10 秒，失败抛 `MCP_CONNECTION_FAILED`；**无论成功、失败还是超时都在 finally 里 close**——它每次点「测试连接」都新建一个客户端，stdio 那条还会留下子进程。正因如此这条路径是 admin 唯一**真的执行**库里那条 `command` 的入口，`McpServerServiceImpl.listTools` 现在第一件事就是过 `McpStdioPolicy`：stdio 开关关着时直接拒绝，连客户端都不建（存量 stdio 行「可编辑不可用」的口径同样适用于探测）。
-- `McpHelper.createMcpClient`：异步那条 `buildAsync().block(60s)` 有上限，构建返回 `null` 时抛 `MCP_CLIENT_CREATE_FAILED` 并带上服务名，而不是让调用方在下一行拿到一个 NPE；
-- 两个 resolver 均为 `null` 时仍会回退 `{ emptyMap() }`，但容器中已不会给 `null`：harness-core 用 `PlaintextMcpConfigDecryptor` 兜底，它只把 admin 下发的明文 JSON 对象解析成 Map，不再解密（原待办 1 已按此方案修复）。
+预热那一步存在的原因是：per-request 的回调会在 MCP 客户端发送所在的线程上读令牌源，而异步握手跑在公共 fork-join 池上；冷启动的一次换发会占住它少数几个线程整一个 admin 往返。预热的失败不致命也不上报——用户可能在会话中途才授权，真正面向用户的是 per-request 回调。
 
-## 6. 环境变量与密钥的两条通道（易混淆）
+`McpConfigAdaptorImpl`（`harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/McpConfigAdaptorImpl.kt`）在下发的 `authType` 为空时记一条 warn 并让实体保持缺省 `NONE`：那等于把一台 OAuth 服务当作静态头服务连出去，错误会指向那台服务而不是指向缺字段的下发方。
+
+### 5.2 传输构建与请求头
+
+`McpHelper.buildMcpConfig`（`harnax-agent/harnax-agent-utils/src/main/kotlin/com/agnetix/harnax/agent/adaptor/mcp/McpHelper.kt`）按 `type` 分派：
+
+| type | 配置 | 取值来源 |
+|------|------|---------|
+| `stdio` | `StdioMcpConfig(name, command, args, env)` | `env = envResolver(envParams)` |
+| `sse` | `SseHttpMcpConfig(name, url, headers, queryParam)` | `headers = networkHeaders(headers)` |
+| `streamablehttp` | `StreamableHttpMcpConfig(name, url, headers, queryParam)` | 同上 |
+
+未识别的 `type` 返回 null，由 `createMcpClient` 抛 `MCP_CLIENT_CREATE_FAILED`。两个 resolver 为 null 时回退 `{ emptyMap() }`；`envResolver` 缺省时复用 `configResolver`。
+
+`networkHeaders` 会为一台 `OAUTH2` 服务剔掉 `headers` 里同名的静态 `Authorization`（大小写不敏感）并记一条 warn：两者写的是同一个头，谁赢由传输层的顺序决定而不是用户能看见的东西；带身份的是按用户令牌，所以留下它。
+
+超时口径：`initialize()` / `tools/list` 各 10 秒；客户端构建 60 秒（stdio 可能要先拉取外部命令）；`OAUTH2` 服务的握手预算放宽到 30 秒（`initializationTimeout`），因为第一次回答令牌回调要多走一跳 admin、再经它走一跳授权服务器。异步构建走 `buildAsync().block(60s)`，返回 null 时抛 `MCP_CLIENT_CREATE_FAILED` 而不是裸 NPE。
+
+### 5.3 OAuth 令牌注入
+
+`McpHelper.createMcpClient` 收到 `authType == OAUTH2` 且 `tokenSource == null` 时直接抛 `MCP_CLIENT_CREATE_FAILED`——照样建客户端会以未认证方式连出去、在第一次工具调用上失败、错误指向那台服务，而不是指向缺失的授权。
+
+有令牌源时通过 `httpRequestCustomizer` 注入，而不是 `headers(...)`：令牌会过期会轮换，建连接时冻结的头会让长对话死在 access token 到期那一刻（5 分钟令牌的对话里那只是一次回答的中途）。回调每次请求都问一次（含握手），实现方负责缓存，因此常见路径只是一次 map 查找；它跑在客户端发送所在的线程上。
+
+`McpAccessTokenSource` 是 `harnax-agent/harnax-agent-utils/src/main/kotlin/com/agnetix/harnax/agent/adaptor/mcp/McpAccessTokenSource.kt` 里的回调接口，拿不到令牌时抛 `McpAuthRequiredException`：这次调用失败并把原因写进日志，而不是让一次未认证的请求出门。
+
+### 5.4 身份在建实例时绑定，以及令牌缓存
+
+`McpAccessTokenSourceFactory.forUser(sessionId, userId)`（接口在 `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/adaptor/McpAccessTokenSourceFactory.kt`）把身份绑在返回的源上。之所以是工厂而不是一个全局源：MCP 客户端随 agent 实例创建、之后被该实例服务的每一次调用复用，而它出示的 bearer token 属于一个具体的人——在建好之后按请求读「当前用户」，会在缓存的 agent 被共享的那一刻把 A 的令牌交给 B。`userId` 为空（服务密钥、渠道会话）时返回 null，这是正确答案而不是错误。
+
+实现 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/AdminMcpAccessTokenSourceFactory.kt`：
+
+| 机制 | 口径 |
+|------|------|
+| 缓存键 | (sessionId, mcpId) 二元组：同一台服务从两个会话访问是两个令牌 |
+| 提前续期 | 过期前 30 秒即视为不可用，避免长调用跨过期点 |
+| 无有效期时 | 给 300 秒租约，授权服务器没说也要到点再问 |
+| single-flight | 64 条固定条带锁，锁内先重读；两个线程同时换同一枚令牌会让 admin 刷两次，而轮换过的 refresh token 会让第二次失败 |
+| 被拒冷却 | 15 秒，冷却期内直接抛 `McpAuthRequiredException`；缺失的授权靠人去点授权，不靠重试；同时把该键的缓存条目清掉，否则会再挂一枚 admin 已经标记为需同意的令牌 |
+| 容量 | 令牌与拒绝两张表各 2048 上限，触顶后先清过期项、再逐个淘汰到 1024；不整体清空，否则每个丢令牌会话都会在 MCP 请求线程里重新换发，一次缓存满就变成一批阻塞往返 |
+
+向 admin 只带 `sessionId`：admin 自己解析属主，因此这里的 `userId` 只是「有没有身份」的判断，从不过线，一个错值或空值都无法让 admin 签发别人的令牌。
+
+### 5.5 会话身份与 OAuth 类 MCP 的加载条件
+
+`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/McpSessionOwnerResolver.kt` 按会话前缀解析 `sys_user.id` + 租户：
+
+| 前缀 | 解析方式 | 结果 |
+|------|---------|------|
+| `web-` / `mp-` | `SessionMapper.selectBySessionIdAndStatus(sessionId, 1)` 取 `creator` + `tenant_id`，再落 `sys_user` | 有身份 |
+| `task-` | 取 `task-` 后的第一段数字作为 taskId，经 `SchedulerClient.taskOwner(taskId)` 读创建人与租户 | 有身份（任务创建人） |
+| `chn-` | 渠道会话没有用户身份，直接返回 null（debug 日志） | 无身份 |
+| 其他 | 前缀未知，warn 后 null | 无身份 |
+
+返回 null 不是要上报的错误：渠道会话是钉钉 / 飞书的一个对话，`creator` 里存的是渠道侧的发送者 id；把某个人的授权呈给一条渠道消息，就是别人的身份伸进了外部系统。定时任务 `task-` 以任务创建人的身份使用其授权——这一读的创建人与租户来自 scheduler 的 HTTP 接口（任务这个域的数据在 scheduler 侧），按设计是冷路径：它只在建 OAuth MCP 客户端时跑，不在每条消息都走的 agent-spec 查询上。读失败的每一种后果都是「这次运行没有这枚身份」，各带一句 warn，异常不逃逸进执行流程。
+
+`creator` 到用户的解析：web 会话存用户名、小程序会话存数字 id，因此两种都试（先 `selectByUsername`，只有它没命中且值是个纯数字才 `selectById`，一个真叫 "12345" 的登录名仍然以它自己优先）。解析结果还要过两道：`username` 命中的行若属于别的租户会被拒（同名跨租户是真实可能，落到那行就是花别人的授权）；`status != 1`（账号被停）也不给身份——会话开在开关拨下之前，不能继续花它的授权。
+
+装配侧的三条后果连在一起：`McpConfigAdaptorImpl` 不在意身份，它只管给出配置；`HarnessAgentLauncher` 在 `authType == OAUTH2` 且拿不到令牌源时跳过这台服务；`HarnessAutoConfiguration` 用 `ObjectProvider` 可选注入令牌源工厂，没有实现时 OAuth 服务连不上，而不是带着空身份连。团队场景里成员用**根会话 id** 去要令牌（`authSessionId = rootSessionId`）：授权属于开这个会话的人，子会话是 admin 从没听说过的内部键。
+
+### 5.6 客户端生命周期
+
+`HarnessAgentLauncher` 把本次装配建出的客户端列表收进 `HarnessAgentWrapper.mcpClients`；wrapper 被丢弃时调 `release()`（`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentWrapper.kt`），触发点是缓存淘汰、`/refresh` 这类显式失效、能力开关变更以及服务关停。顺序是三件事：先用 `released.compareAndSet(false, true)` 占位（关停扫描与缓存自身的移除监听器会同时伸手拿同一个 agent，第二次必须是空操作），再关 `teamOrchestrator?.releaseAll()`（成员只活在编排器里，除了这里没人会关它们），然后逐个 `client.close()`，最后 `harnessAgent.close()`。每一个关闭都自己套 try/catch 记一条 warn 后继续，因此一台关不掉的服务不会让剩下的客户端留着不关。
+
+`HarnessAgent.close()` 只解绑状态存储、清状态缓存，不碰 toolkit 的 MCP 客户端，而 stdio 客户端是一个操作系统进程——智能体每 30 分钟重建一次，少了这一步每次重建都会留下一个进程。
+
+`release()` 不在请求在飞时调用：那会把工具从正在执行的那一步底下抽走，这个判断归调用方。
+
+装配单台失败不外抛：一台连不上的服务不该让整个 agent 丢掉它所有工具，与 admin 把解析不到的绑定从 spec 里丢掉同一个形状。`addMcp` 有自己的等待超时，注册线程可能还在跑，因此失败路径上会把已建出的半成品关掉。
+
+## 6. 环境参数与密钥的两条通道
 
 | 通道 | 配置位置 | 作用对象 | 解密时机 |
 |------|---------|---------|---------|
-| `mcp_server.headers` / `envParams` | MCP 服务自身配置（Admin MCP 编辑页） | **MCP 客户端本身**（鉴权头 / stdio 进程环境变量） | **Admin 下发前**解密（`InternalApiController.plainConfigJson` / `plainToolEnvJson`），agent-service 侧只解析明文 |
-| `agent_mcp_binding.envBindings` | 智能体绑定 MCP 时的环境变量表单 | **ToolEnvContext**（ToolBox 工具方法读取），不注入 MCP 客户端 | Admin 下发时（`InternalApiController`）已解析为明文 |
+| `mcp_server.headers` / `env_params` | MCP 服务自身配置（Admin MCP 编辑页） | **MCP 客户端本身**：请求头 / stdio 进程环境 | admin 出口（下发前解密） |
+| `agent_mcp_binding.env_bindings` | 智能体绑定 MCP 时的环境变量表单 | **`ToolEnvContext`**（ToolBox 工具读取） | admin 出口（解析成明文值写进 `mcpList`） |
 
-> **`env_variable` 那张表归谁**：键的唯一性按**创建人**（迁移 V46，`uk_env_tenant_creator_active_key (tenant_id, creator, active_env_key)`），控制台一侧——列表、智能体配置的下拉、按 id 的读，以及新建／改名／停用／删除四个写入口——只看得到自己建的行，别人的行按「该行不存在」回答；而**已存下的绑定与运行下发仍按租户解析**（`getRowWithinTenant` / `getDecryptedValue(id, tenantId)` 都不看创建人）。两侧口径不同是刻意的：下发跑的是「正在和这个 agent 对话的人」的身份，若也按创建人收，协作者一打开共享 agent 的表单就会把主人绑的变量看成引用不到、保存即被拒，而运行侧其实一直取到值。同一个键因此可以有两个持有者，绑定保存时那道 `assertEnvBindingsBindable` 就顺带拒「同一个 `envKey` 由两个来源承载」（引用配自定义值、或两个不同 `envVarId`）——下发按名字折叠、后写的赢，哪份凭据到工具不该由提交的行序决定。
+第二条通道不注入 MCP 客户端本身。它解析出的值进入的是这个 agent 的环境上下文，因此被扣下的服务必须整条从 `mcpList` 消失，否则它的值仍会到达每个工具。
 
-## 7. 变更记录
+`ToolEnvContext` 是一张以键为索引的扁平表，全 agent 共用一份，工具与 MCP 两条绑定都往里合：`AgentSpecResolver` 先并 `toolList` 再并 `mcpList`，所以一个两边都出现的键由这个顺序决定，而不是由谁的配置更贴近意图决定。这也是 `assertEnvBindingsBindable` 在保存侧就拒绝「同一个键绑到两个来源」的原因——那条判断只看单个绑定对象的表单，而真正决定结果的是这张表的合并顺序。
 
-### 7.1 已修复（第一、二轮）
+变量的值只有一张表：`env_variable`（实体 `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/EnvVariable.kt`）。键的唯一性按 (租户, 创建人) 划分——`uk_env_tenant_creator_active_key (tenant_id, creator, active_env_key)`，生成列在 `active = 0` 时变 NULL，因此删掉的键可以再用。下发时 `resolveEnvBindingsJson` 对指针调 `getDecryptedValue(envVarId, 智能体租户)` 现取，取不到就**不为这个键交付任何东西**并留一条 warn：引用行自身不带值（`serializeEnvBindings` 对引用只写 `envKey` / `envVarId` / `envVarName`），于是工具看到的是「这个参数没配」，这是一个可以照着判断的状态，比交一个空串更准确——很多工具按键是否存在来决定自己是否已配置。
 
-**2026-09 第一轮（MCP 调研发现的问题）**
+MCP 服务自身的 `env_params` 用的是与内置工具同一种条目形状 `ToolEnvParamEntry`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ToolEnvParamEntry.kt`：`envParamName` / `description` / `required` / `secret` / `defaultValue`），值写在 `defaultValue` 里，`secret = true` 的条目由 `SecretFieldEncryptor` 加密存这一列、`decryptToolEnvParamsToMap` 解密成 `envParamName → 明文值`。内置工具的参数定义另有 `agent_tool_env_param` 一表逐列存放，MCP 与 CLI 则把这串 JSON 放在自己行上——它们没有代码侧的参数声明可读。
 
-- **加密 headers / envParams 在运行侧被静默丢弃**（原 TODO-1，高风险）：采用「下发前解密」方案修复——`InternalApiController.plainConfigJson` / `plainToolEnvJson` 在组装 `mcpDetails` 时解密成明文 JSON 对象，AES 密钥只留在 admin 侧；harness-core 新增 `PlaintextMcpConfigDecryptor` 作为兜底 Bean，`mcpConfigDecryptor` 永不为 `null`。解密结果为空而原始串又不是 `[]` 时打 WARN，避免「解析失败」伪装成「没配凭证」。
-- **创建与更新的 stdio 口径不一致**（原 TODO-2）：创建接口里的遗留拦截已删除，创建与更新统一由 `validateTypeAndFields` 校验（stdio 必填 `command`、sse / streamablehttp 必填 `url`），前端两个表单也都提供 STDIO 选项。
-- **Controller 的 mock 死代码**（原 TODO-3）：`getMockTools()` / `createParameter()` 已删除。
-- **网络型 MCP 没有环境变量表单项**（原 TODO-4）：复核后判定为设计如此——`envParams` 是 stdio 进程环境，`McpHelper.buildMcpConfig` 对网络型只消费 `headers`，因此表单按类型分派字段，不是缺陷。
+这一列只喂 stdio 分支：`McpHelper` 把它解析成子进程环境。网络类型的 MCP 用它自己的 `headers` 出网，不读 `env_params`。
 
-**2026-09 第二轮（与工具侧对齐的口径修复）**
+MCP 的下发不做「把声明的默认值补进环境上下文」这件事：`mcpList` 交付的就是绑定行解析出的那些键值，一台服务声明了 `required` 参数而智能体没填，工具就拿不到它（保存时那三道判断已经先拒过一轮）。CLI 的下发做了这件事，`mergeCliEnvBindings` 先取绑定值再按键补上包自己声明的默认值，缺了这一步一个已安装的 CLI 会带着完全没有凭据的沙箱环境落地——`check_command` 通过、每次调用都失败在「未登录」。同一个差别决定了 `defaultValueCounts` 的取值。内置工具传 `false`：它的下发自带绑定值，工具自己声明的默认值进不了 `ToolEnvContext`，因此不能拿来充当一个必填项的答复。MCP 与 CLI 传 `true`：必填判断读的就是这台服务 / 这个包自己声明的条目，MCP 那一列对 stdio 行确实随进程环境到达运行时，CLI 那一列由 `mergeCliEnvBindings` 补进沙箱环境，两边的默认值都真的能回答一个必填项。
 
-- **停用 MCP 对运行时无效**：`status` 此前不出现在下发链路里，把服务禁用后 Agent 照常连接。现在 `McpDetailDto` 带 `status`，`McpConfigAdaptorImpl` 透传到实体，`HarnessAgentLauncher` 在装配时 `status == 0` 直接跳过并打 info 日志（停用是主动决策，既不算缺失也不报错），与工具侧的停用处理同构。
-- **编辑页 status 开关静默失效**：`McpServerUpdateRequest.status` 原为 `Int = 0`（省略即被当成 0），且 `updateById` 的 SET 列表不含 `status` 列。现在 `status` / `isPublic` 均为可空、省略即保持原值，`updateById` 也写入 `status`。
-- **删除 MCP 服务不清理绑定**：`agent_mcp_binding` 的查询不过滤 `active`，残留行会让后续每次下发都出一条「MCP 找不到」告警。现在 `deleteMcpServer` 在逻辑删除成功后于同一事务内 `deleteByMcpId` 物理清理绑定；逻辑删除未命中（返回 0）时不做级联。
-- **`agent_mcp_binding` 缺唯一键**：新增迁移 `V19__add_mcp_binding_unique_key.sql`，先折叠重复的 `(agent_id, mcp_id)` 再建唯一键；应用层 `saveMcpBindings` 同步 `distinctBy { it.mcpId }` 去重，与工具侧 V18 一致。
-- **`is_public` 三处口径不一致**：创建请求新增可空 `isPublic`（缺省 1），更新请求改为可空即「省略不改」，`type` 缺省值从 `stdio` 改为与实体 / DDL 一致的 `streamablehttp`。
+## 7. 配置开关与部署参数
 
-### 7.2 已修复（2026-09 第三轮：清空全部待办）
+| 配置 | 默认 | 作用 |
+|------|------|------|
+| `harnax.mcp.stdio-enabled`（admin，`McpStdioPolicy`） | false | stdio 的准入闸门：关掉时创建 stdio 与切进 stdio 被拒、已有 stdio 行不下发、`list_tools` / 连通性测试也拒 |
+| `harness.mcp-stdio-enabled`（agent，`HarnessAutoConfiguration`） | false | 运行侧的二次防御：关掉时装配跳过 stdio 服务，即使有一行被送到它面前。两侧都为 true 才会真起进程 |
+| `app.base-url` | 分两层：`harnax-admin/src/main/resources/application.yml` 写的是 `${APP_BASE_URL:http://localhost:8080}`，`docker-new/docker-compose.yml` 传给容器的是 `${APP_BASE_URL:-http://localhost:28080}`（容器里没设这个变量时取后者），`docker-new/.env.example` 把它示例成 `http://localhost` | admin 自身地址，`app.frontend-base-url` 为空时作为回调地址的取值；容器里读到的是 compose 那一层，不是 yml 里的 8080 |
+| `app.frontend-base-url` | 空 | 浏览器侧地址：OAuth 的 `redirect_uri` 由它拼上 `/mcp/oauth/callback`。生产由 nginx 用同一个域名代理两者，开发下 SPA 在 `:8000` 而 admin 在 `:8080`，此时必须显式配置 |
 
-**1. `enable_skip` 开关整体删除（原 TODO-1）**
+两个 stdio 开关由同一个环境变量 `HARNAX_MCP_STDIO_ENABLED` 驱动：`harnax-admin/src/main/resources/application.yml` 与 `harnax-agent/harnax-agent-service/src/main/resources/application.yml` 各自把它绑到自己的键上，`docker-new/docker-compose.yml` 给 admin 容器和 agent-service 容器都传这一个值，`docker-new/.env.example` 里也是这一行注释说明取舍。控制台的类型下拉只提供 `sse` 与 `streamablehttp`（`harnax-webui/src/pages/mcp/components/CreateForm.tsx`），表单里判断 `stdio` 的分支留着，是为了某个部署打开开关时不必回来补前端逻辑。
 
-原待办给两条路：把跳过判断下移到「创建客户端 / 注册」两处捕获异常，或者改名并把口径写清。复核后选了第三条：这个开关没有值得保留的语义。它唯一覆盖的「查不到 `mcp_server` 行」，在工具侧已经被认定为「打 warn 继续构建」即可（见 `V17`）；而连接失败本来就绕过了它——把异常也吞掉会让一个连不上任何工具的 Agent 静默上线，比直接失败更难排查。因此：
+stdio 关掉的理由写在 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/McpStdioPolicy.kt` 里：一条 stdio 记录不是连接而是进程，agent-service 会把它启动起来，而该容器以 root 运行并挂载了宿主 Docker socket（`docker-new/docker-compose.yml`）——能保存这样一行，等于能在那里执行命令。在执行侧被隔离之前 stdio 不支持。存储仍然开放，因为把已有行改成不可编辑会让它们既无法维护也无法停用，比被防住的那种状态更糟；被闸的是所有会真去启动它的路径。已存在的 stdio 行可以继续改名、写描述、停用，只是永不下发，`refusalReason()` 给出的就是这段理由，而不是一个笼统的失败。
 
-- 迁移 `V20__drop_mcp_binding_enable_skip.sql` 删除 `agent_mcp_binding.enable_skip` 列；
-- 实体 `AgentMcpBinding`、`McpConfig`（请求 DTO）、`McpDetailDto`、`AgentResponse.McpItem`、`SessionResponse.McpItem` 去掉对应字段；前端两处表单的「允许跳过」开关与相应 i18n 文案一并移除；
-- `McpSpec.skipIfMissing` 与 `HarnaxErrorCode.AGENT_MCP_NOT_FOUND` 删除，`HarnessAgentLauncher` 缺失配置时统一 `log.warn` 后继续构建；
-- `V17` 当年写的是「MCP 保留该列」，这个前提已不成立，`V20` 的注释里显式推翻了它（迁移文本不可改，只能由后一条说明）。
+## 8. 明确不做与边界
 
-**2. 下发链路批量查询（原 TODO-2）**
+- **stdio 类型的 MCP 在当前部署上不可用**：两个开关默认都关，要跑在已隔离运行时的部署上由运维显式打开两侧。
+- **`BASIC` 认证不可用**：列与常量都在，运行时没有分支，管理侧拒收。
+- **没有全局 / 服务级的 OAuth 令牌**：OAuth 授权只有「某个用户对某台服务」这一种形态，租户级共用一份令牌的路不存在。
+- **无用户身份的会话不加载 OAuth 类 MCP**：渠道 `chn-` 会话与不带用户的服务密钥换不到令牌，装配时跳过该服务并留一条 warn，不会退化成未认证连接。
+- **不做动态客户端注册（DCR）**：`registration_endpoint` 会被发现并记录，但没有代码走它；客户端凭据由管理员在 `/oauth/client` 登记。
+- **`CALL` 级审计不记工具调用内容**：`mcp_call_log` 承载的是授权侧的签发与刷新，且不含令牌与请求体。
+- **不在 MCP 客户端上应用按绑定的环境参数**：`env_bindings` 只服务 `ToolEnvContext`。
+- **不在 admin 侧代发授权**：管理面的连通性测试与 `list_tools` 拒绝 OAuth 服务，因为这道检查没有用户可花。
+- **不做令牌的下发与持久化**：`oauthConfig` 不进 `McpDetailDto`，access token 不进任何管理面响应体，refresh token 密文不出 admin 进程。
+- **`mcp_oauth_client` 不随服务删除清理**：一行代表一个租户在一台授权服务器上的客户端身份，可能被别的 MCP 服务共用。
+- **不做待授权状态的跨进程共享**：pending 存内存，因此 admin 重启打断正在进行的同意，多副本要求粘性路由。
+- **不跟随重定向**：发现与换票的出站 HTTP 一律 `Redirect.NEVER`；也不宣称能防 DNS 重绑定。
+- **MCP 的绑定下发不补服务自己声明的默认值**：`mcpList` 交付的就是绑定行解析出的那些键值，声明的 `env_params` 只喂 stdio 分支的进程环境（CLI 的下发会按键补齐包声明的默认值，这是两个域的差别）。环境参数键的唯一性归 `env_variable` 一处。
 
-`McpServerMapper` 新增 `selectByIds`，`InternalApiController` 组装 `mcpDetails` 时一次批量取全部绑定的服务；同一处的技能下发（直接绑定 + CLI 关联两条路）也是同形态的 N+1，一并改完。缺行只告警不抛错，因此 legacy `mcpList` 与 `skillList` 都改成按「已解析出的那批」生成，两半口径一致。
+## 9. 关键文件索引
 
-**3. 残留能力列删除（原 TODO-3）**
-
-`agent.mcp_list` 只是这一类问题的样本：`createAgent` 从不给 `agent.mcp_list` / `agent.skill_list` / `agent.tool_list` 与 `session.mcp_list` / `session.skill_list` 赋值，所以这些列恒为建表缺省值，而读取方还在——会话详情页的 MCP / 技能列表永远为空，定时任务下发给 Agent 的 `mcpList` / `skillList` 也恒空。迁移 `V21__drop_stale_capability_list_columns.sql` 删除这 5 列，读取方改判：`SessionServiceImpl.convertToResponse` 按 `session.agentId` 读两张绑定表重建列表（会话本身没有绑定表，跟随所绑智能体），`InternalApiController.getAgentTaskSpec` 同样改为按 `agent.id` 读绑定表。注意 `AgentSpecResolver` 解析的是**响应字段** `mcpList.env_bindings`，与删掉的列无关。
-
-**4. MCP 列表查询补租户过滤（原 TODO-4）**
-
-选了「补过滤」而不是「写明单租户前提」，因为 CLI 与技能已有 `tenant_id` 口径，MCP 单缺。`selectMcpServerList` 增加可空 `tenantId`，非空时追加 `AND tenant_id = #{tenantId}`；`McpServerServiceImpl.page` 传入 `TenantContext.getTenantId() ?: 1`。同时补上两个前提：resultMap 与 insert 都写了 `tenant_id`（此前 insert 根本不写，所有行都落在缺省租户），迁移 `V22` 先按创建人归属回填一次 `tenant_id`，否则新过滤会把历史数据整体藏起来。口径变化：别的租户标为公开的 MCP 不再出现在自己的列表里，与 CLI / 技能一致。
-
-**5. `is_public` 列缺省对齐（原 TODO-5）**
-
-`V22` 将 `mcp_server.is_public` 的列缺省改为 1，与实体、创建请求、`agent_tool` 一致。（`agent_tool` 那一侧后来由 `V29` 删掉了 `is_public`，工具不再有「是否公开」这一层，见 `tool-integration-design` 第 9 节。）
-
-同一批里顺手清掉的还有 `McpServerServiceImpl` 中「绑定行残留」注释的措辞、`AgentServiceImplTest` 与 `SessionServiceImplTest` 里以 JSON 列为输入的旧用例（改为按绑定表构造）。
-
-**遗留（不属 MCP，本轮未动）**：`AgentMapper.xml` 既不映射也不插入 `agent.tenant_id`，而 `AgentServiceImpl` 会写 `agent.tenantId`、`MpSessionService` 会读它——与本轮修掉的 MCP 缺陷同形。已由第五轮按同口径补上（见 §7.4）。
-
-### 7.3 已修复（2026-09 第四轮：密钥与租户边界）
-
-**1. 掩码回写把真凭据覆盖成掩码（P0）**
-
-详情接口 `McpServerResponse.fromEntity` 对 secret 条目掩码，编辑页 `UpdateForm.tsx` 又把掩码原样装进表单提交，而 `serializeWithEncryption` 此前不区分「新值」与「掩码」，一律 `encrypt(...)` 落库——一次没碰密钥的编辑（只改描述也算）就把凭据换成 `encrypt("Bea****oken")`，全程无报错，直到 MCP 连不上才暴露。现在两个序列化器都多接一个参数（本行现有的那列 JSON），命中掩码时按 `key` / `envParamName` 沿用库里的密文；对不上就抛 `BizException` 要求重填——管理员改了 key 名时静默保留与静默覆盖都是丢数据，只有报错可救。掩码识别沿用既有约定 `contains("****")`（`ModelProviderServiceImpl` 同款），两种形态（`前3****后4` 与定长 `******`）一并覆盖；代价是「真值里恰好有连续四个星号」会被读成未修改，与 api key 掩码同一取舍。
-
-**2. 单行读写补租户归属（P1）**
-
-上一轮给列表加了 `tenant_id` 过滤，但 `selectById` 路径没有，而 MyBatis 层没有任何租户拦截器（它不重写 SQL），于是编辑 / 启停 / 删除只要 id 猜得中就跨租户生效。现在 `getMcpServer(id)` 是唯一入口，取到行后比对当前租户，不属于自己就返回 `null`；`updateMcpServer` / `toggleMcpServerStatus` / `deleteMcpServer` 都改为先经它取行，跨租户与不存在共用一句「MCP server not found」，不区分以免变成 id 探测。历史遗留绑定行的表现与之前一致（下发时 `?: continue` 跳过），不额外报「已删除」。
-
-**3. 服务名唯一键（P1）**
-
-`mcp_server` 从建表起只有 `KEY idx_tenant_id` 与普通索引，名称查重全靠应用层 `selectByName`，并发下能建出两条同名行；而列表已经租户化，应用层的 `selectByName` 却仍是全局查——别租户占用的名字自己不能用。迁移 `V23__add_mcp_server_name_unique_key.sql` 先把历史同租户重名行改名（`LEFT(name,80) + '#dup-' + id`，保留 id 最小的那条），再按 `V15` 的生成列套路加 `active_name`（`IF(active = 1, name, NULL)` VIRTUAL）与 `uk_mcp_server_tenant_active_name (tenant_id, active_name)`：MySQL 唯一索引不锁 NULL，软删后的名字可复用。应用层 `selectByName` 同步补可空 `tenantId`，与技能 `SkillRepositoryMapper.selectByName` 同口径；`ApiErrors.DUPLICATE_INDEX_MESSAGES` 注册了这个索引名，撞键时回「An MCP server with this name already exists in your tenant」而不是把 SQL 甩给页面。
-
-**4. 绑定 id 校验（P1）**
-
-见 4 节：`saveMcpBindings` 写入前批量校验，解析不到就整个请求拒绝。
-
-**5. `update_time` 恒为旧值**
-
-`updateById` 的 SET 列表显式写 `update_time = #{updateTime}`，而 `updateMcpServer` 从不刷新这个字段——每次编辑都把实体里带来的旧时间戳原样写回，列上的 `ON UPDATE CURRENT_TIMESTAMP` 又因为被显式赋值而不触发，列表按更新时间排序时看着永远没动过。现在更新前显式取 `LocalDateTime.now()`。
-
-**6. 更新请求的字段可选性**
-
-`McpServerUpdateRequest` 的 `name` / `description` / `type` / `command` / `url` 由「非空 + 缺省值」改为可空，省略即保持原值（与上一轮的 `status` / `isPublic` 同口径），`updateMcpServer` 改为逐字段 `?.let` 覆盖；此前只想改 url 的部分提交会把 `description` 清成空串、把 `type` 顶成缺省值。`name` 只有「不传」才是保持原值，传空串是直接拒绝（`MCP name cannot be empty`），重名查重按本行自己的租户走 `selectByName(name, mcpServer.tenantId)`。
-
-**7. 两处测试根因**
-
-- `SecretFieldEncryptorTest` 用的是裸 `ObjectMapper()`，Jackson 绑不上 Kotlin 数据类的构造参数，`deserializeEntries` 一律返回字段为空的条目——该类 6 个失败用例（此前在 skill-management 里被记为「与 MCP 无关的既存失败」）根因在此，换成与生产 `JacksonConfig` 同款的 `jacksonObjectMapper()` 后全绿。教训是这条：测试夹具的 mapper 必须与注入给被测类的那个同源，否则「序列化能跑、反序列化全空」这种断裂正好绕过被测逻辑。
-- `harnax-entity` 的 `schema-test.sql` 里 `mcp_server` 挂着 `UNIQUE KEY uk_name (name)`，而生产从来没有这条索引（V1 只有 `idx_tenant_id`）。测试库一直在断言一个生产不存在的约束，V23 之后已按生产对齐。
-
-**遗留**：工具侧与 CLI 侧的掩码回写同形缺陷（`AgentToolServiceImpl`、`CliServiceImpl`）当时未修，共用 helper 已就位，各补一个参数即可——第十轮把这两个服务实际持有的三处一并闭合，另在环境变量里发现第四处（见 §7.9）。本轮记为「要先补 `agent.tenant_id` 才谈得上下发侧过滤」的那半，已在第五轮做完（见 §7.4）。
-
-### 7.4 已修复（2026-09 第五轮：租户归属真正落库）
-
-**1. `agent.tenant_id` 补列与按租户判定（OAuth 方案 P1）**
-
-与第四轮修 MCP 缺陷同形：`AgentMapper.xml` 的 resultMap 与 insert 都不带 `tenant_id`，`AgentServiceImpl` 赋的值落不了库，所有 agent 行停在缺省租户 1。现在这一列进了 resultMap 与 insert，`selectAgentList` 补了可空 `tenantId` 条件（与 `selectMcpServerList` 同款），单行读 `AgentServiceImpl.getAgent` 比对当前租户、别租户按「不存在」回答，`updateAgent` / `toggleAgentStatus` / `deleteAgent` 都走这一道（写入口不过守卫就等于把列表过滤做成摆设）；mp 侧 `MpAgentService.getAgentDetail`、`MpSessionService.createSession` 用 `sys_user.tenant_id` 拒跨租户。`updateById` 有意不带 `tenant_id`：归属不是可编辑字段。
-
-**2. `session.tenant_id`**
-
-`SessionServiceImpl.createSession` 此前完全不写这一列（只有 mp 路径按 agent 归属写），建出来的会话都落在缺省租户；现在建会话打当前租户标，`selectSessionList` 补租户条件，口径与 `agent` 一致。
-
-**3. 下发侧按 agent 租户过滤 MCP**
-
-第四轮的遗留：`selectByIds` 没有租户条件，V23 之前存下的跨租户绑定仍会被解析并解密下发。内部调用没有可信的 `X-Tenant-ID` 可注入，比对基准只能取 agent 自己的归属，因此 `buildAgentSpecResponse` 多收一个 `agentTenantId`（三个解析入口都持有 `Agent` 实体），按它剔除别租户的服务行——两半答案都不出现，`secretFieldEncryptor` 也不被调用（用例 IAD-06）。与 `McpServerServiceImpl` 的可见性口径一致：`is_public` 只在租户内成立，不存在跨租户共享。
-
-**4. `V24__backfill_agent_session_tenant.sql`**
-
-上面两条过滤上线即有风险：历史行都在租户 1，租户 2 的用户会先看不见**自己**的 agent 与会话。故按 `V22` 回填 `mcp_server` 的同一条规则（创建人主租户 `sys_user.tenant_id`）回填 `agent` 与 `session`。`session.creator` 两种形态（web 存用户名、小程序存数字用户 id）分别 join，用 `REGEXP '^[0-9]+$'` 保证两条语句互不重叠。迁移不可改写，`V22` 保持原样，本次另起 `V24`；OAuth 方案原计划的 `V24` / `V25` 相应后移为 `V25` / `V26`。
-
-### 7.5 已修复（2026-09 第六轮：OAuth 数据模型与管理侧校验）
-
-**1. 落地的范围（OAuth 方案 P2-1）**
-
-`V25__add_mcp_oauth_columns.sql` 给 `mcp_server` 加 `auth_type` / `oauth_config`；`V26__add_mcp_oauth_tables.sql` 建 `mcp_oauth_client` / `mcp_user_credential` / `mcp_call_log`。配套的是 `McpAuthTypes` 常量表、三个新实体与三对 Mapper（XML 同名）、`admin/dto/McpOAuthConfig.kt` 类型化 DTO、`McpServerResponse` 回显 `authType` 并解析 `oauthConfig`、`McpServerServiceImpl` 的三条校验 helper 与删除时清凭据级联。测试：`McpServerServiceImplTest.AuthTypeTests` 10 个（管理侧规则）、`McpOauthClientMapperTest` 8 个 / `McpUserCredentialMapperTest` 7 个 / `McpCallLogMapperTest` 3 个（真 MySQL，Testcontainers）、`MapperXmlParseTest` 2 个（不依赖 Docker）。
-
-上面那批 Mapper 测试用的是手写 `schema-test.sql`，**不碰 Flyway**，所以「Mapper 测试绿」不等于「迁移可执行」。迁移另有实测：`harnax-admin` 的 `*IT`（failsafe，`-Pintegration-test`）真起应用、`spring.flyway.enabled=true` 打到一个全新 MySQL 8，跑过 `HealthInfoIT` 3/3 绿——即 `V1..V26` 按序执行成功，含 `V26` 的生成列 `active_client_id` 与两个 `utf8mb4_bin` 列。跑法与坑（必带 `-am`、必须 `TESTCONTAINERS_RYUK_DISABLED=true`）记在 `docs/unit-test-cases.md` §17。
-
-**2. 值得留下理由的四个决定**
-
-- `V25` **不回填**：`NONE` 与 `STATIC_HEADER` 走同一条代码路径，`headers` 里也混着纯路由头，回填出来的标注和「管理员自己选的」在库里分不开。所以历史行一律留 `NONE`，要 `STATIC_HEADER` 标签的人显式去点。
-- `mcp_oauth_client.issuer` 与 `callback_url` 用 `COLLATE utf8mb4_bin`。MySQL 默认排序规则折叠大小写，而 RFC 8414 比 `iss`、RFC 6749 比 `redirect_uri` 都是精确字符串——大小写不敏感会让 `https://as.example.com` 与 `HTTPS://AS.EXAMPLE.COM` 命中同一行注册，等于把两个授权服务器的客户端身份并成一个。代价说清楚：这两列查询时也必须按二进制比，管理员手输大小写不一致就是查不到（这正是想要的行为，误匹配比查不到危险）；面向人搜索的文本列（名称、描述）保持表默认排序规则，不给管理员加负担。用例 `selectByTenantAndIssuer should match the issuer exactly` 钉住这一点。
-- `mcp_user_credential` **没有软删列**：撤销是就地更新（密文写回 NULL、`status=REVOKED`），用户重新授权要能复用 `(tenant_id, user_id, mcp_id)` 这一行；若软删，旧行还占着唯一键，重新授权插不进去。要软删语义的是 `mcp_oauth_client`，用的是 `V15` / `V23` 那套生成列：唯一键里放 `active_client_id`，`active=0` 时它为 NULL，MySQL 唯一索引忽略 NULL，删掉后可重新登记。
-- `updateById` 的 SET 列表是**无条件**的（不是 `<if>` 拼），所以实体里新增任何可空列都必须像 `oauth_config` 那样在应用层显式清空，否则「更新时不传」等于「保留旧值」，切走 OAuth 后前端会继续显示一组不用的 scopes。复用查询同理：`selectByTenantAndIssuer` 带 `ORDER BY id LIMIT 1`，让并发发现两次也稳定命中同一行，而不是各拿一条。
-
-**3. 顺带查出的启动级缺陷**
-
-`PlanNoteMapper.xml` 的注释体里写了连续连字符，XML 注释不允许，MyBatis 解析失败；三个服务的 `mybatis.mapper-locations` 都是 `classpath*:mapper/*.xml`，一个文件解析不了就建不起 `SqlSessionFactory`，**admin / scheduler / router 全都起不来**，同时也是 `harnax-entity` 那批 Mapper 集成测试整片红的原因（此前被记成「环境问题」，见 `docs/unit-test-cases.md` §17 的更正）。修完注释后加了 `MapperXmlParseTest`：不依赖 Docker，把 classpath 上所有 mapper XML 过一遍解析，并单独检查注释体里的 `--`。同一轮删掉 `harnax-admin/src/test/resources/schema-test.sql`——`MySQLContainer.withInitScript` 加载的是 `harnax-entity` 那份，admin 那份不在任何 classpath 引用上且已漂移，测试 schema 从此只有一份。
-
-**4. 本轮没做的**
-
-P2-2（授权服务器发现与客户端登记）已在第七轮落地（见 §7.6、§3.5）。P2-3（授权码 + PKCE + 凭据存取与撤销）、P2-4（内部换发接口与 `mcp_call_log` 写入）、P2-5（前端授权入口）、P3（`authType` / `oauthConfig` 下发与运行时按人注入）当时未开始。**运行时现在仍然只有「读 `headers` 里的服务级静态凭证」这一条路**，页面上把 `authType` 选成 `OAUTH2` 只是把意图存了下来（页面本身第九轮才有，见 §7.8；这句话指的是下游没人读它，至今仍成立）。
-
-### 7.6 已修复（2026-09 第七轮：OAuth 发现与客户端登记）
-
-**落地范围（OAuth 方案 P2-2）**
-
-新增 `McpOAuthController` / `McpOAuthService(.Impl)` / `RemoteJsonFetcher` 与两个 DTO（`McpOAuthDiscoveryResponse`、`McpOAuthClientRequest`；配置形态复用 P2-1 的 `McpOAuthConfig`），规则逐条在 §3.5。改动到的既有文件：`SecretFieldEncryptor` 提出 `resolveSecret`（掩码约定从条目列表扩展到单列）、`McpServerResponse.parseOAuthConfig` 由 private 转公开（OAuth 服务读同一列，必须用同一条解析规则而不是再抄一份，抄的那份遇到坏值会静默回答 null）、`ApiErrors` 注册 `uk_mcp_oauth_client_tenant_issuer_client` 的撞键文案（并发发现撞的是索引，页面不该看到 SQL）、`application.yml` 的 `base-url` 归位到 `app.base-url`。
-
-**三个值得留下理由的点**
-
-- **发现失败不降级**：报错消息里带上每个候选的失败原因。宁可管理员去手填 `authorizationServer`，也不要在库里存一组「看起来能用」的端点——P3 之后运行时会拿它替真人去跳授权。
-- **重发现必须携带已登记的客户端**：`updateById` 无条件写每一列，所以 `storeEndpoints` 复用旧行时显式保留 `client_id` / `client_secret_enc` / `callback_url`。这个坑在 §7.5 就记过一次，本轮是它第二次差点成真。
-- **`client_id = ''` 是一种状态**：不是「还没写完」的中间值，而是「端点已知、客户端未登记」的显式表达，`McpOAuthDiscoveryResponse.clientId` 把它翻译成 null 交给前端，避免页面把空串当成一个真实的 client id。
-
-**验证**：`harnax-admin` 单测 1608 → 1653 全绿；`HealthInfoIT` 3/3（全新 MySQL 8、`V1..V26`、含新增 `@Value` 注入与新 controller 的上下文启动）——跑法与离线 failsafe 的收尾报错说明见 `docs/unit-test-cases.md` §17。
-
-### 7.7 已修复（2026-09 第八轮：发现数据的信任边界）
-
-**这一轮在找什么**
-
-P2-2 的代码功能链路是对的，问题集中在**它把不可信输入当成了自己人**：发现读回来的是别人服务器上的 JSON，落库的端点与 issuer 却会被 P2-3 拿去跳转浏览器、被 P2-4 拿去 POST `client_secret`。三遍 review 出来的东西分四类（逐条规则已并进 §3.5，这里只留「为什么会写成这样」）：
-
-- **存下来的地址没校验过**：`authorization_endpoint` / `token_endpoint` 直接取文档字段入列，`javascript:` 与超宽值都能进来（超宽在非严格模式下是被截断一个 `varchar(500)`，截断即那行注册再也对不上）。现在必需端点过与手填地址同一道 http(s) + 宽度校验；可选端点不过关就丢弃并记 warn——发现不该因为一个可选能力坏掉而整体失败，但也不能把一个坏地址留在要往它发凭据的表里。
-- **少了那一次交叉校验**：文档不声明 `issuer` 时，之前的代码当作「没有这个字段罢了」。issuer 是管理员手填的确实无所谓；是文档广告来的，就等于两份互不印证的文档各说一半。现在后者被拒，并在消息里给出路（手填 `oauthConfig.authorizationServer`）。
-- **整行回写**：`rememberIssuer` 走的是 `updateById(mcpServer)`，SET 无条件，覆盖 status / headers / name——发现拿着几分钟前读的行去改别人正在编辑的东西；`McpServerMapper` 因此补了定点的 `updateOAuthConfig(id, json)`（`McpServerMapperTest` 逐列证明其余各列不动）。顺带一个真实的连带问题：普通编辑 MCP 会把发现写进去的 issuer 擦掉，让那次的注册变成孤儿，现在「请求没带这个字段」= 「不改它」。
-- **读不出来的列被当成没配**：`oauth_config` 非空却解析失败时按默认值继续，后果是发现成功后把管理员填的 scopes 覆盖成空列表还报成功。现在直接中止并说明去哪儿修。
-- **`RemoteJsonFetcher` 自己的护栏有洞**：body 读取阶段的异常（连接被重置、chunked 截断）逃逸在它对外承诺的 `RemoteFetchException` 之外，会让整个发现崩而不是试下一个候选；64KB 上限形同虚设（`ofInputStream` 的排空不受请求超时约束，需要一个真正的截止）；只读第一个 `WWW-Authenticate`；`resource_metadata` 只认带引号的写法；地址层面没有元数据服务底线；报错里原样回显管理员/文档给的 URL（可能带 userinfo）。逐条都补了，并把「这是一道地板不是策略」写在类注释里——连接时地址会被重新解析，DNS 重绑定不在这一层的能力范围内。
-
-**有意没做的事**：`discover` / `saveClient` 不加 `@Transactional`（出站等待最长约 80s，包起来等于把连接池里的连接按住这么久，而所有网络 I/O 都在两次写之前完成、两次写各自幂等可自愈）；不放行环回与 RFC1918（自建授权服务器就住在那里面）；不要求端点与 issuer 同源（跨源授权服务器是规范允许的）；`code_challenge_methods_supported` 这轮不看也不存（那是 P2-3 的事，决策点记在 `mcp-authorization-design` §12.1 的 P2-3 行）。
-
-**验证**：`harnax-admin` 单测 1653 → 1677 全绿，`harnax-entity` 230 → 232 全绿（数字口径与「为什么不能看 surefire XML 的 `tests` 属性」见 `docs/unit-test-cases.md` §17）。
-
-### 7.8 已完成（2026-09 第九轮：OAuth 的管理面前端）
-
-前八轮都只在后端，`authType` / `oauthConfig` 与那两个 OAuth 接口在页面上没有任何入口。本轮补齐管理员侧那一半（OAuth 方案的 P2-2 前端部分）：
-
-- `src/typings.d.ts`：`McpServerItem` 与创建 / 更新请求补 `authType` / `oauthConfig`，并声明与后端同名的 `McpOAuthConfig` / `McpOAuthClientRequest` / `McpOAuthDiscoveryResponse`；
-- `src/services/ant-design-pro/mcp.ts`：`discoverMcpOAuth(id)`、`saveMcpOAuthClient(id, data)`；
-- `src/pages/mcp/components/OAuthFields.tsx`（新建）：`authorizationServer` / `scopes` / `audience` / `resourceIndicator` 四个字段，创建与编辑共用；
-- `CreateForm.tsx` / `UpdateForm.tsx`：认证方式下拉 + 选到 OAUTH2 才展开上面四个字段；
-- `src/pages/mcp/components/OAuthPanel.tsx`（新建）：详情页的 OAuth 面板，回显配置与一次发现的结果，两个动作（发现、登记客户端）都在这里；
-- `pages/mcp/index.tsx`：卡片上给 OAuth 服务加一枚标签，详情页头部加「认证方式」一行。
-
-**四个需要留下理由的取舍**
-
-- **下拉里只有 `NONE` / `STATIC_HEADER` / `OAUTH2`**：运行时认账的就这三个（`McpAuthTypes.SUPPORTED`），`BASIC` 写进来会被 `resolveAuthType` 拒掉，给一个存不下的选项等于让人白填一遍。`STATIC_HEADER` 必须给：§7.5 第 2 条说历史行一律留 `NONE`、「要 `STATIC_HEADER` 标签的人显式去点」，没有这个入口那句话就落不了地。
-- **stdio 选不到 OAuth**：`validateAuthType` 拒 stdio + `OAUTH2`（没有 HTTP 请求可挂 token），所以选项按类型 disable，且把类型切回 stdio 时表单里的值一并收回 `NONE`——留着就会得到一个提交即被拒的表单。
-- **「留空 = 保留」和「空串 = 清除」必须在 UI 上分开**：`resolveSecret` 是三态（null 保留、掩码保留、空白清除，§3.3），弹窗里 `client_secret` 留空提交时前端干脆不带这个字段，清除要显式勾一个框。否则管理员只想改 `callback_url`，顺手清空输入框就把客户端密钥删了。
-- **发现不自动跑、登记客户端在 issuer 未知时 disable**：`discover` 会发出站请求并把 AS 端点快照写库，只能管理员主动点；`saveClient` 在没有 issuer 时直接报错（它要按 issuer 找那一行注册），所以没发现过就不给登记。另外非 OAuth 提交时前端不带 `oauthConfig`：后端在 authType 离开 `OAUTH2` 时本来就会清空那列（§3.5 第 9 条），带上去只会在 `writeOAuthConfig` 处被拒。
-
-**顺带修的页面缺陷**：这一页的中文文案有 15 个键只存在于组件的 `defaultMessage` 里（`pages.mcp.type.*`、`endpoint`、各类校验提示），zh-CN 一直在退回英文，本轮补进 `src/locales/zh-CN/pages.ts`；en-US 侧补了租户用户列表缺的 3 个列名（`role` / `status` / `joinedAt`）。新增的 52 个 `pages.mcp.oauth.*` 键中英一一对齐，两份 `pages.ts` 的键集合做过一次全量 diff。另外修掉 `pages/mcp/index.tsx` 两个既存类型错误：`status` 按 agent 卡片的写法兜 `?? 1`，`currentUser` 的可选性与 `getCurrentUserInfo()` 对齐，并把从模块 import 又当 prop 传一遍的 `hasOperationPermission` 去掉。
-
-**验证**：`tsc --noEmit` 对本轮改动的文件零错误（仓库其他页面仍有既存类型错误，不在本轮范围）；`npm run build` Webpack 编译通过。**没做**：用户侧的授权入口与已授权状态展示（P2-5）、运行时按人注入（P3）、动态注册 DCR（P4）。
-
-### 7.9 已修复（2026-09 第十轮：掩码回写这一类一次清完）
-
-第四轮修的是 MCP 那一处（§7.3 第 6 条），缺陷的形状是「详情页把敏感值返成掩码 → 编辑提交原样回传 → 后端把掩码当新值加密入库，真凭据就地销毁」。本轮把剩下的同类点全部关掉，并顺手把这条规则从四份散落的判断收成一处定义。
-
-**1. 四处站点**
-
-- **CLI 的 `env_params`（活的前端数据丢失）**：`pages/cli/components/CliForm.tsx` 编辑时把详情返回的掩码直接填进输入框，而 `CliServiceImpl.updateCli` 调 `serializeToolEnvParams` 时不带 `storedJson`——掩码被当成新值加密入库，`KUBECONFIG` 这类值就此变成一串 `*`。补上第二个参数 `cli.envParams`，与第四轮 MCP 的写法同形。
-- **工具的 `http_headers`**：`AgentToolServiceImpl.serializeHeaders` 之前只有「加密」一条路，`updateAgentTool` 也没把行里现有的 JSON 递下去。改为委托 `serializeWithEncryption(entries, storedJson)`，更新时传 `existing.httpHeaders`。
-- **工具的环境参数（形状不同，要多读一次）**：`agent_tool_env_param` 是独立表，更新走「先 `deleteByToolId` 再 `batchInsert`」。等到需要判断掩码能不能承接时，那行已经没了，库里再没有第二份密文可读——所以读取必须挪到删除之前：`storedEnvSecrets(id)` 先按 `secret == 1 且 defaultValue 非空` 收一张 `envParamName → 密文`，再交给 `saveToolEnvParams` 逐条解析。这一处不是「补一个参数」能了结的，第四轮的遗留描述把工具侧当成了一处，实际是两处（headers 一列、env params 一张表）。
-- **环境变量（敞口在接口，前端本来就避开了）**：`pages/env-variable/components/UpdateForm.tsx` 对敏感项不预填掩码、留空就不带 `envValue` 字段，所以页面走不到。但接口是公开的，`updateEnvVariable` 收到掩码回传仍会加密入库，因此在服务端补同一判断：命中掩码就保住当前 `envValue`（已是密文）不动。
-
-**2. 规则收成一处**：`SecretFieldEncryptor` 新增 `resolveEnvParamValue(entry, storedSecrets)`，配一个私有的 `storedEnvSecrets(entries)` 从旧 JSON 里收出密文表（与 `AgentToolServiceImpl` 那个同名但从行表读的私有方法是两回事，各自负责一种存储形态），`serializeToolEnvParams` 改为调用它们。于是「非敏感或空白原样存 / 新值加密 / 掩码承接库里密文 / 无密文可承接就报 `BizException` 并指名参数」这一条判断只有一份，JSON 列（CLI、MCP）与行表（工具）两种存储形态共用。这条判断此前在 `SecretFieldEncryptor` 内部就有两份（`serializeWithEncryption` 一份、`serializeToolEnvParams` 内联一份），工具的 `saveToolEnvParams` 再退化出第三份「无条件 encrypt」——那第三份就是缺陷本身。现在三份并成一份，`serializeToolEnvParams` 与工具服务都走 `resolveEnvParamValue`。同一个动作里删掉了 `SecretFieldEncryptor.encrypt`（生产代码已无人调用）：留着一个「拿到值就加密」的公开方法，等于给下一次同样的缺陷留门。
-
-**3. 报错不能被包装**：`resolveEnvParamValue` 抛的 `BizException`（`Secret value of "TOKEN" cannot be kept, please re-enter it`）会被工具 create / update 外层的 `catch (e: Exception)` 包成 `Failed to update agent tool: ...`，丢掉「请重新填一次」那半句——而它恰恰是用户唯一能照做的部分。两处各加一条 `catch (e: BizException) { throw e }`，与 `requireManageableTool` 的处理同形（create 侧目前没有 POST 路由，这条 catch 是为了与 update 保持一致，不是在修一个走得到的路径）。
-
-**4. 可达性口径**：工具那两处只有直接调 API 才会碰到——`pages/tool` 只剩列表，没有任何写入口，服务端也没有 POST 创建路由（能写的只有 `PUT /update/{id}`、`PUT /toggle/{id}` 与删除）。CLI 那处是页面默认动作，属实际在丢数据。环境变量那处前端已避开，修的是接口。
-
-**5. 没做**：`mcp_oauth_client.client_secret` 的同形问题第七轮已由 `resolveSecret` 三态收掉（§7.6），本轮未动；模型 provider 的 `api_key` 掩码判断仍在 `ModelProviderServiceImpl` 里自己写了一份（`value.contains("****")`），本轮没有把它并进 `SecretFieldEncryptor`——它没有 `storedJson` 可传，形状差一段，并进来只会把两边都写歪。同一趟扫到的另一处形状不同、也还没修：`BuiltinToolAutoRegistrar` 把注解里的 `defaultValue` 原样入库，遇到 `secret = true` 的参数并不加密（目前唯一的密钥型内置参数 `SMTP_PASSWORD` 没有默认值，所以库里今天没有明文密钥；读出来时 `maskValue` 解密失败会退回 `******`，不会报错）。这条是约定不是强制，要成真得让同步路径也过一遍加密器。
-
-**测试**：`SecretFieldEncryptorTest` 环境参数组 +2（掩码无密文可承接要指名参数、空白敏感值不加密）；`CliServiceImplTest` +1（更新时把行里的 `envParams` 递进序列化）；`EnvVariableServiceImplTest` +1（敏感值掩码回写保住原密文）；`AgentToolServiceImplTest` 36 → 39，新增「删除前先读到密文」（含 `selectByToolId` 早于 `deleteByToolId` 的顺序断言）、「resolver 的 `BizException` 不被包装」、「headers 序列化收到行里的 JSON」，另有 create 侧 3 个用例改为断言「交给 resolver 的 map + resolver 返回值入库」，因为服务不再自己调 `encrypt`。
-
-**验证**：`TESTCONTAINERS_RYUK_DISABLED=true mvn test -pl harnax-admin -am` 一次实跑全绿，`harnax-admin` 单测 1677 → 1684；`harnax-entity` 232 个未受影响（本轮没碰它）。`docs/unit-test-cases.md` §17 的基线数字按这次实跑做了第五次校准。
-
-### 7.10 已修复（2026-09 第十一轮：把 MCP 前后端连起来读一遍）
-
-前十轮都是一处一处修，本轮按「一条链路从页面读到运行时」的方式重读 MCP，重点是新加的认证方式。先记修掉的四处：
-
-- **部署侧没把 `APP_BASE_URL` 传下去**：`application.yml` 已把它放在顶层 `app.base-url` 并写成 `${APP_BASE_URL:...}`（§3.5 末尾那条「已上线但失效的配置」的修法），但 `docker-new/docker-compose.yml` 的 admin 服务不带这个变量、`.env.example` 也没有它——于是打包好的部署仍然退回 `http://localhost:8080`，通道回调与 OAuth 的 `redirect_uri` 一起是错的。现在 compose 显式给 `APP_BASE_URL: ${APP_BASE_URL:-http://localhost:28080}`（28080 是这套 compose 对外的 admin 端口），`.env.example` 补一行并写明 `redirect_uri` 按精确字符串比对。`docs/deploy-harnax-admin.md` 原先把 `app.base-url` 列在「不支持环境变量覆盖」的表里——那句话本身就是缺陷的成因，已挪进环境变量表并写清两个用途。
-- **重置按钮只退表单值**：`CreateForm.tsx` 的 Reset 原先只 `form.resetFields()`，而 `mcpType` / `authType` / `isPublic` / `status` 是四个本地 state 且驱动条件渲染。结果是人按了重置，页面上 OAuthFields 还挂着、提交出去的 `type` 已退回 `sse`——显示与载荷不一致。现在 `resetFields` 之后四个 state 一并归位。
-- **前端 issuer 校验比后端宽**：`OAuthFields.tsx` 的正则以 `(\/.*)?$` 收尾，query 与 fragment 都放过，而后端 `validateIssuerUrl` 拒 userinfo / query / fragment（issuer 要与 token 的 `iss` 按字节比，多一个 `?a=1` 就是一行再也对不上的注册）。放到后端只多得到一个报错，故把前端正则收到与后端同形：允许路径段，不给 `?` `#`。
-- **三个 i18n 键不存在**：`McpConfigPanel.tsx` 与 `ToolConfigPanel.tsx` 引用 `pages.agent.tool.envParamName` / `envVarName` / `envVarValue`，两份 `pages.ts` 都没有——中文界面一直显示英文兜底。中英各补三个。
-
-**测试**：新增 `controller/McpOAuthControllerTest` 6 个。此前两个 OAuth 接口只有服务层测试，控制器这一层的错误语义没人守：并发发现撞 `uk_mcp_oauth_client_tenant_issuer_client` 时 `DuplicateKeyException` 必须翻成 `ApiErrors` 的友好文案且不外泄 SQL 片段（库里长什么样不该发给浏览器）、`BizException` 的原文要一字不动地送到（「先跑一次发现」正是用户唯一能照做的动作）、异常不带 message 时退回 fallback。另断言 `saveClient` 把 `(id, request)` 原样交给服务层。`harnax-admin` 单测 1684 → 1690。
-
-**功能完整性的结论（本轮核对，不改代码）**：配置这一半是完整的，链路停在「端点和 client 都知道了」之后。四个断点按证据列出：
-
-1. 按人的四个接口（`authorize-url` / `callback` / `status` / `revoke`）不存在，`McpOAuthController` 的 KDoc 里就写着它们随授权码流程一起来；
-2. `McpUserCredentialMapper` 的 `insert` / `updateById` / `selectByUserAndMcp` 零生产调用方（只有 `deleteByMcpId` 被 `deleteMcpServer` 用到），`McpCallLogMapper` 整个接口零引用——表建好了，没人往 `mcp_user_credential` 写一行；
-3. `/api/admin/internal/mcp/access-token` 不存在，运行侧没有换发入口；
-4. `McpDetailDto` 不带 `authType` / `oauthConfig`，`McpHelper` 只按 `type` 分支——一条 `authType=OAUTH2` 的记录今天在运行时的行为与 `NONE` 完全一致。
-
-因此页面上那两处「运行时尚未接入」的提示（`CreateForm` / `UpdateForm` 里认证方式那条 `pages.mcp.oauth.authExtra` 说明、`OAuthPanel` 的 info Alert）至今属实，不能删。分期口径仍以 `mcp-authorization-design` §10 为准：P2-3 / P2-4 / P2-5 / P3 未开始。
-
-> **第十二轮之后这段结论已部分作废**：上面四个断点里，1（按人的四个接口）与 2（`mcp_user_credential` 无人写入）已随 P2-3 闭合，3（内部换发入口）与 4（`McpDetailDto` 不带 `authType`，运行时不分支）仍在——所以那两处提示依旧属实。逐条规则见 §3.6，本轮记录见 §7.11。
-
-**报了没修的两处，理由写清楚**：
-
-- 详情页对 OAuth 服务仍会无条件调 `listTools` 并弹一个失败 toast：此时确实连不上（没有按人 token 可带），报错是诚实信号；把它按 `authType` 藏起来，等于让人以为工具列表坏了。
-- 编辑表单里 `OAuthFields` 的 issuer 有 `allowClear`，但清空等于「留空 = 保持」：`updateMcpServer` 在 `authType` 仍是 `OAUTH2` 而请求没带 `authorizationServer` 时会拿库里的值接管，界面上并没有真正的「清除」。要给它一个与 `client_secret` 同款的显式勾选，得连着 P2-5 的用户侧界面一起重做，本轮不动。
-
-### 7.11 已完成（2026-09 第十二轮：授权码 + PKCE 与凭据存取，P2-3）
-
-这一轮把 §7.10 四个断点里的 1 和 2 接上：按人的四个接口存在了，`mcp_user_credential` 有生产写入方了。规则的逐条口径在 §3.6，这里只记取舍与后果。设计依据是 `mcp-authorization-design` §6.2 / §6.4。
-
-**落地**：`service/McpOAuthUserService.kt` + `service/impl/McpOAuthUserServiceImpl.kt`（发起 / 回调 / 状态 / 撤销）、`util/McpOAuthStateStore.kt`、`controller/McpOAuthCallbackController.kt`、DTO `dto/{McpOAuthAuthorizeResponse,McpOAuthStatusResponse,McpOAuthRevokeResponse,McpOAuthCallbackResult}.kt`；三个 JSON 接口挂进既有 `McpOAuthController`（不另开控制器，鉴权口径与那两个管理接口保持同源）。**不碰运行时**：没有换发接口（P2-4），`McpDetailDto` 仍未带 `authType`（P3）——这一轮交付的是「同意与保管」，不是「使用」。
-
-**四个值得写清的决定**：
-
-- **PKCE 无条件 `S256`**，不在发现阶段快照 AS 的 `code_challenge_methods_supported`。这个「动手前先定」挂在 design §12.1 那张表里好几轮了，本轮定死：OAuth 2.1 与 MCP 都把 PKCE 划成强制项，元数据文档里没写这个字段不等于不支持；真不支持就在 AS 那侧报错，admin 不降级到 `plain`。降级若要做，得先给 `mcp_oauth_client` 加一列、再把「文档当时怎么说」带到换 token 那一步——两条都不值得为省一次失败预支。
-- **`state` 存内存**，不建表。code 本身就是一次性、分钟级的东西，为它建表会把「重启即失效」这个正确语义伪装成「重启还能续上」。代价写在 §3.6 第 2 条：admin 重启打断正在同意的那一次，多副本必须粘性路由或换共享存储。当前部署是单实例，成立。
-- **宁拒不断**：`scope` 宽过 512 直接拒（截断等于替用户记一份没人同意过的清单）、注册行 `client_id` 为空直接拒（带着 `client_id=` 撞 AS 只是让人家的错误页替我们说话）、回调期间服务 `url` 变了直接不换（code 是给旧地址换的，存下来是一把开不了门的钥匙）。三条都是「宁可让用户重做一次，也不存一个自己都不信的结果」。
-- **读状态时不把花不掉的授权显示成可用**：`accessExpiresAt` 过期即不可用，因为刷新要到 P2-4——运行时此刻拿它什么也做不了，页面显示「已授权」是撒谎。
-
-**顺带收敛的两处既有实现**：`normalizeIssuer` 从 `McpOAuthServiceImpl` 的私有方法提到 `RemoteJsonFetcher` 顶层，发现与授权共用同一条规范化（管理员多打一个斜杠不会变成「配了一行、按另一个 issuer 找不到」）；`RemoteJsonFetcher` 补 `postForm`，带 code 与 client secret 的 token POST 走与发现同一道护栏（协议白名单、地址底线、不跟重定向、读取截止、body 上限、报错抹 userinfo），而不是另起一个 `RestTemplate`。
-
-**安全那一跳是两道门，不是一道**：`SecurityConfig` 给 `/api/admin/mcp/oauth/callback` 开 `permitAll()`，`JwtAuthenticationFilter.shouldNotFilter` 同一路径直接跳过。只加前一句不够——浏览器是被 AS 重定向回来的，它照旧带上标签页里那个可能已过期的 bearer，`JwtAuthenticationFilter` 在授权规则之前就会把请求拒成 401，用户看到的是「请求失败」而不是授权结果页。
-
-**测试**：`harnax-admin` 单测 1690 → **1754**（+64：`McpOAuthUserServiceImplTest` 47、`McpOAuthStateStoreTest` 6、`McpOAuthCallbackControllerTest` 4、`McpOAuthControllerTest` 由 6 扩到 13）。`McpOAuthUserServiceImplTest` 出站全在 `RemoteJsonFetcher` 打桩，而 `McpOAuthStateStore` 用真件——要钉住的正是「发出去的 challenge 与换回来的 verifier 是同一个」「`state` 只够用一次」，把存储 mock 掉这两条就白测了。`harnax-entity` 232 不变（本轮没动 mapper）。全量回归 `TESTCONTAINERS_RYUK_DISABLED=true mvn -pl harnax-admin -am -o test` 退出码 0。用例清单同步：`docs/unit-test-cases.md` 新增 §5.9（MOU-01..47，按发起 / 回调换发 / 状态 / 撤销四组）、§5.10（MOS-01..06）、§5.11（MOCB-01..04），§5.8 由 6 条扩到 13 条并改题「五个 JSON 接口对外的答案」，§17 的基线数字按这次实跑做第七次校准。
-
-**没做完与没验证的**：
-
-- **没跑过真实 AS**。`mcp-authorization-design` §10 那行「用 Keycloak/测试 AS 走通发现 → 授权 → 存 → 撤销」仍未完成，各家实现对 RFC 8707 `resource` 参数的实际反应一次都没实测过——现在的实现是「按规范带、被拒就把上游原话回显」。
-- **用户侧界面还没有**（P2-5）：这四个接口今天只能被 curl 或管理员手工调 API 碰到，前端全仓搜不到一处引用，普通用户没有任何地方点「授权」。
-- **撤销不回收已发出的 access token 的运行时效力**：本地置 `REVOKED` 后 P2-4 不再换发，但运行时若已缓存该 token，回收要等 P3 的缓存层实现。这条现在不影响任何链路，因为运行时还读不到它。
-
-### 7.12 已修复（2026-09 第十三轮：按同一套标准把 P2-3 再读一遍）
-
-这一轮不新增功能，只做一件事：把 §3.6 那十条规则逐条对回代码，专找「单测绿着、生产不成立」的断点。修了五处，另有一处**只记录不修**——它要改的是安全模型，得先由人定方向。
-
-**1. 上游拒绝换票的理由从来到不了页面（`RemoteJsonFetcher`）**
-`exchange()` 里 `json` 只在状态是 2xx 时才解析，而 `McpOAuthUserServiceImpl.answerOrThrow` 读的恰恰是**非 2xx 分支**里的 `json.error_description`——这段代码落地那天起就是死的：RFC 6749 §5.2 把被拒原因写在 400 的体里，用户却只能看到光秃秃一句「HTTP 400」。`revokeUpstream` 那句 warn 日志里的 `response.json?.optString("error")` 同理恒为 `null`。改成「有体就解析，是 JSON 对象才留下」，`RemoteFetch.ok` 仍只由状态决定：发现侧三处消费（`McpOAuthServiceImpl` 的 173 / 213 / 267 行）都在读 `json` 之前先 `if (!fetch.ok)` 短路，把元数据文档当不存在处理，语义一点没变。
-**为什么单测抓不到它**：`McpOAuthUserServiceImplTest` 的桩是直接造 `RemoteFetch(400, null, readTree(...))`，等于替被测代码把体解析好了——被测方永远不亏。所以补的是**出站层**的真 HTTP 用例（§5.7：RJF-03 改断言、新增 RJF-14 表单 POST 与 RJF-15 空体），并记下一条review 口径：**桩一旦替实现把活干了，这条断言就是在替被测方说话**。
-
-**2. 换过 AES 密钥会把一条授权锁死在库里**
-`revoke` 原来是裸调 `aesUtil.decrypt(...)`，而 `AesUtil.decrypt` 在密钥变了或密文被手工改过时会抛——用户点撤销得到一个 500，**而撤销是他唯一的出路**。现在解不开就当没有：本地照清（`REVOKED` + 两个密文写回 NULL + `last_error` 一起清），消息说清「是解不开，所以没送去上游」。
-
-**3. 撤销的错误归因**
-注册行被删（管理员重跑发现前先删了那行，或换了 issuer）时 `client == null`，原代码落到「这台 AS 不提供撤销端点（RFC 7009）」那句。两句话的差别是**下一步往哪走**：前者要的是重新发现与登记，后者是「等它自己过期」——把人指向一条改不动的路。现在单独一句，并把 `POST /api/admin/mcp/{id}/oauth/discover` 直接写进话里（与本特性其他拒绝语同源：把下一步点哪写进错误）。
-
-**4. 授予清单宽过列宽时不再截断**
-原来是 `granted.joinToString(",").take(512)` 落库：清单最后一条会变成半截 scope 名，而 `status` 接口把它当「这就是授予的 scope」原样回显。改成**整份不记**（`scopes=null`）并在 `last_error` 写清「有多长、列能存多少、所以没记」，`status` 仍是 `ACTIVE`——授权本身成立，只是这里记不下。与 §7.11 的「宁拒不断」不矛盾：那里拒的是**请求侧**，调用方能改窄参数；这里是**回答侧**，没人能改 AS 的决定，所以要么记全要么不记。
-
-**5. 并发回调把一次真实发生的授权报成数据库失败**
-同一用户对同一服务连点两次授权，两个回调同时走到 `insert`，`uk_mcp_user_credential_tenant_user_mcp` 只让一个赢，输的那个抛 `DuplicateKeyException` → 页面显示「授权失败」，而 AS 那边确实同意了，换回来的那份 token 还成了没人认领的孤儿。现在接住这个异常：重读一次拿到赢的那行，把这次的 token 走 `updateById` 写上去（SET 无条件、按 id 定位，正好够用）。**代价说清楚**：后写的那份覆盖先写的那份，前一个 token 本地不再可解，其效力要等上游自然过期或用户再点一次撤销；这与第 6 条规则里的「整体替换」是同一条取舍。
-
-**F6：回调这条路的身份模型有一个已知缺口，本轮不修**（第十四轮已按下面的 (b) 闭合，见 §7.13）
-`state` 钉住的是「谁发起了这次授权」，钉不住「谁在浏览器里点的同意」。攻击者给自己签一个 `authorize-url`（合法，走的是他自己的 JWT），把带 `state` 的完整链接发给受害者；受害者在 AS 那边同意，回调带着**受害者的 code** 回到本服务，而 `state` 里钉的是攻击者的 userId——于是攻击者账号下多了一条凭受害者身份铸出的 token。这是 §3.6 第 2、3 条那两道门槛的**固有性质**，不是实现漏了一步：回调没有 JWT，`state` 是它唯一的凭据，而 `state` 由发起方生成。
-两条出路各有代价，需要先定方向再动手：**（a）** 发起 `authorize-url` 时在同一浏览器里下一次 `SameSite=Lax` + `HttpOnly` 的 Cookie，回调必须带上同一枚才能消费 `state`——把「发起者」与「点同意者的浏览器」绑在一起，代价是 AS 的跳转必须是同站顶级导航（新开标签页、`target=_blank`、跨站表单 POST 都会丢 Cookie，用户看到的是「请求未知」）；**（b）** 把换票从回调里搬出去，回调只落一个一次性跳转账号，前端（P2-5）带着 JWT 再调一次 JSON 接口换票——`state` 降级成纯重放防护，身份由 JWT 提供，代价是回调页要变成「跳回应用」而不是「告诉用户结果」，也意味着 P2-3 的这条链路要重做一半。本轮按「记录 + 不动模型」处理，因为 (b) 与 P2-5 的前端入口是同一件事，先做哪个会决定另一个的形状。
-
-**测试**：`harnax-admin` 单测 **1754 → 1760**（+6：`RemoteJsonFetcherTest` 14 → 16，`McpOAuthUserServiceImplTest` 47 → 51——新增「授予清单宽过列宽整份不记」「撞唯一键转到先落库的那行」「密文解不开仍清本地并说清理由」「注册行没了的说法不顶包 RFC 7009」）。`harnax-entity` 232 不变（本轮没动 mapper）。全量回归 `TESTCONTAINERS_RYUK_DISABLED=true mvn -o -pl harnax-admin -am test` 退出码 0、1760 全绿；样式由 `spotless:check`（`validate` 阶段）把关。用例清单同步：`docs/unit-test-cases.md` §5.7（RJF-03 改断言 + RJF-14/15）、§5.9（MOU 由 47 重排为 51，四组变成发起 12 / 回调换发 22 / 状态 7 / 撤销 10）、§17 基线第八次校准。
-
-**没做完与没验证的**：
-
-- **还是没跑过真实 AS**（同 §7.11）。本轮第 1 条恰恰说明为什么这件事有代价：`error_description` 的实际形状、各家对 400 体是否真按 §5.2 写、`resource` 被拒时说什么，全都没实测过——现在只能说「理由能带回页面了」，不能说「带回的就是有用的一句话」。
-- **F6 无法实测**：它要的是「两个真人、两个 AS 账号」的场景，比接一个 AS 更重；且它的答案取决于 (a)/(b) 选哪条。
-- **第 5 条的并发只覆盖到单测形状**：`DuplicateKeyException` 是打桩抛的，真 MySQL 下的撞键（含 `insert` 与 `updateById` 之间的可见性）要到 P2-4 之后接 AS 实例时一并验。
-
-### 7.13 已修复（2026-09 第十四轮：F6 按方案 (b) 闭合，顺带补上用户侧授权入口）
-
-§7.12 那条 **F6** 是这份文档里挂了十三轮、每次都写「等方向定了再动」的唯一一个安全缺口。这一轮把它闭合了，走的就是当时记下的 (b)：**本服务不再接收授权服务器的浏览器重定向**，`redirect_uri` 改指前端一条路由，落地页带着浏览器里已有的 JWT 调一个新接口换票。身份因此来自 Spring Security 的认证上下文，而不是来自一个由发起方自己生成、又由攻击者原样带回来的字符串。顺带把 §9.1 里挂了很久、至今零前端调用的 `authorize-url` / `status` / `revoke` 接上了入口（P2-5）。
-
-**1. 删掉的那个入口是整条链路上唯一不收 JWT 的**
-
-`McpOAuthCallbackController`（`GET /api/admin/mcp/oauth/callback`）与它的 `McpOAuthCallbackResult` 一起删除，`SecurityConfig` 的 `permitAll()` 与 `JwtAuthenticationFilter.shouldNotFilter` 的同一路径跳过也删——admin 里还需要鉴权判断的 `permitAll` 业务路径从此只剩 `/api/admin/internal/**` 一条，那条由 `InternalApiAuthFilter` 的共享密钥实际把关（其余 `permitAll` 是登录 / 验证码 / `mp/auth` / swagger，本来就是公开的）。这不是清理冗余：那个路径上唯一能证明「你是谁」的东西就是 `state`，而 `state` 由发起方生成，所以 A 把 `authorize-url` 转给 B 去 AS 点同意，B 的同意铸出的 token 会写进 A 的凭据行。
-
-**2. 新接口的路径里没有 `{id}`**
-
-`POST /api/admin/mcp/oauth/exchange`，收 `McpOAuthExchangeRequest`（`code` / `state` / `error` / `error_description`，四个都可空——因为**是 AS 决定发哪几个**：同意通过带前两个，被拒带后两个，一个从没见过的 `state` 可能带着任何东西）。要授权哪台服务**只能**由 `state` 认出来的那条 pending 说；在这里放一个 id，等于给一个钓到的 `state` 再配一台由调用者挑的服务。它与 `/{id}/oauth/**` 那几条段数不同，不冲突。
-
-**3. 判定的顺序是有意的**
-
-取调用者身份 → `stateStore.consume(state)`（**无论后面走到哪一支，先烧掉**）→ AS 报了 `error` 就回那句话 → pending 不存在回「请求未知或已过期」→ `pending.userId != 调用者` 拒绝 → `code` 为空拒绝 → 换票。先烧后判是 §3.6 第 2 条那条不变量的延续：归属不符那一支要是把 pending 放回去，攻击者就能拿同一枚钓到的 `state` 反复试。归属不符只 warn 出 **mcpId 与两个 userId**，不记 `code`、不记 `verifier`——那些是要发去 token endpoint 的材料。
-
-**4. 换票读服务行的方式反而变严了**
-
-回调时代没有身份，只能拿 `state` 里钉的租户去 `selectById` 直读。现在这一路有身份，于是按 `pending.mcpId` 走 `McpServerService.getMcpServer`（调用者看不见这台服务就按「不存在」回答），读完再断言 `server.tenantId == pending.tenantId`（行被挪出原租户也不行）。`McpOAuthUserServiceImpl` 因此不再需要 `mcpServerMapper` 这个构造参数。
-
-**5. 拒绝也是一句人话，不是一个 HTTP 状态**
-
-`McpOAuthExchangeResponse` = `authorized` + `message` + `scopes` + `accessExpiresAt`，**没有一个字段装得下 token**。被 AS 拒、`state` 认不出、归属不符，全都回 `authorized=false` 加一句下一步该怎么办：`code` 已经花掉，页面重试不了，给 401/500 只会让人以为再点一次有用。`BizException` 的原话照说（那些句子本来就是写给人的），其余异常经 `ApiErrors.message` 收敛——数据库错误不会带着表名到浏览器。原来「上游 `error_description` 先 HTML 转义再上页面」的防护换成「走 JSON，由 React 当文本节点渲染」，与 `listTools` 带回来的上游字符串同一口径。
-
-**6. 前端：落地页 + 详情页的按人授权块**
-
-`/mcp/oauth/callback` 是一条 `layout: false` 的前端路由（`pages/mcp/oauth-callback.tsx`），第一句就读走 query 并 `history.replace` 抹掉它，值只停在 effect 里的一个局部对象上、立刻发出去。`src/app.tsx` 里那两处「没登录就跳 `/login?redirect=`」现在对这条路径特殊处理：把目标换成 `/context/mcp` 而不是原样带上 search——否则 `code` 与 `state` 会被写进登录页地址栏并一路跟着重定向。详情页的 `OAuthPanel` 补了按人授权块（挂载即读 `status`，三态徽标 + 去授权（同页跳转）+ 撤销（二次确认，回显后端那六句话之一）+ 已授予 scopes / 过期时间 / `lastError` 直显），并且当注册行里的 `callback_url` 与当前配置算出的缺省值不一致时显式告警——这个形状变了以后，AS 按字节比对失败是**必然**发生而不是偶发的。文案键由 52 个扩到 74 个（`pages.mcp.oauth.*`，中英同序）。
-
-**7. 配置：回调的 origin 与 API 的 origin 分家**
-
-新增 `app.frontend-base-url`（`APP_FRONTEND_BASE_URL`），只影响 `defaultCallbackUrl()`，未配置时退回 `app.base-url`。生产由 nginx 同域名代理两者，不配也对；开发下 SPA 在 :8000 而 admin 在 :8080，不配就会把用户送到一个没有页面的端口。**没有迁移脚本、没有兼容层、不留中转端点**：`mcp_oauth_client.callback_url` 是按 (租户, issuer) 存的登记值，老行要么在页面上重新保存一次客户端，要么由管理员把 AS 侧的 `redirect_uri` 改回旧形状——后者对本轮的新形状无效。挑这一轮改这个形状，是因为 V25/V26 从未应用到真实环境、也从没跑过真实 AS，此刻改是免费的。
-
-**测试**：`harnax-admin` 单测 **1760 → 1768**（净 +8：`McpOAuthUserServiceImplTest` 51 → 58，回调那 22 条改写成换票 29 条；`McpOAuthControllerTest` 13 → 16；`McpOAuthServiceImplTest` 47 → 49（默认回调地址两条）；`McpOAuthCallbackControllerTest` 4 → 0）。全量回归 `TESTCONTAINERS_RYUK_DISABLED=true mvn -o -pl harnax-admin -am test` 退出码 0、1768 全绿；样式由 `spotless:check`（`validate` 阶段）把关。前端：`npx @biomejs/biome lint` 对改动的文件零 error 零 warning（本轮末尾顺手清掉两处残留：`src/app.tsx` 里 `Space`/`Footer`/`Typography` 三个从未被用到的具名导入，`OAuthPanel` 里那处只为绕过「闭包内属性不收窄」的非空断言，改成一个把值取进局部变量、为空即返回 null 的 IIFE）。`tsc` 用 `src/.umi/tsconfig.json` 这个真实工程口径跑，`pages/mcp/**`、`services/ant-design-pro/mcp.ts`、`typings.d.ts`、`config/routes.ts`、两份 `pages.ts` 全部无错；**`src/app.tsx` 另有两处既有类型报错**（`export const layout: RunTimeLayoutConfig` 的入参推断、`waterMarkProps.content` 读 `currentUser?.name` 而 `CurrentUser` 上没有 `name` 字段），两处都在本轮没碰过的代码上，本轮没修也没有假装修。用例清单同步：`docs/unit-test-cases.md` §5.8、§5.9（MOU 由 51 重排为 58，第二组由「回调」改名为「换票」）、§5.11 删除、§17 基线第九次校准。**一处偏离计划**：原打算断言「归属不符那条 warn 日志里没有 code 与 verifier」，但仓库的测试里没有任何日志捕获装置（零处 `ListAppender` / logback 用例），为一条断言引入一套装置不值；改成断言**响应体与响应 DTO 里没有令牌材料**，日志那侧靠第 3 条写下的口径约束。
-
-**没做完与没验证的**：
-
-- **真实 AS 仍然一次都没跑过**（同 §7.11、§7.12）。而且这一轮把这件事的权重提高了：新 `redirect_uri` 指向的是前端路由，从未被任何 AS 实测过，而且**要管理员手工把新形状输进 AS 的登记**——AS 侧不改，第一次授权就会在 `redirect_uri` 精确匹配上失败，而失败发生在人家那侧的页面上。
-- **换票全链路只到单测**：能实测的是 `authorize-url` 的生成形状，以及落地页对 `?error=&state=` 的渲染（直接敲一个假 query 就能看到「上游拒绝」那句话与 query 被抹掉）。真人授权、撞键并发、解不开的密文这三类仍未验证，与前面几轮同一条。
-- **`code` 会短暂出现在浏览器地址栏与历史里**：落地页第一句 `history.replace` 只是缓解，本仓库无法强制 AS 或浏览器不留痕（旧的服务端回调同样经过地址栏，这一条不比之前差）。
-- **内存态 `state` 的多副本前提没变**，只是窗口从「回调落到没见过这次 `authorize-url` 的副本」变成「换票落到那个副本」；单副本部署下成立，多副本仍要粘性路由或共享存储。
-- **F6 关掉的是「把别人的同意记到自己名下」**，它不关掉「攻击者完成他自己的授权」——那本来就不是这条链路的威胁模型，凭据归属由 JWT 决定之后，一个登录用户对自己租户里看得见的服务发起授权是正常能力。
-- **列表页的授权徽标本轮不做**：§9.1 原来承诺的那个「列表页可见」现在改成「详情页显示，列表页随 P3」，理由写进 mcp-authorization-design §9.1（`NEEDS_CONSENT` 在 P2-4 之前没有任何代码会写，为一个显示不出第三种状态的徽标加批量接口是本末倒置）。`scope` 覆盖参数后端支持、UI 不做入口，同样是明确的非目标。
-
-### 7.14 已修复（2026-09 第十五轮：F6 闭合之后再走一遍完整链路）
-
-第十四轮把身份来源换掉以后，链路上的判定次序也跟着换了，而次序是有语义的。这一轮按「发起 → 同意 → 换票 → 落库 → 读状态 → 撤销 → 改配置」的顺序把代码重读一遍，找到五个真问题（三个在后端、一个在前端、一个是文档口径），全部修掉并各配了用例。它们的共同点是：**每一处都不是「功能没实现」，而是「实现了但在某个边界上说了假话或留了一条别人能走的路」**。
-
-**1. 归属比对必须排在「AS 报了什么」之前**
-
-第十四轮的 `exchange` 次序是：取身份 → 烧 `state` → AS 报了 `error` 就回那句话 → pending 不存在 → 归属不符拒绝。中间那条 `error` 分支于是插在了归属比对前面：**知道别人 `state` 的人只要 POST 一个自造的 `error=access_denied`，就能替对方取消那次在途的授权**，而那条本该记下钓同意行为的 warn 一个字都不会说（请求根本没走到归属比对）。修法是把归属比对提到读请求体任何字段之前——先判「这条 pending 是不是你的」，不是你的就直接拒并 warn，你的才继续看 AS 说了什么。顺带修掉一个同源的次序问题：`error` 分支现在**即使 pending 已经过期也照样回上游的理由**，因为那种情形下什么都没存、也没什么可烧，AS 的原话比一句「请求未知或已过期」对页面更有用（过期与「别人发起的」是两件事，不该被同一句话盖掉）。
-
-**2. 换票回答里的 scopes 报的是记下的那份，不是 AS 回答里的原始字段**
-
-`redeem` 原来把 token 响应里解析出来的 scope 清单直接回给落地页。RFC 6749 §5.1 让 `scope` 成为**可选**字段：AS 授的就是请求的那些时完全可以不回，于是落地页显示零条 scope，几秒后用户回到详情页，`status` 读同一列却显示出两条——同一个人在两处看到互相矛盾的答案。改成回**落库那一列**解析出来的清单；那条「宽过 512 就整份不记」的规则因此也自洽了（记不下就是空清单，页面看到的与库里一致，而不是页面看到一长串、库里什么都没有）。
-
-**3. 读不到状态时不画徽标**
-
-详情页的按人授权块原来在 `status` 请求失败时留着上一次的徽标（或初始的「未授权」）。「还没读到」与「读到了、确实没有凭据行」是两件事：前者什么都不知道，徽标不能替它断言未授权；撤销成功后重读失败更严重——库里已经变了，留着旧徽标就是说谎。加了一个 `grantUnknown` 标志，两条失败路径都置真、徽标渲染为 `null`，三态只属于真读到的答案。（后端「没有行」序列化出来是 `{"authorized": false}`，是个真值对象，所以那一支仍正常显示「未授权」，不会被误当成未知。）
-
-**4. 离开 `OAUTH2` 时把逐人凭据一起清掉**
-
-`updateMcpServer` 原来只清 `oauth_config`。问题是：逐人凭据的读与撤都要先过 `requireOAuthServer`（`authType != OAUTH2` 就拒），所以把一台服务的认证方式从 `OAUTH2` 改成 `NONE` 之后，**那些已经存在的 `mcp_user_credential` 行既读不出来也撤不掉**，成为一串没人管得着的密文。改成与删除路径同一口径：本地清行 + `warn` 出清了几条，同时说清上游那侧的副本并没有被呈递，它们靠自己过期。`wasOAuth` 在**任何字段被覆盖之前**读出来——覆盖 `auth_type` 之后就再也分不出这次请求是不是把 OAuth 关掉了。从来不是 OAuth 的服务一次都不查这张表——「V25 之前 `authType` 为 null 的老行」这种情形并不存在（那一列是 `NOT NULL DEFAULT 'NONE'`，实体字段也是非空 `String`），判据始终只有一个：原行的 `auth_type` 是不是 `OAUTH2`。
-
-**5. 那 500 条的在途预算是所有人共用的**
-
-`McpOAuthStateStore` 只有一个全局上限。一个带脚本的登录用户可以把它填满，让其他人在整个 TTL（5 分钟）里都发起不了授权——这是 §7.13 那条「多副本要粘性路由」之外唯一剩下的自伤式拒绝服务。加了每人 5 条的上限，`countFor(userId)` 在**生成 verifier 与 state 之前**先数一遍（先扫过期，被拒的那次什么材料都不留），拒绝时那句实话把上限与等待时间都说了。
-
-**6. 一处文档口径错误（改的是文档，不是代码）**
-
-§3.6 第 9 条原来写「日志只说有没有 refresh、expiresIn 多少」。实跑的 `log.info` 还打了记下的 scope 名。scope 名不是凭据——`status` 接口本来就把它们回给浏览器——所以代码没错，是文档说漏了一项，已按实情改写。这类「文档比代码严」的偏差比反过来更危险：读文档的人会以为有一条并不存在的保证。
-
-**测试**：`harnax-admin` 单测 **1768 → 1775**（净 +7：`McpOAuthUserServiceImplTest` 58 → 62，`McpServerServiceImplTest` 40 → 42，`McpOAuthStateStoreTest` 6 → 7）。定向跑四个改动过的类 127 个用例全绿，全量回归 `TESTCONTAINERS_RYUK_DISABLED=true mvn -o -pl harnax-admin -am test` 退出码 0。用例清单同步：`docs/unit-test-cases.md` §5.3（MCS-20 扩写 + MCS-23/MCS-24）、§5.9（MOU-12/13/15 改写，新增 MOU-59～MOU-62——编号追加在末尾、表格放在各自分组里，所以既有编号与交叉引用一个都没动）、§5.10（MOS-07）、§17 基线第十次校准。
-
-**没做完与没验证的**：
-
-- 前五条**全部只到单测**。第 1 条的攻击形态（拿到别人 `state` 后 POST 自造 `error`）在真实浏览器里一次都没有复现过，也没有真实 AS；第 4 条的凭据清理只在打桩的 mapper 上验过，没在 Testcontainers 里跑过真行。
-- 第 5 条的每人上限是**内存里的**，多副本下每副本各数各的，实际可用额度是 5 × 副本数；这与 §7.13 那条「多副本要粘性路由」是同一个前提，不是新问题。
-- 第 4 条只清本地：上游 AS 那侧的授权副本没有被呈递撤销，它们靠自己过期。要真撤上游，得在改认证方式**之前**由用户逐条点撤销。
-- 复审中确认的三处**不是缺陷**：时间戳按 ISO 原样显示是全站既有约定（`DetailPageHeader` / `EntityCard` 同样如此），仓库里没有 `StrictMode`（所以开发期 effect 双跑导致的换票重复提交不构成实际风险），`detail.tsx` 已按 `authType === 'OAUTH2'` 决定要不要挂这个面板。
-
-### 7.15 已修复（2026-09 第十六轮：从配置页读到客户端关闭）
-
-第十五轮读的是授权链路，这一轮把**运行侧**补齐：管理页 CRUD → 认证 → 向导绑定 → harness 装配 → 客户端生命周期。找到十条，四条在装配侧（都会造成实际损害），四条在管理面与向导面，两条在鉴权边界上。
-
-**1. MCP 客户端从来没被关过（资源泄漏）**
-
-`HarnessAgentLauncher` 每建一个 agent 就 `createMcpClient` 出新客户端，`DefaultAgentRunner` 按 sessionId 缓存在 Caffeine（`expireAfterWrite` 30 分钟 + 条数上限），淘汰时只是把条目从 map 里丢掉。原本以为 `HarnessAgent.close()` 会把它们带走——按 jar 反查字节码，它的 `close()` 只有 `shutdownTaskRepository` + `WorkspaceIndex.close` + `ReActAgent.close()`（解绑 state saver、清 state 缓存），**没有任何一处触及 `Toolkit` 里注册的 MCP 客户端**；`Toolkit` 自己也没有 close，只有 `registerMcpClient` / `removeMcpClient`。stdio 那条更实在：客户端不关，子进程就一直留着。
-改法是把所有权拿回自己手里：launcher 边建边收集 `List<McpClientWrapper>`，随 agent 一起放进 `HarnessAgentWrapper`，新增 `release()`——先逐个 `close()`（每个单独 try，一个失败不连累其余），再 `harnessAgent.close()`，用 `AtomicBoolean` 保证幂等（缓存淘汰与会话销毁可能撞在一起）。`removalListener` 与 `destroyAgent` 都改为走 `release()`。
-关闭与在途请求是另一件事：淘汰发生时流式对话可能还在跑，直接关会打断正在说话的人。`activeStreams` 里有该会话时把 wrapper 挂进 `pendingRelease`，等两处 `doFinally`（`streamProcess` / `confirm`）摘掉在途标记后再 drain。**非流式的 `process()` 没有在途标记**，仍可能被一次淘汰打断——本轮接受的残余风险，它不持有 SSE 那段时间，窗口小得多。
-同一条根因的另一半是 `McpHelper.listTools`：每点一次「测试连接」建一个客户端却从不关闭，现在整段包在 try/finally 里。
-
-**2. 一台 MCP 建不起来，整个 agent 就没了（故障放大）**
-
-`createMcpClient` 的异常原来一路冒到 `buildAgent`，于是「绑了三台、其中一台地址写错」等于「这个会话完全不能用」，页面只有一句 agent init failed。现在这一台 `log.warn` 后跳过，其余照常装配；**已经建出来的半成品先 close**（`buildAsync` 超时返回时底层连接可能已经起来）。同处补了 `buildAsync().block(60s)` 和「构建返回 `null` 就抛 `MCP_CLIENT_CREATE_FAILED`」——原来那个 null 会在下一行 `addMcp(...)` 变成 NPE；该错误码的消息模板没有占位符，所以服务名改由 `log.error` 带出，不在异常文案里硬塞。
-
-**3. 缓存的并发装载会把 agent 交给别人**
-
-`agentCache.get(sessionId) { ... }` 里 Caffeine 对同一 key 只跑一个 loader，另一个线程**等待并直接拿结果**，而 loader 是用调用者自己的身份解析 MCP 配置与用户级 env 的。两个人同时首次访问同一 sessionId（共享会话，或同一用户双标签页 + 一次权限切换）时，输家拿到的是赢家身份建出来的 agent，里面装着赢家的解密凭据。现在取回后复核 `entry.userId` 与当前用户一致，不一致就 `asMap().remove(key, entry)` 条件删除重建（条件删除是为了不误删第三方刚放入的条目），两轮仍不一致直接拒绝而不是继续复用。`CachedAgent` 因此多带一个 `userId`。
-
-**4. 删掉「查库兜底」这条路径**
-
-`McpConfigAdaptorImpl` 原先在上下文没命中时用 `McpServerMapper.selectById` 直查 `mcp_server`。这一行现在**必然**给错东西：AES 密钥只留在 admin（§7.1 的「下发前解密」方案），库里 `headers` / `env_params` 是密文，兜底读出来会原样当真实请求头交给客户端——连不上且看不出原因。它还顺手绕过了 admin 出口做的租户剔除。构造参数 `mcpServerMapper` 一并删除，缺失只剩一条 warn。工具 / 技能 / 模型三处 adaptor 的查库兜底**没动**：它们读的列不加密。
-
-**5. 分页参数名对不上**
-
-`mcp.ts` 发 `current` / `size`，`McpServerController.pageMcpServer` 收的是 `pageNum` / `pageSize`。Spring 用缺省值补齐，于是 MCP 列表页翻到第 N 页永远是第 1 页，`size` 也改不动。属于「只朝安静方向出错」的那类：页面看不出异常。
-
-**6. 向导不再预填掩码**
-
-绑定 MCP 时环境变量列表的默认值取自服务配置，secret 项后端只给掩码（`****`）。预填等于把掩码当成值存进 `agent_mcp_binding`，运行时解出来是一串星号。现在敏感项一律留空。
-
-这条数据流有**两个客户端**：第一次只改了 webui 的 `McpConfigPanel`，而 `harnax-wechat-app/miniprogram/pages/agent/form/index.ts` 的 `buildEnvBindings` 走的是同一个 `McpServerResponse.fromEntity`（`maskSecret = true`），漏在外面——小程序提交时掩码串经 `toEnvBindingPayload` 变成 `customValue`，`AgentServiceImpl.serializeEnvBindings` 对绑定路径**没有**任何掩码判断（掩码承接只在服务配置那条路径上），于是原样落库、原样随 spec 下发进 `ToolEnvContext`，工具拿到一串被截断的假密钥，而输入框里看着像填好了。同一条 `e.secret ? '' : e.defaultValue || ''` 补到小程序。
-
-**留空的代价要说清楚**：`required` 只是个红色标签——webui 与小程序都没有提交校验，后端 `saveMcpBindings` 也不查必填，所以留空能存进去，运行时该参数拿到空串。本节初稿写的「必填项由提交校验挡下」不成立，已订正；真正的强制点要么在前端补校验，要么在 `saveMcpBindings` 里查 `envParams` 定义，两处都还没做。
-
-**7. 换类型不再留对侧残留，向导不再重复绑定**
-
-`streamablehttp → stdio` 之后行里还带着旧 `url`，反向还带着 `command` 与 `env_params`。`updateById` 无条件写全列，所以「清空即真清」在后端是成立的，只是过去没人清。现在服务端按新类型清对侧字段（`url` / `command` 实体非空用 `""`，`headers` / `env_params` 可空用 `null`），前端切类型时同步清，免得「页面看着清了、提交又带回去」。
-
-重复绑定同样两个入口：webui 的下拉过滤掉本次已绑过的服务（`McpConfigPanel` 里那句 `!mcpConfigs.some(...)`）；小程序每张卡共用一个 `mcpRange`、`pickerIndex` 是它的下标，按下标过滤会让已选卡片错位，所以改成**选中时拒绝**并 toast 提示，判定规则与 webui 那句一致（排除自己那张卡）。落库侧本来有 `distinctBy { it.mcpId }` 兜着，唯一键 `uk_agent_mcp_binding_agent_id_mcp_id` 撞不到——但兜底的后果是「加两张一样的卡、存完回来少一张且没有提示」，所以界面必须先挡。
-
-**8. 改 url 即换资源，旧凭据一并清掉**
-
-RFC 8707 的 resource indicator 让令牌与资源地址绑定，改了 `url` 之后库里那些按旧地址换到的 `mcp_user_credential` **不可能**再被接受，而 `status` 还在回答「已授权」。现在 `wasOAuth && url 有变化` 时 `deleteByMcpId` 并 warn 出条数，与第十四轮「离开 `OAUTH2` 就清」同一口径（判据同样在任何字段被覆盖之前算，`url` 原样重提不算换地址）。编辑页 url 字段加了一行提示，让管理员改地址前知道代价。
-
-**9-10. 链路上顺手收紧的两处鉴权（不在 MCP 的文件里）**
-
-- `InternalTokenProvider` 签发的 token 加 `typ=internal`，`verifyToken()` 只把带这个 claim 的判为 `INTERNAL_SERVICE`。此前任何用 `harnax.auth.internal.shared-secret` 验签通过的 Bearer 都算内部服务——而部署文档要求 `jwt.secret` 在 admin 与 agent-service 之间同值，一旦运维把它也填进内部密钥，浏览器里的登录 JWT 就成了内部服务凭证，直达 `@InternalOnly`。现在无 `typ` 但带 `userId` 的记 `EXTERNAL_API`（认证通过、进不了内部端点），两者都没有的直接拒。router monitor 页与 webui 的 `X-Api-Key` 回退路径不受影响（它们不需要 `@InternalOnly`）。详见 `harnax-auth/AUTH-DESIGN.md` §3.1。
-- `AgentProxyController.resolveUserId` 补审计：认证身份与 body 声明不一致打 WARN（记调用方、声明值、真实值），无认证身份而采纳 body 时打 INFO。规则本身没变，只是让「谁在替谁说话」事后查得到。详见 `harnax-session-router/README.md` 对话代理一节。
-
-**测试与未验证（本轮与前面几轮不同，请注意）**：
-
-- **本轮没有执行编译，也没有跑任何单元测试**（本机资源限制，按要求）。因此 `docs/unit-test-cases.md` §17 那个 **1775** 的基线数字**未重新校准**，仍是第十五轮实跑的结果。本轮动过用例的三个套件里只有 `McpServerServiceImplTest` 在 `harnax-admin` 内（+2：第 8 条的换地址、以及「`url` 原样重提不算换地址」）；另两个不在其中——`McpConfigAdaptorImplTest`（agent-service，7 → 6，删掉两条「查库兜底」用例，因为那条路径已不存在）、`InternalTokenProviderTest`（harnax-auth，+3：`typ` 断言、用户 JWT 判外部、无身份 bearer 被拒）。按那份文档自己的纪律（基线数字要么实跑重数，要么别写），本轮不写新数字，只把增量记在这儿等下次校准。
-- 第 1～3 条都是并发 / 生命周期类缺陷，单测覆盖不到真实的线程交错，也没有把 harness 起起来跑一轮。stdio 子进程是否真被回收、双线程首次访问是否真不再串身份，仍要人工或集成验证。
-- 第 2 条的「跳过后其余照常装配」同理只到读码：`HarnessAgentLauncher` 本来就没有单测，它依赖完整构建链路。
-- 第 8 条的两条用例是打桩 mapper 上的行为，没在 Testcontainers 里跑真行。
-- 第 6、7 条后来补的小程序两处（`pages/agent/form/index.ts` 的 `buildEnvBindings` 与 `onMcpPick`）**没有任何可跑的验证**：`harnax-wechat-app` 只有 `npm run tsc`（`tsc --noEmit`），没有单测框架，本轮连这条也没执行。改动只到读码，两条判定都是照 webui 已有的写法平移。
-- 第 6 条订正时暴露出一个仍未处理的缺口：`required` 环境参数在两个前端与 `saveMcpBindings` 都不校验，留空可入库、运行时拿到空串。要不要补、补在哪一层，尚未定。
-
-### 7.16 已修复（2026-09 第十七轮：把绑定这条线读完，含上一轮留下的两条尾巴）
-
-第十六轮文末留了两条：`required` 环境参数没有任何强制点、非流式 `process()` 没有在途标记。那一轮读的是 MCP，工具侧同三处只读了一半。这一轮补齐绑定这条线，共五条。
-
-**1. 工具向导同样在预填掩码**
-
-第十六轮第 6 条把 MCP 侧的 `e.secret ? '' : e.defaultValue || ''` 补上了，工具侧的 `ToolConfigPanel` 漏着同一句。工具的 `default_value` 在读路径（`AgentToolServiceImpl`）上对 secret 项给的也是掩码，预填进绑定框等于把 `abc****wxyz` 这串字面量存进 `agent_tool_binding.env_bindings`，再随 spec 下发进 `ToolEnvContext`——输入框里看着像填好了，工具拿到的是被截断的假密钥。现在敏感项一律留空，要覆盖就选一个全局变量或者自己填。
-
-**2. 工具重复绑定两侧都不挡**
-
-MCP 那条在第十六轮补过，工具这条没有：webui 的下拉 `options={groupedToolOptions}` 没滤掉本次已绑过的工具，`onToolPick` 也不拒。落库侧有 `distinctBy { it.toolId }` 兜着，所以后果不是报错而是「加两张一样的卡、第二张填的环境变量静默丢掉」。webui 改成按行过滤（`toolOptionsFor(index)`：只挡别的行，本行自己已选的那个必须留着，否则标题会渲染成裸 id，这也是不能整体换成一个共享 memo 的原因）；小程序沿用 MCP 那套「选中时拒绝 + toast」，因为它每张卡共用一个 range、按下标过滤会让已选卡片错位。
-
-**3. 引用型绑定只存指针：掩码不落快照 + 保存时校验 + 删除时挡住**
-
-一条数据流上的三个症状：客户端把 `displayValue`（敏感项即 `******`）当 `envValue` 提交 → `serializeEnvBindings` 原样写进快照 → 下发时 `resolveEnvBindingsJson` 只在变量还在的时候救得回来 → 而 `deleteEnvVariable` 删之前不查有没有人还在用。
-
-「把快照换成解密值」最省事，但那会把明文密钥写进 `env_bindings` 列：AES 密钥只在 admin（§7.1 的下发前解密方案），这一列一旦写明文，等于把第十六轮第 4 条刚删掉的「拿着库里的密文当明文用」那条路换个方向重新铺一遍。所以落地的是三件事的组合：
-
-- **快照不存值**：`serializeEnvBindings` 对引用只写 `envVarId` / `envVarName`。读取路径（`parseEnvBindingsJson`）与下发路径本来就按 id 现取，界面上看到的还是当前值。
-- **保存时校验引用可用**：新增 `assertEnvBindingsBindable`，写法比照 `resolveBindableMcpServers`——查不到、已软删、不属于本租户，一律 `BizException` 并列出 id。同一轮把工具侧也补了 `resolveBindableTools`（原先只有 MCP 有这道），理由与 MCP 那条一样：绑一个查不到的 id，在下发侧是一句日志、在页面上是一个还在的工具；跨租户 id 猜出来就更不只是「少一个工具」。
-- **删除时挡住**：`AgentMapper.selectByEnvVarRef` 一次查三张绑定表快照里的 `$[*].envVarId`（`env_bindings` 是 TEXT，所以 `CASE WHEN JSON_VALID` 挡在 `JSON_EXTRACT` 前面，历史脏行不会让整个语句失败），命中就报「被 N 个 agent 绑着：名字…，先改绑再删」。这句必须走 `ApiErrors.message` 才透得出 controller，否则 catch 会把它压成一句 "Failed to delete env variable"——守卫白做。
-- 下发侧补一条 warn：引用彻底解不开时说明「这个参数什么都不发」，不再是静默。
-
-**4. `required` 环境参数第一次有了强制点**
-
-三个入口，同一条规则：有 `envVarId` 引用就算填了（运行时按 id 现取），否则要有一个非空且不含 `****` 的自填值——掩码是显示产物，不是值。前端两处（`validateConfigStep` / 小程序 `validateRequiredEnvParams`）报参数名，服务端 `assertRequiredEnvParamsFilled` 是真正拦得住的那道。
-
-**默认值算不算数，两处不一样**，判据是「这个默认值在运行时到底去不去得了」：MCP 的 `mcp_server.env_params` 会整份解密成 stdio 进程的环境变量，默认值进得去 → 算；工具的 `agent_tool_env_param.default_value` 进不去 → 不算。后者本轮查实：`ToolConfigAdaptorImpl` 把 `envParams` 装进了运行时的 `AgentTool` 实体，但**全仓没有任何一处读它**，`ToolEnvContext` 里只有绑定值。参数定义也不能从 `AgentToolService` 拿——那份是给人看的展示视图，secret 项的默认值是掩码，分不清「没有默认值」和「默认值被遮住了」，所以服务端走 mapper 直读表。
-
-**5. 非流式 `process()` 登记在途运行**
-
-先确认入口活着：channel → session-router → `/api/agent/chat` 走的正是 `process()`，不是流式那条，所以第十六轮「窗口小得多」的残余风险不是纸面上的。补 `activeCalls` 集合，`releaseAgent` 的非空判断一并看它，调用结束在 `finally` 里摘标记并 drain。登记点放在 `getOrCreateAgent` **之后**、只包住 `agent.call`：包住整个方法会与本方法自己的缓存装载递归撞在一起。`interrupt()` 不动——阻塞调用没有 subscription 可取消，那条路一直是走 `agent.interrupt()`。
-
-**测试与验证（本轮实跑了，与第十六轮不同）**：
-
-- `harnax-admin`：`AgentServiceImplTest` 新增 9 条「环境参数绑定守卫」（工具 id 查不到 / 跨工具租户 / 引用解不开 / 快照不落值 / 必填缺值 / 工具默认值不顶必填 / 引用可存 / 掩码自填值不算已填 / MCP 默认值算已填），`EnvVariableServiceImplTest` 新增 1 条删除引用守卫；第 3 条改了删除接口对外的语义，`EnvVariableControllerTest` 里那条「`RuntimeException("DB error")` → 压成一句 Failed to delete」的旧断言已经不成立，换成两条各守一半（守卫文案原样透出、数据库异常走 `ApiErrors` 兜底），与 `McpOAuthControllerTest` 同一写法。全量 `-Dtest='**/admin/**/*Test'` **1791 条全绿**。
-- `harnax-agent-service`：`DefaultAgentRunnerTest` 新增 1 条「`process` 期间被淘汰时延迟释放」（在 `agent.call` 里阻塞、发 REFRESH、`after(300).never()` 断言没提前释放、放行后 `timeout` 等它真释放），该套件 **52 条全绿**。
-- **顺带修掉一处第十六轮留下的编译错误**：removalListener 把 Caffeine 声明为 `@Nullable` 的 key 直接传给了 `releaseAgent(sessionId: String, ...)`。上一轮文末写了「本轮没有执行编译」，这一行因此从没被编译器看过。本轮 `mvn -DskipTests test-compile` 过了除 `harnax-channel-service` 之外的全部模块（它卡在离线仓库缺 `commons-io:2.20.0`，与代码无关）。基线 1775 仍不重新计数，只记增量（admin +11、agent-service +1）。
-- webui `npm run tsc`：仓库既有 30 条报错全在 `services/**` 与 `typings` 的 umi 临时类型上（`@@/plugin-request` 未生成），**没有一条落在本轮改的 `pages/agent/**`**。这只说明没新增，不等于通过。
-- 小程序仍**没有任何可跑的验证**：`harnax-wechat-app` 没有 node_modules，`tsc --noEmit` 跑不起来；第 2、4 条在小程序侧的改动只到读码，是照 webui 已有写法平移。
-- `selectByEnvVarRef` 那条 JSON SQL 没有跑真库，只按 MySQL 语义读码核对。
-- **仍未处理**：历史快照里已存进去的掩码没有清洗。新写入不再有；旧的在变量还在时按 id 现取（掩码不露出），只有变量被删后才可能兜出那串星号，而删除现在被第 3 条的引用守卫挡着。真要做是一次 `UPDATE ... env_bindings = JSON_REMOVE(...)` 的数据迁移，本轮判断收益不足以引入一次全表 JSON 改写。
-
-### 7.17 已完成（2026-09 第十八轮：P2-4 换发 + P3 运行侧注入，并把 stdio 整条关掉）
-
-这一轮接上 §7.16 留下的尾巴——「OAuth 只有管理端能跑」。用户在详情页授权之后，运行时现在真的会用上那份授权。
-
-**换发（P2-4）**
-
-- `controller/InternalApiController.kt` 新增 `POST /api/admin/internal/mcp/access-token`，体只有 `{sessionId, mcpId}`，**没有 user 字段**：agent-service 不知道任何用户 id，也就无法指名要花谁的授权。DTO 落在 `harnax-entity/.../dto/McpAccessTokenResponse.kt`——它是跨服务的线格式，和 `AgentSpecInfoResponse` 同处；过期时间用 epoch 秒而不是 `LocalDateTime`，因为两侧各自拿自己的时钟比较，而那两个时钟可以不在同一时区。
-- 身份反查 `util/McpSessionOwnerResolver.kt`：`web-` / `mp-` 走 session 行、`task-` 走 `agent_task` 行（定时任务以任务创建人身份运行）、`chn-` **有意返回「没有身份」**——渠道消息背后那个人不是平台账号，把任务创建人的 grant 递给一条钉钉消息，等于让别人的身份去访问上游。
-- `creator` 这一列在 web 会话里是用户名，在小程序会话里是 `userId.toString()`（`MpSessionService.kt:64`），所以两种都要试：只按用户名查，**小程序侧的 OAuth 会永久解析不出人**，而且安静得可怕——表现只是「这个 MCP 服务用不了」。先按用户名，解不出再按纯数字 id（真叫 `12345` 的账号仍然优先按名字命中）。
-- 解出来的用户必须落在**会话自己的租户**里：`sys_user.username` 没有唯一索引，`selectByUsername` 又是 `LIMIT 1`，同名跨租户会随机撞到另一个人的账号，把他的 grant 挂到本会话上。此外换发接口在查任何凭据之前先比「会话租户 == 服务行租户」，不同直接 403 且不去查那行——凭据是按服务行的租户归档的，缺这道校验等于 B 租户能花 A 租户的授权。
-- 刷新：`refreshLocks` 64 条带锁 + 锁内重读，避免同一份 grant 被并发刷两次（轮换后的 refresh token 会让第二次直接死掉，看起来像「用户需要重新授权」）。上游 `invalid_grant` 与「4xx 且不带 error 字段」判为**授权没了**（401 + 标 `NEEDS_CONSENT`），其余 4xx / 5xx / 连不上判为**只是失败**（503，一次状态都不改）——把后者标成待授权，会因为一次网络抖动把用户踹回同意页。
-- 审计：每次决策一行 `mcp_call_log`（`ISSUE` / `REFRESH` × `OK` / `NEEDS_CONSENT` / `ERROR` + 延迟），**永不写令牌、scope 清单或响应体**——读这张表的管理员不是这份授权的主人；写失败只 warn，不让审计把调用带崩。
-- 撤销过的行只拒绝、**不改写状态**：它的令牌已被 `revoke` 清空、必然刷不动，但 `REVOKED` 是这一行仅存的「本人主动收回过」的记录，抹掉它就只剩一个含糊的「需重新授权」。
-
-**运行侧注入（P3）**
-
-- `McpDetailDto` 新增 `authType` 随配置下发；`McpConfigAdaptorImpl` 落到运行时实体，并在**收到空值时 warn**：老版本 admin 不带这个字段时，OAuth 服务会被当成静态头服务、连上而不带身份，然后在第一次工具调用上失败并把锅甩给上游。全仓库只有这一处 `McpDetailDto` → 实体的转换，所以补这一处就够（本轮核对过：`AgentSpecResolver` / `HarnessAgentLauncher` / `PlaintextMcpConfigDecryptor` 都不碰这两个类型，agent 侧也没有任何地方直读 `mcp_server`）。
-- `McpHelper` 对 OAuth 服务挂 `httpRequestCustomizer`：令牌会过期会轮换，构建期钉死的 header 会让长会话在 5 分钟令牌上断掉，所以逐请求现取，实现方负责缓存。同时**剔除配置里那条静态 `Authorization` 并说明为什么**——两条路写同一个头，谁生效由传输层内部顺序决定，管理员在界面上看不出任何差别。握手超时放宽到 30s（首次取令牌要过 admin 与 AS 两跳）。拿不到令牌源时**不建这个客户端**：宁可不给工具，也不发一条没有身份的请求。
-- 令牌源在**建 agent 实例时**绑定 `(sessionId, userId)`（`agent/adaptor/McpAccessTokenSourceFactory.kt`），不是运行时读 ThreadLocal：MCP 客户端随 agent 实例缓存复用，运行时再查「当前用户」会在缓存命中时把 A 的令牌给 B。
-- `agent-service/adaptor/AdminMcpAccessTokenSourceFactory.kt`：按 `(sessionId, mcpId)` 缓存、提前 30s 续期、条带锁做 single-flight；**被拒（401）也冷却 15s**，否则一个未授权的服务会让每次工具调用都重打一趟 admin 与 AS，并往审计表灌同样的行——只有人能修的东西不需要机器重试。缓存满时按数量逐个淘汰，绝不 `clear()`：清空会把所有会话的有效令牌一起丢掉，它们随后各自在 MCP 请求回调里同步重取，一次容量高峰就变成一阵阻塞风暴。
-- 建 agent 时**预热**一次取令牌：回调跑在 MCP 客户端所用的线程上（异步握手用 common fork-join pool），冷取会把那为数不多的共享线程按住一整个 admin 往返。预热失败不改语义——用户可以在会话中途去授权，逐请求的回调才是把那件事暴露给他的地方。
-- 装载循环结束补一条汇总 warn（`built with k of n MCP servers`）：每台被跳过的服务器自己都有一行日志，但用户报上来的症状是「这个 agent 没有 MCP 工具」，中间缺一句能对上号的话。
-
-**stdio 默认关闭**
-
-- stdio 不是「一条连接」而是「让 agent-service 起一个进程」，而那个容器挂着宿主 Docker socket（`docker-new/docker-compose.yml`），所以能存下这样一行就等于能在那台机器上执行命令。新增 `McpStdioPolicy`（`harnax.mcp.stdio-enabled`，默认 false）与运行侧 `harness.mcp-stdio-enabled`，两边共用 `HARNAX_MCP_STDIO_ENABLED`（部署侧两侧取值与后果见 `docs/deploy-harnax-agent-service.md`）。
-- 关闭时：新建 stdio 被拒、从网络型切进 stdio 被拒、**存量行照常可编辑 / 停用 / 删除，只是永不下发**，harness 侧再挡一道（防旧版 admin 仍下发）。不在编辑侧也拦死，是为了不让这些行变成「只有能连数据库的人才能收拾」。
-- 前端新建表单去掉 stdio 选项；编辑表单只在**这行本来就是 stdio** 时保留该选项，否则就是一个永远写不进去的下拉项。
-
-**本轮审计查出并修掉的边界（三只并行审计 + 自查，逐条已补测试）**
-
-- `HARNAX_AES_SECRET_KEY` **此前根本不在 `docker-compose.yml` 里**，admin 一直用仓库中公开的默认密钥加密所有 MCP / 工具凭据。现已暴露该变量，并在 `.env.example` 写清生成方式与换 key 的后果（旧密文一律解不开）。
-- 解不开的 `client_secret` 原先从没兜住的分支冒出去：一句没有审计行的 500，而运行侧只对 401 冷却，于是每次工具调用都重打一趟。现在刷新路径按「配置坏了」回答（503 + 指向重新登记客户端），换票路径给同一句话，撤销路径则**直接当作没有密钥可呈**——解不开不是放弃清本地的理由，撤销是用户唯一的出路。
-- 刷新回答缺 `expires_in` 时不再把库里尚未到期的过期时间抹成 null：这里没有任何一方听得到上游的拒绝，一行「永不过期」意味着运行时会一直递一个没人认的令牌。
-- `JwtAuthenticationFilter` 里「把共享密钥当 JWT 递到 `/api/admin/**` 就按内部服务放行」那支不再接受占位默认值（那串字符在仓库里公开）。代价如实说明：沙箱里的 `harnax-cli` 需要真值，否则它的调用一律 401，admin 启动时有一条 WARN 讲这件事。
-- 令牌里带 `tenantId=0` 不再被当作「属于 0 号租户」（id 从 1 起）；写路径在请求头与声明都给不出租户时改取**账号自己那行**的租户，字面量 1 退成最后一档。
-- 前端：卡片连通性测试、编辑弹窗测试、详情页工具列表原先把后端的拒绝压成「服务不可达」甚至 `Cannot read properties of undefined`（全局 errorHandler 吞掉响应体后返回 undefined）。三处改走 `skipErrorHandler` 并显示后端原文；探测回调的契约从 boolean 改成「null=通过 / 字符串=原因」。OAuth 面板与两处 `authExtra` 里「运行时尚未注入令牌」的说明改成现状，中英两份 locale 同步（`runtimePending` → `runtimeNote`）。
-- 编辑弹窗里重选同一个类型不再触发副作用：原先会把 `authType` 按成 `NONE`，而 stdio + 静态头是合法组合，下一次保存就悄悄改了认证方式。
-- 授权回跳页在**已经换票成功之后刷新**不再显示红色「授权未通过」：query 在发出请求前就被抹掉，刷新必然落进「这里没有可完成的授权」，而那份授权其实已经存下了——这个结果改成中性 `info` 态（新增 `noteTitle` 双语键）。
-
-**这轮没做的**：上游 401 的回执通路（P4 的前置）、`mcp_call_log` 保留期清理（admin 没有全局调度，为一张日志表启用它不划算）、`McpOAuthStateStore` 的多实例化（内存实现要求 admin 单副本，compose 正是单副本）、列表页授权徽标、`scope` 覆盖参数、以及 `DefaultAgentRunner` 里除 approve/deny 之外的命令仍只按 sessionId 起作用（不带用户比对）——那是会话域的既有边界，不在这条链上。
-
-### 7.18 已完成（2026-09-20 第十九轮：让「停用」在三条链路上都真的停用）
-
-前几轮把 `status` 一路透到运行侧、把 stdio 整条关掉、把 `envVarId` 改成只存指针。这一轮补的是同一口径没铺满的缺口：**「停用」在 MCP 下发与环境变量两条路上各有一半是装饰性的，而 CLI 绑定的环境变量引用从来没被校验过**。
-
-**MCP：admin 侧补禁用闸门**
-
-- `InternalApiController.buildAgentSpecResponse` 现在把 `status = 0` 的服务整行扣下，与同函数里既有的 `skill.status == 0` / `cli.status == 0` 对齐。此前只有运行侧过滤，代价两层：这台服务的 `headers` 照样在下发前解密（一次没有消费者的凭据出网），以及 `mcpList` 照样把它的 `env_bindings` 喂进 `ToolEnvContext`——**同名键会静默覆盖一个启用工具自己绑定的值**，报上来的症状是「那个工具的环境变量变了」，跟 MCP 看不出关系。
-- 两份数据一起扣（`mcpDetails` 与 `mcpList` 都过同一个 `mcpById`）：只扣一份会下发一个自相矛盾的 spec，而第二半才是实际会影响工具参数的那一份。
-- `McpDetailDto.status` 与运行侧那道跳过都保留，现在它们只挡「新版 agent-service 配旧版 admin」这一种组合。
-- 绑定保存同口径：`resolveBindableMcpServers` 拒绑定用中的服务（§4 第 1 条）。技能侧本来就拒，MCP 之前是唯一还能把禁用服务写进绑定的路径。
-- `McpServerServiceImpl.listTools`（连通性测试 / 工具列表）**第一道校验改成 stdio 闸门**：这是 admin 唯一会真的执行库里那条 `command` 的路径。此前 stdio 关着时下发被挡得死死的，点一下「测试连接」却照样把进程起起来——闸门只挡住了不动手的那条路。存量 stdio 行「可编辑、不可用」的口径现在同样适用于探测。
-
-**环境变量：四处（`admin/service/impl/EnvVariableServiceImpl.kt`）**
-
-- **跨租户单行读**：`getEnvVariable(id)` 原先直接 `selectById`（XML 里只有 `active = 1`，而 MyBatis 层不设租户拦截器），而 `GET /env-variables/{id}` 对非敏感值原样回显——猜到自增 id 就能读到别人租户的变量。现在取到行后比对当前租户，不符按「不存在」回答，写法抄 `McpServerServiceImpl.getMcpServer`。顺带把 `updateEnvVariable` / `deleteEnvVariable` / `toggleEnabled` 三道权限校验里各写一遍的 `TenantContext.getTenantId() ?: 1` 收进同一个 `currentTenantId()`（context → token 声明 → 账号自己那行 → 字面量 1）：请求头没带 `X-Tenant-ID` 时那句 `?: 1` 恒等于 1，等于把校验基准钉在一个调用者未必属于的租户上。
-- **停用是空操作**：`toggleEnabled` 写下 `enabled = 0`，而下发解析走的 `getDecryptedValue` 根本不读这一列，被停用的值照旧进 `ToolEnvContext`。偏偏智能体配置的下拉已经按 `enabled == 1` 过滤（`listForAgentConfig`），于是这个开关看起来是有效的——轮换或泄露一个值之后想用它止血，止不住。现在解析返回 null；绑定保存侧同时拒引用停用变量（`assertEnvBindingsBindable`），免得出现「表单里选得到、运行时是空的」。
-- **只翻 `sensitive` 会把值写坏**：这一列描述的是**编码方式**，标记变了值没变，就留下另一种编码的旧数据——1→0 把 AES 密文当明文发给工具（工具拿到一串 base64），0→1 把明文当密文存、下次解密失败、下发时报「没有值」。现在请求不带 `envValue` 而只改 `sensitive` 时走 `reEncode` 就地转换；解密失败时**原样保留**，解不开说明它不是本密钥产的密文，覆盖会烧掉运维真正存进去的东西。
-- **CLI 绑定的引用没人校验（本轮最实质的一条）**：`saveCliBindings` 把 `env_bindings` 原样序列化入库，而下发时 `mergeCliEnvBindings` 照样过 `resolveEnvBindingsJson` 解析——一个未校验的 `envVarId` 等于**把别的租户的密钥写进自己的 CLI 会话环境**。工具与 MCP 两条路都有 `assertEnvBindingsBindable`，只有 CLI 漏了；漏的理由值得记下来：CLI 在管理员眼里是「装哪些软件」的配置项，看不出是一条密钥通道。现在三条绑定路径共用同一道校验。
-
-**测试**：`InternalApiControllerTest` 新增「禁用服务两份数据都不出现、且一次都不碰解密」，并改写第十八轮那条「下发带 `status`」的用例对上契约（原来那条断言 `status` 会出现在 `mcpDetails` 里，已被本轮取代）；`AgentServiceImplTest` 三条（拒绑定用中的服务、CLI 引用外租户变量被拒、引用停用变量被拒）；`McpServerServiceImplTest.StdioGateTests` 一条（stdio 探测被拒）；`EnvVariableServiceImplTest` 四条（跨租户单行读返回 null、`sensitive` 两个方向各重编码一次、停用的 `getDecryptedValue` 返回 null）。harnax-admin 全量 **1879 条 0 失败**。
-
-**这轮没做的**：`getDecryptedValue` 自身仍不带租户条件（`selectById` 没有租户谓词，靠保存侧的引用校验兜住，下发时手上没有可比对的租户基准）；`env_variable` 列表按 `creator` 收到个人，与 MCP / CLI / 技能那套 `is_public = 1 OR creator` 加租户的口径不一致——跨租户是安全的，不一致的是「同一租户内共享的变量在别人列表里看不见」；敏感值的掩码哨兵用的是子串 `****` 而不是全等，一个真含 `****` 的值会被判成掩码而拒写；spec 缓存在 30 分钟内不反映管理端改动（本轮的扣留在下一次解析生效）；运行侧 `ensurePermissionRulesMerged` 只在持久化状态里的 permissionContext 为 trivial 时才合并配置规则。　**（这一段里有三条已被后续轮次闭合）**：`getDecryptedValue` 现在收 `tenantId` 并按 `env.tenantId != tenantId → null`，工具 / CLI 分支与 MCP 同口径；掩码回填判定已改成与该行自己算出的掩码逐字比对，真含 `****` 的值改得动；`env_variable` 按创建人隔离不是「口径不一致」而是 2026-09-24 定稿的设计，唯一键与下发侧的分工见 §6 末注。
-
-## 8. 关键文件索引
-
-| 模块 | 文件 |
+| 分类 | 路径 |
 |------|------|
-| 实体 | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/McpServer.kt`、`AgentMcpBinding.kt`、`dto/McpDetailDto.kt`；OAuth 侧 `McpAuthTypes.kt`（认证方式常量与 `SUPPORTED`）、`McpOauthClient.kt`、`McpUserCredential.kt`、`McpCallLog.kt` |
-| Mapper | `harnax-entity/src/main/kotlin/com/agnetix/harnax/mapper/McpServerMapper.kt`（XML：`harnax-entity/src/main/resources/mapper/McpServerMapper.xml`，含 `selectByIds` 批量查询、`selectMcpServerList` 与 `selectByName` 的可选 `tenantId` 过滤，以及 `updateOAuthConfig`——发现只写回一列，因为 `updateById` 的 SET 是无条件的）、`AgentMcpBindingMapper.kt`（XML：`mapper/AgentMcpBindingMapper.xml`，含 `deleteByMcpId` 级联清理）；OAuth 三对：`McpOauthClientMapper.kt`（`selectByTenantAndIssuer` 带 `ORDER BY id LIMIT 1`，保证并发发现复用同一行）、`McpUserCredentialMapper.kt`（`selectByUserAndMcp` / `deleteByMcpId` 等四个方法）、`McpCallLogMapper.kt`（**只有 `insert`**，append-only 由「没有别的方法」保证），XML 均在 `harnax-entity/src/main/resources/mapper/` 下同名 |
-| 迁移 | `harnax-admin/src/main/resources/db/migration/V7__normalize_agent_bindings.sql`（建绑定表）、`V19__add_mcp_binding_unique_key.sql`（`(agent_id, mcp_id)` 唯一键）、`V20__drop_mcp_binding_enable_skip.sql`（删 `enable_skip`）、`V21__drop_stale_capability_list_columns.sql`（删 `agent` / `session` 上的能力残留列）、`V22__mcp_public_default_and_tenant_backfill.sql`（`is_public` 缺省改 1 + 回填 `tenant_id`）、`V23__add_mcp_server_name_unique_key.sql`（租户内名称唯一键，先给历史重名行改名）、`V24__backfill_agent_session_tenant.sql`（回填 `agent` / `session` 的租户归属，§7.4）、`V25__add_mcp_oauth_columns.sql`（`mcp_server.auth_type` / `oauth_config`，有意不回填）、`V26__add_mcp_oauth_tables.sql`（三张 OAuth 表，§7.5） |
-| 管理 API | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/McpServerController.kt`；OAuth 侧只有 `admin/controller/McpOAuthController.kt` 一个类、六个接口：管理面两个（`POST /{id}/oauth/discover`、`POST /{id}/oauth/client`）、按人四个（`GET /{id}/oauth/authorize-url`、`POST /oauth/exchange`、`GET /{id}/oauth/status`、`POST /{id}/oauth/revoke`），**全部要过 JWT**——第十四轮删掉的 `McpOAuthCallbackController` 曾是这里唯一免鉴权的一跳 |
-| 管理服务 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/McpServerServiceImpl.kt`（认证方式那三道校验在 `resolveAuthType` / `validateAuthType` / `writeOAuthConfig`，OAuth 配置的对外形态是 `admin/dto/McpOAuthConfig.kt`；更新时「请求没带 `authorizationServer` 就保住库里那个」的接管在 `updateMcpServer`）；`admin/service/impl/McpOAuthServiceImpl.kt`（发现顺序在 `resolveIssuer`，元数据候选在 `fetchMetadata` / `wellKnownUrls`，端点落库与客户端复用在 `storeEndpoints`；所有对外地址与文档字段都过 `validateHttpUrl` / `validateIssuerUrl` / `normalizeIssuer`——最后这个已从本类的私有方法提到 `RemoteJsonFetcher` 顶层，发现与授权共用同一条规范化，拼进报错的候选失败原因由 `detail` 截断）；`admin/service/McpOAuthUserService.kt` + `admin/service/impl/McpOAuthUserServiceImpl.kt`（P2-3：`authorizeUrl` / `exchange` / `status` / `revoke`；`exchange` 里先烧 `state` 再比归属（第 3 条），换 token 前的六道复核集中在私有 `redeem`——行是否还在发起时的租户、是否还是 `OAUTH2`、`url` 是否还等于 `state` 钉住的 `resource`、注册行是否还在、`client_id` 是否为空、token endpoint 是否已知；scope 宽过列宽那道在 `authorizeUrl`，空 `client_id` 在发起侧另由 `requireClientRegistration` 挡一次）；待授权状态 `admin/util/McpOAuthStateStore.kt`（`PendingAuthorization` 与一次性 `consume` 同文件） |
-| 出站 HTTP | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/RemoteJsonFetcher.kt`（管理员输入或上游文档给出的地址只能从这里出去：协议白名单、元数据地址底线、不跟重定向、body 上限与读取截止都在这里，`redactUrl` 也在；JSON 取值 helper `optString` / `optStringList` 同样在这，顶层 `normalizeIssuer` 是发现与授权共用的那一条规范化，P2-3 加的 `postForm` 让带 code 与 client secret 的 token POST 走同一道护栏而不是另起一个 `RestTemplate`，`fetch` / `postForm` 抛的 `RemoteFetchException` 消息会被拼进发现与换发的报错。admin 别处的出站——`McpServerServiceImpl.listTools`、channel、registry——目标是自己配的，不归它管） |
-| 加密器 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/SecretFieldEncryptor.kt`（`serializeWithEncryption` / `serializeToolEnvParams` 的 `storedJson` 参数即掩码沿用密文之处，单列密钥用 `resolveSecret`；掩码承接这一条判断的定义只有一份，在 `resolveEnvParamValue`——JSON 列把行里的旧 JSON 作为 `storedJson` 交进来，`agent_tool_env_param` 行表由 `AgentToolServiceImpl.storedEnvSecrets(toolId)` 在删除前读出一张密文表再交进来）；撞唯一键时对外的文案在 `admin/util/ApiErrors.kt` 的索引名映射表里 |
-| 解密 SPI | `harnax-common/src/main/kotlin/com/agnetix/harnax/common/mcp/McpConfigDecryptor.kt`；兜底实现 `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/mcp/PlaintextMcpConfigDecryptor.kt` |
-| 绑定保存 / 下发 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AgentServiceImpl.kt`、`controller/InternalApiController.kt`（第十八轮起还含 `POST /internal/mcp/access-token`；下发侧的扣留到第十九轮是三样：服务行已删、stdio（开关关着）、`status = 0`，工具 / MCP / CLI 三条绑定的 `envVarId` 引用在保存时过同一道 `assertEnvBindingsBindable`，`AgentServiceImpl` 与 `InternalApiController` 两边都要看它；扣留规则的唯一真源在 `admin/service/McpStdioPolicy.kt`，会话→用户身份反查在 `admin/util/McpSessionOwnerResolver.kt`，跨服务的令牌线格式在 `harnax-entity/.../dto/McpAccessTokenResponse.kt`，指针解析与解密在 `admin/service/impl/EnvVariableServiceImpl.kt`（`getDecryptedValue` / `getEnvVariable`）） |
-| Spec 解析 | `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/AgentSpecResolver.kt` |
-| 配置适配器 | `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/McpConfigAdaptorImpl.kt`（全仓库唯一的 `McpDetailDto` → 运行时实体转换，`authType` 在此落到实体；收到空值时 warn，因为那等于对上 OAuth 服务「当作静态头服务连」）、同目录 `AdminMcpAccessTokenSourceFactory.kt`（令牌源：按 (会话, 服务) 缓存 + 条带锁 single-flight + 被拒冷却 15s + 满量逐个淘汰），接口 `McpAccessTokenSourceFactory` 在 `harnax-harness-core/.../agent/adaptor/`，回调接口 `McpAccessTokenSource` 与 `McpAuthRequiredException` 在 `harnax-agent-utils/.../adaptor/mcp/` |
-| 客户端构建 | `harnax-agent/harnax-agent-utils/src/main/kotlin/com/agnetix/harnax/agent/adaptor/mcp/McpHelper.kt`、`McpConfig.kt`（OAuth 服务在此挂 `httpRequestCustomizer`、剔除同名静态 `Authorization`、放宽握手超时，且没有令牌源就不建客户端） |
-| 运行时装配 | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt`（stdio 二次防御、身份建实例时绑定、预热、装载数汇总 warn）、`config/HarnessConfig.kt`（`mcpStdioEnabled`）、`spring/HarnessAutoConfiguration.kt`（`ObjectProvider` 可选注入：没有令牌源实现时 OAuth 服务连不上，而不是带着空身份连） |
-| 前端（管理面与用户侧） | 类型 `harnax-webui/src/typings.d.ts`（`McpServerItem` / 创建更新请求 / `McpOAuthConfig` / `McpOAuthClientRequest` / `McpOAuthDiscoveryResponse`，与后端 DTO 同名；第十四轮再加 `McpOAuthAuthorizeResponse` / `McpOAuthExchangeRequest` / `McpOAuthExchangeResponse` / `McpOAuthStatusResponse` / `McpOAuthRevokeResponse`）；服务 `harnax-webui/src/services/ant-design-pro/mcp.ts`（`discoverMcpOAuth`、`saveMcpOAuthClient`，加 `getMcpOAuthAuthorizeUrl`、`exchangeMcpOAuthCode`、`getMcpOAuthStatus`、`revokeMcpOAuth`）；页面 `harnax-webui/src/pages/mcp/index.tsx`（卡片列表，OAuth 标签）、`detail.tsx`（详情头部「认证方式」+ 面板挂载点）、`oauth-callback.tsx`（授权落地页：接 AS 的 query、换票、只回一句话，第十四轮加）；路由 `harnax-webui/config/routes.ts` 的 `/mcp/oauth/callback`（`layout: false`，排在 `path: '*'` 那条 404 之前）；`harnax-webui/src/app.tsx` 的 `loginRedirect`（未登录跳 `/login?redirect=` 时，对落地页丢掉 search，别让 `code` 与 `state` 进登录页地址栏）；表单与面板 `pages/mcp/components/CreateForm.tsx`、`UpdateForm.tsx`（认证方式下拉、stdio 联动）、`OAuthFields.tsx`（四个配置字段）、`OAuthPanel.tsx`（发现、登记客户端、按人授权块，§7.8 的四条 UI 侧取舍与 §7.13 第 6 条都在这几个文件里）；文案 `harnax-webui/src/locales/{zh-CN,en-US}/pages.ts` 的 `pages.mcp.oauth.*`（实测两份各 76 键，同数同序） |
-| 测试 | 管理侧 `harnax-admin/src/test/kotlin/com/agnetix/harnax/admin/service/impl/McpServerServiceImplTest.kt`（含 `AuthTypeTests` 12 个）、`McpOAuthServiceImplTest.kt`（49 个：issuer 解析 14 / 元数据 11 / 发现落库 11 / 客户端凭据 11 / 回调地址来源 2）、`util/RemoteJsonFetcherTest.kt`（16 个，真起 JDK `HttpServer`）、`util/SecretFieldEncryptorTest.kt`（含 `ResolveSecretTests`）、`controller/McpServerControllerTest.kt`、`controller/McpOAuthControllerTest.kt`（16 个，守 OAuth 接口对外的错误语义：管理面 6 个、按人四个接口 10 个）、`service/impl/McpOAuthUserServiceImplTest.kt`（62 个：发起 13 / 换票 32 / 状态 7 / 撤销 10，出站打桩、`McpOAuthStateStore` 用真件）、`util/McpOAuthStateStoreTest.kt`（7 个）、`controller/InternalApiControllerTest.kt`（第十八轮加 3 个 `McpAccessTokenTests` + 3 个 `McpAuthDeliveryTests`：authType 必须随配置下发、stdio 行两半都不出现、开关打开后照常下发；第十九轮加 1 条改 1 条：`status = 0` 的服务两半都不出现**且一次都不碰解密器**，原来那条「下发带 `status`」改成断言禁用服务整体不下发）、`admin/util/McpSessionOwnerResolverTest.kt`（第十八轮新增 10 个，守的是同名跨租户、小程序 creator 存 id、渠道会话故意无身份、task 前缀解析）、`McpServerServiceImplTest.StdioGateTests`（第十八轮新增 4 个：闸门关着时 stdio 被拒且不落库、存量 stdio 行仍可编辑、切进 stdio 被拒、OAuth 服务的连通性测试明确拒绝；第十九轮再加 1 个：开关关着时 stdio 的**探测**同样被拒，且一次都不建客户端）；绑定守卫与环境变量守卫的回归在 `AgentServiceImplTest`（拒绑定用中的服务、CLI 引用跨租户/停用变量各被拒一次）与 `EnvVariableServiceImplTest`（跨租户单行读返回 null、`sensitive` 双向重编码、停用的 `getDecryptedValue` 返回 null）；`McpOAuthUserServiceImplTest` 由 62 扩到 75（第十八轮的 `AccessTokenTests` 13 个守换发侧 401 / 403 / 503 的分别是谁、锁内重读、被拒不改状态）；运行侧 `AdminMcpAccessTokenSourceFactoryTest.kt`（6 个：无身份不给源、缓存只问一次、两个会话不共用令牌、过期重取、被拒冷却、源认死自己那个会话）与 `McpConfigAdaptorImplTest` 的 authType 用例；SQL 侧 `harnax-entity/src/test/kotlin/com/agnetix/harnax/mapper/{McpServer,McpOauthClient,McpUserCredential,McpCallLog}MapperTest.kt`（`McpServerMapperTest` 含 `updateOAuthConfig` 只动一列、已删行不动，需 Docker + `TESTCONTAINERS_RYUK_DISABLED=true`）；不依赖 Docker 的 `harnax-entity/src/test/kotlin/com/agnetix/harnax/MapperXmlParseTest.kt`；迁移可执行性由 `harnax-admin` 的 `HealthInfoIT` 覆盖；测试 schema 只剩 `harnax-entity/src/test/resources/schema-test.sql` 一份 |
+| 实体 | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/McpServer.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentMcpBinding.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/McpAuthTypes.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/McpOauthClient.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/McpUserCredential.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/McpCallLog.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/EnvVariable.kt` |
+| 线格式 DTO | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/dto/McpDetailDto.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/dto/McpAccessTokenResponse.kt` |
+| Mapper | `harnax-entity/src/main/kotlin/com/agnetix/harnax/mapper/McpServerMapper.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/mapper/AgentMcpBindingMapper.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/mapper/McpOauthClientMapper.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/mapper/McpUserCredentialMapper.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/mapper/McpCallLogMapper.kt`，XML 在 `harnax-entity/src/main/resources/mapper/` 下同名 |
+| 迁移 | `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql`、`harnax-admin/src/main/resources/db/migration/V7__normalize_agent_bindings.sql`、`harnax-admin/src/main/resources/db/migration/V19__add_mcp_binding_unique_key.sql`、`harnax-admin/src/main/resources/db/migration/V20__drop_mcp_binding_enable_skip.sql`、`harnax-admin/src/main/resources/db/migration/V22__mcp_public_default_and_tenant_backfill.sql`、`harnax-admin/src/main/resources/db/migration/V23__add_mcp_server_name_unique_key.sql`、`harnax-admin/src/main/resources/db/migration/V25__add_mcp_oauth_columns.sql`、`harnax-admin/src/main/resources/db/migration/V26__add_mcp_oauth_tables.sql`、`harnax-admin/src/main/resources/db/migration/V45__add_env_key_unique_key.sql`、`harnax-admin/src/main/resources/db/migration/V46__scope_env_key_unique_to_creator.sql` |
+| 管理 API | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/McpServerController.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/McpOAuthController.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt` |
+| 管理服务 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/McpServerServiceImpl.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/McpOAuthServiceImpl.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/McpOAuthUserServiceImpl.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/McpServerService.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/McpOAuthService.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/McpOAuthUserService.kt` |
+| 策略与身份 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/McpStdioPolicy.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/McpSessionOwnerResolver.kt` |
+| 请求与响应 DTO | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/McpServerCreateRequest.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/McpServerUpdateRequest.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/McpServerResponse.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/McpConfigEntry.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ToolEnvParamEntry.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/McpOAuthConfig.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/McpOAuthClientRequest.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/McpOAuthDiscoveryResponse.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/McpOAuthAuthorizeResponse.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/McpOAuthExchangeRequest.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/McpOAuthExchangeResponse.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/McpOAuthStatusResponse.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/McpOAuthRevokeResponse.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/McpToolResponse.kt` |
+| 加密与出站 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/SecretFieldEncryptor.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/RemoteJsonFetcher.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/McpOAuthStateStore.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/ApiErrors.kt`、`harnax-common/src/main/kotlin/com/agnetix/harnax/common/mcp/McpConfigDecryptor.kt` |
+| 绑定与下发 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AgentServiceImpl.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/EnvVariableServiceImpl.kt` |
+| 运行侧配置读取 | `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/AgentSpecResolver.kt`、`harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/McpConfigAdaptorImpl.kt`、`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/adaptor/McpConfigAdaptor.kt`、`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/mcp/PlaintextMcpConfigDecryptor.kt` |
+| 令牌源 | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/adaptor/McpAccessTokenSourceFactory.kt`、`harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/AdminMcpAccessTokenSourceFactory.kt`、`harnax-agent/harnax-agent-utils/src/main/kotlin/com/agnetix/harnax/agent/adaptor/mcp/McpAccessTokenSource.kt` |
+| 客户端构建 | `harnax-agent/harnax-agent-utils/src/main/kotlin/com/agnetix/harnax/agent/adaptor/mcp/McpHelper.kt`、`harnax-agent/harnax-agent-utils/src/main/kotlin/com/agnetix/harnax/agent/adaptor/mcp/McpConfig.kt`、`harnax-agent/harnax-agent-utils/src/main/kotlin/com/agnetix/harnax/agent/adaptor/mcp/McpErrorCode.kt` |
+| 装配 | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt`、`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentWrapper.kt`、`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/AgentSpec.kt`、`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/config/HarnessConfig.kt`、`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/spring/HarnessAutoConfiguration.kt` |
+| 配置与部署 | `harnax-admin/src/main/resources/application.yml`、`harnax-agent/harnax-agent-service/src/main/resources/application.yml`、`docker-new/docker-compose.yml`、`docker-new/.env.example` |
+| 前端 | `harnax-webui/src/typings.d.ts`、`harnax-webui/src/services/ant-design-pro/mcp.ts`、`harnax-webui/src/pages/mcp/index.tsx`、`harnax-webui/src/pages/mcp/detail.tsx`、`harnax-webui/src/pages/mcp/oauth-callback.tsx`、`harnax-webui/src/pages/mcp/components/CreateForm.tsx`、`harnax-webui/src/pages/mcp/components/UpdateForm.tsx`、`harnax-webui/src/pages/mcp/components/OAuthFields.tsx`、`harnax-webui/src/pages/mcp/components/OAuthPanel.tsx`、`harnax-webui/config/routes.ts`、`harnax-webui/src/app.tsx` |

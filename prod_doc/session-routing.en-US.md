@@ -1,240 +1,251 @@
-# Harnax Session Routing (English)
+# Harnax Session Router Design (English)
 
-> 中文版本见 [session-routing.zh-CN.md](./session-routing.zh-CN.md)
->
-> Based on a survey of the current codebase, this document describes the contract that `harnax-session-router` (below, "the Router") offers to its **callers**: the endpoint inventory, error semantics, tenant isolation guarantees, deployment shapes, timeout and capacity budgets, observability, and the list of current limitations.
->
-> **How the Router documents divide the work** (each answers a different question — don't read them as substitutes):
->
-> | Document | Audience | Question it answers |
-> |----------|----------|---------------------|
-> | This one (`prod_doc/session-routing`) | Callers (channel / webui / app / mini-program / SDK), product and operations decision-makers | What the capability guarantees, what its semantics are, where its edges are |
-> | [`harnax-session-router/README.md`](../harnax-session-router/README.md) | Developers of this module and on-call ops | How the internals work, Redis key layout, source structure, alerting rules |
-> | [`docs/deploy-harnax-session-router.md`](../docs/deploy-harnax-session-router.md) | Whoever runs the deployment | Environment variables, startup steps, SQLite / MySQL paths |
->
-> When numbers disagree, code wins: defaults live in `harnax-session-router/src/main/resources/application.yml`, behaviour lives in `proxy/SessionRouterService.kt`.
+This document covers the current complete implementation of `harnax-session-router` (Router below): capability boundary, authentication layering, endpoint contracts, session binding and instance lifecycle, the SSE streaming chain, tenant isolation, call logging, deployment shape and observability definitions, plus the list of current limits. Every statement is taken from the code on the `kotlin-dev` branch.
 
-## 1. Scope and boundaries
+## 1. Capability and boundary
 
-### 1.1 The problem it solves
+### 1.1 Where session stickiness comes from
 
-A session (`sessionId`) must keep landing on **the same agent-service instance** for its whole lifetime. Agent state is not in the database — it lives in that process's memory and local disk:
+A conversation (`sessionId`) executes on the same agent-service instance for its whole lifetime. The reason is that the Agent's mutable state does not live in a shared database, it lives in that process's memory and on its local disk:
 
-- the Agent object and its ReAct loop context;
-- the workspace sandbox directory (tool output files, the plan in progress);
-- the suspended HITL tool-confirmation state, which only resumes on the same instance.
+- the Agent instance object with its ReAct loop context and the cached agents (`agentCache`);
+- the workspace sandbox container and the plan in progress inside it;
+- the suspended state of a HITL tool confirmation (it only resumes when `/confirm` reaches the same instance).
 
-The Router exists to serve that sticky-session constraint: it makes the placement decision and forwards the request. Port **8081**, Spring MVC with Kotlin coroutines, stateless and horizontally scalable.
+Router supplies the placement decision and the request forwarding for this "session → instance" constraint. It listens on **8081**, runs Spring MVC with Kotlin coroutines, keeps no state of its own in the process, and scales out horizontally (replicas share one copy of the routing state in Redis).
 
-### 1.2 What it deliberately does not do
+### 1.2 What Router does and does not own
 
-| The Router does not | Who does |
-|---------------------|----------|
-| Run agents or call models | `harnax-agent-service` (:8082) |
-| Store transcripts, plans or workspace files | agent-service (local workspace + snapshot) |
-| Decide whether an API key is valid or which tenant owns it | `harnax-admin` (the Router queries and caches) |
-| Decide which tenant owns a session (query only, no adjudication) | admin (`SessionInfoClient` → admin internal API) |
-| Parse and deliver channel messages | `harnax-channel` |
-| Schedule agent tasks | `harnax-scheduler` (:8084) |
+| Concern | Owner |
+|------|------|
+| Session-to-instance binding, placement, rerouting, circuit breaking | Router |
+| Request forwarding and streaming responses back | Router |
+| Running the Agent, calling models | `harnax-agent-service` (:8082) |
+| Storing conversation history, plans, workspace files | agent-service (state store + snapshot) |
+| Whether an API Key is valid and which tenant it belongs to | `harnax-admin` (Router queries it remotely and caches locally) |
+| Which tenant owns a session | admin internal endpoint `/api/admin/internal/sessions/{id}/info`; Router only queries, it never adjudicates |
+| Channel message parsing and delivery back | `harnax-channel` |
+| Scheduled task dispatch | `harnax-scheduler` (:8084) |
 
-> In one line: **the Router is a session-aware layer-7 reverse proxy plus a placement decider — not a business service.** Its only state is the routing table (instance registry, session bindings, circuit-breaker state).
+The complete set of state Router holds is: the instance registry, session bindings, the reverse index, circuit-breaker state, idempotency leases and call logs. It holds no business data at all.
 
-## 2. End-to-end flow
+## 2. Topology and callers
 
 ### 2.1 Topology
 
 ```
-                          ┌─ channel-service   (DingTalk / Feishu / WeChat user messages)
-                          ├─ webui             (Ant Design Pro console)
-External callers ─ nginx ─┼─ harnax-app        (uni-app H5 / mini-program)
-   :80                    ├─ harnax-client SDK (external integrations)
-                          └─ harnax-admin      (proxies workspace / session calls)
-                                   │
-                                   ↓  X-Api-Key or Bearer JWT
-                          ┌────────────────────┐
-                          │  Router :8081      │──JWT──> agent-service :8082 (×N instances)
-                          │  sticky routing    │            │
-                          └────────────────────┘            │ register / heartbeat (every 10s)
-                            │      │      │                 ↓
-                            ↓      ↓      ↓        ┌── Router /api/router/instance/*
-                     admin :8080  Redis   MySQL    │  (agent-service registers itself)
-                   (key check,    (shared  (call
-                    session        state)   logs only)
-                    ownership)
+                       +- channel-service  (platform user messages, internal JWT)
+                       +- webui            (admin console, login JWT or API Key)
+ external callers -- nginx --+-- harnax-app      (H5 / mini program, API Key)
+    80 -> 443                +- harnax-client SDK (system integration, API Key)
+                             +- harnax-admin     (session and workspace calls, API Key)
+                                |
+                                v  X-Api-Key or Bearer JWT
+                       +--------------------+
+        +--------------|   Router :8081     |-----------+
+        |              +--------------------+           |
+        |                        |                       v  internal JWT
+   admin :8080                Redis :6379        agent-service :8082 (xN)
+ (key validation, session    (instance registry,  |
+   ownership, raw secret      session bindings,   | register / heartbeat
+   string comparison)         breaker, leases)    v
+                             MySQL :3306   +-- POST /api/router/instance/*
+                           (call log db)   |  agent-service registers itself
+                                           +-- call log persisted (api_call_log)
 ```
 
-### 2.2 One streaming chat call (the fullest path)
+### 2.2 Caller matrix
 
-For `POST /api/router/agent/chat/stream`:
+| Caller | Endpoints used | Credential | Notes |
+|--------|-----------|------|------|
+| channel-service | `/agent/chat/stream`, `/agent/command`, `/agent/session/{id}` DELETE | internal JWT (`typ=internal`) | Forwards on behalf of an already authenticated user; carries no tenant, so no tenant comparison happens |
+| webui | all of `/agent/**` (workspace included), `/monitor/**` | Bearer JWT or `X-Api-Key` | reaches Router through the nginx `/api/router/` location |
+| harnax-app (H5 / mini program) | the chat + workspace subset | `X-Api-Key` | may hit 28081 directly or go through nginx |
+| harnax-client SDK | the matching `/agent/**` methods | `X-Api-Key` | — |
+| agent-service | `/instance/register`, `/instance/heartbeat`, `/instance/unregister` | internal JWT | `@InternalOnly`; any external credential gets 403 |
+| admin / operators | `/instance/drain`, `/instance/list`, `/health`, `/metrics/cache`, `/monitor/**` | internal JWT (`/monitor/**` also accepts an admin Key) | — |
+| scheduler | `/agent/chat`, `/agent/command`, `/agent/session/{id}` DELETE | whatever its own configuration says | goes through the `task-` prefix rule, see the session id prefix rules |
 
-| Step | Action | What failure looks like |
-|------|--------|-------------------------|
-| 1 | `UnifiedAuthFilter` validates the credential (Bearer JWT or `X-Api-Key`) and populates `AuthContextHolder` | 401 (real HTTP status) |
-| 2 | `SessionAccessGuard.requireAccessible(sessionId)` checks tenant ownership | 403 / `SecurityException` (see 6.4) |
-| 3 | Look up the binding; if present, use that instance | Not bound → a "not bound" error (see 6.3) |
-| 4 | Otherwise place it: exclude DRAINING and tripped instances, then weighted-random over the reverse index with weight `1/(count+1)` | No usable instance → error |
-| 5 | Write the binding atomically (one Lua script updates the session key and the per-instance reverse index together) | Redis unavailable → a node-local shadow binding; degraded, still served |
-| 6 | Forward with WebClient to `http://{host}:{port}`, stream SSE events back | See step 7 |
-| 7 | On a connectivity failure **before any event reached the client**, retry on another instance, up to `failover-max-retries=2` | After the first event there is no replay (no duplicated content) |
-| 8 | Retryable failures feed the circuit breaker; 3 in a row trips that instance for 30s | While tripped, no **new** session is placed on it |
+## 3. Authentication and authorization layers
 
-**The key contract**: step 7's "no replay after the first event" means that once the client has seen one token, the Router will not silently move it to another instance. If the instance dies at that point, the client sees a terminating error event — not a continued stream.
+### 3.1 Inbound: API Key and internal JWT
 
-### 2.3 Caller matrix
+`UnifiedAuthFilter` (`harnax-auth`, `@Order(HIGHEST_PRECEDENCE + 10)`) establishes an `AuthContext` before `/api/router/**`:
 
-| Caller | Endpoints | Credential | Notes |
-|--------|-----------|------------|-------|
-| channel-service | `/agent/chat/stream`, `/agent/command`, `/agent/session/{id}` DELETE | Internal service token (JWT) | Calls on behalf of users; the Router does not compare tenants (see 7.2) |
-| webui | All of `/agent/**` including workspace | Bearer JWT or `X-Api-Key` | Through the nginx `/api/router/` proxy |
-| harnax-app (H5 / mini-program) | Chat plus a workspace subset | `X-Api-Key` | Mini-program uses a separate proxy path |
-| harnax-client SDK | Methods mapping to `/agent/**` | `X-Api-Key` | `SpringHarnaxClient` / `SingleClient` |
-| agent-service | `/instance/register`, `/instance/heartbeat`, `/instance/unregister` | Internal service token | `@InternalOnly`; external credentials always rejected |
-| admin / ops | `/instance/drain`, `/instance/list`, `/health`, `/metrics/cache`, `/monitor/**` | Internal token or a management API key | — |
+| Step | Behaviour |
+|------|------|
+| Auth-exempt prefixes | `/health`, `/actuator` plus `harnax.auth.skip-paths` (static resources only) |
+| `Authorization: Bearer …` | `InternalTokenProvider.verifyToken` validates the signature and classifies the token; failure is 401 |
+| `X-Api-Key: …` | `ExternalApiKeyValidator` hashes with SHA-256 and looks the digest up in `ApiKeyStore`; failure is 401 |
+| Neither present | 401 with a `ResultVo` body |
 
-## 3. Deployment shapes
+The classification rules inside `verifyToken` are what separate internal from external:
 
-### 3.1 The two cache modes
+- a `typ=internal` claim → `CallerType.INTERNAL_SERVICE`, optionally with `userId` / `tenantId`;
+- no `typ` but a `userId` → handled as `EXTERNAL_API` (a JWT signed at login never obtains an internal identity, even if an operator points `jwt.secret` and `harnax.auth.internal.shared-secret` at the same value);
+- neither `typ` nor `userId` → throws `SecurityException`; that bearer is not accepted.
 
-`router.cache.type` decides where all shared state (instance registry, session bindings, circuit breaker, idempotency) lives:
+On the API Key side, `RemoteApiKeyStore` (`@Primary`) calls admin's `/api/admin/internal/api-keys/validate` and caches 1000 entries for 5 minutes after write with Caffeine, caching both hits and misses; `enabled=false` or a passed `expiresAt` → 401. The Key's tenant and owner identity come entirely from admin's answer; Router never interprets the Key itself.
 
-| Capability | `local` (default) | `redis` |
-|------------|-------------------|---------|
-| Routing state | Process memory (`ConcurrentHashMap`) | Redis, shared across replicas |
-| Call logs | SQLite (embedded) | MySQL |
-| Replica count | 1 | Any |
-| Circuit-breaker consistency | This node only | Shared by all nodes |
-| Failover | Executed by this node | Executed by any node (CAS race, one winner) |
-| Session affinity | Visible to this node only | Visible to all nodes |
-| State persistence | Lost on restart | Survives router restart (Redis durability depends on your AOF/RDB) |
-| Use for | Development / testing / single box | Production |
+### 3.2 API Key scope: chat / manager
 
-> **The binding lifetime is the same value in both modes** (`RedisSessionMappingService.SESSION_TTL` = 24h), not two separate knobs. "How long until a session may move to another agent" therefore behaves identically in dev and in a cluster.
+`scopes` is a comma-separated string. admin writes `chat` when a Key is created without an explicit value, and the management console offers `chat` (conversation) and `manager` (administration). Router carries scopes into the `AuthContext` unchanged, but **none of its admission decisions read scopes**:
 
-### 3.2 Redis topology support matrix
+- internal-only endpoints are decided by `callerType` (`InternalAuthorizationInterceptor` accepts `INTERNAL_SERVICE` only);
+- session-scoped endpoints are decided by tenant ownership (`SessionAccessGuard`);
+- rate is decided by the Key's `rateLimit`.
 
-| Topology | Supported | Notes |
-|----------|-----------|-------|
-| Standalone | ✅ | Default. Run with `maxmemory-policy=noeviction` |
-| Sentinel (replication + automatic failover) | ✅ | `REDIS_SENTINEL_MASTER` / `REDIS_SENTINEL_NODES` |
-| **Redis Cluster** | ❌ **Not supported; configuring it fails startup** | See below |
+So "what a given Key may do" on the Router side is equivalent to: whether it is an internal or an external identity, which tenant it belongs to, and how many requests per minute it may send. The `chat` versus `manager` distinction is applied by admin's management endpoints.
 
-The reason is a hard constraint, not "untested": Router state transitions rely heavily on **multi-key Lua scripts** —
+### 3.3 Outbound: Router to agent-service and to admin
 
-- writing one session binding also updates that instance's reverse index (two keys: `router:session:*` and `router:instance_sessions:*`);
-- an instance status transition must complete atomically with the healthy set (`router:instance:*` and `router:instances:healthy`).
+| Target | Authentication | Implementation |
+|------|----------|------|
+| agent-service | `Authorization: Bearer <internal JWT>` + `X-Caller-Id` | `RouterConfig.authFilter()` asks `InternalTokenProvider.authHeaders()` for headers on every request; token TTL 300s, re-signed when fewer than 60s remain |
+| admin internal API | `Authorization: Bearer <raw secret string>` | `AdminClientService` attaches a `defaultHeader` when building its WebClient, value from `admin.internal-api.secret` |
 
-Those keys do not hash to the same slot in Cluster mode, and Redis returns `CROSSSLOT` **before** executing the script. The consequence is not partial degradation but immediate total failure: the first heartbeat after registration answers 500, `checkInstanceHealth()` throws every 5 seconds, and failover never happens.
+admin's `InternalApiAuthFilter` guards `/api/admin/internal/**` with a **raw string equality comparison** (`token == secret`); it does not parse a JWT. If a caller sends a JWT by mistake, the 401 response text says exactly that. The two outbound chains use different credential systems, so `HARNAX_AUTH_SECRET` and `ADMIN_INTERNAL_API_SECRET` have to be aligned separately in configuration.
 
-`RedisConfig` therefore throws `IllegalStateException` at startup when `REDIS_CLUSTER_NODES` is non-empty, naming the alternative — rather than letting a process that "looks alive with a broken registry" reach production. `RedisConfigTest` locks this behaviour.
+Router calls admin for two things: Key validation (`validateApiKey`) and session-ownership lookup (`lookupSession`). The session id is assembled with `pathSegment()` rather than string interpolation, so that an id containing `../` cannot point the request at a different internal endpoint and carry this secret with it.
 
-**Capacity view**: all Router state is "tens of thousands of bindings plus a few hundred instance records", on the order of tens of megabytes. One node is nowhere near its limit, and Cluster's horizontal scaling buys this component nothing.
+### 3.4 Rate limiting and async dispatch
 
-### 3.3 Two things called "cluster" are not the same thing
+- `RateLimitInterceptor` applies to `EXTERNAL_API` only, counting per `callerId` in a 60-second sliding window; exceeding the limit is **HTTP 429** + `Retry-After: 60` with a `ResultVo(429, …)` body. A Key with an empty `rateLimit` is not limited.
+- Router's counter is in-process (`RateLimiter`); with several replicas each one counts on its own.
+- `InternalAuthorizationInterceptor` decides on `DispatcherType.REQUEST` only. The asynchronous dispatch (SSE) is not re-checked, because `AuthContextHolder` is thread-local.
 
-| Name | Meaning |
-|------|---------|
-| Spring profile `cluster` (`--spring.profiles.active=cluster`, i.e. `application-cluster.yml`) | **The Router deployment shape: multiple replicas + MySQL + Redis.** Still connects to standalone / Sentinel Redis. This is the supported production mode |
-| Redis Cluster (`REDIS_CLUSTER_NODES`) | Redis' own sharded cluster. **Not supported** |
+## 4. Session binding and instance lifecycle
 
-In docker-compose the Router runs with `SPRING_PROFILES_ACTIVE: cluster`; that is the former, unrelated to Redis Cluster.
+### 4.1 Redis key layout
 
-### 3.4 What is promised while Redis is unreachable
+In `redis` mode all shared state lives in Redis, values serialized as JSON (strings carry quotes), key names serialized as plain text:
 
-"Does a Redis outage take the Router down?" is the most common ops question. The answer has four layers and callers need each one's semantics:
+| Key | Type | Content | Lifetime |
+|----|------|------|------|
+| `router:session:<sessionId>` | String | the bound `instanceId` | 24h, extended by every request |
+| `router:instance_sessions:<instanceId>` | Set | the sessionId set on that instance (reverse index; the basis for load statistics and for moving sessions) | 24h, extended together with the bindings inside it |
+| `router:lock:session:<sessionId>` | String | placement mutex token | 10s |
+| `router:instance:<instanceId>` | Hash | `host` / `port` / `status` / `lastHeartbeat` / `active` | 24h, extended by heartbeat |
+| `router:instances:healthy` | Set | instances that accept new sessions | — |
+| `router:instances:all` | Set | every registered instance | — |
+| `router:circuit:<instanceId>` | Hash | breaker state and consecutive failure count (0 closed / 1 open / 2 half-open) | open duration 30s |
+| `router:idempotency:<requestId>` | String | lease for a request in flight | 60s, deleted when the request ends |
+| `router:lock:index_reconcile` | String | global lock for reverse-index reconciliation | 4min |
 
-| State | Behaviour while Redis is unreachable | Cost |
-|-------|--------------------------------------|------|
-| Requests for already-bound sessions | Read this node's shadow bindings (`lastKnownBindings`, 50k entries / 24h) | Affinity across router replicas is not guaranteed during the window |
-| Placement of new sessions | Read the last Redis snapshot of instances (`knownInstances`) | Snapshots age out by heartbeat timeout; once aged out the Router prefers not to route at all over hammering a fleet that may be entirely gone |
-| Circuit-breaker decisions | Read failure → allow the request (fail-open) | A tripped instance may be selected again during the window |
-| Writing a new binding | `placeUnpersisted`: effective on this node only | Other replicas cannot see the binding |
+One state change touches at least two keys (binding + reverse index, or instance status + the healthy set), so every change is **one multi-key Lua script**: `BIND` / `CLAIM` (established with NX) / `MOVE_IF_FROM` (compare-and-swap relocation) / `UNBIND_SESSION` / `REFRESH_TTL` / `REBIND_BATCH` / `UNBIND_BATCH` / `HEARTBEAT` / `MARK_DOWN` / `MARK_DRAINING` / lock release. Doing read-modify-write in Kotlin lets a second replica overwrite the first replica's binding and leaves index entries pointing at an instance that does not serve the session.
 
-**Explicitly not promised**: cross-replica session affinity while Redis is unreachable. The Router guarantees "request threads are not exhausted, the service is not silently dead", not "routing results match what Redis would have said once healthy".
-
-## 4. Session binding lifecycle
-
-### 4.1 Creation and expiry
+### 4.2 Binding lifecycle
 
 | Event | Behaviour |
-|-------|-----------|
-| First request for an unbound session | Placement decision + atomic binding write |
-| Every subsequent request through that session | Binding TTL refreshed (24h) |
-| 24h with no request | Binding expires; the next request places it afresh |
-| Session cleared (`DELETE /agent/session/{sessionId}`) | Forwarded to the instance for CLEAR, then unbound |
-| The bound instance is judged DOWN | Batch re-route to other instances (see 4.3) |
+|------|------|
+| First request for an unbound session | placement decision + atomic `CLAIM` write |
+| A successful request through the session | `refreshActiveTime` extends the binding and the reverse index together |
+| No request for 24h | binding and index expire together; the next request is placed afresh |
+| The bound instance goes DOWN | relocated to other instances in batches by the health checker |
+| Instance `unregister` | `unbindInstanceSessions` deletes every binding on that instance |
+| Clearing a session (`DELETE /agent/session/{id}`) | forwarded to the instance only; the binding stays |
 
-> The 24h TTL means "a session that has been out of the Router's sight for a day may change instance". It is not the business lifetime of a session — that lives in admin's session table.
+The TTL is one constant in both cache modes: `LocalSessionMappingService`'s `bindingTtl` defaults to `RedisSessionMappingService.SESSION_TTL` (24h). The 24h says "once a session has been out of Router's sight for a day, it may be given a different instance"; it has nothing to do with the session's business validity, whose lifecycle lives in admin's session table.
 
-### 4.2 Instance state machine
+### 4.3 Placement decision
+
+`selectLeastLoadedInstance` runs a weighted random draw over the candidates with weight `1 / (current session count + 1)`, and returns immediately when there is a single candidate. Candidates come from `instanceRegistry.getHealthyInstances()`, minus:
+
+- instances the caller already saw fail (the `excluded` set);
+- instances with the breaker open (`placementExclusions` → `circuitBreaker.trippedInstances`);
+- DRAINING instances (not in the healthy set; `MARK_DRAINING_SCRIPT` removes them from it).
+
+**Placement exclusions affect new sessions only.** A session already bound to an instance is not relocated because that instance's breaker tripped — relocating on a breaker reading would move every session on that instance at once, turning one slow instance into a cluster-wide rebinding storm, and the next request's binding would just come back. The only trigger for moving a session is the instance going DOWN.
+
+`rerouteSession` handles concurrency: it first tries to take the 10-second session lock (failing to take it is not a failure; the lock only makes placements tidier), then up to 3 rounds of read-select-compare-and-swap. If another replica already put the session onto an acceptable instance, that placement is adopted and extended. When Redis refuses the write, `placeUnpersisted` takes over (see the behaviour when Redis is unreachable). With no healthy candidate at all, the existing binding is kept when its instance still accepts new sessions; otherwise `IllegalStateException("No healthy agent-service instances available for session …")` is thrown.
+
+### 4.4 Instance state machine
 
 ```
-  register          heartbeat older than 30s
-UP ──────────── DOWN ◄────────────  health check (scan every 5s)
-│                ↑
-│ /drain         │ heartbeat recovers (only non-DRAINING resets to UP)
-↓                │
-DRAINING ────────┘
-   │
-   └─ existing sessions keep being served, new ones are refused; no way back
+(new / re-register)  --register----------> UP        writes status=UP and adds the id to the healthy and all sets
+UP                   --heartbeat---------> UP        refreshes lastHeartbeat and the TTL
+DOWN                 --heartbeat---------> UP        DOWN is reached only through heartbeat staleness, so one successful heartbeat reclaims it
+UP                   --/instance/drain---> DRAINING  removed from the healthy set
+DRAINING             --heartbeat---------> DRAINING  a heartbeat keeps DRAINING instead of resetting it to UP
+UP / DRAINING        --heartbeat silent 30s --> DOWN CAS decision, one replica wins; the health check scans every 5s
+any state            --unregister--------> (the instance key is deleted and the id leaves both sets)
 ```
 
-| State | Accepts new sessions | Serves existing ones | Counted as healthy |
-|-------|----------------------|----------------------|--------------------|
-| `UP` | ✅ | ✅ | ✅ |
-| `DRAINING` | ❌ | ✅ | ✅ (alive, just not taking new work) |
-| `DOWN` | ❌ | Triggers re-route | ❌ |
+| State | Accepts new sessions | Existing bindings keep serving | Counted as a healthy instance |
+|------|-----------|------------------|----------------|
+| `UP` | yes | yes | yes |
+| `DRAINING` | no | yes | no |
+| `DOWN` | no | triggers a batch relocation | no |
 
-**DRAINING is currently a one-way door**: after `/instance/drain` there is no `undrain`, and the heartbeat script deliberately preserves DRAINING instead of resetting it to UP. The only way back to accepting new sessions is for the instance to `register` again. Operationally that means **drain is for "about to shut down", not for "temporarily pull it out to debug"**.
+**A heartbeat can reclaim DOWN**: unless the state is DRAINING, `HEARTBEAT_SCRIPT` writes the state back to UP and re-adds the instance to the healthy set, so a DOWN caused by one network blip rejoins the fleet as soon as that instance's heartbeat returns, with no re-registration needed — but sessions already moved away do not move back. `MARK_DOWN_SCRIPT` returns 0 for an instance that is already DOWN, so one instance is never relocated twice.
 
-### 4.3 Failover
+`AgentInstance.isHealthy` counts DRAINING as alive — the state means "take no new sessions", not "dead". Treating it as unhealthy would let the health checker mark it DOWN within one scan cycle, forcibly move every session away, and make graceful draining pointless.
 
-When the health check (`router.health.check-interval-ms=5000`) finds an instance whose heartbeat is older than 30s:
+**drain is a one-way door**: there is no `undrain` endpoint, and the heartbeat script explicitly preserves DRAINING instead of resetting it to UP. The only way back to accepting new sessions is for that instance to `register` again. drain therefore serves "about to go away", not "pull myself out of rotation for a moment to read the logs".
 
-1. CAS-mark it DOWN — with several replicas only one wins; the others see `rows == 0` and skip;
-2. Sessions on it are **re-routed in batches** of 500, up to 200 batches;
-3. Target selection applies **overload avoidance**: if the target holds more than 2× the cluster average, pick one at or below 1.5× instead;
-4. Per-instance failover has a 10-second cooldown (`failoverCooldownMs`, hard-coded) so flapping cannot churn sessions;
-5. After re-routing, the old instance gets an **eviction notice** (see 4.4).
+### 4.5 Failover and relocation
 
-> **Placement exclusion is not eviction**: tripped or DRAINING instances only affect where **new** sessions go. A bound session is never moved because of a circuit breaker — only when its instance goes DOWN.
+`HeartbeatHealthChecker.checkInstanceHealth` (`@Scheduled`, fixed delay 5s):
 
-### 4.4 Eviction semantics: STOP_SANDBOX, not CLEAR
+1. handles every instance where `!isHealthy(30s)` one at a time, re-reading its health snapshot each time, so sessions are not moved from one just-dead instance to another instance dying in the same batch;
+2. applies a 10-second cooldown per instance for relocation (`failoverCooldownMs`, hardcoded); the cooldown record is swept every 60 seconds and entries are treated as expired after 5 minutes;
+3. `markInstanceDown` is CAS: a return of 0 rows means another replica already decided, so this one skips;
+4. targets exclude breaker-tripped instances (when everything is tripped, nothing is excluded — a session stuck in place is worse than one move), choosing the least loaded;
+5. overload avoidance: when the target's session count exceeds cluster mean × 2, the least loaded instance at or below mean × 1.5 is chosen instead;
+6. `rebindAllSessions` moves sessions with `REBIND_BATCH_SCRIPT`, 500 per batch, at most 200 batches; whatever does not fit is left to the reconciler;
+7. the reverse index is backed up by `SessionIndexReconciler`: one pass every 5 minutes, a global lock keeping it single-node, two sweeps (drop index entries whose binding is gone, re-add index entries that were lost), at most 50000 keys per sweep, the remainder left for the next round.
 
-After a session moves, the Router tells the old instance to stop its sandbox — with `STOP_SANDBOX`:
+### 4.6 Eviction semantics: STOP_SANDBOX, not CLEAR
 
-- the workspace snapshot, transcript and plans are **kept**;
-- only the sandbox process and its reserved resources stop.
+After a session moves, `SessionEvictor` tells the instance it left to stop that session's sandbox:
 
-This is deliberate: a session may simply have been placed on a better instance, and the user should find everything intact when they return. Controlled by `router.migration.evict-old-instance` (default `true`); eviction runs asynchronously on a small thread pool (queue depth 200, excess dropped with a warning) and never occupies a request thread.
+- the command sent is `CommandType.STOP_SANDBOX`. `CLEAR` would delete the conversation history and the plans along with it, and those live in a state store shared by every instance — one instance losing a session must not delete what the next instance still needs;
+- `STOP_SANDBOX` persists a workspace snapshot before destroying the container, so a session that returns to this instance still finds its files;
+- before sending, the binding store is asked to confirm "this session really left". During a Redis outage placements are recorded on this node only, and evicting on that basis alone would stop the sandbox of a session that never moved;
+- it runs on a dedicated pool (1 to 2 threads, queue `router.migration.max-pending=200`); overflow is dropped and counted in a warning, request threads are never occupied, and failures are not propagated to the caller;
+- controlled by `router.migration.evict-old-instance` (default `true`).
 
-### 4.5 Clearing a session
+### 4.7 Clearing a session and release failures
 
-`DELETE /api/router/agent/session/{sessionId}` is forwarded to the bound instance. Note the difference from unbinding: clearing the transcript does not move the session — it stays bound to the same instance.
+Behaviour of `DELETE /api/router/agent/session/{sessionId}`:
 
-## 5. Endpoint contract
+| Case | Result |
+|------|------|
+| This Router never placed the session | returns `code=200` directly, the message states it was unbound; no instance is contacted |
+| Bound | forwards `DELETE /api/agent/session/{id}` to that instance exactly once, never retried against another instance |
 
-### 5.1 Agent proxy (14 endpoints; credential plus ownership check)
+The agent-side chain is: `DefaultAgentRunner.clearSession` → first `interrupt`, clear `agentCache`, clear the state store and the plan notes, and clean up team sub-sessions one by one; then `KeepAliveSandboxManager.destroy` persists the workspace snapshot before `docker rm -f`. **The snapshot is kept**; the history and the plans are removed.
 
-All under `/api/router/agent`, all routed by `sessionId`.
+What Router does not do: it does not clear the binding. After the records are cleared the session still points at the same instance.
 
-| Method and path | Body | Returns | Purpose |
-|-----------------|------|---------|---------|
-| `POST /chat` | `ChatAgentRequest` | `ResultVo<ChatResponse>` | Non-streaming chat |
-| `POST /chat/stream` | `ChatAgentRequest` | `Flux<ChatEvent>` (SSE) | Streaming chat (main path) |
-| `POST /command` | `CommandAgentRequest` | `ResultVo<CommandResponse>` | Imperative control (`/clear`, `/stop`, `/compact`, `/enable`, …) |
+Release failure is handled on the admin side: `SessionRuntimeReleaser.release` reads `ResultVo.isSuccess()` from Router's reply and throws a `BizException` carrying the runtime's own message when it is not a success. Deleting a session (management console and mobile) and deleting a channel (whose `chn-{uuid}` session has no separate session row) are therefore both built on "if the runtime says no, this delete is not written". Unbound is treated as success by the Runtime side, so a session that never started can still be deleted.
+
+The difference between `callBound` and `executeWithRetry` deserves an explicit statement: write endpoints (chat / command) switch instance and retry after a failure; read and clear endpoints **hit the bound instance exactly once** — a second machine does not have what the first was asked to provide, and reporting the failure to the caller is more useful than inventing an empty result. Only "this instance does not answer" style failures count towards the breaker.
+
+## 5. Endpoint contracts
+
+### 5.1 Conversation proxy (14 endpoints, prefix `/api/router/agent`)
+
+All are routed by `sessionId` and all pass through `SessionAccessGuard.requireAccessible`.
+
+| Method and path | Request body | Returns | Purpose |
+|------------|--------|------|------|
+| `POST /chat` | `ChatAgentRequest` | `ResultVo<ChatResponse>` | non-streaming chat |
+| `POST /chat/stream` | `ChatAgentRequest` | `Flux<ChatEvent>` (SSE) | streaming chat (the main path) |
+| `POST /command` | `CommandAgentRequest` | `ResultVo<CommandResponse>` | imperative control (clear / stop / compact / …) |
 | `POST /confirm` | `ConfirmAgentRequest` | `Flux<ChatEvent>` (SSE) | HITL tool confirmation, resumes the suspended run |
-| `DELETE /session/{sessionId}` | — | `ResultVo<String>` | Clear the transcript |
-| `GET /chat/history/{sessionId}` | — | `ResultVo` (passed through) | Load transcript |
-| `GET /session/{sessionId}/plans` | — | `ResultVo` (passed through) | Plan list |
-| `GET /session/{sessionId}/current-plan` | — | `ResultVo` (passed through) | Current plan |
-| `GET /workspace/{sessionId}/files` | `path` etc., passed through | `ResultVo` (passed through) | List directory |
-| `GET /workspace/{sessionId}/read` | `path`, passed through | `ResultVo` (passed through) | Read a text file |
-| `POST /workspace/{sessionId}/upload` | multipart | `ResultVo` (passed through) | Upload into the workspace |
-| `GET /workspace/{sessionId}/download` | `path`, passed through | file stream | Download a produced file |
-| `GET /workspace/status` | — | `ResultVo` | Workspace status for all sessions (console view) |
-| `GET /workspace/{sessionId}/status` | — | `ResultVo` | One session's status, including whether its sandbox is live |
+| `DELETE /session/{sessionId}` | — | `ResultVo<String>` | clear the session records |
+| `GET /chat/history/{sessionId}` | — | pass-through | conversation history |
+| `GET /session/{sessionId}/plans` | — | pass-through | plan list |
+| `GET /session/{sessionId}/current-plan` | — | pass-through | current plan |
+| `GET /workspace/{sessionId}/files` | `path` (default `/workspace`) | pass-through | list a directory |
+| `GET /workspace/{sessionId}/read` | `path` | pass-through | read a file as text |
+| `GET /workspace/status` | `sessionIds` (comma-separated, required) | pass-through | workspace status for several sessions |
+| `GET /workspace/{sessionId}/status` | — | single-session status | `{"active": false}` when there is no data |
+| `POST /workspace/{sessionId}/upload` | multipart `file` + `path` | pass-through | upload into the workspace |
+| `GET /workspace/{sessionId}/download` | `path` | file stream | download a produced file |
 
-Request body essentials:
+Body fields and identity:
 
 ```kotlin
 ChatAgentRequest(sessionId, message, imageUrls = [], requestId = "", userId = null)
@@ -242,245 +253,422 @@ CommandAgentRequest(sessionId, command: CommandType, args = "", userId = null)
 ConfirmAgentRequest(sessionId, isConfirmed, toolInfoList = [], toolResults = [], userId = null)
 ```
 
-`userId` precedence: the end-user identity from the authentication context **wins over** `userId` in the body. When a trustworthy identity exists, a forged body value has no effect; only when no identity is available (e.g. an internal service token carrying no user) does it fall back to the body value, logging one info line.
+`resolveUserId` precedence: the end-user identity in the auth context outranks the body's `userId`. When a trusted identity exists but the body reports a different value, the trusted identity wins and a warning is logged. Only when no identity is available at all (an internal token without `userId`) is the body value adopted, logged at info — that is the single case where body identity is trusted.
 
-### 5.2 Instance registry (`@InternalOnly`, prefix `/api/router`)
+`/workspace/status` sends the whole id list to one instance for it to answer, so every id that `IdFormat.parseSessionIds` extracts is put through the guard separately. Checking only the first would turn the remaining ids into an entry point for reading another tenant's session content.
+
+Download and upload boundaries:
+
+- the file name comes from the client, and Router writes it into logs, forwards it into agent's multipart, and puts it in the download's `Content-Disposition`. `safeFileName` strips the directory part, removes quotes and control characters, truncates to 128 characters, and substitutes `unnamed` when nothing is left;
+- a download above `MAX_DOWNLOAD_SIZE = 50 MB` makes Router return **HTTP 413** directly; an empty body from agent yields **HTTP 404** (these two use real status codes, not `ResultVo`).
+
+### 5.2 Unbound behaviour of read-only endpoints
+
+When a session is unbound (never chatted, binding expired, or its instance unregistered) Router contacts no instance, and the endpoints answer differently:
+
+| Endpoint | When unbound |
+|------|----------|
+| `DELETE /session/{id}` | `code=200`, `data` is an explanatory string |
+| `GET /chat/history/{id}`, `/plans`, `/current-plan` | `code=200`, `data` is an empty list / null |
+| `GET /workspace/{id}/files`, `/workspace/status` | `code=200`, empty list / empty map |
+| `GET /workspace/{id}/read` | `code=404`, stating there is no workspace because the session is unbound |
+| `POST /workspace/{id}/upload` | `code=409`, telling the caller to send a message first |
+| `GET /workspace/{id}/download` | HTTP 404 |
+| `POST /chat`, `/command`, `/chat/stream`, `/confirm` | placed onto a new instance immediately |
+
+Semantically, unbound means "this session has not started yet". These answers deliberately do not pretend that "the content really is empty", and do not manufacture an empty directory by placing the session elsewhere.
+
+### 5.3 Instance management (prefix `/api/router`, the whole controller is `@InternalOnly`)
 
 | Method and path | Caller | Semantics |
-|-----------------|--------|-----------|
-| `POST /instance/register` | agent-service | Registers itself (`host` + `port`, port must be 8000–9999) |
-| `POST /instance/heartbeat` | agent-service | Refreshes the heartbeat (every 10s by default, `AGENT_HEARTBEAT_INTERVAL`); **when the instance is unknown the body carries `code=410`** (HTTP stays 200), which the agent turns into a re-registration |
-| `POST /instance/unregister` | agent-service | Takes itself out and unbinds all of its sessions |
-| `POST /instance/drain` | ops / admin | Graceful shutdown: no new sessions, existing ones kept (one-way door, see 4.2) |
-| `GET /instance/list` | ops | Instances and their states |
-| `GET /health` | Probes | Router-view health |
-| `GET /metrics/cache` | ops | Cache mode and state size |
+|------------|--------|------|
+| `POST /instance/register` | agent-service | parameters `instanceId` / `host` / `port`; host must be an IPv4 literal, not blocked, and the port within 8000–9999 |
+| `POST /instance/heartbeat` | agent-service | refreshes the heartbeat; for an unknown instance the body says `code=410` (HTTP stays 200) and agent re-registers on that |
+| `POST /instance/unregister` | agent-service | takes the instance away and unbinds all its sessions |
+| `POST /instance/drain` | operators / admin | graceful take-out; body `code=404` when the instance is unknown |
+| `GET /instance/list` | operators | instances and their states |
+| `GET /health` | operators | capacity report: `healthyInstances > 0` yields `UP`. This is not this node's health; containers and load balancers must use `/actuator/health/*` |
+| `GET /metrics/cache` | operators | class names of the registry / binding / idempotency implementations currently in effect |
 
-External API keys calling these always get 403 — `@InternalOnly` requires an internal service identity.
+Because the class is annotated `@InternalOnly`, an external API Key calling any of these endpoints (including `GET /health` and `/metrics/cache`) gets 403.
 
-### 5.3 Monitoring and UI
+Registration is validated twice: `InstanceRegistrationValidationFilter` (`@Order(HIGHEST_PRECEDENCE + 20)`, ahead of authorization, reading URL parameters rather than the body, and truncating matrix parameters at `;` before matching the path) rejects dirty parameters with real HTTP status codes — invalid `instanceId`/`host` format 400, blocked address 400, out-of-range port 400, privileged port 403. The controller then re-checks IPv4 and the port range independently, answering inside a `ResultVo`. The first check sits at the registration door so that a dirty address never enters the registry — registration is the main SSRF surface.
+
+### 5.4 Monitoring and static resources
 
 | Path | Auth | Content |
-|------|------|---------|
-| `GET /api/router/monitor/instances` | **Credential required** | Map of the cluster's internal addresses; sensitive |
-| `GET /api/router/monitor/call-logs` | **Credential required** | Recorded calls, with session ids and error text, **scoped to the caller's tenant**: a tenant-bearing credential sees only its own rows; only a caller with no tenant (internal service token / SYSTEM key) sees the whole table — including the rows whose `tenant_id` is NULL, which is what those callers write |
-| `/ui`, `/index.html`, `/static/`, `/style.css`, `/app.js`, `/favicon.ico` | Open | Only the static files that render the page |
+|------|------|------|
+| `GET /api/router/monitor/instances` | credential required | instance address, port, state, heartbeat age, session count. This is cluster topology, owned by no tenant, which is why it does not descend into session content |
+| `GET /api/router/monitor/call-logs` | credential required | paged call-log query, narrowed to the caller's tenant (see the call log section) |
+| `/ui`, `/index.html`, `/static/`, `/style.css`, `/app.js`, `/favicon.ico` | exempt | static resources for rendering the monitor page only; the page's data requests require a credential |
 
-> The open paths (`harnax.auth.skip-paths`) contain **static resources only**. Never add `/api/router/` — `/instance/heartbeat` and `/instance/register` depend on `UnifiedAuthFilter` establishing `AuthContext`, which is what `InternalAuthorizationInterceptor` judges.
+The monitoring endpoints are deliberately not `@InternalOnly`: browsers hold no service-to-service credential, and operators use their own JWT or an admin Key. The exempt paths are static resources only — putting `/api/router/` into `harnax.auth.skip-paths` would leave `heartbeat` / `register` without an `AuthContext`, and `InternalAuthorizationInterceptor` would have nothing to decide on.
 
-### 5.4 Idempotency
+### 5.5 Idempotency
 
-| Endpoint | Deduplicated | Basis |
-|----------|--------------|-------|
-| `POST /chat` | ✅ only when `requestId` is non-empty | Dedupe key = `requestId`, 60s window |
-| `POST /chat/stream`, `/confirm`, `/command` | ❌ none | See limitation #4 |
+| Endpoint | Deduplicated | Condition |
+|------|------|------|
+| `POST /chat` | yes, only when `requestId` is non-empty | lease key = `requestId` |
+| `POST /chat/stream`, `/confirm`, `/command` | no | — |
 
-A duplicate `/chat` returns `code=429` with `Duplicate request: {requestId}`. **Callers that want dedupe must generate and send `requestId` themselves** — channel currently does not, so this path is inert in practice.
+`proxyChatRequest` deduplicates only when the client supplied a `requestId` itself (an id Router generates is unique by definition; guarding it costs an extra round trip and rejects nothing). The semantics are an **in-flight lease**, not a replay window: `tryAcquire` claims the slot with `SET NX`, `release` deletes it in the request's `finally`, and the 60-second TTL only covers a process dying mid-request. When the lease cannot be taken, the answer is `code=429` with the message `Duplicate request: {requestId}`. When Redis is unreachable `tryAcquire` lets the request through (better to miss one duplicate than to stop serving).
 
-## 6. Error semantics (the contract callers care about most)
+## 6. Response and error semantics
 
 ### 6.1 Non-streaming: HTTP 200 plus a business code
 
-**Most Router business errors return HTTP 200 with the error in the body**:
+`GlobalExceptionHandler` writes uncaught exceptions as a `ResultVo` while the HTTP status stays 200:
 
 ```json
-{ "code": 500, "message": "Session xxx is not bound to any instance", "data": null }
+{ "code": 500, "message": "No healthy agent-service instances available for session web-…", "data": null }
 ```
 
-This is an intentional convention: webui's request wrapper only reads `code`/`message` out of 2xx responses, and treats anything else as a swallowed network failure. **Judge success by `body.code`, not by the HTTP status.**
+An `HarnaxException` contributes its own numeric code; every other exception comes out as `code=500`. This is the shape webui's request wrapper requires: it judges success from the `code` field of a 2xx response, and a non-2xx is swallowed as a network failure. **Judge success from `body.code`, not from the HTTP status.**
 
-Only errors raised in filters and interceptors — before a controller is entered — use real HTTP statuses:
+Non-500 business codes Router produces itself in its control flow: 429 (duplicate request), 404 (workspace read unbound, drain of an unknown instance), 409 (workspace upload unbound), 410 (heartbeat for an unknown instance).
 
-| Situation | HTTP | Response |
-|-----------|------|----------|
-| Missing or invalid credential | 401 | Status written directly by the filter |
-| Origin not in the CORS allow-list | 403 | `Invalid CORS request` (happens *before* authentication, easily misread as "no permission") |
-| External key on `@InternalOnly` | 403 | Rejected by the interceptor |
-| Session belongs to another tenant | see 6.4 | `SecurityException` |
+### 6.2 Streaming: errors are events
 
-> **Known defect**: once control reaches the exception handler, everything except a few explicit branches (such as the 429 dedupe) collapses into business code `500`. Callers currently **cannot** distinguish "not bound" from "no instance available" or "invalid argument" programmatically, and must match on `message` text. See limitation #3.
+`/chat/stream` and `/confirm` declare `text/event-stream`. Every failure path — ownership refusal, invalid id format, no instance, forwarding failure, relocation failure — terminates as an event stream:
 
-### 6.2 Streaming: errors travel as events
+```kotlin
+ErrorChatEvent(code = HarnaxErrorCode.code, message = …)   // code is a string code
+EndEventChatEvent()
+```
 
-`/chat/stream` and `/confirm` declare `produces = text/event-stream`. On the normal failure path the error is emitted as an event and the stream closes:
+The `code` is the string code of a `HarnaxErrorCode`: `2002` FORBIDDEN (ownership refusal), `1003` INVALID_PARAM (invalid id), `6011` ROUTER_NO_INSTANCE (placement failed), `6010` ROUTER_PROXY_ERROR (forwarding or relocation failed). **Do not read these numbers with HTTP status-code semantics.** Regular content events are `StreamThinkingChatEvent`, `StreamTextChatEvent`, `CallToolChatEvent`, `ToolResultChatEvent`, `ToolConfirmChatEvent` (HITL suspension, which must come back through `/confirm`), and the stream closes with `EndEventChatEvent` (carrying `tokenUsage`).
 
-| Event type | Payload | Meaning |
-|------------|---------|---------|
-| `ErrorChatEvent` | `code: String`, `message: String` | **`code` is a `HarnaxErrorCode` string, not an HTTP status** — do not compare it to numbers |
-| `EndEventChatEvent` | `tokenUsage?` | Normal end of output |
+Caller contract: an `ErrorChatEvent` means a business failure and the end of the exchange; do not retry the whole stream.
 
-Content events: `StreamThinkingChatEvent`, `StreamTextChatEvent`, `CallToolChatEvent`, `ToolResultChatEvent`, `ToolConfirmChatEvent` (HITL suspension; the caller must answer via `/confirm`).
+### 6.3 Where real HTTP status codes are used
 
-**Caller rule**: treat `ErrorChatEvent` as a business failure and stop. Do not retry the whole stream — if content was already delivered, a retry duplicates it. The Router obeys the same "no replay after the first event" rule internally.
+| Case | HTTP | Source |
+|------|------|------|
+| credential missing / invalid / Key disabled or expired | 401 | `UnifiedAuthFilter` |
+| Origin outside the CORS allow-list | 403 (body `Invalid CORS request`) | `CorsFilter`, ahead of authentication |
+| external credential calling `@InternalOnly` | 403 | `InternalAuthorizationInterceptor` |
+| `@InternalOnly` but no `AuthContext` available | 401 | same (normally a misconfigured `skip-paths`) |
+| external Key over its per-minute quota | 429 + `Retry-After: 60` | `RateLimitInterceptor` |
+| invalid registration parameters / blocked address / port out of range | 400 | `InstanceRegistrationValidationFilter` |
+| registration of a privileged port | 403 | same |
+| download too large / download with no content | 413 / 404 | `AgentProxyController` |
 
-### 6.3 Session not bound
+## 7. The SSE streaming chain
 
-When a session never had a conversation, or its binding expired, the Router does **not** contact any agent-service and answers with a not-bound error. Semantically this is "this session has not started yet". Workspace endpoints behave the same way — no binding means no files to list.
+### 7.1 End-to-end timeout budget
 
-### 6.4 How an ownership rejection currently surfaces on SSE endpoints (mind this)
+| Layer | Parameter | Value |
+|----|------|-----|
+| client → nginx (the SSE regex location) | `proxy_read_timeout` | 900s |
+| client → nginx (`/api/router/`) | `proxy_read_timeout` | 60s |
+| Router container async request | `spring.mvc.async.request-timeout` | 1800000ms (30min) |
+| Router → agent (non-streaming JSON) | `router.proxy.read-timeout-ms` | 600000ms (10min), used both as `responseTimeout` and as `ReadTimeoutHandler` |
+| Router → agent (write) | `router.proxy.write-timeout-seconds` | 30s, **an in-code default**: the key exists only as the `@Value` default on a `RouterConfig` constructor parameter, neither `harnax-session-router/src/main/resources/application.yml` nor compose carries it, so it is not adjustable through configuration |
+| Router → agent (connect) | `router.proxy.connect-timeout-ms` | 5s |
+| Router stream idle | `router.proxy.stream-idle-timeout-seconds` | 120s |
+| Router stream wall clock | `router.proxy.stream-max-duration-minutes` | 30min |
+| Router → Redis | command timeout / connect timeout | 3s / 2s |
+| Router → admin | response timeout / connect timeout | 3s (plus a 1s total-budget margin) / 2s |
+| idempotency lease | `router.idempotency.ttl-seconds` | 60s |
+| agent per-turn budget | `HARNAX_TURN_TIMEOUT_SECONDS` | 300s |
 
-| Endpoint kind | Current behaviour | What the caller sees |
-|---------------|-------------------|----------------------|
-| Non-streaming (`/chat`, `/command`, history, workspace) | Exception reaches the global handler → JSON `ResultVo` | A readable error body (HTTP 200) |
-| **Streaming (`/chat/stream`, `/confirm`)** | The guard sits outside the `try`, so the exception also escapes to the global handler, which tries to write JSON on an endpoint declared `text/event-stream` | Possibly a 406 negotiation failure; even when JSON is written, channel's `bodyToFlux(ChatEvent)` fails to decode it and its fallback reports "cannot reach the router" |
+The two stream bounds are applied at subscription time by `AgentServiceClient.withinStreamLimits`: `timeout(120s)` measures silence between events, `takeUntilOther(Mono.delay(30min))` measures the wall clock of the whole stream. Both end the stream with an exception, so the caller sees a failure rather than a silent stop. `streamingWebClient` deliberately carries no `responseTimeout` — an agent thinking for a minute without sending a byte is the very reason this endpoint exists, and cutting on a read timeout would remove exactly the requests it is meant to serve.
 
-The consequence: **a correctly rejected cross-tenant access shows up as a misleading network fault**, sending debugging in the wrong direction. This is a known defect (limitation #2); until it is fixed, a stream that fails instantly with a "network" error should first be checked for a 403 ownership rejection.
+The container async timeout (30min) is aligned with the stream wall clock (30min) so that Router ends the stream itself instead of being cut off by the container. The Redis 3s command timeout is deliberately short: only a fast failure leaves room for the degradation paths.
 
-## 7. Tenant isolation guarantees
+### 7.2 Requirements on the nginx side
 
-### 7.1 Where it is enforced
+In `docker-new/nginx.conf`, `location ~ ^/api/router/agent/(chat/stream|confirm)` does the following; omit any one of them and the symptom is "the stream does not move":
 
-All 14 session-scoped proxy endpoints pass `SessionAccessGuard.requireAccessible(sessionId)` **before** the Router looks for an instance. The convergence point is `boundInstance()`, so there is no "one endpoint forgot the guard" bypass.
+| Directive | Value | Reason |
+|------|-----|------|
+| `proxy_http_version` | 1.1 | — |
+| `proxy_set_header Connection` | `""` | keep-alive reuse without an `Upgrade`: SSE is not a protocol upgrade, and the location on this path does not forward an `Upgrade` header |
+| `proxy_buffering` / `proxy_request_buffering` | off | neither response nor request is buffered |
+| `proxy_cache` | off | skips any response cache |
+| `gzip` | off, and `Accept-Encoding` emptied | compressing SSE makes nginx accumulate blocks |
+| `X-Accel-Buffering` | `no` | also disables buffering behind one more upstream proxy |
+| `chunked_transfer_encoding` | on | — |
+| `proxy_next_upstream_tries` | 1 | a POST is never resubmitted to a different upstream |
+| `proxy_read_timeout` | 900s | trips only on stream silence, and Router's 120s arrives first |
 
-What is compared: the caller's `tenantId` (from the JWT `tenantId` claim, or the tenant attached to the API key) against the owning `tenantId` that admin reports for the session. A mismatch throws `SecurityException`.
+Regex locations take precedence over the `/api/router/` prefix location, so only these two endpoints take the unbuffered path.
 
-A `chn-` session became **attributable** in release 3: instead of answering "no such session" for that prefix, admin reads the owner off the `channel` row and **deliberately ignores its `active` flag** — a soft-deleted channel still belongs to the tenant stamped on the row, because deleting one cleans up neither the session nor the sandbox, and a guard that let anyone make a still-readable conversation unattributable would be a way to erase accountability. So "read another tenant's channel conversation or workspace with my own login" is a refusal today, not a pass. `task-` does not go this way: it is still refused by the prefix rule before any lookup, for callers that have an end user behind them (its owner lives in the scheduler domain and will come from that service's endpoint).
+### 7.3 Instance switch allowed before the first event, no replay after it
 
-Worth recording why this guard exists at all: the Router stamps **its own** service token on the outbound call, so agent-service sees a peer service and cannot block cross-tenant access on the Router's behalf; and inbound authentication only answers "may this caller use the Router", never "may this caller read *this* session".
+`buildStreamFlux` uses an `AtomicBoolean delivered` set in `doOnNext` to record "has an event already been delivered to the client", and `onErrorResume` switches instance only when all three hold: `isConnectivityError(e)` && `attempt < failover-max-retries(2)` && `!delivered`.
 
-### 7.2 Three deliberate pass-throughs (not holes, but they define the guarantee's edge)
+`isConnectivityError` recognizes only these exception classes (walking the cause chain): `ConnectException`, `SocketTimeoutException`, `NoRouteToHostException`, `UnknownHostException`, `ConnectTimeoutException`. Instance switching therefore happens only on "cannot connect". Once an event has been delivered Router does not replay — replaying a prompt that already produced text would append a second answer inside the same conversation and run the tools the agent already executed a second time.
 
-| Pass-through condition | Reason |
-|------------------------|--------|
-| Caller has no `tenantId` (internal service token, `SYSTEM`-scoped API key) | channel routes on behalf of users it already authenticated; there is nothing to compare, and inventing a denial would only push operators to disable authentication |
-| admin does not know the session (`Unknown`) | Nothing is bound to it, so the proxy endpoints answer "not bound" without touching an agent — and ownership cannot be proven either way |
-| admin unreachable (`Unreachable`) | Chat is not blocked because admin is down; logged at warn and allowed |
+During a switch the `excluded` set accumulates the instances already tried, and `placementExclusions` additionally excludes breaker-tripped instances; before switching, `sessionEvictor.requestEviction` is called so the instance being left stops the sandbox.
 
-### 7.3 Granularity and precision
+### 7.4 Connection pool and buffering
 
-**The granularity must be stated plainly**: the isolation unit is the **tenant**, not the user.
+`RouterConfig` builds one `ConnectionProvider` (`router-pool`) shared by both WebClients. Reactor Netty pools per `host:port`, so the limits below are the amount **a single agent instance** may occupy, not a global amount — one wedged instance cannot fill up the whole Router:
 
-- Different logged-in users **inside the same tenant can read each other's sessions** (anyone holding a valid credential of that tenant).
-- User-level isolation has to come from above (admin's session authorisation, or the channel-side user↔session mapping). The Router does not provide it.
+| Parameter | Value | Meaning |
+|------|-----|------|
+| `max-connections-per-instance` | 50 | concurrent connection ceiling for one instance |
+| `pending-acquire-timeout-ms` | 10000 | how long a waiter queues for a slot when the pool is full |
+| `pending-acquire-max-count` | 100 | above this many waiters requests are rejected fast instead of everyone timing out |
+| `pool-max-idle-seconds` | 60 | idle connection reclamation |
+| `pool-max-lifetime-minutes` | 5 | forced reclamation by age; after a session moves, the connections to its former instance reach end of life and get no reuse |
+| `evictInBackground` | 30s | — |
+| `max-in-memory-size-mb` | 16 | non-streaming response buffer ceiling; downloads and streams do not take this path |
 
-**Precision edges**:
+## 8. Tenant isolation
+
+### 8.1 Where validation converges
+
+All 14 session-scoped endpoints pass `SessionAccessGuard.requireAccessible(sessionId)` before any instance is looked up: write paths call it explicitly, read paths get it from `boundInstance()` uniformly (a new endpoint inherits the guard simply by reusing `boundInstance`). The two sides compared: the caller's `tenantId` (the JWT's `tenantId` claim or the tenant attached to the Key) and the owning tenant admin reports; a mismatch raises `SecurityException`.
+
+Why this guard exists: when forwarding, Router presents its own service token, so agent-service sees "a peer service" and cannot block a cross-tenant call on that basis; and inbound authentication answers "may you use Router", never "may you read this session".
+
+### 8.2 Conditions that let a request through
+
+| Passed through | Basis |
+|------|------|
+| caller has no `tenantId` (internal service token without a tenant / Key without a tenant) | there is no side to compare. channel comes to route on behalf of a user it already authenticated, and manufacturing a refusal would only push operators towards turning authentication off |
+| admin explicitly answers "no such session" (`Unknown`) | nothing is bound, the proxy endpoints answer "unbound", no instance is touched, and ownership can be neither proved nor disproved |
+| admin unreachable or refusing (`Unreachable`) | the conversation chain is not blocked by an admin outage; a warning is logged and the request proceeds |
+
+`Unknown` and `Unreachable` are two distinct outcomes inside `AdminClientService.lookupSession` (a 404 means "admin did answer"), and `SessionInfoClient` caches only the former while invalidating immediately on the latter — otherwise one admin hiccup would make the affected sessions read as "does not exist" for 5 minutes after recovery.
+
+### 8.3 Session id prefix rules
+
+`PrivilegedSessionPrefixes` blocks `task-` ahead of any ownership query: when the caller carries an end-user identity, a `task-` prefix raises `SecurityException` directly. This is a prefix rule rather than a query because admin parses `task-` from the id itself (`agent_task` already lives in scheduler's own database), so the ownership query cannot answer for it — a uniform `Unknown` would mean passing it through, and the taskId inside `task-{taskId}` is a monotonically increasing integer, enumerable with one valid credential. Internal callers without an end user, such as scheduler, keep working.
+
+`chn-` is not on that list: its id is a UUID, and pointing at it already requires knowing it. admin's `/sessions/{id}/info` takes the tenant of a `chn-` id from the `channel` row and **ignores the `active` flag** — a soft-deleted channel still belongs to its original tenant (deleting clears neither the session nor the sandbox, so deletion is not what makes a read orphaned). Cross-tenant `chn-` reads are therefore refused by the tenant comparison above, while legitimate same-tenant page reads keep passing. `web-` and `mp-` are decided entirely by the tenant comparison.
+
+### 8.4 Granularity and precision
+
+**The isolation unit is the tenant, not the user.** Within one tenant, different logged-in users holding valid credentials for that tenant can read each other's sessions. User-level isolation must come from a higher layer (admin's session authorization, or the channel side's user-to-session mapping).
 
 | Item | Value / behaviour |
-|------|-------------------|
-| Ownership lookup cache | 5000 entries, 5 minutes after write → ownership is judged from the cached value inside that window |
-| Lookup timeout | `admin.internal-api.timeout-response-ms=3000`, plus a 1s fallback bound |
-| Where the lookup happens | On the request thread, via `runBlocking` — see limitation #8 |
+|----|-----------|
+| ownership lookup cache | 5000 entries, 5 minutes after write; `Unknown` is cached too |
+| thread the lookup runs on | `runBlocking` on the request thread, worst case about 4s (3s response timeout + 1s margin) |
+| the window the cache opens | a `chn-` id asked about before admin started answering keeps passing for 5 more minutes on its cached `Unknown` |
 
-### 7.4 Input and SSRF defences
+### 8.5 Input format and SSRF defences
 
-| Defence | Rule |
-|---------|------|
-| `sessionId` format | `[A-Za-z0-9._:-]{1,128}`, `..` rejected; anything else fails as `IllegalArgumentException` |
-| Instance registration address | `isValidIpAddress` plus loopback / private-range blocklist (`isBlockedHost`), port restricted to **8000–9999** |
-| Workspace `path` | `substringBefore(';')` strips matrix parameters, then `UriUtils.encodePathSegment` / `pathSegment()` builds the URI — never string concatenation |
+| Defence point | Rule |
+|--------|------|
+| `sessionId` | `^[A-Za-z0-9._:-]{1,128}$` and no `..`; a violation raises `IllegalArgumentException` without echoing the rejected value |
+| `instanceId` | `^[A-Za-z0-9._-]{1,64}$` |
+| the `sessionIds` list | split on commas and validated one by one; an empty list is refused outright |
+| registered address | IPv4 literals only (any letter is refused); `0.*`, `127.*`, `169.254.*` and hostnames such as `localhost` or `metadata*` are refused; private ranges are allowed. Port 8000–9999 |
+| forwarded path | `sessionId` always becomes a path segment through `UriUtils.encodePathSegment`; query parameters through `encodeQueryParam`; the URI is built by `java.net.URI`, never by string concatenation |
+| file names | `safeFileName` strips the directory, removes quotes and control characters, caps length at 128 |
+| Redis deserialization | `GenericJackson2JsonRedisSerializer` with a `BasicPolymorphicTypeValidator` that allows only `com.agnetix.harnax.`, `java.util.` and `java.lang.` |
 
-> The registration endpoint is the main SSRF surface (registering `169.254.169.254:80` would make the Router issue requests for the attacker), which is why validation happens at the **registration entry filter**, not at use time — dirty records never reach the registry.
+Format validation matters because `sessionId` appears simultaneously in a Redis key name, in a URL Router itself issues, and in logs: an id containing a quote or a backslash makes the reverse index derive a key name that never matches (the session quietly loses its instance mid-conversation), and an id containing `../` turns one session lookup into a request against a different internal endpoint.
 
-## 8. Timeout and capacity budgets
+## 9. Storage and the call log
 
-### 8.1 Layered timeouts (current actual values)
+### 9.1 Two datasource shapes
 
-| Layer | Parameter | Value | Notes |
-|-------|-----------|-------|-------|
-| Client → nginx | SSE location `proxy_read_timeout` | **900s** | Covers the streaming endpoints |
-| Client → nginx | Plain `/api/router/` `proxy_read_timeout` | **60s** ⚠️ | Misaligned with the next row |
-| nginx → Router | Follows the above | 60s ⚠️ | Long non-streaming calls get cut by the gateway first |
-| Router → agent-service (non-streaming) | `router.proxy.read-timeout-ms` | **600s** | AI processing budget |
-| Router → agent-service (connect) | `router.proxy.connect-timeout-ms` | 5s | |
-| Router stream, idle | `stream-idle-timeout-seconds` | 120s | Silence this long ends the stream |
-| Router stream, wall clock | `stream-max-duration-minutes` | 30min | Cap regardless of how chatty it is |
-| Router → Redis | `spring.data.redis.timeout` / `connect-timeout` | 3s / 2s | **Deliberately short**: fast failure is what reaches the fallback path |
-| Router → admin | `admin.internal-api.timeout-response-ms` | 3s | Plus a 1s fallback bound |
-| Idempotency window | `router.idempotency.ttl-seconds` | 60s | |
+| Mode | Trigger | Routing state | Call log |
+|------|----------|----------|----------|
+| `local` (`router.cache.type=local`, default) | single node / development | in-process memory | SQLite, JDBC URL defaulting to `jdbc:sqlite:tmp/harnax-router/call-log.db`; the table is created by `SqliteInitConfig` running `db/sqlite-init.sql`, the directory by `SqliteDirectoryInitializer` |
+| `redis` (cluster profile) | `CACHE_TYPE=redis` | Redis | MySQL database `harnax_router`, tables created by the Flyway migration `V1__create_session_router_tables.sql` |
 
-⚠️ **Two of these disagree**: a non-streaming `/chat` may run 600s inside the Router while nginx gives up at 60s — the caller sees 504 while the Router may still be finishing successfully (duplicate model work and billing risk). See limitation #5.
+The two DDLs carry the same columns (the SQLite one differs in constraints around the `instance_id` index and additionally creates `idx_instance_id`). The SQLite branch is active only when the datasource URL contains `sqlite` and Flyway is not enabled, so the cluster profile never reaches it.
 
-### 8.2 Connection pool (keeping one bad instance from absorbing the Router)
+The call-log database takes no part in readiness: failing to write a log must not take routing out of service.
 
-| Parameter | Value | Semantics |
-|-----------|-------|-----------|
-| `max-connections-per-instance` | 50 | Reactor Netty keeps one pool per `host:port`, so this caps what a **single agent instance** may occupy |
-| `pending-acquire-timeout-ms` | 10s | How long a caller waits for a slot when the pool is saturated |
-| `pending-acquire-max-count` | 100 | Waiters beyond this are refused fast instead of timing out together |
-| `pool-max-idle-seconds` | 60s | Idle connection recycling |
-| `pool-max-lifetime-minutes` | 5min | Age-based recycle, so a re-balanced agent is not pinned |
-| `max-in-memory-size-mb` | 16 | Buffer ceiling for non-streaming responses; **large downloads do not take this path** |
+### 9.2 `api_call_log` columns
 
-### 8.3 Circuit breaker
+| Column group | Columns |
+|--------|------|
+| caller | `caller_id`, `caller_type` (`INTERNAL_SERVICE` / `EXTERNAL_API`), `tenant_id` (nullable) |
+| session and target | `session_id`, `agent_id`, `agent_name`, `model_id`, `model_name`, `instance_id` |
+| request | `endpoint`, `method`, `request_type` (`CHAT` / `COMMAND` / `CONFIRM`), `request_id` |
+| outcome | `status_code`, `success`, `error_message`, `start_time`, `end_time`, `duration_ms`, `create_time` |
+| indexes | `idx_caller_id`, `idx_session_id`, `idx_start_time`, `idx_tenant_id` |
 
-| Parameter | Value | Semantics |
-|-----------|-------|-----------|
-| `failure-threshold` | 3 | Consecutive retryable failures before opening |
-| `open-duration-ms` | 30s | While open, no **new** session is placed on that instance |
-| `probe-lease-ms` | 30s | Half-open state leases a **single** probe slot, so a concurrent burst cannot storm a half-open breaker |
+### 9.3 When it is captured and how it is buffered
 
-Breaker state is shared through Redis in multi-replica deployments: an instance tripped by replica A is not used by B or C. In `local` mode it is node-local.
+`ApiCallLogFilter` (`@Order(HIGHEST_PRECEDENCE + 15)`) handles the `/api/router/agent/` prefix only; requests outside it are not logged:
 
-## 9. Observability
+- the row is written when the response actually ends. The basis is the response status, not whether the filter chain returned — for streams and coroutine endpoints the chain returns at the start of async processing, and recording then would log a 200 and a few milliseconds;
+- SSE endpoints (path ending in `/stream`, or `/api/router/agent/confirm`) and coroutine batch endpoints (`/chat`, `/command`, `/session`, `/chat/history`, `/workspace` and its sub-paths) are not wrapped in a `ContentCachingResponseWrapper`: buffering would cut the event stream or flush out an empty body. These requests register an `AsyncListener` instead and write one row (exactly one) in `onComplete` / `onTimeout` / `onError`, with `duration_ms` covering the whole stream's life, and a timeout row marked as failure stating that the response was never written;
+- the landing instance comes from the request attribute `router.routedInstanceId` written by `SessionRouterService.trackPlacement`, falling back to MDC. MDC belongs to the thread where placement happened and is invalidated by coroutine suspension; only a thread bound to an HTTP request can write that attribute;
+- the four agent / model columns come from `SessionInfoClient`; when admin is unreachable they stay empty and the rest is recorded as usual;
+- `ApiCallLogService` buffers in memory, flushing a batch insert at 50 rows or every 5 seconds, with a buffer ceiling of 10000 rows beyond which rows are dropped and counted; a failed batch insert falls back to row-by-row retries and bad rows count towards `poisonedCount`; one flush happens before the process exits. Each string column is truncated to its DDL width.
+- there is no time-based deletion task anywhere; the table only grows.
 
-### 9.1 Metrics (`/actuator/prometheus`)
+### 9.4 Narrowed to the caller's tenant
 
-| Metric | Type | Tags | Use |
-|--------|------|------|-----|
-| `router.proxy.duration` | Timer | `endpoint` | Proxy latency distribution |
-| `router.proxy.requests` | Counter | `endpoint`, `status` (`ok`/`error`) | Success rate |
-| `router.failover.count` | Counter | `endpoint`, `attempt` | How often failover happens, and on which hop |
-| `router.healthy.instances` | Gauge | — | Instances this replica could place on right now (DRAINING excluded) |
+The `tenantId` used by `GET /monitor/call-logs` does not come from a request parameter; `RouterMonitorController` takes it from the already validated credential:
 
-> Alerting note: use **`min()`, not `avg()`** for `router.healthy.instances` — when replicas disagree, an average hides "this replica cannot see any instance at all". Rule samples are in the README's alerting section.
+| Caller | Sees |
+|--------|------|
+| a credential with a tenant | only rows with `tenant_id = own tenant` |
+| no tenant (internal token without a tenant / Key without a tenant) | everything, including rows with `tenant_id IS NULL` |
 
-### 9.2 Call logs (`api_call_log`)
+Rows with `tenant_id IS NULL` were written by tenant-less callers in the first place, which is why the rule is not widened to `IS NULL OR = own tenant` — a row that cannot be attributed must not become everyone's row. `sessionId`, `instanceId`, `agentName`, `statusCode`, `success`, `minDurationMs`, `limit` and `offset` are optional caller-side filters, unrelated to the question of whose rows these are; paging and count reuse the same WHERE fragment.
 
-Written to MySQL in `redis` mode; `local` mode keeps the same columns in SQLite.
+## 10. Behaviour when Redis is unreachable
 
-| Field group | Fields |
-|-------------|--------|
-| Caller | `caller_id`, `caller_type` (`INTERNAL_SERVICE`/`EXTERNAL_API`), `tenant_id` |
-| Session and target | `session_id`, `agent_id`, `agent_name`, `model_id`, `model_name`, `instance_id` |
-| Request | `endpoint`, `method`, `request_type` (`CHAT`/`COMMAND`/`CONFIRM`), `request_id` |
-| Result | `status_code`, `success`, `error_message`, `start_time`, `end_time`, `duration_ms` |
+### 10.1 Degradation point by point
 
-How it is collected: `ApiCallLogFilter` uses an allow-list strategy (only response bodies of paths worth capturing are cached), then batches asynchronously to the database (batch 50, every 5s) with a 10000-row buffer; overflow is dropped with a warning. Streaming requests are logged by an `AsyncListener` once the stream closes, so `duration_ms` covers the whole stream.
+| Step | Behaviour | Consequence |
+|------|------|------|
+| request for an already bound session | when `getInstanceId` fails to read, fall back to this node's shadow cache `lastKnownBindings` (Caffeine, 50000 entries / 24h, repopulated on every successful read so it outlives a fault longer than the TTL) | stickiness is not guaranteed when another replica handles the same session |
+| placement of a new session | the instance list comes from `RedisInstanceRegistry`'s `knownInstances` snapshot, discarded in full once entries age out on heartbeat timeout | after ageing, placement stops rather than being aimed at a fleet that may all be gone |
+| load statistics | `degradedCounts` estimates from this node's shadow bindings | a single-node view only, and spreading is still better than choosing nothing |
+| breaker decision | read failure lets the request pass | an instance inside the breaker window may be selected again |
+| writing a new binding | `placeUnpersisted` takes effect on this node, and the write happens at the next placement after Redis recovers | other replicas cannot see this binding |
+| idempotency lease | `tryAcquire` lets the request through | duplicates may get through during the fault |
 
-**Retention: none.** There is no time-based DELETE anywhere; the table only grows. Plan archiving or pruning yourself — see limitation #7.
+Lettuce is configured with `DisconnectedBehavior.REJECT_COMMANDS`: with the connection down, commands throw immediately on the calling thread instead of queueing — queueing would exhaust the servlet thread pool, and only throwing reaches the fallback paths above.
 
-### 9.3 Tracing a problem by sessionId
+**What is not promised**: cross-replica session stickiness while Redis is unreachable. What is promised is that request threads are not wedged and that service is not silently lost — not that routing results match what Redis would say after recovery. In cluster mode the readiness check (`/actuator/health/readiness`, which includes the `redis` member) takes that node out of load balancing.
 
-| Means | Reliability |
-|-------|-------------|
-| Query `api_call_log` by `session_id` | ✅ Most reliable; includes `instance_id`, so you know which agent to look at |
-| `GET /api/router/monitor/instances` | ✅ Instance-level session distribution |
-| MDC in application logs | ⚠️ Unreliable: MDC does not follow coroutine suspension and can leak onto the next request handled by the same Tomcat thread (limitation #11). **Do not confirm which instance served a call from log lines — use `api_call_log.instance_id`** |
+### 10.2 Redis Cluster is not supported: fail-fast at startup
 
-## 10. Current limitations (source of truth)
+| Topology | Support |
+|------|------|
+| single standalone instance | supported, and the default; requires `maxmemory-policy=noeviction` |
+| Sentinel (replication plus automatic failover) | supported, via `REDIS_SENTINEL_MASTER` / `REDIS_SENTINEL_NODES` / `REDIS_SENTINEL_PASSWORD` |
+| Redis Cluster | not supported; a non-empty `REDIS_CLUSTER_NODES` fails startup |
 
-Ordered by caller impact. "Workaround" is what to do until it is fixed.
+The reason is in the key layout: scripts such as `BIND` / `MOVE_IF_FROM` / `REBIND_BATCH` operate on `router:session:*` and `router:instance_sessions:*` at the same time, and `HEARTBEAT` / `MARK_DOWN` / `MARK_DRAINING` operate on `router:instance:*` and `router:instances:healthy` at the same time. Under Cluster these keys do not land in one slot, so Redis answers `CROSSSLOT` before executing the script — the first heartbeat after registration fails, the health checker throws every 5 seconds, and failover does not work at all.
 
-| # | Limitation | Impact | Workaround |
-|---|------------|--------|------------|
-| 1 | **Redis Cluster is not supported**; `REDIS_CLUSTER_NODES` aborts startup | Redis HA must be standalone or Sentinel | Use Sentinel. If Cluster is mandatory, the key layout needs reworking first (single-hash-tag route, see README) |
-| 2 | **An ownership rejection on SSE endpoints answers JSON, not an event stream** | Cross-tenant access looks like "cannot reach the router", misleading debugging | When a stream fails instantly with a network error, check for a 403 rejection first (Router log: `Rejected a cross-tenant session access`) |
-| 3 | All non-streaming business errors collapse to code `500` | Callers cannot programmatically tell not-bound from no-instance from bad-argument | Match `message` text, or query session state first |
-| 4 | **No idempotency on streaming endpoints**; `/chat` dedupe needs a caller-supplied `requestId` (channel sends none) | A client retry can trigger a second model call | Dedupe client-side; pass `requestId` if you want Router-side dedupe |
-| 5 | nginx `60s` vs Router `600s` non-streaming read timeouts disagree | Long non-streaming calls get cut at the gateway while the Router may still succeed → duplicate work / billing | Use `/chat/stream` for long work (900s at nginx), or align the two settings |
-| 6 | Hang-class failures (`ReadTimeoutException`, pool acquire timeout) neither trip the breaker nor fail over | An instance that accepts connections but never answers is not evicted automatically; callers just time out | Heartbeat timeout (30s) is the backstop; `/instance/drain` manually if needed |
-| 7 | `api_call_log` has no retention policy or cleanup job | The table grows without bound | Schedule archive/delete by `start_time` yourself |
-| 8 | Ownership check is **tenant-granular**, and the lookup uses `runBlocking` on the request thread | Users inside one tenant are not isolated from each other; a slow admin occupies request threads (up to ~4s worst case) | Enforce user-level isolation above the Router; keep admin healthy |
-| 9 | `drain` is irreversible; there is no `undrain` | A mistaken drain needs an instance restart to recover | Confirm the instance is really leaving service before draining |
-| 10 | `local` mode shares nothing | With several replicas each places independently and affinity drifts per node | Deploy `local` as a single replica (a deployment constraint, not a bug) |
-| 11 | MDC is not cleared across coroutine suspension points | Log lines of a later request on the same Tomcat thread can carry an earlier session | Attribute via `api_call_log`, not application logs |
+`RedisConfig.redisConnectionFactory` therefore puts the Cluster check first and throws an `IllegalStateException` whose message names the alternatives (standalone or Sentinel), instead of letting a node come online that is "process alive, registry unusable". `harnax-session-router/src/test/kotlin/com/agnetix/harnax/router/config/RedisConfigTest.kt` locks this behaviour.
 
-## 11. Code and document index
+Router's entire state is "tens of thousands of session bindings + a few hundred instance records + a handful of index sets", an order of a few tens of MB; docker-compose gives Redis `maxmemory 512mb` with `noeviction`.
+
+### 10.3 profile `cluster` and Redis Cluster are two different things
+
+| Name | Meaning |
+|------|------|
+| Spring profile `cluster` (`SPRING_PROFILES_ACTIVE=cluster`, i.e. `application-cluster.yml`) | the deployment shape of multiple Router replicas + MySQL + Redis; the Redis it connects to is still standalone or Sentinel. This is the production shape |
+| `REDIS_CLUSTER_NODES` | Redis's own sharded cluster; not supported, and setting it fails startup |
+
+What `application-cluster.yml` overrides is the datasource (MySQL with Flyway enabled), `router.cache.type=redis`, the reverse-index reconciliation parameters, and the inclusion of `redis` in the readiness group.
+
+## 11. Deployment shape (docker-new)
+
+`docker-new/docker-compose.yml` is the only deployment entry point. The relevant lines of the `router` service:
+
+| Item | Value |
+|----|-----|
+| image / container name | `harnax-router:latest` (built by `docker-new/Dockerfile.router`) / `harnax-router` |
+| profile | `SPRING_PROFILES_ACTIVE: cluster` |
+| storage | `DB_URL: jdbc:mysql://mysql:3306/harnax_router`, `DB_USERNAME` / `DB_PASSWORD`; the database itself is created by `docker-new/sql/init-databases.sql` |
+| cache | `CACHE_TYPE: redis`, `REDIS_HOST: redis`, `REDIS_PORT: 6379`, `REDIS_PASSWORD` |
+| identity | `SERVICE_ID` (`ROUTER_SERVICE_ID`, default `router-0`), `HARNAX_AUTH_SECRET`, `ADMIN_INTERNAL_API_SECRET` |
+| upstream | `ADMIN_SERVICE_URL: http://admin:8080` |
+| CORS | `ROUTER_CORS_ALLOWED_ORIGINS`, which must include the port-less `http(s)://localhost` and `127.0.0.1` variants |
+| port | `28081:8081` published to the host (the standard convention: 20000 + service port) |
+| depends on | `admin` started, `redis` healthy |
+| health check | `wget /actuator/health/liveness` every 30s with `start_period` 30s; this is a liveness check and does not look at Redis |
+| resources | CPU ceiling 2.0 / memory 1024M, JVM `-Xms128m -Xmx512m` |
+| volumes | `router-logs:/app/logs`, host `/etc/localtime` read-only |
+
+The proxy-side requirements are in the nginx section above: the SSE regex location must keep buffering off and a 900s read timeout; the `/api/router/` prefix location's 60s covers non-streaming and instance-management calls; `= /ui` is proxied to `router:8081` on its own.
+
+### 11.1 Fail-fast at startup
+
+| Check | Condition | Result |
+|------|------|------|
+| `RedisConfig` | `router.cache.type=redis` and `REDIS_CLUSTER_NODES` non-empty | throws `IllegalStateException`, process does not start |
+| `RedisConfig` | `router.cache.type=redis` and neither a host nor a sentinel master | `check(...)` fails with a message to configure `REDIS_HOST` |
+| `PlaceholderSecretCheck` | `redis` mode with `harnax.auth.enabled=true` while `HARNAX_AUTH_SECRET` or `ADMIN_INTERNAL_API_SECRET` still holds a placeholder value from the repository | throws and refuses to start |
+| `SqliteInitConfig` / `SqliteDirectoryInitializer` | the datasource is SQLite and Flyway is not enabled | create the directory and the table; failure fails startup |
+
+`PlaceholderSecretCheck` covers `redis` mode only: a placeholder secret buys nothing in single-node in-memory mode, and refusing to start a development environment over a strength requirement that is never exercised only pushes people towards turning authentication off.
+
+### 11.2 Liveness, readiness and the scheduler pool
+
+| Endpoint | Content |
+|------|------|
+| `GET /actuator/health/liveness` | whether the process is up. A container restart policy should look at nothing else |
+| `GET /actuator/health/readiness` | whether routing can happen. Under the cluster profile it includes the `redis` member and excludes MySQL |
+| `GET /metrics/cache` | the implementation classes currently in effect (internal identity) |
+
+`spring.task.scheduling.pool.size` is 4 (`ROUTER_SCHEDULER_POOL_SIZE`): health checking, call-log flushing, rate limiting and binding cleanup are all `@Scheduled`, and sharing one thread would let a single health check waiting on Redis stop every other task including call-log flushing.
+
+## 12. Observability
+
+### 12.1 Metrics
+
+`/actuator/prometheus` (exposing `health,info,prometheus,metrics`, all tagged with `application`):
+
+| Metric | Type | Tags | Definition |
+|------|------|------|------|
+| `router.proxy.duration` | Timer | `endpoint=chat` | non-streaming chat duration; the timer also stops on the exception path |
+| `router.proxy.requests` | Counter | `endpoint=chat\|stream`, `status=ok\|error` | numerator and denominator of the success rate |
+| `router.failover.count` | Counter | `endpoint`, `attempt` | how often relocation happens and at which hop |
+| `router.healthy.instances` | Gauge | — | how many instances this replica may place onto at scrape time (DRAINING is not in the healthy set and is therefore not counted) |
+
+`router.healthy.instances` reads the registry at scrape time instead of accumulating a counter: registration, drain and another replica's DOWN decision all change the fleet outside this node, and a counter would drift from the view. With several replicas this metric must be aggregated with `min()`, not `avg()` — when replica views disagree, an average hides "one replica sees no instances at all".
+
+### 12.2 Locating the landing instance from a sessionId
+
+| Means | Availability |
+|------|--------|
+| query `api_call_log` by `session_id` and read `instance_id` | the first choice; includes the landing instance |
+| `GET /api/router/monitor/instances` | session distribution and heartbeat age from the instance side |
+| MDC in the application log | reliable on synchronous paths only. Streaming requests do not write MDC (events arrive on agent's event loop), and a relocation that completes on agent's event loop does not reach the call log's `instance_id` |
+
+## 13. Current limits (source of truth)
+
+| # | Fact | Effect | Handling today |
+|---|------|------|----------|
+| 1 | Redis Cluster is not supported; cross-key Lua is a design precondition, and a non-empty `REDIS_CLUSTER_NODES` refuses startup | Redis high availability comes from standalone or Sentinel only | Sentinel; the state footprint is a few tens of MB, so sharding buys this component nothing |
+| 2 | outside the explicit branches, non-streaming business errors all collapse to `code=500` | callers cannot distinguish "unbound / no instance / invalid parameter" programmatically and must match on `message` | when a distinction is needed, check session and instance state first |
+| 3 | streaming endpoints have no idempotency, and `/chat` deduplication requires the caller to bring a `requestId` | a client reconnect may trigger two model calls | deduplicate on the client; to get Router-side deduplication, generate and send a `requestId` |
+| 4 | the nginx `proxy_read_timeout` for the `/api/router/` prefix is 60s while Router's non-streaming read timeout is 600s | a non-streaming `/chat` longer than 60s is cut by the gateway first while Router may still run it to success | send long work through `/chat/stream` (the 900s location), or align the two values |
+| 5 | neither the read-idle timeout nor the pool-acquire timeout triggers relocation or the breaker: `isConnectivityError` knows only connectivity exceptions, `isRetryableError` only connectivity plus 5xx/429 | an instance that "accepts connections but never returns data" is not removed automatically, and the caller just gets a timeout | the 30s heartbeat timeout is the backstop; operators use `/instance/drain` |
+| 6 | `api_call_log` has no retention period and no cleanup task | the table only grows | operators archive or delete by `start_time` |
+| 7 | session ownership validation is at tenant granularity; different users inside one tenant can read each other's sessions | user-level isolation is not provided by Router | provided by admin's session authorization or the channel-side mapping |
+| 8 | the ownership lookup runs `runBlocking` on the request thread (budget 3s + 1s) | a slow admin occupies request threads | keep admin healthy; a cache hit means no network call |
+| 9 | `Unknown` results are cached for 5 minutes while `Unreachable` is not cached | ownership is decided from the cached value inside that window | when a change must take effect immediately, wait out the window or restart the node |
+| 10 | `drain` is irreversible and there is no `undrain`; heartbeat preserves DRAINING | an accidental drain recovers only through a fresh `register` | confirm the instance is going away before draining it |
+| 11 | `local` mode shares no state at all | with several replicas each places independently and stickiness drifts per replica | run `local` on a single replica (deployment constraint) |
+| 12 | the rate-limit counter is in-process per replica | the effective quota of an external Key grows with the replica count | exact quotas need a shared counter |
+| 13 | a relocation that completes on agent's event loop writes no `instance_id` into the call log | that landing instance is traceable only in the instance's own logs | landing is recorded by `trackPlacement` on synchronous paths |
+| 14 | `GET /workspace/status` hands every id to the instance that owns the first id | sessions on other instances are answered only partially, and unbound ones come back empty | group the query by instance, or use the single-session endpoints |
+
+## 14. Key file index
 
 | Topic | Location |
-|-------|----------|
-| Proxy and placement flow | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/proxy/SessionRouterService.kt` |
-| Endpoint definitions | `.../router/controller/AgentProxyController.kt`, `InstanceRegistryController.kt`, `RouterMonitorController.kt` |
-| Session mapping (Redis / local) | `.../router/service/impl/RedisSessionMappingService.kt`, `LocalSessionMappingService.kt` |
-| Instance registry and health | `.../router/service/impl/RedisInstanceRegistry.kt`, `.../router/health/HeartbeatHealthChecker.kt` |
-| Circuit breaker | `.../router/service/InstanceCircuitBreaker.kt` with `impl/RedisCircuitBreaker.kt`, `LocalInstanceCircuitBreaker.kt` |
-| Reverse-index reconciliation | `.../router/service/impl/SessionIndexReconciler.kt` |
-| Tenant isolation | `.../router/service/SessionAccessGuard.kt`, `SessionInfoClient.kt` |
-| Input format and SSRF defences | `.../router/support/IdFormat.kt`, `.../router/entity/AgentInstance.kt` |
-| Call logging | `.../router/config/ApiCallLogFilter.kt`, `.../router/service/ApiCallLogService.kt` |
-| Topology decision (Cluster rejection) | `.../router/config/RedisConfig.kt`; test `src/test/.../config/RedisConfigTest.kt` |
-| Event and request protocol | `harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/` (`AgentRequest.kt`, `ChatEvent.kt`) |
-| Module internals and alerting rules | [`harnax-session-router/README.md`](../harnax-session-router/README.md) |
-| Deployment steps | [`docs/deploy-harnax-session-router.md`](../docs/deploy-harnax-session-router.md) |
-| Channel-side integration | [`prod_doc/channel-integration.zh-CN.md`](./channel-integration.zh-CN.md) |
-| Cross-service call map | [`docs/http-call-network.md`](../docs/http-call-network.md) |
+|------|------|
+| application entry point | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/SessionRouterApplication.kt` |
+| proxy and placement main flow | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/proxy/SessionRouterService.kt` |
+| conversation proxy endpoints | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt` |
+| instance management endpoints | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/InstanceRegistryController.kt` |
+| monitoring endpoints | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/RouterMonitorController.kt` |
+| monitor page entry | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/RootController.kt` |
+| session binding (Redis) | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/service/impl/RedisSessionMappingService.kt` |
+| session binding (single node) | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/service/impl/LocalSessionMappingService.kt` |
+| instance registry | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/service/impl/RedisInstanceRegistry.kt`, `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/service/impl/LocalInstanceRegistry.kt` |
+| reverse-index reconciliation | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/service/impl/SessionIndexReconciler.kt` |
+| circuit breaker | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/service/InstanceCircuitBreaker.kt`, `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/service/impl/RedisCircuitBreaker.kt`, `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/service/impl/LocalInstanceCircuitBreaker.kt` |
+| idempotency | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/service/impl/RedisIdempotencyService.kt`, `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/service/impl/CaffeineIdempotencyService.kt` |
+| health check and relocation | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/health/HeartbeatHealthChecker.kt` |
+| sandbox eviction | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/service/SessionEvictor.kt` |
+| outbound client and stream bounds | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/service/AgentServiceClient.kt` |
+| connection pool and WebClients | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/config/RouterConfig.kt` |
+| Redis wiring and topology decision | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/config/RedisConfig.kt` |
+| tenant ownership | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/service/SessionAccessGuard.kt`, `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/service/SessionInfoClient.kt` |
+| admin client | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/service/AdminClientService.kt`, `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/service/RemoteApiKeyStore.kt` |
+| input format and prefix rules | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/support/IdFormat.kt`, `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/support/PrivilegedSessionPrefixes.kt` |
+| instance entity and address validation | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/entity/AgentInstance.kt` |
+| pre-auth registration parameter checks | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/config/InstanceRegistrationValidationFilter.kt` |
+| call-log capture | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/config/ApiCallLogFilter.kt`, `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/service/ApiCallLogService.kt`, `harnax-session-router/src/main/resources/mapper/ApiCallLogMapper.xml` |
+| rate limiting | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/service/RateLimiter.kt`, `harnax-auth/src/main/kotlin/com/agnetix/harnax/auth/RateLimitInterceptor.kt` |
+| startup secret check | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/config/PlaceholderSecretCheck.kt` |
+| exception to response | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/config/GlobalExceptionHandler.kt` |
+| configuration | `harnax-session-router/src/main/resources/application.yml`, `harnax-session-router/src/main/resources/application-cluster.yml` |
+| schema scripts | `harnax-session-router/src/main/resources/db/migration/V1__create_session_router_tables.sql`, `harnax-session-router/src/main/resources/db/sqlite-init.sql` |
+| inbound authentication | `harnax-auth/src/main/kotlin/com/agnetix/harnax/auth/UnifiedAuthFilter.kt`, `harnax-auth/src/main/kotlin/com/agnetix/harnax/auth/ExternalApiKeyValidator.kt`, `harnax-auth/src/main/kotlin/com/agnetix/harnax/auth/InternalTokenProvider.kt`, `harnax-auth/src/main/kotlin/com/agnetix/harnax/auth/InternalAuthorizationInterceptor.kt` |
+| admin internal API secret comparison | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/config/InternalApiAuthFilter.kt`, `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt` |
+| release failure refuses the delete | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/SessionRuntimeReleaser.kt`, `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AgentRuntimeClientImpl.kt` |
+| agent-side clearing and sandbox release | `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt`, `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/sandbox/KeepAliveSandboxManager.kt` |
+| events and request protocol | `harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/AgentRequest.kt`, `harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/ChatEvent.kt` |
+| error codes | `harnax-common/src/main/kotlin/com/agnetix/harnax/common/error/HarnaxErrorCode.kt` |
+| deployment and proxy | `docker-new/docker-compose.yml`, `docker-new/nginx.conf`, `docker-new/Dockerfile.router`, `docker-new/sql/init-databases.sql` |

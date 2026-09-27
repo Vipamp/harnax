@@ -1,584 +1,423 @@
-# Harnax Tool Capability Overview (English)
+# Harnax Tool Capability and Developer Guide (English)
 
-> 中文版本见 [tool-capability.zh-CN.md](./tool-capability.zh-CN.md)
->
-> This document is based on a survey of the current codebase, covering the tool SDK (`harnax-tools-sdk`), built-in tools (`harnax-tools-buildin`), and the full runtime tool-assembly chain in the agent.
->
-> For the classification model, layer responsibilities, key design decisions with their trade-offs, and the evolution timeline, see [tool-integration-design.en-US.md](./tool-integration-design.en-US.md).
+This is the capability document of the tool domain: where tools come from, which annotations and abstractions describe them, how the platform registers and assembles them, which tables hold the data, and what an operator and a developer can each do. Architectural decisions and invariants live in the sibling document "Harnax Tool Integration Design". Each document stands on its own; neither refers to the other's section numbers.
 
 ## 1. Overview
 
-The Harnax tool system provides invocable external capabilities for agents. The design follows a layered architecture: "the SDK defines the contract, built-in modules provide implementations, Admin manages metadata, and the agent runtime assembles tools dynamically":
+### 1.1 Where the facts come from
 
-- **harnax-tools-sdk**: the tool SDK layer. Defines the tool abstraction (`ToolBox`), annotations (`@ToolMeta`, `ToolEnvParamDef`), the registry (`ToolRegistry`), and adaptor interfaces. No business dependencies.
-- **harnax-tools-buildin**: the built-in tool module (under `harnax-tools-external`), providing ready-to-use tools (time, email, etc.) built on the SDK.
-- **harnax-harness-core**: the agent runtime, responsible for dynamically assembling tools per configuration when building an agent, injecting environment parameters, and configuring permission rules.
-- **harnax-admin**: the metadata management service, syncing built-in tools to the database at startup and exposing tool-management APIs.
+Every externally visible property of a tool is decided by annotations in the code: one `@Tool` method is one tool, and `@ToolMeta` adds its display names, environment parameter definitions, confirmation flag and dangerous-input flag. The `agent_tool` table is a mirror of those declarations, written by one sync at admin process startup; neither the pages nor the API offer a write path.
 
-The underlying framework is agentscope 2.0.2 (`io.agentscope`). Tools are ultimately registered into the HarnessAgent toolkit as `AgentTool` instances.
+### 1.2 Modules and dependencies
 
-### Module dependencies
+| Module | Maven artifactId | Responsibility |
+| --- | --- | --- |
+| `harnax-agent/harnax-tools-sdk` | `harnax-tools-sdk` | SDK: `ToolBox` base class, annotations, contexts, descriptors, `ToolRegistry`, the two SPI interfaces |
+| `harnax-tools-external/harnax-tools-buildin` | `harnax-tools-buildin` | Built-in tool implementations; today two groups: time and email |
+| `harnax-agent/harnax-harness-core` | `harnax-harness-core` | Runtime assembly: `HarnessAgentLauncher`, `HarnessAgentBuilder`, `DangerousInputCheckingTool`, team tool groups |
+| `harnax-admin` | `harnax-admin` | Startup sync `BuiltinToolAutoRegistrar`, read-only management API, spec delivery |
+| `harnax-agent/harnax-agent-service` | `harnax-agent-service` | `ToolConfigAdaptorImpl`, `ToolCallLogAdaptorImpl`, `AgentSpecResolver` |
 
-```
-harnax-tools-sdk  ←── harnax-tools-buildin (built-in tool implementations)
-        ↑                      ↑
-        │                      │
-harnax-harness-core     harnax-admin (startup sync + management APIs)
-        ↑
-harnax-agent-service (runtime assembly, adaptor implementations)
-```
+Dependency directions (taken from each module's `pom.xml`):
+
+- `harnax-tools-sdk` → `harnax-common`, `harnax-entity`, `io.agentscope:agentscope`, `spring-boot-autoconfigure`, `spring-context`
+- `harnax-tools-buildin` → `harnax-tools-sdk`, `io.agentscope:agentscope`, `spring-context`, `jakarta.mail-api` + `angus-mail`
+- `harnax-harness-core` → `harnax-common`, `harnax-entity`, `harnax-protocol`, `harnax-agent-utils`, `harnax-tools-sdk`
+- `harnax-admin` → `harnax-tools-sdk` + `harnax-tools-buildin` (the POM comment states the reason: so `BuiltinToolAutoRegistrar` can discover `ToolBox` beans)
+- `harnax-agent-service` → `harnax-tools-buildin`
+
+Both processes scan the `com.agnetix.harnax.tools` package: `HarnaxAdminApplication`'s `scanBasePackages` are `com.agnetix.harnax.admin` and `com.agnetix.harnax.tools`; `AgentServiceApplication`'s are `com.agnetix.harnax.agent.service`, `com.agnetix.harnax.agent.skill` and `com.agnetix.harnax.tools`. `ToolRegistry` is therefore a local bean container in each process, and its content equals the set of `ToolBox` beans on that process's classpath - which is why a new tool module has to join both the admin and the agent-service classpath.
+
+The underlying framework is `io.agentscope` (version from the root `pom.xml` property `agent-scope.version`, currently `2.0.2`). `@Tool`, `@ToolParam`, `Toolkit` and the permission engine all come from it; harnax adds only its own annotations and wrappers.
 
 ## 2. Tool Classification
 
-### 2.1 One category only: built-in tools
+### 2.1 One category only: code-built tools
 
-Every tool is a built-in tool: it ships with the code, is synced into the database at admin startup from the `@Tool` / `@ToolMeta` annotations, and is visible to every user on the platform. There are no user-authored tools and neither the `type` column nor the "public or not" (`is_public`) concept exists anymore — every row of `agent_tool` is written by `BuiltinToolAutoRegistrar`, and no API or page can create, modify, enable, disable or delete a tool.
+Every tool on the platform comes from a `@Tool` method on the classpath. `agent_tool` has no type column, no visibility column, no URL or input-schema column, and `AgentToolService` exposes read methods only. What an operator can choose is "which agent binds which tool, and which environment variable values that binding carries" - not how to define a tool.
 
-> All tools take the same runtime path (`HarnessAgentLauncher.createAgentBase()`): a ToolBox is created reflectively by `beanName`, then authorized per method.
+### 2.2 Required versus optional tools
 
-### 2.2 Built-in tools split further: required and optional
+`@ToolMeta(isRequired = true)` declares a required tool, landing as `agent_tool.is_required = 1`. Three behaviours follow:
 
-| Sub-category | `agent_tool.is_required` | Who selects it | Runtime source |
-|--------------|--------------------------|----------------|----------------|
-| **Required tools** | `1` | Nobody has to — and cannot | Appended automatically when Admin delivers the AgentSpec (see 6.1); **no `agent_tool_binding` row** |
-| **Optional built-in tools** | `0` | The user, in the agent configuration wizard | `agent_tool_binding` rows |
+- A required tool never enters the agent configuration candidate set: the SQL of `AgentToolMapper.selectAvailableTools` carries `is_required = 0`.
+- A required tool needs no binding row: at delivery time `InternalApiController.buildAgentSpecResponse` appends `requiredToolIds` (from `selectRequiredTools()`, whose predicate is `is_required = 1 AND status = 1 AND active = 1`) to the id set, skipping ids already bound.
+- A required tool cannot carry environment parameters: with no binding row there is no `agent_tool_binding.env_bindings` to write into, so the sync logs a WARN whenever `isRequired` and a `required = true` env parameter appear together, telling the author to drop one of the two.
 
-How this maps onto the UI:
+For a team lead, `requiredToolIds` is empty: a lead is configured by the `team` row and carries no business tools.
 
-- **Tool management page** (`/api/admin/tools/builtin`): shows every tool, required and optional alike, distinguished by a "Required / Optional" tag.
-- **Agent configuration wizard** (`/api/admin/tools/available`): lists only selectable tools, i.e. enabled tools with `is_required = 0`; required tools never appear as candidates.
-- Required tools cannot be bound either: `agent_tool.is_required` is synced from `@ToolMeta(isRequired)` and has no UI switch.
+### 2.3 Tool groups constructed at assembly time
 
-> For the full chain of MCP server entity management, encrypted storage, and runtime assembly, see [mcp-management.en-US.md](./mcp-management.en-US.md).
->
-> Skills are another capability source alongside tools (SKILL.md plus bundled resources, not stored in `agent_tool`); for repository management, sync-into-DB and runtime assembly, see [skill-management.en-US.md](./skill-management.en-US.md).
+`TeamLeadToolBox` / `TeamMemberToolBox` in `harnax-harness-core` are plain classes, not Spring beans (their constructors need a `TeamOrchestrator`), and `HarnessAgentLauncher` builds them directly when assembling a team role. They are absent from `ToolRegistry`'s bean scan, so they appear in no `agent_tool` row, on no tool page, and in no agent binding; their names come from constants such as `TeamLeadToolBox.TOOL_NAMES` and are added to the framework ALLOW set of the permission engine. Assembling a lead also explicitly turns off the meta tool, the filesystem tools and the shell tool.
 
 ## 3. SDK Core Concepts (harnax-tools-sdk)
 
-### 3.1 The ToolBox Abstract Base Class
+### 3.1 The ToolBox base class
 
-Path: `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolBox.kt`
+`ToolBox` (`harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolBox.kt`) is the base class of a tool group:
 
-- Every tool must extend `ToolBox` and implement `name()` (the logical tool-group name).
-- At runtime, `init(toolCallLogAdaptor, sessionMetaContext, userIdentifier)` injects the session context. **A fresh instance is created per session** to avoid context bleed between concurrent sessions.
-- The `execute { ... }` / `execute(vararg args) { ... }` template methods wrap the tool method body, automatically handling timing, success/failure log emission (via `ToolCallLogAdaptor`), and rethrowing exceptions.
-- `userIdentifier()` exposes the current invoking user.
+- `abstract fun name(): String`: the group name, used as the prefix of `tool_call_log.tool_name` and as `ToolMetaDescriptor.toolName`.
+- `init(toolCallLogAdaptor, sessionMetaContext, userIdentifier)`: called by the assembly side before handing the instance to the `Toolkit`; pins the internal `name` field to the result of `name()`.
+- `userIdentifier()`: throws `IllegalStateException("ToolBox not initialized: userIdentifier is null")` when `init` has not run.
+- `protected fun <T> execute(vararg args: Pair<String, Any?>, action: () -> T)` and `execute(action: () -> T)`: wrap the method body. The method name comes from `Throwable().stackTrace[1].methodName`, so `execute` must be the direct expression of the tool method; a nested call records the enclosing method name instead.
+- On success it logs `ToolCallInfo(success = true, result = the action's return value via toString, null as an empty string)`; on an exception it logs `success = false, result = "ERROR: ${message}"` and rethrows unchanged.
+- The logged name format is `"<group>::<method>"`, e.g. `email-tool-box::sendEmail`.
+- Without `init` (null `sessionMetaContext` or adaptor) it logs one WARN and skips recording; an exception from the adaptor itself is swallowed and logged at ERROR, leaving the tool result untouched.
 
-### 3.2 Annotation System
+### 3.2 The annotation set
 
-Tool methods combine three annotations:
+| Annotation | Declared in | Targets | Provides |
+| --- | --- | --- | --- |
+| `@Tool` | `io.agentscope.core.tool.Tool` (agentscope 2.0.2) | method (and annotation type) | `name` (falls back to the method name), `description` (sent to the model), `readOnly`, `strict`, `concurrencySafe` (default true), `externalTool`, `stateInjected`, `dangerousFiles`, `dangerousDirectories`, `converter` |
+| `@ToolParam` | `io.agentscope.core.tool.ToolParam` | parameter (and field, annotation type) | `name` (no default, mandatory), `description`, `required` (default true) |
+| `@ToolMeta` | `com.agnetix.harnax.tools.sdk.ToolMeta` | method (`AnnotationTarget.FUNCTION`) | `displayName`, `displayNameZh`, `envParamDefs`, `needConfirm`, `dangerousInput`, `isRequired` |
+| `@ToolEnvParamDef` | `com.agnetix.harnax.tools.sdk.ToolEnvParamDef` | annotation type (only as an `envParamDefs` element) | `key`, `description`, `required` (default true), `secret`, `defaultValue` |
 
-| Annotation | Source | Responsibility |
-|------------|--------|----------------|
-| `@Tool` | agentscope | Tool name (`name`), description (`description`, sent to the LLM), `readOnly` |
-| `@ToolParam` | agentscope | Declares LLM-visible parameters (`name` + `description`); **parameters without it are excluded from the JSON schema** and treated as framework-injected |
-| `@ToolMeta` | harnax SDK | Method-level metadata, synced to the database at startup (see 3.3) |
+Two hard constraints decide whether the model can see a tool at all:
 
-> ⚠️ Common pitfalls:
-> - `@ToolMeta` applies to methods only; each `@Tool` method is a standalone tool instance.
-> - Every parameter the LLM must supply requires `@ToolParam(name, description)`; framework-injected parameters (e.g. `ToolEnvContext`) must **not** have `@ToolParam`.
-> - Prefer snake_case parameter names; mark optional parameters with `required = false`.
+1. **A parameter enters the JSON schema only when it carries `@ToolParam`.** agentscope's `ToolSchemaGenerator` iterates over annotated parameters only; `ToolMethodInvoker` treats a non-annotated, non-primitive parameter as an object to inject, resolving it by type from the `ToolExecutionContext`. The `ToolEnvContext` parameter is therefore exactly "auto-injected, hidden from the model".
+2. **`@ToolMeta` applies to methods only.** Its `@Target` is `AnnotationTarget.FUNCTION`, so putting it on a class is never read: `ToolRegistry.extractToolMeta` calls `method.getAnnotation(ToolMeta::class.java)` per method, and a missing annotation yields empty display names, `needConfirm = false`, an empty env-parameter list and `isRequired = false`.
 
-### 3.3 @ToolMeta Attributes
+Division of fields: `name` / `description` / `readOnly` come from `@Tool` only; `needConfirm` comes from `@ToolMeta` only (`ToolRegistry` states "only from @ToolMeta.needConfirm", and `@Tool` has no such attribute); display names and env parameter definitions come from `@ToolMeta` only.
 
-Path: `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolMeta.kt`
+### 3.3 @ToolMeta attributes
 
-| Attribute | Default | Description |
-|-----------|---------|-------------|
-| `displayName` | `""` | English display name in the Admin UI; when blank, the sync falls back to the tool name (`@Tool.name`); also serves as the i18n fallback text |
-| `displayNameZh` | `""` | Chinese display name in the Admin UI (used in the i18n zh-CN locale); the frontend falls back to the English name when blank |
-| `envParamDefs` | `[]` | Array of environment parameter definitions (`ToolEnvParamDef`), synced to the `agent_tool_env_param` table at startup and used as the rendering basis for the env-parameter form when binding tools in the Admin UI; each entry has `key` (parameter name), `description` (UI hint), `required` (mandatory or not), `secret` (secret or not, masked in the UI), and `defaultValue` (default, non-secret only — the sync stores the annotation value verbatim and never goes through the encryptor, so putting a default on a `secret = true` parameter writes a plaintext credential into the table) — see section 3.4 |
-| `needConfirm` | `false` | **Whether user confirmation is required before execution.** When `true`, an ASK permission rule is generated at runtime: every invocation pauses and waits for user confirmation; it does not inspect input content and is independent of the arguments; it can be skipped in `BYPASS` permission mode. This value comes from the annotation and is not editable in the UI; the only no-code way to tighten it is the binding row `agent_tool_binding.needConfirm` for one agent. The runtime ORs the two, so a binding can only add confirmation, never cancel a confirmation the tool itself declares (`agent_tool.needConfirm` has no write endpoint at all) — see section 6.4 |
-| `dangerousInput` | `false` | **Whether to scan string inputs for dangerous patterns** (dangerous commands like `rm -rf`, sensitive paths like `.env`/`.ssh`). Confirmation is triggered only when an input hits a dangerous pattern, and that confirmation cannot be skipped even in `BYPASS` mode (bypass-immune); safe inputs pass through directly; when combined with `needConfirm`, the input scanning is automatically skipped (the confirmation rule fires first) — see sections 6.3 / 6.4 |
-| `isRequired` | `false` | **Whether this is a mandatory tool**: when `true` it applies to every agent — Admin appends it to the delivered AgentSpec, so no binding row and no user selection is needed; it never appears in the agent wizard candidate list but is still listed on the tool management page (tagged "Required"); the value comes from the annotation only and has no UI switch. See 2.2 / 6.1 |
+| Attribute | Default | Column written | Runtime effect |
+| --- | --- | --- | --- |
+| `displayName` | `""` | `agent_tool.display_name`; the sync writes `@Tool.name` when blank | English label on the management page and the agent panel |
+| `displayNameZh` | `""` | `agent_tool.display_name_zh`; NULL when blank | Label under the zh-CN locale |
+| `envParamDefs` | `[]` | rows in `agent_tool_env_param`; keys with `required = true` are summarised into `agent_tool.required_env_param_keys` (a JSON array string) | Which fields the configuration panel shows, which are mandatory, which are masked as secrets |
+| `needConfirm` | `false` | `agent_tool.need_confirm` | Assembly creates an ASK rule for that tool |
+| `dangerousInput` | `false` | not stored | Assembly wraps the tool with `DangerousInputCheckingTool` |
+| `isRequired` | `false` | `agent_tool.is_required` | See "Required versus optional tools" |
 
-Quick selection guide for `needConfirm` vs `dangerousInput`:
+`dangerousInput` is not stored because its consumer lives in-process: `HarnessAgentLauncher.collectDangerousInputTools` reflects over the ToolBox class's method annotations and never queries a table.
 
-| Requirement | Which one |
-|-------------|-----------|
-| The tool has side effects and **every invocation** needs human confirmation | `needConfirm = true` |
-| The tool is neutral; only intercept dangerous commands / paths in the inputs | `dangerousInput = true` |
-| Both | Just mark `needConfirm = true` (already covers all invocations; the scan is auto-skipped when combined) |
+### 3.4 The environment parameter system
 
-### 3.4 Environment Parameter System
+`ToolEnvContext(bindings: Map<String, String>)` is the only entry point a tool method has to environment configuration:
 
-- **`ToolEnvParamDef`**: nested annotation definition declaring a single env parameter's `key`, `description`, `required`, `secret` (masked in the UI), and `defaultValue`.
-- **`ToolEnvContext`**: the runtime env-binding container (`bindings: Map<String, String>`). Registered into agentscope's `ToolExecutionContext` at agent build time; any tool method declaring a parameter of this type receives it automatically and reads values via `get(key)` / `require(key)`.
+- `get(key)` returns null when the key is unconfigured.
+- `require(key)` throws `IllegalArgumentException("Environment parameter '<key>' is required but not configured")` when the value is missing or blank.
+- `bindings` is one flat, per-agent merge: every env key/value resolved from the agent's tool bindings and MCP bindings lands in the same map, answered by name, with no record of which binding declared it. The merge order is tools first, then MCP, so a duplicate key keeps the later value.
+- The whole map is handed to every tool of the agent, so a tool can read a key another binding declared.
+- The map is registered into the `ToolExecutionContext` even when empty: otherwise a method declaring a `ToolEnvContext` parameter would fail at injection, and `require()` could not produce its readable "not configured" message.
+- A declared `defaultValue` never fills a value at runtime: delivery carries binding values only, and `saveToolBindings` passes `defaultValueCounts = false` for built-in tools in its required-parameter check.
 
-### 3.5 ToolRegistry
+### 3.5 The ToolRegistry
 
-Path: `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/registry/ToolRegistry.kt`
+`com.agnetix.harnax.tools.sdk.registry.ToolRegistry` is a `@Component`; its `@PostConstruct` does two things:
 
-A Spring `@Component`. At `@PostConstruct`:
+1. `applicationContext.getBeansOfType(ToolBox::class.java)` collects every ToolBox bean into `registry`, keyed by Spring bean name.
+2. For each bean it reflects over `clazz.methods`, folding every `@Tool` method into a `ToolMethodDescriptor` and collecting them into `ToolMetaDescriptor(beanName, toolName = toolBox.name(), methods)` stored in `metaRegistry`. A bean with no `@Tool` method is logged at INFO and skipped: it stays out of `metaRegistry` but remains in `registry`, where `getToolBox` can find it.
 
-1. Scans all `ToolBox` beans in the container and registers them by bean name;
-2. Reflectively reads each bean's `@Tool` + `@ToolMeta` annotations, extracting a `ToolMetaDescriptor` (containing a `ToolMethodDescriptor` per method);
-3. ToolBoxes without `@Tool` methods are skipped.
+Public methods: `getToolBox(beanName)`, `getAllToolBoxes()`, `getToolBoxNames()`, `contains(beanName)`, `getToolMeta(beanName)`, `getAllToolMeta()`, and `createToolBoxInstance(beanName)`.
 
-Key methods:
+`createToolBoxInstance` calls `template::class.java.getDeclaredConstructor().newInstance()` so each session owns its ToolBox; on failure it logs ERROR and falls back to the singleton. A ToolBox therefore keeps a no-argument constructor and holds no session state in fields.
 
-- `createToolBoxInstance(beanName)`: creates a **fresh per-session instance** via the no-arg constructor (falls back to the singleton template on failure);
-- `getAllToolMeta()`: consumed by the Admin startup sync.
+### 3.6 Adaptor interfaces (SPI)
 
-### 3.6 Adaptor Interfaces (SPI)
+| Interface | Declared in | harnax implementation | Purpose |
+| --- | --- | --- | --- |
+| `ToolCallLogAdaptor` (`fun interface`, `emit(ToolCallInfo)`) | tools-sdk `adaptor` package | `ToolCallLogAdaptorImpl` in `harnax-agent-service`, converting to `ToolCallLogEntity` then `ToolCallLogMapper.insert` | Persists the call into `tool_call_log`; falls back to `{}` when args serialisation fails; swallows every exception into a log line |
+| `ToolConfigAdaptor` (`getToolConfig(toolId): AgentTool?`) | tools-sdk `adaptor` package | `ToolConfigAdaptorImpl` in `harnax-agent-service` | Resolves a tool by id: first the delivered `toolDetails` in `AgentSpecContextHolder` (a `ToolDetailDto` converted to the entity), otherwise `AgentToolMapper.selectById`; `toolId <= 0` returns null |
 
-| Interface | Responsibility | Implementation |
-|-----------|----------------|----------------|
-| `ToolCallLogAdaptor` | Emits tool call logs (`ToolCallInfo`: agentId, sessionId, toolName, args, result, success, duration) | `ToolCallLogAdaptorImpl` (agent-service, persisted to `tool_call_log`) |
-| `ToolConfigAdaptor` | Loads tool configuration by `toolId` (`AgentTool` entity) | `ToolConfigAdaptorImpl` (agent-service, prefers the admin pre-resolved context, falls back to a DB query) |
+On the harness side, `HarnessAutoConfiguration` obtains the `ToolCallLogAdaptor` through an `ObjectProvider` and uses a no-op when absent - running the harness embedded simply loses the call records, and assembly is unaffected.
 
-### 3.7 Other Data Classes
+### 3.7 Descriptors and remaining data classes
 
-- `ToolSpec`: a tool reference inside the agent configuration (`toolId`, `toolName`, `needConfirm` override).
-- `SessionMetaContext` / `UserIdentifier`: session and user contexts, implementing the `ToolCallContext` marker interface.
+- `ToolMetaDescriptor(beanName, toolName, methods)`: everything one ToolBox declares; the sync's input.
+- `ToolMethodDescriptor(methodName, toolName, displayName, displayNameZh, description, readOnly, needConfirm, envParamDescriptors, isRequired)`: one `@Tool` method, i.e. one `agent_tool` row.
+- `ToolEnvParamDescriptor(key, description, required, secret, defaultValue)`: one env parameter definition.
+- `SessionMetaContext(agentId: Long?, sessionId, tenantId: Long? = null)` and `UserIdentifier(userId: Long? = null)`: both implement the marker interface `ToolCallContext`. A null `agentId` means no `agent` row stands behind the run (a team lead); a null `tenantId` means the delivery named no tenant. Both are written as-is into `tool_call_log`, never guessed.
+- `ToolSpec(toolId, toolName = "", needConfirm = false)`: assembly input. `toolName` is unused on the assembly path; the confirmation bit travels in `needConfirm`.
 
-## 4. Current Built-in Tools (harnax-tools-buildin)
+## 4. Built-in Tools Today (harnax-tools-buildin)
 
-Path: `harnax-tools-external/harnax-tools-buildin/src/main/kotlin/com/agnetix/harnax/tools/buildin/`
+The module directory is `harnax-tools-external/harnax-tools-buildin/src/main/kotlin/com/agnetix/harnax/tools/buildin/`, while the files declare the package `com.agnetix.harnax.tools.builtin`: the directory name and the package name differ, and imports follow the package name.
 
-### 4.1 TimeToolBox (bean `time-tool-box`)
+Three `@Tool` methods are on the classpath, in two groups:
 
-| `@Tool` name | `methodName` | Description | readOnly | needConfirm | isRequired | Env params |
-|--------------|--------------|-------------|----------|-------------|------------|------------|
-| `getDate` | `getDate` | Get the current date (`yyyy-MM-dd`) | yes | no | no | none |
-| `getDatetime` | `getDatetime` | Get the current datetime (`yyyy-MM-dd HH:mm:ss`) | yes | no | no | none |
+| Bean name | Group `name()` | Tool `@Tool.name` | Description | readOnly | needConfirm | Env params |
+| --- | --- | --- | --- | --- | --- | --- |
+| `time-tool-box` | `time-tool-box` | `getDate` | 获取当前日期 | yes | no | none |
+| `time-tool-box` | `time-tool-box` | `getDatetime` | 获取当前时间 | yes | no | none |
+| `email-tool-box` | `email-tool-box` | `sendEmail` | Send an email via SMTP. Supports plain text and HTML body. | no | yes | `SMTP_HOST`, `SMTP_PORT` (optional, default 587), `SMTP_USER`, `SMTP_PASSWORD` (secret), `SMTP_FROM` |
 
-### 4.2 EmailToolBox (bean `email-tool-box`)
+Additional behaviour:
 
-| `@Tool` name | `methodName` | Description | readOnly | needConfirm | isRequired | Env params |
-|--------------|--------------|-------------|----------|-------------|------------|------------|
-| `sendEmail` | `sendEmail` | Send an email via SMTP, supports plain text / HTML body | no | **yes** | no | 5 (see below) |
+- `getDate` / `getDatetime` format with `SimpleDateFormat("yyyy-MM-dd")` and `"yyyy-MM-dd HH:mm:ss"` in the JVM default time zone, with no inputs.
+- All four model-visible `sendEmail` parameters carry `@ToolParam`: `to`, `subject`, `body` (all required) and `is_html` (`required = false`, type `Boolean?`); the fifth parameter `envContext: ToolEnvContext` is unannotated and injected. The body re-validates `to` / `subject` / `body` with `require` because the model can send null.
+- `sendEmail` talks to Jakarta Mail directly: the port comes from `SMTP_PORT`, with a code-level 587 fallback when the binding carries no value; 465 uses implicit SSL, 25 is plaintext, anything else forces STARTTLS (`starttls.required = true`); connection and read timeouts are 10 seconds each; the body type follows `isHtml ?: false`, so a null `is_html` sends `text/plain` and true sends `text/html`, with subject and body encoded UTF-8. The `@ToolParam` description of `is_html` reads `Whether the body is HTML format (default: true)`, which disagrees with that same method body's `isHtml ?: false`: the description is model-facing text, and the `?:` expression is what decides the default behaviour.
+- That is why `harnax-tools-buildin`'s `pom.xml` carries `jakarta.mail-api` and `angus-mail`.
 
-- Uses Jakarta Mail directly, no Spring dependency.
-- LLM parameters: `to`, `subject`, `body`, `is_html` (optional).
-- Env parameters: `SMTP_HOST` (required), `SMTP_PORT` (optional, default 587), `SMTP_USER` (required), `SMTP_PASSWORD` (required, secret), `SMTP_FROM` (required).
-- Port policy: 465 uses implicit SSL, 25 is unencrypted, others (including 587) enforce STARTTLS.
+## 5. Registration: One Sync at Startup
 
-> **No builtin tool in the codebase is currently `isRequired = true`** — the required-tool branch (auto-appended at delivery, no binding row, startup conflict warning) is implemented and covered by tests, but no shipped tool uses it yet.
+### 5.1 Trigger
 
-## 5. Builtin Tool Registration (the only lifecycle entry point)
-
-Implementation:
-
-- Scan: `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/registry/ToolRegistry.kt` (`@PostConstruct`)
-- Persist: `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/registrar/BuiltinToolAutoRegistrar.kt` (`ApplicationReadyEvent`)
-
-**The rule**: registering, updating and deleting tools happens **only here**. The `@Tool` / `@ToolMeta` annotations are the single source of truth, every row of `agent_tool` is written by this mechanism, and neither the pages nor the APIs expose any write path.
-
-### 5.1 Scan
-
-At startup `ToolRegistry` collects `getBeansOfType(ToolBox::class.java)` and reads `@Tool` + `@ToolMeta` per bean, per method, producing a `ToolMetaDescriptor` (`beanName` plus each method's `toolName`, `methodName`, `displayName` / `displayNameZh`, `description`, `readOnly`, `needConfirm`, `isRequired`, `envParamDescriptors`). A bean without any `@Tool` method yields no metadata and is never persisted.
-
-Tool-level timeout is not annotation-driven: `@ToolMeta` has no `timeoutSeconds` (removed in V40 together with `agent_tool.timeout_seconds`); the whole-turn budget is set on the assembly side by `HarnessConfig.turnTimeoutSeconds` — see 6.5.
-
-### 5.2 Sync (a full convergence pass on every admin start)
-
-1. **Insert**: a name present in the declarations but absent from the database → one new `agent_tool` row (`status=1`, `active=1`, `creator='SYSTEM'`).
-2. **Update**: when a row with the same name already exists, every column is compared; an UPDATE is issued only when something differs, and the difference is written to the startup log (which tool, which columns, from what to what). `name` never takes part in the update: it is the lookup key. `status` and `active` converge to 1 as well; a tool has no "disabled by an operator" state.
-3. **No deletion**: a row that exists in the database but was not declared on this start is **kept as is**; neither the row nor its `agent_tool_binding` rows are touched. Because its name is not in this start's declared name set, it is **never delivered** (see 6.1) — it stays visible to operators only.
-4. **Env parameter definitions**: `@ToolMeta.envParamDefs` sync into `agent_tool_env_param` with an "update in place + insert new + delete stale" strategy, preserving record IDs. What gets deleted is a parameter definition, not a tool, which counts as updating the tool's definition.
-5. **Duplicate names fail hard**: when two `@Tool` methods declare the same `@Tool.name`, the whole sync throws `IllegalStateException` before any write, listing every conflicting `bean::method`. The name is the identity, so letting one of them win would make the bean order decide which method the tool actually executes.
-6. **Config-conflict warning**: a method combining `isRequired = true` with required `envParamDefs` is logged at startup — a required tool has no binding row and therefore no env values, so that combination is guaranteed to fail at runtime (see 6.1).
-
-> A rename costs one of two things:
-> - Changing only `@Tool(name = ...)`: **this swaps the tool**. The identity is `name`, so the new name inserts a new row while the row under the old name is kept (but no longer delivered), and the `agent_tool_binding` rows on the old row are not migrated — an agent already using the tool silently loses it and needs the new tool re-selected in its configuration.
-> - Changing the Java method name (`methodName`) or the bean name: **still the same tool**. Both are merely parameters for reflective instantiation and take no part in identity, so the row refreshes in place (the difference shows up in the startup log) and its `id` and bindings are all preserved.
-
-> Tools are a **platform-level asset**: the `agent_tool` table has no `tenant_id` (dropped in V40) — one shared set of rows for the whole platform, not a copy per tenant.
-
-> Consequently, the required/optional split, whether a tool exists at all, and every field value are code-owned: changing them means a code change plus a re-release, not an operator action.
-
-### 5.3 External write paths: they do not exist
-
-| Path | Current state |
-|------|---------------|
-| `AgentToolController` | GET only: `/page`, `/{id}`, `/available`, `/builtin`, `/{id}/required-env-params`. `PUT /update/{id}`, `PUT /toggle/{id}` and `DELETE /{id}` are gone, together with the `AgentToolCreateRequest` / `AgentToolUpdateRequest` DTOs |
-| `AgentToolService` | Declares queries and `convertToResponse` only — no create / update / toggle / delete method |
-| Frontends (webui tool page, miniprogram tool list) | Read-only — no add / edit / delete / disable; `services/ant-design-pro/tool.ts` keeps only `getAvailableTools` / `getBuiltinTools` |
-| `harnax-cli` | Only the five query commands `tool list / get / available / builtin / env-params`; no `update / delete / toggle` |
-
-### 5.4 Idempotency and troubleshooting anchors
-
-- **When it runs**: `BuiltinToolAutoRegistrar` listens on `ApplicationReadyEvent`, not `@PostConstruct`. `ToolRegistry` scans at `@PostConstruct`, but persisting has to wait for Flyway and the datasource, and the ready event is what guarantees `agent_tool` already exists.
-- **Idempotent**: the whole pass is replayed on every start. The identity is `name` (unique key `uk_agent_tool_name`); an existing row is updated only when a difference is found, so a restart inserts nothing new and changes no value except `update_time`; env parameter definitions converge in place and keep their record IDs.
-- **Fault isolation**: each bean has its own `try/catch`, so a failing tool group affects only that group (the rest is still written); the tool names of the failed group still count as declared, so one failed write never turns into every agent missing that tool.
-- **Log anchors** (grep the admin startup log):
-
-| Log line | Meaning |
-|----------|---------|
-| `Syncing N builtin tool group(s), M declared tool(s)` | N ToolBoxes and M declarations scanned, sync starting |
-| `Required tool '...' declares required env params ...` | WARN: `isRequired` contradicts required env params — a required tool has no binding, so those values can never resolve (see 6.1) |
-| `Registered new tool '<name>' (<bean>::<method>)` | A newly declared tool was inserted |
-| `Updated tool '<name>' (id=N): <columns>` | An existing row differed and was refreshed; the column names after the colon are the ones that changed |
-| `Synced tool group: xxx [N methods]` | That group written successfully |
-| `Synced env params for tool 'bean::name': N total, M stale removed` | Env parameter definitions converged; `M > 0` means a parameter definition was removed in code (cleaned from `agent_tool_env_param`) |
-| `Failed to sync tool group: xxx` | That group threw; the other groups are unaffected |
-| `Sync complete: X succeeded, Y failed; N tool name(s) declared` | Overview; `N` is the total number of names declared on this start |
-| `Duplicate @Tool name(s) on the classpath: ...` | Exception: duplicate names, startup fails; the parentheses list every conflicting `bean::method` |
-| `No @Tool annotated methods found, skipping sync` | Nothing was scanned; the whole sync was skipped |
-
-- **Unit coverage**: the convergence rules are pinned by `harnax-admin/src/test/kotlin/com/agnetix/harnax/admin/registrar/BuiltinToolAutoRegistrarTest.kt` (9 cases: insert, no diff means no write, refresh on diff, a disabled row converging back to enabled, undeclared rows left untouched, duplicate name rejected, empty registry skipped, single-group failure isolated, env parameter convergence), case IDs in `docs/unit-test-cases.md` §5.2; the mapper-level write and unique-key behaviour lives in `harnax-entity/src/test/kotlin/com/agnetix/harnax/mapper/AgentToolMapperTest.kt`. The tool service keeps only queries, so the former "write entry rejects BUILTIN" guard cases were deleted together with the write endpoints, and `docs/unit-test-cases.md` §5.1 now registers the query and response-assembly cases.
-
-## 6. Runtime Tool Assembly in the Agent
-
-Core implementation: `createAgentBase()` in `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt`.
-
-### 6.1 Assembly Flow
-
-```
-InternalApiController.buildAgentSpecResponse (Admin delivery stage)
-        ├─ toolDetails = tools from agent_tool_binding
-        │                + enabled builtin tools with is_required=1 (appended, deduped by id, no binding rows)
-        │                − rows whose name is not in this startup's declared name set (see the key points below)
-        └─ toolList (legacy JSON) carries only the env-parameter snapshot of bound tools
-        ▼
-AgentSpecResolver (admin response → AgentSpec)
-        │  toolSpecs + contextForTools (ToolEnvContext)
-        ▼
-HarnessAgentLauncher.createAgentBase()
-        │
-        ├─ Iterate agentSpec.toolSpecs
-        │    ├─ ToolConfigAdaptor.getToolConfig(toolId) loads the config
-        │    ├─ status=0 (disabled) → skip, and leave it out of the granted set
-        │    ├─ ToolRegistry.createToolBoxInstance(beanName)
-        │    │      → init(log adaptor, SessionMetaContext, UserIdentifier)
-        │    │      → agentBuilder.addTool(toolBox) (registers ALL @Tool methods of the ToolBox)
-        │    ├─ Missing config / ToolBox → log a warning and skip (no switch, never blocks the build)
-        │    └─ needConfirm (entity value OR binding value) → collected into needConfirmedTools
-        │
-        ├─ Final sweep: take every @Tool method of each added ToolBox from its ToolMetaDescriptor and
-        │    removeTool the ones this agent was not granted (unselected siblings, disabled methods)
-        │
-        ├─ Empty toolSpecs → no tool is assembled (the old "register every ToolBox" fallback is gone)
-        │
-        ├─ contextForTools → ToolExecutionContext (injects ToolEnvContext)
-        │
-        ├─ Permission rules (PermissionContextState)
-        │    ├─ Framework tool ALLOW whitelist: plan_enter / plan_write / plan_exit /
-        │    │   todo_write / agent_spawn / agent_send / agent_list / task_output / task_list
-        │    └─ needConfirmedTools → ASK rules
-        │
-        └─ Dangerous-input wrapping: methods annotated @ToolMeta(dangerousInput=true)
-             → agentBuilder.wrapWithDangerousInputCheck(toolName)
-             (skipped for tools that already have a needConfirm ASK rule, to avoid duplication)
-```
-
-Key points:
-
-- **Undeclared rows are not delivered**: the sync deletes no `agent_tool` row (see 5.2), so the database may keep tools that "no longer exist in code" — their methods are gone, so assembling them at runtime is bound to fail. `buildAgentSpecResponse` filters against `BuiltinToolAutoRegistrar.registeredToolNames()` (the name set declared on this start) and logs every blocked id at WARN; an empty set means the sync never ran, in which case nothing is filtered rather than blocking every tool.
-- **Required tools are injected at delivery**: tools with `is_required = 1` are appended to `toolDetails` by `InternalApiController` (deduped by id against the bindings); the agent wizard cannot select or deselect them. Taking one away means a code change — drop `isRequired` or delete the `@Tool` method — and after the re-release the old row is kept but no longer delivered (see 5.2).
-- **`status` travels with the delivery**: `ToolDetailDto.status` → `ToolConfigAdaptorImpl` restores the entity → runtime skips `status == 0`. Drop any link in that chain and "disable a tool" silently stops working. Since sync forces `status` to 1 and no write endpoint can set it to 0, this skip is purely defensive today.
-- **Required tools have no binding row**, hence no `agent_tool_binding.envBindings` snapshot and no per-agent environment parameters. Do not mark a tool that needs env parameters as `isRequired` — `require()` will always fail with "not configured". Admin logs a warning for that combination at sync time.
-- **Dedup by beanName, grant by method**: multiple `agent_tool` records may share one ToolBox and `addTool` runs only once; because `addTool` registers every method of that ToolBox, the final sweep subtracts the granted method set from `ToolRegistry.getToolMeta(beanName)` and removes the remainder — otherwise selecting one tool in a ToolBox would expose the whole box.
-- **Config source**: `ToolConfigAdaptorImpl` prefers the admin pre-resolved `toolDetails` (delivered with the AgentSpec) and falls back to a direct DB query on a miss.
-- **Env parameter injection**: `AgentSpecResolver` merges env bindings from tool/MCP bindings into a flat map, wraps it as a `ToolEnvContext` attached to `agentSpec.contextForTools`, and registers it into the `ToolExecutionContext` at build time so tool methods receive it automatically. The container is registered even when empty, so a tool's `envContext` parameter always injects and reports a readable "not configured" error.
-
-### 6.2 Permission Modes
-
-Sessions support 5 tool-execution permission modes (switched via the `PERMISSION <mode>` command):
-
-| Mode | Behavior |
-|------|----------|
-| `DEFAULT` | Default; tools matching rules require confirmation |
-| `BYPASS` | Auto-execute (but `safety` ASK decisions cannot be skipped) |
-| `ACCEPT_EDITS` | Auto-approve file edits |
-| `EXPLORE` | Read-only exploration |
-| `DONT_ASK` | Auto-reject dangerous tools |
-
-### 6.3 Dangerous Input Interception (bypass-immune)
-
-Implementation: `harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/permission/DangerousInputCheckingTool.kt`
-
-Tools annotated with `@ToolMeta(dangerousInput = true)` are wrapped by `DangerousInputCheckingTool`, overriding `checkPermissions()`:
-
-1. **Dangerous command scan**: substring matching against string inputs of length ≥ 3 (`rm -rf`, `sudo rm`, `chmod 777`, `kill -9`, etc.);
-2. **Dangerous path scan**: reuses `ToolBase.isDangerousPath`, checking sensitive files (`.env`, `.bashrc`, `.ssh/config`) and directories (`.git`, `.ssh`), resolving symlinks to prevent bypasses.
-
-A hit returns an ASK decision with a `safety` reason — per the PermissionEngine contract, such decisions cannot be skipped even in `BYPASS` mode.
-
-### 6.4 How to Mark a Tool as Dangerous (Developer's Perspective)
-
-There are two levels of marking, which can be combined:
-
-**Option 1: `needConfirm = true` — mandatory user confirmation before execution**
-
-```kotlin
-@Tool(name = "sendEmail", description = "Send an email via SMTP")
-@ToolMeta(needConfirm = true)   // requires user confirmation before every execution
-fun sendEmail(...)
-```
-
-- Inspects no input content; every invocation generates an ASK permission rule and asks the user for confirmation;
-- Can be skipped in `BYPASS` mode (a regular ASK);
-- Adjustable without a code change in exactly one direction: `agent_tool.needConfirm` has no write endpoint (see 5.3), so the available knob is the binding-level `agent_tool_binding.needConfirm`, which adds confirmation for one agent (the runtime ORs the two, so a binding can never cancel the tool's own confirmation).
-
-**Option 2: `dangerousInput = true` — dangerous input scanning (bypass-immune)**
-
-For tools whose inputs may contain dangerous commands / sensitive paths (e.g. shell execution, file writes):
-
-```kotlin
-@Tool(name = "execute_command", description = "Run a shell command")
-@ToolMeta(dangerousInput = true)   // input pattern scanning — cannot be skipped even in BYPASS mode
-fun executeCommand(
-    @ToolParam(name = "command", description = "The shell command to run")
-    command: String?,
-): String = execute("command" to command) { ... }
-```
-
-**Selection guide**:
-
-| Scenario | Recommended marking |
-|----------|---------------------|
-| The tool has side effects (sending email, placing orders, writing to external systems) and always needs human confirmation | `needConfirm = true` |
-| The tool itself is neutral, but inputs may smuggle in dangerous commands / paths | `dangerousInput = true` |
-| Side effects + dangerous inputs | Just mark `needConfirm = true` (already covers every invocation) |
-
-> Combining note: when both are marked, the runtime skips the `dangerousInput` wrapping — the `needConfirm` ASK rule fires first in the permission engine, making input scanning redundant.
-
-### 6.5 Turn timeout (assembly-side, not a tool attribute)
-
-Timeout is not a property of a tool: `@ToolMeta` has no `timeoutSeconds`, and neither does `agent_tool` (both removed in V40 — the old value made it into the entity but had no reader, so it was decoration from the start).
-
-What actually applies is the **whole-turn budget**, decided by `HarnessConfig.turnTimeoutSeconds` for a lone agent and by `TeamConfig.turnTimeoutSeconds` for a team turn:
-
-| Item | Location | Notes |
-|---|---|---|
-| Config (lone agent) | `harness.turn-timeout-seconds` / `HARNAX_TURN_TIMEOUT_SECONDS` | Defaults to 300 seconds; bound by `HarnessProperties` into `HarnessConfig` |
-| Config (team) | `harness.team.turn-timeout-seconds` / `HARNAX_TEAM_TURN_TIMEOUT_SECONDS` | Defaults to 1800 seconds; one turn of a lead or a member uses it. Bound by `TeamProperties` into `TeamConfig` |
-| Batch path | `HarnessAgentWrapper.call` | Applies to the whole `harnessAgent.call` |
-| Streaming path | `HarnessAgentWrapper.callStreamInternal` | The same value; deliberately placed before the output-file probe so that probe does not consume budget. A timeout lands in `onErrorResume` like any other stream error and becomes an `ErrorChatEvent` |
-
-> A single tool call has no timeout of its own: a batch of tool calls shares this one turn budget. A team turn may stay silent longer — a member running one long tool emits nothing on the root stream, while a parked confirmation heartbeats every `confirm-heartbeat-seconds` — so it gets the larger budget above, and that number has to stay above `member-turn-timeout-seconds` (900) and `confirm-timeout-seconds` (600). Below them the turn budget fires first, and a run that should have come back to the lead as a failed delegation cuts the whole conversation instead. Assembly logs a WARN when the two are configured the wrong way round but still honours the value (see `multi-agent-team-design`).
+`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/registrar/BuiltinToolAutoRegistrar.kt` is a `@Component` whose `syncBuiltinTools()` is bound to `@EventListener(ApplicationReadyEvent::class)`. When `getAllToolMeta()` is empty the whole sync is skipped with an INFO line and `declaredNames` keeps its previous value.
+
+### 5.2 Convergence rules
+
+The identity is `@Tool.name`, and the first step before any write is `requireUniqueNames(declared)`: one name claimed by two `@Tool` methods raises `IllegalStateException`, listing every `bean::method`, with no row written yet.
+
+Groups are then processed one by one, each saving its rows before syncing its env parameter definitions:
+
+- Name absent from the table: `insert`. The SQL writes `status` and `active` as the literal 1 and `creator` as `'SYSTEM'`.
+- Name present in the table: the code-owned columns are compared one at a time (`display_name`, `display_name_zh`, `description`, `bean_name`, `method_name`, `read_only`, `need_confirm`, `is_required`, `required_env_param_keys`, `status`, `active`), and `updateById` runs only on a difference, which is written into the INFO log; `id`, `create_time` and `creator` keep the stored values. `name` takes part neither in the comparison nor in the UPDATE SET list.
+- Row present, declaration absent: left alone. Nothing is deleted.
+
+The lookup `AgentToolMapper.selectByName` carries no `active` condition, so a row sitting at `active = 0` still holds the name and gets updated back to `active = 1` instead of inserting a second row that would collide with `uk_agent_tool_name`.
+
+A failed group is logged at ERROR, counted in `failCount`, and does not stop the other groups.
+
+### 5.3 Env parameter definition sync
+
+`syncToolEnvParams` works on `agent_tool_env_param` through the row ids resolved by the same `saveTool` pass: for a matching key it compares `description` / `required` / `secret` / `default_value` and updates on a difference; new keys are inserted; keys absent from the current declaration set are deleted (removing a parameter definition belongs to updating a tool; removing a tool is a different thing). A tool of the group that failed to save is skipped with a WARN.
+
+### 5.4 Declared set and delivery filter
+
+At the end of the sync, `declaredNames` becomes "the names declared in this pass" - declared, not successfully written; otherwise one write failure would remove those tools from every agent.
+
+`InternalApiController` filters with it at delivery: `agentToolMapper.selectByIds(ids).filter { declaredNames.isEmpty() || it.name in declaredNames }`. The table may hold rows whose method is off the classpath; handing one to the runtime would fail at assembly, so the row stays visible and stops travelling. An empty `declaredNames` means the sync knows nothing, which disables the filter rather than blocking every tool. Dropped ids are logged at WARN.
+
+### 5.5 Troubleshooting anchors
+
+Search the logs for `[BuiltinToolAutoRegistrar]`. The lines in order are: `Syncing N builtin tool group(s), M declared tool(s)`, `Registered new tool '<name>' (<bean>::<method>)`, `Updated tool '<name>' (id=..): <column list>`, `Synced env params for tool '<bean>::<method>': N total, M stale removed`, `Synced tool group: <bean> [N methods]`, and the last one `Sync complete: N succeeded, M failed; K tool name(s) declared`. On the `ToolRegistry` side: `[ToolRegistry] Registered ToolBox bean: ...` and `Total N ToolBox beans registered, M with @Tool methods`.
+
+## 6. Runtime Tool Assembly
+
+### 6.1 Delivery: the admin side
+
+`InternalApiController.buildAgentSpecResponse` reads the `agent_tool_binding` rows and `selectRequiredTools()`, builds the de-duplicated id set, filters it as described under "Declared set and delivery filter", and produces two structures:
+
+- `toolDetails`: a `ToolDetailDto` list carrying `name` / `beanName` / `methodName` / `readOnly` / `needConfirm` / `requiredEnvParamKeys` / `status`, plus that binding's own `bindingNeedConfirm`.
+- `toolList`: a JSON string whose items carry `id`, `need_confirm` (from the binding row) and `env_bindings`, the latter resolved on the spot by `resolveEnvBindingsJson`: an `envVarId` reference prefers the current decrypted value via `envVariableService.getDecryptedValue(envVarId, tenantId)` and falls back to the stored snapshot `envValue`; a reference that resolves to nothing with no snapshot delivers nothing (the tool sees the parameter as unconfigured); otherwise `customValue`, and the snapshot last.
+
+### 6.2 Resolution: the agent-service side
+
+`AgentSpecResolver` folds `toolDetails` into `ToolSpec(toolId, needConfirm = bindingNeedConfirm)` entries, merges the `env_bindings` found in `toolList` and `mcpList` into one flat map, and registers that map as a `ToolEnvContext` in `AgentSpec.contextForTools`.
+
+### 6.3 Assembly: the harness-core side
+
+The tool section of `HarnessAgentLauncher.createAgentBase` does, in order:
+
+1. Assembly runs only for a non-lead with a non-empty `agentSpec.toolSpecs` and a present `toolConfigAdaptor`; a missing `ToolConfigAdaptor` is the one case that logs a WARN and installs no tools at all.
+2. Each `toolSpec` is resolved with `toolConfigAdaptor.getToolConfig(toolSpec.toolId)`; `status == 0` logs INFO and skips.
+3. De-duplicated by `beanName`: a ToolBox is instantiated once. `toolRegistry.createToolBoxInstance(beanName)` builds a session-level instance, `init(toolCallLogAdaptor, SessionMetaContext(agentSpec.attributableAgentId, sessionId, agentSpec.tenantId), userIdentifier)` primes it, and `agentBuilder.addTool(toolBox)` registers the group.
+4. `Toolkit.registerTool` registers the whole group, so a sweep follows: every tool name in `getToolMeta(bean).methods` that this agent was not granted is withdrawn with `agentBuilder.removeTool(name)`. Two sources produce ungranted names - unselected siblings inside the same group, and disabled methods.
+5. Confirmation is a union: `toolConfig.needConfirm == 1 || toolSpec.needConfirm`. The binding level can only tighten. Hits go into `needConfirmedTools`.
+6. Each ToolBox class is reflected once for `@ToolMeta(dangerousInput = true)`; hits go into `dangerousInputTools`.
+7. `contextForTools` is registered into the `ToolExecutionContext` (see "The environment parameter system").
+8. Team tools are registered after the sweep, so step 4 cannot withdraw them.
+9. Permission context: a set of framework tool names (`plan_enter`, `plan_write`, `plan_exit`, `todo_write`, `agent_spawn`, `agent_send`, `agent_list`, `task_output`, `task_list`) plus the team tool names go to ALLOW; `needConfirmedTools` go to ASK, rules sourced as `harnax`.
+10. Dangerous-input wrapping: each `dangerousInputTools` name is wrapped with `agentBuilder.wrapWithDangerousInputCheck(toolName)`; a tool that already has an ASK rule skips wrapping (the ASK fires before `checkPermissions`, so the scan would be redundant).
+
+### 6.4 Permission modes
+
+Mode strings go through `PermissionMode.fromString`, accepting `DEFAULT`, `ACCEPT_EDITS`, `EXPLORE`, `BYPASS`, `DONT_ASK`: DEFAULT needs an explicit ALLOW rule for every operation; ACCEPT_EDITS auto-allows edits inside working directories; EXPLORE is read-only and denies mutating tools; BYPASS skips rule evaluation; DONT_ASK demotes ASK to DENY for unattended runs. A `@Tool(readOnly = true)` tool is auto-allowed under EXPLORE and ACCEPT_EDITS.
+
+### 6.5 Dangerous-input interception
+
+`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/permission/DangerousInputCheckingTool.kt` is a `ToolBase` decorator wrapping the original tool (typically a `ReflectiveFunctionTool`): name, description and input schema are copied, `concurrencySafe(true)`, `readOnly` read from the delegate, and `callAsync` delegates directly.
+
+`checkPermissions` walks the string values of the input (length threshold 3):
+
+- First a case-insensitive substring match against `ToolDangerousPathConstants.DANGEROUS_COMMANDS`; a hit returns ASK naming the fragment and the parameter.
+- Then `ToolBase.isDangerousPath`; a hit returns ASK. That check matches dangerous file names and directory segments and resolves symlinks so redirection cannot bypass it.
+- With no hit it returns `PermissionDecision.passthrough(name)`, leaving the decision to the engine's rule tables and mode defaults.
+
+Both ASK reasons start with `safety:`, which the PermissionEngine contract treats as bypass-immune: BYPASS cannot skip them.
+
+### 6.6 Execution timeout
+
+Timeout is an assembly-side property, not a tool property. `HarnessAgentWrapper`'s constructor parameter `turnTimeoutSeconds` (default 300) puts `.timeout(Duration.ofSeconds(...))` on the whole turn, and a non-positive value skips it. The value comes from `harness.turn-timeout-seconds` (`harnax-agent/harnax-agent-service/src/main/resources/application.yml`, default 300); team turns go through `turnBudget(teamRole)` and use `harness.team.turn-timeout-seconds` (default 1800), with a WARN when that budget is not above the member-turn budget. A single tool has no timeout budget of its own; a slow tool is bounded by the turn budget.
+
+### 6.7 Call logging
+
+`ToolBox.execute` produces the `ToolCallInfo` and `ToolCallLogAdaptorImpl` stores it: `toolName` is `<group>::<method>`, `args` is the map serialised to JSON (each value via `toString`, null as the string `"null"`), `result` is the return value as a string or `ERROR: <message>`, `success` is 0/1, timestamps are converted from milliseconds in the system time zone, and `ts` takes the end time.
 
 ## 7. Data Model
 
-### 7.1 agent_tool (tool master table)
+Columns and indexes are defined by the latest DDL under `harnax-admin/src/main/resources/db/migration/` (currently up to V50). `agent_tool`'s final shape is V40: platform-scoped, name-identified, additive; `tool_call_log.tenant_id` is V50.
 
-Entity: `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentTool.kt`
+### 7.1 agent_tool
 
-| Field | Description |
-|-------|-------------|
-| `name` / `displayName` / `displayNameZh` | Tool identifier and English/Chinese display names |
-| `description` | Tool description (sent to the LLM) |
-| `beanName` / `methodName` | Parameters for reflective ToolBox bean and method instantiation; **not part of the identity** |
-| `requiredEnvParamKeys` | Required env parameter key list (JSON); the definitions themselves live in `agent_tool_env_param` (see 7.3). The column only serves management-side display and save-time validation; the runtime never reads it |
-| `readOnly` / `needConfirm` / `isRequired` | Read-only, confirmation-required, and mandatory flags (0/1) |
-| `status` / `active` | Enabled state and logical-delete flag; `status` is forced to 1 by the startup sync and `active` is always 1 — the sync deletes no row (see 5.2) |
+The tool table: one row = one `@Tool` method.
 
-> Constraints and deletion semantics:
-> - Unique key `uk_agent_tool_name (name)` (since V40). `name` is the identity: when two `@Tool` methods in code declare the same name, the registration pass fails outright instead of leaving it to the database to catch (see 5.2).
-> - This table has **no DELETE statement**: the startup sync only inserts and updates, and `agent_tool_binding` / `agent_tool_env_param` are kept alongside the tool. Env parameter definitions still converge with the annotations (that counts as updating the tool definition).
-> - There is no `tenant_id` on the table: tools are a platform-level asset, one shared set of rows.
+| Column | Type | Written by | Meaning |
+| --- | --- | --- | --- |
+| `id` | bigint PK AUTO_INCREMENT | database | Addressed by bindings and by delivery |
+| `name` | varchar(100) NOT NULL, `UNIQUE uk_agent_tool_name` | sync | The tool identity, i.e. `@Tool.name` |
+| `display_name` / `display_name_zh` | varchar(200) | sync | Display names; English falls back to `name`, Chinese to NULL |
+| `description` | text | sync | Sent to the model, from `@Tool.description` |
+| `bean_name` / `method_name` | varchar(200) / varchar(100) | sync | For instantiation and invocation; attributes, not identity |
+| `read_only` | tinyint(1) | sync | From `@Tool.readOnly` |
+| `need_confirm` | tinyint(1) | sync | From `@ToolMeta.needConfirm` |
+| `is_required` | tinyint(1) NOT NULL DEFAULT 0 | sync | From `@ToolMeta.isRequired` |
+| `required_env_param_keys` | varchar(1000) | sync | JSON array of the `required = true` keys, e.g. `["SMTP_HOST","SMTP_USER"]` |
+| `status` / `active` | tinyint(1) | sync | Always 1: the sync is the only writer and never deletes |
+| `creator` | varchar(100) | sync | Constant `SYSTEM` |
+| `create_time` / `update_time` | datetime | database | Only `update_time` moves on an update |
 
-### 7.2 agent_tool_binding (agent-tool binding table)
+There is no tenant column, no type column, no HTTP columns, no schema columns and no timeout column.
 
-Entity: `AgentToolBinding.kt`
+### 7.2 agent_tool_binding
 
-- `agentId` / `toolId`: the binding relationship; `(agent_id, tool_id)` is unique (see the V18 note below) and saving dedupes by toolId;
-- `needConfirm`: binding-level confirmation, **OR-ed** with `agent_tool.needConfirm` — it can add confirmation for one agent, never cancel the tool's own confirmation;
-- `envBindings`: env variable binding JSON snapshot (per-agent tool env configuration).
+| Column | Meaning |
+| --- | --- |
+| `agent_id`, `tool_id` | Composite unique key `uk_agent_tool_binding_agent_id_tool_id` (V18): at most one row per agent-tool pair |
+| `need_confirm` | Binding-level confirmation, OR-ed with `agent_tool.need_confirm` at runtime |
+| `env_bindings` | JSON array snapshot whose elements carry `envKey`, `envValue`, `envVarId`, `envVarName`, `customValue` |
+| `create_time` / `update_time` | Written on save |
 
-> There used to be an `enable_skip` column ("skip when the tool is unavailable"). Its only semantic was error-vs-warn logging; it granted no runtime tolerance. It was dropped by `V17__drop_tool_binding_enable_skip.sql`. The same-named column on the MCP binding table was dropped too, by `V20__drop_mcp_binding_enable_skip.sql`: it only covered "no `mcp_server` record found" while an unreachable server still threw, so keeping it around only misled people (see section 7 of `mcp-management`).
->
-> `V18__add_tool_binding_unique_key.sql` first removes historical duplicate rows (same agent bound to the same tool twice, keeping the newest), then adds a unique key on `(agent_id, tool_id)` and drops `idx_agent_tool_binding_agent_id`, which that key already covers as a left prefix.
->
-> Required tools (`is_required = 1`) are **never written to this table** — see 2.2 / 6.1.
+`AgentServiceImpl.saveToolBindings` saves by deleting the agent's whole set and re-inserting, with `distinctBy { toolId }` first. An unresolvable tool id raises `BizException("Tool is missing or deleted: ...")`; an unfilled required env parameter is refused by `assertRequiredEnvParamsFilled`, where a built-in tool's declared default does not count as filled. The binding row has no "skip when missing" switch: whether a tool travels is decided by the declared-name set.
 
-### 7.3 agent_tool_env_param (tool env parameter definition table)
+### 7.3 agent_tool_env_param
 
-Entity: `AgentToolEnvParam.kt`
+The tool's env parameter definition table: `tool_id` points at `agent_tool.id`, `(tool_id, env_param_name)` is unique, and `description`, `required`, `secret`, `default_value` complete it. It describes what a tool needs; the values live on the binding row.
 
-`toolId`, `envParamName`, `description`, `required`, `secret`, `defaultValue` — auto-synced from `@ToolMeta.envParamDefs`, used by the Admin UI to render configuration forms.
+### 7.4 tool_call_log
 
-### 7.4 tool_call_log (tool call log table)
+`agent_id` (nullable; NULL for a lead run), `tenant_id` (nullable; NULL when unattributed), `session_id`, `tool_name` (`<group>::<method>`), `args` (JSON), `result`, `success`, `start_time`, `end_time`, `duration`, `ts`. `ToolCallLogMapper` has `insert` only: a row is written once, never read back, and never pruned together with its session or agent. Indexes: `idx_agent_id`, `idx_session_id`, `idx_tool_name`, `idx_ts`, plus `idx_tenant_ts` from V50.
 
-`ToolCallLogAdaptorImpl` persists each `ToolBox.execute` invocation: agentId, sessionId, toolName (`toolGroup::methodName` format), args (JSON), result, success, startTime / endTime / duration. Log failures never affect the main flow.
+### 7.5 Relation to env_variable
 
-## 8. Management APIs (harnax-admin)
+An element of `agent_tool_binding.env_bindings` either references an `env_variable` row (`envVarId` plus an `envVarName` snapshot) or carries its own `customValue`; the two are mutually exclusive. A reference is resolved at delivery time against the agent's tenant for the latest decrypted value, falling back to the snapshot.
 
-Implementation: `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/AgentToolController.kt`, prefix `/api/admin/tools`.
+## 8. Management API and Pages
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/page` | GET | Paginated query; parameters are only `pageNum` / `pageSize` / `keyword` / `status` |
-| `/{id}` | GET | Tool details |
-| `/available` | GET | Wizard candidate list: `status=1 AND active=1 AND is_required = 0`, i.e. the selectable optional tools; takes no filter parameter |
-| `/builtin` | GET | Tool management page list: every tool, **required and optional alike** (`active=1`) |
-| `/{id}/required-env-params` | GET | Required env parameter keys of a tool |
+### 8.1 Read-only API
 
-> Notes:
-> - This is a purely read-only API: `PUT /update/{id}`, `PUT /toggle/{id}` and `DELETE /{id}` are deleted, and there is no POST creation endpoint either (see 5.3).
-> - `AgentToolResponse` no longer carries `type` / `httpUrl` / `httpMethod` / `httpHeaders` / `inputSchema` / `outputSchema`; env parameters come from `envParams` (read from `agent_tool_env_param`) and `requiredEnvParamKeys`.
-> - Tools are one platform-wide set of rows, so `/page` applies no creator or visibility filter.
+`/api/admin/tools` (`AgentToolController`), GET only:
 
-Frontend management page: `harnax-webui/src/pages/tool/` (read-only list).
+| Method | Path | Behaviour |
+| --- | --- | --- |
+| GET | `/api/admin/tools/page` | Paged listing; `pageNum`, `pageSize` (clamped to 1..1000), `keyword` (matches name / display_name / description), `status`; ordered `status DESC, update_time DESC` |
+| GET | `/api/admin/tools/{id}` | Single detail; missing row returns `error.tool.notfound` |
+| GET | `/api/admin/tools/available` | Bindable candidates: `status = 1 AND active = 1 AND is_required = 0`, ordered by name |
+| GET | `/api/admin/tools/builtin` | All code-owned tools: `active = 1`, ordered by name, no status predicate |
+| GET | `/api/admin/tools/{id}/required-env-params` | The tool's required env parameter keys |
 
-## 9. Developing a New Tool: Step-by-Step Guide
+Responses are `AgentToolResponse`, carrying `envParams` (a `ToolEnvParamEntry` list) and the parsed `requiredEnvParamKeys`. There is no POST/PUT/DELETE: tools are created, changed and removed in code.
 
-This section walks through the full flow — "write code → support env variables → register in the database → bind to an agent → verify it works" — using a fictional `WeatherToolBox` (weather query tool) as the example.
+### 8.2 The tool page
 
-### Step 1: Choose the Hosting Module
+`harnax-webui/src/pages/tool/index.tsx` is a read-only table fed by `getBuiltinTools()`. Columns: name (locale-resolved `displayNameZh` → `displayName` → `name`, with a monospace `name` line when the label differs), description, env params (`EnvParamsPopover`, whose fallback count reads `requiredEnvParamKeys.length`), need confirm (an orange Tag when `needConfirm === 1`), required (a red Tag when `isRequired === 1`). Searching happens in the browser over `name` plus the three display fields; there is no pagination. `harnax-webui/src/pages/tool/components/ToolEnvEntriesEditor.tsx` provides the env-variable editor reused by the agent side.
 
-Either of the two options works:
+### 8.3 Agent-side configuration
 
-**Option A (recommended): add it to the existing `harnax-tools-buildin` module**
+`harnax-webui/src/pages/agent/components/ToolConfigPanel.tsx` is where tools are actually selected and configured: each entry can toggle `needConfirm` (written to the binding row) and produces `envBindings` through the env editor. The service layer is `harnax-webui/src/services/ant-design-pro/tool.ts`: `getAvailableTools()` and `getBuiltinTools()`.
 
-Simply create a new class under `harnax-tools-external/harnax-tools-buildin/src/main/kotlin/com/agnetix/harnax/tools/buildin/`. Both `harnax-admin` and `harnax-agent-service` already depend on this module, so **no pom changes are needed**.
+## 9. Developing a New Tool, Step by Step
 
-**Option B: create a standalone module** (suitable for large toolboxes intended for independent release)
+### Step 1: pick the module
 
-1. Create a Maven submodule under `harnax-tools-external/` (e.g. `harnax-tools-weather`) depending on `harnax-tools-sdk`;
-2. Register the submodule in the `<modules>` section of `harnax-tools-external/pom.xml`;
-3. Add the dependency in **both** places — neither can be omitted:
-   - `harnax-admin/pom.xml`: Admin scans the new ToolBox at startup and syncs its metadata into the database;
-   - `harnax-agent/harnax-agent-service/pom.xml`: actual tool execution happens in the agent-service runtime.
+Create a sibling module under `harnax-tools-external/` (built-in tools are `harnax-tools-buildin`) whose POM depends at least on `harnax-tools-sdk`, `io.agentscope:agentscope` (version via `agent-scope.version`) and `spring-context`. Add it to both `harnax-admin/pom.xml` and `harnax-agent/harnax-agent-service/pom.xml`: the first decides whether the tool can be registered into the table, the second whether the runtime can instantiate it. Both discover beans through the `com.agnetix.harnax.tools` package scan; the Spring bean name defaults to the decapitalised class name, so write `@Component("xxx-tool-box")` when the name must be stable.
 
-### Step 2: Write the ToolBox Class
+### Step 2: write the ToolBox class
 
 ```kotlin
-@Component("weather-tool-box")
-class WeatherToolBox : ToolBox() {
+@Component("order-tool-box")
+class OrderToolBox : ToolBox() {
 
-    @Tool(name = "getWeather", description = "Query the real-time weather of a given city")
+    @Tool(name = "queryOrder", description = "按订单号查询订单状态", readOnly = true)
     @ToolMeta(
-        displayName = "Get Weather",
-        displayNameZh = "查询天气",
-        envParamDefs = [
-            ToolEnvParamDef(key = "WEATHER_API_KEY", description = "Weather service API key", required = true, secret = true),
-            ToolEnvParamDef(key = "WEATHER_BASE_URL", description = "Weather service base URL", required = false, defaultValue = "https://api.example.com"),
-        ],
+        displayName = "Query Order",
+        displayNameZh = "查询订单",
         needConfirm = false,
     )
-    fun getWeather(
-        @ToolParam(name = "city", description = "City name, e.g. Hangzhou")
-        city: String?,
-        envContext: ToolEnvContext,
-    ): String = execute("city" to city) {
-        // The LLM may pass null — validate explicitly
-        require(!city.isNullOrBlank()) { "Parameter 'city' is required" }
-        val apiKey = envContext.require("WEATHER_API_KEY")
-        val baseUrl = envContext.get("WEATHER_BASE_URL") ?: "https://api.example.com"
-        // TODO: call the weather service HTTP API and return the result text
-        "weather of $city: ..."
+    fun queryOrder(
+        @ToolParam(name = "order_no", description = "订单号") orderNo: String?,
+    ): String = execute("order_no" to orderNo) {
+        require(!orderNo.isNullOrBlank()) { "Parameter 'order_no' is required" }
+        "order $orderNo: PAID"
     }
 
     override fun name(): String = NAME
 
     companion object {
-        const val NAME = "weather-tool-box"
+        const val NAME = "order-tool-box"
     }
 }
 ```
 
-Authoring checklist:
+Points: extend `ToolBox` and implement `name()`; keep a no-argument constructor (session-level instances come from `getDeclaredConstructor()`); wrap the body in `execute`, otherwise there is no call log; one method, one globally unique tool name.
 
-| Item | Notes |
-|------|-------|
-| `@Component` bean name | Prefer the `xxx-tool-box` format, matching the return value of `name()` |
-| `@Tool` | `description` is the model's only clue about the tool's purpose — state the capability and when to use it clearly |
-| `@ToolParam` | Every parameter the LLM must supply **requires** this annotation (with `name` and `description`); otherwise it is excluded from the JSON schema and the model cannot pass a value |
-| `ToolEnvContext` parameter | Framework-injected — do **not** annotate it with `@ToolParam` |
-| `execute {}` | The method body must be wrapped in it, listing key arguments as `"key" to value` pairs for call logging |
-| Null defense | The LLM may pass `null`; validate inside the method body |
-| `secret = true` | Always mark secret env parameters; the Admin UI masks them |
-| `dangerousInput = true` | Enable when inputs may contain dangerous commands / sensitive paths (bypass-immune interception) |
-| `isRequired = true` | Baseline tools every agent needs: appended at delivery, kept out of the wizard candidate list (still visible on the management page, and unable to carry env parameters) |
+### Step 3: expose parameters to the model
 
-### Step 3: Supporting Environment Variables
+Every model-visible parameter needs `@ToolParam(name = ...)`; `name` has no default and must be written. Optional parameters need `required = false`. Stick to primitives and String; framework-injected objects such as `ToolEnvContext` must not carry `@ToolParam`. Nullable Kotlin parameters plus a `require` in the body are the built-in style, because the model may omit any argument and send null. A `description` only reaches the schema text and takes no part in evaluation: the default behaviour comes from the fallback expression in the method body, so where the description's default and the value after `?:` differ, the latter is what runs.
 
-**Declaration**: declare each parameter in `@ToolMeta.envParamDefs` (see the Step 2 code), each with `key`, `description`, `required`, `secret`, and `defaultValue`.
+### Step 4: environment parameters
 
-**Assigning values**: when the tool is bound to an agent, the Admin UI renders an env-parameter form based on the declarations; the operator picks one of two options:
+Declare configuration with `@ToolMeta(envParamDefs = [...])` of `ToolEnvParamDef(key = ..., description = ..., required = ..., secret = ..., defaultValue = ...)`, add an unannotated `envContext: ToolEnvContext` parameter, and read with `envContext.require("KEY")` (throws when missing) or `envContext.get("KEY") ?: fallback`.
 
-1. **Reference a global env variable**: first create the variable in Admin's "Environment Variables" management (`/api/admin/env-variables`, values stored encrypted), then associate it at binding time (`envVarId` is stored). At runtime Admin resolves it to the **latest** decrypted value — updating the global variable propagates to all referencing bindings. **The snapshot does not store the value**, only the pointer: what the client submits back is a display value (`******` for a sensitive one), so snapshotting it would keep a string of stars as the secret, while resolving it server-side first would write a plaintext secret into the `env_bindings` column (the AES key lives in admin only — see `mcp-management` §7.16). A pointer has to be checked before it can be stored: `assertEnvBindingsBindable` verifies that every `envVarId` in the batch **resolves, belongs to the current tenant, and is not disabled**, one guard shared by the tool / MCP / CLI binding paths (CLI counts, because `mergeCliEnvBindings` delivers that column too). The two halves of "disabled" are consistent: `getDecryptedValue` now answers null for `enabled = 0`, so **disabling a variable retracts it from every referencing binding**, while a binding that points at a disabled variable cannot be saved at all — otherwise the form would show it filled and the runtime would receive nothing. The other direction of the same rule: **a referenced variable cannot be deleted** — `deleteEnvVariable` checks the `envVarId` pointers in all three binding tables first and answers "bound by N agent(s): …; rebind them first";
-2. **Custom value**: enter a literal directly (`customValue` is stored), saved as a snapshot.
+Three notes: `required` only drives the panel's labelling and the save-time check, while the runtime judgement is `require()`; keys are shared across the whole agent, so a tool can read a value another binding declared; `defaultValue` does not fill anything at runtime.
 
-A `secret = true` parameter is **never prefilled with its default**: the read API masks a secret default too, so prefilling would drop `abc****wxyz` into the form field and from there into the row. Override it by typing a real value or by referencing a global variable.
+### Step 5: confirmation and dangerous input
 
-**Full data flow**:
+`needConfirm = true` makes every call ask the user. `dangerousInput = true` makes assembly wrap the tool with `DangerousInputCheckingTool`, scanning string arguments for dangerous command fragments and paths, producing a bypass-immune ASK on a hit. Declaring both means wrapping is skipped (the ASK rule fires first). Any tool whose string parameters may carry a command or a path should declare `dangerousInput`; a read-only tool with no free-text input needs neither.
 
-```
-@ToolMeta.envParamDefs (declared in code)
-    → admin startup: BuiltinToolAutoRegistrar syncs them into the agent_tool_env_param table (basis for UI form rendering)
-    → Admin UI: when binding the tool to an agent, fill in each envKey via the form (global variable reference or custom value)
-    → agent_tool_binding.envBindings (JSON snapshot: envKey + envVarId / customValue; a reference stores the pointer, never the value)
-    → agent startup: InternalApiController resolves envVarId to the latest decrypted value (falls back to the snapshot value — rows written now carry no snapshot to fall back to, so a miss is left at a warn)
-    → AgentSpecResolver merges all bindings into a flat map, wrapped as a ToolEnvContext
-    → HarnessAgentLauncher registers it into the ToolExecutionContext
-    → the tool method's envContext parameter is auto-injected; read values via envContext.require("KEY")
-```
+### Step 6: unit tests
 
-Leaving a required parameter empty is **rejected when you save**: `assertRequiredEnvParamsFilled` goes through the rows with `agent_tool_env_param.required = 1` and asks each one "will anything resolve at runtime?" — an `envVarId` reference counts as answered, a hand-typed value must be non-blank and must not contain `****`, and the parameter's own `default_value` does **not** count (`ToolConfigAdaptorImpl` loads the definitions into the runtime `AgentTool`, but nothing in the codebase reads them, so a default never reaches `ToolEnvContext`). Both frontends have their own submit-time check that names the missing parameters, but this server-side one is what actually holds.
+Every built-in ToolBox has a matching test (`TimeToolBoxTest`, `EmailToolBoxTest`, `EmailToolBoxIntegrationTest`). `ToolRegistryTest` on the SDK side covers bean scanning and descriptor extraction and is the model for a registration assertion: given a ToolBox class, each `@Tool` method yields one `ToolMethodDescriptor`.
 
-The runtime line `Environment parameter 'XXX' is required but not configured` (thrown by `require()`, returned to the model as the tool result) therefore has only two remaining sources: dirty rows stored before this guard existed, and `is_required = 1` tools, which have no binding row at all (see 6.1).
+### Step 7: it registers itself at startup
 
-### Step 4: Write Unit Tests
+No manual insert, no page action, no SQL script: when admin finishes starting, the sync writes the `@Tool` methods into `agent_tool` and their env parameters into `agent_tool_env_param`. Confirm via the `[BuiltinToolAutoRegistrar]` log lines. A startup failure whose message is `Duplicate @Tool name(s) on the classpath` means two methods claim one name; rename one - no row had been written.
 
-Refer to `TimeToolBoxTest` and `EmailToolBoxTest` under `harnax-tools-buildin/src/test/kotlin/com/agnetix/harnax/tools/buildin/`. Minimum coverage:
+### Step 8: bind and verify
 
-- Return value for valid inputs;
-- Validation exceptions for missing / invalid parameters;
-- Exceptions when a required env parameter is missing (inject an empty `ToolEnvContext`).
+Select the tool in the agent panel, fill the env values, run one turn, and check that `tool_call_log` contains a `<group>::<method>` row. If the agent cannot see the tool, check in order: whether the bean is on the admin and agent-service classpaths (the `[ToolRegistry] Registered ToolBox bean` line), whether `declaredNames` contains the name (visible on the page but missing for the agent usually means the bean is absent from agent-service), whether the binding row exists, whether `status` is 1, and whether a name clash failed the startup.
 
-### Step 5: Register the Tool in the Database (Fully Automatic, No Manual Inserts)
+### Quick pitfall reference
 
-1. Build: run `mvn clean install` for the hosting module;
-2. **Restart harnax-admin**: `BuiltinToolAutoRegistrar` scans the `ToolRegistry` and runs the full convergence pass described in 5.2 — new names inserted, changed rows refreshed in place only where a column differs, names no longer declared kept as rows but no longer delivered; env parameter definitions sync into `agent_tool_env_param`;
-3. Verify registration: the new tool appears on the Admin UI "Tool Management" page, or confirm the record in the `agent_tool` table;
-4. **Restart harnax-agent-service**: actual execution lives in agent-service; without a restart the `ToolRegistry` lacks the new ToolBox, and the runtime logs a warning and skips the tool (this behaviour has no switch).
+| Symptom | Judgement |
+| --- | --- |
+| Missing from the tool page | Class outside the scanned package; class without `@Component`; ToolBox with no `@Tool` method (`ToolRegistry` logs INFO and skips); bean absent from the admin classpath |
+| On the page but not assembled | The delivery filter on `registeredToolNames()` empties the list, meaning the bean is missing from agent-service; or `bean_name` is empty |
+| The model cannot see a parameter | The parameter lacks `@ToolParam`, so schema generation skips it |
+| A parameter's default differs from its description | The `@ToolParam` description takes no part in evaluation; the fallback expression in the method body decides it: `EmailToolBox.sendEmail`'s `is_html` is described as `Whether the body is HTML format (default: true)` while the body computes `val htmlMode = isHtml ?: false`, so an omitted argument sends `text/plain` |
+| An env parameter always reports unconfigured | The value sits in `agent_tool_env_param.default_value` (unused at runtime); or a required tool tries to carry parameters (no binding row) |
+| Unselected sibling methods are available | The assembly sweep keeps exactly the granted names, so check the binding rows really hold one `tool_id` each |
+| Wrong method name in the log | `execute` is not the tool method's direct expression, so the stack-frame walk picked up the outer method |
+| `@ToolMeta` seems to have no effect | It was written on the class; its target is `FUNCTION` |
 
-> Sync policy reminders: builtin tools are code-owned — adding, changing and removing them all take effect on an admin restart. The tool management page is read-only; there is no edit / delete / disable control. Renaming `@Tool(name = ...)` swaps the tool: a new row under the new name, the old row kept but no longer delivered, and its bindings left behind, so the tool has to be re-selected in the agent configuration; renaming the Java method or the bean keeps the same tool and refreshes the row in place (`id` and bindings untouched). A tool removed from the code keeps its row and its bindings but stops being delivered (see 5.2).
+## 10. Explicit Non-goals and Known Boundaries
 
-### Step 6: Bind the Tool to an Agent and Configure Env Variables
+- No tool definition at runtime: no scripted or HTTP tool kind, no input-schema form. `agent_tool` has no such columns and the management API has no write method.
+- No disable or uninstall: there is no human disable path, `status` and `active` stay 1; deleting a `@Tool` method from code leaves its row in the table, held back by the delivery filter.
+- Tools carry no tenant: `agent_tool` has no `tenant_id`, so a row is visible to every tenant. Isolation lives in the binding layer - an `agent` belongs to a tenant and its binding rows follow it.
+- No configuration slot for per-tool timeout, retry or concurrency limits: the turn timeout is applied by the assembly side, and concurrency serialisation is the code attribute `@Tool.concurrencySafe`, neither stored nor adjustable per agent.
+- Required tools and required env parameters are mutually exclusive; the sync only warns, it does not refuse to start.
+- Tools have no permission model of their own: visibility equals "bound to this agent", and behaviour under the permission engine comes from `readOnly` / `needConfirm` / `dangerousInput` plus the session's permission mode.
+- Call logs are write-only: the product has no tool-call statistics page, and `tool_call_log` needs a direct database query.
+- A team lead assembles no business or required tools, only the team tool group; its meta tool, filesystem tools and shell tool are explicitly disabled.
+- A secret env parameter's `defaultValue` is decrypted and then masked in the response (first 3 and last 4 characters, fully masked below length 7), and shows `******` when decryption fails, so the rendered length is not the plaintext length.
 
-1. In the Admin UI, open the agent configuration (create or edit) and select the new tool in the tool-selection step (the candidate list holds only `is_required = 0` tools; a tool marked `isRequired = true` is not in the list and needs no selection — it is appended at delivery);
-2. Fill in the required env parameters via the form (global variable reference or custom value) — an empty one cannot be saved: the server names the parameters left without a value, and an `envVarId` belonging to another tenant or already deleted is rejected in the same pass;
-3. Optionally set `needConfirm` (confirmation before execution) — the switch can only tighten the rule: turning it on makes every invocation in this agent ask for confirmation, and a tool that already requires confirmation cannot be switched off here;
-4. Save — the binding is written to `agent_tool_binding`.
+## 11. Key File Index
 
-### Step 7: Verify the Tool Works
-
-1. Start a conversation with the agent and steer the model to call the new tool (e.g. "What's the weather in Hangzhou?");
-2. Watch the tool-call card on the frontend conversation page (SSE tool event stream);
-3. Check the `tool_call_log` table / service logs for a `weather-tool-box::getWeather` call record (including args, result, and duration);
-4. For `needConfirm=true` tools, verify the ASK confirmation interaction;
-5. Deliberately leave a required env parameter empty and verify the save is rejected and names the parameter (the runtime "parameter not configured" error is no longer reachable that way — it now only comes from dirty rows stored before the guard and from `is_required = 1` tools).
-
-### Common Pitfalls Quick Reference
-
-| Symptom | Cause and fix |
-|---------|---------------|
-| The tool "doesn't exist" from the model's side; parameters can't be passed | Parameters lack `@ToolParam` — re-check the annotations |
-| The new tool doesn't appear on the tool management page | admin not restarted (never synced), or the ToolBox exposes no `@Tool` method so `ToolRegistry` has no metadata for it |
-| The tool is missing from the agent wizard | it has `is_required = 1` (required tools are never candidates — they are appended at delivery) |
-| `Tool ... not found, skipping` in the runtime logs | the `agent_tool` record is missing (admin not restarted after sync), `beanName` is empty, or agent-service was not restarted so the `ToolRegistry` lacks the ToolBox — the tool is skipped outright; there is no fallback registration any more |
-| Env parameter resolves to nothing | A reference entry stores no value in the snapshot, only `envVarId`: as long as the variable still exists it is always resolved to its latest value, so an empty result usually means the envKey disagrees with the code declaration, or `agent_tool_binding.envBindings` has no entry for that key at all (the save-time required/reference checks now block that case first). One silent case remains in rows stored before the change: they may carry a mask string as the value while the variable is already gone, which is what surfaces as stars |
-| The form looked filled, yet the tool gets a string of stars | Those are mask characters, not a value. Two historical sources: a `secret = true` parameter used to prefill its masked default into the binding field, and a reference snapshot used to store `displayValue` (`******` for a sensitive one). Both are fixed now (secrets stay blank, references store no value). The rule is "anything containing `****` does not count as filled", so legacy dirty rows need to be filled in once more |
-| A required tool fails at runtime with "environment parameter not configured" | A tool with `is_required = 1` has no binding row, so it gets no envBindings snapshot at all. Do not declare required env params on a required tool; if the value really must be configurable, keep the tool optional so users can bind it, or have the code fall back via `ToolEnvContext.get(key)` instead of calling `require(key)` |
-| "I want to disable / rename / delete a tool" | There is no such entry point: tools are owned exclusively by the code sync (see 5.3) — the write endpoints do not exist and the page has no switch. To disable or delete one, drop that `@Tool` method from the code and re-release: the row is kept but no longer delivered (see 5.2). A manual row edit is converged back to the code state on the next admin restart |
-| Agents report "tool not found" after a `@Tool(name = ...)` rename | The identity is `name`, so a rename swaps the tool: the new name inserts a new row, the old row is kept but no longer delivered, and the `agent_tool_binding` rows hanging off the old row do not migrate — go to the agent configuration and re-select the new tool |
-| Agents report "tool not found" after a Java method or bean rename | Those two take no part in identity, so this should not happen: the row refreshes in place and keeps its `id` and bindings. If it does happen, check the startup log for an `Updated tool ... (id=N)` line for that tool first |
-| A tool the code removed is still in the table | Expected behaviour: the sync deletes no row (see 5.2), so the old row is kept as is and is simply no longer delivered. Truly clearing it is a manual operation (confirm nothing binds it, then delete the row) |
-| Context bleed between sessions | Don't cache singleton state; the runtime already creates a fresh ToolBox instance per session — avoid relying on mutable member variables in methods |
-
-
-## 10. Key File Index
-
-| Module | File |
-|--------|------|
-| SDK base class | `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolBox.kt` |
-| Metadata annotations | `ToolMeta.kt`, `ToolEnvParamDef.kt`, `ToolMetaDescriptor.kt` (same directory) |
-| Env context | `ToolEnvContext.kt`, `ToolCallContext.kt` (same directory) |
-| Registry | `registry/ToolRegistry.kt` (same directory) |
-| Adaptor interfaces | `adaptor/ToolCallLogAdaptor.kt`, `adaptor/ToolConfigAdaptor.kt` (same directory) |
-| Built-in tools | `harnax-tools-external/harnax-tools-buildin/src/main/kotlin/com/agnetix/harnax/tools/buildin/TimeToolBox.kt`, `EmailToolBox.kt` |
-| Runtime assembly | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt` |
-| Dangerous-input wrapping | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/permission/DangerousInputCheckingTool.kt` |
-| Spec resolution | `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/AgentSpecResolver.kt` |
-| Adaptor implementations | `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/ToolConfigAdaptorImpl.kt`, `ToolCallLogAdaptorImpl.kt` |
+| Topic | Path |
+| --- | --- |
+| ToolBox base class | `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolBox.kt` |
+| `@ToolMeta` and `@ToolEnvParamDef` | `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolMeta.kt`, `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolEnvParamDef.kt` |
+| Descriptors | `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolMetaDescriptor.kt` |
+| Env and call contexts | `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolEnvContext.kt`, `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolCallContext.kt` |
+| SPI | `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/adaptor/ToolCallLogAdaptor.kt`, `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/adaptor/ToolConfigAdaptor.kt` |
+| Registry | `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/registry/ToolRegistry.kt` |
+| Assembly input | `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolSpec.kt` |
+| Built-in tools | `harnax-tools-external/harnax-tools-buildin/src/main/kotlin/com/agnetix/harnax/tools/buildin/TimeToolBox.kt`, `harnax-tools-external/harnax-tools-buildin/src/main/kotlin/com/agnetix/harnax/tools/buildin/EmailToolBox.kt` |
 | Startup sync | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/registrar/BuiltinToolAutoRegistrar.kt` |
-| AgentSpec delivery (where required tools are appended) | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt` |
-| Management APIs | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/AgentToolController.kt` |
-| Entities | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentTool.kt`, `AgentToolBinding.kt`, `AgentToolEnvParam.kt` |
-| Turn timeout | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/config/HarnessConfig.kt`, `HarnessAgentWrapper.kt` |
-| Migrations | `harnax-admin/src/main/resources/db/migration/V4__refactor_tool_granularity.sql`, `V17__drop_tool_binding_enable_skip.sql`, `V18__add_tool_binding_unique_key.sql`, `V29__drop_custom_and_http_tool.sql`, `V40__tool_registry_platform_scoped.sql` (platform-level + identity = `name` + tool-level timeout removed) |
+| Read-only management API | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/AgentToolController.kt`, `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AgentToolServiceImpl.kt` |
+| Binding save | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AgentServiceImpl.kt` |
+| Spec delivery | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt` |
+| Spec resolution | `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/AgentSpecResolver.kt` |
+| SPI implementations | `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/ToolConfigAdaptorImpl.kt`, `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/ToolCallLogAdaptorImpl.kt` |
+| Runtime assembly | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt`, `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentBuilder.kt` |
+| Dangerous-input decorator | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/permission/DangerousInputCheckingTool.kt` |
+| Team tool groups | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/team/TeamToolBoxes.kt` |
+| Turn timeout | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentWrapper.kt`, `harnax-agent/harnax-agent-service/src/main/resources/application.yml` |
+| Entities and mappers | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentTool.kt`, `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentToolBinding.kt`, `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentToolEnvParam.kt`, `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/ToolCallLogEntity.kt`, `harnax-entity/src/main/resources/mapper/AgentToolMapper.xml`, `harnax-entity/src/main/resources/mapper/ToolCallLogMapper.xml` |
+| DDL | `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql`, `harnax-admin/src/main/resources/db/migration/V40__tool_registry_platform_scoped.sql`, `harnax-admin/src/main/resources/db/migration/V50__scope_stats_and_logs_to_a_tenant.sql` |
+| Frontend | `harnax-webui/src/pages/tool/index.tsx`, `harnax-webui/src/pages/agent/components/ToolConfigPanel.tsx`, `harnax-webui/src/services/ant-design-pro/tool.ts` |
+| Process wiring | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/HarnaxAdminApplication.kt`, `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/AgentServiceApplication.kt` |
