@@ -1,0 +1,15 @@
+/* Shared copy used by HarnaxKit components and state placeholders. */
+
+"common.retry" = "Retry";
+"common.cancel" = "Cancel";
+"common.confirm" = "Done";
+"common.close" = "Close";
+
+"state.loading" = "Loading…";
+"state.empty.title" = "Nothing here yet";
+"state.empty.hint" = "Pull to refresh once there is data.";
+"state.error.title" = "Something went wrong";
+"state.error.hint" = "Check your connection, then try again.";
+
+"me.language.followSystem" = "Follow Device Language";
+"agent.sessionCount" = "%d sessions";
