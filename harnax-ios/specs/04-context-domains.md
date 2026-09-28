@@ -64,7 +64,7 @@ totalModels / enabledModels / disabledModels。
 - 能力标签渲染：`harnax-webui/src/pages/model/components/ModelListTable.tsx:137-176`。`thinkingMode === 2` 渲染红色"必需思考"标签。
 
 模型响应字段 `ModelResponse`：`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ModelResponse.kt:11-51`
-id / name / modelName / providerId / providerName / description / modelType / supportInternet / supportReasoning / thinkingMode / supportTool / supportMcp / supportVision / price / status / isPublic / creator / createTime / updateTime，外加**计算字段 tags**：`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ModelResponse.kt:80-90`（由 support_* 整数推导 internet/reasoning/tool/mcp/vision）。
+id / name / modelName / providerId / providerName / description / modelType / supportInternet / supportReasoning / thinkingMode / supportTool / supportMcp / supportVision / price / status / isPublic / creator / createTime / updateTime，外加**计算字段 tags**：`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ModelResponse.kt:79-87`（由 support_* 整数推导 internet/reasoning/tool/mcp/vision）。
 
 ### 模型表单：thinkingMode 与四个能力开关
 
@@ -79,7 +79,7 @@ id / name / modelName / providerId / providerName / description / modelType / su
 1. 能力开关**仅 chat 模型可用**；`modelType` 非 chat 时重置全部能力位为 0：`harnax-webui/src/pages/model/components/ModelForm.tsx:67-78`。
 2. 四个开关 = reasoning / internet / vision / tool（+ mcp），`harnax-webui/src/pages/model/components/ModelForm.tsx:191-218`；thinkingMode 下拉（0/1/2）同样仅 chat 显示：`harnax-webui/src/pages/model/components/ModelForm.tsx:220-235`。
 3. 编辑回填时 thinkingMode 的**兼容推导**：`thinkingMode ?? (supportReasoning === 1 ? 1 : 0)`：`harnax-webui/src/pages/model/components/ModelForm.tsx:33-65`。旧数据只有 supportReasoning 时据此还原。
-4. 提交时**反向推导**：`supportReasoning = (thinkingMode ?? 0) >= 1 ? 1 : 0`：`harnax-webui/src/pages/model/components/ModelForm.tsx:84-99`。即 thinkingMode 1/2 都会把 supportReasoning 置 1；iOS 必须保留这一耦合，否则后端 tags 计算（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ModelResponse.kt:80-90`）与 Agent 侧选模型逻辑会不一致。
+4. 提交时**反向推导**：`supportReasoning = (thinkingMode ?? 0) >= 1 ? 1 : 0`：`harnax-webui/src/pages/model/components/ModelForm.tsx:84-99`。即 thinkingMode 1/2 都会把 supportReasoning 置 1；iOS 必须保留这一耦合，否则后端 tags 计算（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ModelResponse.kt:79-87`）与 Agent 侧选模型逻辑会不一致。
 5. providerId 为隐藏字段（由选中厂商注入）：`harnax-webui/src/pages/model/components/ModelForm.tsx:147-149`。
 6. modelName 必填：`harnax-webui/src/pages/model/components/ModelForm.tsx:158-163`；后端 `@NotBlank @Size 1-100`：`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ModelCreateRequest.kt:16`。
 7. price 步进 0.0001，含义"元 / 百万 token"：`harnax-webui/src/pages/model/components/ModelForm.tsx:176-182`；后端 `@DecimalMin 0.0` 默认 0.0：`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ModelCreateRequest.kt:53`。
@@ -593,4 +593,4 @@ Web 方案依赖：redirect_uri 是**前端 http 页面**（由 `APP_FRONTEND_BA
 8. **已核实**：`hasOperationPermission`（`harnax-webui/src/utils/permissionUtil.ts:111`-`:123`，文件共 123 行）**没有**「公开实体额外放行」分支，规则只有两条——`isAdmin` 放行一切，否则 `currentUser === creator`。因此「公开资源允许非管理员操作」在 Web 侧并不成立，iOS 照两条实现即可，不要给 `isPublic` 加编辑放行。
 9. 工具页除 `/builtin` 之外是否存在按 Agent 维度的可用工具视图（`/available`，`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/AgentToolController.kt:54`）—— 上下文域页面不用，Agent 表单用；iOS 若做 Agent 域再确认。
 10. `SkillInstallResponse.flagged[].reasons` 的元素类型（`List<String>` 还是单串）与 `stale` 的语义细节需按 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/SkillInstallResponse.kt:12-68` 逐行核对；本文只按 `harnax-webui/src/pages/skill/components/RepositoryList.tsx:73-81,153-183` 的分区渲染结论描述。
-11. **已核实**：Flyway 目录`harnax-admin/src/main/resources/db/migration/` 只剩 `README.md` 与 `V1__init_schema.sql`，没有更高版本脚本，增量历史全部折进了基线。需要留个记号的是「V1~V50 机械合并」这一口径只有该文件头注释一个出处（`harnax-admin/src/main/resources/db/migration/V1__init_schema.sql:1`-`:18`），文件体内不含任何 `V35__` / `V37__` 之类的版本标记，因此 V35 删 `cli_plugin`、V37 退役种子技能这两条结论是从注释读来的，不是从 DDL 逐条对上的。
+11. **已核实**：Flyway 目录只剩 `harnax-admin/src/main/resources/db/migration/README.md` 与 `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql`，没有更高版本脚本，增量历史全部折进了基线。需要留个记号的是「V1~V50 机械合并」这一口径只有该文件头注释一个出处（`harnax-admin/src/main/resources/db/migration/V1__init_schema.sql:1`-`:18`），文件体内不含任何 `V35__` / `V37__` 之类的版本标记，因此 V35 删 `cli_plugin`、V37 退役种子技能这两条结论是从注释读来的，不是从 DDL 逐条对上的。

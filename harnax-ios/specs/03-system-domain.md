@@ -203,7 +203,7 @@
 | 按智能体 | `data.agentStats` | `agentId` / `agentName` / 四个度量（`:56-63`） | `:365-480` |
 | 按会话 | `data.sessionStats` | `sessionId`(String) / `sessionTitle` / 四个度量（`:48-55`） | **前端 `slice(0, 10)` 只取前 10**（`:483-598`） |
 
-排序由后端保证：三个聚合都 `ORDER BY grandTotalToken DESC`（`TokenStatsMapper.xml:95-145`）。
+排序由后端保证：三个聚合都 `ORDER BY grandTotalToken DESC`（`harnax-entity/src/main/resources/mapper/TokenStatsMapper.xml:95-145`）。
 
 ### 4. 四个折线图（Line，多系列 `shapeField: 'smooth'`）
 
@@ -219,7 +219,7 @@ X 轴标签按粒度格式化（hour→`MM-DD HH:mm`，week/month→`MM-DD`/`YYY
 
 ### 5. 前端只需知道的 SQL 语义要点（不必移植，但影响取值）
 
-- 「别名即契约」：Mapper 用 camelCase 别名直接对位 DTO 字段（`TokenStatsMapper.xml:30-39` 有明确注释）。iOS 只要按字段名解码即可。
+- 「别名即契约」：Mapper 用 camelCase 别名直接对位 DTO 字段（`harnax-entity/src/main/resources/mapper/TokenStatsMapper.xml:30-39` 有明确注释）。iOS 只要按字段名解码即可。
 - 租户与时间窗谓词无 `<if>` 分支，恒定生效（`:41-58`）→ 不可能出现「不带租户查全量」。
 - 度量列定义 `tokenMetrics`（`:60-65`）。
 - 时间桶用 `CAST(... AS DATETIME)`，四种桶各一份（`:67-72`）；`timePoint` 因此是字符串。
@@ -331,7 +331,7 @@ Token 统计（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller
 
 ## iOS 适配注意点
 
-1. **图表重画（Swift Charts）**：webui 用 `@ant-design/plots`，一次进页并发 5 请求、任一返回就 setState。iOS 上若照做，5 个 `@Published` 会触发 5 次全页重算 body，Swift Charts 的 `LineMark` 序列在维度时序上是「桶 × 模型」笛卡尔积（`TokenStatsMapper.xml:234`），行数可达数百，动画抖动明显。建议：① 5 个请求 `async let` 并发但**全部落地后一次性提交**给视图；② 按 `dimensionName` 预分组成 `[String: [TimePoint]]` 存 VM，视图只读；③ 关闭 `.animation`，只在用户显式改筛子时启用过渡；④ 会话维度按前端 `slice(0,10)` 同样截断（`harnax-webui/src/pages/token-monitor/index.tsx:483-598`），饼图颜色用固定调色板（webui 是 Tableau 风 8 色循环，`:237-239`），避免每次刷新换色。
+1. **图表重画（Swift Charts）**：webui 用 `@ant-design/plots`，一次进页并发 5 请求、任一返回就 setState。iOS 上若照做，5 个 `@Published` 会触发 5 次全页重算 body，Swift Charts 的 `LineMark` 序列在维度时序上是「桶 × 模型」笛卡尔积（`harnax-entity/src/main/resources/mapper/TokenStatsMapper.xml:234`），行数可达数百，动画抖动明显。建议：① 5 个请求 `async let` 并发但**全部落地后一次性提交**给视图；② 按 `dimensionName` 预分组成 `[String: [TimePoint]]` 存 VM，视图只读；③ 关闭 `.animation`，只在用户显式改筛子时启用过渡；④ 会话维度按前端 `slice(0,10)` 同样截断（`harnax-webui/src/pages/token-monitor/index.tsx:483-598`），饼图颜色用固定调色板（webui 是 Tableau 风 8 色循环，`:237-239`），避免每次刷新换色。
 2. **回调地址只读**：`callbackUrl` 只有 webhook 模式才存在，且 `callbackKey` 从不下发（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelResponse.kt:36-41`）。iOS 用不可编辑的 LabeledContent + 「拷贝」按钮，不要给 `TextField`；非 webhook 模式整行隐藏（对齐 `harnax-webui/src/pages/channel/components/UpdateForm.tsx:412-481` 的条件渲染）。`sessionId` 同理标 IMMUTABLE，任何编辑尝试都应拒绝。
 3. **轮询与前后台**：三处轮询周期不同——微信扫码 2s（`harnax-webui/src/pages/channel/components/WechatLoginModal.tsx:22`）、Token 监控是手动刷新不进轮询、沙箱状态是随列表刷新。iOS 规则：① 扫码轮询只在弹窗 scene 内用 `Timer`/`Task` 循环，`scenePhase != .active` 立即暂停并在回前台续跑（服务端 5 分钟硬超时 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/WechatLoginService.kt:60`，后台冻结会让 QR 直接变 EXPIRED，需在 UI 明示「二维码可能已过期，请重新获取」而不是静默失败）；② 单次请求失败**继续轮询**，与 `harnax-webui/src/pages/channel/components/WechatLoginModal.tsx:99-101` 一致，只有拿到 `EXPIRED`/`LOGGED_IN` 或用户关闭才停；③ 关闭弹窗/页面消失必须 `cancel`，否则内存态会话残留到超时（`harnax-webui/src/pages/channel/components/WechatLoginModal.tsx:105-111`）。
 4. **一次性密钥**：`rawKey` 只在 `POST`/`regenerate` 响应里出现一次（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ApiKeyResponse.kt:60-72`）。iOS 用 fullScreenCover + `interactiveDismissDisabled(true)` 对齐 `maskClosable={false}`（`harnax-webui/src/pages/api-key/components/RawKeyModal.tsx:28`），关闭后从内存清除、不写 Keychain、不进日志；复制用 `UIPasteboard.general.string`，并在 iOS 16+ 注意系统「已粘贴」提示是预期行为。
@@ -345,7 +345,7 @@ Token 统计（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller
 
 ## 未确认
 
-1. **已核实 + 已裁定（O6，定案为进 v1）**：Channel「流式开关」不存在——全 webui 无 `enableStream`/`isStream`，`stream` 只是 dingtalk 的接入模式。`Channel` 实体确有 `enableThink`/`enableSearch`/`enablePlan`（`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Channel.kt:49`-`:55`，内部接口会读它们，见 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt:417`-`:419`），但 admin 侧三个渠道 DTO（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelCreateRequest.kt`、`ChannelUpdateRequest.kt`、`ChannelResponse.kt`）逐文件 grep 这三列零命中，Web 表单因此从未能编辑。裁定：iOS v1 暴露这三个开关，后端同步把三列补进渠道 DTO——落点为两个请求 DTO 加字段、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelResponse.kt:86`-`:103` 的 `fromEntity` 加三行映射、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ChannelServiceImpl.kt:79` 的创建映射与 `:116` 的更新映射；三列取值沿用实体的 0/1 `Int`，Web 表单是否跟进不在本规格范围。
+1. **已核实 + 已裁定（O6，定案为进 v1）**：Channel「流式开关」不存在——全 webui 无 `enableStream`/`isStream`，`stream` 只是 dingtalk 的接入模式。`Channel` 实体确有 `enableThink`/`enableSearch`/`enablePlan`（`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Channel.kt:49`-`:55`，内部接口会读它们，见 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt:417`-`:419`），但 admin 侧三个渠道 DTO（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelCreateRequest.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelUpdateRequest.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelResponse.kt`）逐文件 grep 这三列零命中，Web 表单因此从未能编辑。裁定：iOS v1 暴露这三个开关，后端同步把三列补进渠道 DTO——落点为两个请求 DTO 加字段、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelResponse.kt:86`-`:103` 的 `fromEntity` 加三行映射、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ChannelServiceImpl.kt:79` 的创建映射与 `:116` 的更新映射；三列取值沿用实体的 0/1 `Int`，Web 表单是否跟进不在本规格范围。
 2. **`permissionMode` 取值域已查实**：五个字符串值 `DEFAULT`／`BYPASS`／`ACCEPT_EDITS`／`EXPLORE`／`DONT_ASK`（文案见 `harnax-webui/src/locales/zh-CN/pages.ts:871-875`，会话侧 DTO 字段 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/SessionResponse.kt:50`）。后端只声明 `String?` 加 `@Size(20)`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelCreateRequest.kt:32`），没有枚举校验，因此 iOS 要自己把这五个值建成枚举并在提交前拦非法值；渠道侧前端零处引用，v1 按「不发送、原样透传已存值」处理。
 3. **已裁定（O7）**：`http` 类型的实际可用性——后端注释明确它「无 adaptor 注册，运行时报 `no adaptor registered`」（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ChannelServiceImpl.kt:355-366`、`harnax-webui/src/pages/channel/components/channelModes.ts:14`）。裁定：iOS 表单保留该类型选项但灰显不可提交，标注「暂未支持」。
 4. **已核实**：`regenerate` 不带保护键检查是**既定出口而不是遗漏**。改、删、停三处的拒绝文案自己写着「use regenerate instead」（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ApiKeyServiceImpl.kt:116`-`:117`、`:142`-`:143`、`:153`-`:154`，保护集 `protectedKeyTypes = setOf("PERMANENT", "SYSTEM")` 见 `:40`），而 `regenerateApiKey` 只走 `loadAndCheckAccess`（`:162`-`:183`）。webui 侧对任意可操作行都渲染重新生成按钮、不按 `keyType` 灰显（`harnax-webui/src/pages/api-key/index.tsx:282`-`:299`）。iOS 照此实现：不加客户端拦截，但要把「换掉 PERMANENT/SYSTEM 的密钥会让既有引用立即失效」写进二次确认文案。
