@@ -252,14 +252,14 @@ HarnaxApp                App target：场景、导航、依赖装配
 | M1 上下文域 | 模型、工具、MCP（含 OAuth 回跳改造）、技能（含上传与详情文件树）、CLI | 五个域可增改查，连通性测试与关联拦截可用 |
 | M2 智能体域（配置） | 智能体 5 步向导、团队、四类绑定与环境参数、刷新受影响会话 | 能建出一个带工具与技能的智能体并在 Web 侧看到同一份配置 |
 | M3 对话全量 | 会话列表、分段渲染、工具确认、计划面板、slash 命令、权限模式、图片、workspace、团队多路合并 | 第 11 章第 5 条端到端链路通过；与 Web 同一会话逐段对照渲染结果一致 |
-| M4 任务与系统域 | 定时任务、Channel（含微信扫码）、API Key、环境变量、Token 监控 | 图表数值与 Web 同源一致；Channel 五种类型配置可完成 |
+| M4 任务与系统域 | 定时任务、Channel（含微信扫码、含渠道级三开关）、API Key、环境变量、Token 监控；并落 O6 的后端改动：渠道两个请求 DTO 加三列、`fromEntity` 与创建/更新映射补齐 | 图表数值与 Web 同源一致；Channel 五种类型配置可完成；三开关写入后内部接口读到同一值 |
 | M5 收口 | 双语、深色、无障碍、TestFlight 分发、签名与隐私清单 | 内部试用一轮，无阻断缺陷 |
 
 M3 与 M4 可并行拆分给不同人。开工前必须先落 §14 的 R1：开发期绕开 Nginx 直连 Admin `28080` / Router `28081` 并在 ATS 里配例外域，否则 M0 的「真机能登录」这条出口判据达不到；R7（Swift 工程骨架、CI、图标基线）由 M0 本身建成。
 
 ## 13. 各页面字段级规格
 
-逐字段的全量清单落在同目录 `specs/` 的四份文件里，每份都带 `路径:行号` 锚点：四份文件合计 1320 条，本文件另有 79 条、`FEATURES.md` 1 条，1400 条已用同一脚本逐条核过「文件存在 + 行号在文件行数内」，无一条指向不存在的文件或越界的行号（脚本另报 4 条本文件指向 `specs/` 四份文档的相对链接，那是文档对文档的引用，已手工确认文件在位）。本章给的是写码时要对照的口径摘要；两者冲突以代码为准，代码与 `specs/` 冲突时以 `specs/` 里更细的锚点为准。
+逐字段的全量清单落在同目录 `specs/` 的四份文件里，每份都带 `路径:行号` 锚点：四份文件合计 1322 条，本文件另有 81 条、`FEATURES.md` 1 条，1404 条已用同一脚本逐条核过「文件存在 + 行号在文件行数内」，无一条指向不存在的文件或越界的行号（脚本另报 4 条本文件指向 `specs/` 四份文档的相对链接，那是文档对文档的引用，已手工确认文件在位）。本章给的是写码时要对照的口径摘要；两者冲突以代码为准，代码与 `specs/` 冲突时以 `specs/` 里更细的锚点为准。
 
 | 文件 | 覆盖页面 | 「未确认」条数 / 其中已回代码核实 |
 |---|---|---|
@@ -268,7 +268,7 @@ M3 与 M4 可并行拆分给不同人。开工前必须先落 §14 的 R1：开�
 | `specs/03-system-domain.md` | 渠道与微信扫码、API Key、环境变量、Token 监控、租户切换 | 8 / 6 |
 | `specs/04-context-domains.md` | 模型两级、工具、MCP 与 OAuth、技能仓库与技能、技能详情、CLI | 11 / 4 |
 
-「已核实」只统计各文件「未确认」章节里显式标了「已定案／已核实／已查实／已裁定」的条目，合计 37 条中已收口 17 条；其余条目是写码前需要实测或产品拍板的开口，没有一条可以当作已验证前提。
+「已核实」只统计各文件「未确认」章节里显式标了「已定案／已核实／已查实／已裁定」的条目，合计 37 条中已收口 17 条（八项产品问题已全部拍板，剩余 20 条是写码前实测项）；其余条目是写码前需要实测或产品拍板的开口，没有一条可以当作已验证前提。
 
 ### 13.1 智能体
 
@@ -312,7 +312,7 @@ M3 与 M4 可并行拆分给不同人。开工前必须先落 §14 的 R1：开�
 
 ### 13.5 系统域
 
-- 渠道是「类型 × 接入模式」的条件字段矩阵，`callbackKey` 从不下发、`callbackUrl` 只在 webhook 模式存在；`configJson` 与 `envValue` 都走「掩码回传＝不修改」协议；`http` 类型没有 adaptor，运行时会报 `no adaptor registered`。
+- 渠道是「类型 × 接入模式」的条件字段矩阵，`callbackKey` 从不下发、`callbackUrl` 只在 webhook 模式存在；`configJson` 与 `envValue` 都走「掩码回传＝不修改」协议；`http` 类型没有 adaptor，运行时会报 `no adaptor registered`，iOS 表单保留选项但灰显不可提交（O7）。渠道级 `enableThink` / `enableSearch` / `enablePlan` 三开关进 v1，取值沿用实体的 0/1 整数、与类型无关因此放在表单通用段而非条件段（O6，连带后端补 DTO 三列）。
 - API Key 的 `scope` 由前端传值决定，缺省 `"chat"`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ApiKeyServiceImpl.kt:91`），且 scope 不参与访问控制；原始 Key 只在创建与 `regenerate` 的响应里出现一次。`regenerate` 对 PERMANENT／SYSTEM 保护键没有服务端拦截，这是**既定出口而非遗漏**——改／删／停三处的拒绝文案自己写着「use regenerate instead」（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ApiKeyServiceImpl.kt:116`-`:117`、`:142`-`:143`、`:153`-`:154`，保护集 `:40`），Web 侧也按 `keyType` 灰显；iOS 不加客户端拦截，但二次确认要写清「换钥会让既有引用立即失效」。另一条要拍的板是可见性：Web 把这一页挂在管理员门禁下（`harnax-webui/config/routes.ts:136`-`:141`），见 O5。
 - 环境变量 `GET /list` 固定返回 `id` / `envKey` / `displayValue` / `sensitive` 四键，其中 `sensitive` 是布尔（全仓其余标志位都是 `0/1` 整数）；掩码三档规则见 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/EnvVariableServiceImpl.kt:275`-`:279`。
 - Token 监控是唯一图表页，一次进页并发 5 个请求、任一返回即重算；会话维度前端截 `slice(0, 10)`，周维度按周一对齐。
@@ -349,15 +349,15 @@ M3 与 M4 可并行拆分给不同人。开工前必须先落 §14 的 R1：开�
 
 ## 15. 待拍板的开放问题
 
-这八项都需要产品或后端拍板，超出本文件能替你定的范围。**未明确否决前，本文档按「推荐」列执行**，实现阶段照此推进即视为已授权。
+八项已全部拍板（2026-09-28）：O1~O5、O7、O8 按「推荐」列执行，O6 反转为进 v1 并要求后端补渠道 DTO 三列。「推荐」列即执行口径，下表保留理由备查。
 
 | # | 问题 | 推荐 | 理由 |
 |---|---|---|---|
 | O1 | iOS 是否提供手动切租户 | 提供，但只放在「我的」页、仅对拥有多个租户的账号可见，不进主导航 | Web 已按「多租户由系统自动管理」硬关闭该能力（§5.4）。移动端的合理用途是管理员跨租户排查问题，不是日常切工作区；放主导航等于推翻原裁定 |
 | O2 | 对话凭据是否要设备维度 | v1 接受账号级永久 Key，v1.1 与 `cli-login` 限流一起提后端 | 该 Key 一旦泄露等同账号对话权（R4）。iOS 侧 Keychain + 生物识别能挡设备丢失，挡不住主动导出。要后端新增设备登记接口，与零改造前提冲突 |
-| O3 | APNs 推送做不做、推什么 | 列入 v1.1，作为唯一新增后端接口项；事件源先只开两个——定时任务失败、工具等待确认 | 移动管理台的真实增量就是「不在电脑前也能被叫回来处理确认」。其余事件（对话结束、Token 报表）噪音大于价值 |
+| O3 | APNs 推送做不做、推什么 | 列入 v1.1，作为 v1.1 唯一新增后端接口项（v1 的后端改动只有 O6 的渠道 DTO 三列）；事件源先只开两个——定时任务失败、工具等待确认 | 移动管理台的真实增量就是「不在电脑前也能被叫回来处理确认」。其余事件（对话结束、Token 报表）噪音大于价值 |
 | O4 | 旧移动端工程与移动专用接口面何时下线 | 与 iOS M0 并行做，先删工程再删接口面 | §4.3 的顺序不可颠倒。趁 iOS 还没写第一行 Swift 之前把口径收干净，能避免实现阶段误引到那条面上 |
 | O5 | API Key 页是否照搬「仅管理员可见」 | 照搬：非管理员不显示入口，但「我的永久 Key」照常可看 | Web 的门禁只落在前端路由（`harnax-webui/config/routes.ts:136`-`:141` 的 `access: canAccessUserManagement`，判据 `harnax-webui/src/access.ts:13` 即 `isAdmin === 1`），后端 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/ApiKeyController.kt:23`-`:25` 没有任何管理员校验。iOS 若放开入口，等于给普通用户新开一条 Web 上刻意不给的能力面；而 `getMyPermanentKey`（`:128`）本来就是按人取自己的 Key，不必连带上列表 |
-| O6 | 渠道级「思考 / 联网 / 计划」三个开关进不进 v1 | 不进，等后端把字段补进渠道 DTO | 三列在实体上（`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Channel.kt:49`-`:55`）、内部接口会读（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt:417`-`:419`），但 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelCreateRequest.kt` / `ChannelUpdateRequest.kt` / `ChannelResponse.kt` 三个 DTO 都不带这三列，Web 表单因此从未能编辑它们。iOS 要做必须先改后端，与零改造前提冲突 |
+| O6 | 渠道级「思考 / 联网 / 计划」三个开关进不进 v1 | **已定案（2026-09-28）：进 v1，后端把三列补进渠道 DTO** | 三列在实体上（`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Channel.kt:49`-`:55`）、内部接口会读（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt:417`-`:419`），但 admin 侧三个 DTO（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelCreateRequest.kt`、`ChannelUpdateRequest.kt`、`ChannelResponse.kt`）不带，Web 表单因此从未能编辑。改动落点四处：两个请求 DTO 加字段、`ChannelResponse.kt:86`-`:103` 的 `fromEntity` 加三行映射、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ChannelServiceImpl.kt:79` 的创建映射与 `:116` 的更新映射。这是 v1 唯一的后端改动 |
 | O7 | `http` 渠道类型给不给入口 | 给，但灰显且不可提交，标注「暂未支持」 | 后端把它当合法值接受，运行时找不到适配器、报 `no adaptor registered`（见 `harnax-ios/specs/03-system-domain.md` 的渠道矩阵）。让用户填完一整张表单才在运行期看到失败，比入口灰显更糟 |
 | O8 | 附件收取与下载留不留 v1 | 留，客户端把 404 当作「对象存储未开启」处理 | 该路由整控制器受开关控制（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/OutputFileController.kt:36`-`:39`），`application.yml` 里 `${MINIO_ENABLED:false}` 默认关，但标准部署 compose 显式置 `true`。也就是说部署环境能用、裸配置环境必 404，需要一条明确的降级表现而不是让页面报错 |
