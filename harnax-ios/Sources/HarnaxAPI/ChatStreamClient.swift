@@ -47,7 +47,6 @@ public struct ChatStreamClient: AgentStreaming {
     }
 
     private func events(path: String, body: some Encodable) async -> AsyncThrowingStream<ChatEvent, any Error> {
-        let encoded: Data
         let request: URLRequest
         do {
             request = try await buildRequest(path: path, body: try JSONEncoder().encode(body))
