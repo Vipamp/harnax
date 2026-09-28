@@ -18,6 +18,7 @@ public struct HarnaxDependencies: Sendable {
     public let envVars: any EnvVarCataloging
     public let apiKeys: any ApiKeyCataloging
     public let channels: any ChannelCataloging
+    public let tokenStats: any TokenStatsCataloging
     public let sessions: any SessionCataloging
     public let chatHistory: any ChatHistoryReading
     public let commands: any AgentCommanding
@@ -38,6 +39,7 @@ public struct HarnaxDependencies: Sendable {
         envVars: any EnvVarCataloging,
         apiKeys: any ApiKeyCataloging,
         channels: any ChannelCataloging,
+        tokenStats: any TokenStatsCataloging,
         sessions: any SessionCataloging,
         chatHistory: any ChatHistoryReading,
         commands: any AgentCommanding,
@@ -55,6 +57,7 @@ public struct HarnaxDependencies: Sendable {
         self.envVars = envVars
         self.apiKeys = apiKeys
         self.channels = channels
+        self.tokenStats = tokenStats
         self.sessions = sessions
         self.chatHistory = chatHistory
         self.commands = commands
@@ -76,8 +79,8 @@ public struct HarnaxDependencies: Sendable {
             // next launch.
             language: { AcceptLanguage.current() }
         )
-        // One admin surface, fourteen protocols: every `/api/admin/**` route family hangs off the same client,
-        // so the agent, team, refresh, five context domains, three system domains and the three session reads
+        // One admin surface, fifteen protocols: every `/api/admin/**` route family hangs off the same client,
+        // so the agent, team, refresh, five context domains, four system reads and the three session reads
         // share its header injection.
         let admin = AdminClient(client: client)
         return HarnaxDependencies(
@@ -93,6 +96,7 @@ public struct HarnaxDependencies: Sendable {
             envVars: admin,
             apiKeys: admin,
             channels: admin,
+            tokenStats: admin,
             sessions: admin,
             chatHistory: admin,
             commands: admin,

@@ -210,11 +210,11 @@ struct UnwiredChat: SessionCataloging, ChatHistoryReading, AgentCommanding, Agen
     }
 }
 
-/// The three system-tab catalogs for tests that never open the tab.
+/// The four system-tab catalogs for tests that never open the tab.
 ///
 /// Same rule as the other two doubles: every method fails, so a screen reaching this object in a test shows up
 /// as a failing call rather than as a list that quietly renders nothing.
-struct UnwiredSystem: EnvVarCataloging, ApiKeyCataloging, ChannelCataloging {
+struct UnwiredSystem: EnvVarCataloging, ApiKeyCataloging, ChannelCataloging, TokenStatsCataloging {
     private func unwired() -> APIError {
         .business(code: -1, message: "this test never wires the system tab")
     }
@@ -279,4 +279,33 @@ struct UnwiredSystem: EnvVarCataloging, ApiKeyCataloging, ChannelCataloging {
     func wechatLoginStatus(id: Int64) async -> Result<WechatLoginUpdate, APIError> { .failure(unwired()) }
 
     func cancelWechatLogin(id: Int64) async -> Result<EmptyResponse, APIError> { .failure(unwired()) }
+
+    func tokenAggregation(
+        startTime: String?,
+        endTime: String?
+    ) async -> Result<TokenStatsPayload, APIError> { .failure(unwired()) }
+
+    func tokenTimeSeries(
+        startTime: String?,
+        endTime: String?,
+        granularity: TokenGranularity
+    ) async -> Result<[TokenTimePoint], APIError> { .failure(unwired()) }
+
+    func tokenModelTimeSeries(
+        startTime: String?,
+        endTime: String?,
+        granularity: TokenGranularity
+    ) async -> Result<[TokenTimePoint], APIError> { .failure(unwired()) }
+
+    func tokenAgentTimeSeries(
+        startTime: String?,
+        endTime: String?,
+        granularity: TokenGranularity
+    ) async -> Result<[TokenTimePoint], APIError> { .failure(unwired()) }
+
+    func tokenSessionTimeSeries(
+        startTime: String?,
+        endTime: String?,
+        granularity: TokenGranularity
+    ) async -> Result<[TokenTimePoint], APIError> { .failure(unwired()) }
 }

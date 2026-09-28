@@ -39,6 +39,7 @@ enum HarnaxDebugScreen: String {
     case envVars
     case apiKeys
     case channels
+    case tokenMonitor
     case me
     case appearance
 
@@ -52,7 +53,7 @@ enum HarnaxDebugScreen: String {
         switch self {
         case .me: return .me
         case .chat: return .chat
-        case .system, .envVars, .apiKeys, .channels: return .system
+        case .system, .envVars, .apiKeys, .channels, .tokenMonitor: return .system
         default: return .agents
         }
     }
@@ -79,6 +80,49 @@ enum HarnaxDebugLaunch {
         }
     }
 }
+
+#if canImport(UIKit)
+import UIKit
+
+/// `-SCROLL <points>`: the one way a page taller than the handset gets captured below its fold, since the
+/// simulator takes no synthetic input. It scrolls the screen's own scroll view once the data has landed, which
+/// is what lets the token monitor's donuts and lines be reviewed rather than only its filters and cards.
+struct HarnaxDebugScroll: UIViewRepresentable {
+    func makeUIView(context: Context) -> HarnaxScrollProbe { HarnaxScrollProbe() }
+
+    func updateUIView(_ uiView: HarnaxScrollProbe, context: Context) {}
+}
+
+final class HarnaxScrollProbe: UIView {
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        guard window != nil,
+              let raw = HarnaxDebugLaunch.value(for: "SCROLL"),
+              let points = Double(raw), points > 0 else { return }
+        // After the screen's own `.task`, so the capture shows a scrolled page rather than a scroll that was
+        // reset when the rows arrived.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.scroll(points: CGFloat(points)) }
+    }
+
+    private func scroll(points: CGFloat) {
+        guard let window, let scroll = scrollViews(in: window).first(where: { $0.contentSize.height > $0.bounds.height }) else { return }
+        let inset = scroll.adjustedContentInset
+        let limit = max(-inset.top, scroll.contentSize.height - scroll.bounds.height + inset.bottom)
+        scroll.setContentOffset(CGPoint(x: 0, y: min(limit, points)), animated: false)
+    }
+
+    /// Depth-first, so the page's own scroll view wins over one nested further in.
+    private func scrollViews(in view: UIView) -> [UIScrollView] {
+        if let scroll = view as? UIScrollView { return [scroll] }
+        return view.subviews.flatMap { scrollViews(in: $0) }
+    }
+}
+#else
+/// Nothing to move on the macOS host this file is typechecked against.
+struct HarnaxDebugScroll: View {
+    var body: some View { EmptyView() }
+}
+#endif
 
 enum HarnaxDebugEntrance {
     @MainActor static func root() -> some View {
@@ -113,6 +157,7 @@ struct HarnaxDebugView: View {
             envVars: HarnaxDebugEnvVars(),
             apiKeys: HarnaxDebugApiKeys(),
             channels: HarnaxDebugChannels(),
+            tokenStats: HarnaxDebugTokenStats(),
             sessions: HarnaxDebugSessions(screen: screen),
             chatHistory: HarnaxDebugHistory(),
             commands: HarnaxDebugCommands(),
@@ -161,6 +206,14 @@ struct HarnaxDebugView: View {
                         account: model.account
                     )
                 }
+            }
+            .harnaxThemed()
+        case .tokenMonitor:
+            // The one chart page sits behind the hub row as well. Framed alone it captures with all five reads
+            // landed, which is the only way to see the donuts and the four lines at once.
+            NavigationStack {
+                TokenMonitorView(catalog: model.dependencies.tokenStats)
+                    .background(HarnaxDebugScroll())
             }
             .harnaxThemed()
         case .context:
@@ -638,6 +691,54 @@ struct HarnaxDebugChannels: ChannelCataloging {
     func cancelWechatLogin(id: Int64) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
 }
 
+/// The token monitor's five reads.
+///
+/// One payload shape serves all five because the backend answers the same `TokenStatsAggregationResponse` on
+/// every route: the aggregation read is the only one that fills the seven cards and the three donuts, each
+/// trend read fills only its `timeSeriesData`. The session donut gets eleven rows against the screen's
+/// ten-slice cap so a capture shows the truncation rather than implying it, and the last model and session rows
+/// have a blank name — the `LEFT JOIN` case, where a deleted model still costs tokens.
+struct HarnaxDebugTokenStats: TokenStatsCataloging {
+    func tokenAggregation(
+        startTime: String?,
+        endTime: String?
+    ) async -> Result<TokenStatsPayload, APIError> {
+        HarnaxDebugPages.decode(HarnaxDebugPages.tokenAggregateJSON, TokenStatsPayload.self)
+    }
+
+    func tokenTimeSeries(
+        startTime: String?,
+        endTime: String?,
+        granularity: TokenGranularity
+    ) async -> Result<[TokenTimePoint], APIError> {
+        HarnaxDebugPages.decode(HarnaxDebugPages.tokenTrendJSON, TokenStatsPayload.self).map(\.timeSeries)
+    }
+
+    func tokenModelTimeSeries(
+        startTime: String?,
+        endTime: String?,
+        granularity: TokenGranularity
+    ) async -> Result<[TokenTimePoint], APIError> {
+        HarnaxDebugPages.decode(HarnaxDebugPages.tokenModelTrendJSON, TokenStatsPayload.self).map(\.timeSeries)
+    }
+
+    func tokenAgentTimeSeries(
+        startTime: String?,
+        endTime: String?,
+        granularity: TokenGranularity
+    ) async -> Result<[TokenTimePoint], APIError> {
+        HarnaxDebugPages.decode(HarnaxDebugPages.tokenAgentTrendJSON, TokenStatsPayload.self).map(\.timeSeries)
+    }
+
+    func tokenSessionTimeSeries(
+        startTime: String?,
+        endTime: String?,
+        granularity: TokenGranularity
+    ) async -> Result<[TokenTimePoint], APIError> {
+        HarnaxDebugPages.decode(HarnaxDebugPages.tokenSessionTrendJSON, TokenStatsPayload.self).map(\.timeSeries)
+    }
+}
+
 /// The conversation list.
 ///
 /// Only the page read answers; the four writes fail, so a capture that ever reached for a row's menu shows
@@ -925,6 +1026,111 @@ private enum HarnaxDebugPages {
     /// map entirely, which is what the unknown badge is for.
     static let sandboxJSON = """
     {"chn-1f0a9c66-2b4d-4c11-9a3e-7d5c1b0a4e21":{"active":true},"chn-6b1d02ce-8f4a-4b7e-93c1-0a2d5e7f9b44":{"active":false}}
+    """
+
+    /// The aggregation reply: seven numbers and the three donut sources, each list in the server's own
+    /// descending order. The three lists all sum to the overall `grandTotalToken`, so the share each slice
+    /// prints is the real one.
+    static let tokenAggregateJSON = """
+    {"overall":{"totalInputToken":1240000,"totalOutputToken":600000,"grandTotalToken":1840000,"totalFee":12,"agentCount":3,"sessionCount":11,"modelCount":4},
+    "modelStats":[
+      {"modelId":3,"modelName":"qwen3.7-max","providerName":"阿里云百炼","totalInputToken":520000,"totalOutputToken":260000,"grandTotalToken":780000,"totalFee":6},
+      {"modelId":8,"modelName":"deepseek-v4","providerName":"DeepSeek","totalInputToken":380000,"totalOutputToken":170000,"grandTotalToken":550000,"totalFee":4},
+      {"modelId":12,"modelName":"gpt-5-mini","totalInputToken":250000,"totalOutputToken":120000,"grandTotalToken":370000,"totalFee":2},
+      {"modelName":"   ","totalInputToken":90000,"totalOutputToken":50000,"grandTotalToken":140000,"totalFee":0}
+    ],
+    "agentStats":[
+      {"agentId":3,"agentName":"客服助手","totalInputToken":610000,"totalOutputToken":300000,"grandTotalToken":910000,"totalFee":6},
+      {"agentId":5,"agentName":"运维值班","totalInputToken":390000,"totalOutputToken":180000,"grandTotalToken":570000,"totalFee":4},
+      {"agentId":7,"agentName":"周报助手","totalInputToken":240000,"totalOutputToken":120000,"grandTotalToken":360000,"totalFee":2}
+    ],
+    "sessionStats":[
+      {"sessionId":"web-8842","sessionTitle":"Weekly digest","totalInputToken":230000,"totalOutputToken":110000,"grandTotalToken":340000,"totalFee":3},
+      {"sessionId":"web-8790","sessionTitle":"Release notes","totalInputToken":200000,"totalOutputToken":100000,"grandTotalToken":300000,"totalFee":2},
+      {"sessionId":"chn-1f0a","sessionTitle":"合同审阅","totalInputToken":170000,"totalOutputToken":90000,"grandTotalToken":260000,"totalFee":2},
+      {"sessionId":"web-8712","sessionTitle":"值班告警","totalInputToken":150000,"totalOutputToken":70000,"grandTotalToken":220000,"totalFee":1},
+      {"sessionId":"chn-6b1d","sessionTitle":"翻译请求","totalInputToken":120000,"totalOutputToken":60000,"grandTotalToken":180000,"totalFee":1},
+      {"sessionId":"web-8634","sessionTitle":"工单 4821","totalInputToken":100000,"totalOutputToken":50000,"grandTotalToken":150000,"totalFee":1},
+      {"sessionId":"web-8601","sessionTitle":"数据核对","totalInputToken":80000,"totalOutputToken":40000,"grandTotalToken":120000,"totalFee":1},
+      {"sessionId":"chn-a33f","sessionTitle":"会议纪要","totalInputToken":65000,"totalOutputToken":30000,"grandTotalToken":95000,"totalFee":0},
+      {"sessionId":"web-8540","sessionTitle":"周报草稿","totalInputToken":55000,"totalOutputToken":25000,"grandTotalToken":80000,"totalFee":0},
+      {"sessionId":"web-8511","sessionTitle":"FAQ 补充","totalInputToken":45000,"totalOutputToken":20000,"grandTotalToken":65000,"totalFee":0},
+      {"sessionId":"web-8490","sessionTitle":"   ","totalInputToken":20000,"totalOutputToken":10000,"grandTotalToken":30000,"totalFee":0}
+    ]}
+    """
+
+    /// The overall trend: seven day buckets, and no dimension on any of them — the plain `/time-series` route
+    /// is the one chart that is not multi-series.
+    static let tokenTrendJSON = """
+    {"timeSeriesData":[
+      {"timePoint":"2026-09-20 00:00:00","totalInputToken":150000,"totalOutputToken":70000,"grandTotalToken":220000,"totalFee":1},
+      {"timePoint":"2026-09-21 00:00:00","totalInputToken":180000,"totalOutputToken":95000,"grandTotalToken":275000,"totalFee":2},
+      {"timePoint":"2026-09-22 00:00:00","totalInputToken":210000,"totalOutputToken":105000,"grandTotalToken":315000,"totalFee":2},
+      {"timePoint":"2026-09-23 00:00:00","totalInputToken":160000,"totalOutputToken":80000,"grandTotalToken":240000,"totalFee":2},
+      {"timePoint":"2026-09-24 00:00:00","totalInputToken":120000,"totalOutputToken":55000,"grandTotalToken":175000,"totalFee":1},
+      {"timePoint":"2026-09-25 00:00:00","totalInputToken":200000,"totalOutputToken":100000,"grandTotalToken":300000,"totalFee":2},
+      {"timePoint":"2026-09-26 00:00:00","totalInputToken":220000,"totalOutputToken":95000,"grandTotalToken":315000,"totalFee":2}
+    ]}
+    """
+
+    /// A dimension reply is one row per *bucket × dimension*, ordered by bucket — the shape the screen has to
+    /// group before it can draw a line. These three fixtures are that, with one unnamed series each so the
+    /// legend's fallback shows.
+    static let tokenModelTrendJSON = """
+    {"timeSeriesData":[
+      {"timePoint":"2026-09-20 00:00:00","dimensionId":"3","dimensionName":"qwen3.7-max","totalInputToken":90000,"totalOutputToken":40000,"grandTotalToken":130000,"totalFee":1},
+      {"timePoint":"2026-09-21 00:00:00","dimensionId":"3","dimensionName":"qwen3.7-max","totalInputToken":100000,"totalOutputToken":55000,"grandTotalToken":155000,"totalFee":1},
+      {"timePoint":"2026-09-22 00:00:00","dimensionId":"3","dimensionName":"qwen3.7-max","totalInputToken":120000,"totalOutputToken":60000,"grandTotalToken":180000,"totalFee":1},
+      {"timePoint":"2026-09-23 00:00:00","dimensionId":"3","dimensionName":"qwen3.7-max","totalInputToken":95000,"totalOutputToken":45000,"grandTotalToken":140000,"totalFee":1},
+      {"timePoint":"2026-09-24 00:00:00","dimensionId":"3","dimensionName":"qwen3.7-max","totalInputToken":70000,"totalOutputToken":30000,"grandTotalToken":100000,"totalFee":1},
+      {"timePoint":"2026-09-25 00:00:00","dimensionId":"3","dimensionName":"qwen3.7-max","totalInputToken":110000,"totalOutputToken":50000,"grandTotalToken":160000,"totalFee":1},
+      {"timePoint":"2026-09-26 00:00:00","dimensionId":"3","dimensionName":"qwen3.7-max","totalInputToken":125000,"totalOutputToken":55000,"grandTotalToken":180000,"totalFee":1},
+      {"timePoint":"2026-09-20 00:00:00","dimensionId":"8","dimensionName":"deepseek-v4","totalInputToken":60000,"totalOutputToken":30000,"grandTotalToken":90000,"totalFee":0},
+      {"timePoint":"2026-09-21 00:00:00","dimensionId":"8","dimensionName":"deepseek-v4","totalInputToken":80000,"totalOutputToken":40000,"grandTotalToken":120000,"totalFee":1},
+      {"timePoint":"2026-09-22 00:00:00","dimensionId":"8","dimensionName":"deepseek-v4","totalInputToken":90000,"totalOutputToken":45000,"grandTotalToken":135000,"totalFee":1},
+      {"timePoint":"2026-09-23 00:00:00","dimensionId":"8","dimensionName":"deepseek-v4","totalInputToken":65000,"totalOutputToken":35000,"grandTotalToken":100000,"totalFee":1},
+      {"timePoint":"2026-09-24 00:00:00","dimensionId":"8","dimensionName":"deepseek-v4","totalInputToken":50000,"totalOutputToken":25000,"grandTotalToken":75000,"totalFee":0},
+      {"timePoint":"2026-09-25 00:00:00","dimensionId":"   ","dimensionName":"   ","totalInputToken":90000,"totalOutputToken":50000,"grandTotalToken":140000,"totalFee":1},
+      {"timePoint":"2026-09-26 00:00:00","dimensionId":"8","dimensionName":"deepseek-v4","totalInputToken":95000,"totalOutputToken":40000,"grandTotalToken":135000,"totalFee":1}
+    ]}
+    """
+
+    static let tokenAgentTrendJSON = """
+    {"timeSeriesData":[
+      {"timePoint":"2026-09-20 00:00:00","dimensionId":"3","dimensionName":"客服助手","totalInputToken":100000,"totalOutputToken":50000,"grandTotalToken":150000,"totalFee":1},
+      {"timePoint":"2026-09-21 00:00:00","dimensionId":"3","dimensionName":"客服助手","totalInputToken":110000,"totalOutputToken":55000,"grandTotalToken":165000,"totalFee":1},
+      {"timePoint":"2026-09-22 00:00:00","dimensionId":"3","dimensionName":"客服助手","totalInputToken":130000,"totalOutputToken":65000,"grandTotalToken":195000,"totalFee":1},
+      {"timePoint":"2026-09-23 00:00:00","dimensionId":"3","dimensionName":"客服助手","totalInputToken":100000,"totalOutputToken":50000,"grandTotalToken":150000,"totalFee":1},
+      {"timePoint":"2026-09-24 00:00:00","dimensionId":"3","dimensionName":"客服助手","totalInputToken":80000,"totalOutputToken":35000,"grandTotalToken":115000,"totalFee":1},
+      {"timePoint":"2026-09-25 00:00:00","dimensionId":"3","dimensionName":"客服助手","totalInputToken":120000,"totalOutputToken":60000,"grandTotalToken":180000,"totalFee":1},
+      {"timePoint":"2026-09-26 00:00:00","dimensionId":"3","dimensionName":"客服助手","totalInputToken":135000,"totalOutputToken":60000,"grandTotalToken":195000,"totalFee":1},
+      {"timePoint":"2026-09-20 00:00:00","dimensionId":"5","dimensionName":"运维值班","totalInputToken":50000,"totalOutputToken":20000,"grandTotalToken":70000,"totalFee":0},
+      {"timePoint":"2026-09-21 00:00:00","dimensionId":"5","dimensionName":"运维值班","totalInputToken":70000,"totalOutputToken":40000,"grandTotalToken":110000,"totalFee":1},
+      {"timePoint":"2026-09-22 00:00:00","dimensionId":"5","dimensionName":"运维值班","totalInputToken":80000,"totalOutputToken":40000,"grandTotalToken":120000,"totalFee":1},
+      {"timePoint":"2026-09-23 00:00:00","dimensionId":"5","dimensionName":"运维值班","totalInputToken":60000,"totalOutputToken":30000,"grandTotalToken":90000,"totalFee":1},
+      {"timePoint":"2026-09-24 00:00:00","dimensionId":"5","dimensionName":"运维值班","totalInputToken":40000,"totalOutputToken":20000,"grandTotalToken":60000,"totalFee":0},
+      {"timePoint":"2026-09-25 00:00:00","dimensionId":"5","dimensionName":"运维值班","totalInputToken":80000,"totalOutputToken":40000,"grandTotalToken":120000,"totalFee":1},
+      {"timePoint":"2026-09-26 00:00:00","dimensionId":"5","dimensionName":"运维值班","totalInputToken":85000,"totalOutputToken":35000,"grandTotalToken":120000,"totalFee":1}
+    ]}
+    """
+
+    static let tokenSessionTrendJSON = """
+    {"timeSeriesData":[
+      {"timePoint":"2026-09-20 00:00:00","dimensionId":"web-8842","dimensionName":"Weekly digest","totalInputToken":70000,"totalOutputToken":30000,"grandTotalToken":100000,"totalFee":1},
+      {"timePoint":"2026-09-21 00:00:00","dimensionId":"web-8842","dimensionName":"Weekly digest","totalInputToken":80000,"totalOutputToken":40000,"grandTotalToken":120000,"totalFee":1},
+      {"timePoint":"2026-09-22 00:00:00","dimensionId":"web-8842","dimensionName":"Weekly digest","totalInputToken":95000,"totalOutputToken":45000,"grandTotalToken":140000,"totalFee":1},
+      {"timePoint":"2026-09-23 00:00:00","dimensionId":"web-8842","dimensionName":"Weekly digest","totalInputToken":75000,"totalOutputToken":35000,"grandTotalToken":110000,"totalFee":1},
+      {"timePoint":"2026-09-24 00:00:00","dimensionId":"web-8842","dimensionName":"Weekly digest","totalInputToken":55000,"totalOutputToken":25000,"grandTotalToken":80000,"totalFee":0},
+      {"timePoint":"2026-09-25 00:00:00","dimensionId":"web-8842","dimensionName":"Weekly digest","totalInputToken":90000,"totalOutputToken":45000,"grandTotalToken":135000,"totalFee":1},
+      {"timePoint":"2026-09-26 00:00:00","dimensionId":"web-8842","dimensionName":"Weekly digest","totalInputToken":100000,"totalOutputToken":45000,"grandTotalToken":145000,"totalFee":1},
+      {"timePoint":"2026-09-20 00:00:00","dimensionId":"chn-1f0a","dimensionName":"   ","totalInputToken":80000,"totalOutputToken":40000,"grandTotalToken":120000,"totalFee":0},
+      {"timePoint":"2026-09-21 00:00:00","dimensionId":"chn-1f0a","dimensionName":"   ","totalInputToken":100000,"totalOutputToken":55000,"grandTotalToken":155000,"totalFee":1},
+      {"timePoint":"2026-09-22 00:00:00","dimensionId":"chn-1f0a","dimensionName":"   ","totalInputToken":115000,"totalOutputToken":60000,"grandTotalToken":175000,"totalFee":1},
+      {"timePoint":"2026-09-23 00:00:00","dimensionId":"chn-1f0a","dimensionName":"   ","totalInputToken":85000,"totalOutputToken":45000,"grandTotalToken":130000,"totalFee":1},
+      {"timePoint":"2026-09-24 00:00:00","dimensionId":"chn-1f0a","dimensionName":"   ","totalInputToken":65000,"totalOutputToken":30000,"grandTotalToken":95000,"totalFee":1},
+      {"timePoint":"2026-09-25 00:00:00","dimensionId":"chn-1f0a","dimensionName":"   ","totalInputToken":110000,"totalOutputToken":55000,"grandTotalToken":165000,"totalFee":1},
+      {"timePoint":"2026-09-26 00:00:00","dimensionId":"chn-1f0a","dimensionName":"   ","totalInputToken":120000,"totalOutputToken":50000,"grandTotalToken":170000,"totalFee":1}
+    ]}
     """
 }
 #endif

@@ -1,0 +1,20 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "overall": {
+      "totalInputToken": 0,
+      "totalOutputToken": 0,
+      "grandTotalToken": 0,
+      "totalFee": 0.0,
+      "agentCount": 0,
+      "sessionCount": 0,
+      "modelCount": 0
+    },
+    "modelStats": [],
+    "sessionStats": [],
+    "agentStats": []
+  },
+  "timestamp": 1790632276140,
+  "isSuccess": true
+}

@@ -11,20 +11,20 @@ final class SystemHomeTests: XCTestCase {
     func testAnAdministratorSeesEveryDomainInTheMockupOrder() {
         XCTAssertEqual(
             SystemRoute.visible(for: AccountSnapshot(username: "admin", isAdministrator: true)),
-            [.envVars, .apiKeys, .channels]
+            [.envVars, .apiKeys, .channels, .tokenMonitor]
         )
     }
 
-    /// The channel route carries no access rule server-side, so a member keeps that row and loses only the
-    /// key list the backend would refuse.
+    /// The channel and token-monitor routes name no access rule server-side, so a member keeps both rows and
+    /// loses only the key list the backend would refuse.
     func testAMemberIsNotOfferedTheKeyListTheBackendWouldRefuse() {
-        XCTAssertEqual(SystemRoute.visible(for: AccountSnapshot(username: "liwei")), [.envVars, .channels])
+        XCTAssertEqual(SystemRoute.visible(for: AccountSnapshot(username: "liwei")), [.envVars, .channels, .tokenMonitor])
     }
 
     /// The tab can be drawn before the profile read has landed, and an unknown account is not an
     /// administrator.
     func testAnUnknownAccountGetsTheRowsAnyoneMayOpen() {
-        XCTAssertEqual(SystemRoute.visible(for: nil), [.envVars, .channels])
+        XCTAssertEqual(SystemRoute.visible(for: nil), [.envVars, .channels, .tokenMonitor])
     }
 
     /// The row label and the screen's own navigation title are one key each (`env.title`, `apikey.title`), so
@@ -32,6 +32,7 @@ final class SystemHomeTests: XCTestCase {
     func testEachRowIsNamedByTheKeyItsOwnScreenTitlesItselfWith() {
         XCTAssertEqual(SystemRoute.envVars.titleKey, "env.title")
         XCTAssertEqual(SystemRoute.apiKeys.titleKey, "apikey.title")
+        XCTAssertEqual(SystemRoute.tokenMonitor.titleKey, "monitor.title")
     }
 
     func testEveryRowLabelResolvesInBothLanguages() {

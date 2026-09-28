@@ -23,6 +23,7 @@ final class AppModelTests: XCTestCase {
             envVars: system,
             apiKeys: system,
             channels: system,
+            tokenStats: system,
             sessions: chat,
             chatHistory: chat,
             commands: chat,
