@@ -12,6 +12,7 @@
 "state.error.title" = "Something went wrong";
 "state.error.hint" = "Check your connection, then try again.";
 "state.filter.all" = "All";
+"state.filter.status" = "Status filter";
 "state.badge.enabled" = "Enabled";
 "state.badge.disabled" = "Stopped";
 "state.badge.shared" = "Public";
@@ -161,6 +162,117 @@
 "tool.row.method" = "Method";
 "tool.detail.empty" = "This tool declares no parameters and names no implementation.";
 "tool.detail.reload" = "Reload this tool";
+
+/* ---- MCP: server list ---- */
+"mcp.search" = "Search MCP servers";
+"mcp.create" = "New MCP server";
+"mcp.edit" = "Edit";
+"mcp.empty" = "No MCP servers yet";
+"mcp.empty.filtered" = "No MCP servers match this search or filter";
+"mcp.type.filter" = "Type filter";
+"mcp.type.stdio" = "STDIO";
+"mcp.type.sse" = "SSE";
+"mcp.type.streamablehttp" = "Streamable HTTP";
+"mcp.auth.none" = "None";
+"mcp.auth.basic" = "Basic";
+"mcp.auth.staticHeader" = "Static header";
+"mcp.auth.oauth" = "OAuth 2.1 (per user)";
+"mcp.chip.headers" = "Headers %d";
+
+/* ---- MCP: connectivity test ---- */
+"mcp.action.test" = "Test connectivity";
+"mcp.testing" = "Testing connectivity…";
+"mcp.test.title" = "Connectivity test";
+"mcp.test.passed" = "Test successful";
+"mcp.test.failed" = "Test failed";
+"mcp.test.timeout" = "No answer within 15 s, so the test timed out.";
+
+/* ---- MCP: server detail ---- */
+"mcp.detail.section.transport" = "Configuration";
+"mcp.detail.section.auth" = "Auth method";
+"mcp.detail.section.meta" = "Created and updated";
+"mcp.detail.section.tools" = "Tools";
+"mcp.detail.private" = "Private";
+"mcp.detail.updated" = "Updated";
+"mcp.stdio.note" = "stdio is disabled on the server: nothing new can be created with it, and only legacy rows still show it.";
+"mcp.stdio.legacy" = "This row is still stdio, which the server refuses. It stays visible as legacy data and will not connect.";
+
+/* ---- MCP: tool list ---- */
+"mcp.tools.count" = "%d tools";
+"mcp.tools.disabled" = "Tool list is not fetched while the server is disabled";
+"mcp.tools.empty" = "No tools";
+"mcp.tool.noParams" = "No parameters";
+"mcp.tool.params" = "%d parameters";
+
+/* ---- MCP: per-user authorization ---- */
+"mcp.oauth.section" = "Your authorization";
+"mcp.oauth.state" = "Status";
+"mcp.oauth.authorized" = "Authorized";
+"mcp.oauth.required" = "Needs authorization";
+"mcp.oauth.action.authorize" = "Authorize";
+"mcp.oauth.action.reauthorize" = "Re-authorize";
+"mcp.oauth.action.revoke" = "Revoke";
+"mcp.oauth.revoking" = "Revoking…";
+"mcp.oauth.scopes" = "Granted scopes";
+"mcp.oauth.lastError" = "Last error";
+"mcp.oauth.browser" = "Authorization URL";
+"mcp.oauth.hint" = "This grant belongs to your account only; every other user authorizes for themselves.";
+"mcp.oauth.badUrl" = "The server returned no authorization URL. Try again.";
+"mcp.oauth.cancelled" = "Authorization cancelled.";
+
+/* ---- MCP: create and edit ---- */
+"mcp.form.section.identity" = "Basic info";
+"mcp.form.name" = "MCP name";
+"mcp.form.description" = "Description";
+"mcp.form.transport" = "Connection";
+"mcp.form.url" = "Service URL";
+"mcp.form.url.placeholder" = "e.g. https://example.com/mcp";
+"mcp.form.command" = "Command";
+"mcp.form.headers" = "Headers";
+"mcp.form.headers.note" = "Request headers, such as an authentication token.";
+"mcp.form.key" = "Name";
+"mcp.form.value" = "Value";
+"mcp.form.secret" = "Sensitive";
+"mcp.form.keptMask" = "Stored value kept";
+"mcp.form.addEntry" = "Add entry";
+"mcp.form.envParams" = "Environment parameters";
+"mcp.form.envParams.note" = "Variables handed to the stdio process at startup - API keys, database addresses and the like.";
+"mcp.form.paramName" = "Parameter name";
+"mcp.form.paramDefault" = "Default value";
+"mcp.form.paramRequired" = "Required";
+"mcp.form.authType" = "Auth method";
+"mcp.form.legacyAuth" = "Basic is retired and a legacy row still shows it. Pick another method before saving.";
+"mcp.form.oauth.issuer" = "Authorization server";
+"mcp.form.oauth.storedIssuer" = "Leave it empty to keep the stored server: %@";
+"mcp.form.oauth.scopes" = "Scopes";
+"mcp.form.oauth.audience" = "Audience";
+"mcp.form.oauth.resource" = "Resource indicator";
+"mcp.form.oauth.note" = "OAuth 2.1 authorizes per user: this form only configures the authorization server, and every user taps Authorize on the detail page.";
+"mcp.form.isPublic" = "Visibility";
+"mcp.form.isPublic.note" = "Once public, other users can see and use this MCP server.";
+"mcp.form.section.state" = "Status and visibility";
+"mcp.form.saving" = "Saving…";
+"mcp.form.testAfterSave" = "Save this MCP server before testing connectivity.";
+"mcp.form.urlChanged.title" = "The service URL changed";
+"mcp.form.urlChanged.note" = "Changing the URL drops every user grant issued for the old address, so those users have to authorize again.";
+"mcp.form.urlChanged.confirm" = "Change it anyway";
+"mcp.form.requiredName" = "Enter the MCP name";
+"mcp.form.nameTooLong" = "The name cannot exceed %d characters";
+"mcp.form.requiredCommand" = "stdio needs an execution command";
+"mcp.form.requiredURL" = "Enter the service URL";
+"mcp.form.badURL" = "Enter a valid URL";
+"mcp.form.badIssuer" = "Enter a full http(s) URL without userinfo";
+"mcp.form.duplicateKey" = "Duplicate header name: %@";
+"mcp.form.duplicateParam" = "Duplicate parameter name: %@";
+"mcp.form.envNeedsDefault" = "Required parameter \"%@\" must have a default value";
+"mcp.form.noId" = "This server has no id, so it cannot be saved.";
+
+/* ---- MCP: delete ---- */
+"mcp.delete.title" = "Delete this MCP server?";
+"mcp.delete.confirm" = "Delete \"%@\"";
+"mcp.delete.clear" = "Nothing binds this server, so the delete will go through.";
+"mcp.delete.bound" = "%d agent(s) bind this server. Deleting it removes those bindings as well.";
+"mcp.delete.loadFailed" = "Failed to load the bound agents, please retry";
 
 /* ---- not in this build ---- */
 "soon.title" = "Not in this build yet";

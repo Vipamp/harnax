@@ -12,6 +12,7 @@
 "state.error.title" = "出错了";
 "state.error.hint" = "请检查网络后重试。";
 "state.filter.all" = "全部";
+"state.filter.status" = "状态筛选";
 "state.badge.enabled" = "启用";
 "state.badge.disabled" = "停用";
 "state.badge.shared" = "公开";
@@ -162,6 +163,117 @@
 "tool.row.method" = "方法";
 "tool.detail.empty" = "该工具没有声明任何参数。";
 "tool.detail.reload" = "重新加载";
+
+/* ---- MCP：服务列表 ---- */
+"mcp.search" = "搜索 MCP 服务";
+"mcp.create" = "新建 MCP 服务";
+"mcp.edit" = "编辑";
+"mcp.empty" = "暂无 MCP 服务";
+"mcp.empty.filtered" = "没有符合条件的 MCP 服务";
+"mcp.type.filter" = "类型筛选";
+"mcp.type.stdio" = "STDIO";
+"mcp.type.sse" = "SSE";
+"mcp.type.streamablehttp" = "Streamable HTTP";
+"mcp.auth.none" = "无鉴权";
+"mcp.auth.basic" = "Basic 鉴权";
+"mcp.auth.staticHeader" = "静态 Header";
+"mcp.auth.oauth" = "OAuth 2.1（按用户）";
+"mcp.chip.headers" = "请求头 %d";
+
+/* ---- MCP：连通性测试 ---- */
+"mcp.action.test" = "测试连通性";
+"mcp.testing" = "正在测试连通性…";
+"mcp.test.title" = "连通性测试";
+"mcp.test.passed" = "测试成功";
+"mcp.test.failed" = "测试失败";
+"mcp.test.timeout" = "15 秒未响应，测试已超时。";
+
+/* ---- MCP：服务详情 ---- */
+"mcp.detail.section.transport" = "配置信息";
+"mcp.detail.section.auth" = "认证方式";
+"mcp.detail.section.meta" = "创建与更新";
+"mcp.detail.section.tools" = "工具列表";
+"mcp.detail.private" = "私有";
+"mcp.detail.updated" = "更新时间";
+"mcp.stdio.note" = "stdio 已在服务端禁用，无法新建，仅历史数据仍然可见。";
+"mcp.stdio.legacy" = "这条记录仍是 stdio。该类型已在服务端禁用，仅作为历史数据保留，服务端不会再连接它。";
+
+/* ---- MCP：工具列表 ---- */
+"mcp.tools.count" = "%d 个工具";
+"mcp.tools.disabled" = "服务已停用，未获取工具列表";
+"mcp.tools.empty" = "暂无工具";
+"mcp.tool.noParams" = "无参数";
+"mcp.tool.params" = "%d 个参数";
+
+/* ---- MCP：按用户授权 ---- */
+"mcp.oauth.section" = "你的授权";
+"mcp.oauth.state" = "授权状态";
+"mcp.oauth.authorized" = "已授权";
+"mcp.oauth.required" = "需要授权";
+"mcp.oauth.action.authorize" = "去授权";
+"mcp.oauth.action.reauthorize" = "重新授权";
+"mcp.oauth.action.revoke" = "撤销";
+"mcp.oauth.revoking" = "撤销中…";
+"mcp.oauth.scopes" = "已授予作用域";
+"mcp.oauth.lastError" = "最近错误";
+"mcp.oauth.browser" = "浏览器授权地址";
+"mcp.oauth.hint" = "这份授权只属于你当前的账号，其他用户要各自完成授权。";
+"mcp.oauth.badUrl" = "服务端没有返回授权地址，请稍后重试。";
+"mcp.oauth.cancelled" = "已取消授权。";
+
+/* ---- MCP：创建与编辑 ---- */
+"mcp.form.section.identity" = "基本信息";
+"mcp.form.name" = "MCP 名称";
+"mcp.form.description" = "描述";
+"mcp.form.transport" = "连接方式";
+"mcp.form.url" = "服务地址";
+"mcp.form.url.placeholder" = "如：https://example.com/mcp";
+"mcp.form.command" = "执行命令";
+"mcp.form.headers" = "请求头";
+"mcp.form.headers.note" = "HTTP 请求头配置，例如认证 Token。";
+"mcp.form.key" = "名称";
+"mcp.form.value" = "值";
+"mcp.form.secret" = "敏感";
+"mcp.form.keptMask" = "保留原值";
+"mcp.form.addEntry" = "添加配置项";
+"mcp.form.envParams" = "环境参数";
+"mcp.form.envParams.note" = "启动 stdio 进程时注入的环境变量，如 API Key、数据库地址。";
+"mcp.form.paramName" = "参数名称";
+"mcp.form.paramDefault" = "默认值";
+"mcp.form.paramRequired" = "必需";
+"mcp.form.authType" = "认证方式";
+"mcp.form.legacyAuth" = "Basic 鉴权已停用，历史数据仍会显示，请改选其他方式后再保存。";
+"mcp.form.oauth.issuer" = "授权服务器";
+"mcp.form.oauth.storedIssuer" = "留空则保留已保存的授权服务器：%@";
+"mcp.form.oauth.scopes" = "作用域";
+"mcp.form.oauth.audience" = "Audience";
+"mcp.form.oauth.resource" = "资源标识（resource）";
+"mcp.form.oauth.note" = "OAuth 2.1 按用户授权：这里只配置授权服务器，每个用户在详情页自行「去授权」。";
+"mcp.form.isPublic" = "是否公开";
+"mcp.form.isPublic.note" = "公开后其他用户也可以查看并使用该 MCP 服务。";
+"mcp.form.section.state" = "状态与可见性";
+"mcp.form.saving" = "保存中…";
+"mcp.form.testAfterSave" = "请先保存该 MCP 服务，再进行连通性测试。";
+"mcp.form.urlChanged.title" = "服务地址已变更";
+"mcp.form.urlChanged.note" = "改动地址会清掉旧地址上所有用户已授权的凭据，他们需要重新授权。";
+"mcp.form.urlChanged.confirm" = "仍要修改";
+"mcp.form.requiredName" = "请输入 MCP 名称";
+"mcp.form.nameTooLong" = "名称长度不能超过 %d 个字符";
+"mcp.form.requiredCommand" = "stdio 类型必须填写执行命令";
+"mcp.form.requiredURL" = "请填写服务地址";
+"mcp.form.badURL" = "请输入正确的 URL 格式";
+"mcp.form.badIssuer" = "请填写完整的 http(s) 地址，且不含 userinfo";
+"mcp.form.duplicateKey" = "存在重复的请求头名称：%@";
+"mcp.form.duplicateParam" = "存在重复的参数名称：%@";
+"mcp.form.envNeedsDefault" = "必需参数「%@」必须填写默认值";
+"mcp.form.noId" = "该服务缺少 id，无法保存。";
+
+/* ---- MCP：删除 ---- */
+"mcp.delete.title" = "确认删除该 MCP 服务？";
+"mcp.delete.confirm" = "删除「%@」";
+"mcp.delete.clear" = "当前没有智能体绑定该服务，删除可以正常执行。";
+"mcp.delete.bound" = "%d 个智能体绑定了该服务，删除会一并移除这些绑定。";
+"mcp.delete.loadFailed" = "关联智能体列表加载失败，请重试";
 
 /* ---- 未开放 ---- */
 "soon.title" = "本版本暂未开放";
