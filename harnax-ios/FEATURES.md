@@ -15,7 +15,7 @@
 | 冷启动恢复登录态与租户 | `getInitialState` | v1 | `GET /api/admin/auth/me` | S |
 | 生物识别解锁已存凭据 | 无 | v1 | Keychain + LocalAuthentication | M |
 | 退出登录 | 头像菜单 | v1 | `POST /api/admin/auth/logout` | S |
-| 租户切换 | 组件已硬关闭 | 待拍板（O1） | `POST /api/admin/auth/switch-tenant` | M |
+| 租户切换（仅「我的」页，多租户账号才可见） | 组件已硬关闭 | v1（O1 定案） | `POST /api/admin/auth/switch-tenant` | M |
 | 语言切换（中 / 英） | `SelectLang` | v1 | `Accept-Language` | S |
 | 主题切换（浅 / 深 / 跟随系统） | `ThemeSwitcher` | v1 | 本地 | S |
 | 修改密码、编辑个人资料 | 无此能力 | 否 | — | — |
@@ -180,10 +180,26 @@
 
 ## 14. 计数与口径
 
-本清单分 12 个功能域，逐条枚举 **98 项**能力：v1 **89 项**、v1.1 **2 项**、待拍板 **1 项**（租户切换，未计入 v1）、不做 **6 项**。复杂度分布 S 20 / M 43 / L 24 / XL 5。
+本清单分 12 个功能域，逐条枚举 **99 项**能力：v1 **91 项**（其中 2 项在档位后附了口径说明）、v1.1 **2 项**、不做 **6 项**。O1 定案后租户切换计入 v1。复杂度分布 S 20 / M 43 / L 25 / XL 5，合计 93——不做的 6 项不计复杂度。
 
-5 个 XL 分别是：智能体 5 步向导、发消息与流式接收、五类可见分段渲染、团队成员多路合并与气泡归属、渠道的条件字段表单。这五项加在 L 档的 24 项之前构成工期主体——L 档集中在跨实体流程（关联拦截、刷新会话、OAuth 回跳、Workspace、扫码绑定）与多接口表单矩阵。
+5 个 XL 分别是：智能体 5 步向导、发消息与流式接收、五类可见分段渲染、团队成员多路合并与气泡归属、渠道的条件字段表单。这五项加在 L 档的 25 项之前构成工期主体——L 档集中在跨实体流程（关联拦截、刷新会话、OAuth 回跳、Workspace、扫码绑定）与多接口表单矩阵。
 
 第 13 章的「不做清单」另有 10 条，与上表标记为「否」的 6 项口径不同：那 6 项是本应在某页里、但确认不实现的功能；这 10 条是整体层面的取舍，包含推送、离线、断线重连、Android 这类未进入任何页面拆分的项。两处不要相加。
 
-统计脚本为 `tmp/count-features.cjs`，改动本文件后需重跑核对计数。
+改动上表任一档位或复杂度后需重跑本段核对计数（注意先还原转义竖线，否则会少算一行）：
+
+```python
+import re, collections
+rows = []
+for line in open('FEATURES.md', encoding='utf-8'):
+    s = line.strip()
+    if not s.startswith('|'):
+        continue
+    cells = [c.strip() for c in re.sub(r'\\\|', '\x00', s.strip('|')).split('|')]
+    cells = [c.replace('\x00', '|') for c in cells]
+    if len(cells) != 5 or set(''.join(cells)) <= set('-: ') or cells[2] == 'iOS':
+        continue
+    rows.append(cells)
+tier = collections.Counter('v1.1' if c[2].startswith('v1.1') else 'v1' if c[2].startswith('v1') else '否' for c in rows)
+print(len(rows), dict(tier), dict(collections.Counter(c[4] for c in rows)))
+```

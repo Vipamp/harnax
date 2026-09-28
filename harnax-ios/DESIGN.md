@@ -24,7 +24,7 @@
 | D4 | 接口口径 | 统一复用 `/api/admin/**`，不区分移动端与 Web | 移动专用接口面覆盖过窄且即将下线；小程序已验证 admin 面对非浏览器客户端可用 |
 | D5 | 登录口 | v1 用 `cli-login` 加既有续期接口；v1.1 切回 `login`，前置是 `cli-login` 限流与验证码状态共享存储 | 见 §5 的权衡表 |
 | D6 | 排除项 | 用户管理、租户管理、修改密码、个人资料 | 用户裁定；后两项在 Web 侧同样不存在 |
-| D7 | 保留项 | 用户管理与租户管理两页不进 v1；切租户能力保留（属登录态能力，不属管理页），按 O1 推荐的形态落地——只对多租户账号的管理员出现在「我的」页，是否对用户开放由 O1 拍板 | `POST /api/admin/auth/switch-tenant` 会签发新令牌，`X-Tenant-ID` 受成员校验 |
+| D7 | 保留项 | 用户管理与租户管理两页不进 v1；切租户能力保留（属登录态能力，不属管理页），按 O1 定案的形态落地——只对拥有多个租户的账号出现在「我的」页，不进主导航 | `POST /api/admin/auth/switch-tenant` 会签发新令牌，`X-Tenant-ID` 受成员校验；候选列表来自 `GET /api/admin/auth/tenants`，该接口按 `user_tenant` 关联行返回、对管理员也不放宽 |
 | D8 | 交付目标 | 有付费开发者账号，可真机与 TestFlight | 用户裁定；APNs 推送因需后端改造后置 |
 | D9 | 图表 | 用 Swift Charts 重画，不引第三方 | 仅一个页面用到 3 饼 4 折，系统框架够用 |
 | D10 | 平台边界 | iPad 采用同一套自适应布局，不做独立形态 | 避免范围膨胀 |
@@ -38,7 +38,7 @@ Web 侧路由定义见 `harnax-webui/config/routes.ts`，iOS 与之一一对应�
 | 域 | Web 路由 | iOS 形态 | 备注 |
 |---|---|---|---|
 | 智能体 | `/agent/manager` | 列表 + 5 步向导 | 含工具/MCP/技能/CLI 四类绑定与环境参数 |
-| 智能体 | `/agent/team` | 列表 + 3 步向导 | 基本信息／主管技能／成员智能体（`TeamWizard.tsx:261-269`），成员编排与排序 |
+| 智能体 | `/agent/team` | 列表 + 3 步向导 | 基本信息／主管技能／成员智能体（`harnax-webui/src/pages/team/components/TeamWizard.tsx:261-269`），成员编排与排序 |
 | 智能体 | `/agent/session` | 会话列表 + 对话全屏 | 本项目最大单体，见 §6 与第 13 章 |
 | 智能体 | `/agent/task` | 列表 + 编辑 + 日志 | 含 cron 预设、立即执行、日志停止 |
 | 上下文 | `/context/model` | 供应商卡片 → 模型两级 | 含连通性测试与 thinkingMode |
@@ -101,30 +101,30 @@ Web 侧所有请求写绝对路径 `/api/...`，靠 Nginx 同源反代分流到�
 
 Web 登录链路是：取验证码 → 前端 SHA-256 → 提交。后端把验证码当硬闸门，三条校验各自抛错（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AuthServiceImpl.kt:62-69`），库里存的是 `BCrypt(SHA-256(明文))`，Web 登录直接拿前端 hash 比对（同文件 `:51`）。
 
-这条路 iOS 技术上能一比一复刻（验证码值是完整 data URL，见 `CaptchaServiceImpl.kt:203`，Swift 侧剥前缀后解码成 `UIImage` 即可），但在移动形态上有三处不适配：
+这条路 iOS 技术上能一比一复刻（验证码值是完整 data URL，见 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/CaptchaServiceImpl.kt:203`，Swift 侧剥前缀后解码成 `UIImage` 即可），但在移动形态上有三处不适配：
 
-1. **登录频率被放大**。后端有 `POST /api/admin/auth/refresh-token`（`TokenController.kt:31`），但 Web 全仓无调用点，只按登录时下发的 `expiresAt` 本地判过期然后踢回登录页。浏览器一天登一次，感知不到；App 进程被系统随时回收，感知很强。
-2. **图形码是 120×40 px 的四字符位图**（`CaptchaServiceImpl.kt:29-33`），小屏读数吃力、放大即糊、白底图与暗色模式冲突、VoiceOver 不可读。
-3. **验证码状态在进程内存**（`CaptchaServiceImpl.kt:26-27` 用的是并发 Map，代码注释自己写明应改 Redis）。Admin 一旦多副本，生成与校验落到不同实例必然失败。走这条口会把该部署约束继承进 iOS。
+1. **登录频率被放大**。后端有 `POST /api/admin/auth/refresh-token`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/TokenController.kt:31`），但 Web 全仓无调用点，只按登录时下发的 `expiresAt` 本地判过期然后踢回登录页。浏览器一天登一次，感知不到；App 进程被系统随时回收，感知很强。
+2. **图形码是 120×40 px 的四字符位图**（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/CaptchaServiceImpl.kt:29-33`），小屏读数吃力、放大即糊、白底图与暗色模式冲突、VoiceOver 不可读。
+3. **验证码状态在进程内存**（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/CaptchaServiceImpl.kt:26-27` 用的是并发 Map，代码注释自己写明应改 Redis）。Admin 一旦多副本，生成与校验落到不同实例必然失败。走这条口会把该部署约束继承进 iOS。
 
-反向事实必须记清：`cli-login` **更安全面更弱**。它免验证码（`AuthController.kt:45-49`），从取用户到返回令牌只有一次口令比对，无失败计数、无锁定、无速率限制（`AuthServiceImpl.kt:192-236`），且收明文口令由服务端补 hash。
+反向事实必须记清：`cli-login` **更安全面更弱**。它免验证码（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/AuthController.kt:45-49`），从取用户到返回令牌只有一次口令比对，无失败计数、无锁定、无速率限制（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AuthServiceImpl.kt:192-236`），且收明文口令由服务端补 hash。
 
 所以 D5 的排序是：**v1 用 `cli-login` 换取零后端改造与可用体验，v1.1 补完续期与限流后切回 `login`**。
 
 ### 5.2 两个登录口的差异只有一处
 
-返回体是完全同一个 `LoginResponse`：`accessToken`、`tokenType`、`expiresIn`、`expiresAt`、`userInfo`、`tenants`、`currentTenantId`、`routerApiKey`（`AuthServiceImpl.kt:237-243` 与 `:118-126` 逐字段一致；字段定义见 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/LoginResponse.kt`）。身份查找两边都是按用户名，`/api/admin/auth/login-methods` 声明的手机号与邮箱在两条口上都不生效——iOS 的登录页只放用户名一个输入框，与后端行为对齐。
+返回体是完全同一个 `LoginResponse`：`accessToken`、`tokenType`、`expiresIn`、`expiresAt`、`userInfo`、`tenants`、`currentTenantId`、`routerApiKey`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AuthServiceImpl.kt:237-243` 与 `:118-126` 逐字段一致；字段定义见 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/LoginResponse.kt`）。身份查找两边都是按用户名，`/api/admin/auth/login-methods` 声明的手机号与邮箱在两条口上都不生效——iOS 的登录页只放用户名一个输入框，与后端行为对齐。
 
 唯一差异是口令口径：Web 口收前端 hash，CLI 口收明文。切回 `login` 时 iOS 需改为 `CryptoKit.Insecure.SHA256` 输出小写 hex，与服务端期望一致。
 
-`routerApiKey` 是自愈的：账号无永久 Key 时登录过程会当场创建（`AuthServiceImpl.kt:107-114`），客户端不需要预置。
+`routerApiKey` 是自愈的：账号无永久 Key 时登录过程会当场创建（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AuthServiceImpl.kt:107-114`），客户端不需要预置。
 
 ### 5.3 凭据存储与续期
 
 - 全部凭据进 Keychain，`kSecAttrAccessibleAfterFirstUnlock`，保证后台刷新可用；`accessToken`、`routerApiKey`、两个基址、`currentTenantId` 分条目存。
 - 冷启动用 `GET /api/admin/auth/me` 恢复登录态与租户，不靠本地缓存判身份。
-- v1 即接续期：`POST /api/admin/auth/refresh-token` 返回 `{accessToken, tenantId, expiresIn}`（`TokenController.kt:56-62`），**不含 `expiresAt`**，客户端需用 `now + expiresIn` 自行换算后写入 Keychain；该接口继承当前租户上下文。
-- 续期要求**旧令牌仍然有效**（该接口靠鉴权上下文取当前用户，`TokenController.kt:35`），因此只能在临期时主动触发，过期后无路可走、只能重登。阈值取剩余有效期低于三分之一。
+- v1 即接续期：`POST /api/admin/auth/refresh-token` 返回 `{accessToken, tenantId, expiresIn}`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/TokenController.kt:56-62`），**不含 `expiresAt`**，客户端需用 `now + expiresIn` 自行换算后写入 Keychain；该接口继承当前租户上下文。
+- 续期要求**旧令牌仍然有效**（该接口靠鉴权上下文取当前用户，`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/TokenController.kt:35`），因此只能在临期时主动触发，过期后无路可走、只能重登。阈值取剩余有效期低于三分之一。
 - 续期只换 JWT，`routerApiKey` 是账号级永久凭据，不参与续期。
 - 续期失败一律回到登录页；登录页优先用生物识别解锁已存凭据，避免重复输入。
 - 客户端本地对登录失败做指数退避（起始 1s，上限 60s，5 次后要求重新输入），补偿 `cli-login` 无服务端限流的缺口。
@@ -134,13 +134,13 @@ Web 登录链路是：取验证码 → 前端 SHA-256 → 提交。后端把验�
 
 租户不是可选项，但也不是唯一来源。后端解析租户走一条四级回退链（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/TenantResolver.kt:20-26`）：带 `X-Tenant-ID` 且通过成员校验的请求上下文 → 令牌里的 `tenantId` 声明 → 账号行上的租户 → 兜底常量 1。**只有第一级带成员校验**，漏带请求头不会报错，而是静默回落到令牌里的租户。
 
-切换租户的接口 `POST /api/admin/auth/switch-tenant` **会签发一个带新租户声明的新令牌**并返回 `{accessToken, tenantId}`（`AuthController.kt:164-177`），但 Web 侧全仓没有任何调用点：`harnax-webui/src/components/TenantSwitcher/index.tsx:56-71` 的切换只改本地存储里的当前租户 ID 然后刷页面，租户列表也另取。等于说这个接口与 §5.3 的续期接口一样，是后端已有、Web 从未启用的能力。
+切换租户的接口 `POST /api/admin/auth/switch-tenant` **会签发一个带新租户声明的新令牌**并返回 `{accessToken, tenantId}`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/AuthController.kt:164-177`），但 Web 侧全仓没有任何调用点：`harnax-webui/src/components/TenantSwitcher/index.tsx:56-71` 的切换只改本地存储里的当前租户 ID 然后刷页面，租户列表也另取。等于说这个接口与 §5.3 的续期接口一样，是后端已有、Web 从未启用的能力。
 
-iOS 应该是第一个真正调用它的客户端，理由是自洽性：换令牌后租户声明跟着令牌走，漏带请求头也只是回到正确的工作区；照 Web 的做法只改本地状态，则令牌里的声明永远停在登录时那一个租户（`AuthServiceImpl.kt:217`），一旦某个请求漏带头就静默漂回去。落地做法：切换成功后**同时替换 Keychain 里的 JWT 与本地租户 ID**，并让所有页面重载。
+iOS 应该是第一个真正调用它的客户端，理由是自洽性：换令牌后租户声明跟着令牌走，漏带请求头也只是回到正确的工作区；照 Web 的做法只改本地状态，则令牌里的声明永远停在登录时那一个租户（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AuthServiceImpl.kt:217`），一旦某个请求漏带头就静默漂回去。落地做法：切换成功后**同时替换 Keychain 里的 JWT 与本地租户 ID**，并让所有页面重载。
 
-成员校验对管理员放行：非目标租户成员时，`isAdmin != 1` 才被拒（`AuthController.kt:159-162`），管理员可切进任意租户。iOS 的租户列表因此对管理员要显示全部，并在 UI 上标明「以管理员身份进入」。
+两个接口的口径不一致，且不一致的方向对 iOS 有约束：`switch-tenant` 对管理员放行任意租户（非成员且 `isAdmin != 1` 才拒，`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/AuthController.kt:159-162`），但候选列表接口 `GET /api/admin/auth/tenants` 只把调用者自己的 `user_tenant` 关联行映射出来、对管理员也不放宽（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/UserTenantServiceImpl.kt:31-47`）。因此 iOS 的选择器只能列出「有成员行的租户」，管理员也拿不到全量——要跨进没有关联行的租户，只能靠后端补一个放宽的列表接口。
 
-但要注意一条既有产品裁定：Web 侧的租户切换是**刻意整体关闭**的，不是窄屏才隐藏。`TenantSwitcher` 组件在渲染前有一条无条件 `return null`，注释写明「所有版本都隐藏租户切换组件（多租户由系统自动管理，不需要用户手动切换）」（`harnax-webui/src/components/TenantSwitcher/index.tsx:91-92`），组件本身也不发任何租户请求，列表数据来自登录响应。因此「iOS 是否提供手动切租户」等于重开这条裁定，已列入 §15 的 O1 待拍板；本文档在 O1 定案前，把切租户按「管理员诊断用途、默认不进主导航」处理。
+但要注意一条既有产品裁定：Web 侧的租户切换是**刻意整体关闭**的，不是窄屏才隐藏。`TenantSwitcher` 组件在渲染前有一条无条件 `return null`，注释写明「所有版本都隐藏租户切换组件（多租户由系统自动管理，不需要用户手动切换）」（`harnax-webui/src/components/TenantSwitcher/index.tsx:91-92`），组件本身也不发任何租户请求，列表数据来自登录响应。因此「iOS 是否提供手动切租户」等于重开这条裁定；O1 已定案（见 §15）：iOS 提供，但只放在「我的」页、仅对拥有多个租户的账号可见，不进主导航。
 
 ## 6. 流式对话链路
 
@@ -148,9 +148,9 @@ iOS 应该是第一个真正调用它的客户端，理由是自洽性：换令�
 
 `POST <router>/api/router/agent/chat/stream`，请求头 `Accept: text/event-stream` + `X-Api-Key`，请求体是三类多态请求之一，用 `type` 判别（`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/AgentRequest.kt:17-26`）：
 
-- `CHAT`：`sessionId`、`message`、`imageUrls`、`requestId`、`userId`（`AgentRequest.kt:50-58`）
-- `CONFIRM`：`sessionId`、`isConfirmed`、`toolResults[]`、`toolInfoList[]`、`childRunId?`（`AgentRequest.kt:136-145`）
-- `COMMAND`：`sessionId`、`command`、`args`（`AgentRequest.kt:74-79`）
+- `CHAT`：`sessionId`、`message`、`imageUrls`、`requestId`、`userId`（`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/AgentRequest.kt:50-58`）
+- `CONFIRM`：`sessionId`、`isConfirmed`、`toolResults[]`、`toolInfoList[]`、`childRunId?`（`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/AgentRequest.kt:136-145`）
+- `COMMAND`：`sessionId`、`command`、`args`（`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/AgentRequest.kt:74-79`）
 
 已认证时服务端用鉴权上下文覆盖请求体里的 `userId`，客户端传与不传都不影响归属，但 `sessionId` 必须正确。
 
@@ -173,7 +173,7 @@ iOS 应该是第一个真正调用它的客户端，理由是自洽性：换令�
 
 1. **没有 `[DONE]` 哨兵**。流结束只由 `EndEvent`/`ErrorEvent` 或连接关闭表达，拒绝也走流内 `ErrorEvent` 而非 HTTP 错误码。解码器不能等哨兵。
 2. **`KeepAliveEvent` 存在的原因就是「静默流会被各跳掐断」**：会话路由侧 120 秒、渠道侧 180 秒（`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/ChatEvent.kt:178-185` 的注释记录了这组数字）。成员停在确认上时不产生任何事件，靠心跳撑住。iOS 若把它当结束，会在用户还没答完时就拆掉界面；若把它当内容渲染，会出现空气泡。
-3. **团队成员共享一条根会话与一条 SSE 通道**，成员事件与主管事件混在一起，而 `agentId` 与显示名区分不开同一成员的两次运行。确认回执必须把 `source.childRunId` 原样带回（`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/ChatEvent.kt:47-60`、`AgentRequest.kt:131-134`）。`source` 非空即表示该事件来自成员运行，气泡归属与合并规则据此判定。
+3. **团队成员共享一条根会话与一条 SSE 通道**，成员事件与主管事件混在一起，而 `agentId` 与显示名区分不开同一成员的两次运行。确认回执必须把 `source.childRunId` 原样带回（`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/ChatEvent.kt:47-60`、`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/AgentRequest.kt:131-134`）。`source` 非空即表示该事件来自成员运行，气泡归属与合并规则据此判定。
 
 ### 6.3 客户端实现要求
 
@@ -358,6 +358,6 @@ M3 与 M4 可并行拆分给不同人。开工前必须先落 §14 的 R1：开�
 | O3 | APNs 推送做不做、推什么 | 列入 v1.1，作为 v1.1 唯一新增后端接口项（v1 的后端改动只有 O6 的渠道 DTO 三列）；事件源先只开两个——定时任务失败、工具等待确认 | 移动管理台的真实增量就是「不在电脑前也能被叫回来处理确认」。其余事件（对话结束、Token 报表）噪音大于价值 |
 | O4 | 旧移动端工程与移动专用接口面何时下线 | 与 iOS M0 并行做，先删工程再删接口面 | §4.3 的顺序不可颠倒。趁 iOS 还没写第一行 Swift 之前把口径收干净，能避免实现阶段误引到那条面上 |
 | O5 | API Key 页是否照搬「仅管理员可见」 | 照搬：非管理员不显示入口，但「我的永久 Key」照常可看 | Web 的门禁只落在前端路由（`harnax-webui/config/routes.ts:136`-`:141` 的 `access: canAccessUserManagement`，判据 `harnax-webui/src/access.ts:13` 即 `isAdmin === 1`），后端 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/ApiKeyController.kt:23`-`:25` 没有任何管理员校验。iOS 若放开入口，等于给普通用户新开一条 Web 上刻意不给的能力面；而 `getMyPermanentKey`（`:128`）本来就是按人取自己的 Key，不必连带上列表 |
-| O6 | 渠道级「思考 / 联网 / 计划」三个开关进不进 v1 | **已定案（2026-09-28）：进 v1，后端把三列补进渠道 DTO** | 三列在实体上（`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Channel.kt:49`-`:55`）、内部接口会读（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt:417`-`:419`），但 admin 侧三个 DTO（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelCreateRequest.kt`、`ChannelUpdateRequest.kt`、`ChannelResponse.kt`）不带，Web 表单因此从未能编辑。改动落点四处：两个请求 DTO 加字段、`ChannelResponse.kt:86`-`:103` 的 `fromEntity` 加三行映射、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ChannelServiceImpl.kt:79` 的创建映射与 `:116` 的更新映射。这是 v1 唯一的后端改动 |
+| O6 | 渠道级「思考 / 联网 / 计划」三个开关进不进 v1 | **已定案（2026-09-28）：进 v1，后端把三列补进渠道 DTO** | 三列在实体上（`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Channel.kt:49`-`:55`）、内部接口会读（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt:417`-`:419`），但 admin 侧三个 DTO（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelCreateRequest.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelUpdateRequest.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelResponse.kt`）不带，Web 表单因此从未能编辑。改动落点四处：两个请求 DTO 加字段、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelResponse.kt:86`-`:103` 的 `fromEntity` 加三行映射、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ChannelServiceImpl.kt:79` 的创建映射与 `:116` 的更新映射。这是 v1 唯一的后端改动 |
 | O7 | `http` 渠道类型给不给入口 | 给，但灰显且不可提交，标注「暂未支持」 | 后端把它当合法值接受，运行时找不到适配器、报 `no adaptor registered`（见 `harnax-ios/specs/03-system-domain.md` 的渠道矩阵）。让用户填完一整张表单才在运行期看到失败，比入口灰显更糟 |
-| O8 | 附件收取与下载留不留 v1 | 留，客户端把 404 当作「对象存储未开启」处理 | 该路由整控制器受开关控制（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/OutputFileController.kt:36`-`:39`），`application.yml` 里 `${MINIO_ENABLED:false}` 默认关，但标准部署 compose 显式置 `true`。也就是说部署环境能用、裸配置环境必 404，需要一条明确的降级表现而不是让页面报错 |
+| O8 | 附件收取与下载留不留 v1 | 留，客户端把 404 当作「对象存储未开启」处理 | 该路由整控制器受开关控制（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/OutputFileController.kt:36`-`:39`），`harnax-admin/src/main/resources/application.yml:96` 里 `${MINIO_ENABLED:false}` 默认关，但标准部署 compose 显式置 `true`（`harnax-deploy/docker-compose.yml:178`、`:478`）。也就是说部署环境能用、裸配置环境必 404，需要一条明确的降级表现而不是让页面报错 |
