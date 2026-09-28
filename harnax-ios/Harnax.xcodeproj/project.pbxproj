@@ -8,6 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		1A00000000000000000000B0 /* HarnaxCore in Frameworks */ = {isa = PBXBuildFile; productRef = 1A00000000000000000000B2 /* HarnaxCore */; };
+		1A00000000000000000000E0 /* HarnaxAPI in Frameworks */ = {isa = PBXBuildFile; productRef = 1A00000000000000000000E3 /* HarnaxAPI */; };
+		1A00000000000000000000E1 /* HarnaxKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1A00000000000000000000E4 /* HarnaxKit */; };
+		1A00000000000000000000E2 /* HarnaxFeatures in Frameworks */ = {isa = PBXBuildFile; productRef = 1A00000000000000000000E5 /* HarnaxFeatures */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -34,6 +37,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				1A00000000000000000000B0 /* HarnaxCore in Frameworks */,
+				1A00000000000000000000E0 /* HarnaxAPI in Frameworks */,
+				1A00000000000000000000E1 /* HarnaxKit in Frameworks */,
+				1A00000000000000000000E2 /* HarnaxFeatures in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -77,6 +83,9 @@
 			name = Harnax;
 			packageProductDependencies = (
 				1A00000000000000000000B2 /* HarnaxCore */,
+				1A00000000000000000000E3 /* HarnaxAPI */,
+				1A00000000000000000000E4 /* HarnaxKit */,
+				1A00000000000000000000E5 /* HarnaxFeatures */,
 			);
 			productName = Harnax;
 			productReference = 1A00000000000000000000A4 /* Harnax.app */;
@@ -265,6 +274,21 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 1A00000000000000000000B3 /* XCLocalSwiftPackageReference "." */;
 			productName = HarnaxCore;
+		};
+		1A00000000000000000000E3 /* HarnaxAPI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1A00000000000000000000B3 /* XCLocalSwiftPackageReference "." */;
+			productName = HarnaxAPI;
+		};
+		1A00000000000000000000E4 /* HarnaxKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1A00000000000000000000B3 /* XCLocalSwiftPackageReference "." */;
+			productName = HarnaxKit;
+		};
+		1A00000000000000000000E5 /* HarnaxFeatures */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1A00000000000000000000B3 /* XCLocalSwiftPackageReference "." */;
+			productName = HarnaxFeatures;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
