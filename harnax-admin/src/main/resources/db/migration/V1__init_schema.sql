@@ -1,21 +1,20 @@
 -- Harnax admin schema baseline
 --
--- Consolidated from the V1~V50 migration history. Derived mechanically: the 50 scripts were
--- replayed in version order into an empty schema on MySQL 8.0 and the resulting DDL was taken
--- with mysqldump --no-data, so this file is the exact net schema of that history, not a rewrite.
+-- This file is the whole admin schema in its final shape: every table with its final columns,
+-- indexes, unique keys and comments, followed by the rows the system needs at boot. There is no
+-- second script in this directory to stack on top of it — changing a table means changing this file.
 --
--- What the incremental history had accumulated and this file drops:
--- - The hand-entered CLI plugin model (V10/V11 tables and seed) replaced by package registration
---   in V35, which DROPs cli_plugin, agent_cli_plugin_binding and cli_skill_binding.
--- - The seeded `harnax-cli` skill row (V12, content rewritten by V14) retired by V37. Its host
---   repository row is kept below, since BuiltinRepository.CLI_SKILLS still identifies it by name.
--- - The agent task domain tables V1 created and V39 dropped once that domain moved to
---   harnax-scheduler.
--- - Column-level backfills (V22/V24/V44/V47/V49/V50) and the unique-key hardening that came with
---   them; on an empty schema those are no-ops, and their DDL is folded into the table definitions.
+-- Applying it assumes an empty schema. A database already built from another shape is rebuilt, not
+-- carried forward: Flyway validates the checksum of the baseline it has already applied, so an
+-- in-place edit there is a startup failure rather than a migration.
 --
--- Applying this file assumes an empty schema. It is not a rewrite of an applied migration: the
--- environments that had run V1~V50 are rebuilt rather than carried forward.
+-- Deliberately absent from this schema:
+-- - CLI packages are not a hand-entered table; they register from the package directory at admin
+--   startup into the `cli` table below.
+-- - No `harnax-cli` skill row is seeded. Its host repository row is (`builtin-cli-skills`, seeded at
+--   the end of this file), since BuiltinRepository.CLI_SKILLS identifies it by name.
+-- - The scheduled-task domain has no table here; `agent_task`, `agent_task_log` and
+--   `agent_task_execution` live in harnax-scheduler's own baseline and its own database.
 /*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
 /*!40103 SET TIME_ZONE='+00:00' */;
 /*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;

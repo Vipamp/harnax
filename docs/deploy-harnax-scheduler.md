@@ -15,7 +15,7 @@
 | 依赖 | 要求 | 说明 |
 |---|---|---|
 | JDK | 21 | |
-| MySQL | `harnax_scheduler` 库（本服务自有） | **本服务独占这个库**：11 张 `QRTZ_*` 集群表 + `agent_task` / `agent_task_log` / `agent_task_execution` 三张业务表都在这里面，表结构全部由本服务的 Flyway 建（`harnax-scheduler/src/main/resources/db/migration/V1__init_schema.sql`，记在自有的 `flyway_schema_history_scheduler`），没有任何别的工具往这个库写表。所以迁移开关（`SCHEDULER_FLYWAY_ENABLED`，未设时回退 `FLYWAY_ENABLED`）默认 `true` 且**必须保持开**——关掉就一张表都没有，`QUARTZ_JOB_STORE=jdbc` 的节点直接起不来。库与授权由 `harnax-deploy/sql/init-databases.sql` 预建（已有部署要手工补那两行，那脚本只在 MySQL 首次初始化空数据目录时执行）。改造前就建好的 `harnax_admin` 里可能还留着这个域的同名表与一批 `QRTZ_*`，没有任何读路径指向那里，删除归运维（「发布 2 切口」第 8 步） |
+| MySQL | `harnax_scheduler` 库（本服务自有） | **本服务独占这个库**：11 张 `QRTZ_*` 集群表 + `agent_task` / `agent_task_log` / `agent_task_execution` 三张业务表都在这里面，表结构全部由本服务的 Flyway 建（`harnax-scheduler/src/main/resources/db/migration/V1__init_schema.sql`，记在自有的 `flyway_schema_history_scheduler`），没有任何别的工具往这个库写表。所以迁移开关（`SCHEDULER_FLYWAY_ENABLED`，未设时回退 `FLYWAY_ENABLED`）默认 `true` 且**必须保持开**——关掉就一张表都没有，`QUARTZ_JOB_STORE=jdbc` 的节点直接起不来。库与授权由 `harnax-deploy/sql/init-databases.sql` 预建（已有部署要手工补那两行，那脚本只在 MySQL 首次初始化空数据目录时执行）。既有 `harnax_admin` 里若还留着这个域的同名表与一批 `QRTZ_*`，没有任何读路径指向那里，删除归运维（「发布 2 切口」第 8 步） |
 | router | 必须可达 | 执行入口 `SCHEDULER_ROUTER_URL` |
 | admin | 必须可达 | 会话管理与系统 Key 获取 |
 | Redis / MinIO | 不需要 | |
@@ -30,7 +30,7 @@
 | 模式 | 定位 | 后果 |
 |---|---|---|
 | `jdbc` | **当前默认与目标形态**：`harnax-scheduler/src/main/resources/db/migration/V1__init_schema.sql` 由本服务的 Flyway 建表，`isClustered=true` + `clusterCheckinInterval=15000` + `acquireTriggersWithinLock=true` | 多实例安全：一次触发全集群只有一个节点抢到；故障接管与 misfire 补偿都由引擎负责 |
-| `memory` | **逃生门，不是运行形态**：本地无库启动、以及回滚（见下一节） | 该实例**不是集群成员**：它读不到也写不进共享 store，自己按自己的 cron 各 fire 一次。同一发 cron 被两台同时 fire 时**全集群只执行一次**：每一发（cron 与 one-shot 都是）都要过 `AbstractAgentTaskJob` 的 `AgentTaskExecutionGuard.tryAcquireLock(taskId, triggerTime)`，`uk_task_trigger(task_id, trigger_time)` 只让一台赢，`agent_task_log` 也就一行（这正是集群化前的多实例形态，见 `prod_doc/agent-task-scheduler.zh-CN.md` §2.1）。真正的代价是三样：赢家由一次 INSERT 抢出来、不是由调度器决定；这台**没有故障接管也没有 misfire 补偿**，它停机期间错过的触发永久跳过；它的 schedule 是私有的，一次只落到 jdbc 那台的 CRUD 会让两台跑着**不同的 cron 表达式**——不同表达式就是不同触发时点，也就不同 `trigger_time`，这才是真会成对写 `agent_task_log` 的那条路径 |
+| `memory` | **逃生门，不是运行形态**：本地无库启动、以及回滚（见下一节） | 该实例**不是集群成员**：它读不到也写不进共享 store，自己按自己的 cron 各 fire 一次。同一发 cron 被两台同时 fire 时**全集群只执行一次**：每一发（cron 与 one-shot 都是）都要过 `AbstractAgentTaskJob` 的 `AgentTaskExecutionGuard.tryAcquireLock(taskId, triggerTime)`，`uk_task_trigger(task_id, trigger_time)` 只让一台赢，`agent_task_log` 也就一行（这正是各节点各持一份私有 schedule、互不知情的多实例形态，见 `prod_doc/agent-task-scheduler.zh-CN.md` §2.1）。真正的代价是三样：赢家由一次 INSERT 抢出来、不是由调度器决定；这台**没有故障接管也没有 misfire 补偿**，它停机期间错过的触发永久跳过；它的 schedule 是私有的，一次只落到 jdbc 那台的 CRUD 会让两台跑着**不同的 cron 表达式**——不同表达式就是不同触发时点，也就不同 `trigger_time`，这才是真会成对写 `agent_task_log` 的那条路径 |
 
 `org.quartz.jobStore.class` 故意**不写**：Boot 注入 DataSource 后会强制覆盖成 `LocalDataSourceJobStore`，写死 `JobStoreTX` 反而连不上 Spring 管理的数据源。
 
@@ -72,7 +72,7 @@ SELECT INSTANCE_NAME, LAST_CHECKIN_TIME, CHECKIN_INTERVAL FROM harnax_scheduler.
 
 故障接管的窗口就是上面那串算式：**约 22.5~52.5s**（22.5 = 15000ms checkin 间隔 + 7500ms 常量；+15s 对端轮询粒度；+15s 对端自身 checkin 滞后）。写在这里而不是写一个约数，是因为这三个数都来自 `application.yml` 与 Quartz 源码，改 `clusterCheckinInterval` 就是要回到这段重算。它还解释了为什么单节点死掉不丢触发：接管最坏 52.5s，仍在 `misfireThreshold: 60000` 之内，那一发根本不会被判成 misfire——而 400s 的全集群下线一定越过它。
 
-**约束：`SCHEDULER_ENABLED=false` 的实例不要继续注册在同一个 compose service 名下。** admin 现在只发**一次**转发（`SchedulerClientImpl`，共享 store 之后广播已失去意义），Docker 的 DNS 轮询会把这一发落到任意一个同名副本上；落到一台关了调度的实例上，用户就看到 40903（`CODE_SCHEDULER_DISABLED`），而且是**按运气出现的**——重试一次可能就通了。更糟的是 reload 路径：那台实例答的 40903 会被 admin 改判成 40902（只有它的文案留在 message 里），运维读到的意思是「已存库但没人调度它」。要么把这台从 service 里摘掉，要么给它另一个 compose service 名（另一份 `docker-compose.*.yml`），让 `HARNAX_SCHEDULER_URL` 只指向开着的实例。compose 侧做不到按副本区分——`SCHEDULER_ENABLED` 是一份插值、对所有副本生效，所以这只能是拓扑规则。
+**约束：`SCHEDULER_ENABLED=false` 的实例不要继续注册在同一个 compose service 名下。** admin 只发**一次**转发（`SchedulerClientImpl`：调度真相在共享 store 里，广播没有意义），Docker 的 DNS 轮询会把这一发落到任意一个同名副本上；落到一台关了调度的实例上，用户就看到 40903（`CODE_SCHEDULER_DISABLED`），而且是**按运气出现的**——重试一次可能就通了。更糟的是 reload 路径：那台实例答的 40903 会被 admin 改判成 40902（只有它的文案留在 message 里），运维读到的意思是「已存库但没人调度它」。要么把这台从 service 里摘掉，要么给它另一个 compose service 名（另一份 `docker-compose.*.yml`），让 `HARNAX_SCHEDULER_URL` 只指向开着的实例。compose 侧做不到按副本区分——`SCHEDULER_ENABLED` 是一份插值、对所有副本生效，所以这只能是拓扑规则。
 
 `SCHEDULER_ENABLED=false` 也不意味着这台完全 inert，需要知道的边界：
 
@@ -86,11 +86,11 @@ SELECT INSTANCE_NAME, LAST_CHECKIN_TIME, CHECKIN_INTERVAL FROM harnax_scheduler.
 - 本模块 compose 有 `stop_grace_period: 400s`，`application.yml` 显式写了 `spring.quartz.wait-for-jobs-to-complete-on-shutdown: ${QUARTZ_WAIT_FOR_JOBS:true}`（Boot 的默认是 `false`，必须写出来）。**400 是一串求和的上取整**：chat 读超时 300 + `clearSession` 上限 60 + 两次调用各 10s 的 connect 预扣 20 + 定态写回 8 + Spring 关停钩子 4 = 392。逐项推导写在 `harnax-deploy/docker-compose.yml` 的 scheduler 段注释里，改 `SCHEDULER_TIMEOUT` 或 `SCHEDULER_CLEAR_SESSION_TIMEOUT` 都要回到那里重算，别让注释变成谎话。
 - 宽限和 `waitForJobsToCompleteOnShutdown` 必须成对：等任务的前提是内核没先 SIGKILL；`docker stop -t` 的默认 10s 会把一次跑到一半的执行切成 `agent_task_log` 的 `status=3` 与 `agent_task_execution` 的 `status=0`，等 housekeeping 最坏 2× 超时后才回收。
 - **`roll-scheduler.sh` 里有一份同一个数**（`SCHEDULER_STOP_GRACE`，默认 400），滚动时逐台花掉这个窗口；两处要一起改——滚动超时短于 `stop_grace_period` 等于在 mid-run 上 SIGKILL，正是这个宽限要挡的事。
-- **保护范围 = 本模块的全部执行路径**：cron 与手动执行现在是同一类对象。`/tasks/{id}/trigger` 与 `/tasks/{id}/run-once` 都只往共享 store 投一枚 one-shot job（组 `AgentTaskGroup_ONCE`、非 durable、`startNow()`），由 Quartz worker 就地跑完，所以 `waitForJobsToCompleteOnShutdown` 有东西可等、这 400s 对两条路径同样生效。两副本下仍然猜不出是哪台忙——admin 那一发落到 DNS 选中的任一台，所以滚动必须假设两台都可能忙，逐台给满宽限。
+- **保护范围 = 本模块的全部执行路径**：cron 与手动执行是同一类对象。`/tasks/{id}/trigger` 与 `/tasks/{id}/run-once` 都只往共享 store 投一枚 one-shot job（组 `AgentTaskGroup_ONCE`、非 durable、`startNow()`），由 Quartz worker 就地跑完，所以 `waitForJobsToCompleteOnShutdown` 有东西可等、这 400s 对两条路径同样生效。两副本下仍然猜不出是哪台忙——admin 那一发落到 DNS 选中的任一台，所以滚动必须假设两台都可能忙，逐台给满宽限。
 - **点一下拿到 200，不等于会留下一行执行记录**。投递成功只代表那枚 one-shot 进了 store；fire 时还要过 `AbstractAgentTaskJob` 的两道判断——`concurrent=0` 且本任务已有活着的执行（重叠闸口）、`tryAcquireLock` 输给另一个节点（集群锁）——任一条命中就直接返回，而这两处**都在插 `agent_task_log` 那行之前**。于是 webui 的"执行成功 → 打开日志列表"可以合法地是空列表，这不是前端坏了。真相在 scheduler 的日志里：`skipping this fire` / `already being executed by another instance`。
 - **容量规则（运维必读）**：一次手动执行占用 `QUARTZ_THREAD_COUNT`（默认 10）个 worker 之一，直到跑完；`SimpleThreadPool` **没有队列**，worker 全忙时到期的 cron 只能干等，等到越过 `misfireThreshold: 60000` 就变成一次 misfire，而 `concurrent=0` 的任务用的正是 `withMisfireHandlingInstructionDoNothing`——**那一发定时任务被跳过，不是延后跑**。所以：**不要用 1~2 个 worker 跑 scheduler**。worker 数是"同时在跑的执行数"和"cron 不被饿死"两件事的同一个余量，手动执行混进来之后，余量必须留在 cron 这一侧。
 
-`QUARTZ_THREAD_COUNT` 默认 `10`，是**每节点**并发执行的上限（2 实例 = 全集群最多 20）；设计文档明确**不再上调**（提高会直接放大对 router / agent-service 的下游压力，而 agent-service 仍是单实例）。它与 `DB_POOL_SIZE` 之间是下界关系，见数据源一节。**它同时也是 cron 的余量**：发布 3 之后手动执行与定时执行共用这批 worker（没有独立的手动池），所以这个数只有上限、没有下调空间——上面那条"1~2 个 worker 不算可用配置"的下限就是从这里来的。
+`QUARTZ_THREAD_COUNT` 默认 `10`，是**每节点**并发执行的上限（2 实例 = 全集群最多 20）；设计文档明确**不再上调**（提高会直接放大对 router / agent-service 的下游压力，而 agent-service 仍是单实例）。它与 `DB_POOL_SIZE` 之间是下界关系，见数据源一节。**它同时也是 cron 的余量**：手动执行与定时执行共用这批 worker（没有独立的手动池），所以这个数只有上限、没有下调空间——上面那条"1~2 个 worker 不算可用配置"的下限就是从这里来的。
 
 ---
 
@@ -108,7 +108,7 @@ SELECT INSTANCE_NAME, LAST_CHECKIN_TIME, CHECKIN_INTERVAL FROM harnax_scheduler.
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `SPRING_DATASOURCE_URL` | `jdbc:mysql://localhost:3306/harnax_scheduler?...` | 本服务自有的库：`QRTZ_*` 与三张 `agent_task*` 表都由它建、由它读写。指回 `harnax_admin` 只有一种合法用途——切口后的回滚（见「发布 2 切口」） |
+| `SPRING_DATASOURCE_URL` | `jdbc:mysql://localhost:3306/harnax_scheduler?...` | 本服务自有的库：`QRTZ_*` 与三张 `agent_task*` 表都由它建、由它读写。指回 `harnax_admin` 只有一种合法用途——回滚（见「发布 2 切口」） |
 | `SCHEDULER_DB_URL` | 空（用上面的 yml 默认值） | **compose 侧的连接串只由它决定**。它故意不是 admin / agent-service / channel-service 共用的那条 `DB_URL`：那三个服务靠 `DB_URL` 打同一句 `harnax_admin`，scheduler 复用同一变量的话，改一处就带走三个不该动的服务 |
 | `SPRING_DATASOURCE_USERNAME` / `SPRING_DATASOURCE_PASSWORD` | `root` / `123456` | compose 侧走 `DB_USERNAME` / `DB_PASSWORD`（与 admin 同一个 MySQL 用户，它对两库都有权限，见 `init-databases.sql`） |
 | `DB_POOL_SIZE` / `DB_POOL_MIN_IDLE` | `30` / `3` | Hikari。30 是按下界选的：≥ `QUARTZ_THREAD_COUNT`(10) 个 worker（每个在一次 fire 里占一条连接）+ 业务查询 + 集群 checkin，全走这一个池。**`QUARTZ_THREAD_COUNT` 与它要一起动**——只加 worker 不加池不会多出容量，只是把等待从调度线程挪到 30s 的 connection-timeout 上。与 admin 的 20/5 不同 |
@@ -138,29 +138,29 @@ SELECT INSTANCE_NAME, LAST_CHECKIN_TIME, CHECKIN_INTERVAL FROM harnax_scheduler.
 | `LOG_LEVEL_ROOT` / `LOG_LEVEL` | `INFO` / `INFO` | |
 | `MYBATIS_LOG_IMPL` | `org.apache.ibatis.logging.slf4j.Slf4jImpl` | **与 admin 不同**：admin 默认打到 stdout，本服务默认走 slf4j，生产无须改 |
 | `SWAGGER_ENABLED` | `true` | `/swagger-ui.html` 与 `/v3/api-docs`，生产建议关 |
-| `HARNAX_AUTH_SECRET` | 占位串 | 服务间 token 的签名密钥，发布 2 起是**双向**的：既签本服务的出向调用，也验 admin 转发进来的 bearer，**必须与 admin 同值**且 ≥32 字符，见「认证边界」 |
+| `HARNAX_AUTH_SECRET` | 占位串 | 服务间 token 的签名密钥，它是**双向**的：既签本服务的出向调用，也验 admin 转发进来的 bearer，**必须与 admin 同值**且 ≥32 字符，见「认证边界」 |
 
 ---
 
 ## 认证边界（读代码得到的事实）
 
-`harnax.auth.enabled: false` 这条**仍然成立**，但它的含义在发布 2 变了：关掉的只是 `harnax-auth` 那套统一入向鉴权（API Key、限流、`@InternalOnly`，那是 spec §9 F1 的完整方案），本服务自己另装了一道只认服务间 token 的门禁（`support/InternalCallerInterceptor`）。从发布 2 起，`/api/scheduler/**` 的**全部**接口——**读也在内**——都要带一枚 `typ=internal` 的 `Authorization: Bearer <内部 JWT>`，否则直接 401（响应体是 `ResultVo`，`code=401`）。`/actuator/**` 不在门禁内，它不在这个前缀下，所以 compose 的健康检查照旧匿名可用。身份的另一半走转发头：`X-Forwarded-User` 与 `X-Tenant-Id` 由 admin 盖，本服务只在接受了内部 JWT 之后才读它们；`X-Forwarded-Tenant` **一律不读**，那是浏览器自己能发的头。
+`harnax.auth.enabled: false` 这条**仍然成立**，但它的边界要说清：关掉的只是 `harnax-auth` 那套统一入向鉴权（API Key、限流、`@InternalOnly`，那是 spec §9 F1 的完整方案），本服务自己另装了一道只认服务间 token 的门禁（`support/InternalCallerInterceptor`）。这道门禁覆盖 `/api/scheduler/**` 的**全部**接口——**读也在内**——都要带一枚 `typ=internal` 的 `Authorization: Bearer <内部 JWT>`，否则直接 401（响应体是 `ResultVo`，`code=401`）。`/actuator/**` 不在门禁内，它不在这个前缀下，所以 compose 的健康检查匿名可用。身份的另一半走转发头：`X-Forwarded-User` 与 `X-Tenant-Id` 由 admin 盖，本服务只在接受了内部 JWT 之后才读它们；`X-Forwarded-Tenant` **一律不读**，那是浏览器自己能发的头。
 
-读面也被关进去，是对 spec §2.3「全部写面」那句的一次有意偏离：那句话出自 scheduler 只有写面的时候，而发布 2 的 C5 加了 `GET /api/scheduler/agent-tasks/{id}/owner`——任何能碰到 `8084` 的人都能凭一个任务 id 读出创建人与租户。理由与写面逐字相同，所以不再留豁免。
+读面同样在门禁之内，这是对 spec §2.3「全部写面」那句的一次有意加严：`GET /api/scheduler/agent-tasks/{id}/owner` 答的是创建人与租户，任何能碰到 `8084` 的人都能凭一个任务 id 读出来。理由与写面逐字相同，所以不留豁免。
 
-网络那一条**没有因此放松**：`8084` 依旧只有 `expose`、不发布宿主端口（compose 里就是这么写的，别把 `28084` 之类的映射加回来），nginx 也不再代理 `/api/scheduler/`。服务间 token 挡的是「进了容器网络的人」，不是「把 8084 暴露出去、签名密钥又写歪了的人」。这一条的取舍与后续计划写在 `prod_doc/agent-task-scheduler.zh-CN.md` §8.2，别在这里重新论证。
+网络这一条同样算在内：`8084` 只有 `expose`、不发布宿主端口（compose 里就是这么写的，别把 `28084` 之类的映射加回来），nginx 不代理 `/api/scheduler/`。服务间 token 挡的是「进了容器网络的人」，不是「把 8084 暴露出去、签名密钥又写歪了的人」。这一条的取舍与后续计划写在 `prod_doc/agent-task-scheduler.zh-CN.md` §8.2，别在这里重新论证。
 
-**admin 与 scheduler 必须同窗口升级。** 门禁一上，旧版 admin 转发的调用一律 401（它不带内部 JWT），症状是用户点「立即执行」「暂停」「删除」时看到「Scheduler service unavailable」或 40902，而调度本身照常在跑——看着像 scheduler 连不上，其实是它把请求拒了。同时两边的 `HARNAX_AUTH_SECRET` 必须同值：compose 里 admin 与 scheduler 两段都由同一个变量插值，配一次就同源；唯一能配错的是手工/裸机部署，那里两边各写一次。`HARNAX_AUTH_SECRET` 短于 32 字符时本服务**起不来**（`SchedulerConfig` 与 admin 的 provider 都按这条硬性拒绝），这是有意的：宁可启动就报错，也不要起来后把每一发转发都拒成 401。
+**admin 与 scheduler 必须同窗口升级。** 这道门禁只认内部 JWT，没带上这一枚的转发一律 401（还没升上来的 admin 就是这种），症状是用户点「立即执行」「暂停」「删除」时看到「Scheduler service unavailable」或 40902，而调度本身照常在跑——看着像 scheduler 连不上，其实是它把请求拒了。同时两边的 `HARNAX_AUTH_SECRET` 必须同值：compose 里 admin 与 scheduler 两段都由同一个变量插值，配一次就同源；唯一能配错的是手工/裸机部署，那里两边各写一次。`HARNAX_AUTH_SECRET` 短于 32 字符时本服务**起不来**（`SchedulerConfig` 与 admin 的 provider 都按这条硬性拒绝），这是有意的：宁可启动就报错，也不要起来后把每一发转发都拒成 401。
 
 ## 与 MCP / 用户身份的关系
 
-定时任务发起的会话 id 形如 `task-{taskId}-{agentId}-{uuid}`（契约 C1，四段）。运行时**以任务创建人的身份**解析其 MCP 授权，但**不再由 admin 本地读表**：`McpSessionOwnerResolver.fromTask` 改打本服务的 C5 端点 `GET /api/scheduler/agent-tasks/{id}/owner`（`AgentTaskOwnerController.kt:48-58`，读 `selectAnyById`，答 `creator` + `tenantId` + `agentId`；行不存在回 `data:null`）。部署上有三条后果：
+定时任务发起的会话 id 形如 `task-{taskId}-{agentId}-{uuid}`（契约 C1，四段）。运行时**以任务创建人的身份**解析其 MCP 授权，属主由本服务的 C5 端点答出：`McpSessionOwnerResolver.fromTask` 调 `GET /api/scheduler/agent-tasks/{id}/owner`（`AgentTaskOwnerController.kt:48-58`，读 `selectAnyById`，答 `creator` + `tenantId` + `agentId`；行不存在回 `data:null`）。部署上有三条后果：
 
 - **冷路径坏了不会让任务失败，只会让那次执行缺一类工具**。owner 查询失败（本服务停机、密钥不同值、网络不通）⇒ 解析结果为 `null` ⇒ 那次执行的 OAuth 类 MCP 工具不可用，任务本身照常跑完。admin 侧的故障形态是 **WARN 日志**（带 taskId 与原因），不是静默 debug——排查"任务成功但 OAuth 工具不见了"先看这条。
-- **这个端点也在 C4 门禁之内**（它答的是"谁的任务"），所以它需要与 admin 同值的 `HARNAX_AUTH_SECRET`，并且只从容器网络可达（`8084` 不发布宿主端口）。把它当成匿名内部接口来 curl 会得到 401，那不是回归。
-- **维护窗口内停掉 scheduler 的连带影响多了一项**：那段窗口里跑起来的定时任务解析不出 OAuth 属主（任务照跑、OAuth 工具缺席）。要避开就把这类任务排在窗口之外，不要靠"反正是冷路径"。
+- **这个端点也在 C4 门禁之内**（它答的是"谁的任务"），所以它需要与 admin 同值的 `HARNAX_AUTH_SECRET`，并且只从容器网络可达（`8084` 不发布宿主端口）。把它当成匿名内部接口来 curl 会得到 401，这是预期行为。
+- **维护窗口内停掉 scheduler 会连带影响 OAuth 属主解析**：那段窗口里跑起来的定时任务解析不出 OAuth 属主（任务照跑、OAuth 工具缺席）。要避开就把这类任务排在窗口之外，不要靠"反正是冷路径"。
 
-另外两条与身份有关、但不由这条链决定的事实：任务创建人撤销或过期了自己的 OAuth 授权，会直接反映到该用户创建的任务上——表现为任务执行时提示「请重新授权该 MCP 服务」，而不是调度失败；人员离职 / 账号删除后，其任务不再有任何可花的授权，停用任务要走 admin 的通道，不是删库。任务运行在 `BYPASS` 权限模式下（当前硬编码在 admin 的 `resolveFromTask`），这是既有设计口径（spec D5 / F5）。**同一处还有一个已登记的残留**：admin 装配 spec 用的 agentId 是直接从 sessionId 字符串里读出来的，域搬走之后它没法再拿 `agent_task.agent_id` 核对——见 spec §9 F15。
+另外两条与身份有关、但不由这条链决定的事实：任务创建人撤销或过期了自己的 OAuth 授权，会直接反映到该用户创建的任务上——表现为任务执行时提示「请重新授权该 MCP 服务」，而不是调度失败；人员离职 / 账号删除后，其任务不再有任何可花的授权，停用任务要走 admin 的通道，不是删库。任务运行在 `BYPASS` 权限模式下（当前硬编码在 admin 的 `resolveFromTask`），这是既有设计口径（spec D5 / F5）。**同一处还有一个已知残留**：admin 装配 spec 用的 agentId 是直接从 sessionId 字符串里读出来的，不回读 `agent_task.agent_id` 做核对——见 spec §9 F15。
 
 ## 健康检查与观测
 
@@ -178,23 +178,23 @@ SELECT INSTANCE_NAME, LAST_CHECKIN_TIME, CHECKIN_INTERVAL FROM harnax_scheduler.
 
 这一步把本服务的数据源从 `harnax_admin` 换进自有的 `harnax_scheduler`，是整个改造里唯一需要停服的动作，也是唯一不能滚动做的动作。
 
-**它不搬任何数据。** 用户确认没有历史包袱，spec 的 D8（迁任务定义、不迁历史日志）因此取消：没有迁移脚本，没有自校验查询，也没有"历史清空 / 最近运行两列变空"这类要公告的损失——没有东西可失去。新库从空开始，**切口后由用户在界面重建任务**。旧库 `harnax_admin` 里的 `agent_task` / `agent_task_log` / `agent_task_execution` 与 11 张 `QRTZ_*` 在切口后没有任何活着的读者，**当场 DROP 即可，不需要观察期**。这一刀全部归运维就地执行：admin 的 `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` 既不建这三张表也不删它们，所以 admin 启动不会替谁收尾，全新部署的 `harnax_admin` 里本来就没有本域的任何表——只有建库早于这次改造、且把 `QUARTZ_JOB_STORE=jdbc` 指向过它的安装，才有东西可删。
+**它不搬任何数据。** 本域没有需要迁移的历史：没有迁移脚本，没有自校验查询，也没有"历史清空 / 最近运行两列变空"这类要公告的损失——没有东西可失去。新库从空开始，**换库后由用户在界面重建任务**。`harnax_admin` 里若还有 `agent_task` / `agent_task_log` / `agent_task_execution` 与 11 张 `QRTZ_*`，它们没有任何活着的读者，**当场 DROP 即可，不需要观察期**。这些删除全部归运维就地执行：admin 的 `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` 既不建这三张表也不删它们，admin 启动不会替谁收尾，全新部署的 `harnax_admin` 里本来就没有本域的任何表——只有把 `QUARTZ_JOB_STORE=jdbc` 指到过它的旧安装，才有东西可删。
 
 **为什么 admin 与 scheduler 必须一起下线**——两条理由都与数据无关，所以"先把库换过去、代码以后再合"这种分两批的做法在这里不成立：
 
-1. **C4**：scheduler 现在拒收未签名的 HTTP，`/api/scheduler/**` 全部接口（读也在内）都要带一枚 `typ=internal` 的 bearer。旧版 admin 不发这一枚，它的每一次转发都是 401。两边的 `HARNAX_AUTH_SECRET` 还必须同值：compose 里两个服务由同一个变量插值，配一次就同源；手工/裸机部署两边各写一次，是唯一能写歪的地方。
-2. **C1**：sessionId 现在是四段 `task-{taskId}-{agentId}-{uuid}`，旧 admin 读不懂这个形态（它的解析器只认三段），反过来旧 scheduler 发的三段 id 新 admin 会直接拒。所以**任何新旧混跑的组合都不成立**，一新一旧凑一对就是坏的一侧在坏的一侧看不见地丢执行。
+1. **C4**：scheduler 拒收未签名的 HTTP，`/api/scheduler/**` 全部接口（读也在内）都要带一枚 `typ=internal` 的 bearer。旧版 admin 不发这一枚，它的每一次转发都是 401。两边的 `HARNAX_AUTH_SECRET` 还必须同值：compose 里两个服务由同一个变量插值，配一次就同源；手工/裸机部署两边各写一次，是唯一能写歪的地方。
+2. **C1**：sessionId 是四段 `task-{taskId}-{agentId}-{uuid}`，旧 admin 读不懂这个形态（它的解析器只认三段），反过来旧 scheduler 发的三段 id 新 admin 会直接拒。所以**任何新旧混跑的组合都不成立**，一新一旧凑一对就是坏的一侧在坏的一侧看不见地丢执行。
 
 ### 顺序
 
 1. 停 scheduler 的**全部副本** + admin。窗口内堆积的 cron 走 misfire 路径，`concurrent=0` 用的是 `withMisfireHandlingInstructionDoNothing`——**那一发被跳过，不是延后补跑**，公告要这么写。
 2. 起**一个** scheduler 副本，数据源指向 `harnax_scheduler`。库与授权由 `harnax-deploy/sql/init-databases.sql` 预建（已有部署要手工补建库 + `GRANT` + `FLUSH PRIVILEGES`，那个脚本只在 MySQL 首次初始化空数据目录时跑），Flyway 在这个空库里应用 `harnax-scheduler/src/main/resources/db/migration/V1__init_schema.sql`。
 3. 核对建出来的表：三张 `agent_task*` + 11 张 `QRTZ_*` + `flyway_schema_history_scheduler` 的一行。**`agent_task_log` 哪怕注定是空的也必须在**——`AgentTaskMapper.xml` 的 `selectTaskList` 自联这张表取 `lastRunStatus` / `lastRunTime`，缺表是列表页 500，不是"某一列空着"。
-4. 让对账跑一轮（等 60s 的集群清扫，或建一个任务由 admin 转发触发 `/reload`），核对结果是 **0 个被调度的任务**：`/actuator/health` 的 `scheduledJobCount`（读 store，匿名可用），或 `GET /api/scheduler/tasks/status` 的 `scheduledTaskCount`——后者从 C4 起要带内部 JWT，别按匿名端点 curl 它。非 0 说明这台连的还是旧库。
-5. 起 admin（发布 2 版本），三客户端主链路各跑一遍：webui 列表/创建/编辑/启停/删除/立即执行/日志轮询、CLI `task list|get|create|trigger|stop`、小程序任务页。
+4. 让对账跑一轮（等 60s 的集群清扫，或建一个任务由 admin 转发触发 `/reload`），核对结果是 **0 个被调度的任务**：`/actuator/health` 的 `scheduledJobCount`（读 store，匿名可用），或 `GET /api/scheduler/tasks/status` 的 `scheduledTaskCount`——后者受 C4 门禁约束，要带内部 JWT，别按匿名端点 curl 它。非 0 说明这台连的还是旧库。
+5. 起 admin，三客户端主链路各跑一遍：webui 列表/创建/编辑/启停/删除/立即执行/日志轮询、CLI `task list|get|create|trigger|stop`、小程序任务页。
 6. 起第二副本（`--scale scheduler=2`，或 `roll-scheduler.sh`），回读 `harnax_scheduler.QRTZ_SCHEDULER_STATE`：要看到的是**两个 `INSTANCE_NAME` 各自的 `LAST_CHECKIN_TIME` 每 15s 前进**，不是"两行"（见「双实例与逐台滚动」）。
 7. 用户在界面重建任务。
-8. 旧库收尾：三张 `agent_task*` 与 11 张 `QRTZ_*` 都由运维就地 DROP——admin 的 baseline 既不建也不删它们，起多少次 admin 都不会替这一步收尾。只有建库早于这次改造、并把 `QUARTZ_JOB_STORE=jdbc` 指向过 `harnax_admin` 的安装里有东西可删。
+8. 旧库收尾：三张 `agent_task*` 与 11 张 `QRTZ_*` 都由运维就地 DROP——admin 的 baseline 既不建也不删它们，起多少次 admin 都不会替这一步收尾。只有把 `QUARTZ_JOB_STORE=jdbc` 指到过 `harnax_admin` 的旧安装里才有东西可删。
 
 ### 回滚
 
@@ -204,25 +204,25 @@ QUARTZ_JOB_STORE=memory                    # 不去接旧库里那批遗留的 Q
 SCHEDULER_FLYWAY_ENABLED=false             # 否则它会拿本模块的基线去碰 harnax_admin
 ```
 
-三个都要：`QUARTZ_JOB_STORE=memory` 让这台节点不进集群、不往一张已经没有活着的对端承诺同源更新的旧 store 里写调度真相（离集群的完整代价见「Quartz 存储模式」）；`SCHEDULER_FLYWAY_ENABLED=false` 是因为本模块的基线对旧库虽是 `IF NOT EXISTS` 的空转，却会把这一次应用记进旧库的 `flyway_schema_history_scheduler`，让一个回滚状态看起来像本服务自己建起来的库。**并且要说清**：只把 URL 指回去**不等于回到发布 1 的行为**——C4 的门禁与 C1 的四段 id 都在代码里，旧 admin 与新 scheduler 仍然互相读不懂，要退就得连镜像一起退、两个服务同时退。回滚的残留是明确的：切口之后新建/改过的任务只存在于 `harnax_scheduler`，不会跟着回到旧库，也没有合并路径。
+三个都要：`QUARTZ_JOB_STORE=memory` 让这台节点不进集群、不往一张已经没有活着的对端承诺同源更新的旧 store 里写调度真相（离集群的完整代价见「Quartz 存储模式」）；`SCHEDULER_FLYWAY_ENABLED=false` 是因为本模块的基线对旧库虽是 `IF NOT EXISTS` 的空转，却会把这一次应用记进旧库的 `flyway_schema_history_scheduler`，让一个回滚状态看起来像本服务自己建起来的库。**并且要说清**：只把 URL 指回去**不是一次完整的回滚**——C4 的门禁与 C1 的四段 id 都在代码里，旧 admin 与新 scheduler 互相读不懂，要退就得连镜像一起退、两个服务同时退。回滚的残留是明确的：换库后新建/改过的任务只存在于 `harnax_scheduler`，不会跟着回到旧库，也没有合并路径。
 
 > **这条退路的期限握在运维手里**：上面三步只在 `harnax_admin` 的三张 `agent_task*` 还在时成立。admin 的 baseline 既不建也不删它们，所以没有任何一次启动会自动收掉这条路——它失效于第 8 步的 DROP 真的被执行那一刻，在此之前拖着它是一份可选，而不是欠账。表已经删了再退，指回旧库就连表都没有，得先把表建回来（运维手工建表是干净的一条；把 `SCHEDULER_FLYWAY_ENABLED` 临时开成 true 让本模块的基线在旧 URL 上建出来也行，但前提是旧库那张 `flyway_schema_history_scheduler` 台账与实际 schema 对得上——台账被一起删过就得先把它对齐，否则 validate 会先拦下来），然后再关回去。11 张 `QRTZ_*` 是同一个道理，只是它们在旧库存在与否取决于这个安装有没有把 `QUARTZ_JOB_STORE=jdbc` 指向过 `harnax_admin`。
 
-## 全新部署一次（2026-09-16 实测）
+## 全新部署一次
 
 `bash harnax-deploy/deploy-all.sh` 一把梭（Maven 全模块 → webui `npm run build` → 产物入 `harnax-deploy/dist` → 沙箱镜像 → 6 个服务镜像 `--no-cache` → `down` → `up -d --scale scheduler=${SCHEDULER_REPLICAS:-2}`）。**开跑前有两件事不做就一定失败**：
 
 1. **`harnax-deploy/.env` 里那两个占位密钥必须换掉真值**。`ADMIN_INTERNAL_API_SECRET` 与 `HARNAX_AUTH_SECRET` 一旦还是仓库里公开的 `change-me-in-production-min-32-chars!!`，router 在 `CACHE_TYPE=redis` 下会被 `harnax-session-router/.../config/PlaceholderSecretCheck.kt` 在 `@PostConstruct` 里直接 `error(...)`——**容器起不来，不是降级起来**。顺手给 `HARNAX_AES_SECRET_KEY` 一个**恰好 32 字节**的值（`AesUtil` 只告警不拦，但空库时是唯一次没有代价的设定时机：晚设会让已加密的模型 key / MCP header 读不出来）。
 2. **"清空数据库"在这套部署里等价于移走 bind mount**。MySQL 的数据在 `${MYSQL_DATA_DIR:-./data/mysql}`，`sql/init-databases.sql` 只在**目录为空**时由 `docker-entrypoint-initdb.d` 执行一次；删库名、`TRUNCATE`、或只重启容器都不会让 `harnax_scheduler` 重新出现（它连库都不建，建表是 scheduler 自己的 Flyway）。做法：`docker compose -f harnax-deploy/docker-compose.yml down` 之后把 `harnax-deploy/data/mysql` 改名（比 `rm -rf` 可回退），再起来，五个库（`harnax_admin` / `harnax` / `agentscope` / `harnax_router` / `harnax_scheduler`）与授权会由脚本重建。Redis 只有派生状态，跟着 `docker volume rm harnax-deploy_redis-data` 一起清掉最省事（`down` 不动卷）。
 
-实测结论（`kotlin-dev` @ `d60eab3`）：
+一次清库重部署应当看到这些核对结果：
 
-- 11 个容器全 `healthy`；`harnax_scheduler` 恰好 15 张表 = 11 张 `QRTZ_*` + `agent_task` / `agent_task_log` / `agent_task_execution` + `flyway_schema_history_scheduler`，本域的表全部出自本服务的基线 `harnax-scheduler/src/main/resources/db/migration/V1__init_schema.sql`；`harnax_admin` 共 35 张 = 基线的 34 张 + 自己的 `flyway_schema_history`，其中没有本域的任何表（`QRTZ_*` 与 `agent_task*` 在 `harnax_admin` 里一张都没有）。**这组数与台账行数出自 2026-09-28 按合并后单份基线的清库重部署实测**：三个 schema 的启动日志都是 `Migrating schema … to version "1 - …"` → `Successfully applied 1 migration … now at version v1`，台账各一行且 `success=1`，没有校验和与 validate 报错，`Tomcat started on port` 每个服务恰好一条；`QRTZ_SCHEDULER_STATE` 两行（两副本都登记进集群）。这一回核的前置条件就是上面第 2 条清库重部署——老台账与新基线的校验和必然不符，服务会拒绝启动。
-- `QRTZ_SCHEDULER_STATE` 两行、各按 15s 前进；`docker kill harnax-deploy-scheduler-2` 之后存活副本 **21s** 打出 `ClusterManager: detected 1 failed or restarted instances` → `Freed 1 acquired trigger(s)`，`up -d --scale scheduler=2` 后重新两行。**接管窗口不是纸面推的了**（推算过程见 spec §11 第 2 条）。
+- 11 个容器全 `healthy`；`harnax_scheduler` 恰好 15 张表 = 11 张 `QRTZ_*` + `agent_task` / `agent_task_log` / `agent_task_execution` + `flyway_schema_history_scheduler`，本域的表全部出自本服务的基线 `harnax-scheduler/src/main/resources/db/migration/V1__init_schema.sql`；`harnax_admin` 共 35 张 = 基线的 34 张 + 自己的 `flyway_schema_history`，其中没有本域的任何表（`QRTZ_*` 与 `agent_task*` 在 `harnax_admin` 里一张都没有）。三个 schema 的启动日志都是 `Migrating schema … to version "1 - …"` → `Successfully applied 1 migration … now at version v1`，台账各一行且 `success=1`，没有校验和与 validate 报错，`Tomcat started on port` 每个服务恰好一条；`QRTZ_SCHEDULER_STATE` 两行（两副本都登记进集群）。这些核对的前置条件就是上面第 2 条清库重部署——旧台账与当前基线的校验和必然不符，服务会拒绝启动。
+- `QRTZ_SCHEDULER_STATE` 两行、各按 15s 前进；`docker kill harnax-deploy-scheduler-2` 之后存活副本 **21s** 打出 `ClusterManager: detected 1 failed or restarted instances` → `Freed 1 acquired trigger(s)`，`up -d --scale scheduler=2` 后重新两行。**接管窗口的实测值是 21s**（纸面推算见 spec §11 第 2 条）。
 - 观测面无漂移：`scheduler.jobs.scheduled`=0（空库），`scheduler.reconcile.rounds{outcome=success}` 每分钟一次、没有 `failure` 标签，`scheduler.reconcile.drift` 从未被采样。
-- 界面链路通：`https://localhost/` 200（80 端口 301 跳 443），`/api/admin/auth/cli-login` 拿到 JWT，`GET /api/admin/agent-tasks/page` 与 `GET /api/admin/agent-tasks/{id}/logs` 经 admin 转发到 scheduler 均 200 且 `Page` 形状完好。webui 调用的 11 条 agent-task 路径与 admin `AgentTaskController` 暴露的一一对得上，搬迁没漏路由。
-- **仍未覆盖**：spec §11 的第 3/4/5/7 条（带执行中任务重启、执行中点"停止"、界面建任务/立即执行、OAuth MCP 的 C5 回归）。它们的前置是库里有一个 agent，而建 agent 要真实的模型 API Key——这一步只能由使用方给。
-- 两条已登记的记账：建库早于这次改造的 `harnax_admin` 里可能留着三张 0 行的孤儿 `agent_task*` 表（spec §9 F16；admin 的基线不建它们，所以全新安装里根本没有，已存在的库里的那些由运维删）；两副本冷启动时系统 sweep 撞一次重复键、20ms 后自愈，代价是一条带 SQL 字样的 WARN（spec §9 F17）。
+- 界面链路通：`https://localhost/` 200（80 端口 301 跳 443），`/api/admin/auth/cli-login` 拿到 JWT，`GET /api/admin/agent-tasks/page` 与 `GET /api/admin/agent-tasks/{id}/logs` 经 admin 转发到 scheduler 均 200 且 `Page` 形状完好。webui 调用的 11 条 agent-task 路径与 admin `AgentTaskController` 暴露的一一对得上，没有漏掉的路由。
+- **还没有核对结果的项**：spec §11 的第 3/4/5/7 条（带执行中任务重启、执行中点"停止"、界面建任务/立即执行、OAuth MCP 的 C5 回归）。它们的前置是库里有一个 agent，而建 agent 要真实的模型 API Key——这一步只能由使用方给。
+- 两条已知事项：既有的 `harnax_admin` 里可能留着三张 0 行的孤儿 `agent_task*` 表（spec §9 F16；admin 的基线不建它们，所以全新安装里根本没有，已存在的库里的那些由运维删）；两副本冷启动时系统 sweep 撞一次重复键、20ms 后自愈，代价是一条带 SQL 字样的 WARN（spec §9 F17）。
 
 ## 常见问题
 
@@ -231,12 +231,12 @@ SCHEDULER_FLYWAY_ENABLED=false             # 否则它会拿本模块的基线�
 | 任务跑了两遍 | 先分清是不是**同一个时点**跑了两遍。不同触发时点各跑一遍（`trigger_time` 不同，`uk_task_trigger` 挡不住）＝有实例以 `QUARTZ_JOB_STORE=memory` 起：它不进集群、按自己私有的那份 schedule 到点，而只有 jdbc 那台收到的 CRUD 让它带着旧 cron 一直在跑（见前两节）。同一个时点真跑了两遍＝有两套不同 `instanceName` 的部署共用了同一个库 |
 | 任务到点不触发 | 集群里是否**至少一台** `SCHEDULER_ENABLED=true`；`QRTZ_SCHEDULER_STATE` 有没有行、`LAST_CHECKIN_TIME` 有没有在动（空表说明没人进过集群）；cron 表达式；`agent_task` 的启用状态 |
 | 触发后无执行 | `SCHEDULER_ROUTER_URL` 是否可达、`SCHEDULER_API_KEY` 是否拿到了（留空时要问 admin） |
-| 内部 API 401 | `SCHEDULER_ADMIN_SECRET` 与 admin 的 `ADMIN_INTERNAL_API_SECRET` 是否同值；admin 现在**拒绝占位默认值**走业务接口，两边都得换成真值 |
-| 发布后 admin 的每次调度操作都失败（「Scheduler service unavailable」/ 40902），但 cron 照常触发 | 大概率是 C4 门禁拒了那一发，不是网络不通：scheduler 日志里 `Refusing /api/scheduler/...` 的 WARN 把原因写在最后一段——`no internal service bearer token presented`＝admin 还没升到发布 2（两边必须同窗口发）；`bearer rejected (…)`＝两边 `HARNAX_AUTH_SECRET` 不同值或密钥被换过（compose 同源，手工部署才会歪）；`caller 'xxx' is <type>, not an internal service`＝拿来的那枚不是 `typ=internal` 的 token（例如误用了用户 JWT 或另一服务的 key） |
+| 内部 API 401 | `SCHEDULER_ADMIN_SECRET` 与 admin 的 `ADMIN_INTERNAL_API_SECRET` 是否同值；admin **拒绝占位默认值**走业务接口，两边都得换成真值 |
+| 发布后 admin 的每次调度操作都失败（「Scheduler service unavailable」/ 40902），但 cron 照常触发 | 大概率是 C4 门禁拒了那一发，不是网络不通：scheduler 日志里 `Refusing /api/scheduler/...` 的 WARN 把原因写在最后一段——`no internal service bearer token presented`＝admin 那一发没带内部 JWT（两边必须同窗口发）；`bearer rejected (…)`＝两边 `HARNAX_AUTH_SECRET` 不同值或密钥被换过（compose 同源，手工部署才会歪）；`caller 'xxx' is <type>, not an internal service`＝拿来的那枚不是 `typ=internal` 的 token（例如误用了用户 JWT 或另一服务的 key） |
 | 用户看到 40903 / 40902 但任务确实保存了 | admin 那一发转发落到了关了调度的实例上——检查同名 service 下是否还挂着 `SCHEDULER_ENABLED=false` 的副本 |
-| 发布后出现中间态执行 | 手动与 cron 现在同受停机宽限保护（见「优雅停机」），所以中间态只意味着**宽限真的被截断过**：核对 `stop_grace_period` 与 `SCHEDULER_STOP_GRACE` 是否被单独改小过、`QUARTZ_WAIT_FOR_JOBS` 是否还是 `true`、以及是否用了 `--force-recreate` 而不是 `roll-scheduler.sh` |
+| 发布后出现中间态执行 | 手动与 cron 同受停机宽限保护（见「优雅停机」），所以中间态只意味着**宽限真的被截断过**：核对 `stop_grace_period` 与 `SCHEDULER_STOP_GRACE` 是否被单独改小过、`QUARTZ_WAIT_FOR_JOBS` 是否还是 `true`、以及是否用了 `--force-recreate` 而不是 `roll-scheduler.sh` |
 | 点了「立即执行」但日志列表是空的 | 先看 scheduler 日志有没有 `skipping this fire` / `already being executed by another instance`：那一发在 fire 时被重叠闸口或集群锁丢掉，按设计**不留日志行**（见「优雅停机」第二条）。两处都没有再看 `agent_task` 的 `active`——软删除的任务在 fire 时同样被拒，而 one-shot **不看** `task_status`，暂停中照样跑 |
-| 执行里缺 MCP 工具 | 两问：① 任务创建人是否有有效授权（挂的是 OAuth 类 MCP 而未授权就会缺）；② 那次执行**读得到属主吗**——发布 2 起这一步是跨服务的 C5 冷路径，本服务停机或两边密钥不同值都会让它返回 null，症状同样是"任务成功但缺一类工具"，线索是 admin 侧那条带 taskId 的 WARN（见「与 MCP / 用户身份的关系」） |
+| 执行里缺 MCP 工具 | 两问：① 任务创建人是否有有效授权（挂的是 OAuth 类 MCP 而未授权就会缺）；② 那次执行**读得到属主吗**——这一步是跨服务的 C5 冷路径，本服务停机或两边密钥不同值都会让它返回 null，症状同样是"任务成功但缺一类工具"，线索是 admin 侧那条带 taskId 的 WARN（见「与 MCP / 用户身份的关系」） |
 
 ---
 
@@ -244,8 +244,8 @@ SCHEDULER_FLYWAY_ENABLED=false             # 否则它会拿本模块的基线�
 
 - `prod_doc/agent-task-scheduler.zh-CN.md`：职责划分、数据归属、admin↔scheduler 契约、指标口径
 - `docs/superpowers/specs/2026-09-11-scheduler-cluster-design.md`：真集群（JDBC JobStore、2 实例、D6 停机语义）的设计与里程碑
-- `docs/superpowers/plans/2026-09-14-scheduler-jdbc-cluster.md`：发布 1 的实现计划（里程碑 S2，QRTZ 集群 + reconcile + 部署形态）
-- `docs/superpowers/plans/2026-09-14-scheduler-domain-migration.md`：发布 2 的实现计划（里程碑 S3，域搬迁 + C1/C4/C5 + 上面「发布 2 切口」那一节的出处）
+- `docs/superpowers/plans/2026-09-14-scheduler-jdbc-cluster.md`：QRTZ 集群 + reconcile + 部署形态的实现计划（里程碑 S2）
+- `docs/superpowers/plans/2026-09-14-scheduler-domain-migration.md`：域搬迁 + C1/C4/C5 的实现计划（里程碑 S3，上面「发布 2 切口」那一节的出处）
 - `harnax-deploy/roll-scheduler.sh`：逐台滚动脚本，头部注释是这段拓扑规则的出处
 - `docs/deploy-harnax-session-router.md`：router 部署（执行入口）
 - `docs/deploy-harnax-agent-service.md`：运行时侧的 MCP 与身份语义

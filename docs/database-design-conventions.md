@@ -211,7 +211,7 @@ CREATE TABLE IF NOT EXISTS `example` (
 
 ## 九、Flyway 迁移规范
 
-### 9.1 目录与命名
+### 9.1 目录与基线
 
 - 每个服务模块只有一份 schema 基线，位于该模块的 `src/main/resources/db/migration/`：
 
@@ -221,36 +221,24 @@ CREATE TABLE IF NOT EXISTS `example` (
 | `harnax-scheduler` | `V1__init_schema.sql` | `harnax_scheduler` | `flyway_schema_history_scheduler` |
 | `harnax-session-router` | `V1__create_session_router_tables.sql` | `harnax_router` | `flyway_schema_history`（仅 cluster profile；`local` 模式走 `db/sqlite-init.sql`） |
 
-- 基线给出该模块 schema 的**最终形态**：每张表的建表语句带最终的列、索引、唯一键与注释，其后是系统启动所需的初始化数据。
-- 命名格式仍是 `V{version}__{description}.sql`，全小写；基线固定占 `V1`，只有前向迁移才占用后续版本号。
-- 描述用动词开头的短语（`add_example_table`、`scope_stats_to_a_tenant`），初始化数据用 `seed` 前缀。
+- 基线给出该模块 schema 的**最终形态**：每张表的建表语句带最终的列、索引、唯一键与注释，其后是系统启动所需的初始化数据。判「这张表现在长什么样」只看这一个文件，该模块的 `db/migration/` 目录下没有需要往上叠加的后续版本。
 
 ### 9.2 变更落法
 
-两条路，一次变更只走一条。
-
-**重建（默认）**：把变更折进基线本身，然后重建库。`harnax-deploy` 环境一律按这条走，历史不向下传。折进基线的同时：
+变更直接写进所属模块的那一份 init 基线：把列、索引、唯一键、初数据改到该文件里对应的 `CREATE TABLE` 与 `INSERT` 上，然后重建库。`harnax-deploy` 环境一律按这条走，schema 历史不向下传。改基线的同时：
 
 - 重新生成 `harnax-entity/src/test/resources/schema-test.sql`——它的 DDL 段取自 admin 基线，不是手工对照；`SchemaBaselineDriftIT` 拿 Flyway 真正建出的库与该文件比对，漂了就红。
 - 重跑 `mvn -o -pl harnax-entity -am test` 与 `mvn -o -pl harnax-admin -am -Pintegration-test verify`。
 
-**前向迁移**：只在确实存在不能重建的库时才写 `V{next}__*.sql`。此时**不得改动 `V1`**——那张库已经按 `V1` 的旧形态建好了，改一个字启动即 checksum 不符。等这些增量攒够、环境又都可丢弃时，折回一份新基线并重建，历史从 `V1` 重新开始。
+没有「另写一份脚本叠上去」这条路：目录下只有基线一个文件，而已经按旧形态建好的库不认改过的基线——启动即校验和不符，`repair-on-migrate` 也不是解法。所以**改表结构与重建库是同一个动作**，不能拆开。
 
-两条路共用的编写规则：
+基线本身的编写规则：
 
 - 建表一律 `CREATE TABLE IF NOT EXISTS`，唯一的既有例外是 `harnax-scheduler` 基线里那 11 张 `QRTZ_*`，它们沿用 Quartz 官方脚本的裸 `CREATE TABLE`
-- 结构变更使用 `ALTER TABLE ADD COLUMN ... AFTER ...`，**禁止 DROP + CREATE 重建表**
-- 一个脚本只做一类变更，文件头部注释说明变更目的
-- 初始化数据使用 `INSERT IGNORE`，保证幂等可重放
-- 逻辑删除优先于删除数据；确需清理数据须单独脚本并评审
+- 列写成最终形态：类型、`DEFAULT`、`COMMENT`、列顺序都直接落在建表语句里，基线内不留 `ALTER` 增量语句，也**禁止 DROP + CREATE 重造整张表**
+- 一张表一段建表语句；初始化数据用 `INSERT IGNORE`，保证幂等可重放
+- 逻辑删除优先于删除数据；确需清理数据须单独评审
 - 基线里不写数据修复语句（回填、改名、归属重判）：新库没有待修的行，写了也没有对象
-
-```sql
--- V2: Add the retry budget to the scheduled task table
-ALTER TABLE `agent_task`
-    ADD COLUMN `retry_budget` int DEFAULT '0' COMMENT 'Retry budget (0: no retry)'
-    AFTER `task_status`;
-```
 
 ### 9.3 配置与验证
 
@@ -268,10 +256,10 @@ spring:
     clean-disabled: ${FLYWAY_CLEAN_DISABLED:true}
 ```
 
-- `baseline-on-migrate` + `baseline-version: 0` 是必需的：库由 `harnax-deploy/sql/init-databases.sql` 预建，Flyway 见到的是一张空库，基线版本设 0 才会应用 `V1` 而不是把库判定为「已迁移」。
+- `baseline-on-migrate` + `baseline-version: 0` 是必需的：库由 `harnax-deploy/sql/init-databases.sql` 预建，Flyway 见到的是一张空库，基线版本设 0 才会应用该模块的基线脚本，而不是把库判定为「已迁移」。
 - `repair-on-migrate` 只有 `harnax-admin` 开着；`harnax-scheduler` 与 `harnax-session-router` 没有配，历史里出现类路径上已不存在的脚本时直接失败。
-- **跑过长历史的库不能直接换基线**：它的历史行指向已不存在的脚本，`V1` 的校验和也不再相符。按策略是删库重建，不是就地修复。
-- 部署后通过 `flyway_schema_history` 表确认版本；社区版不支持自动回滚，回滚需新写反向脚本。
+- **已按旧形态建过的库不能直接换基线**：它的台账行指向类路径上已不存在的脚本，基线的校验和也不再相符。按策略是删库重建，不是就地修复。
+- 部署后通过 `flyway_schema_history` 确认基线已应用；社区版不支持自动回滚，回退形态就是把基线改回去再重建库。
 - 生产执行迁移前必须备份；先在数据副本上验证。
 
 ## 十、测试库规范（schema-test.sql）
@@ -314,8 +302,8 @@ Mapper 集成测试（Testcontainers）使用 `harnax-entity/src/test/resources/
 
 **迁移**：
 
-- [ ] 变更默认折进所属模块的基线（`V1__init_schema.sql`）并重建库；确有不能重建的库才新写 `V{n}__*.sql` 增量脚本，且不动 `V1`
-- [ ] `CREATE TABLE IF NOT EXISTS` / `ALTER TABLE`，无破坏性操作
+- [ ] 变更写进所属模块的 init 基线（`V1__init_schema.sql`）并重建库，不在已按旧形态建好的库上就地改基线
+- [ ] 建表用 `CREATE TABLE IF NOT EXISTS`，基线内无 `DROP`、无 `ALTER` 增量语句、无数据修复语句
 - [ ] 种子数据 `INSERT IGNORE` 幂等；基线内不放数据修复语句
 - [ ] 重新生成 `schema-test.sql` 的 DDL 段并补充 Mapper 集成测试
 

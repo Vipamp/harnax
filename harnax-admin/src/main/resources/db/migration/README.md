@@ -25,11 +25,16 @@ repository row.
 
 ## Changing the Schema
 
-Two paths, and a change goes down one of them — not both.
+One path: edit this baseline in place, then recreate the database. Columns, indexes, keys, comments
+and the seed rows all go straight into the final `CREATE TABLE` / `INSERT` form — the file holds no
+`ALTER` deltas and no data-repair statements, and this directory holds nothing to stack on top of it.
+This is what every `harnax-deploy` environment does, and it is why the schema history is not carried
+forward: a fresh install and a rebuilt install end at the same shape because they run the same single
+script.
 
-**Rebuild (the default).** Edit the baseline in place, then recreate the database. This is what every
-`harnax-deploy` environment does, and it is why the history is not carried forward: a fresh install and a
-rebuilt install end at the same shape because they run the same single script.
+A database already built from an earlier form of this file will not accept the edited baseline: its
+history row names a script whose checksum no longer matches, so startup fails on validate. Editing
+the schema and rebuilding the database are therefore one action, never two.
 
 Along with editing the baseline:
 
@@ -39,16 +44,11 @@ Along with editing the baseline:
 2. Re-run the mapper tests (`mvn -o -pl harnax-entity -am test`) and the drift guard
    (`mvn -o -pl harnax-admin -am -Pintegration-test verify`).
 
-**Forward migration.** Write `V2__*.sql` — the next number, an `ALTER`-style delta, nothing that drops
-data — only when a database exists that must not be rebuilt. Then leave `V1` alone: it is the shape
-that database already has. Once such deltas accumulate and every environment is disposable again, fold
-them into a new baseline and rebuild, which restarts history at `V1`.
-
 ## Adopting the Baseline on an Existing Database
 
-A database that replayed a longer history cannot simply switch to the consolidated baseline: its
-history rows name scripts that are no longer on the classpath, and its `V1` checksum no longer matches.
-Drop the schema and let the baseline rebuild it.
+A database whose ledger already carries rows cannot simply switch to this baseline: those rows name
+scripts that are no longer on the classpath, and the recorded checksum no longer matches the file on
+disk. Drop the schema and let the baseline rebuild it.
 
 `harnax-admin` alone runs Flyway with `repair-on-migrate: true`, so it would realign the checksum and
 clear the unresolved history rows instead of failing — but that leaves the schema unverified against
@@ -75,8 +75,8 @@ spring:
 
 `baseline-on-migrate` with `baseline-version: 0` matters for the database created by
 `harnax-deploy/sql/init-databases.sql`: that script creates the schema, so Flyway finds a non-empty schema
-only when it is also brand new, and baselining at 0 makes it apply `V1` rather than mark the schema as
-already migrated.
+only when it is also brand new, and baselining at 0 makes it apply this baseline rather than mark the
+schema as already migrated.
 
 ## Notes
 

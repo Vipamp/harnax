@@ -278,7 +278,7 @@ skip-paths:
   - /app.js
 ```
 
-跳过的只有页面本身要加载的文件；`/api/router/monitor/*` 已从该列表移出，因为实例列表和调用日志是
+跳过的只有页面本身要加载的文件；`/api/router/monitor/*` 不在该列表里，因为实例列表和调用日志是
 集群级信息，匿名可读等于把拓扑和会话轨迹摆在公网上。`UnifiedAuthFilter` 另外内置跳过 `/health` 和
 `/actuator` 前缀，无需在此声明。
 
@@ -643,11 +643,7 @@ readinessProbe:
 
 ## 数据库迁移
 
-Flyway 管理，位于 `src/main/resources/db/migration/`：
-
-| 版本 | 说明 |
-|------|------|
-| V1 | 建表 `api_call_log`（调用日志） |
+Flyway 管理，本库的建表语句全部写在 `src/main/resources/db/migration/V1__create_session_router_tables.sql`（`api_call_log` 调用日志表），目录下没有需要往上叠加的后续版本。
 
 **local 模式**：Flyway 禁用，启动时由 `SqliteInitConfig` 执行 `db/sqlite-init.sql` 建表。  
 **cluster 模式**：Flyway 启用，启动时自动执行 `db/migration` 下的迁移脚本。  

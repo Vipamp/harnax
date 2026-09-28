@@ -53,7 +53,7 @@ com.example.project
 
 resources/
 ├── mapper/              # Mapper XML（与 Mapper 接口同名）
-├── db/migration/        # Flyway 迁移脚本
+├── db/migration/        # Flyway schema 基线（每模块一份）
 └── i18n/                # 国际化消息文件
 ```
 
@@ -1088,29 +1088,21 @@ CREATE TABLE IF NOT EXISTS `example` (
 
 ## 二十五、Flyway 迁移规范
 
-### 25.1 目录与命名
+### 25.1 目录与基线
 
 - 每个服务模块在自己的 `resources/db/migration/` 下只有一份 schema 基线（`harnax-admin`、`harnax-scheduler` 为 `V1__init_schema.sql`，`harnax-session-router` 为 `V1__create_session_router_tables.sql`），给出该模块 schema 的最终形态：建表语句带最终的列、索引、唯一键与注释，其后是启动所需的初始化数据
-- 命名格式：`V{version}__{description}.sql`，全小写短横线描述，基线固定占 `V1`
   - 结构、索引、注释与启动初始化数据都写进这一份基线，初始化数据放在建表语句之后，不为它单独开脚本
-  - 只有不能重建的库才写前向增量，版本号从 `V2` 起递增（`V2__add_example_column.sql`），攒够后再折回一份新基线
-- 变更默认折进基线并重建库，历史不向下传；走前向增量时**不得改动已执行的 `V1`**（那张库已按旧形态建好，改一个字启动即 checksum 不符）
+  - 判「这张表长什么样」只看这一个文件，目录下没有需要往上叠加的后续版本
+- 变更直接写进这一份 init 基线并重建库，schema 历史不向下传。没有「另写一份脚本叠上去」这条路：已按旧形态建好的库不认改过的基线——启动即校验和不符，所以改表结构与重建库是同一个动作，不能拆开
 
-### 25.2 脚本编写规则
+### 25.2 基线编写规则
 
 - 建表一律 `CREATE TABLE IF NOT EXISTS`，唯一的既有例外是 `harnax-scheduler` 基线里那 11 张 `QRTZ_*`，它们沿用 Quartz 官方脚本的裸 `CREATE TABLE`
-- 结构变更使用 `ALTER TABLE ADD COLUMN ... AFTER ...`，**禁止 DROP + CREATE 重建表**
-- 一个脚本只做一类变更，文件头部注释说明变更目的
+- 列写成最终形态：类型、`DEFAULT`、`COMMENT` 与列顺序都直接落在建表语句里；基线内不留 `ALTER` 增量语句，也**禁止 DROP + CREATE 重造整张表**
+- 一张表一段建表语句，末尾统一跟初始化数据
 - 初始化数据使用 `INSERT IGNORE`，保证幂等可重放
 - 基线里不写数据修复语句（回填、改名、归属重判）：新库没有待修的行
-- 逻辑删除优先于删除数据；确需清理数据须单独脚本并评审
-
-```sql
--- V2: Add i18n support columns
-ALTER TABLE `product`
-    ADD COLUMN `display_name_zh` varchar(200) DEFAULT NULL COMMENT 'Display name (Chinese, for i18n zh-CN locale)'
-    AFTER `display_name`;
-```
+- 逻辑删除优先于删除数据；确需清理数据须单独评审
 
 ### 25.3 配置与验证
 
@@ -1127,8 +1119,8 @@ spring:
     clean-disabled: true
 ```
 
-- 部署后通过 `flyway_schema_history` 表确认版本
-- 社区版不支持自动回滚：回滚需新写反向迁移脚本
+- 部署后通过 `flyway_schema_history` 确认该模块的基线已应用
+- 社区版不支持自动回滚：回退形态就是把基线改回去再重建库
 - 生产执行迁移前必须备份；先在数据副本上验证
 
 ## 二十六、测试库规范（schema-test.sql）
@@ -1171,8 +1163,8 @@ Mapper 集成测试（Testcontainers）使用 `src/test/resources/schema-test.sq
 
 **迁移**：
 
-- [ ] 新增 Flyway 脚本，版本号递增，命名清晰
-- [ ] `CREATE TABLE IF NOT EXISTS` / `ALTER TABLE`，无破坏性操作
+- [ ] 变更写进本模块的 init 基线（`resources/db/migration/` 下那一份）并重建库，基线内不留增量语句
+- [ ] 建表用 `CREATE TABLE IF NOT EXISTS`，基线内无 `DROP`、无 `ALTER` 增量语句
 - [ ] 种子数据 `INSERT IGNORE` 幂等
 - [ ] 同步更新 `schema-test.sql` 并补充 Mapper 集成测试
 
