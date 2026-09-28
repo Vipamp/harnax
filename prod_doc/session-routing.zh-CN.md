@@ -378,7 +378,7 @@ EndEventChatEvent()
 
 ### 7.2 nginx 侧要求
 
-`docker-new/nginx.conf` 中 `location ~ ^/api/router/agent/(chat/stream|confirm)` 做了这些事，缺一即表现为"流不动"：
+`harnax-deploy/nginx.conf` 中 `location ~ ^/api/router/agent/(chat/stream|confirm)` 做了这些事，缺一即表现为"流不动"：
 
 | 指令 | 值 | 原因 |
 |------|-----|------|
@@ -549,15 +549,15 @@ Router 的全部状态是「数万会话绑定 + 数百实例记录 + 少量索�
 
 `application-cluster.yml` 覆盖的是数据源（MySQL + Flyway 开启）、`router.cache.type=redis`、反向索引对账参数、以及把 `redis` 纳入就绪组。
 
-## 11. 部署形态（docker-new）
+## 11. 部署形态（harnax-deploy）
 
-`docker-new/docker-compose.yml` 是唯一部署入口，`router` 服务的相关行：
+`harnax-deploy/docker-compose.yml` 是唯一部署入口，`router` 服务的相关行：
 
 | 项 | 值 |
 |----|-----|
-| 镜像 / 容器名 | `harnax-router:latest`（`docker-new/Dockerfile.router`） / `harnax-router` |
+| 镜像 / 容器名 | `harnax-router:latest`（`harnax-deploy/Dockerfile.router`） / `harnax-router` |
 | profile | `SPRING_PROFILES_ACTIVE: cluster` |
-| 存储 | `DB_URL: jdbc:mysql://mysql:3306/harnax_router`、`DB_USERNAME` / `DB_PASSWORD`；库由 `docker-new/sql/init-databases.sql` 建出 |
+| 存储 | `DB_URL: jdbc:mysql://mysql:3306/harnax_router`、`DB_USERNAME` / `DB_PASSWORD`；库由 `harnax-deploy/sql/init-databases.sql` 建出 |
 | 缓存 | `CACHE_TYPE: redis`、`REDIS_HOST: redis`、`REDIS_PORT: 6379`、`REDIS_PASSWORD` |
 | 身份 | `SERVICE_ID`（`ROUTER_SERVICE_ID`，缺省 `router-0`）、`HARNAX_AUTH_SECRET`、`ADMIN_INTERNAL_API_SECRET` |
 | 上游 | `ADMIN_SERVICE_URL: http://admin:8080` |
@@ -671,4 +671,4 @@ Router 的全部状态是「数万会话绑定 + 数百实例记录 + 少量索�
 | agent 侧清除与沙箱释放 | `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt`、`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/sandbox/KeepAliveSandboxManager.kt` |
 | 事件与请求协议 | `harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/AgentRequest.kt`、`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/ChatEvent.kt` |
 | 错误码 | `harnax-common/src/main/kotlin/com/agnetix/harnax/common/error/HarnaxErrorCode.kt` |
-| 部署与代理 | `docker-new/docker-compose.yml`、`docker-new/nginx.conf`、`docker-new/Dockerfile.router`、`docker-new/sql/init-databases.sql` |
+| 部署与代理 | `harnax-deploy/docker-compose.yml`、`harnax-deploy/nginx.conf`、`harnax-deploy/Dockerfile.router`、`harnax-deploy/sql/init-databases.sql` |

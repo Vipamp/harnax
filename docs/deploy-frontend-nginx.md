@@ -4,7 +4,7 @@
 
 `frontend` 服务（镜像 `harnax-frontend:latest`）是**整套部署唯一的公网入口**：nginx 同时干两件事——发 SPA 静态文件、按路径把 API 反代到各服务。用户浏览器只看到 `80` / `443` 两个标准端口，其余服务的端口（`28080`/`28081`/…）**只是为了从宿主机直连调试才发布**，不该对外开放。
 
-配置在 `docker-new/nginx.conf`，构建进镜像（`docker-new/Dockerfile.frontend`），改了要**重新 build 镜像**才生效；卷挂载的是 `ssl/` 目录，证书可以直接换。
+配置在 `harnax-deploy/nginx.conf`，构建进镜像（`harnax-deploy/Dockerfile.frontend`），改了要**重新 build 镜像**才生效；卷挂载的是 `ssl/` 目录，证书可以直接换。
 
 ## 路由表（以 nginx.conf 现状为准）
 
@@ -32,7 +32,7 @@
 ## HTTPS 与证书
 
 - `443` 上是标准端口（用户在浏览器里不带端口号）。SPA 里配置的回调 / 跳转 origin 必须与之一致：`APP_BASE_URL` 与 `APP_FRONTEND_BASE_URL` 要填**浏览器地址栏里那个 origin**（不带端口），否则 MCP OAuth 的 `redirect_uri` 与授权服务器登记值逐字符比不上，第一次授权就被拒。
-- 证书放 `docker-new/ssl/`，换证书后 `docker compose restart frontend` 即可，不必重建镜像。
+- 证书放 `harnax-deploy/ssl/`，换证书后 `docker compose restart frontend` 即可，不必重建镜像。
 - `server_name localhost`：真实域名要改这一行（否则同机其他 SNI 虚拟主机可能抢走请求）。
 
 ## 常见故障定位

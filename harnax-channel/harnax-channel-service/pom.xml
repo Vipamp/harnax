@@ -204,7 +204,7 @@
                         target/classes) on the IT fork classpath, and a Boot fat jar keeps the
                         module's classes under BOOT-INF/classes where a plain classloader cannot
                         see them. Same precedent as `harnax-admin`. Deployment scripts copy the
-                        `-exec` jar (docker-new/build.sh, deploy-all.sh, deploy-service.sh,
+                        `-exec` jar (harnax-deploy/build.sh, deploy-all.sh, deploy-service.sh,
                         Dockerfile.channel-service).
                     -->
                     <classifier>exec</classifier>

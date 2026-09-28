@@ -378,7 +378,7 @@ The container async timeout (30min) is aligned with the stream wall clock (30min
 
 ### 7.2 Requirements on the nginx side
 
-In `docker-new/nginx.conf`, `location ~ ^/api/router/agent/(chat/stream|confirm)` does the following; omit any one of them and the symptom is "the stream does not move":
+In `harnax-deploy/nginx.conf`, `location ~ ^/api/router/agent/(chat/stream|confirm)` does the following; omit any one of them and the symptom is "the stream does not move":
 
 | Directive | Value | Reason |
 |------|-----|------|
@@ -549,15 +549,15 @@ Router's entire state is "tens of thousands of session bindings + a few hundred 
 
 What `application-cluster.yml` overrides is the datasource (MySQL with Flyway enabled), `router.cache.type=redis`, the reverse-index reconciliation parameters, and the inclusion of `redis` in the readiness group.
 
-## 11. Deployment shape (docker-new)
+## 11. Deployment shape (harnax-deploy)
 
-`docker-new/docker-compose.yml` is the only deployment entry point. The relevant lines of the `router` service:
+`harnax-deploy/docker-compose.yml` is the only deployment entry point. The relevant lines of the `router` service:
 
 | Item | Value |
 |----|-----|
-| image / container name | `harnax-router:latest` (built by `docker-new/Dockerfile.router`) / `harnax-router` |
+| image / container name | `harnax-router:latest` (built by `harnax-deploy/Dockerfile.router`) / `harnax-router` |
 | profile | `SPRING_PROFILES_ACTIVE: cluster` |
-| storage | `DB_URL: jdbc:mysql://mysql:3306/harnax_router`, `DB_USERNAME` / `DB_PASSWORD`; the database itself is created by `docker-new/sql/init-databases.sql` |
+| storage | `DB_URL: jdbc:mysql://mysql:3306/harnax_router`, `DB_USERNAME` / `DB_PASSWORD`; the database itself is created by `harnax-deploy/sql/init-databases.sql` |
 | cache | `CACHE_TYPE: redis`, `REDIS_HOST: redis`, `REDIS_PORT: 6379`, `REDIS_PASSWORD` |
 | identity | `SERVICE_ID` (`ROUTER_SERVICE_ID`, default `router-0`), `HARNAX_AUTH_SECRET`, `ADMIN_INTERNAL_API_SECRET` |
 | upstream | `ADMIN_SERVICE_URL: http://admin:8080` |
@@ -671,4 +671,4 @@ The proxy-side requirements are in the nginx section above: the SSE regex locati
 | agent-side clearing and sandbox release | `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt`, `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/sandbox/KeepAliveSandboxManager.kt` |
 | events and request protocol | `harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/AgentRequest.kt`, `harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/ChatEvent.kt` |
 | error codes | `harnax-common/src/main/kotlin/com/agnetix/harnax/common/error/HarnaxErrorCode.kt` |
-| deployment and proxy | `docker-new/docker-compose.yml`, `docker-new/nginx.conf`, `docker-new/Dockerfile.router`, `docker-new/sql/init-databases.sql` |
+| deployment and proxy | `harnax-deploy/docker-compose.yml`, `harnax-deploy/nginx.conf`, `harnax-deploy/Dockerfile.router`, `harnax-deploy/sql/init-databases.sql` |

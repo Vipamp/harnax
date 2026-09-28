@@ -47,7 +47,7 @@ class PlaceholderSecretCheck(
 
         log.error(
             "Refusing to start a cluster router with the repository's placeholder secret — set {} to a " +
-                "unique value of at least 32 characters (docker: fill docker-new/.env, see .env.example).",
+                "unique value of at least 32 characters (docker: fill harnax-deploy/.env, see .env.example).",
             placeholders.joinToString(" and "),
         )
         error(

@@ -20,8 +20,8 @@ RUN addgroup -S harnax && adduser -S harnax -G harnax
 
 WORKDIR /app
 
-# Copy JAR file from docker-new/dist/agent-service/
-COPY docker-new/dist/agent-service/harnax-agent-service-*.jar app.jar
+# Copy JAR file from harnax-deploy/dist/agent-service/
+COPY harnax-deploy/dist/agent-service/harnax-agent-service-*.jar app.jar
 
 # Create log and temp directories
 RUN mkdir -p /app/logs /tmp/harnax-agent && chown -R harnax:harnax /app /tmp/harnax-agent

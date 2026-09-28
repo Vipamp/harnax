@@ -372,7 +372,7 @@ TeamOrchestrator.answerConfirmation(childRunId, approved) 完成该运行的等�
 | `harnax-session-router` | 根 sessionId 粘性路由与流空闲超时（团队不新增外部路由维度，`childRunId` 随请求透传） |
 | channel / scheduler / client | 按各自协议消费点处理来源与心跳；团队入口当前只有 Web 会话 |
 
-部署沿用 `docker-new`，团队不引入新服务。成员独立沙箱会带来容器、镜像与对象存储的资源开销，容量限制、生命周期与部署说明与沙箱、MinIO 两份口径一起维护。
+部署沿用 `harnax-deploy`，团队不引入新服务。成员独立沙箱会带来容器、镜像与对象存储的资源开销，容量限制、生命周期与部署说明与沙箱、MinIO 两份口径一起维护。
 
 ## 11. 明确不做
 
@@ -401,8 +401,7 @@ TeamOrchestrator.answerConfirmation(childRunId, approved) 完成该运行的等�
 | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/TeamArtifact.kt` | 产物元数据与引用语义 |
 | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Session.kt` | `agentId` 可空与 `teamId` |
 | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/dto/TeamSpecInfoResponse.kt` | 团队 spec 下发形状 |
-| `harnax-admin/src/main/resources/db/migration/V32__add_team_tables.sql` | 团队、成员、产物与会话关联的建表 |
-| `harnax-admin/src/main/resources/db/migration/V34__team_owns_lead_config.sql` | 主管配置内聚与 `team_skill_binding` |
+| `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` | admin 的 schema 基线：`team`、`team_member`、`team_artifact`、`team_skill_binding` 四张表的建表语句与 `session.team_id` 都写在这一个脚本里，主管配置 `system_prompt`、`model_id` 两列就在 `team` 自己的建表语句中 |
 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/TeamController.kt` | 团队 CRUD、启停、关联会话接口 |
 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/TeamServiceImpl.kt` | 保存校验、可见性、删除拒绝 |
 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt` | `/team-spec`、`/sessions/{id}/team`、`specForTeam`、`buildAgentSpecResponse` |

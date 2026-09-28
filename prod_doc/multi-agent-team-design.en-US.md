@@ -373,7 +373,7 @@ root-stream heartbeat while a confirmation waits is fixed at 30-second slices.
 | `harnax-session-router` | sticky routing by root sessionId and the stream idle timeout (a team adds no external routing dimension; `childRunId` travels on the request) |
 | channel / scheduler / client | handle provenance and heartbeats where their protocols consume events; the team entry today is the web session |
 
-Deployment stays on `docker-new` and a team introduces no new service. Member sandboxes add demand for containers, images and object storage, so capacity limits, lifecycle and deployment notes are maintained together with the sandbox and MinIO configurations.
+Deployment stays on `harnax-deploy` and a team introduces no new service. Member sandboxes add demand for containers, images and object storage, so capacity limits, lifecycle and deployment notes are maintained together with the sandbox and MinIO configurations.
 
 ## 11. Explicitly Not Done
 
@@ -402,8 +402,7 @@ Deployment stays on `docker-new` and a team introduces no new service. Member sa
 | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/TeamArtifact.kt` | artifact metadata and reference semantics |
 | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Session.kt` | nullable `agentId` and `teamId` |
 | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/dto/TeamSpecInfoResponse.kt` | the delivered team spec shape |
-| `harnax-admin/src/main/resources/db/migration/V32__add_team_tables.sql` | team, member, artifact and the session link |
-| `harnax-admin/src/main/resources/db/migration/V34__team_owns_lead_config.sql` | lead configuration on the team row and `team_skill_binding` |
+| `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` | admin's schema baseline: the `team`, `team_member`, `team_artifact` and `team_skill_binding` create statements and `session.team_id` are all written in this one script, and the lead's own configuration — the `system_prompt` and `model_id` columns — sits inside the `team` create statement |
 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/TeamController.kt` | team CRUD, enable/disable, related sessions |
 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/TeamServiceImpl.kt` | save-time validation, visibility, delete refusal |
 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt` | `/team-spec`, `/sessions/{id}/team`, `specForTeam`, `buildAgentSpecResponse` |

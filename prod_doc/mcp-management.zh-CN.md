@@ -25,7 +25,7 @@ MCP（Model Context Protocol）服务是 Agent 的外部工具来源之一，与
 
 ## 2. 数据模型
 
-表结构以 `harnax-admin/src/main/resources/db/migration/` 下的迁移脚本为准，叠加到该目录下编号最高的那一个为止。列名与缺省值取迁移叠加后的最终形态。
+表结构以 admin 的 schema 基线 `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` 为准：这一个脚本就是全部建表与列定义，没有需要往上叠加的后续版本，下面各表的列名与缺省值都按它写下的形态来。
 
 ### 2.1 mcp_server（MCP 服务主表）
 
@@ -56,7 +56,7 @@ MCP（Model Context Protocol）服务是 Agent 的外部工具来源之一，与
 - 主键 `PRIMARY KEY (id)`；`UNIQUE KEY uk_mcp_server_tenant_active_name (tenant_id, active_name)`。唯一性只在租户内、只覆盖有效行——生成列在 `active = 0` 时变 NULL，MySQL 的唯一索引忽略 NULL，因此删掉一台服务后同名可以再用。
 - `headers` / `oauth_config` / `env_params` 这类 TEXT 列没有单列索引。
 - `auth_type` 有意不回填：`NONE` 与 `STATIC_HEADER` 走同一条代码路径（都读 `headers`），差别只是给管理员一个可读标注，因此一行带着 `headers` 值并不构成任一意图的证据（`headers` 也放路由类头），标成哪个由管理员显式决定。
-- `McpServer` 实体的属性全部可空带默认值（`type` 默认 `streamablehttp`、`authType` 默认 `NONE`、`status` / `isPublic` / `active` 默认 1）。其中 `type` 的缺省**只存在于实体属性**：那一列是 `NOT NULL` 而没有 DEFAULT，所以值一定要由走实体的写入路径给出；`authType` 的 `NONE` 则与 `V25` 给的列缺省同义，两边任一都读得出同一个意思。
+- `McpServer` 实体的属性全部可空带默认值（`type` 默认 `streamablehttp`、`authType` 默认 `NONE`、`status` / `isPublic` / `active` 默认 1）。其中 `type` 的缺省**只存在于实体属性**：那一列是 `NOT NULL` 而没有 DEFAULT，所以值一定要由走实体的写入路径给出；`authType` 的 `NONE` 则与列自己的 DEFAULT（`VARCHAR(20) NOT NULL DEFAULT 'NONE'`）同义，两边任一都读得出同一个意思。
 
 ### 2.2 agent_mcp_binding（智能体-MCP 绑定）
 
@@ -216,7 +216,7 @@ MCP（Model Context Protocol）服务是 Agent 的外部工具来源之一，与
 
 - `NONE`：无上游凭证，行为等同「静态头为空」。
 - `STATIC_HEADER`：`headers` 那一列，一份整租户共用的静态凭证，只是多一个可读标注。
-- `BASIC`：有列、有常量，运行时没有对应分支，因此管理侧拒收，报错文案直说它「stored by V25 but not wired into the runtime yet」。
+- `BASIC`：有列、有常量，运行时没有对应分支，因此管理侧拒收，报错文案直说它「declared by the schema but not wired into the runtime yet」。
 - `OAUTH2`：按用户的授权，运行时按 (服务, 人) 换令牌。
 
 拒收未知值而不当作 `NONE` 处理，理由是**入库即下发**：运行时收到认不得的分支比收到 `NONE` 更难查。
@@ -466,12 +466,12 @@ MCP 的下发不做「把声明的默认值补进环境上下文」这件事：`
 |------|------|------|
 | `harnax.mcp.stdio-enabled`（admin，`McpStdioPolicy`） | false | stdio 的准入闸门：关掉时创建 stdio 与切进 stdio 被拒、已有 stdio 行不下发、`list_tools` / 连通性测试也拒 |
 | `harness.mcp-stdio-enabled`（agent，`HarnessAutoConfiguration`） | false | 运行侧的二次防御：关掉时装配跳过 stdio 服务，即使有一行被送到它面前。两侧都为 true 才会真起进程 |
-| `app.base-url` | 分两层：`harnax-admin/src/main/resources/application.yml` 写的是 `${APP_BASE_URL:http://localhost:8080}`，`docker-new/docker-compose.yml` 传给容器的是 `${APP_BASE_URL:-http://localhost:28080}`（容器里没设这个变量时取后者），`docker-new/.env.example` 把它示例成 `http://localhost` | admin 自身地址，`app.frontend-base-url` 为空时作为回调地址的取值；容器里读到的是 compose 那一层，不是 yml 里的 8080 |
+| `app.base-url` | 分两层：`harnax-admin/src/main/resources/application.yml` 写的是 `${APP_BASE_URL:http://localhost:8080}`，`harnax-deploy/docker-compose.yml` 传给容器的是 `${APP_BASE_URL:-http://localhost:28080}`（容器里没设这个变量时取后者），`harnax-deploy/.env.example` 把它示例成 `http://localhost` | admin 自身地址，`app.frontend-base-url` 为空时作为回调地址的取值；容器里读到的是 compose 那一层，不是 yml 里的 8080 |
 | `app.frontend-base-url` | 空 | 浏览器侧地址：OAuth 的 `redirect_uri` 由它拼上 `/mcp/oauth/callback`。生产由 nginx 用同一个域名代理两者，开发下 SPA 在 `:8000` 而 admin 在 `:8080`，此时必须显式配置 |
 
-两个 stdio 开关由同一个环境变量 `HARNAX_MCP_STDIO_ENABLED` 驱动：`harnax-admin/src/main/resources/application.yml` 与 `harnax-agent/harnax-agent-service/src/main/resources/application.yml` 各自把它绑到自己的键上，`docker-new/docker-compose.yml` 给 admin 容器和 agent-service 容器都传这一个值，`docker-new/.env.example` 里也是这一行注释说明取舍。控制台的类型下拉只提供 `sse` 与 `streamablehttp`（`harnax-webui/src/pages/mcp/components/CreateForm.tsx`），表单里判断 `stdio` 的分支留着，是为了某个部署打开开关时不必回来补前端逻辑。
+两个 stdio 开关由同一个环境变量 `HARNAX_MCP_STDIO_ENABLED` 驱动：`harnax-admin/src/main/resources/application.yml` 与 `harnax-agent/harnax-agent-service/src/main/resources/application.yml` 各自把它绑到自己的键上，`harnax-deploy/docker-compose.yml` 给 admin 容器和 agent-service 容器都传这一个值，`harnax-deploy/.env.example` 里也是这一行注释说明取舍。控制台的类型下拉只提供 `sse` 与 `streamablehttp`（`harnax-webui/src/pages/mcp/components/CreateForm.tsx`），表单里判断 `stdio` 的分支留着，是为了某个部署打开开关时不必回来补前端逻辑。
 
-stdio 关掉的理由写在 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/McpStdioPolicy.kt` 里：一条 stdio 记录不是连接而是进程，agent-service 会把它启动起来，而该容器以 root 运行并挂载了宿主 Docker socket（`docker-new/docker-compose.yml`）——能保存这样一行，等于能在那里执行命令。在执行侧被隔离之前 stdio 不支持。存储仍然开放，因为把已有行改成不可编辑会让它们既无法维护也无法停用，比被防住的那种状态更糟；被闸的是所有会真去启动它的路径。已存在的 stdio 行可以继续改名、写描述、停用，只是永不下发，`refusalReason()` 给出的就是这段理由，而不是一个笼统的失败。
+stdio 关掉的理由写在 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/McpStdioPolicy.kt` 里：一条 stdio 记录不是连接而是进程，agent-service 会把它启动起来，而该容器以 root 运行并挂载了宿主 Docker socket（`harnax-deploy/docker-compose.yml`）——能保存这样一行，等于能在那里执行命令。在执行侧被隔离之前 stdio 不支持。存储仍然开放，因为把已有行改成不可编辑会让它们既无法维护也无法停用，比被防住的那种状态更糟；被闸的是所有会真去启动它的路径。已存在的 stdio 行可以继续改名、写描述、停用，只是永不下发，`refusalReason()` 给出的就是这段理由，而不是一个笼统的失败。
 
 ## 8. 明确不做与边界
 
@@ -496,7 +496,7 @@ stdio 关掉的理由写在 `harnax-admin/src/main/kotlin/com/agnetix/harnax/adm
 | 实体 | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/McpServer.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentMcpBinding.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/McpAuthTypes.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/McpOauthClient.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/McpUserCredential.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/McpCallLog.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/EnvVariable.kt` |
 | 线格式 DTO | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/dto/McpDetailDto.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/dto/McpAccessTokenResponse.kt` |
 | Mapper | `harnax-entity/src/main/kotlin/com/agnetix/harnax/mapper/McpServerMapper.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/mapper/AgentMcpBindingMapper.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/mapper/McpOauthClientMapper.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/mapper/McpUserCredentialMapper.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/mapper/McpCallLogMapper.kt`，XML 在 `harnax-entity/src/main/resources/mapper/` 下同名 |
-| 迁移 | `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql`、`harnax-admin/src/main/resources/db/migration/V7__normalize_agent_bindings.sql`、`harnax-admin/src/main/resources/db/migration/V19__add_mcp_binding_unique_key.sql`、`harnax-admin/src/main/resources/db/migration/V20__drop_mcp_binding_enable_skip.sql`、`harnax-admin/src/main/resources/db/migration/V22__mcp_public_default_and_tenant_backfill.sql`、`harnax-admin/src/main/resources/db/migration/V23__add_mcp_server_name_unique_key.sql`、`harnax-admin/src/main/resources/db/migration/V25__add_mcp_oauth_columns.sql`、`harnax-admin/src/main/resources/db/migration/V26__add_mcp_oauth_tables.sql`、`harnax-admin/src/main/resources/db/migration/V45__add_env_key_unique_key.sql`、`harnax-admin/src/main/resources/db/migration/V46__scope_env_key_unique_to_creator.sql` |
+| 迁移 | `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql`（admin 的 schema 基线：本域用到的 `mcp_server`、`agent_mcp_binding`、`mcp_oauth_client`、`mcp_user_credential`、`mcp_call_log`、`env_variable` 六张表，其列、键与缺省都写在这一个脚本里） |
 | 管理 API | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/McpServerController.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/McpOAuthController.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt` |
 | 管理服务 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/McpServerServiceImpl.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/McpOAuthServiceImpl.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/McpOAuthUserServiceImpl.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/McpServerService.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/McpOAuthService.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/McpOAuthUserService.kt` |
 | 策略与身份 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/McpStdioPolicy.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/McpSessionOwnerResolver.kt` |
@@ -507,5 +507,5 @@ stdio 关掉的理由写在 `harnax-admin/src/main/kotlin/com/agnetix/harnax/adm
 | 令牌源 | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/adaptor/McpAccessTokenSourceFactory.kt`、`harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/AdminMcpAccessTokenSourceFactory.kt`、`harnax-agent/harnax-agent-utils/src/main/kotlin/com/agnetix/harnax/agent/adaptor/mcp/McpAccessTokenSource.kt` |
 | 客户端构建 | `harnax-agent/harnax-agent-utils/src/main/kotlin/com/agnetix/harnax/agent/adaptor/mcp/McpHelper.kt`、`harnax-agent/harnax-agent-utils/src/main/kotlin/com/agnetix/harnax/agent/adaptor/mcp/McpConfig.kt`、`harnax-agent/harnax-agent-utils/src/main/kotlin/com/agnetix/harnax/agent/adaptor/mcp/McpErrorCode.kt` |
 | 装配 | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt`、`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentWrapper.kt`、`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/AgentSpec.kt`、`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/config/HarnessConfig.kt`、`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/spring/HarnessAutoConfiguration.kt` |
-| 配置与部署 | `harnax-admin/src/main/resources/application.yml`、`harnax-agent/harnax-agent-service/src/main/resources/application.yml`、`docker-new/docker-compose.yml`、`docker-new/.env.example` |
+| 配置与部署 | `harnax-admin/src/main/resources/application.yml`、`harnax-agent/harnax-agent-service/src/main/resources/application.yml`、`harnax-deploy/docker-compose.yml`、`harnax-deploy/.env.example` |
 | 前端 | `harnax-webui/src/typings.d.ts`、`harnax-webui/src/services/ant-design-pro/mcp.ts`、`harnax-webui/src/pages/mcp/index.tsx`、`harnax-webui/src/pages/mcp/detail.tsx`、`harnax-webui/src/pages/mcp/oauth-callback.tsx`、`harnax-webui/src/pages/mcp/components/CreateForm.tsx`、`harnax-webui/src/pages/mcp/components/UpdateForm.tsx`、`harnax-webui/src/pages/mcp/components/OAuthFields.tsx`、`harnax-webui/src/pages/mcp/components/OAuthPanel.tsx`、`harnax-webui/config/routes.ts`、`harnax-webui/src/app.tsx` |

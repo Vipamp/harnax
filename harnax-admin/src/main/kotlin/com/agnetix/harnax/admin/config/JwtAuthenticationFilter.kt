@@ -133,7 +133,7 @@ class JwtAuthenticationFilter(
         if (internalApiSecret.isBlank()) {
             log.warn(
                 "admin.internal-api.secret is not configured: service-to-service callers cannot authenticate " +
-                    "with a shared secret (see docker-new/.env.example)",
+                    "with a shared secret (see harnax-deploy/.env.example)",
             )
         } else if (!sharedSecretUsable) {
             log.warn(

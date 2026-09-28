@@ -107,7 +107,7 @@
 | `SANDBOX_KEEP_ALIVE` | `true` | 会话空闲后保活容器，下次对话免冷启动。空闲容器由后台定时扫描回收（见下两个变量），不需要「下一次新会话」才顺带触发；重启后被重新接管的容器空闲时钟从接管时刻起算，所以崩溃遗留的容器会在一个空闲预算内自行回收。紧急清理仍可在宿主执行 `docker rm -f $(docker ps -aq --filter name=agentscope-sandbox-)`。单实例上限 `maxSize=100` 是硬编码的 |
 | `SANDBOX_KEEP_ALIVE_MAX_IDLE_MS` | `1800000`（30 分钟） | 保活容器空闲多久后回收。**必须大于最长单轮对话**：时钟只在一轮开始挂载沙箱时刷新，轮中不刷新 |
 | `SANDBOX_KEEP_ALIVE_SWEEP_INTERVAL_MS` | `300000`（5 分钟） | 回收扫描周期，首次扫描同样延迟一个周期。仅 `SANDBOX_ENABLED=true` 时该定时任务才装配 |
-| `SANDBOX_NETWORK` | 空（`bridge`） | 需要容器按域名访问其他服务时填自定义网络名，例如 `docker-new_harnax-network` |
+| `SANDBOX_NETWORK` | 空（`bridge`） | 需要容器按域名访问其他服务时填自定义网络名，例如 `harnax-deploy_harnax-network` |
 | `SANDBOX_CLI_PACKAGE_CACHE_DIR` | `/tmp/harnax-agent/cli-packages` | CLI 包 payload 的解包与缓存目录，按 `packageDigest` 分片，是 `docker build` 的上下文。**容器内路径**，构建上下文由客户端打包成 tar 流给宿主 daemon，所以不必与宿主共享文件系统；容器重建后缓存丢失只会重新从 MinIO 拉一次 |
 | `SANDBOX_PLATFORM_ADMIN_URL` | 空（compose 里 `http://admin:8080`） | 包内 `${platform.adminUrl}` 的解析值，即沙箱内 CLI 回调 admin 的地址。**必须是容器可达的地址**。为空时该锚点解析不出值：受管 CLI 起得来但调不通 admin |
 | `SANDBOX_PLATFORM_INTERNAL_TOKEN` | 回退 `ADMIN_INTERNAL_API_SECRET` | 包内 `${platform.internalToken}` 的解析值。compose 不单独注入，靠的就是与 admin 同值的那个密钥变量；留过占位默认值会同时踩中「admin 拒收占位密钥」那条 401（见部署文档的密钥一致性） |
@@ -160,7 +160,7 @@
 - 出向：本服务拿它作为 Bearer 调 admin 的 `/api/admin/internal/**`。
 - 回程：沙箱里的 `harnax-cli` 拿同一个值访问 admin 的**业务接口**（`/api/admin/**`，不是 internal）。
 
-第十八轮起，admin 侧不再接受**仍是占位默认值**的这串密钥走业务接口（那串字符在仓库里是公开的）。因此留着默认值的部署会看到：会话与内部调用正常，但沙箱内 CLI 的操作一律 401，且 admin 启动时有一条 WARN 点名这件事。修法：在 `docker-new/.env` 里给它一个真值（≥32 字符），重启两侧容器——所有服务读同一个 `.env`，改一次即可。
+第十八轮起，admin 侧不再接受**仍是占位默认值**的这串密钥走业务接口（那串字符在仓库里是公开的）。因此留着默认值的部署会看到：会话与内部调用正常，但沙箱内 CLI 的操作一律 401，且 admin 启动时有一条 WARN 点名这件事。修法：在 `harnax-deploy/.env` 里给它一个真值（≥32 字符），重启两侧容器——所有服务读同一个 `.env`，改一次即可。
 
 > 与之相关但**不要顺手改**的是 `HARNAX_AES_SECRET_KEY`：那是 admin 侧的凭据加密密钥，只影响 admin，本服务没有也不需要它；换掉会让 admin 库里已存的 MCP / 工具凭据全部解不开（详见 `docs/deploy-harnax-admin.md`）。
 
@@ -182,7 +182,7 @@
 - **`--scale` 现在起不来**：compose 里 `container_name: harnax-agent-service` 是固定名，且 `AGENT_INSTANCE_ID` 有默认值，两个副本会撞容器名并共用同一实例 ID。要多实例就复制服务块并各自改名、改 ID，而不是 `--scale`。
 - **实例挂掉时正在跑的会话会断**：SSE 直连 agent-service 时断的是这一条连接；会话与实例的绑定在 router 侧，重连由 router 决定落到哪台。缓存 agent 数上限（`AGENT_CACHE_MAX_SIZE`，默认 500）按实例计，容量规划据此摊。
 - **宿主磁盘会长**，四处：`harnax-snapshots` 桶里的 workspace 快照（回收取决于 MinIO 生命周期规则，代码不管）、`harnax-sandbox:cli-<hash>` 这类按所选 CLI 的 `payloadDigest` 组合哈希产出的镜像（**只在 `checkCommand` 验收失败时被 `docker rmi -f`，成功落地的没有任何回收**，所以每换一次二进制就多一个 tag）、`SANDBOX_CLI_PACKAGE_CACHE_DIR` 下按 `packageDigest` 分片的 payload 缓存、以及 `LOCAL_TMP_DIR` 下的临时工作区。部署说明里应写明定期回收策略，否则表现为宿主的 `docker system df` 一路涨。
-- **构建顺序**：`build.sh` 必须在**仓库根目录**执行；镜像构建依赖 `docker-new/dist/agent-service/*.jar`，那是 Step 3 的产物，跳过 Step 3 会在 Step 8 报「文件不存在」。
+- **构建顺序**：`build.sh` 必须在**仓库根目录**执行；镜像构建依赖 `harnax-deploy/dist/agent-service/*.jar`，那是 Step 3 的产物，跳过 Step 3 会在 Step 8 报「文件不存在」。
 
 ---
 
@@ -212,11 +212,11 @@ java -Xms256m -Xmx1g -jar harnax-agent/harnax-agent-service/target/harnax-agent-
 
 ## 集群部署（docker-compose）
 
-`docker-new/docker-compose.yml` 的 `agent-service` 服务已把上面这些值连好，要点：
+`harnax-deploy/docker-compose.yml` 的 `agent-service` 服务已把上面这些值连好，要点：
 
-- 构建镜像前先跑 `docker-new/build.sh`（Step 3 打 JAR，Step 7 建沙箱镜像，缺 Step 7 会导致会话期沙箱创建失败）。
+- 构建镜像前先跑 `harnax-deploy/build.sh`（Step 3 打 JAR，Step 7 建沙箱镜像，缺 Step 7 会导致会话期沙箱创建失败）。
 - 容器挂载 `/var/run/docker.sock`：这是**宿主 Docker 的控制接口**，能访问它就等于能在宿主上起容器。这也是 stdio MCP 默认关闭的直接原因——沙箱内跑什么由 admin 侧的部署决定，而不是由某个能填表单的人决定。
-- `SANDBOX_NETWORK` 默认指向 compose 自己的网络（`docker-new_harnax-network`），否则沙箱容器按域名访问不到其他服务。
+- `SANDBOX_NETWORK` 默认指向 compose 自己的网络（`harnax-deploy_harnax-network`），否则沙箱容器按域名访问不到其他服务。
 - 多实例时每个实例必须有独立的 `AGENT_INSTANCE_ID`。
 
 ---

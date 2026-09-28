@@ -32,9 +32,9 @@ yarn-error.log*
 .npm
 .eslintcache
 
-# Build outputs (keep docker-new/dist/ for Docker COPY)
+# Build outputs (keep harnax-deploy/dist/ for Docker COPY)
 dist/
-!docker-new/dist/
+!harnax-deploy/dist/
 build/
 
 # Logs
@@ -46,7 +46,7 @@ logs/
 Thumbs.db
 
 # Docker
-docker-new/data/
+harnax-deploy/data/
 Dockerfile.*
 docker-compose*.yml
 .dockerignore

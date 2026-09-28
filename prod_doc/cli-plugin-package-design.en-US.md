@@ -34,11 +34,11 @@ Keeping the two digests apart is the pivot of the whole design: `packageDigest` 
 | `active` | none | registration writes 1; the prune path hard-deletes rather than soft-deleting |
 | `create_time` / `update_time` | none | `NOW()` on the SQL side |
 
-The table has no `tenant_id`, `creator`, `is_public` or `install_script` column. The column set is the stack of two migrations: `env_params`, `status`, `active` and `create_time` / `update_time` were written by the `V8__add_cli_management.sql` table creation, and `V35__cli_package_registration.sql` adds the package columns (`skill_id`, `package_digest`, `payload_digest`, `package_object`, `deps_apt`, `runtime_env`) plus `uk_cli_name` in one statement and drops those four columns in another. The three visibility columns are absent because a published package is a platform asset with no visibility to express, and an install script has no counterpart — the payload plus a declarative `deps.apt` list are what the package carries. The only associations a `cli` row participates in are the `agent_cli_binding` rows naming it and the one skill row reached through `cli.skill_id` — that skill carries the package's instruction sheet and its assets.
+The table has no `tenant_id`, `creator`, `is_public` or `install_script` column. The column set is what the one `CREATE TABLE` for `cli` in the baseline `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` writes in a single statement: the 16 columns the table above lists, and besides the auto-increment primary key the only key on the table is `uk_cli_name (name)` — there is no other index. The three visibility columns are absent because a published package is a platform asset with no visibility to express, and an install script has no counterpart — the payload plus a declarative `deps.apt` list are what the package carries. The only associations a `cli` row participates in are the `agent_cli_binding` rows naming it and the one skill row reached through `cli.skill_id` — that skill carries the package's instruction sheet and its assets.
 
 ### 2.2 `agent_cli_binding`
 
-One row = one agent selected one CLI, carrying `env_bindings` (that agent's snapshot of values typed for this CLI). `V41__add_cli_binding_unique_key.sql` added `uk_agent_cli_binding_agent_id_cli_id (agent_id, cli_id)`, first collapsing duplicate rows to the newest, and dropped `idx_agent_cli_binding_agent_id` (`agent_id` is the leftmost prefix of the new key). Bindings point at a CLI, not at a version, so a package upgrade does not reset them.
+One row = one agent selected one CLI, carrying `env_bindings` (that agent's snapshot of values typed for this CLI). The table's only keys are its auto-increment primary key and `uk_agent_cli_binding_agent_id_cli_id (agent_id, cli_id)`: an `(agent_id, cli_id)` pair exists at most once, and a lookup by `agent_id` rides on that key's leftmost prefix, which is why no separate `agent_id` index is on the table. Bindings point at a CLI, not at a version, so a package upgrade does not reset them.
 
 The save path rewrites the whole set. Delivery maps one row per binding into the spec, so a duplicate would ship the same CLI twice and compute the image material per copy — the unique key stops that in the database.
 
@@ -50,7 +50,7 @@ The prune path deletes the binding rows of a taken-off CLI (`deleteByCliIds`).
 
 ### 2.4 Constraints at the SQL level
 
-`CliMapper.upsertCliPackage` is an `INSERT ... ON DUPLICATE KEY UPDATE` whose update list covers every manifest-owned column plus `active = 1`, and pointedly never mentions `status`. `selectByName` carries no `active` condition (the registrar must recognise a row it wrote and then disabled), and `V42__retire_soft_deleted_pre_package_cli_rows.sql` is what makes the claim "looking a package name up never lands on a soft-deleted row" true rather than nearly true, by suffixing the names of foreign rows with `#retired-<id>`: `V38` covers the rows that are live, `V42` the ones a form has soft-deleted while the unique key still holds their name. Both restrict themselves to `package_digest = ''` and neither touches a row the registrar wrote.
+`CliMapper.upsertCliPackage` is an `INSERT ... ON DUPLICATE KEY UPDATE` whose update list covers every manifest-owned column plus `active = 1`, and pointedly never mentions `status`. `selectByName` carries no `active` condition (the registrar must recognise a row it wrote and then disabled), and "a package name lookup never lands on a soft-deleted row" is now held by the schema and the write paths together, with no out-of-band device: `uk_cli_name` caps a package name at one row, so that `LIMIT 1` does not pick a winner among several; a `cli` row has exactly two write paths, the registration upsert, which always writes `active = 1`, and the switch's `updateStatus`, which writes only `status`, and neither has a branch that soft-deletes; take-off goes through `deleteByIds`, a hard delete, because an `active = 0` row would keep holding the name under `uk_cli_name` and leave a re-added package nowhere to write.
 
 `selectByNameForUpdate` is the identical WHERE clause of `selectByName` plus `FOR UPDATE`. The registrar reads `status` through it inside the transaction, so the switch's `updateStatus` has to wait for that transaction to commit and the two rows (`cli` and its `skill`) cannot disagree.
 
@@ -330,7 +330,7 @@ The three bindable asset kinds (tool / MCP / CLI) share one declaration shape, `
 - **`archive-retention-days` reads the object's last-modified time.** Overwriting an object by hand refreshes that stamp, so it then reads as "how long since these bytes were written" rather than "how long since anyone wanted them".
 - **A row with an empty `package_object` is excluded from the archive whitelist** — `selectPackageObjects()` filters on `<> ''` — so such a row can never be deleted by the reclaim step.
 - **The bucket name must match on both sides.** admin's `minio.cli-package-bucket` and the agent's `harness.minio.cli-package-bucket` are fed by the same `MINIO_CLI_PACKAGE_BUCKET`; setting them apart shows up as the runtime reporting "the object does not exist" rather than "the bucket does not exist".
-- **The bind mount hides the baked-in copy.** Under docker-compose, `/home/harnax/cli-packages` is a read-only mount of the host's `docker-new/dist/cli-packages`, so the host shelf — not the image's COPY — is what admin reads. The directory must be kept non-empty on purpose: an absent path is what Docker creates as empty, and admin then reads every CLI on the shelf as taken off and prunes it.
+- **The bind mount hides the baked-in copy.** Under docker-compose, `/home/harnax/cli-packages` is a read-only mount of the host's `harnax-deploy/dist/cli-packages`, so the host shelf — not the image's COPY — is what admin reads. The directory must be kept non-empty on purpose: an absent path is what Docker creates as empty, and admin then reads every CLI on the shelf as taken off and prunes it.
 
 ## 10. Operations manual
 
@@ -354,7 +354,7 @@ The three bindable asset kinds (tool / MCP / CLI) share one declaration shape, `
 
 ### 10.2 How packages get into a deployment
 
-`docker-new/build.sh`, `deploy-all.sh` and `deploy-service.sh` all run the same sequence: `./cli-packages/build.sh` → `cp cli-packages/dist/*.harnaxcli.zip docker-new/dist/cli-packages/` → `Dockerfile.admin`'s `COPY docker-new/dist/cli-packages/ /home/harnax/cli-packages/`. The build scripts refuse to ship at all when `cli-packages/build.sh` fails, rather than emitting a partial shelf.
+`harnax-deploy/build.sh`, `deploy-all.sh` and `deploy-service.sh` all run the same sequence: `./cli-packages/build.sh` → `cp cli-packages/dist/*.harnaxcli.zip harnax-deploy/dist/cli-packages/` → `Dockerfile.admin`'s `COPY harnax-deploy/dist/cli-packages/ /home/harnax/cli-packages/`. The build scripts refuse to ship at all when `cli-packages/build.sh` fails, rather than emitting a partial shelf.
 
 `cli-packages/build.sh` holds three rules of its own: it never clears the shelf (clearing it would take every hand-delivered package with it, and a missing package is not "nothing happened" to admin — it is "this CLI was taken off", and the row is pruned); exactly one `harnax-cli` artifact must exist (two same-named packages land on the shelf and the newest wins by manifest version, which is not the same question as which one this build just produced); and a shelf with no package at all exits with an ERROR, because that would start admin with no CLI registered. With several packages declaring one name, the highest manifest version is kept and the rest move into `dist/.superseded/`; several at the same name and version is an outright ERROR. That matches admin's arbitration, applied earlier so the ambiguity never reaches the shelf.
 
@@ -363,7 +363,7 @@ The three bindable asset kinds (tool / MCP / CLI) share one declaration shape, `
 ### 10.3 Adding a package
 
 1. The author produces `<name>-<version>.harnaxcli.zip` per the specification.
-2. It goes onto the shelf (under compose, the host's `docker-new/dist/cli-packages/`).
+2. It goes onto the shelf (under compose, the host's `harnax-deploy/dist/cli-packages/`).
 3. Restart admin.
 4. Read startup: `Sync complete: N registered, M failed`. With `M > 0`, find the `Failed to register package` line above it — that ERROR carries the complete refusal list, all reasons at once.
 5. Confirm on the page (`GET /api/admin/clis/page`) that the row exists and the digest is the expected one.
@@ -422,12 +422,7 @@ The runtime-side trees and images go in later rounds of `CliArtifactReaper`. To 
 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/CliResponse.kt` | the list/detail field split and secret masking |
 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt` | `imageFields`, `mergeCliEnvBindings`, `cliDetails`, `GET /cli/inventory` |
 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/SecretFieldEncryptor.kt` | `serializeToolEnvParams` / `decryptToolEnvParamsToMap` |
-| `harnax-admin/src/main/resources/db/migration/V8__add_cli_management.sql` | the initial `cli` DDL |
-| `harnax-admin/src/main/resources/db/migration/V35__cli_package_registration.sql` | where the `cli` package columns and `uk_cli_name` are defined |
-| `harnax-admin/src/main/resources/db/migration/V37__retire_seeded_builtin_cli_skill.sql` | disposition of the hand-seeded skill row |
-| `harnax-admin/src/main/resources/db/migration/V38__retire_pre_package_cli_rows.sql` | disabling and renaming rows no package owns |
-| `harnax-admin/src/main/resources/db/migration/V41__add_cli_binding_unique_key.sql` | `uk_agent_cli_binding_agent_id_cli_id` |
-| `harnax-admin/src/main/resources/db/migration/V42__retire_soft_deleted_pre_package_cli_rows.sql` | releasing the names of already-soft-deleted foreign rows |
+| `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` | admin's schema baseline: the whole `cli` column set and `uk_cli_name`, `agent_cli_binding`'s `uk_agent_cli_binding_agent_id_cli_id`, and the `skill` / `skill_repository` table definitions all live in this one file; of the initial-data rows the only one belonging to this domain is the `builtin-cli-skills` repository row, and no skill row is seeded |
 | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/sandbox/CliPackageStore.kt` | digest-verified download, atomic publish, idle eviction |
 | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/sandbox/CliImageBuilder.kt` | revalidation, Dockerfile generation, tagging, build and acceptance, image eviction |
 | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/sandbox/DockerCommandExecutor.kt` | `docker` invocation and its timeouts |
@@ -442,9 +437,9 @@ The runtime-side trees and images go in later rounds of `CliArtifactReaper`. To 
 | `harnax-webui/src/pages/cli/components/CliDetailDrawer.tsx` | digests, apt and `runtimeEnv` spread out |
 | `harnax-webui/src/pages/agent/components/CliConfigPanel.tsx` | parameter entry on the agent |
 | `harnax-webui/src/services/ant-design-pro/cli.ts` | the five routes wrapped for the front end |
-| `docker-new/Dockerfile.admin` | where the shelf is copied into the image |
-| `docker-new/docker-compose.yml` | the read-only mount of `/home/harnax/cli-packages` |
-| `docker-new/build.sh` | shelf assembly at build time |
+| `harnax-deploy/Dockerfile.admin` | where the shelf is copied into the image |
+| `harnax-deploy/docker-compose.yml` | the read-only mount of `/home/harnax/cli-packages` |
+| `harnax-deploy/build.sh` | shelf assembly at build time |
 | `cli-packages/build.sh` | shelf rules: never clear it, one package per name, an empty shelf fails the build |
 | `harnax-cli/Makefile` | the `package` target: the reference self-pack |
 | `harnax-admin/src/test/kotlin/com/agnetix/harnax/admin/registrar/CliPackageAutoRegistrarTest.kt` | convergence, same-name arbitration, the prune brakes, archive reclamation |

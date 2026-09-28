@@ -410,7 +410,7 @@ jwt:
 首次部署前在每个节点预拉取沙箱镜像，避免首次请求时等待下载：
 
 ```bash
-bash sandbox-plugins/build.sh    # 产出 harnax-sandbox:py-node；等价于 docker-new/build.sh 的 Step 7
+bash sandbox-plugins/build.sh    # 产出 harnax-sandbox:py-node；等价于 harnax-deploy/build.sh 的 Step 7
 ```
 
 按 CLI 包组合派生的 `harnax-sandbox:cli-<hash>` **无法预拉取**：它由本服务在首个用到那组 CLI 的会话前现场构建（`checkCommand` 验收不过就 `docker rmi -f` 并抛错），每个节点第一次遇到某个组合时会慢这一截。

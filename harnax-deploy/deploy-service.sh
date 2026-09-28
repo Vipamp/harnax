@@ -2,15 +2,15 @@
 # Harnax 单服务部署脚本
 # 用法: ./deploy-service.sh <service-name>
 # 支持的服务: admin, router, agent-service, channel-service, scheduler, frontend
-# scheduler 一项走的是逐台滚动（docker-new/roll-scheduler.sh），它会读 SCHEDULER_REPLICAS（目标实例数，
+# scheduler 一项走的是逐台滚动（harnax-deploy/roll-scheduler.sh），它会读 SCHEDULER_REPLICAS（目标实例数，
 # 默认 2）与 MYSQL_ROOT_PASSWORD（只用于滚动结束后回读 harnax_scheduler.QRTZ_SCHEDULER_STATE 做确认）；
-# 两者放在 docker-new/.env 里即可，本脚本会 source 它并导出给滚动脚本。
+# 两者放在 harnax-deploy/.env 里即可，本脚本会 source 它并导出给滚动脚本。
 
 set -e
 
 SERVICE=$1
 
-# 定位项目根目录（脚本在 docker-new/ 下，项目根是上一级）
+# 定位项目根目录（脚本在 harnax-deploy/ 下，项目根是上一级）
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -60,26 +60,26 @@ case $SERVICE in
         mvn clean package -Dmaven.test.skip=true -pl harnax-admin -am -q
 
         echo "📋 步骤 2/4: 复制 jar 包与 CLI 插件包..."
-        mkdir -p docker-new/dist/harnax-admin
-        cp harnax-admin/target/harnax-admin-*-exec.jar docker-new/dist/harnax-admin/
+        mkdir -p harnax-deploy/dist/harnax-admin
+        cp harnax-admin/target/harnax-admin-*-exec.jar harnax-deploy/dist/harnax-admin/
 
         # Dockerfile.admin COPY 这个目录，缺它 docker build 直接失败，所以先保证目录存在
-        mkdir -p docker-new/dist/cli-packages/
-        rm -f docker-new/dist/cli-packages/*.harnaxcli.zip
+        mkdir -p harnax-deploy/dist/cli-packages/
+        rm -f harnax-deploy/dist/cli-packages/*.harnaxcli.zip
         # 货架是投递口：cli-packages/build.sh 不清架，只把有源码的包补上架；同名两份留 manifest 版本高的，
         # 落选的移进 dist/.superseded——手工直接丢进来的 zip 同样照此上架。它只在整架为空或同名同版本时失败。
         # 少一个包会被 admin 读成「这个 CLI 下架了」并 prune 它的行，所以 set -e 下构建失败就直接停，
         # 不给它上线半个货架的机会。
         ./cli-packages/build.sh
-        cp cli-packages/dist/*.harnaxcli.zip docker-new/dist/cli-packages/
-        echo "  ✓ cli-packages: $(ls docker-new/dist/cli-packages | tr '\n' ' ')"
+        cp cli-packages/dist/*.harnaxcli.zip harnax-deploy/dist/cli-packages/
+        echo "  ✓ cli-packages: $(ls harnax-deploy/dist/cli-packages | tr '\n' ' ')"
 
         echo "🐳 步骤 3/4: 构建 Docker 镜像..."
         docker rmi -f harnax-admin:latest 2>/dev/null || true
-        docker build --no-cache -f docker-new/Dockerfile.admin -t harnax-admin:latest . -q
+        docker build --no-cache -f harnax-deploy/Dockerfile.admin -t harnax-admin:latest . -q
 
         echo "🚀 步骤 4/4: 重启服务..."
-        docker-compose -f docker-new/docker-compose.yml up -d --force-recreate --no-deps admin
+        docker-compose -f harnax-deploy/docker-compose.yml up -d --force-recreate --no-deps admin
         ;;
 
     router)
@@ -87,15 +87,15 @@ case $SERVICE in
         mvn clean package -Dmaven.test.skip=true -pl harnax-session-router -am -q
 
         echo "📋 步骤 2/4: 复制 jar 包..."
-        mkdir -p docker-new/dist/router
-        cp harnax-session-router/target/harnax-session-router-*.jar docker-new/dist/router/
+        mkdir -p harnax-deploy/dist/router
+        cp harnax-session-router/target/harnax-session-router-*.jar harnax-deploy/dist/router/
 
         echo "🐳 步骤 3/4: 构建 Docker 镜像..."
         docker rmi -f harnax-router:latest 2>/dev/null || true
-        docker build --no-cache -f docker-new/Dockerfile.router -t harnax-router:latest . -q
+        docker build --no-cache -f harnax-deploy/Dockerfile.router -t harnax-router:latest . -q
 
         echo "🚀 步骤 4/4: 重启服务..."
-        docker-compose -f docker-new/docker-compose.yml up -d --force-recreate --no-deps router
+        docker-compose -f harnax-deploy/docker-compose.yml up -d --force-recreate --no-deps router
         ;;
 
     agent-service)
@@ -103,15 +103,15 @@ case $SERVICE in
         mvn clean package -Dmaven.test.skip=true -pl harnax-agent/harnax-agent-service -am -q
 
         echo "📋 步骤 2/4: 复制 jar 包..."
-        mkdir -p docker-new/dist/agent-service
-        cp harnax-agent/harnax-agent-service/target/harnax-agent-service-*.jar docker-new/dist/agent-service/
+        mkdir -p harnax-deploy/dist/agent-service
+        cp harnax-agent/harnax-agent-service/target/harnax-agent-service-*.jar harnax-deploy/dist/agent-service/
 
         echo "🐳 步骤 3/4: 构建 Docker 镜像..."
         docker rmi -f harnax-agent-service:latest 2>/dev/null || true
-        docker build --no-cache -f docker-new/Dockerfile.agent-service -t harnax-agent-service:latest . -q
+        docker build --no-cache -f harnax-deploy/Dockerfile.agent-service -t harnax-agent-service:latest . -q
 
         echo "🚀 步骤 4/4: 重启服务..."
-        docker-compose -f docker-new/docker-compose.yml up -d --force-recreate --no-deps agent-service
+        docker-compose -f harnax-deploy/docker-compose.yml up -d --force-recreate --no-deps agent-service
         ;;
 
     channel-service)
@@ -119,15 +119,15 @@ case $SERVICE in
         mvn clean package -Dmaven.test.skip=true -pl harnax-channel/harnax-channel-service -am -q
 
         echo "📋 步骤 2/4: 复制 jar 包..."
-        mkdir -p docker-new/dist/channel-service
-        cp harnax-channel/harnax-channel-service/target/harnax-channel-service-*-exec.jar docker-new/dist/channel-service/
+        mkdir -p harnax-deploy/dist/channel-service
+        cp harnax-channel/harnax-channel-service/target/harnax-channel-service-*-exec.jar harnax-deploy/dist/channel-service/
 
         echo "🐳 步骤 3/4: 构建 Docker 镜像..."
         docker rmi -f harnax-channel-service:latest 2>/dev/null || true
-        docker build --no-cache -f docker-new/Dockerfile.channel-service -t harnax-channel-service:latest . -q
+        docker build --no-cache -f harnax-deploy/Dockerfile.channel-service -t harnax-channel-service:latest . -q
 
         echo "🚀 步骤 4/4: 重启服务..."
-        docker-compose -f docker-new/docker-compose.yml up -d --force-recreate --no-deps channel-service
+        docker-compose -f harnax-deploy/docker-compose.yml up -d --force-recreate --no-deps channel-service
         ;;
 
     scheduler)
@@ -135,15 +135,15 @@ case $SERVICE in
         mvn clean package -Dmaven.test.skip=true -pl harnax-scheduler -am -q
 
         echo "📋 步骤 2/4: 复制 jar 包..."
-        mkdir -p docker-new/dist/harnax-scheduler
-        cp harnax-scheduler/target/harnax-scheduler-*.jar docker-new/dist/harnax-scheduler/
+        mkdir -p harnax-deploy/dist/harnax-scheduler
+        cp harnax-scheduler/target/harnax-scheduler-*.jar harnax-deploy/dist/harnax-scheduler/
 
         echo "🐳 步骤 3/4: 构建 Docker 镜像..."
         docker rmi -f harnax-scheduler:latest 2>/dev/null || true
-        docker build --no-cache -f docker-new/Dockerfile.scheduler -t harnax-scheduler:latest . -q
+        docker build --no-cache -f harnax-deploy/Dockerfile.scheduler -t harnax-scheduler:latest . -q
 
         echo "🚀 步骤 4/4: 逐台滚动 scheduler（保持至少 1 个实例在跑）..."
-        bash docker-new/roll-scheduler.sh
+        bash harnax-deploy/roll-scheduler.sh
         ;;
 
     frontend)
@@ -155,14 +155,14 @@ case $SERVICE in
 
         echo "📋 步骤 2/3: 复制构建产物..."
         # 产物文件名带 hash，覆盖式复制会把上一版的 chunk 一起留在镜像里
-        rm -rf docker-new/dist/frontend
-        mkdir -p docker-new/dist/frontend
-        cp -r harnax-webui/dist/* docker-new/dist/frontend/
+        rm -rf harnax-deploy/dist/frontend
+        mkdir -p harnax-deploy/dist/frontend
+        cp -r harnax-webui/dist/* harnax-deploy/dist/frontend/
 
         echo "🐳 步骤 3/3: 构建并重启服务..."
         docker rmi -f harnax-frontend:latest 2>/dev/null || true
-        docker build --no-cache -f docker-new/Dockerfile.frontend -t harnax-frontend:latest . -q
-        docker-compose -f docker-new/docker-compose.yml up -d --force-recreate --no-deps frontend
+        docker build --no-cache -f harnax-deploy/Dockerfile.frontend -t harnax-frontend:latest . -q
+        docker-compose -f harnax-deploy/docker-compose.yml up -d --force-recreate --no-deps frontend
         ;;
 
     *)
@@ -185,4 +185,4 @@ echo ""
 echo "📊 服务状态:"
 # 按服务过滤而不是 grep 容器名：scheduler 现在没有固定容器名，且同一服务可能有多台在跑，
 # grep "harnax-$SERVICE" 匹配不到就会让脚本在部署成功后以非 0 退出。
-docker-compose -f docker-new/docker-compose.yml ps "$SERVICE"
+docker-compose -f harnax-deploy/docker-compose.yml ps "$SERVICE"

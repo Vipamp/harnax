@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component
  * Whether stdio MCP servers may be stored and delivered.
  *
  * A stdio entry is not a connection, it is a process: agent-service starts it, and that container
- * runs as root with the host Docker socket mounted (`docker-new/docker-compose.yml`), so being able
+ * runs as root with the host Docker socket mounted (`harnax-deploy/docker-compose.yml`), so being able
  * to save such a row is being able to run commands there. Until the execution side is isolated,
  * stdio is off: creation and the switch into it are refused, rows that already exist are not
  * delivered, and admin's own "list tools" / connectivity probe refuses them too — that probe spawns

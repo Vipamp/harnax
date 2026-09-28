@@ -2,7 +2,7 @@
 
 > 项目性质：个人独立项目，架构设计、接口契约、全部实现与部署环境均为本人独立完成，非职务作品。本文按当前代码库实际能力整理，是 `prod_doc` 各域文档的门面：这里只给「能力由谁提供、走哪条链路」，细节留在各域文档。
 >
-> 规模口径：11 个顶层 Maven 模块，再加 14 个子模块——`harnax-agent` 4 个、`harnax-channel` 6 个、`harnax-client` 3 个、`harnax-tools-external` 1 个；后端主代码全量 Kotlin、无 Java 源码。库表由 Flyway 版本化脚本承载，管理侧当前最高 `V50`；交付形态为 `docker-new/docker-compose.yml` 一键起全链路。
+> 规模口径：11 个顶层 Maven 模块，再加 14 个子模块——`harnax-agent` 4 个、`harnax-channel` 6 个、`harnax-client` 3 个、`harnax-tools-external` 1 个；后端主代码全量 Kotlin、无 Java 源码。库表由 Flyway 脚本承载，每个服务对自己的数据源各持一份 schema 基线；交付形态为 `harnax-deploy/docker-compose.yml` 一键起全链路。
 
 ## 1. 一句话定位
 
@@ -55,12 +55,12 @@ Harnax 把 AI Agent 从「一次调用」做成「可长期运行的系统」：
 
 | 目录 | 说明 |
 |------|------|
-| `docker-new` | 部署唯一入口：各服务 Dockerfile、`docker-new/docker-compose.yml`、`docker-new/sql/init-databases.sql`、`docker-new/nginx.conf`、`docker-new/build.sh`、`docker-new/deploy-all.sh`、`docker-new/deploy-service.sh`、`docker-new/roll-scheduler.sh`（scheduler 副本逐台滚动，`deploy-service.sh` 的 scheduler 分支调它）、`docker-new/Dockerfile.router-native`（`build.sh` 构建 router 的 native 镜像）、`docker-new/mcp-server/`（compose 里 `mcp-server` 服务的构建上下文） |
+| `harnax-deploy` | 部署唯一入口：各服务 Dockerfile、`harnax-deploy/docker-compose.yml`、`harnax-deploy/sql/init-databases.sql`、`harnax-deploy/nginx.conf`、`harnax-deploy/build.sh`、`harnax-deploy/deploy-all.sh`、`harnax-deploy/deploy-service.sh`、`harnax-deploy/roll-scheduler.sh`（scheduler 副本逐台滚动，`deploy-service.sh` 的 scheduler 分支调它）、`harnax-deploy/Dockerfile.router-native`（`build.sh` 构建 router 的 native 镜像）、`harnax-deploy/mcp-server/`（compose 里 `mcp-server` 服务的构建上下文） |
 | `cli-packages` | CLI 插件包货架，按包存放可分发产物，随包提供 `cli-packages/build.sh` |
 | `sandbox-plugins` | 沙箱侧扩展，含 `sandbox-plugins/Dockerfile.custom-sandbox` 与 `sandbox-plugins/build.sh` |
 | `harnax-cli` | Go 语言 CLI，在沙箱内被 Agent 调用 |
 
-`docker-new/docker-compose.yml` 当前编排 10 个服务：`mysql`、`redis`、`minio`、`admin`、`router`、`scheduler`、`agent-service`、`channel-service`、`mcp-server`、`frontend`，全部挂在自建 bridge 网络上。
+`harnax-deploy/docker-compose.yml` 当前编排 10 个服务：`mysql`、`redis`、`minio`、`admin`、`router`、`scheduler`、`agent-service`、`channel-service`、`mcp-server`、`frontend`，全部挂在自建 bridge 网络上。
 
 ## 3. 核心能力
 
@@ -106,7 +106,7 @@ MCP 服务登记在 `harnax-admin`，运行期由 `harnax-agent/harnax-agent-uti
 
 ### 3.7 定时任务
 
-`harnax-scheduler` 是独立可部署服务，触发权交给 Quartz JDBC 集群 JobStore，同一任务在多副本下只触发一次。它使用独立数据库 `harnax_scheduler`（`docker-new/sql/init-databases.sql` 建库并授权），该库内既有 11 张 `QRTZ_*` 集群表，也有 Agent 任务域三张表：任务定义 `harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/entity/AgentTask.kt`、执行账本 `harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/entity/AgentTaskExecution.kt`、执行日志 `harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/entity/AgentTaskLog.kt`。管理侧不重复持有任务数据，`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/SchedulerClient.kt`（实现 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/SchedulerClientImpl.kt`）在两个服务之间同步任务，管理台入口是 `harnax-webui/src/pages/agent-task`。
+`harnax-scheduler` 是独立可部署服务，触发权交给 Quartz JDBC 集群 JobStore，同一任务在多副本下只触发一次。它使用独立数据库 `harnax_scheduler`（`harnax-deploy/sql/init-databases.sql` 建库并授权），该库内既有 11 张 `QRTZ_*` 集群表，也有 Agent 任务域三张表：任务定义 `harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/entity/AgentTask.kt`、执行账本 `harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/entity/AgentTaskExecution.kt`、执行日志 `harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/entity/AgentTaskLog.kt`。管理侧不重复持有任务数据，`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/SchedulerClient.kt`（实现 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/SchedulerClientImpl.kt`）在两个服务之间同步任务，管理台入口是 `harnax-webui/src/pages/agent-task`。
 
 任务与 Quartz 的对应关系由 `harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/job/TaskQuartzRegistrar.kt` 建立，`harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/service/TaskScheduleReconciler.kt` 与 `harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/job/SchedulerReconcileJob.kt` 做差异式对账：库里与 JobStore 里的任务集各自补齐与摘除，而不是删除重建。执行入口分两种——`harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/job/AgentTaskJob.kt` 允许并跑，`harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/job/AgentTaskNonConcurrentJob.kt` 用 Quartz 的非并发注解禁止同一任务重叠；两者共用 `harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/job/AbstractAgentTaskJob.kt`，其中包含一条约束：共享 JobStore 会把某个节点从未注册过的 job 的触发交给它，此时该节点直接放弃。
 
@@ -132,7 +132,7 @@ MCP 服务登记在 `harnax-admin`，运行期由 `harnax-agent/harnax-agent-uti
 
 「本次请求在哪个租户内行事」由 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/TenantResolver.kt` 一处回答，全部管理侧服务共用同一条链，首个给出答案的步骤胜出：请求上下文里已校验过归属的租户、调用方令牌自带的租户声明、调用方账号行上的租户、默认租户。`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/interceptor/TenantInterceptor.kt` 只在 `X-Tenant-ID` 请求头到达时填充 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/context/TenantContext.kt`，且先校验调用方确属该租户；后两步只会说出调用方自己所在的租户，因此这条链可以比单看请求头更准确，但不会把调用方放进它不属于的工作区。
 
-隔离写在哪条语句上是有讲究的：本项目没有 MyBatis 层的自动租户拦截器，隔离只存在于显式写了租户条件的 SQL 语句里。核心配置对象带租户列——`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Team.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Agent.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/ModelProvider.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/McpServer.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Skill.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Cli.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/ApiKeyEntity.kt`；三张绑定表不带租户列，租户谓词挂在它们所查询的 `agent` 行上（见 `harnax-entity/src/main/kotlin/com/agnetix/harnax/mapper/AgentMapper.kt` 的 `selectByEnvVarRef`，`tenantId` 是无默认值的硬参数）。统计与日志的租户口径由 `harnax-admin/src/main/resources/db/migration/V50__scope_stats_and_logs_to_a_tenant.sql` 统一到同一套口径上。
+隔离写在哪条语句上是有讲究的：本项目没有 MyBatis 层的自动租户拦截器，隔离只存在于显式写了租户条件的 SQL 语句里。核心配置对象带租户列——`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Team.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Agent.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/ModelProvider.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/McpServer.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Skill.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Cli.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/ApiKeyEntity.kt`；三张绑定表不带租户列，租户谓词挂在它们所查询的 `agent` 行上（见 `harnax-entity/src/main/kotlin/com/agnetix/harnax/mapper/AgentMapper.kt` 的 `selectByEnvVarRef`，`tenantId` 是无默认值的硬参数）。统计与日志的租户口径就写在表上：admin 的 schema 基线 `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` 给 `token_stats`、`process_log`、`tool_call_log` 三张表各声明一个可空的 `tenant_id` 列与一个 `idx_tenant_ts (tenant_id, ts)` 组合索引——租户做前导列，是因为按租户的读取总是「租户等值 + 时间范围」一个形状。NULL 在这里是真实状态而不是租户 1 的别名：一次没解析出租户的运行写 NULL，此后任何按租户的读取都不命中它。
 
 ### 3.11 Token 用量与调用日志
 
@@ -152,12 +152,12 @@ MCP 服务登记在 `harnax-admin`，运行期由 `harnax-agent/harnax-agent-uti
 
 ## 4. 工程质量与可观测
 
-- 库表由 Flyway 版本化脚本管理，各服务按自己的数据源独立编号：管理侧脚本在 `harnax-admin/src/main/resources/db/migration/`，当前最高 `V50`；调度侧脚本在 `harnax-scheduler/src/main/resources/db/migration/`，其中 `V1__quartz_tables.sql` 建 11 张 `QRTZ_*` 集群表、`V2__agent_task_domain.sql` 建任务域三张表；`harnax_scheduler` 库本身由 `docker-new/sql/init-databases.sql` 建库并授权。
+- 库表由 Flyway 脚本管理，每个服务对自己的数据源各持一份 schema 基线，目录下没有需要往上叠加的后续版本：管理侧的 `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` 一次写完 admin 库全部 34 张表与初数据；调度侧的 `harnax-scheduler/src/main/resources/db/migration/V1__init_schema.sql` 一次写完 11 张 `QRTZ_*` 集群表加任务域的 `agent_task`、`agent_task_log`、`agent_task_execution` 三张表，并记在该服务自己的历史表 `flyway_schema_history_scheduler` 里；会话路由侧另有 `harnax-session-router/src/main/resources/db/migration/V1__create_session_router_tables.sql`；`harnax_scheduler` 库本身由 `harnax-deploy/sql/init-databases.sql` 建库并授权。改表的口径是把变更折进对应基线并重建环境，只有线上库不允许重建时才另写一份前滚的 `V2__*.sql` ALTER。
 - 持久层测试以 Testcontainers 拉起真实 MySQL 而非 mock，集中在 `harnax-entity/src/test/kotlin/com/agnetix/harnax/mapper/`，覆盖 Agent、Team、Model、ModelProvider、McpServer、McpOauthClient、McpUserCredential、Skill、SkillRepository、Channel、Cli、Session、Token、PlanNote、ProcessLog、McpCallLog、SysUser、Tenant 等实体的真实读写。
 - 服务侧集成用例以 `IT` 或 `IntegrationTest` 结尾，各自使用独立的 `*_it` 数据库，例如 `harnax-scheduler/src/test/kotlin/com/agnetix/harnax/scheduler/it/BaseSchedulerIT.kt`；`harnax-channel/harnax-channel-service/src/test/kotlin/com/agnetix/harnax/channel/service/it/ChannelServiceContextIT.kt` 拉起渠道服务的完整上下文。
 - 会话路由的 Redis 侧行为有专门集成用例，集中在 `harnax-session-router/src/test/kotlin/com/agnetix/harnax/router/integration/`，覆盖实例注册、会话映射与熔断。
 - 端到端用例在 `harnax-ui-test`，以 Playwright 驱动管理台真实页面。
-- 部署与端到端验证以 `docker-new` 为唯一入口：`docker-new/build.sh` 产出各镜像，`docker-new/docker-compose.yml` 编排全链路，`docker-new/deploy-all.sh` 与 `docker-new/deploy-service.sh` 分别完成整体与单服务发布；`docker-new/nginx.conf` 负责前端与 API 反代，并对 SSE 路由关闭 `proxy_buffering` 与 `proxy_request_buffering`、下发 `X-Accel-Buffering: no`。
+- 部署与端到端验证以 `harnax-deploy` 为唯一入口：`harnax-deploy/build.sh` 产出各镜像，`harnax-deploy/docker-compose.yml` 编排全链路，`harnax-deploy/deploy-all.sh` 与 `harnax-deploy/deploy-service.sh` 分别完成整体与单服务发布；`harnax-deploy/nginx.conf` 负责前端与 API 反代，并对 SSE 路由关闭 `proxy_buffering` 与 `proxy_request_buffering`、下发 `X-Accel-Buffering: no`。
 - 运行期观测以三类日志（过程、工具调用、MCP 调用）加 Token 统计为主，网关侧另有跨请求的调用日志；Router 的健康探测、熔断与渠道的监听权状态可查询。
 - 代码格式由 Spotless 统一约束，配置在根 `pom.xml`。
 

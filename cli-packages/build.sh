@@ -2,7 +2,7 @@
 # Builds every CLI plugin package into one shelf: cli-packages/dist/.
 #
 # The shelf is a drop box as much as a build output. Anything you put there by hand
-# (`cli-packages/dist/mycli-1.2.0.harnaxcli.zip`) ships: the docker-new scripts copy the whole shelf
+# (`cli-packages/dist/mycli-1.2.0.harnaxcli.zip`) ships: the harnax-deploy scripts copy the whole shelf
 # into the admin image and a bind-mounted admin registers it at startup. What this script adds is the
 # packages that have a source in this repository — `harnax-cli`, which packs itself with its own
 # Makefile, plus every third-party CLI that has a directory here (`plugin.yaml`, `skill/`, and a

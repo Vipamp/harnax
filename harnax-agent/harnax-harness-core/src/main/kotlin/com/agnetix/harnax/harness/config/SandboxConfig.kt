@@ -14,7 +14,7 @@ import io.agentscope.harness.agent.IsolationScope
  *   the container is stopped and removed after each call
  * @param network Docker network mode or name passed to `docker run --network`;
  *   when null, Docker uses the default bridge network; set to "host" to share host network,
- *   or a custom network name (e.g. "docker-new_harnax-network") for inter-container communication
+ *   or a custom network name (e.g. "harnax-deploy_harnax-network") for inter-container communication
  * @param cliPackageCacheDir directory CLI payloads are downloaded and unpacked into, keyed by package
  *   digest. It has to survive across sessions only to spare a re-download; a fresh container refetches.
  * @param platformAdminUrl the `platform.adminUrl` slot a package may bind: the admin URL as the sandbox

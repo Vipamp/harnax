@@ -9,8 +9,8 @@ ENV TZ=Asia/Shanghai
 
 WORKDIR /app
 
-# Copy native executable from docker-new/dist/router/
-COPY docker-new/dist/router/harnax-session-router /app/harnax-session-router
+# Copy native executable from harnax-deploy/dist/router/
+COPY harnax-deploy/dist/router/harnax-session-router /app/harnax-session-router
 
 # Make executable
 RUN chmod +x /app/harnax-session-router

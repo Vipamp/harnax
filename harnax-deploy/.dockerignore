@@ -1,0 +1,8 @@
+# Exclude everything, then include only what's needed for Docker builds
+*
+!harnax-deploy/Dockerfile.*
+!harnax-deploy/nginx.conf
+!harnax-deploy/dist/
+!harnax-deploy/dist/**
+!harnax-deploy/sql/
+!harnax-deploy/sql/**

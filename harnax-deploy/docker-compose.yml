@@ -13,7 +13,7 @@
 #   Start services:     docker-compose up -d --scale scheduler="${SCHEDULER_REPLICAS:-2}"
 #                       (a plain `up` is not cluster-safe: it asks for ONE scheduler replica and compose
 #                        scales the service back down — see the scheduler service block below)
-#   Roll new images onto a running scheduler cluster: bash docker-new/deploy-service.sh scheduler
+#   Roll new images onto a running scheduler cluster: bash harnax-deploy/deploy-service.sh scheduler
 #   View logs:          docker-compose logs -f
 #   Stop services:      docker-compose down
 
@@ -241,7 +241,7 @@ services:
       # Auth
       # These `change-me` fallbacks are not harmless here: CACHE_TYPE above is `redis`, and
       # PlaceholderSecretCheck aborts startup instead of accepting tokens signed with a key that is
-      # published in the repository. Put real values in docker-new/.env (see .env.example).
+      # published in the repository. Put real values in harnax-deploy/.env (see .env.example).
       SERVICE_ID: ${ROUTER_SERVICE_ID:-router-0}
       HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:-change-me-in-production-min-32-chars!!}
       # Admin service (for API key validation + session info)
@@ -311,7 +311,7 @@ services:
   #
   # This service deliberately has no `container_name`: a pinned name is unique, so Docker refuses to
   # scale the service at all — which is also why nothing here may be reached as `docker exec
-  # harnax-scheduler …`. Go through `docker-compose -f docker-new/docker-compose.yml exec scheduler`,
+  # harnax-scheduler …`. Go through `docker-compose -f harnax-deploy/docker-compose.yml exec scheduler`,
   # and once two replicas exist add `--index=1`/`--index=2` (or the container id) to say which one.
   scheduler:
     image: harnax-scheduler:latest
@@ -327,8 +327,9 @@ services:
       SPRING_DATASOURCE_URL: ${SCHEDULER_DB_URL:-jdbc:mysql://mysql:3306/harnax_scheduler?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-harnax}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-harnax123}
-      # Flyway Configuration. The scheduler owns its schema outright now: V1__quartz_tables.sql and
-      # V2__agent_task_domain.sql both apply against harnax_scheduler above, into the single ledger
+      # Flyway Configuration. The scheduler owns its schema outright: its single baseline,
+      # harnax-scheduler/src/main/resources/db/migration/V1__init_schema.sql, applies against harnax_scheduler
+      # above — the QRTZ_* cluster store and the three task tables — into the single ledger
       # flyway_schema_history_scheduler — the dedicated name is kept so the ledger says whose it is (and so a
       # rolled-back node still recognises its own history in harnax_admin). This override is
       # what decides whether QRTZ_* gets created at all: an env var beats the yml default, so leaving the
@@ -439,7 +440,7 @@ services:
     # has to fit inside admin's 30s read timeout on the forward (SchedulerClientImpl). Do not "align" the
     # two numbers: they bound different threads against different consequences.
     #
-    # A second copy of this number lives in docker-new/roll-scheduler.sh (`docker stop -t`, overridable
+    # A second copy of this number lives in harnax-deploy/roll-scheduler.sh (`docker stop -t`, overridable
     # with SCHEDULER_STOP_GRACE), which is where a deploy spends this period one replica at a time: the
     # roll stops a replica and lets its peer cover the cluster. Move the two together — a roll timeout
     # shorter than this period SIGKILLs an execution mid-run, which is the whole thing the period stops.
@@ -489,7 +490,7 @@ services:
       SANDBOX_KEEP_ALIVE_SWEEP_INTERVAL_MS: ${SANDBOX_KEEP_ALIVE_SWEEP_INTERVAL_MS:-300000}
       # Docker network for sandbox containers (default: bridge).
       # Set to a custom network name if sandbox needs to reach other services by DNS name.
-      SANDBOX_NETWORK: ${SANDBOX_NETWORK:-docker-new_harnax-network}
+      SANDBOX_NETWORK: ${SANDBOX_NETWORK:-harnax-deploy_harnax-network}
       # CLI plugin packages: a package's `${platform.adminUrl}` slot resolves to this.
       # `${platform.internalToken}` needs no line here — application.yml defaults it to
       # ADMIN_INTERNAL_API_SECRET, which this service already carries.

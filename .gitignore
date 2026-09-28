@@ -36,9 +36,7 @@ Thumbs.db
 logs/
 
 # Docker MySQL data
-docker/data/
-docker/init/
-docker-new/data/
+harnax-deploy/data/
 
 # Environment
 .env

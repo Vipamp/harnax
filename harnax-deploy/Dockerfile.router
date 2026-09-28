@@ -1,5 +1,6 @@
-# Harnax Scheduler Dockerfile - Single Stage Build
+# Harnax Router Dockerfile - Single Stage Build
 # Uses locally built JAR package, no compilation inside Docker
+# Session routing service with cluster mode support (MySQL + Redis)
 
 FROM eclipse-temurin:21-jre-alpine
 
@@ -15,8 +16,8 @@ RUN addgroup -S harnax && adduser -S harnax -G harnax
 
 WORKDIR /app
 
-# Copy JAR file from docker-new/dist/harnax-scheduler/
-COPY docker-new/dist/harnax-scheduler/harnax-scheduler-*.jar app.jar
+# Copy JAR file from harnax-deploy/dist/router/
+COPY harnax-deploy/dist/router/harnax-session-router-*.jar app.jar
 
 # Create log directory and set permissions
 RUN mkdir -p /app/logs && chown -R harnax:harnax /app
@@ -25,11 +26,12 @@ RUN mkdir -p /app/logs && chown -R harnax:harnax /app
 USER harnax
 
 # Expose port
-EXPOSE 8084
+EXPOSE 8081
 
-# Health check
+# Health check — /api/router/health needs an internal JWT, so a probe there would read 401 and
+# mark a perfectly routing-enabled container unhealthy. Liveness is anonymous, like every other image.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
-  CMD wget -qO- http://localhost:8084/actuator/health/liveness || exit 1
+  CMD wget -qO- http://localhost:8081/actuator/health/liveness || exit 1
 
 # JVM options optimization
 ENV JAVA_OPTS="-Xms128m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/app/logs"
@@ -40,4 +42,4 @@ ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
 # Metadata
 LABEL maintainer="agnetix"
 LABEL version="1.0.0"
-LABEL description="Harnax Scheduler"
+LABEL description="Harnax Session Router"

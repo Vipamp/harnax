@@ -26,7 +26,7 @@ test:
 lint:
 	golangci-lint run
 
-# The standard CLI package: drop the result into admin's harnax.cli.package-dir (docker-new stages this
+# The standard CLI package: drop the result into admin's harnax.cli.package-dir (harnax-deploy stages this
 # into the admin image) and admin registers the CLI plus the skill it ships on its next startup.
 # Modes matter as much as content — the platform reads the execute bit out of the zip's central
 # directory, so the binary is chmod'd before it is packed and `zip -X` records it.

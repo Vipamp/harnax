@@ -5,7 +5,7 @@ echo "=========================================="
 echo "  Harnax 全量重新打包部署脚本"
 echo "=========================================="
 
-# 定位项目根目录（脚本在 docker-new/ 下，项目根是上一级）
+# 定位项目根目录（脚本在 harnax-deploy/ 下，项目根是上一级）
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_DIR"
@@ -27,46 +27,46 @@ cd "$PROJECT_DIR"
 
 echo "✅ 前端编译完成"
 
-# 3. 复制构建产物到 docker-new/dist 目录
+# 3. 复制构建产物到 harnax-deploy/dist 目录
 echo ""
 echo "📋 步骤 3/6: 复制构建产物到部署目录..."
 
-mkdir -p docker-new/dist/harnax-admin/
-cp harnax-admin/target/harnax-admin-*-exec.jar docker-new/dist/harnax-admin/
+mkdir -p harnax-deploy/dist/harnax-admin/
+cp harnax-admin/target/harnax-admin-*-exec.jar harnax-deploy/dist/harnax-admin/
 echo "  ✓ harnax-admin"
 
-mkdir -p docker-new/dist/agent-service/
-cp harnax-agent/harnax-agent-service/target/harnax-agent-service-*.jar docker-new/dist/agent-service/
+mkdir -p harnax-deploy/dist/agent-service/
+cp harnax-agent/harnax-agent-service/target/harnax-agent-service-*.jar harnax-deploy/dist/agent-service/
 echo "  ✓ harnax-agent-service"
 
-mkdir -p docker-new/dist/channel-service/
-cp harnax-channel/harnax-channel-service/target/harnax-channel-service-*-exec.jar docker-new/dist/channel-service/
+mkdir -p harnax-deploy/dist/channel-service/
+cp harnax-channel/harnax-channel-service/target/harnax-channel-service-*-exec.jar harnax-deploy/dist/channel-service/
 echo "  ✓ harnax-channel-service"
 
-mkdir -p docker-new/dist/router/
-cp harnax-session-router/target/harnax-session-router-*.jar docker-new/dist/router/
+mkdir -p harnax-deploy/dist/router/
+cp harnax-session-router/target/harnax-session-router-*.jar harnax-deploy/dist/router/
 echo "  ✓ harnax-session-router"
 
-mkdir -p docker-new/dist/harnax-scheduler/
-cp harnax-scheduler/target/harnax-scheduler-*.jar docker-new/dist/harnax-scheduler/
+mkdir -p harnax-deploy/dist/harnax-scheduler/
+cp harnax-scheduler/target/harnax-scheduler-*.jar harnax-deploy/dist/harnax-scheduler/
 echo "  ✓ harnax-scheduler"
 
 # 产物文件名带 hash，覆盖式复制会把上一版的 chunk 一起留在镜像里
-rm -rf docker-new/dist/frontend/
-mkdir -p docker-new/dist/frontend/
-cp -r harnax-webui/dist/* docker-new/dist/frontend/
+rm -rf harnax-deploy/dist/frontend/
+mkdir -p harnax-deploy/dist/frontend/
+cp -r harnax-webui/dist/* harnax-deploy/dist/frontend/
 echo "  ✓ harnax-frontend"
 
-# CLI 插件包：统一货架在 cli-packages/dist，admin 镜像 COPY docker-new/dist/cli-packages/ 作启动登记目录
-mkdir -p docker-new/dist/cli-packages/
+# CLI 插件包：统一货架在 cli-packages/dist，admin 镜像 COPY harnax-deploy/dist/cli-packages/ 作启动登记目录
+mkdir -p harnax-deploy/dist/cli-packages/
 # 暂存目录先清：残留旧包等于让 admin 在两个包里替你裁决，上架的不再是刚构建的那个
-rm -f docker-new/dist/cli-packages/*.harnaxcli.zip
+rm -f harnax-deploy/dist/cli-packages/*.harnaxcli.zip
 # 货架是投递口：cli-packages/build.sh 不清架，只把有源码的包（harnax-cli + cli-packages/ 下每个第三方包）补上架；
 # 同名两份留 manifest 版本高的，落选的移进 dist/.superseded——手工直接丢进来的 zip 同样照此上架。
 # 它只在整架为空或同名同版本两份时失败；少一个包会被 admin 读成「这个 CLI 下架了」并 prune 它的行，所以这里失败必须停住整条部署。
 ./cli-packages/build.sh
-cp cli-packages/dist/*.harnaxcli.zip docker-new/dist/cli-packages/
-echo "  ✓ cli-packages: $(ls docker-new/dist/cli-packages | tr '\n' ' ')"
+cp cli-packages/dist/*.harnaxcli.zip harnax-deploy/dist/cli-packages/
+echo "  ✓ cli-packages: $(ls harnax-deploy/dist/cli-packages | tr '\n' ' ')"
 
 # 4. 构建 Docker 镜像
 echo ""
@@ -77,27 +77,27 @@ bash sandbox-plugins/build.sh
 
 echo "  构建 harnax-admin..."
 docker rmi -f harnax-admin:latest 2>/dev/null || true
-docker build --no-cache -f docker-new/Dockerfile.admin -t harnax-admin:latest .
+docker build --no-cache -f harnax-deploy/Dockerfile.admin -t harnax-admin:latest .
 
 echo "  构建 harnax-agent-service..."
 docker rmi -f harnax-agent-service:latest 2>/dev/null || true
-docker build --no-cache -f docker-new/Dockerfile.agent-service -t harnax-agent-service:latest .
+docker build --no-cache -f harnax-deploy/Dockerfile.agent-service -t harnax-agent-service:latest .
 
 echo "  构建 harnax-channel-service..."
 docker rmi -f harnax-channel-service:latest 2>/dev/null || true
-docker build --no-cache -f docker-new/Dockerfile.channel-service -t harnax-channel-service:latest .
+docker build --no-cache -f harnax-deploy/Dockerfile.channel-service -t harnax-channel-service:latest .
 
 echo "  构建 harnax-router..."
 docker rmi -f harnax-router:latest 2>/dev/null || true
-docker build --no-cache -f docker-new/Dockerfile.router -t harnax-router:latest .
+docker build --no-cache -f harnax-deploy/Dockerfile.router -t harnax-router:latest .
 
 echo "  构建 harnax-scheduler..."
 docker rmi -f harnax-scheduler:latest 2>/dev/null || true
-docker build --no-cache -f docker-new/Dockerfile.scheduler -t harnax-scheduler:latest .
+docker build --no-cache -f harnax-deploy/Dockerfile.scheduler -t harnax-scheduler:latest .
 
 echo "  构建 harnax-frontend..."
 docker rmi -f harnax-frontend:latest 2>/dev/null || true
-docker build --no-cache -f docker-new/Dockerfile.frontend -t harnax-frontend:latest .
+docker build --no-cache -f harnax-deploy/Dockerfile.frontend -t harnax-frontend:latest .
 
 echo "✅ 所有镜像构建完成"
 
@@ -106,7 +106,7 @@ echo ""
 echo "🛑 步骤 5/6: 停止旧容器..."
 echo "⚠️  冷启动：整栈（含全部 scheduler 副本）一起停，直到 mysql 健康门 + JVM 起来才回到集群；这期间堆起来的过期触发"
 echo "⚠️  会被 concurrent=0 任务的 DoNothing misfire 策略直接丢弃。请挑安静时段跑；只换 scheduler 镜像走 deploy-service.sh scheduler。"
-docker-compose -f docker-new/docker-compose.yml down || true
+docker-compose -f harnax-deploy/docker-compose.yml down || true
 
 echo "✅ 旧容器已停止"
 
@@ -118,7 +118,7 @@ echo "🚀 步骤 6/6: 启动所有服务..."
 # 一次 up --scale 就是它的冷启动形态。compose 文件里不写 deploy.replicas（与 stop-one/replace-one
 # 冲突），副本数只在命令行决定，所以这一行漏掉 --scale 就会把 scheduler 缩回一台。
 SCHEDULER_REPLICAS="${SCHEDULER_REPLICAS:-2}"
-docker-compose -f docker-new/docker-compose.yml up -d --scale "scheduler=${SCHEDULER_REPLICAS}"
+docker-compose -f harnax-deploy/docker-compose.yml up -d --scale "scheduler=${SCHEDULER_REPLICAS}"
 
 echo ""
 echo "=========================================="
@@ -130,7 +130,7 @@ sleep 10
 
 echo ""
 echo "📊 服务状态："
-docker-compose -f docker-new/docker-compose.yml ps
+docker-compose -f harnax-deploy/docker-compose.yml ps
 
 echo ""
 echo "🔗 访问地址（对外入口固定 80/443，其余 = 20000 + 容器端口）："
@@ -141,10 +141,10 @@ echo "  - Agent:      http://localhost:28082"
 echo "  - Channel:    http://localhost:28083"
 echo "  - Scheduler:  不发布宿主端口，仅容器网络 http://scheduler:8084"
 echo "                两实例且无 container_name，exec 必须指名哪一台（--index=1 / --index=2，或容器 id）："
-echo "                探活：docker-compose -f docker-new/docker-compose.yml exec --index=1 scheduler wget -qO- http://localhost:8084/actuator/health/liveness"
+echo "                探活：docker-compose -f harnax-deploy/docker-compose.yml exec --index=1 scheduler wget -qO- http://localhost:8084/actuator/health/liveness"
 echo "  - MinIO:      http://localhost:29000 (Console: http://localhost:29001)"
 echo "  - MCP Server: http://localhost:29002"
 echo "  - Redis:      localhost:26379"
 echo "  - MySQL:      localhost:23306"
 echo ""
-echo "📝 查看日志: docker-compose -f docker-new/docker-compose.yml logs -f [service-name]"
+echo "📝 查看日志: docker-compose -f harnax-deploy/docker-compose.yml logs -f [service-name]"

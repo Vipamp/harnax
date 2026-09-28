@@ -102,7 +102,7 @@ harnax 当前的自动化测试全部分散在各业务模块的 `src/test/kotli
 |------|------|------|
 | **Testcontainers 1.21.4 + 单例容器（推荐）** | 与项目现有版本一致；用"单例容器模式"（静态初始化 + Ryuk 回收）代替 `@Container` per-class，全套件只起一次 MySQL/Redis/MinIO/服务容器，大幅缩短执行时间 | ✅ **采用** |
 | `@Container` per-class（现有 mapper 测试的用法） | 隔离最彻底 | 每个测试类重启容器，E2E 场景下不可接受（5 个服务 + 3 个中间件） | ❌ 不用于 IT |
-| Docker Compose 模式（`ComposeContainer` 复用 docker-new/docker-compose.yml） | 直接复用生产编排 | compose 文件包含 frontend/mcp-server 等无关服务且面向生产参数，测试可控性差；容器就绪判定和端口映射不如程序化 API 灵活 | ❌ 备选（作为方案 A 的变体记录，见 §3） |
+| Docker Compose 模式（`ComposeContainer` 复用 harnax-deploy/docker-compose.yml） | 直接复用生产编排 | compose 文件包含 frontend/mcp-server 等无关服务且面向生产参数，测试可控性差；容器就绪判定和端口映射不如程序化 API 灵活 | ❌ 备选（作为方案 A 的变体记录，见 §3） |
 
 #### 2.2.4 断言库
 
@@ -129,7 +129,7 @@ harnax 当前的自动化测试全部分散在各业务模块的 `src/test/kotli
 
 #### 方案 A：Testcontainers 拉起服务 Docker 镜像（黑盒 E2E）
 
-先 `mvn package` 出各服务 JAR → 构建服务镜像（复用 docker-new/Dockerfile.*）→ 测试代码用 Testcontainers `GenericContainer` 在同一 `Network` 内拉起 MySQL/Redis/MinIO/WireMock + 5 个服务容器 → 测试通过映射端口访问。
+先 `mvn package` 出各服务 JAR → 构建服务镜像（复用 harnax-deploy/Dockerfile.*）→ 测试代码用 Testcontainers `GenericContainer` 在同一 `Network` 内拉起 MySQL/Redis/MinIO/WireMock + 5 个服务容器 → 测试通过映射端口访问。
 
 | 维度 | 评价 |
 |------|------|
@@ -460,7 +460,7 @@ abstract class BaseIntegrationTest {
 
 - 创建共享 `Network`；
 - 启动顺序：MySQL(8.0) → Redis(7-alpine) → MinIO → WireMock(mock-llm) → admin → agent-service → router → channel-service → scheduler；
-- 服务容器以 `GenericContainer(HarnaxImages.of(service))` 启动，环境变量对齐 `docker-new/docker-compose.yml`（DB/Redis/MinIO 指向网络别名，`JWT_SECRET`、`harnax.auth.internal.shared-secret` 注入固定测试值，LLM provider base-url 指向 WireMock）；
+- 服务容器以 `GenericContainer(HarnaxImages.of(service))` 启动，环境变量对齐 `harnax-deploy/docker-compose.yml`（DB/Redis/MinIO 指向网络别名，`JWT_SECRET`、`harnax.auth.internal.shared-secret` 注入固定测试值，LLM provider base-url 指向 WireMock）；
 - 就绪判定：`Wait.forHttp("/api/health")`（各服务健康端点），Flyway 迁移完成体现在健康检查通过；
 - 日志经 `Slf4jLogConsumer` 输出，CI 失败时可直接从 job log 定位；
 - JVM shutdown / Ryuk 兜底回收，不依赖用例显式关闭。
@@ -567,7 +567,7 @@ fun `chat stream should emit message deltas then complete event`() {
 
 - 新增 `it-test` job，放入现有 **test stage**（与 test-backend 并行，不新增 stage，避免拉长流水线关键路径）；
 - 使用 **dind**（`docker:24-dind` service，与现有 docker-* job 一致），Maven 镜像内的 Testcontainers 通过 `DOCKER_HOST=tcp://docker:2375` 连接；
-- **一条命令完成**：先全量 `install -DskipTests` 产出各模块 JAR → 脚本用 docker-new/Dockerfile.* 构建 5 个服务测试镜像（tag = `$CI_COMMIT_SHORT_SHA`）→ `mvn -pl harnax-it verify -Pintegration-test`；
+- **一条命令完成**：先全量 `install -DskipTests` 产出各模块 JAR → 脚本用 harnax-deploy/Dockerfile.* 构建 5 个服务测试镜像（tag = `$CI_COMMIT_SHORT_SHA`）→ `mvn -pl harnax-it verify -Pintegration-test`；
 - 复用现有 `.m2/repository` 缓存；JUnit 报告收集 failsafe-reports；
 - 触发策略：MR 与 main 分支执行；提供 `IT_SKIP` 变量可临时跳过；`allow_failure: false`（IT 是准入门槛）；
 - 另在 deploy 之后增加可选的 `smoke-external` 手动 job（方案 C），指向已部署环境跑 `@Tag("smoke")`。
@@ -703,7 +703,7 @@ smoke-external:
 | R1 | CI Runner 的 dind 资源不足（5 服务 + 4 中间件容器，内存峰值约 6-8GB） | it-test 频繁 OOM/超时 | 服务容器 JVM 限制 `-Xmx384m`；为 IT job 指定高配 Runner tag；必要时首期裁剪为 admin+router+agent 三服务最小环境，channel/scheduler 用例单独分组按需拉起 |
 | R2 | SSE 用例受调度/网络抖动影响成为 flaky 主要来源 | 流水线信任度下降 | 超时给足余量（60s+）；断言"序列模式"而非精确增量条数；失败自动转储容器日志；引入 JUnit `@RetryingTest` 前先修根因（flaky 记录进看板） |
 | R3 | 服务镜像构建拉长 CI 时间 | 反馈变慢 | Dockerfile 为"复制 JAR 单阶段"，构建本身秒级；主要耗时在 mvn install，与 test-backend 并行摊薄；后续可评估 build 阶段产物复用（needs+artifacts）省去重复编译 |
-| R4 | 测试环境配置与 docker-new/docker-compose.yml 漂移 | IT 环境与生产编排脱节，测试失真 | `ContainerizedEnvironment` 中的环境变量集中在单一常量文件并注释对应 compose 行号；compose 变更纳入 code review checklist |
+| R4 | 测试环境配置与 harnax-deploy/docker-compose.yml 漂移 | IT 环境与生产编排脱节，测试失真 | `ContainerizedEnvironment` 中的环境变量集中在单一常量文件并注释对应 compose 行号；compose 变更纳入 code review checklist |
 | R5 | Testcontainers 1.21.4 与 Spring Boot 4 生态版本演进 | 依赖冲突 | harnax-it 独立管理 testcontainers 版本（与现有模块一致）；升级时全工程统一 |
 | R6 | 数据清理不彻底污染 external 环境 | 联调环境脏数据 | external 模式强制 `it_<runId>_` 前缀 + 仅 smoke（只读为主）；DESTRUCTIVE capability 硬性禁用 |
 

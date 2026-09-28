@@ -2,7 +2,7 @@
 
 # =====================================================
 # Harnax Docker Build Script (Cluster Mode)
-# Usage: ./docker-new/build.sh [--native]
+# Usage: ./harnax-deploy/build.sh [--native]
 #
 # Options:
 #   --native    Build router service as GraalVM native image
@@ -69,9 +69,9 @@ echo "Step 1/9: Building admin JAR (harnax-admin)..."
 mvn spotless:apply
 mvn clean package -pl harnax-admin -am -Dmaven.test.skip=true
 
-echo "Copying JAR to docker-new/dist/harnax-admin/..."
-mkdir -p docker-new/dist/harnax-admin
-cp harnax-admin/target/harnax-admin-*-exec.jar docker-new/dist/harnax-admin/
+echo "Copying JAR to harnax-deploy/dist/harnax-admin/..."
+mkdir -p harnax-deploy/dist/harnax-admin
+cp harnax-admin/target/harnax-admin-*-exec.jar harnax-deploy/dist/harnax-admin/
 echo "Admin JAR built successfully."
 echo ""
 
@@ -83,17 +83,17 @@ if [ "$NATIVE_MODE" = true ]; then
     echo "Note: Native image build may take several minutes..."
     mvn clean package -Pnative -pl harnax-session-router -am -Dmaven.test.skip=true
 
-    echo "Copying native executable to docker-new/dist/router/..."
-    mkdir -p docker-new/dist/router
-    cp harnax-session-router/target/harnax-session-router docker-new/dist/router/
+    echo "Copying native executable to harnax-deploy/dist/router/..."
+    mkdir -p harnax-deploy/dist/router
+    cp harnax-session-router/target/harnax-session-router harnax-deploy/dist/router/
     echo "Router native image built successfully."
 else
     echo "Step 2/9: Building router JAR (harnax-session-router)..."
     mvn clean package -pl harnax-session-router -am -Dmaven.test.skip=true
 
-    echo "Copying JAR to docker-new/dist/router/..."
-    mkdir -p docker-new/dist/router
-    cp harnax-session-router/target/harnax-session-router-*.jar docker-new/dist/router/
+    echo "Copying JAR to harnax-deploy/dist/router/..."
+    mkdir -p harnax-deploy/dist/router
+    cp harnax-session-router/target/harnax-session-router-*.jar harnax-deploy/dist/router/
     echo "Router JAR built successfully."
 fi
 echo ""
@@ -104,9 +104,9 @@ echo ""
 echo "Step 3/9: Building agent-service JAR..."
 mvn clean package -pl harnax-agent/harnax-agent-service -am -Dmaven.test.skip=true
 
-echo "Copying JAR to docker-new/dist/agent-service/..."
-mkdir -p docker-new/dist/agent-service
-cp harnax-agent/harnax-agent-service/target/harnax-agent-service-*.jar docker-new/dist/agent-service/
+echo "Copying JAR to harnax-deploy/dist/agent-service/..."
+mkdir -p harnax-deploy/dist/agent-service
+cp harnax-agent/harnax-agent-service/target/harnax-agent-service-*.jar harnax-deploy/dist/agent-service/
 echo "Agent-service JAR built successfully."
 echo ""
 
@@ -116,9 +116,9 @@ echo ""
 echo "Step 4/9: Building channel-service JAR..."
 mvn clean package -pl harnax-channel/harnax-channel-service -am -Dmaven.test.skip=true
 
-echo "Copying JAR to docker-new/dist/channel-service/..."
-mkdir -p docker-new/dist/channel-service
-cp harnax-channel/harnax-channel-service/target/harnax-channel-service-*-exec.jar docker-new/dist/channel-service/
+echo "Copying JAR to harnax-deploy/dist/channel-service/..."
+mkdir -p harnax-deploy/dist/channel-service
+cp harnax-channel/harnax-channel-service/target/harnax-channel-service-*-exec.jar harnax-deploy/dist/channel-service/
 echo "Channel-service JAR built successfully."
 echo ""
 
@@ -128,9 +128,9 @@ echo ""
 echo "Step 5/9: Building scheduler JAR (harnax-scheduler)..."
 mvn clean package -pl harnax-scheduler -am -Dmaven.test.skip=true
 
-echo "Copying JAR to docker-new/dist/harnax-scheduler/..."
-mkdir -p docker-new/dist/harnax-scheduler
-cp harnax-scheduler/target/harnax-scheduler-*.jar docker-new/dist/harnax-scheduler/
+echo "Copying JAR to harnax-deploy/dist/harnax-scheduler/..."
+mkdir -p harnax-deploy/dist/harnax-scheduler
+cp harnax-scheduler/target/harnax-scheduler-*.jar harnax-deploy/dist/harnax-scheduler/
 echo "Scheduler JAR built successfully."
 echo ""
 
@@ -142,12 +142,12 @@ cd harnax-webui
 npm install
 npm run build
 
-echo "Copying frontend files to docker-new/dist/frontend/..."
+echo "Copying frontend files to harnax-deploy/dist/frontend/..."
 cd ..
 # Hashed file names: a plain overwrite leaves the previous build's chunks behind
-rm -rf docker-new/dist/frontend
-mkdir -p docker-new/dist/frontend
-cp -r harnax-webui/dist/* docker-new/dist/frontend/
+rm -rf harnax-deploy/dist/frontend
+mkdir -p harnax-deploy/dist/frontend
+cp -r harnax-webui/dist/* harnax-deploy/dist/frontend/
 echo "Frontend built successfully."
 echo ""
 
@@ -155,17 +155,17 @@ echo ""
 # Step 7: Sandbox artifacts (CLI plugin packages + default sandbox image)
 # ==========================================
 echo "Step 7/9: Building CLI plugin packages and sandbox image (harnax-sandbox:py-node)..."
-mkdir -p docker-new/dist/cli-packages
-rm -f docker-new/dist/cli-packages/*.harnaxcli.zip
+mkdir -p harnax-deploy/dist/cli-packages
+rm -f harnax-deploy/dist/cli-packages/*.harnaxcli.zip
 # cli-packages/build.sh tops the shelf up: harnax-cli plus every third-party package under
 # cli-packages/. The shelf is a drop box — it is never cleared, so a zip put there by hand ships too —
 # and one CLI name still means one package, with the higher manifest version kept and the loser moved
 # to dist/.superseded/. The copy exists because .dockerignore keeps `dist/` out of the build context
-# everywhere except docker-new/dist. Failing here fails the build — a shelf that is short a package
+# everywhere except harnax-deploy/dist. Failing here fails the build — a shelf that is short a package
 # reads to admin as a retirement, and that CLI's row gets pruned.
 ./cli-packages/build.sh || { echo "ERROR: cli-packages/build.sh failed, refusing to ship a partial shelf" >&2; exit 1; }
-cp cli-packages/dist/*.harnaxcli.zip docker-new/dist/cli-packages/
-echo "  ✓ CLI packages staged: $(ls docker-new/dist/cli-packages | tr '\n' ' ')"
+cp cli-packages/dist/*.harnaxcli.zip harnax-deploy/dist/cli-packages/
+echo "  ✓ CLI packages staged: $(ls harnax-deploy/dist/cli-packages | tr '\n' ' ')"
 bash sandbox-plugins/build.sh
 echo "Sandbox artifacts built successfully."
 echo ""
@@ -174,18 +174,18 @@ echo ""
 # Step 8: Build Docker Images
 # ==========================================
 echo "Step 8/9: Building Docker images..."
-docker build -f docker-new/Dockerfile.admin -t harnax-admin:latest .
+docker build -f harnax-deploy/Dockerfile.admin -t harnax-admin:latest .
 
 if [ "$NATIVE_MODE" = true ]; then
-    docker build -f docker-new/Dockerfile.router-native -t harnax-router:latest .
+    docker build -f harnax-deploy/Dockerfile.router-native -t harnax-router:latest .
 else
-    docker build -f docker-new/Dockerfile.router -t harnax-router:latest .
+    docker build -f harnax-deploy/Dockerfile.router -t harnax-router:latest .
 fi
 
-docker build -f docker-new/Dockerfile.agent-service -t harnax-agent-service:latest .
-docker build -f docker-new/Dockerfile.channel-service -t harnax-channel-service:latest .
-docker build -f docker-new/Dockerfile.scheduler -t harnax-scheduler:latest .
-docker build -f docker-new/Dockerfile.frontend -t harnax-frontend:latest .
+docker build -f harnax-deploy/Dockerfile.agent-service -t harnax-agent-service:latest .
+docker build -f harnax-deploy/Dockerfile.channel-service -t harnax-channel-service:latest .
+docker build -f harnax-deploy/Dockerfile.scheduler -t harnax-scheduler:latest .
+docker build -f harnax-deploy/Dockerfile.frontend -t harnax-frontend:latest .
 echo "Docker images built successfully."
 echo ""
 
@@ -205,17 +205,17 @@ echo "Docker images:"
 docker images | grep harnax
 echo ""
 echo "To start the services (cluster mode), run — note the --scale, it is not optional for scheduler:"
-echo "  docker-compose -f docker-new/docker-compose.yml up -d --scale scheduler=\"${SCHEDULER_REPLICAS:-2}\""
+echo "  docker-compose -f harnax-deploy/docker-compose.yml up -d --scale scheduler=\"${SCHEDULER_REPLICAS:-2}\""
 echo "  An up without --scale asks compose for ONE scheduler replica and scales the cluster back down to it,"
 echo "  possibly mid-execution (SCHEDULER_REPLICAS here is only a default for the line above)."
 echo "  To put new images on a running cluster, do not use this command at all: run"
-echo "  bash docker-new/deploy-service.sh scheduler, which ends in docker-new/roll-scheduler.sh."
+echo "  bash harnax-deploy/deploy-service.sh scheduler, which ends in harnax-deploy/roll-scheduler.sh."
 echo ""
 echo "To view logs:"
-echo "  docker-compose -f docker-new/docker-compose.yml logs -f"
+echo "  docker-compose -f harnax-deploy/docker-compose.yml logs -f"
 echo ""
 echo "To stop the services:"
-echo "  docker-compose -f docker-new/docker-compose.yml down"
+echo "  docker-compose -f harnax-deploy/docker-compose.yml down"
 echo ""
 echo "Service ports (public entry on 80/443, everything else = 20000 + container port):"
 echo "  Frontend:        http://localhost  (HTTPS: https://localhost)"
@@ -224,7 +224,7 @@ echo "  Router:          http://localhost:28081"
 echo "  Agent-Service:   http://localhost:28082"
 echo "  Channel-Service: http://localhost:28083"
 echo "  Scheduler:       not published — container network only (http://scheduler:8084); two replicas, no"
-echo "                   container_name, so name one: docker-compose -f docker-new/docker-compose.yml exec --index=1 scheduler …"
+echo "                   container_name, so name one: docker-compose -f harnax-deploy/docker-compose.yml exec --index=1 scheduler …"
 echo "  MinIO API:       http://localhost:29000 (Console: http://localhost:29001)"
 echo "  MCP Server:      http://localhost:29002"
 echo "  MySQL:           localhost:23306"

@@ -350,15 +350,17 @@ first.
   resort the default — the same expression `createChannel` writes, so a row is always readable by whoever
   was allowed to write it.
 - **Who `channel.tenant_id` belongs to.** A channel row's tenant is the tenant of the Agent named by its
-  `agent_id`: a channel exists to expose one Agent and the runtime runs as that Agent. The write side uses
-  `currentTenantId()`, a request without a workspace header lands on the DDL default tenant 1, and
-  `selectChannelList` filters on that column, so such a row disappears from its own creator's list and
-  stays visible in tenant 1's list.
-  `harnax-admin/src/main/resources/db/migration/V47__attribute_default_tenant_channels_to_their_agent.sql`
-  does exactly one thing: it JOINs `agent` and re-attributes rows whose `tenant_id = 1` to the Agent's
-  tenant, leaving other rows alone because those were written deliberately by a request carrying a
-  workspace header. The `creator` column cannot serve this rule (`createChannel` never writes it and every
-  row carries the literal `system`).
+  `agent_id`: a channel exists to expose one Agent and the runtime runs as that Agent. The baseline
+  `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` declares that column as
+  `bigint NOT NULL DEFAULT '1'`, so every row names a tenant and no channel row in the database is
+  unattributed. The write side uses `currentTenantId()`, a request without a workspace header lands on the
+  DDL default tenant 1, and `selectChannelList` filters on that column, so such a row disappears from its
+  own creator's list and stays visible in tenant 1's list. No database constraint links `tenant_id` to
+  `agent_id`, which is why "the tenant follows the Agent" is a rule the write side keeps rather than one the
+  schema enforces: a row is attributed to its Agent's tenant only when the resolution chain answers with the
+  right tenant, and a tenant written by a request that did carry a workspace header is deliberate and stays
+  as it is. The `creator` column cannot serve this rule (`createChannel` never writes it, the baseline
+  defaults the column to the literal `system`, so every row carries that value).
 - **`callbackKey` is never delivered.** There is no `ChannelResponse.callbackKey` field at all. It is the
   only credential the callback endpoint checks, so what leaves the server is the derived `callbackUrl`, and
   only when `communicationMode == "webhook"` — a `websocket` / `stream` / `long_polling` channel pulls its
@@ -510,10 +512,10 @@ unreachable is normal; the exception thrown when no key can be obtained carries 
 
 ## 13. Deployment and networking
 
-- Image build: `docker-new/Dockerfile.channel-service`; the compose service is `channel-service`, listening on
-  8083 inside the container and published by `docker-new/docker-compose.yml` as `28083:8083` — from the host
+- Image build: `harnax-deploy/Dockerfile.channel-service`; the compose service is `channel-service`, listening on
+  8083 inside the container and published by `harnax-deploy/docker-compose.yml` as `28083:8083` — from the host
   the port is 28083, while container-to-container traffic and the nginx upstream keep 8083.
-- The `location /api/channel/` block in `docker-new/nginx.conf` forwards to `channel-service:8083`, which is
+- The `location /api/channel/` block in `harnax-deploy/nginx.conf` forwards to `channel-service:8083`, which is
   what makes a public callback address usable; the callback path hits this block. The same file carries a
   longer `location /api/channel/webhook/` block (long timeouts, buffering off) while no mapping in the
   service answers under `/api/channel/webhook/`, so that block receives no traffic.
@@ -594,11 +596,10 @@ unreachable is normal; the exception thrown when no key can be obtained carries 
 | Entity → Spec | `harnax-channel/harnax-channel-service/src/main/kotlin/com/agnetix/harnax/channel/service/mapper/ChannelEntityConverter.kt` |
 | Channel conversation cache | `harnax-channel/harnax-channel-service/src/main/kotlin/com/agnetix/harnax/channel/service/session/InMemoryChannelSessionManager.kt` |
 | Management-plane rules | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ChannelServiceImpl.kt`, `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelResponse.kt` |
-| `channel` table statements | `harnax-entity/src/main/resources/mapper/ChannelMapper.xml`, `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Channel.kt` |
+| `channel` table statements | `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` (the `channel` create statement and its `tenant_id` column are both written in this one baseline), `harnax-entity/src/main/resources/mapper/ChannelMapper.xml`, `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Channel.kt` |
 | Runtime release on deletion | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/SessionRuntimeReleaser.kt` |
-| Tenant attribution | `harnax-admin/src/main/resources/db/migration/V47__attribute_default_tenant_channels_to_their_agent.sql` |
 | MCP identity for channel conversations | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/McpSessionOwnerResolver.kt` |
 | Attachment shape for channel conversations | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentWrapper.kt` |
 | Front-end mode filtering | `harnax-webui/src/pages/channel/components/channelModes.ts` |
 | Ownership decidability (router side) | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/support/PrivilegedSessionPrefixes.kt`, `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/service/SessionAccessGuard.kt` |
-| Deployment | `docker-new/Dockerfile.channel-service`, `docker-new/docker-compose.yml`, `docker-new/nginx.conf` |
+| Deployment | `harnax-deploy/Dockerfile.channel-service`, `harnax-deploy/docker-compose.yml`, `harnax-deploy/nginx.conf` |

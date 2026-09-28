@@ -148,7 +148,7 @@ mkdir -p stage/skill stage/payload/usr/local/bin
 cp SKILL.md stage/skill/
 install -m 0755 kubectl stage/payload/usr/local/bin/kubectl   # 可执行位要靠 zip 携带
 (cd stage && zip -X -r ../kubectl-1.30.0.harnaxcli.zip plugin.yaml skill payload)
-# 丢进货架 cli-packages/dist/，再走一次 docker-new 的打包部署（脚本会把整架复制进构建输入目录）
+# 丢进货架 cli-packages/dist/，再走一次 harnax-deploy 的打包部署（脚本会把整架复制进构建输入目录）
 ```
 
 ### MCP Server 管理

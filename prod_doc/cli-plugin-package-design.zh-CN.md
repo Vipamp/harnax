@@ -34,11 +34,11 @@ CLI 是包登记的资产，不是页面录入的记录。`cli` 表的一行等�
 | `active` | 无 | 登记写 1；清理路径硬删，不走软删 |
 | `create_time` / `update_time` | 无 | SQL 侧 `NOW()` |
 
-表上没有 `tenant_id`、`creator`、`is_public`、`install_script` 这四列。这一组的列集合由两支脚本叠加而成：`env_params`、`status`、`active`、`create_time` / `update_time` 由 `V8__add_cli_management.sql` 建表时写下，`V35__cli_package_registration.sql` 一支加包列（`skill_id`、`package_digest`、`payload_digest`、`package_object`、`deps_apt`、`runtime_env`）与 `uk_cli_name`、另一支把那四列从表上收掉。三个可见性列没有对应物，因为发布的包是平台级资产、没有可表达的可见性；`install_script` 也没有，包携带的是 payload 加声明式 `deps.apt`。一行 `cli` 参与的关联只有两处：指向它的 `agent_cli_binding` 行，以及经 `cli.skill_id` 拿到的那一条技能行——说明书与它的资源都在那条技能上。
+表上没有 `tenant_id`、`creator`、`is_public`、`install_script` 这四列。`cli` 的列集合是基线 `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` 里那一段建表语句一次写完的：上一张表逐列列出的那 16 列就是全部，除自增主键之外表上只有 `uk_cli_name (name)` 一个键，也没有别的索引。三个可见性列没有对应物，因为发布的包是平台级资产、没有可表达的可见性；`install_script` 也没有，包携带的是 payload 加声明式 `deps.apt`。一行 `cli` 参与的关联只有两处：指向它的 `agent_cli_binding` 行，以及经 `cli.skill_id` 拿到的那一条技能行——说明书与它的资源都在那条技能上。
 
 ### 2.2 `agent_cli_binding`
 
-一行 = 一个智能体选了一个 CLI，携带 `env_bindings`（该智能体为这个 CLI 填的参数值快照）。`V41__add_cli_binding_unique_key.sql` 加了 `uk_agent_cli_binding_agent_id_cli_id (agent_id, cli_id)`，并先把重复行折叠成保留最新一条；同时删掉 `idx_agent_cli_binding_agent_id`（`agent_id` 是新键的最左前缀）。绑定指向的是 CLI 而不是版本，所以包升级不重置绑定。
+一行 = 一个智能体选了一个 CLI，携带 `env_bindings`（该智能体为这个 CLI 填的参数值快照）。这张表的键只有自增主键与 `uk_agent_cli_binding_agent_id_cli_id (agent_id, cli_id)`：`(agent_id, cli_id)` 至多一行，按 `agent_id` 查走的就是这个键的最左前缀，因此表上没有单独的 `agent_id` 索引。绑定指向的是 CLI 而不是版本，所以包升级不重置绑定。
 
 保存路径整体重写这个集合。投递侧按一行一份映射进规格，因此重复行会让同一个 CLI 装两遍、并按每一份算一次镜像材料——唯一键把这件事挡在库里。
 
@@ -50,7 +50,7 @@ CLI 是包登记的资产，不是页面录入的记录。`cli` 表的一行等�
 
 ### 2.4 库层的语句约束
 
-`CliMapper.upsertCliPackage` 是 `INSERT ... ON DUPLICATE KEY UPDATE`，更新列表覆盖清单拥有的全部列与 `active = 1`，唯独不出现 `status`。`selectByName` 不带 `active` 条件（登记器必须认得自己写过并停用的行），`V42__retire_soft_deleted_pre_package_cli_rows.sql` 用「按包外行改名的 `#retired-<id>` 后缀」把这一条从「几乎成立」变成成立：`V38` 处理还活着的行，`V42` 处理页面上被软删、名字还被唯一键占着的行，两支都限定 `package_digest` 为空，都不碰登记器写的行。
+`CliMapper.upsertCliPackage` 是 `INSERT ... ON DUPLICATE KEY UPDATE`，更新列表覆盖清单拥有的全部列与 `active = 1`，唯独不出现 `status`。`selectByName` 不带 `active` 条件（登记器必须认得自己写过并停用的行），而「按包名查不会查到一条软删行」这件事由 schema 和写路径一起保证，不再需要任何库外手段：`uk_cli_name` 让一个包名在表上至多对应一行，所以那条 `LIMIT 1` 不是「多行里挑一条」；`cli` 行只有两条写路径，登记的 upsert 恒写 `active = 1`，启停开关的 `updateStatus` 只写 `status`，都没有把行软删的分支，下架走 `deleteByIds` 硬删——留着一条 `active = 0` 的行只会被 `uk_cli_name` 一直占住那个名字，让重新上架的包无处可写。
 
 `selectByNameForUpdate` 是与 `selectByName` 完全相同的 WHERE 加 `FOR UPDATE`。登记器在事务里用它读 `status`，于是启停开关的 `updateStatus` 必须等这条事务提交，两行（`cli` 与它的 `skill`）不会各说一套。
 
@@ -332,7 +332,7 @@ payload 树与镜像都只朝一个方向积累。`CliArtifactReaper`（`harness
 - **`archive-retention-days` 的依据是对象的最后修改时间。** 手工覆盖过桶里的对象，这个时间就不代表「这串字节多久没人用了」。
 - **`package_object` 为空的行不进归档白名单**，`selectPackageObjects()` 用 `<> ''` 过滤，这样的行也就不会被回收步骤误删。
 - **桶名两侧必须一致。** admin 侧 `minio.cli-package-bucket` 与 agent 侧 `harness.minio.cli-package-bucket` 由同一个环境变量 `MINIO_CLI_PACKAGE_BUCKET` 供给；分开设成不同值时的症状是 runtime 报「对象不存在」而不是「桶不存在」。
-- **bind mount 优先于镜像内的 COPY。** 用 docker-compose 时 `/home/harnax/cli-packages` 是宿主 `docker-new/dist/cli-packages` 的只读挂载，镜像里 baked 的那份被遮住；因此宿主目录必须非空——目录不存在正是 Docker 会替你建成空目录的情形，admin 于是把架上每个 CLI 读成已退役并 prune。
+- **bind mount 优先于镜像内的 COPY。** 用 docker-compose 时 `/home/harnax/cli-packages` 是宿主 `harnax-deploy/dist/cli-packages` 的只读挂载，镜像里 baked 的那份被遮住；因此宿主目录必须非空——目录不存在正是 Docker 会替你建成空目录的情形，admin 于是把架上每个 CLI 读成已退役并 prune。
 
 ## 10. 运维手册
 
@@ -356,7 +356,7 @@ payload 树与镜像都只朝一个方向积累。`CliArtifactReaper`（`harness
 
 ### 10.2 一次部署里包怎么进镜像
 
-`docker-new/build.sh`、`deploy-all.sh`、`deploy-service.sh` 三者都做同一串：`./cli-packages/build.sh` → `cp cli-packages/dist/*.harnaxcli.zip docker-new/dist/cli-packages/` → `Dockerfile.admin` 的 `COPY docker-new/dist/cli-packages/ /home/harnax/cli-packages/`。构建脚本在 `cli-packages/build.sh` 失败时直接拒绝出货，以免发出一个残缺的货架。
+`harnax-deploy/build.sh`、`deploy-all.sh`、`deploy-service.sh` 三者都做同一串：`./cli-packages/build.sh` → `cp cli-packages/dist/*.harnaxcli.zip harnax-deploy/dist/cli-packages/` → `Dockerfile.admin` 的 `COPY harnax-deploy/dist/cli-packages/ /home/harnax/cli-packages/`。构建脚本在 `cli-packages/build.sh` 失败时直接拒绝出货，以免发出一个残缺的货架。
 
 `cli-packages/build.sh` 的三条自身规则：绝不清架（清架会把手工投递的包一起带走，而少一个包对 admin 不是「什么都没发生」，是「这个 CLI 退役了」）；`harnax-cli` 的产物必须恰好一份（两份同名的包会按清单版本决定赢家，那不是「哪一个刚被构建出来」）；架上一个包都没有时以 ERROR 退出，因为那会让 admin 启动成没有 CLI 的平台。同名多份时留清单版本最高的，其余移进 `dist/.superseded/`；同名同版本多份直接以 ERROR 退出——这与 admin 的仲裁规则一致，只是提前到出货前，让歧义在货架上就不存在。
 
@@ -365,7 +365,7 @@ payload 树与镜像都只朝一个方向积累。`CliArtifactReaper`（`harness
 ### 10.3 加一个包
 
 1. 作者按规范产出 `<name>-<version>.harnaxcli.zip`。
-2. 放进货架（compose 部署里是宿主 `docker-new/dist/cli-packages/`）。
+2. 放进货架（compose 部署里是宿主 `harnax-deploy/dist/cli-packages/`）。
 3. 重启 admin。
 4. 看启动日志：`Sync complete: N registered, M failed`。`M > 0` 时往上找 `Failed to register package`，那条 ERROR 带完整的拒绝列表（一次报全）。
 5. 页面 `GET /api/admin/clis/page` 确认这行在，摘要与预期一致。
@@ -424,12 +424,7 @@ runtime 侧的树与镜像由 `CliArtifactReaper` 在后续轮次收掉。要立
 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/CliResponse.kt` | 列表与详情的字段划分、secret 掩码 |
 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt` | `imageFields`、`mergeCliEnvBindings`、`cliDetails`、`GET /cli/inventory` |
 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/SecretFieldEncryptor.kt` | `serializeToolEnvParams` / `decryptToolEnvParamsToMap` |
-| `harnax-admin/src/main/resources/db/migration/V8__add_cli_management.sql` | `cli` 表初始 DDL |
-| `harnax-admin/src/main/resources/db/migration/V35__cli_package_registration.sql` | `cli` 的包化列与 `uk_cli_name` 的定义处 |
-| `harnax-admin/src/main/resources/db/migration/V37__retire_seeded_builtin_cli_skill.sql` | 手工播种的技能行处置 |
-| `harnax-admin/src/main/resources/db/migration/V38__retire_pre_package_cli_rows.sql` | 非包行的停用与改名 |
-| `harnax-admin/src/main/resources/db/migration/V41__add_cli_binding_unique_key.sql` | `uk_agent_cli_binding_agent_id_cli_id` |
-| `harnax-admin/src/main/resources/db/migration/V42__retire_soft_deleted_pre_package_cli_rows.sql` | 已软删非包行的名字释放 |
+| `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` | admin 的 schema 基线：`cli` 的全部列与 `uk_cli_name`、`agent_cli_binding` 的 `uk_agent_cli_binding_agent_id_cli_id`、`skill` 与 `skill_repository` 的建表语句都在这一个文件里；初数据里属于本域的只有 `builtin-cli-skills` 这一条仓储行，没有任何技能行 |
 | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/sandbox/CliPackageStore.kt` | 摘要校验下载、原子发布、闲置回收 |
 | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/sandbox/CliImageBuilder.kt` | 二次校验、Dockerfile 生成、标签、构建与验收、镜像回收 |
 | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/sandbox/DockerCommandExecutor.kt` | `docker` 调用与超时 |
@@ -444,9 +439,9 @@ runtime 侧的树与镜像由 `CliArtifactReaper` 在后续轮次收掉。要立
 | `harnax-webui/src/pages/cli/components/CliDetailDrawer.tsx` | 摘要、apt、`runtimeEnv` 的摊开 |
 | `harnax-webui/src/pages/agent/components/CliConfigPanel.tsx` | 智能体上的参数填写 |
 | `harnax-webui/src/services/ant-design-pro/cli.ts` | 五条路由的前端封装 |
-| `docker-new/Dockerfile.admin` | 货架 COPY 进镜像的路径 |
-| `docker-new/docker-compose.yml` | `/home/harnax/cli-packages` 的只读挂载 |
-| `docker-new/build.sh` | 构建期的货架装配 |
+| `harnax-deploy/Dockerfile.admin` | 货架 COPY 进镜像的路径 |
+| `harnax-deploy/docker-compose.yml` | `/home/harnax/cli-packages` 的只读挂载 |
+| `harnax-deploy/build.sh` | 构建期的货架装配 |
 | `cli-packages/build.sh` | 货架规则：不清架、同名留一个、空架即失败 |
 | `harnax-cli/Makefile` | `package` 目标：自打样本 |
 | `harnax-admin/src/test/kotlin/com/agnetix/harnax/admin/registrar/CliPackageAutoRegistrarTest.kt` | 收敛、同名仲裁、清理四道闸、归档回收的用例 |

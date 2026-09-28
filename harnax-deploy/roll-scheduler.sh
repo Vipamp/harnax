@@ -29,7 +29,7 @@
 # it. See LOCK_DIR below. Ctrl-C and SIGTERM end the roll — they do not merely drop the lock out from under a
 # script that would then keep working (see on_signal).
 #
-# Usage: docker-new/roll-scheduler.sh
+# Usage: harnax-deploy/roll-scheduler.sh
 #
 # Needs Compose v2 (the `docker compose` v2 CLI, or a `docker-compose` shim pointing at it). Two of this
 # script's listings are v2-only: `ps --all --quiet`, which proves a stopped replica is really gone, and
@@ -56,7 +56,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-COMPOSE_FILE="${COMPOSE_FILE:-docker-new/docker-compose.yml}"
+COMPOSE_FILE="${COMPOSE_FILE:-harnax-deploy/docker-compose.yml}"
 SERVICE="scheduler"
 REPLICAS="${SCHEDULER_REPLICAS:-2}"
 GRACE="${SCHEDULER_STOP_GRACE:-400}"
@@ -64,9 +64,9 @@ HEALTH_WAIT="${SCHEDULER_HEALTH_WAIT:-300}"
 HEALTH_POLL_SECONDS=5
 # What the lock has to name: the *cluster*, not the directory this copy of the repo sits in. Two rolls of one
 # compose project are the failure the lock prevents, and every checkout of this repo drives the same one —
-# compose takes the project name from the directory that holds the compose file, so `docker-new` here in all
-# three of this repo's worktrees (verified: `docker-compose -f docker-new/docker-compose.yml config` prints
-# `name: docker-new` from both the main checkout and .worktrees/scheduler-cluster-cutover, while
+# compose takes the project name from the directory that holds the compose file, so `harnax-deploy` here in all
+# three of this repo's worktrees (verified: `docker-compose -f harnax-deploy/docker-compose.yml config` prints
+# `name: harnax-deploy` from both the main checkout and .worktrees/scheduler-cluster-cutover, while
 # basename "${PROJECT_DIR}" differed between them). The previous key, basename of the checkout, therefore gave
 # one cluster as many locks as there are checkouts — which is exactly the concurrency the lock exists to stop.
 #

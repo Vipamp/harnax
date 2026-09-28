@@ -303,13 +303,13 @@ Agent 产出的文件按会话类型分两种形态。渠道会话（`chn-` 前�
   id 既改不动也删不掉。租户解析链在 `TenantResolver`：验签过的 `X-Tenant-ID` 优先，其次调用方自己的
   租户，最后落到默认值——与 `createChannel` 写入的是同一个表达式，所以一行总是由有权写它的人读得到。
 - **`channel.tenant_id` 的归属。** 一条渠道行的租户就是它 `agent_id` 所指 Agent 的租户：渠道存在的意义
-  就是暴露一个 Agent，运行侧以那个 Agent 身份跑。写入侧用的是 `currentTenantId()`，没有 workspace 头的
-  请求会落到 DDL 默认租户 1，而 `selectChannelList` 按这一列过滤，于是这类行会从自己创建者的列表里消失、
-  停在租户 1 的列表中可见。`harnax-admin/src/main/resources/db/migration/V47__attribute_default_tenant_channels_to_their_agent.sql`
-  做的正是这一件事：
-  JOIN `agent` 把 `tenant_id = 1` 且所属 Agent 不在租户 1 的行改判到 Agent 的租户，其余行不动，因为那是
-  带 workspace 头的请求刻意写下的。`creator` 列在这条判据里不可用（`createChannel` 从不写它，每行都是
-  字面量 `system`）。
+  就是暴露一个 Agent，运行侧以那个 Agent 身份跑。基线 `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` 给
+  这一列写的是 `bigint NOT NULL DEFAULT '1'`——每一行都带着一个租户，库里不存在无归属的渠道行。写入侧用的是
+  `currentTenantId()`，没有 workspace 头的请求会落到 DDL 默认租户 1，而 `selectChannelList` 按这一列过滤，于是这类行会从
+  自己创建者的列表里消失、停在租户 1 的列表中可见。`tenant_id` 与 `agent_id` 之间没有任何数据库约束，「租户跟着 Agent 走」
+  因此是写入侧的判据而不是库内的保证：把一行的租户判成它所属 Agent 的租户，只能由解析链答出正确租户来达成，而带
+  workspace 头的请求写下的租户本就是刻意取值，不该被改写。`creator` 列在这条判据里不可用（`createChannel` 从不写它，
+  基线给这一列的缺省是字面量 `system`，于是每行都是这个值）。
 - **`callbackKey` 不下发。** `ChannelResponse.callbackKey` 字段根本不存在。它是回调端点唯一校验的凭据，
   对外只给服务端派生的 `callbackUrl`，且只在 `communicationMode == "webhook"` 时给——`websocket` /
   `stream` / `long_polling` 的渠道主动拉消息，没有回调地址可言。
@@ -445,10 +445,10 @@ channel-service 在 compose 里一起起来，admin 短暂不可达是常态；�
 
 ## 13. 部署与网络
 
-- 镜像构建：`docker-new/Dockerfile.channel-service`；compose 服务名 `channel-service`，容器内监听 8083，
-  `docker-new/docker-compose.yml` 的发布映射是 `28083:8083`——宿主机上访问 28083，容器之间与 nginx
+- 镜像构建：`harnax-deploy/Dockerfile.channel-service`；compose 服务名 `channel-service`，容器内监听 8083，
+  `harnax-deploy/docker-compose.yml` 的发布映射是 `28083:8083`——宿主机上访问 28083，容器之间与 nginx
   上游仍用 8083。
-- `docker-new/nginx.conf` 的 `location /api/channel/` 转发到 `channel-service:8083`，公网回调地址因此
+- `harnax-deploy/nginx.conf` 的 `location /api/channel/` 转发到 `channel-service:8083`，公网回调地址因此
   可用；回调路径命中的是这一条。同一份配置里还有一条更长的 `location /api/channel/webhook/`（长超时 +
   关缓冲），而服务侧没有任何映射落在 `/api/channel/webhook/` 下，它接不到流量。
 - admin 创建渠道时下发的 `callbackUrl = $baseUrl/api/channel/callback/{callbackKey}` 由
@@ -523,11 +523,10 @@ channel-service 在 compose 里一起起来，admin 短暂不可达是常态；�
 | 实体 → Spec | `harnax-channel/harnax-channel-service/src/main/kotlin/com/agnetix/harnax/channel/service/mapper/ChannelEntityConverter.kt` |
 | 渠道会话缓存 | `harnax-channel/harnax-channel-service/src/main/kotlin/com/agnetix/harnax/channel/service/session/InMemoryChannelSessionManager.kt` |
 | 管理面规则 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ChannelServiceImpl.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelResponse.kt` |
-| `channel` 表语句 | `harnax-entity/src/main/resources/mapper/ChannelMapper.xml`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Channel.kt` |
+| `channel` 表语句 | `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql`（`channel` 的建表语句与 `tenant_id` 列都写在这一个基线里）、`harnax-entity/src/main/resources/mapper/ChannelMapper.xml`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Channel.kt` |
 | 删除时的运行侧释放 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/SessionRuntimeReleaser.kt` |
-| 租户归属迁移 | `harnax-admin/src/main/resources/db/migration/V47__attribute_default_tenant_channels_to_their_agent.sql` |
 | 渠道会话的 MCP 身份 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/McpSessionOwnerResolver.kt` |
 | 渠道会话的附件形态 | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentWrapper.kt` |
 | 前端模式过滤 | `harnax-webui/src/pages/channel/components/channelModes.ts` |
 | 归属可判定性（router 侧） | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/support/PrivilegedSessionPrefixes.kt`、`harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/service/SessionAccessGuard.kt` |
-| 部署 | `docker-new/Dockerfile.channel-service`、`docker-new/docker-compose.yml`、`docker-new/nginx.conf` |
+| 部署 | `harnax-deploy/Dockerfile.channel-service`、`harnax-deploy/docker-compose.yml`、`harnax-deploy/nginx.conf` |

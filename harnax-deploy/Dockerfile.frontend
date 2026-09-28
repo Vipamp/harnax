@@ -17,10 +17,10 @@ RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.aliyun.com|g' /etc/apk/repositories
     || { sed -i 's|mirrors.aliyun.com|dl-cdn.alpinelinux.org|g' /etc/apk/repositories && apk add --no-cache wget; }
 
 # Copy Nginx configuration
-COPY docker-new/nginx.conf /etc/nginx/conf.d/default.conf
+COPY harnax-deploy/nginx.conf /etc/nginx/conf.d/default.conf
 
-# Copy frontend static files from docker-new/dist/frontend/
-COPY docker-new/dist/frontend/ /usr/share/nginx/html/
+# Copy frontend static files from harnax-deploy/dist/frontend/
+COPY harnax-deploy/dist/frontend/ /usr/share/nginx/html/
 
 # Create SSL directory for certificate mount
 RUN mkdir -p /etc/nginx/ssl
@@ -30,7 +30,7 @@ RUN chown -R nginx:nginx /usr/share/nginx/html && \
     chmod -R 755 /usr/share/nginx/html
 
 # Expose ports. Nginx listens on the standard 80 / 443 inside the container — see
-# docker-new/nginx.conf — and docker-compose publishes them 1:1 on the host.
+# harnax-deploy/nginx.conf — and docker-compose publishes them 1:1 on the host.
 EXPOSE 80 443
 
 # Health check
