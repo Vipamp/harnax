@@ -34,11 +34,15 @@ public final class McpDetailViewModel: ObservableObject {
     @Published public private(set) var isTesting = false
     @Published public private(set) var isEnabled = false
     @Published public private(set) var oauthPhase: OAuthPhase = .idle
-    /// The URL the browser hand-off was asked to open, shown so the operator can finish it by hand while
-    /// the return leg is not wired up yet. It carries a one-time `state`, so it is displayed and never
-    /// stored (`McpOAuthUserServiceImpl.kt:153`, `McpOAuthStateStore.kt:77-82`).
+    /// Where the browser was sent. The URL carries a one-time `state`, so it is displayed and never stored
+    /// (`McpOAuthUserServiceImpl.kt:153`, `McpOAuthStateStore.kt:77-82`); showing it is what lets an
+    /// operator finish the dance on another device if the hand-off itself did not take.
     @Published public private(set) var authorizationURL: String?
     @Published public private(set) var isRequestingAuthorization = false
+    /// The browser tab is open and the grant is not visible yet: this is the wait in between.
+    @Published public private(set) var isAwaitingAuthorization = false
+    /// What the wait has to say for itself — currently only that its window ran out.
+    @Published public private(set) var oauthNotice: String?
     /// The server's own summary of a revoke, including whether the authorization server was told
     /// (`McpOAuthRevokeResponse.kt:13-21`).
     @Published public private(set) var revokeMessage: String?
@@ -49,14 +53,29 @@ public final class McpDetailViewModel: ObservableObject {
     /// Same local deadline as the list, and injectable for the same reason.
     public let testTimeout: TimeInterval
 
+    /// How often the status is re-read while waiting, and how long that goes on for.
+    private let pollInterval: TimeInterval
+    private let pollReads: Int
+
     private let mcp: any McpCataloging
     private let authorizer: any McpAuthorizing
+    /// Bumped by whoever wants the running wait to stop: a second hand-off, the manual check, the screen.
+    private var waitGeneration = 0
 
-    public init(mcp: any McpCataloging, authorizer: any McpAuthorizing, id: Int64, testTimeout: TimeInterval = 15) {
+    public init(
+        mcp: any McpCataloging,
+        authorizer: any McpAuthorizing,
+        id: Int64,
+        testTimeout: TimeInterval = 15,
+        pollInterval: TimeInterval = 2,
+        pollWindow: TimeInterval = 120
+    ) {
         self.mcp = mcp
         self.authorizer = authorizer
         self.serverID = id
         self.testTimeout = testTimeout
+        self.pollInterval = pollInterval
+        self.pollReads = max(1, Int(pollWindow / pollInterval))
     }
 
     /// The OAuth block only exists for a row that authorizes per user
@@ -198,36 +217,104 @@ public final class McpDetailViewModel: ObservableObject {
         return status.error
     }
 
-    /// Build the authorization request server-side and hand the URL to whoever can run a browser session.
+    /// Build the authorization request server-side, hand the URL to whoever can run a browser session, and
+    /// then wait for the grant.
     ///
-    /// The return leg is a later milestone, so the outcome this can report is only "the URL is in a
-    /// browser": the grant is stored by the exchange, which needs the code coming back. The status is
-    /// re-read when the URL actually reached a browser session, because a cancelled or refused hand-off
-    /// left nothing that could have changed.
+    /// Awaitable to the end on purpose: the caller's task becomes the wait, so the whole flow has one
+    /// outcome a test can await rather than a loop racing whoever started it. The grant is stored by the
+    /// browser's own return leg, so a status read taken right after the hand-off can only answer "not yet";
+    /// a cancelled or refused hand-off left nothing that could change, so it re-reads once.
     public func startAuthorization() async {
+        guard let url = await requestAuthorizeURL() else { return }
+        authorizationURL = url.absoluteString
+        switch await authorizer.presentAuthorizeURL(url, for: serverID) {
+        case let .openedInBrowser(opened):
+            authorizationURL = opened.absoluteString
+            await awaitAuthorization()
+        case .cancelled:
+            revokeMessage = hx("mcp.oauth.cancelled")
+            await loadOAuth()
+        case let .refused(message):
+            revokeMessage = message
+            await loadOAuth()
+        }
+    }
+
+    /// The one call that makes a hand-off possible. Returns nil, having already said why, when there is no
+    /// URL to give up.
+    private func requestAuthorizeURL() async -> URL? {
         isRequestingAuthorization = true
         defer { isRequestingAuthorization = false }
-        let request = await mcp.mcpAuthorizeURL(id: serverID, scope: nil)
-        switch request {
+        switch await mcp.mcpAuthorizeURL(id: serverID, scope: nil) {
         case let .failure(error):
             oauthPhase = .failed(message: ErrorMessage.text(for: error))
-            return
+            return nil
         case let .success(authorization):
             guard let url = authorization.url else {
                 oauthPhase = .failed(message: hx("mcp.oauth.badUrl"))
-                return
+                return nil
             }
-            authorizationURL = url.absoluteString
-            switch await authorizer.presentAuthorizeURL(url, for: serverID) {
-            case let .openedInBrowser(opened):
-                authorizationURL = opened.absoluteString
-            case .cancelled:
-                revokeMessage = hx("mcp.oauth.cancelled")
-            case let .refused(message):
-                revokeMessage = message
-            }
+            return url
         }
+    }
+
+    /// The bounded wait. The window is a count of re-reads rather than a clock, so the bound is the same
+    /// number in a test as on a device.
+    public func awaitAuthorization() async {
+        waitGeneration += 1
+        let generation = waitGeneration
+        oauthNotice = nil
+        isAwaitingAuthorization = true
+        defer {
+            if generation == waitGeneration { isAwaitingAuthorization = false }
+        }
+        for _ in 0 ..< pollReads {
+            guard await sleptOneInterval(generation: generation) else { return }
+            await loadOAuth()
+            if isAuthorized { return }
+        }
+        if generation == waitGeneration { oauthNotice = hx("mcp.oauth.timedOut") }
+    }
+
+    /// One poll interval, dozed in short slices so `stopAwaitingAuthorization` does not have to wait out an
+    /// interval that can be longer than the screen's remaining lifetime. False means somebody ended the
+    /// wait while it was asleep.
+    private func sleptOneInterval(generation: Int) async -> Bool {
+        var remaining = pollInterval
+        while remaining > 0 {
+            let slice = min(remaining, 0.25)
+            remaining -= slice
+            try? await Task.sleep(nanoseconds: UInt64(slice * 1_000_000_000))
+            if Task.isCancelled || generation != waitGeneration { return false }
+        }
+        return true
+    }
+
+    /// The manual way out of the wait, for a user who finished in the browser before the window closed and
+    /// for one whose device never gave the URL up. A read that still says "no grant" needs no extra
+    /// sentence: the status row already says that.
+    public func confirmAuthorizationDone() async {
+        stopAwaitingAuthorization()
+        oauthNotice = nil
         await loadOAuth()
+    }
+
+    /// Ends the wait from the outside: the manual check, and the screen going away with a loop still
+    /// asleep. `awaitAuthorization` clears the flag itself only if nobody restarted it meanwhile.
+    public func stopAwaitingAuthorization() {
+        waitGeneration += 1
+        isAwaitingAuthorization = false
+    }
+
+    /// Offer the manual check once a browser has the URL and no grant is on record yet — including after
+    /// the wait's window closed, and after a hand-off this device could not complete.
+    public var canConfirmAuthorization: Bool {
+        authorizationURL != nil && !isAuthorized
+    }
+
+    private var isAuthorized: Bool {
+        if case let .loaded(status) = oauthPhase { return status.authorized }
+        return false
     }
 
     public func clearAuthorizationURL() {
@@ -240,6 +327,8 @@ public final class McpDetailViewModel: ObservableObject {
     public func revoke() async {
         isRevoking = true
         defer { isRevoking = false }
+        stopAwaitingAuthorization()
+        oauthNotice = nil
         switch await mcp.revokeMcpOAuth(id: serverID) {
         case let .success(result):
             revokeMessage = result.explanation

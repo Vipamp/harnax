@@ -22,6 +22,7 @@ public struct McpDetailView: View {
             .task {
                 if vm.server == nil { await vm.load() }
             }
+            .onDisappear(perform: vm.stopAwaitingAuthorization)
             .refreshable { await vm.load() }
     }
 
@@ -211,6 +212,14 @@ public struct McpDetailView: View {
                         HXValueText(url, lines: 3)
                     }
                 }
+                if vm.isAwaitingAuthorization {
+                    HXRow(text: hx("mcp.oauth.waiting")) {
+                        ProgressView().tint(Color.hx(.brand))
+                    }
+                }
+                if let notice = vm.oauthNotice {
+                    HXRow(text: notice, divider: false) { EmptyView() }
+                }
                 if let message = vm.revokeMessage {
                     HXRow(text: message, divider: false) { EmptyView() }
                 }
@@ -260,7 +269,15 @@ public struct McpDetailView: View {
                     HXText(vm.oauthActionKey)
                 }
                 .buttonStyle(.hxSecondary)
-                .disabled(vm.isRequestingAuthorization)
+                .disabled(vm.isRequestingAuthorization || vm.isAwaitingAuthorization)
+            }
+            if vm.canConfirmAuthorization {
+                Button {
+                    Task { await vm.confirmAuthorizationDone() }
+                } label: {
+                    HXText("mcp.oauth.action.done")
+                }
+                .buttonStyle(.hxSecondary)
             }
             if vm.canRevoke {
                 Button {

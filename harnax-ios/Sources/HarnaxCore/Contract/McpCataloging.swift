@@ -61,21 +61,9 @@ public enum McpAuthorizationHandoff: Equatable, Sendable {
 
 /// The seam the detail screen's authorize button calls.
 ///
-/// Kept an interface so the browser milestone only has to add an `ASWebAuthenticationSession`
-/// implementation plus the app's `CFBundleURLTypes`; the domain code, the state machine and the tests stay
-/// as they are. Implementations must treat the URL as sensitive material — it carries a one-time state —
-/// and must not persist it.
+/// Implementations must treat the URL as sensitive material — it carries a one-time state — and must not
+/// persist it. Reaching a browser is not a grant: the return leg stores one server-side, so the caller
+/// re-reads the status afterwards rather than taking this return value as approval.
 public protocol McpAuthorizing: Sendable {
     func presentAuthorizeURL(_ url: URL, for serverID: Int64) async -> McpAuthorizationHandoff
-}
-
-/// The placeholder that ships with this milestone: it does the one thing every implementation has to do
-/// first, which is say what URL has to be opened. The view shows the URL and the hint; nothing claims the
-/// authorization went through.
-public struct SystemBrowserAuthorizer: McpAuthorizing {
-    public init() {}
-
-    public func presentAuthorizeURL(_ url: URL, for serverID: Int64) async -> McpAuthorizationHandoff {
-        .openedInBrowser(url: url)
-    }
 }

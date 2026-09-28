@@ -245,7 +245,11 @@
 "mcp.oauth.required" = "Needs authorization";
 "mcp.oauth.action.authorize" = "Authorize";
 "mcp.oauth.action.reauthorize" = "Re-authorize";
+"mcp.oauth.action.done" = "I've finished in the browser";
 "mcp.oauth.action.revoke" = "Revoke";
+"mcp.oauth.waiting" = "Waiting for the browser to finish…";
+"mcp.oauth.timedOut" = "Still no grant. Check again once the browser has finished.";
+"mcp.oauth.noBrowser" = "This device has no browser to open the authorization URL in.";
 "mcp.oauth.revoking" = "Revoking…";
 "mcp.oauth.scopes" = "Granted scopes";
 "mcp.oauth.lastError" = "Last error";
@@ -550,3 +554,27 @@
 "apikey.published.copied" = "Copied";
 
 /* ---- not in this build ---- */
+
+/* ---- conversation ---- */
+"chat.empty.hint" = "Send a message to start this conversation.";
+"chat.input.placeholder" = "Ask the agent…";
+"chat.input.busy" = "Answering…";
+"chat.action.send" = "Send";
+"chat.action.stop" = "Stop";
+"chat.streaming" = "Answering";
+"chat.thinking" = "Thinking";
+"chat.tool.running" = "Running";
+"chat.tool.pending" = "Pending";
+"chat.tool.completed" = "Done";
+"chat.tool.rejected" = "Failed";
+"chat.tool.interrupted" = "Interrupted";
+"chat.tool.arguments" = "Arguments";
+"chat.tool.result" = "Result";
+"chat.tool.failure" = "Failure";
+"chat.confirm.title" = "Waiting for confirmation";
+"chat.confirm.safe" = "Low risk";
+"chat.confirm.dangerous" = "High risk";
+"chat.confirm.note" = "This build shows the request; it is answered from the web console.";
+"chat.error.title" = "The answer stopped";
+"chat.error.disconnected" = "The connection closed before anything arrived.";
+"chat.error.occurred" = "The agent reported an error: %@";
