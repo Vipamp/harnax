@@ -89,6 +89,13 @@
 "context.domain.skill" = "技能";
 "context.domain.cli" = "CLI";
 
+/* ---- 环境变量参数 ---- */
+"env.title" = "参数";
+"env.count" = "%d 个参数";
+"env.required" = "必需";
+"env.sensitive" = "敏感";
+"env.default" = "默认值";
+
 /* ---- 未开放 ---- */
 "soon.title" = "本版本暂未开放";
 "soon.hint" = "该模块会在后续里程碑落地。";

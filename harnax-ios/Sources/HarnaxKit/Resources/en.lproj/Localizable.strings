@@ -89,6 +89,13 @@
 "context.domain.skill" = "Skills";
 "context.domain.cli" = "CLI";
 
+/* ---- environment parameters ---- */
+"env.title" = "Parameters";
+"env.count" = "%d params";
+"env.required" = "Required";
+"env.sensitive" = "Sensitive";
+"env.default" = "Default";
+
 /* ---- not in this build ---- */
 "soon.title" = "Not in this build yet";
 "soon.hint" = "This area lands in a later milestone.";
