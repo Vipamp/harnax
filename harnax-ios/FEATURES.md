@@ -50,7 +50,7 @@
 | 团队产物抽屉与下载 | 同上 | v1 | `GET /api/admin/team-artifacts` | M |
 | 历史消息回放（含分段重建） | 同上 | v1 | `GET /api/router/agent/chat/history/{id}` | L |
 | 发消息与流式接收 | `ChatWindow` | v1 | `POST /api/router/agent/chat/stream` | XL |
-| 六种分段渲染（文本 / 思考 / 工具调用 / 工具结果 / 确认卡 / 计划卡） | 同上 | v1 | 同一事件流 | XL |
+| 五类可见分段渲染（文本 / 思考 / 工具调用合并卡 / 确认卡 / 计划卡；`tool_result` 段在 Web 恒不渲染） | 同上 | v1 | 同一事件流 | XL |
 | 思考过程折叠展开 | 同上 | v1 | `ThinkingEvent` | M |
 | 工具确认：单个批准 / 全部拒绝 / 总是允许 | 同上 | v1 | `POST /agent/confirm` + `CONFIRM` 请求体 | L |
 | 高危工具的显著标识 | 同上 | v1 | `pendingCallTools[].isDangerous` | S |
@@ -60,7 +60,7 @@
 | 权限模式切换（5 档） | 同上 | v1 | `COMMAND` + `PERMISSION` | M |
 | 图片输入（拍照 / 相册） | 同上 | v1 | `imageUrls` | M |
 | 停止生成 / 清空会话 / 停止沙箱 | 同上 | v1 | `COMMAND`（`INTERRUPT`/`CLEAR`/`STOP_SANDBOX`） | M |
-| 附件收取与下载（iOS 超出 Web 的一项：后端已下发，webui 全仓零处引用 `attachments`） | 无 | v1 | `EndEvent.attachments` + `GET /api/output-files/{sessionType}/{sessionId}/{fileId}`，该路由整控制器受 `minio.enabled=true` 开关控制，未开启即 404 | M |
+| 附件收取与下载（iOS 超出 Web 的一项：后端已下发，webui 全仓零处引用 `attachments`） | 无 | v1 | `EndEvent.attachments` + `GET /api/output-files/{sessionType}/{sessionId}/{fileId}`，该路由整控制器受 `minio.enabled=true` 开关控制：裸配置默认关（`${MINIO_ENABLED:false}`）、标准部署 compose 显式开启，未开启时整条路由不注册即 404（O8） | M |
 | 模型能力门控（推理 / 思考模式 / 联网 / 视觉） | 同上 | v1 | 会话配置字段 | M |
 | 联网搜索开关 | 同上 | v1 | `ENABLE`/`DISABLE` | S |
 | 断线自动重连 | 无（Web 也未做） | 否 | — | — |
@@ -137,7 +137,8 @@
 | 能力 | Web 出处 | iOS | 依赖接口 | 复杂度 |
 |---|---|---|---|---|
 | 渠道列表（类型、接入模式、状态、启停、删除） | `/system/channel` | v1 | `channels/*` | L |
-| 新建 / 编辑：按渠道类型与接入模式切换条件字段 | 同上 | v1 | 随保存提交 | XL |
+| 新建 / 编辑：按渠道类型与接入模式切换条件字段（`http` 类型运行时无适配器，灰显不可提交，O7） | 同上 | v1 | 随保存提交 | XL |
+| 渠道级思考 / 联网 / 计划三开关 | 无（Web 表单从未暴露） | 待拍板 | 实体列已有，渠道三个 DTO 未带，需后端补字段（O6） | M |
 | 回调地址与回调凭据展示 | 同上 | v1 | 同一响应 | M |
 | 沙箱状态展示 | 同上 | v1 | 同一响应 | S |
 | 微信扫码绑定（二维码 + 状态轮询 + 取消） | 扫码弹窗 | v1 | `wechat/login`、`wechat/status`、`wechat/cancel` | L |
@@ -146,7 +147,7 @@
 
 | 能力 | Web 出处 | iOS | 依赖接口 | 复杂度 |
 |---|---|---|---|---|
-| API Key 列表（增改、启停、删除） | `/system/api-key` | v1 | `api-keys/*` | L |
+| API Key 列表（增改、启停、删除；Web 侧入口仅管理员可见，后端未校验，O5） | `/system/api-key` | v1 | `api-keys/*` | L |
 | 重新生成 + 一次性原始 Key 展示与复制 | 同上 | v1 | `regenerate` | M |
 | 作用域、限流、有效期、归属租户编辑 | 同上 | v1 | 随保存提交 | M |
 | 环境变量列表（增改、启停、删除） | `/system/env-variable` | v1 | `env-variables/*` | M |
@@ -179,9 +180,9 @@
 
 ## 14. 计数与口径
 
-本清单分 12 个功能域，逐条枚举 **97 项**能力：v1 **88 项**、v1.1 **2 项**、待拍板 **1 项**（租户切换，未计入 v1）、不做 **6 项**。复杂度分布 S 20 / M 42 / L 24 / XL 5。
+本清单分 12 个功能域，逐条枚举 **98 项**能力：v1 **88 项**、v1.1 **2 项**、待拍板 **2 项**（租户切换、渠道级三开关，均未计入 v1）、不做 **6 项**。复杂度分布 S 20 / M 43 / L 24 / XL 5。
 
-5 个 XL 分别是：智能体 5 步向导、发消息与流式接收、六种分段渲染、团队成员多路合并与气泡归属、渠道的条件字段表单。这五项加在 L 档的 24 项之前构成工期主体——L 档集中在跨实体流程（关联拦截、刷新会话、OAuth 回跳、Workspace、扫码绑定）与多接口表单矩阵。
+5 个 XL 分别是：智能体 5 步向导、发消息与流式接收、五类可见分段渲染、团队成员多路合并与气泡归属、渠道的条件字段表单。这五项加在 L 档的 24 项之前构成工期主体——L 档集中在跨实体流程（关联拦截、刷新会话、OAuth 回跳、Workspace、扫码绑定）与多接口表单矩阵。
 
 第 13 章的「不做清单」另有 10 条，与上表标记为「否」的 6 项口径不同：那 6 项是本应在某页里、但确认不实现的功能；这 10 条是整体层面的取舍，包含推送、离线、断线重连、Android 这类未进入任何页面拆分的项。两处不要相加。
 

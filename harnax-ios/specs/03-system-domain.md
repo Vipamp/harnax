@@ -91,6 +91,8 @@
 
 ## API Key
 
+页面可见性：Web 侧 `/system/api-key` 带 `access: 'canAccessUserManagement'`（`harnax-webui/config/routes.ts:136`-`:141`），而该 access 就是 `currentUser.isAdmin === 1`（`harnax-webui/src/access.ts:13`）——**这一页对非管理员根本不可见**，与用户管理、租户管理同一条门禁。iOS 是否照搬列入 §15 的 O5。
+
 ### 1. 字段与校验
 
 新增（`harnax-webui/src/pages/api-key/components/CreateForm.tsx`）：
@@ -343,10 +345,10 @@ Token 统计（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller
 
 ## 未确认
 
-1. **Channel「流式开关」不存在**：全 webui 无 `enableStream`/`isStream`；`stream` 只是 dingtalk 的接入模式。`Channel` 实体确有 `enableThink`/`enableSearch`/`enablePlan`（`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Channel.kt:48-55`），但 admin 的 `ChannelCreateRequest`/`ChannelResponse` 均不暴露。iOS v1 是否要加这三个开关、以及由哪个接口写入，需要产品另行拍板。
+1. **已核实 + 已裁定（O6）**：Channel「流式开关」不存在——全 webui 无 `enableStream`/`isStream`，`stream` 只是 dingtalk 的接入模式。`Channel` 实体确有 `enableThink`/`enableSearch`/`enablePlan`（`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Channel.kt:49`-`:55`，内部接口会读它们，见 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt:417`-`:419`），但 admin 侧三个渠道 DTO（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelCreateRequest.kt`、`ChannelUpdateRequest.kt`、`ChannelResponse.kt`）逐文件 grep 这三列零命中，Web 表单因此从未能编辑。裁定：v1 不做，等后端把三列补进 DTO 再提。
 2. **`permissionMode` 取值域已查实**：五个字符串值 `DEFAULT`／`BYPASS`／`ACCEPT_EDITS`／`EXPLORE`／`DONT_ASK`（文案见 `harnax-webui/src/locales/zh-CN/pages.ts:871-875`，会话侧 DTO 字段 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/SessionResponse.kt:50`）。后端只声明 `String?` 加 `@Size(20)`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelCreateRequest.kt:32`），没有枚举校验，因此 iOS 要自己把这五个值建成枚举并在提交前拦非法值；渠道侧前端零处引用，v1 按「不发送、原样透传已存值」处理。
-3. **`http` 类型的实际可用性**：后端注释明确它「无 adaptor 注册，运行时报 `no adaptor registered`」（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ChannelServiceImpl.kt:355-366`、`harnax-webui/src/pages/channel/components/channelModes.ts:14`）。iOS 是否在 v1 提供该类型入口、要不要灰显，未定。
-4. **`regenerate` 对 PERMANENT/SYSTEM 保护键是否应被拒**：代码里 `regenerate` 无保护检查（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ApiKeyServiceImpl.kt:162-183`），其余三个操作都有（`:116-118`、`:142-144`、`:153-155`）。不确定是有意还是遗漏；iOS v1 按现状实现（不加客户端拦截）。
+3. **已裁定（O7）**：`http` 类型的实际可用性——后端注释明确它「无 adaptor 注册，运行时报 `no adaptor registered`」（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ChannelServiceImpl.kt:355-366`、`harnax-webui/src/pages/channel/components/channelModes.ts:14`）。裁定：iOS 表单保留该类型选项但灰显不可提交，标注「暂未支持」。
+4. **已核实**：`regenerate` 不带保护键检查是**既定出口而不是遗漏**。改、删、停三处的拒绝文案自己写着「use regenerate instead」（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ApiKeyServiceImpl.kt:116`-`:117`、`:142`-`:143`、`:153`-`:154`，保护集 `protectedKeyTypes = setOf("PERMANENT", "SYSTEM")` 见 `:40`），而 `regenerateApiKey` 只走 `loadAndCheckAccess`（`:162`-`:183`）。webui 侧对任意可操作行都渲染重新生成按钮、不按 `keyType` 灰显（`harnax-webui/src/pages/api-key/index.tsx:282`-`:299`）。iOS 照此实现：不加客户端拦截，但要把「换掉 PERMANENT/SYSTEM 的密钥会让既有引用立即失效」写进二次确认文案。
 5. **环境变量 `GET /list` 的返回结构已核实**：投影固定四个键 `id` / `envKey` / `displayValue` / `sensitive`，其中 `sensitive` 是 **Boolean** 而非全仓惯用的 0/1 `Int`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/EnvVariableServiceImpl.kt:252`-`:269`），iOS 解码这一处要按布尔写。`displayValue` 的掩码规则是三档：长度 ≤4 全掩、≤8 首尾各留 1 字符、其余首 3 尾 2（同文件 `:275`-`:279`），因此「回填后原样提交」必然写出星号；候选只含 `enabled == 1` 且按调用者可见范围过滤。
 6. **租户列表的可见范围已核实，且与切租户口不一致**：`GET /api/admin/auth/tenants` 只返回已经存在 `user_tenant` 关联行的租户（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/UserTenantServiceImpl.kt:31`-`:47`），对管理员没有放宽；而 `POST /api/admin/auth/switch-tenant` 在 `isAdmin == 1` 时跳过成员检查、允许切到任意租户（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/AuthController.kt:159`-`:162`）。结果是管理员的切换列表可能为空却能切成功。iOS 若要呈现切换器（O1），列表源要么补一次「全部租户」读，要么接受管理员看不到未加入的租户。
 7. **`workspace/status` 的失败语义**：`active` 之外还有哪些字段、未创建过沙箱的 `chn-` 会话返回缺省还是条目不存在（`harnax-webui/src/services/ant-design-pro/workspace.ts:98-110`、`harnax-webui/src/pages/session/index.tsx:111-128`），未核实；iOS 的未知态渲染口径待定。
