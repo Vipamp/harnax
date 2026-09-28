@@ -175,7 +175,8 @@ struct ModelProviderCard: View {
                     VStack(alignment: .leading, spacing: 7) {
                         header
                         detailText
-                        statsLine
+                        chips
+                        statsNote
                         if let test { testLine(test) }
                         byline
                     }
@@ -194,10 +195,6 @@ struct ModelProviderCard: View {
                 .foregroundStyle(Color.hx(.textPrimary))
                 .lineLimit(1)
             HXBadge(enabled ? "state.badge.enabled" : "state.badge.disabled", tone: enabled ? .success : .textTertiary)
-            HXChip(ModelProviderPresenter.typeLabel(for: provider))
-            if provider.isShared {
-                HXChip(hx("state.badge.shared"), tone: .indigo)
-            }
             Spacer(minLength: 0)
         }
         .padding(.trailing, 34)
@@ -217,24 +214,48 @@ struct ModelProviderCard: View {
         }
     }
 
-    /// The three counts, or the reason they are not there. An empty provider and an unreadable one are
-    /// different answers, and the second is the common one for a provider borrowed from another tenant.
+    /// One wrapping row for everything that qualifies the provider: what it is, whether it is borrowed,
+    /// and how many models it carries. The type and visibility chips sat on the title line until the
+    /// English screenshots showed what that costs — three wide pills leave the name one glyph.
+    private var chips: some View {
+        HXFlow(spacing: 6) {
+            let typeLabel = ModelProviderPresenter.typeLabel(for: provider)
+            // A single-vendor tenant usually names its provider after the vendor, and then the pill would
+            // repeat the headline word for word.
+            if typeLabel != ModelProviderPresenter.title(for: provider) {
+                HXChip(typeLabel)
+            }
+            if provider.isShared {
+                HXChip(hx("state.badge.shared"), tone: .indigo)
+            }
+            if case let .loaded(counts) = stats {
+                countsChips(counts)
+            }
+        }
+    }
+
+    private func countsChips(_ counts: ModelProviderStats) -> some View {
+        Group {
+            HXChip(hxCount("model.provider.stats.total", counts.totalModels), tone: .brand)
+            HXChip(
+                hx("model.provider.stats.enabled", counts.enabledModels),
+                tone: counts.enabledModels > 0 ? .success : .textTertiary
+            )
+            HXChip(hx("model.provider.stats.disabled", counts.disabledModels), tone: .textTertiary)
+        }
+    }
+
+    /// The two answers that replace the counts. An empty provider and an unreadable one are different
+    /// answers, and the second is the common one for a provider borrowed from another tenant.
     @ViewBuilder
-    private var statsLine: some View {
+    private var statsNote: some View {
         switch stats {
         case .pending:
             HXText("model.provider.stats.loading")
                 .font(.caption)
                 .foregroundStyle(Color.hx(.textTertiary))
-        case let .loaded(counts):
-            HXFlow(spacing: 6) {
-                HXChip(hxCount("model.provider.stats.total", counts.totalModels), tone: .brand)
-                HXChip(
-                    hx("model.provider.stats.enabled", counts.enabledModels),
-                    tone: counts.enabledModels > 0 ? .success : .textTertiary
-                )
-                HXChip(hx("model.provider.stats.disabled", counts.disabledModels), tone: .textTertiary)
-            }
+        case .loaded:
+            EmptyView()
         case .unavailable:
             HXText("model.provider.stats.unavailable")
                 .font(.caption)
