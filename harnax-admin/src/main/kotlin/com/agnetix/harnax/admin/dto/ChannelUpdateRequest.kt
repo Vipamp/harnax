@@ -32,6 +32,15 @@ data class ChannelUpdateRequest(
     @Schema(description = "Channel-specific configuration JSON, e.g. {\"appId\":\"xxx\",\"appSecret\":\"xxx\"}")
     val configJson: String? = null,
 
+    @Schema(description = "Enable thinking mode (0:no, 1:yes); null keeps the stored value", example = "1")
+    val enableThink: Int? = null,
+
+    @Schema(description = "Enable web search (0:no, 1:yes); null keeps the stored value", example = "0")
+    val enableSearch: Int? = null,
+
+    @Schema(description = "Enable plan mode (0:no, 1:yes); null keeps the stored value", example = "0")
+    val enablePlan: Int? = null,
+
     @Schema(description = "Description", example = "Robot channel for customer service")
     val description: String? = null,
 

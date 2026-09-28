@@ -52,6 +52,15 @@ data class ChannelResponse(
     @Schema(description = "Channel-specific configuration JSON")
     val configJson: String? = null,
 
+    @Schema(description = "Enable thinking mode (0:no, 1:yes)")
+    val enableThink: Int? = null,
+
+    @Schema(description = "Enable web search (0:no, 1:yes)")
+    val enableSearch: Int? = null,
+
+    @Schema(description = "Enable plan mode (0:no, 1:yes)")
+    val enablePlan: Int? = null,
+
     @Schema(description = "Description")
     val description: String? = null,
 
@@ -95,6 +104,9 @@ data class ChannelResponse(
             permissionMode = channel.permissionMode,
             enabled = channel.enabled,
             configJson = channel.configJson,
+            enableThink = channel.enableThink,
+            enableSearch = channel.enableSearch,
+            enablePlan = channel.enablePlan,
             description = channel.description,
             creator = channel.creator,
             status = channel.status,

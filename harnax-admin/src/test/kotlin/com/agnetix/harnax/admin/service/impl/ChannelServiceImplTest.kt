@@ -5,9 +5,11 @@ import com.agnetix.harnax.admin.dto.ChannelCreateRequest
 import com.agnetix.harnax.admin.dto.ChannelUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.AgentService
+import com.agnetix.harnax.admin.service.ModelService
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.Channel
+import com.agnetix.harnax.entity.Model
 import com.agnetix.harnax.mapper.ChannelMapper
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
@@ -52,6 +54,9 @@ class ChannelServiceImplTest {
 
     @Mock
     private lateinit var agentService: AgentService
+
+    @Mock
+    private lateinit var modelService: ModelService
 
     @Mock
     private lateinit var sessionRuntimeReleaser: SessionRuntimeReleaser
@@ -110,6 +115,7 @@ class ChannelServiceImplTest {
         val service = ChannelServiceImpl(
             channelMapper = channelMapper,
             agentService = agentService,
+            modelService = modelService,
             sessionRuntimeReleaser = sessionRuntimeReleaser,
             jwtUtil = jwtUtil,
         )
@@ -1004,6 +1010,164 @@ class ChannelServiceImplTest {
             createService().updateChannel(1L, ChannelUpdateRequest(configJson = """{"appId":"cli_a1b2c3"}"""))
 
             assertFalse(entriesOf(savedConfig()).containsKey("appSecret"), "clearing a credential must not silently keep it")
+        }
+    }
+
+    @Nested
+    @DisplayName("Capability Switch Tests")
+    inner class CapabilitySwitchTests {
+
+        /**
+         * A row of this class's own: the shared [testChannel] is handed to the tenant tests below, and
+         * thinking flags written there would read as part of those cases.
+         */
+        private fun localChannel(think: Int): Channel = Channel().apply {
+            id = 1L
+            tenantId = 1L
+            name = "Capability Channel"
+            type = "wecom"
+            agentId = 100L
+            sessionId = "chn-11111111-2222-3333-4444-555555555555"
+            communicationMode = "websocket"
+            status = 1
+            active = 1
+            enableThink = think
+        }
+
+        private fun stubModelThinkingMode(mode: Int) {
+            `when`(agentService.getAgent(100L)).thenReturn(testAgent)
+            `when`(modelService.getModel(1L)).thenReturn(
+                Model().apply {
+                    id = 1L
+                    thinkingMode = mode
+                },
+            )
+        }
+
+        @Test
+        @DisplayName("createChannel - the three switches land as sent")
+        fun `createChannel should store the capability switches`() {
+            val request = ChannelCreateRequest(
+                name = "Capability Channel",
+                type = "wecom",
+                agentId = 100L,
+                enableThink = 1,
+                enableSearch = 1,
+                enablePlan = 0,
+            )
+            `when`(channelMapper.insert(any())).thenReturn(1)
+
+            createService().createChannel(request)
+
+            val captor = argumentCaptor<Channel>()
+            verify(channelMapper).insert(captor.capture())
+            val saved = captor.firstValue
+            assertEquals(1, saved.enableThink)
+            assertEquals(1, saved.enableSearch)
+        }
+
+        @Test
+        @DisplayName("createChannel - thinking follows the model when the caller says nothing")
+        fun `createChannel should derive thinking from the bound model`() {
+            // The runtime feeds this column straight into the agent spec, so a stored 0 here really
+            // does silence a model that requires thinking — which is why the default isn't the column default.
+            stubModelThinkingMode(2)
+            val request = ChannelCreateRequest(name = "Quiet Channel", type = "wecom", agentId = 100L)
+            `when`(channelMapper.insert(any())).thenReturn(1)
+
+            createService().createChannel(request)
+
+            val captor = argumentCaptor<Channel>()
+            verify(channelMapper).insert(captor.capture())
+            assertEquals(1, captor.firstValue.enableThink)
+        }
+
+        @Test
+        @DisplayName("createChannel - an explicit no keeps the model's yes out of the way")
+        fun `createChannel should honour an explicit thinking off`() {
+            stubModelThinkingMode(1)
+            val request = ChannelCreateRequest(
+                name = "Explicit Channel",
+                type = "wecom",
+                agentId = 100L,
+                enableThink = 0,
+                enablePlan = 1,
+            )
+            `when`(channelMapper.insert(any())).thenReturn(1)
+
+            createService().createChannel(request)
+
+            val captor = argumentCaptor<Channel>()
+            verify(channelMapper).insert(captor.capture())
+            assertEquals(0, captor.firstValue.enableThink)
+            assertEquals(1, captor.firstValue.enablePlan)
+        }
+
+        @Test
+        @DisplayName("createChannel - an explicit thinking-off on a required model inserts nothing")
+        fun `createChannel should refuse a thinking-off the model cannot run`() {
+            stubModelThinkingMode(2)
+            val request = ChannelCreateRequest(
+                name = "Muted Channel",
+                type = "wecom",
+                agentId = 100L,
+                enableThink = 0,
+            )
+
+            val exception = assertThrows<RuntimeException> { createService().createChannel(request) }
+
+            assertTrue(
+                exception.message!!.contains("requires Deep Thinking"),
+                "expected the same refusal the update path gives, got: ${exception.message}",
+            )
+            verify(channelMapper, never()).insert(any())
+        }
+
+        @Test
+        @DisplayName("updateChannel - this route is not a way around the thinking-required refusal")
+        fun `updateChannel should refuse to turn thinking off on a required model`() {
+            stubModelThinkingMode(2)
+            `when`(channelMapper.selectById(1L)).thenReturn(localChannel(think = 1))
+
+            val exception = assertThrows<RuntimeException> {
+                createService().updateChannel(1L, ChannelUpdateRequest(enableThink = 0))
+            }
+
+            assertTrue(
+                exception.message!!.contains("requires Deep Thinking"),
+                "expected the refusal the chat page already gets, got: ${exception.message}",
+            )
+            verify(channelMapper, never()).updateById(any())
+        }
+
+        @Test
+        @DisplayName("updateChannel - a stray flag value stores as off, not as whatever was sent")
+        fun `updateChannel should normalise a stray flag`() {
+            // thinkingMode 0 means nothing requires thinking, so 2 -> 0 is allowed and must land as 0.
+            stubModelThinkingMode(0)
+            `when`(channelMapper.selectById(1L)).thenReturn(localChannel(think = 1))
+            `when`(channelMapper.updateById(any())).thenReturn(1)
+
+            createService().updateChannel(1L, ChannelUpdateRequest(enableThink = 2, enableSearch = 7))
+
+            val captor = argumentCaptor<Channel>()
+            verify(channelMapper).updateById(captor.capture())
+            assertEquals(0, captor.firstValue.enableThink)
+            assertEquals(0, captor.firstValue.enableSearch)
+        }
+
+        @Test
+        @DisplayName("updateChannel - a request that says nothing leaves all three columns alone")
+        fun `updateChannel should leave the switches untouched when the request omits them`() {
+            // This is what the console form still sends, so it must not silently zero the switches.
+            `when`(channelMapper.selectById(1L)).thenReturn(localChannel(think = 1))
+            `when`(channelMapper.updateById(any())).thenReturn(1)
+
+            createService().updateChannel(1L, ChannelUpdateRequest(name = "Renamed"))
+
+            val captor = argumentCaptor<Channel>()
+            verify(channelMapper).updateById(captor.capture())
+            assertEquals(1, captor.firstValue.enableThink)
         }
     }
 

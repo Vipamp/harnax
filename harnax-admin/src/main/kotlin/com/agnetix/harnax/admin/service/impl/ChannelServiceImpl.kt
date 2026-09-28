@@ -6,6 +6,7 @@ import com.agnetix.harnax.admin.dto.ChannelUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.service.AgentService
 import com.agnetix.harnax.admin.service.ChannelService
+import com.agnetix.harnax.admin.service.ModelService
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.TenantResolver
 import com.agnetix.harnax.entity.Agent
@@ -27,6 +28,7 @@ import java.util.UUID
 class ChannelServiceImpl(
     private val channelMapper: ChannelMapper,
     private val agentService: AgentService,
+    private val modelService: ModelService,
     private val sessionRuntimeReleaser: SessionRuntimeReleaser,
     private val jwtUtil: JwtUtil,
 ) : ChannelService {
@@ -79,6 +81,9 @@ class ChannelServiceImpl(
             permissionMode = request.permissionMode ?: "DEFAULT"
             enabled = request.enabled ?: 1
             configJson = request.configJson
+            enableThink = thinkingFlagOrRefuse(agentId, request.enableThink)
+            enableSearch = capabilityFlag(request.enableSearch)
+            enablePlan = capabilityFlag(request.enablePlan)
             description = request.description
             status = requireValidStatus(request.status ?: 1)
             tenantId = currentTenantId()
@@ -115,6 +120,9 @@ class ChannelServiceImpl(
         }
         request.permissionMode?.let { channel.permissionMode = it }
         request.enabled?.let { channel.enabled = it }
+        request.enableThink?.let { channel.enableThink = thinkingFlagOrRefuse(channel.agentId, it) }
+        request.enableSearch?.let { channel.enableSearch = capabilityFlag(it) }
+        request.enablePlan?.let { channel.enablePlan = capabilityFlag(it) }
         request.configJson?.let {
             validateConfigJson(it)
             channel.configJson = keepStoredSecrets(it, channel.configJson)
@@ -143,6 +151,42 @@ class ChannelServiceImpl(
             throw RuntimeException("Channel status must be 0 (disabled) or 1 (enabled), got $status")
         }
         return status
+    }
+
+    /**
+     * The columns are 0/1 and the runtime compares against 1, so a stray 7 would mean something
+     * different to every reader. Anything but an explicit 1 is an off.
+     */
+    private fun capabilityFlag(value: Int?): Int = if (value == 1) 1 else 0
+
+    /**
+     * The thinking switch as it should be stored. An explicit request wins, a caller who says nothing
+     * inherits the model's own rule the way session creation does, and turning thinking off on a model
+     * that requires it is refused either way: the runtime feeds this column straight into the agent
+     * spec, and both the session config route and the agent-service capability route already refuse it
+     * — this route would otherwise be the way around them.
+     */
+    private fun thinkingFlagOrRefuse(agentId: Long, requested: Int?): Int {
+        val mode = thinkingModeOf(agentId)
+        val flag = if (requested == null) {
+            if (mode >= 1) 1 else 0
+        } else {
+            capabilityFlag(requested)
+        }
+        if (flag == 0 && mode == 2) {
+            throw RuntimeException("Current model requires Deep Thinking and it cannot be turned off.")
+        }
+        return flag
+    }
+
+    /**
+     * Thinking mode of the model behind this channel's agent: 0 optional, 1 available, 2 required.
+     * A missing agent or model row reads as 0, the same way [com.agnetix.harnax.admin.controller.InternalApiController]
+     * treats it — the channel still runs, it just has no constraint to enforce here.
+     */
+    private fun thinkingModeOf(agentId: Long): Int {
+        val modelId = agentService.getAgent(agentId)?.modelId ?: return 0
+        return modelService.getModel(modelId)?.thinkingMode ?: 0
     }
 
     /**
