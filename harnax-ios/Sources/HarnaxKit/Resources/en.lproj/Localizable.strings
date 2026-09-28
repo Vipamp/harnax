@@ -67,6 +67,7 @@
 "me.section.preferences" = "Preferences";
 "me.section.server" = "Server";
 "me.tenant.current" = "Current tenant: %@ (id %@)";
+"me.tenant.unknown" = "Unknown tenant";
 "me.role.administrator" = "Administrator";
 "me.role.member" = "Member";
 "me.themeAndLanguage" = "Appearance & Language";

@@ -1,8 +1,16 @@
 import SwiftUI
 
-/// Settings / list row inside an `HXGroupCard`: optional tinted glyph, localised title, trailing accessory.
+/// Settings / list row inside an `HXGroupCard`: optional tinted glyph, localised title, optional value
+/// under that title, trailing accessory.
 public struct HXRow<Trailing: View>: View {
-    private let titleKey: String
+    /// Either a catalogue key or copy that is already final — a language name belongs in its own language.
+    private enum RowTitle {
+        case key(String)
+        case verbatim(String)
+    }
+
+    private let title: RowTitle
+    private let subtitle: String?
     private let systemImage: String?
     private let tone: PaletteSlot
     private let divider: Bool
@@ -10,16 +18,61 @@ public struct HXRow<Trailing: View>: View {
 
     public init(
         _ titleKey: String,
+        subtitle: String? = nil,
         systemImage: String? = nil,
         tone: PaletteSlot = .brand,
         divider: Bool = true,
         @ViewBuilder trailing: () -> Trailing = { EmptyView() }
     ) {
-        self.titleKey = titleKey
+        self.title = .key(titleKey)
+        self.subtitle = subtitle
         self.systemImage = systemImage
         self.tone = tone
         self.divider = divider
         self.trailing = trailing()
+    }
+
+    public init(
+        text: String,
+        subtitle: String? = nil,
+        systemImage: String? = nil,
+        tone: PaletteSlot = .brand,
+        divider: Bool = true,
+        @ViewBuilder trailing: () -> Trailing = { EmptyView() }
+    ) {
+        self.title = .verbatim(text)
+        self.subtitle = subtitle
+        self.systemImage = systemImage
+        self.tone = tone
+        self.divider = divider
+        self.trailing = trailing()
+    }
+
+    @ViewBuilder
+    private var titleView: some View {
+        switch title {
+        case let .key(key):
+            HXText(key)
+        case let .verbatim(text):
+            Text(verbatim: text)
+        }
+    }
+
+    /// A value that would only fit a full row width — two base URLs, say — rides under the title instead of
+    /// being truncated in the trailing slot.
+    @ViewBuilder
+    private var label: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            titleView
+                .font(.body)
+                .foregroundStyle(Color.hx(.textPrimary))
+            if let subtitle {
+                Text(verbatim: subtitle)
+                    .font(.footnote)
+                    .foregroundStyle(Color.hx(.textSecondary))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     public var body: some View {
@@ -30,9 +83,7 @@ public struct HXRow<Trailing: View>: View {
                     .foregroundStyle(Color.hx(tone))
                     .frame(width: 26)
             }
-            HXText(titleKey)
-                .font(.body)
-                .foregroundStyle(Color.hx(.textPrimary))
+            label
             Spacer(minLength: 8)
             trailing
         }
@@ -49,22 +100,7 @@ public struct HXRow<Trailing: View>: View {
     }
 }
 
-/// Right-hand value text, e.g. the tenant name on the switch-tenant row.
-public struct HXValueText: View {
-    private let value: String
-
-    public init(_ value: String) {
-        self.value = value
-    }
-
-    public var body: some View {
-        Text(verbatim: value)
-            .font(.subheadline)
-            .foregroundStyle(Color.hx(.textSecondary))
-            .lineLimit(1)
-    }
-}
-
+/// Trailing affordance on a row that pushes another screen.
 public struct HXChevron: View {
     public init() {}
 

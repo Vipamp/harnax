@@ -5,6 +5,8 @@ import XCTest
 /// English and Simplified Chinese ship together; nothing reaches a screen in one language only.
 final class LocalizationKeyTests: XCTestCase {
     /// Screens add their namespace here as they land. Only dotted literals in this set are treated as keys.
+    /// A namespace word also claims the matching SF Symbol prefix — `server.rack` reads as a copy key — so
+    /// an icon name inside a screen has to avoid these prefixes.
     private static let namespaces = [
         "common", "state", "tab", "login", "server", "me",
         "agent", "team", "task", "chat", "model", "skill", "mcp", "cli",

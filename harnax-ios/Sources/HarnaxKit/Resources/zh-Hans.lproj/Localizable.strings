@@ -67,6 +67,7 @@
 "me.section.preferences" = "偏好设置";
 "me.section.server" = "服务器";
 "me.tenant.current" = "当前租户：%@（id %@）";
+"me.tenant.unknown" = "未知租户";
 "me.role.administrator" = "管理员";
 "me.role.member" = "成员";
 "me.themeAndLanguage" = "主题与语言";
