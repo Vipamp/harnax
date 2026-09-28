@@ -1,0 +1,55 @@
+{
+  "code": 200,
+  "message": "success",
+  "timestamp": 1759041600000,
+  "isSuccess": true,
+  "data": {
+    "pageNum": 1,
+    "pageSize": 10,
+    "total": 2,
+    "pages": 1,
+    "records": [
+      {
+        "id": 3,
+        "name": "harnax-cli",
+        "description": "Harnax 平台命令行工具包",
+        "version": "1.4.0",
+        "checkCommand": "harnax --version",
+        "packageDigest": "9f2c41d7ab53e0c18f6b4d2a7c5e9130b8f4a6c2d0e5b7a91c3f5d8e0a2b4c6f",
+        "envParams": [
+          {
+            "id": 11,
+            "envParamName": "HARNAX_TOKEN",
+            "description": "平台下发的短期令牌",
+            "required": true,
+            "secret": true,
+            "defaultValue": "hur****abcd"
+          },
+          {
+            "id": 12,
+            "envParamName": "HARNAX_REGION",
+            "required": false,
+            "secret": false,
+            "defaultValue": "cn-hangzhou"
+          }
+        ],
+        "skill": {
+          "skillId": 27,
+          "skillName": "harnax-cli",
+          "skillDescription": "怎么用这个命令行包"
+        },
+        "status": 1,
+        "createTime": "2026-09-12 10:20:30",
+        "updateTime": "2026-09-26 08:41:07"
+      },
+      {
+        "id": 4,
+        "name": "kubectl",
+        "packageDigest": "",
+        "version": "",
+        "status": 0,
+        "createTime": "2026-09-20 15:02:11"
+      }
+    ]
+  }
+}

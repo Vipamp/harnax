@@ -163,6 +163,35 @@
 "tool.detail.empty" = "This tool declares no parameters and names no implementation.";
 "tool.detail.reload" = "Reload this tool";
 
+/* ---- CLI packages ---- */
+"cli.search" = "Search CLI name";
+"cli.empty" = "No registered CLI packages";
+"cli.empty.filtered" = "No CLI package matches this search or filter";
+"cli.action.detail" = "View declaration";
+"cli.chip.skill" = "Skill %@";
+"cli.chip.digest" = "Digest %@";
+"cli.disable.title" = "Disable this CLI?";
+"cli.disable.confirm" = "Disable %@";
+"cli.disable.body" = "%1$d agent(s) bind this CLI (%2$@). Their sandboxes lose the command and its shipped skill stops loading.";
+"cli.related.agentFallback" = "Agent #%d";
+"cli.related.agentUnnamed" = "Unnamed";
+"cli.value.none" = "None";
+"cli.section.overview" = "Package";
+"cli.section.fingerprint" = "Package and image fingerprints";
+"cli.section.apt" = "apt dependencies";
+"cli.section.runtime" = "Runtime environment";
+"cli.field.version" = "Version";
+"cli.field.description" = "Description";
+"cli.field.status" = "Status";
+"cli.field.skill" = "Shipped skill";
+"cli.field.createTime" = "Registered";
+"cli.field.packageDigest" = "Package digest";
+"cli.field.payloadDigest" = "Image fingerprint";
+"cli.field.depsApt" = "apt packages";
+"cli.field.checkCommand" = "Health check";
+"cli.field.envParams" = "Declared parameters";
+"cli.field.runtimeEnv" = "Runtime env slots";
+
 /* ---- MCP: server list ---- */
 "mcp.search" = "Search MCP servers";
 "mcp.create" = "New MCP server";
