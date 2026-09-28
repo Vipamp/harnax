@@ -6,7 +6,19 @@ import HarnaxFeatures
 @MainActor
 final class AppModelTests: XCTestCase {
     private func makeModel(_ auth: FakeAuth = FakeAuth()) -> (AppModel, FakeAuth) {
-        let model = AppModel(dependencies: HarnaxDependencies(auth: auth, agents: FakeAgents(), teams: FakeTeams(), sessionRefresher: FakeRefresher()))
+        // Nothing here opens the 上下文 tab, so its five catalogs share one failing double.
+        let unwired = UnwiredCatalogs()
+        let model = AppModel(dependencies: HarnaxDependencies(
+            auth: auth,
+            agents: FakeAgents(),
+            teams: FakeTeams(),
+            sessionRefresher: FakeRefresher(),
+            models: unwired,
+            tools: unwired,
+            mcp: unwired,
+            skills: unwired,
+            clis: unwired
+        ))
         return (model, auth)
     }
 

@@ -1,14 +1,20 @@
 import SwiftUI
+import HarnaxCore
 import HarnaxKit
 
 /// D1 — the 上下文 tab is a five-way switch over the domains an agent binds to.
 ///
-/// The segment row is the whole navigation shape of this tab, so it lands before the domains do: a
-/// placeholder per column keeps the tab from rearranging between milestones.
+/// The segment row is the whole navigation shape of this tab: one column on screen at a time, each column
+/// the domain's own list screen with its forms and detail pushes riding on the tab's stack.
 public struct ContextView: View {
     @State private var domain: ContextDomain = .model
+    private let dependencies: HarnaxDependencies
+    private let account: AccountSnapshot?
 
-    public init() {}
+    public init(dependencies: HarnaxDependencies, account: AccountSnapshot?) {
+        self.dependencies = dependencies
+        self.account = account
+    }
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -20,12 +26,19 @@ public struct ContextView: View {
             .padding(.top, 10)
             .padding(.bottom, 4)
 
-            // Each column holds its own state, so switching away and back does not lose a search term.
-            Group {
-                switch domain {
-                case .model, .tool, .mcp, .skill, .cli:
-                    SoonView(titleKey: domain.titleKey)
-                }
+            // A column is built when its segment is picked and thrown away when it is left, so a search term
+            // does not survive the round trip and the first page reloads on every visit.
+            switch domain {
+            case .model:
+                ModelProviderListView(catalog: dependencies.models, account: account)
+            case .tool:
+                ToolListView(tools: dependencies.tools)
+            case .mcp:
+                McpListView(mcp: dependencies.mcp)
+            case .skill:
+                SkillHomeView(skills: dependencies.skills)
+            case .cli:
+                CliListView(clis: dependencies.clis, sessionRefresher: dependencies.sessionRefresher)
             }
         }
     }

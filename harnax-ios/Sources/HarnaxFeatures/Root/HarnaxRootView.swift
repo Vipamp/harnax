@@ -66,7 +66,11 @@ struct HarnaxTabView: View {
                 account: model.account
             )
         case .me: MeView(model: model)
-        case .context: ContextView()
+        case .context:
+            ContextView(
+                dependencies: model.dependencies,
+                account: model.account
+            )
         case .chat, .system: SoonView(titleKey: tab.titleKey)
         }
     }

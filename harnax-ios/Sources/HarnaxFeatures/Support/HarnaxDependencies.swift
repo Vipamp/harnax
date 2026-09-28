@@ -10,17 +10,32 @@ public struct HarnaxDependencies: Sendable {
     public let agents: any AgentCataloging
     public let teams: any TeamCataloging
     public let sessionRefresher: any SessionRefreshing
+    public let models: any ModelCataloging
+    public let tools: any ToolCataloging
+    public let mcp: any McpCataloging
+    public let skills: any SkillCataloging
+    public let clis: any CliCataloging
 
     public init(
         auth: any AuthFlowing,
         agents: any AgentCataloging,
         teams: any TeamCataloging,
-        sessionRefresher: any SessionRefreshing
+        sessionRefresher: any SessionRefreshing,
+        models: any ModelCataloging,
+        tools: any ToolCataloging,
+        mcp: any McpCataloging,
+        skills: any SkillCataloging,
+        clis: any CliCataloging
     ) {
         self.auth = auth
         self.agents = agents
         self.teams = teams
         self.sessionRefresher = sessionRefresher
+        self.models = models
+        self.tools = tools
+        self.mcp = mcp
+        self.skills = skills
+        self.clis = clis
     }
 
     public static func live() -> HarnaxDependencies {
@@ -38,14 +53,19 @@ public struct HarnaxDependencies: Sendable {
             // next launch.
             language: { AcceptLanguage.current() }
         )
-        // One admin surface, three protocols: the agent, team and session-refresh routes all sit behind the
-        // same client and the same auth session.
+        // One admin surface, eight protocols: every `/api/admin/**` route family hangs off the same client,
+        // so the agent, team, refresh and five context domains all share its header injection.
         let admin = AdminClient(client: client)
         return HarnaxDependencies(
             auth: AuthFlow(client: client, session: session, configs: configs),
             agents: admin,
             teams: admin,
-            sessionRefresher: admin
+            sessionRefresher: admin,
+            models: admin,
+            tools: admin,
+            mcp: admin,
+            skills: admin,
+            clis: admin
         )
     }
 }

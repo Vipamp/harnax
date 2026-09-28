@@ -123,16 +123,16 @@ final class ToolDetailModel: ObservableObject {
 
 /// The tool drill-down: parameters with their flags and defaults, then the bean and method that serve the
 /// call. Read-only in both directions — there is nothing here to edit, and the stack offers no route for it.
-struct ToolDetailSheet: View {
+public struct ToolDetailSheet: View {
     @StateObject private var model: ToolDetailModel
     /// Held so switching language inside the app re-resolves the name column, which is picked per row.
     @ObservedObject private var catalog = HarnaxCatalog.shared
 
-    init(tools: any ToolCataloging, tool: ToolSummary) {
+    public init(tools: any ToolCataloging, tool: ToolSummary) {
         _model = StateObject(wrappedValue: ToolDetailModel(tools: tools, tool: tool))
     }
 
-    var body: some View {
+    public var body: some View {
         HXBindingSheet(title: ToolDetailPresenter.title(for: model.tool, chinese: chinese)) {
             VStack(alignment: .leading, spacing: 0) {
                 if let inline = model.inlineError {
