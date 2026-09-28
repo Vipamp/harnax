@@ -151,6 +151,18 @@
 "env.sensitive" = "敏感";
 "env.default" = "默认值";
 
+/* ---- 工具 ---- */
+"tool.search" = "搜索工具名称或描述";
+"tool.empty" = "还没有注册的工具。";
+"tool.empty.filtered" = "没有符合筛选条件的工具。";
+"tool.readonly.note" = "工具由代码注册，这里只能查看。";
+"tool.badge.mandatory" = "必选";
+"tool.section.implementation" = "实现";
+"tool.row.bean" = "Spring Bean";
+"tool.row.method" = "方法";
+"tool.detail.empty" = "该工具没有声明任何参数。";
+"tool.detail.reload" = "重新加载";
+
 /* ---- 未开放 ---- */
 "soon.title" = "本版本暂未开放";
 "soon.hint" = "该模块会在后续里程碑落地。";

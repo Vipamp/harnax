@@ -150,6 +150,18 @@
 "env.sensitive" = "Sensitive";
 "env.default" = "Default";
 
+/* ---- tools ---- */
+"tool.search" = "Search tool name or description";
+"tool.empty" = "No tools registered by the code";
+"tool.empty.filtered" = "No tool matches this search or filter";
+"tool.readonly.note" = "Tools are declared by the running code, so this list is read-only.";
+"tool.badge.mandatory" = "Mandatory";
+"tool.section.implementation" = "Implementation";
+"tool.row.bean" = "Spring bean";
+"tool.row.method" = "Method";
+"tool.detail.empty" = "This tool declares no parameters and names no implementation.";
+"tool.detail.reload" = "Reload this tool";
+
 /* ---- not in this build ---- */
 "soon.title" = "Not in this build yet";
 "soon.hint" = "This area lands in a later milestone.";

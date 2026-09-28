@@ -1,0 +1,59 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "pageNum": 1,
+    "pageSize": 50,
+    "total": 2,
+    "records": [
+      {
+        "id": 1,
+        "name": "send_email",
+        "displayName": "Send Email",
+        "displayNameZh": "发送邮件",
+        "description": "按收件人邮箱发送已渲染的正文",
+        "beanName": "emailTool",
+        "methodName": "send",
+        "envParams": [
+          {
+            "id": 3,
+            "envParamName": "SMTP_PASSWORD",
+            "description": "SMTP 登录口令",
+            "required": true,
+            "secret": true,
+            "defaultValue": "abc****wxyz"
+          },
+          {
+            "id": 4,
+            "envParamName": "SMTP_TIMEOUT_SECONDS",
+            "required": false,
+            "secret": false,
+            "defaultValue": "30"
+          }
+        ],
+        "readOnly": 1,
+        "needConfirm": 1,
+        "isRequired": 0,
+        "requiredEnvParamKeys": ["SMTP_PASSWORD"],
+        "status": 1,
+        "creator": "heqingsong",
+        "createTime": "2026-09-12 10:20:30",
+        "updateTime": "2026-09-28 08:01:12"
+      },
+      {
+        "id": 2,
+        "name": "web_search",
+        "displayName": "Web Search",
+        "description": null,
+        "envParams": [],
+        "requiredEnvParamKeys": ["SEARCH_QUOTA", "SEARCH_REGION"],
+        "status": 1
+      }
+    ],
+    "hasNext": false,
+    "hasPrevious": false,
+    "pages": 1
+  },
+  "timestamp": 1790592457109,
+  "isSuccess": true
+}
