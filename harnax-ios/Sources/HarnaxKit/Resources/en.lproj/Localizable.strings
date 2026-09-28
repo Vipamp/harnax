@@ -1,9 +1,9 @@
-/* Shared copy used by HarnaxKit components and state placeholders. */
-
+/* ---- shared ---- */
 "common.retry" = "Retry";
 "common.cancel" = "Cancel";
 "common.confirm" = "Done";
 "common.close" = "Close";
+"common.save" = "Save";
 
 "state.loading" = "Loading…";
 "state.empty.title" = "Nothing here yet";
@@ -11,5 +11,75 @@
 "state.error.title" = "Something went wrong";
 "state.error.hint" = "Check your connection, then try again.";
 
-"me.language.followSystem" = "Follow Device Language";
+/* ---- errors ---- */
+"error.offline" = "You appear to be offline.";
+"error.timeout" = "The request timed out.";
+"error.unauthorized" = "Your session has expired. Please sign in again.";
+"error.business" = "The server rejected this request.";
+"error.unpackable" = "The server returned an empty response.";
+"error.decoding" = "The server reply could not be read.";
+"error.serverConfig" = "That server address is not valid.";
+"error.throttled" = "Too many attempts. Try again in %d s.";
+"error.refillPassword" = "Too many failed attempts — retype your password.";
+
+/* ---- tabs ---- */
+"tab.chat" = "Chats";
+"tab.agents" = "Agents";
+"tab.context" = "Context";
+"tab.system" = "System";
+"tab.me" = "Me";
+
+/* ---- login ---- */
+"login.subtitle" = "Agent control, on the go";
+"login.usernamePlaceholder" = "Username";
+"login.passwordPlaceholder" = "Password";
+"login.submit" = "Sign in";
+"login.signingIn" = "Signing in…";
+"login.needCredentials" = "Enter both your username and password.";
+"login.serverAddress" = "Server address";
+"login.serverBanner.title" = "Server";
+"login.address.admin" = "Admin API";
+"login.address.router" = "Router API";
+"login.address.hint" = "Both addresses must point at the same Harnax stack.";
+"login.address.saved" = "Server address updated.";
+
+/* ---- agents ---- */
+"agent.title" = "Agents";
+"agent.segment.agents" = "Agents";
+"agent.segment.teams" = "Teams";
+"agent.segment.tasks" = "Scheduled";
+"agent.badge.enabled" = "Enabled";
+"agent.badge.disabled" = "Stopped";
+"agent.badge.public" = "Public";
 "agent.sessionCount" = "%d sessions";
+"agent.chip.model" = "Model %@";
+"agent.chip.tools" = "Tools %d";
+"agent.chip.skills" = "Skills %d";
+"agent.chip.mcp" = "MCP %d";
+"agent.chip.cli" = "CLI %d";
+"agent.action.chat" = "Chat";
+"agent.action.edit" = "Edit";
+"agent.create" = "New agent";
+
+/* ---- me ---- */
+"me.title" = "Me";
+"me.section.account" = "Account";
+"me.section.preferences" = "Preferences";
+"me.section.server" = "Server";
+"me.tenant.current" = "Current tenant: %@ (id %@)";
+"me.role.administrator" = "Administrator";
+"me.role.member" = "Member";
+"me.themeAndLanguage" = "Appearance & Language";
+"me.theme" = "Appearance";
+"me.theme.system" = "System";
+"me.theme.light" = "Light";
+"me.theme.dark" = "Dark";
+"me.language" = "Language";
+"me.language.followSystem" = "Follow Device Language";
+"me.server.address" = "Server address";
+"me.logout" = "Sign out";
+"me.logout.confirm" = "Sign out on this device?";
+
+/* ---- not in this build ---- */
+"soon.title" = "Not in this build yet";
+"soon.hint" = "This area lands in a later milestone.";

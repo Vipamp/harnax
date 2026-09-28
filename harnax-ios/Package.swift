@@ -7,6 +7,7 @@ let package = Package(
     platforms: [.iOS(.v17), .macOS(.v14)],
     products: [
         .library(name: "HarnaxCore", targets: ["HarnaxCore"]),
+        .library(name: "HarnaxAPI", targets: ["HarnaxAPI"]),
         .library(name: "HarnaxKit", targets: ["HarnaxKit"]),
     ],
     targets: [
@@ -15,6 +16,16 @@ let package = Package(
             name: "HarnaxCoreTests",
             dependencies: ["HarnaxCore"],
             resources: [.copy("Fixtures")],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .target(
+            name: "HarnaxAPI",
+            dependencies: ["HarnaxCore"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .testTarget(
+            name: "HarnaxAPITests",
+            dependencies: ["HarnaxAPI"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .target(

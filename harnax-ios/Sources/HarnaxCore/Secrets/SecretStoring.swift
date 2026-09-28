@@ -10,6 +10,9 @@ public enum SecretKey: String, CaseIterable, Sendable {
     case tokenLifetimeMillis
     case adminBaseURL
     case routerBaseURL
+    /// Display fields of the signed-in account, as JSON. Restoring from the keychain alone would leave
+    /// the identity card blank until `auth/me` answers, which never happens offline.
+    case cachedAccount
 }
 
 public enum SecretStoreError: Error, Equatable, Sendable {

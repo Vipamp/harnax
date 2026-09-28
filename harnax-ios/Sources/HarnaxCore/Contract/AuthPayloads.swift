@@ -3,7 +3,7 @@ import Foundation
 /// `POST /api/admin/auth/cli-login` body.
 ///
 /// Backend: `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/LoginRequest.kt:9-29`.
-/// `captcha` / `captchaKey` / `autoLogin` are deliberately not encoded: the CLI口 ignores them
+/// `captcha` / `captchaKey` / `autoLogin` are deliberately not encoded: the CLI endpoint ignores them
 /// (`AuthController.kt:45-49`), and iOS sends the plain password because the server applies
 /// `sha256Hex` before the BCrypt comparison (`AuthServiceImpl.kt:195-200`).
 public struct LoginRequest: Encodable, Equatable, Sendable {
@@ -16,7 +16,7 @@ public struct LoginRequest: Encodable, Equatable, Sendable {
     }
 }
 
-/// `LoginResponse` from either login口.
+/// `LoginResponse` from either login endpoint.
 ///
 /// Backend: `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/LoginResponse.kt:14-40`.
 /// Every field is nullable there, so iOS mirrors the optionality and validates at the use site

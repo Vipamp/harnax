@@ -13,7 +13,12 @@
         "modelName": "qwen-plus",
         "status": 1,
         "isPublic": 1,
-        "sessionCount": 3
+        "sessionCount": 3,
+        "creator": "heqingsong",
+        "createTime": "2026-09-12T10:20:30",
+        "skillList": [{ "id": 5, "name": "术语表" }, { "id": 7, "name": "润色" }],
+        "toolList": [{ "id": 2 }, { "id": 3 }, { "id": 9 }],
+        "cliList": [{ "id": 1, "name": "harnax-cli" }]
       },
       {
         "id": 12,
