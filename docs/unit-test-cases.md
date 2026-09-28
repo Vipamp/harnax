@@ -1,8 +1,8 @@
-# harnax-admin 单元测试用例设计
+# harnax 后端单元测试用例目录
 
-> 范围:harnax-admin 模块核心业务逻辑的单元测试(UT)用例设计。
-> 与集成测试(harnax-admin/src/test/kotlin/.../admin/it/,`-Pintegration-test` 运行)互补:集成测试覆盖 HTTP 端到端链路,本文档聚焦 Service/Util 层的分支逻辑,mock 掉 Mapper 与外部依赖。
-> 框架建议:JUnit 5 + MockK(Kotlin 项目首选,可 mock 静态/顶级函数)+ kotlin.test 断言。
+> 范围:harnax 后端各模块核心业务逻辑的单元测试(UT)用例目录,覆盖 Service / Controller / Util / Loader 层的分支逻辑,mock 掉 Mapper 与外部依赖。每个域的逐条清单不追求与套件的用例数一一对应,全量计数以 §17 的实跑为准。
+> 与集成测试(`harnax-admin/src/test/kotlin/.../admin/it/`,`-Pintegration-test` 运行)互补:集成测试覆盖 HTTP 端到端链路与真库,本文档聚焦不碰容器的这一层。
+> 框架:JUnit 5 + mockito-kotlin(`@Mock` / `@InjectMocks`、`whenever`、`argumentCaptor<T>()`、`anyOrNull()`)与 JUnit 的 `assertEquals` / `assertThrows` / `assertNull` 断言。
 
 ## 测试分级说明
 
@@ -149,7 +149,7 @@
 |------|------|------|------|
 | SES-01 | 标题重复 | countByTitle>0 | BizException `Session name already exists, please use another name` |
 | SES-02 | agent 不存在 | getAgent=null | BizException `Agent not found`(注意被外层 catch 包装为 RuntimeException `Failed to create session: ...`,断言最终异常类型与 message) |
-| SES-03 | 创建复制 agent 字段 | agent 含 name/description/systemPrompt/modelId/owner | Session 实体对应字段一致;sessionId 前缀 `web-`;status=1、isPublic=0(agent 与 session 上的 `mcp_list` / `skill_list` 两列已不在 schema 里,创建会话不再复制能力清单) |
+| SES-03 | 创建复制 agent 字段 | agent 含 name/description/systemPrompt/modelId/owner | Session 实体对应字段一致;sessionId 前缀 `web-`;status=1、isPublic=0(agent 与 session 上都没有 `mcp_list` / `skill_list` 列,创建会话不复制能力清单) |
 | SES-04 | 更新不存在会话 | selectById=null | BizException `Session not found` |
 | SES-05 | 更新字段映射 | 传 sessionDescription | 写入实体 description 字段(命名不一致点,固化行为) |
 | SES-06 | chat config 会话不存在 | selectBySessionIdAndStatus=null | BizException `Session not found or disabled` |
@@ -167,23 +167,23 @@
 
 | 编号 | 用例 | 输入 | 期望 |
 |------|------|------|------|
-| AGT-01 | 创建成功默认值 | status/isPublic 不传 | status=1、isPublic=0、tenantId=TenantContext ?: 1(第四轮之前 `AgentMapper.xml` 的 insert 与 resultMap 都漏了 `tenant_id`,实体带值也落不了库;OAuth 方案 P1-5 已补齐,落库那一半由 `AgentMapperTest` 的 `insert should persist tenant id` 钉住) |
+| AGT-01 | 创建成功默认值 | status/isPublic 不传 | status=1、isPublic=0、tenantId=TenantContext ?: 1(落库那一半由 `AgentMapper.xml` 的 insert 与 resultMap 承担，并由 `AgentMapperTest` 的 `insert should persist tenant id` 钉住;本条只验入口默认值) |
 | AGT-02 | 子调用异常被包装 | mapper.insert 抛 SQLException | RuntimeException,message 前缀 `Failed to create agent:` |
 | AGT-03 | 更新不存在 agent | selectById=null | RuntimeException `Agent not found`(注意非 BizException,前端会拿到 500 语义 —— 建议列为改进项) |
 | AGT-04 | 更新时 list 为 null 不覆盖绑定 | toolList=null | 不调用 saveToolBindings;传空列表时则清空绑定 |
 | AGT-05 | deleteAgent 级联 | 任意 id | 顺序验证:tool→mcp→skill 绑定删除,最后 agentMapper.deleteById |
 | AGT-06 | saveToolBindings 先删后插 | toolList=[{id:1}] | InOrder: deleteByAgentId → insert |
 | AGT-07 | toolList 条目缺 id 跳过 | [{id:null}, {id:2}] | 只插入 toolId=2 |
-| AGT-08 | needConfirm 透传 | binding 请求 needConfirm=true / false / null | 分别存 1 / 0 / 0;不再查工具实体(运行时取 `agent_tool.needConfirm` 与绑定值的或,绑定层只能加严) |
+| AGT-08 | needConfirm 透传 | binding 请求 needConfirm=true / false / null | 分别存 1 / 0 / 0;查询侧不读工具实体(运行时取 `agent_tool.needConfirm` 与绑定值的或,绑定层只能加严) |
 | AGT-09 | 同一请求内重复 toolId 去重 | [{id:1}, {id:1}, {id:2}] | 只插入 toolId=1、2 各一条(取首次出现),配合 `uk_agent_tool_binding_agent_id_tool_id` |
 | AGT-10 | skillList 解析 | "1,,x,3" | 只插入 1、3;空串与非数字跳过 |
 | AGT-11 | serializeEnvBindings 空入参 | null / 空列表 | 返回 null |
-| AGT-12 | serializeEnvBindings 引用优先 | envVarId=5 且 customValue="abc" | 两个都带时按引用处理：JSON 只写 `envVarId` / `envVarName`，`customValue` 被丢弃（第十七轮之前这行写的是「customValue 优先」，与 `if (envVarId != null) … else if` 的实现一直相反） |
-| AGT-13 | serializeEnvBindings 引用只落指针 | envVarId=7,envValue=`******` | JSON 含 `"envVarId":7`、不含 `******`、不含 `envValue` 键。旧期望「envValue 取 getDecryptedValue(id)」会把明文密钥写进 `env_bindings` 列，而客户端回填的又常常是掩码，两边都不成立。这条现在**有**用例，在 §5.11 |
+| AGT-12 | serializeEnvBindings 引用优先 | envVarId=5 且 customValue="abc" | 两个都带时按引用处理：JSON 只写 `envVarId` / `envVarName`，`customValue` 被丢弃（与 `if (envVarId != null) … else if` 的分支一致） |
+| AGT-13 | serializeEnvBindings 引用只落指针 | envVarId=7,envValue=`******` | JSON 含 `"envVarId":7`、不含 `******`、不含 `envValue` 键。引用条目带的是指针，值在下发时现取：把 `getDecryptedValue` 的结果写进列等于让明文密钥常驻 `env_bindings`，而客户端回填到这一栏的又常常是掩码，两边都不是可用值。解析侧的同一条不变量在 §5.11 |
 | AGT-14 | parseEnvBindingsJson 脏数据 | "not-json" | 返回 null,不抛 |
 | AGT-15 | parseEnvBindingsJson 敏感变量掩码 | envVar.sensitive=1 | displayValue="******" |
-| AGT-16 | parseEnvBindingsJson 变量已删除回退快照 | getRowWithinTenant=null | 使用存储的 snapshotValue。**只对历史行成立**：新写入的引用条目没有 snapshotValue 可兜，界面与下发都拿不到值（下发侧剩一句 warn），见 §5.11 与 `mcp-management` §7.16 |
-| AGT-17 | 同一请求内重复 mcpId 去重 | mcpList=[{id:3},{id:3},{id:4}] | 只插入 mcpId=3、4 各一条(取首次出现),配合 `uk_agent_mcp_binding_agent_id_mcp_id`;绑定行已无 `enableSkip` 字段(schema 里也没有这一列) |
+| AGT-16 | parseEnvBindingsJson 变量已删除回退快照 | getRowWithinTenant=null | 使用存储的 snapshotValue。**只对历史行成立**：新写入的引用条目没有 snapshotValue 可兜，界面与下发都拿不到值（下发侧剩一句 warn），见 §5.11 与 `prod_doc/mcp-management.zh-CN.md` §6 |
+| AGT-17 | 同一请求内重复 mcpId 去重 | mcpList=[{id:3},{id:3},{id:4}] | 只插入 mcpId=3、4 各一条(取首次出现),配合 `uk_agent_mcp_binding_agent_id_mcp_id`;绑定行没有 `enableSkip` 字段(schema 里也没有这一列) |
 | AGT-18 | 绑定的 mcpId 解析不到 | mcpList=[{id:9}],`mcpServerMapper.selectByIds([9])` 返回空(服务已删/不存在) | BizException,message 含 `9`;`mcpBindingMapper.batchInsert` never()(存得进去但 `agent-spec` 解析不出来的绑定从此造不出来) |
 | AGT-19 | 绑定的 mcpId 属别的租户 | selectByIds 返回 tenantId=2 的行,当前租户为默认的 1 | BizException;`batchInsert` never()。判定口径与 `McpServerService.getMcpServer` 一致(`selectByIds` 已排除 `active=0`,再比租户) |
 | AGT-20 | 创建时打上当前租户 | TenantContext 设为 7 | argumentCaptor 捕获的实体 tenantId=7;落库列由 `AgentMapperTest` 的 `insert should persist tenant id` 补齐(此前 `AgentMapper.xml` 的 insert 无 `tenant_id`,这行只是意图声明) |
@@ -194,7 +194,7 @@
 
 ### 5.1 AgentToolServiceImpl(只读查询)
 
-> 工具只剩内置一类,生命周期只有「代码注册」一个入口(见 prod_doc 工具文档 §5),`createAgentTool` / `updateAgentTool` / `deleteAgentTool` / `updateStatus` 连同 `AgentToolCreateRequest` / `AgentToolUpdateRequest` 与对应写接口已在自定义工具下线时整体删除,原先八条「写入口拒绝 BUILTIN」的用例随之取消。本节只覆盖剩下的四个读方法与响应装配。
+> 工具只剩内置一类,生命周期只有「代码注册」一个入口(见 prod_doc 工具文档 §5),因此工具侧没有创建/更新/删除/启停四类写接口,也不存在 `AgentToolCreateRequest` / `AgentToolUpdateRequest` 这两个请求体。本节覆盖四个读方法与响应装配。
 
 | 编号 | 用例 | 输入 | 期望 |
 |------|------|------|------|
@@ -214,30 +214,31 @@
 | TLS-14 | required-env-params 空值与坏 JSON | null / `not-json` | 都返回空列表 |
 | TLS-15 | required-env-params 工具不存在 | selectById=null | RuntimeException |
 
-### 5.2 BuiltinToolAutoRegistrar(启动全量收敛)
+### 5.2 BuiltinToolAutoRegistrar(启动收敛,只增不删)
 
-> `upsertBuiltinTool` 的 `ON DUPLICATE KEY UPDATE` 会覆盖 `name`,所以只改 `@Tool(name = ...)` 是原地更新(`id` 与绑定不动);下面的删除用例都针对「代码不再声明那个 `beanName + methodName + name` 三元组」的残留行。
+> 记录身份是 `@Tool.name`,唯一键 `uk_agent_tool_name`;写入按 `selectByName` 定位后 `insert` 或有差异才 `updateById`,mapper 里没有 upsert 语句。这张表只有这个启动同步会写,因此代码不再声明的行留着但不再下发。
 
 | 编号 | 用例 | 输入 | 期望 |
 |------|------|------|------|
-| REG-01 | 库与代码一致时不删 | selectAllBuiltin 返回的行都在 liveKeys 里 | 一条 upsert / 方法,不调用 deleteBuiltinByIds / deleteByToolIds |
-| REG-02 | 代码删了方法 → 硬删 + 级联 | 库中多一条 beanName+methodName+name 不在代码中的行 | binding.deleteByToolIds → envParam.deleteByToolIds → deleteBuiltinByIds([id]),顺序固定 |
-| REG-03 | 软删残留被清 | active=0 的行(旧手工删除留下的) | 同样进入删除集合,`uk_tenant_bean_method` 不再挡同名重建 |
-| REG-04 | 改了 Java 方法名 → 删旧行 | 代码声明 `currentTimestamp`,库中留着 `currentTime` 的旧行 | 身份键含 method_name,旧行(唯一一条 stale)硬删 |
-| REG-05 | 安全阀:扫不到工具 | getAllToolMeta 返回空 | 直接 return:不 upsert、不 selectAllBuiltin、不删任何行 |
-| REG-06 | 单组失败不触发删除 | broken-box 的 upsert 抛异常,库里另有一条 orphan | failCount>0 时整轮 prune 跳过,orphan 与 broken-box 的行都保留 |
-| REG-07 | 熔断:待删数不少于声明数 | 代码只声明 1 个工具,库里留着 2 条孤儿 | stale.size(2) >= liveKeys.size(1) → 跳过删除并打 ERROR,live 记录仍正常 upsert |
-| REG-08 | status/active 归代码所有 | 代码里存在的方法 | 交给 upsert 的实体 status=1、active=1、creator=SYSTEM |
+| REG-01 | 库里没有的声明被插入 | selectByName=null | insert 的实体 `name`/`beanName` 按声明,`status=1, active=1, creator='SYSTEM'`;不调 updateById |
+| REG-02 | 逐列一致就不写 | 已有一行且代码拥有的列全等 | insert、updateById 都不调用 |
+| REG-03 | 有差异才原地更新 | 库中 `method_name` 为 `oldMethod`、`display_name` 为旧值 | updateById 携带既有 `id=7` 与 `createTime`,agent 绑定因此存活 |
+| REG-04 | status 由同步收敛回启用 | 库中该行 `status=0` | 被改回 1(整张表只有这个写入方) |
+| REG-05 | 代码不再声明的行不碰 | 库中留着 `removed_tool` 一行 | 既不 update 也不 delete;`registeredToolNames()` 不含它,即被挡在下发之外 |
+| REG-06 | 同名两条声明先拒后写 | 两个 bean 各声明一个 `@Tool.name` 相同的方法 | 抛 IllegalStateException,消息点名两个 `bean::method`;任何 insert/updateById 都没发生 |
+| REG-07 | 扫不到工具就整轮跳过 | getAllToolMeta 返回空 map | 不 insert、不 updateById,`registeredToolNames()` 保持空集 |
+| REG-08 | 单组失败不牵连同组外 | broken 组 insert 抛异常,healthy 组正常 | 两组都被尝试(insert 两次);失败组的工具名仍计入 `registeredToolNames()`,写失败不该变成所有 agent 少一个工具 |
+| REG-09 | 环境参数跟随所属工具收敛 | 注解声明 1 条必填,库中同 toolId 下有一条陈旧定义 | 声明的那条 insert(`required=1`),注解里已不存在的陈旧定义 deleteById |
 
 ### 5.3 McpServerServiceImpl(MCP 写入口缺省、更新语义、删除级联与租户过滤)
 
-> MCP 没有代码注册收敛,页面/API 就是它的生命周期,因此写入口的缺省值与「省略是否等于覆盖」必须钉住。停用链路的下发环节另有覆盖:`InternalApiControllerTest`「getAgentSpec - MCP status 随配置下发」与 agent-service 的 `McpConfigAdaptorImplTest`(DTO→实体透传 status;第十六轮起该类只验「下发的 spec 是唯一来源」——查库兜底被删了,库里那行是这一侧解不开的密文)。最末一环 `HarnessAgentLauncher` 在 harness-core 无单测(该类依赖完整构建链路),它现在持有三条未验行为:「status=0 跳过装配」、「单台客户端建不起来只跳过这一台并关掉半成品」、「`release()` 逐个关闭本轮建出的 MCP 客户端」,与工具侧的同类跳过一样留给人工/集成验证。
+> MCP 没有代码注册收敛,页面/API 就是它的生命周期,因此写入口的缺省值与「省略是否等于覆盖」必须钉住。停用链路的下发环节另有覆盖:`InternalApiControllerTest`「getAgentSpec - MCP status 随配置下发」与 agent-service 的 `McpConfigAdaptorImplTest`(DTO→实体透传 status;该套件只验「下发的 spec 是唯一来源」——这一侧不查库,库里那行是它解不开的密文)。最末一环 `HarnessAgentLauncher` 在 harness-core 无单测(该类依赖完整构建链路),它持有三条未验行为:「status=0 跳过装配」、「单台客户端建不起来只跳过这一台并关掉半成品」、「`release()` 逐个关闭本轮建出的 MCP 客户端」,与工具侧的同类跳过一样留给人工/集成验证。
 
 | 编号 | 用例 | 输入 | 期望 |
 |------|------|------|------|
-| MCS-01 | 创建携带 isPublic | request.isPublic=0 | 落库实体 isPublic=0(请求说了算,不再恒为公开) |
+| MCS-01 | 创建携带 isPublic | request.isPublic=0 | 落库实体 isPublic=0(isPublic 以请求值落库,不写死公开) |
 | MCS-02 | 创建缺省值 | 不传 status / isPublic | 实体 status=1、isPublic=1、active=1 |
-| MCS-03 | 创建允许 stdio | type=stdio + command 非空 | 正常 insert(创建接口不再硬拒 stdio,与更新同口径) |
+| MCS-03 | 创建允许 stdio | type=stdio + command 非空 | 正常 insert(创建与更新对 stdio 同一条闸,口径一致) |
 | MCS-04 | stdio 缺 command | type=stdio,command=null | BizException,不调用 insert |
 | MCS-05 | 更新应用 status | request.status=0 | argumentCaptor 捕获实体 status=0(`updateById` 的 SET 已含 status 列) |
 | MCS-06 | 更新省略 status / isPublic | 两个字段都不传 | 实体保持原值 1、1(可空即「省略不改」,修复编辑页开关静默失效) |
@@ -264,7 +265,7 @@
 | MCS-27 | OAuth 服务换 url 清逐人凭据 | 原行 `OAUTH2` + `url=:8080/mcp`,请求改 `url=:9090/mcp`(不改 authType) | `verify(mcpUserCredentialMapper).deleteByMcpId(1L)`,且捕获实体仍是 `OAUTH2`、`oauthConfig` 非空。RFC 8707 把令牌与 resource 地址绑死,旧地址换到的凭据不可能再被接受——不清就是 `status` 永远回答「已授权」而换票必失败 |
 | MCS-28 | url 原样重提不算换地址 | 原行 `OAUTH2` + `url=:8080/mcp`,请求带同一个 url | `verify(mcpUserCredentialMapper, never()).deleteByMcpId(anyLong())`。编辑表单每次都把填着的 url 提交回去,把「带着但相同」读成搬迁,等于每次保存都把全租户的用户登出 |
 
-> 唯一键与租户过滤的 SQL 行为另有 `McpServerMapperTest`:`selectByName should limit the lookup to the given tenant`、`unique key should guard active names per tenant`(同租户重名 `assertThrows<DuplicateKeyException>`、别租户可同名、软删后可复用)、`selectMcpServerList should filter by tenant`。该类走 Testcontainers,跑法见 §17(本机 Docker + `TESTCONTAINERS_RYUK_DISABLED=true`),已计入回归。`schema-test.sql` 的 DDL 段取自 admin 的 schema 基线 `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql`,生成列与唯一键因此与生产同源、不再两头对齐。`mcp_oauth_client`、`mcp_user_credential`、`mcp_call_log` 三张 OAuth 表各有对应用例:`McpOauthClientMapperTest`(8,含 `issuer` 精确匹配与复用取最小 id)、`McpUserCredentialMapperTest`(7,含撤销时把两个密文列写回 NULL、重新授权复用同一行)、`McpCallLogMapperTest`(3,只有 insert)。
+> 唯一键与租户过滤的 SQL 行为另有 `McpServerMapperTest`:`selectByName should limit the lookup to the given tenant`、`unique key should guard active names per tenant`(同租户重名 `assertThrows<DuplicateKeyException>`、别租户可同名、软删后可复用)、`selectMcpServerList should filter by tenant`。该类走 Testcontainers,跑法见 §17(本机 Docker 可用即可,无需额外环境变量),已计入回归。`schema-test.sql` 的 DDL 段取自 admin 的 schema 基线 `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql`,生成列与唯一键因此与生产同源、不需要两头对齐。`mcp_oauth_client`、`mcp_user_credential`、`mcp_call_log` 三张 OAuth 表各有对应用例:`McpOauthClientMapperTest`(8,含 `issuer` 精确匹配与复用取最小 id)、`McpUserCredentialMapperTest`(7,含撤销时把两个密文列写回 NULL、重新授权复用同一行)、`McpCallLogMapperTest`(3,只有 insert)。
 
 ### 5.4 InternalApiController(配置下发)
 
@@ -272,18 +273,18 @@
 
 | 编号 | 用例 | 输入 | 期望 |
 |------|------|------|------|
-| IAD-01 | MCP 一次批量查询 | 绑定 mcpId=7、88,`selectByIds([7,88])` 只返回 7 | `verify(mcpServerMapper).selectByIds(...)` 且 `never().selectById(anyLong())`(逐个查的 N+1 不再回来) |
+| IAD-01 | MCP 一次批量查询 | 绑定 mcpId=7、88,`selectByIds([7,88])` 只返回 7 | `verify(mcpServerMapper).selectByIds(...)` 且 `never().selectById(anyLong())`(一次批量查询，不留逐条 `selectById` 的 N+1) |
 | IAD-02 | 悬空 MCP 绑定两半同缺 | 同上 | `mcpDetails` 只含 7;legacy `mcpList` 也只含 7——已删服务的 `env_bindings` 不会经 `mcpList` 漏进 `ToolEnvContext` |
 | IAD-03 | 悬空技能绑定两半同缺 | 绑定 skillId=21、999,批量结果只含 21 | `skillDetails` 与 `skillList` 都只剩 21 |
-| IAD-04 | getAgentTaskSpec 能力清单取自绑定表 | agent 上已无 `mcp_list` / `skill_list` 列 | `mcpList` 由 `serializeMcpBindings(绑定行)` 得到(含 `env_bindings`),`skillList` 为绑定 skillId 的逗号串 |
+| IAD-04 | getAgentTaskSpec 能力清单取自绑定表 | agent 上没有 `mcp_list` / `skill_list` 列 | `mcpList` 由 `serializeMcpBindings(绑定行)` 得到(含 `env_bindings`),`skillList` 为绑定 skillId 的逗号串 |
 | IAD-05 | status 随配置下发 | mcp_server.status=0 | `McpDetailDto.status=0` 原样下发,由运行侧决定跳过 |
 | IAD-06 | 别租户的 MCP 不下发 | 绑定 mcpId=7 的行 tenantId=2,agent tenantId=1 | `mcpDetails` 与 `mcpList` 两半都不出现该条,且 `verifyNoInteractions(secretFieldEncryptor)`——别租户的凭据连解密都不发生 |
 
-> **口径差的关闭方式**:下发用的 `selectByIds` 仍然不带租户条件(内部调用没有可信的 `X-Tenant-ID`,注入不进来),但 `agent.tenant_id` 已由 P1-5 真正落库,于是 `buildAgentSpecResponse` 拿到 agent 归属后在内存里比一刀(IAD-06)。第四轮的绑定校验挡新写入,这一刀把库里已经存在的跨租户绑定挡在下发之外。与 `McpServerServiceImpl` 的可见性口径一致:`is_public` 只在租户内成立,不存在跨租户共享。
+> **口径差的关闭方式**:下发用的 `selectByIds` 仍然不带租户条件(内部调用没有可信的 `X-Tenant-ID`,注入不进来),但 `agent.tenant_id` 是真正落库的列,于是 `buildAgentSpecResponse` 拿到 agent 归属后在内存里比一刀(IAD-06)。写入侧由绑定校验拦,下发侧由这一刀拦:库里已存在的跨租户绑定不会随 spec 出去。与 `McpServerServiceImpl` 的可见性口径一致:`is_public` 只在租户内成立,不存在跨租户共享。
 
 ### 5.5 SecretFieldEncryptor(敏感字段加解密与掩码沿用)
 
-> 前端把 secret 回显成掩码(`abc****defg` / 短值 `******`),原样提交回来时不能当新值写库——这是 P0 的凭据销毁缺陷,断言放在加密器这一层,因为 MCP / 工具 / CLI 三个写入口共用它。
+> 前端把 secret 回显成掩码(`abc****defg` / 短值 `******`),原样提交回来时不能当新值写库——否则掩码字符串会覆盖掉真凭据。断言放在加密器这一层,因为 MCP / 工具 / CLI 三个写入口共用它。
 
 | 编号 | 用例 | 输入 | 期望 |
 |------|------|------|------|
@@ -291,7 +292,7 @@
 | SFE-02 | 短掩码同样沿用 | value = `******` | 同 SFE-01(一个 `contains("****")` 判据覆盖两种掩码形态) |
 | SFE-03 | 无可沿用密文时要求重填 | 掩码值 + `storedJson` 为空/无同名条目 | BizException,message 点名该 key 要求重新填写,不静默写坏 |
 | SFE-04 | 工具环境参数同口径 | `serializeToolEnvParams` 的敏感 `defaultValue` 为掩码 | 按 `envParamName` 匹配沿用库里密文 |
-| SFE-05 | 夹具必须用 Kotlin 感知的 mapper | 构造 `SecretFieldEncryptor` | 用 `jacksonObjectMapper()`,与生产注入的 `JacksonConfig` bean 一致;裸 `ObjectMapper()` 绑不了 Kotlin 数据类的构造参数,`deserializeEntries` 会返回字段全空的条目(曾是纯测试侧假阴性) |
+| SFE-05 | 夹具必须用 Kotlin 感知的 mapper | 构造 `SecretFieldEncryptor` | 用 `jacksonObjectMapper()`,与生产注入的 `JacksonConfig` bean 一致;裸 `ObjectMapper()` 绑不了 Kotlin 数据类的构造参数,`deserializeEntries` 会返回字段全空的条目,夹具看着绿、测的却是一个空壳 |
 | SFE-06 | `resolveSecret` 未提供即保持 | provided=null,stored=密文 | 原样返回 stored(单列密钥的「省略不改」) |
 | SFE-07 | `resolveSecret` 掩码即沿用 | provided 含 `****`,stored=密文 | 返回 stored 密文,不把掩码加密 |
 | SFE-08 | `resolveSecret` 掩码且无密文可沿用 | provided 含 `****`,stored=null | BizException,message 含 `please re-enter it`——静默保留与静默覆盖都是丢数据 |
@@ -299,13 +300,13 @@
 | SFE-10 | `resolveSecret` 新值加密并 trim | provided="  s3cr3t  " | 返回密文,`decrypt` 回来等于 `s3cr3t` |
 | SFE-11 | `resolveSecret` 新值无需既有行 | provided 非空,stored=null | 正常加密返回(首次登记客户端的路径) |
 
-### 5.6 McpOAuthServiceImpl(AS 发现与客户端登记,P2-2)
+### 5.6 McpOAuthServiceImpl(AS 发现与客户端登记)
 
-> 设计口径见 `prod_doc/mcp-management.zh-CN.md` §3.5(英文版 §3.5)。被测的 MCP 服务 url 是 `http://mcp.example.com:3000/mcp`,issuer 是 `https://as.example.com`。出站请求全部经 `remoteJsonFetcher` 打桩:桩是一个 `Map<String, () -> RemoteFetch>`,**未登记的地址一律回 404**——「试了哪个候选、按什么顺序试」因此是断言出来的,不是猜的。`encryptor.resolveSecret` 也按真实规则打了桩(keep/replace/clear),掩码分支另有 `SecretFieldEncryptorTest` 用真加密器跑。五组分别是 issuer 解析 14、AS 元数据 11、发现落库 11、客户端凭据 11、回跳地址 2(第十四轮加的那组,共 49 个)。
+> 设计口径见 `prod_doc/mcp-management.zh-CN.md` §3.5(英文版 §3.5)。被测的 MCP 服务 url 是 `http://mcp.example.com:3000/mcp`,issuer 是 `https://as.example.com`。出站请求全部经 `remoteJsonFetcher` 打桩:桩是一个 `Map<String, () -> RemoteFetch>`,**未登记的地址一律回 404**——「试了哪个候选、按什么顺序试」因此是断言出来的,不是猜的。`encryptor.resolveSecret` 也按真实规则打了桩(keep/replace/clear),掩码分支另有 `SecretFieldEncryptorTest` 用真加密器跑。五组分别是 issuer 解析 14、AS 元数据 11、发现落库 11、客户端凭据 11、回跳地址 2,合计 49 个。
 
 | 编号 | 用例 | 输入 | 期望 |
 |------|------|------|------|
-| MOA-01 | 手填 issuer 不再走发现 | `oauthConfig.authorizationServer` 非空 | `issuerSource=CONFIG`,且两个 protected-resource 候选都 `never()` 被请求 |
+| MOA-01 | 手填 issuer 时不走发现 | `oauthConfig.authorizationServer` 非空 | `issuerSource=CONFIG`,且两个 protected-resource 候选都 `never()` 被请求 |
 | MOA-02 | 无 authorizationServer 时走 RFC 9728 插入式 | 只有 `http://mcp.example.com:3000/.well-known/oauth-protected-resource/mcp` 有文档 | `issuerSource=PROTECTED_RESOURCE`,端点取自该 AS 的元数据 |
 | MOA-03 | 两个路径型文档都没有时试主机根 | 只有 `.../.well-known/oauth-protected-resource` 有文档 | 仍解析出授权服务器(候选顺序是规范要求的,只试一种会漏) |
 | MOA-04 | 文档列多个 AS 时取第一个 | `authorization_servers:[本 AS, 另一个]` | 用第一个,不去合并(合并等于把两个 AS 的客户端身份并成一个) |
@@ -318,7 +319,7 @@
 | MOA-11 | 文档声明的 issuer 不等就拒绝 | 文档 `issuer=https://evil.example.com` | 报错含 `expected <issuer>` 且 `never()` insert(RFC 8414 要求精确相等,否则每个 token 都会在自己的 issuer 校验上失败) |
 | MOA-12 | 缺 token_endpoint 不算 AS | 只有 `authorization_endpoint` | 报错含 `no authorization_endpoint/token_endpoint`——半套端点看起来「配好了」更危险 |
 | MOA-13 | 200 但没有 JSON 节点 | `RemoteFetch(200, null, null)` | 报错含 `is not a JSON object`(200 不等于拿到了元数据) |
-| MOA-14 | 首次发现落新行 | 无既有行 | insert:`clientId=""`、`tenantId=1`、`creator="admin"`、`callbackUrl=${app.frontend-base-url 或 base-url}/mcp/oauth/callback`(第十四轮起指前端路由,见 MOA-48/49);回显 `clientId=null`、`clientSecretPresent=false` |
+| MOA-14 | 首次发现落新行 | 无既有行 | insert:`clientId=""`、`tenantId=1`、`creator="admin"`、`callbackUrl=${app.frontend-base-url 或 base-url}/mcp/oauth/callback`(指前端路由,见 MOA-48/49);回显 `clientId=null`、`clientSecretPresent=false` |
 | MOA-15 | 二次发现保留已登记客户端 | 既有行有 clientId/secret/callback | `never()` insert;三个值原样携带,端点刷新,且 AS 不再广告的 `registrationEndpoint` 被写成 null(快照要说出这件事,而不是留着死端点) |
 | MOA-16 | 发现的 issuer 回写配置 | issuer 来自 protected-resource | 捕获 `updateOAuthConfig(eq(1L), json)`,其 `authorizationServer` 等于该 issuer;并 `verify(mcpServerMapper, never()).updateById(any())`——发现只拥有这一列,整行回写会把别人正在编辑的 status/headers 一起覆盖(下次也不必再走网络) |
 | MOA-17 | 手填的 issuer 不回写 | issuer 来自 `oauthConfig` | `verifyNoInteractions(mcpServerMapper)`——不覆盖管理员填的那列 |
@@ -329,7 +330,7 @@
 | MOA-22 | 登记 client_id + 新密钥 | clientId=`" harnax-web "`、secret=`"s3cret"` | 落库 clientId 已 trim、密文来自 `resolveSecret("s3cret", ...)`;回显只有 `clientSecretPresent=true`,无明文 |
 | MOA-23 | 省略 secret 保持原值 | clientSecret=null,行内有密文 | `verify(encryptor).resolveSecret(anyOrNull(), eq("stored-ciphertext"))`,行上的密文不变(掩码回显后再提交是常态) |
 | MOA-24 | 空串 secret 清空 | clientSecret="" | 行上 `clientSecretEnc=null` 且回显 `clientSecretPresent=false`(公开 PKCE 客户端) |
-| MOA-25 | 端点齐全时登记不再发现 | 既有行端点完整 | `verify(fetcher, never()).fetch(any())`,端点与 `scopesSupported` 直接来自那行,`issuerSource=CONFIG` |
+| MOA-25 | 端点齐全时登记不触发发现 | 既有行端点完整 | `verify(fetcher, never()).fetch(any())`,端点与 `scopesSupported` 直接来自那行,`issuerSource=CONFIG` |
 | MOA-26 | 有行但没端点则补一次发现 | 既有行 authorization/token 为 null | fetch 恰好一次,`updateById` 两次(发现写端点 + 登记写 client),最终同一行两者齐备 |
 | MOA-27 | 不知道 issuer 时提示先发现 | `oauthConfig` 无 authorizationServer | 报错含 `run discovery first` 且 `never()` updateById(告诉管理员下一步,而不是丢一句内部状态) |
 | MOA-28 | 显式 callbackUrl 覆盖缺省 | callbackUrl=`https://ops.example.com/cb` | 回显与落库都是它,不用生成值 |
@@ -342,7 +343,7 @@
 | MOA-35 | 库里 url 前后有空格仍能发现 | url=`  http://mcp.example.com:3000/mcp  ` | 候选地址按 trim 后的算,`issuerSource=PROTECTED_RESOURCE`(`URI.create` 对带空格的串会直接抛) |
 | MOA-36 | 挑战里不加引号的 resource_metadata 也读 | `Bearer error="invalid_token", resource_metadata=http://.../authz.json` | 顺指针取到 issuer(引号是惯例不是规范强制) |
 | MOA-37 | 指针不是 http(s) 拒绝 | `resource_metadata="file:///etc/passwd"` | 报错含 `resource_metadata must be an http(s) URL` 且不 insert |
-| MOA-38 | 必需的 endpoint 也过同一道 http(s) 关 | `token_endpoint=javascript:alert(1)` | 报错含 `token_endpoint must be an http(s) URL` 与 `advertised by`,不 insert(这正是 P2-4 要往上 POST client_secret 的地址) |
+| MOA-38 | 必需的 endpoint 也过同一道 http(s) 关 | `token_endpoint=javascript:alert(1)` | 报错含 `token_endpoint must be an http(s) URL` 与 `advertised by`,不 insert(这个地址正是登记客户端时要往上 POST client_secret 的目标) |
 | MOA-39 | 必需的 endpoint 超宽拒绝 | `token_endpoint` 620 字符 | 报错含 `longer than the 500 characters`,不 insert |
 | MOA-40 | 可选 endpoint 指歪就丢弃而不是存下来 | `revocation_endpoint=ftp://...` | 发现仍成功、`revocationEndpoint=null`,required 端点照旧落库(缺一个可选能力不是理由,留一个坏地址才是) |
 | MOA-41 | 文档不声明 issuer 时无法佐证「文档广告」的 issuer | issuer 来自 protected-resource,元数据没有 `issuer` 字段 | 报 `declares no issuer` 且提示 `set oauthConfig.authorizationServer`,零落库、`verifyNoInteractions(mcpServerMapper)`——这条链路上没有管理员能背书 |
@@ -379,7 +380,7 @@
 
 ### 5.8 McpOAuthController(六个 JSON 接口对外的答案)
 
-> 发现与登记的逻辑在 `McpOAuthServiceImpl` 有自己的 49 个用例(§5.6),按人的四步在 `McpOAuthUserServiceImpl` 有 62 个(§5.9),这里钉的是**用户在页面上读到的那一段文字**:失败时 `ApiErrors` 的策略(数据库细节不外泄、应用自己写的话原样保留)只有这一层会应用,而这条特性的失败大多是服务层精心写出来的一长句(`run discovery first`、`set oauthConfig.authorizationServer`、`save the OAuth client`)——被控制器包一层前缀就等于把「下一步该做什么」扔掉。这一层原本只接两个管理面接口,第十四轮后是六个:发现、登记客户端、`authorize-url`、`exchange`、`status`、`revoke`,打桩相应地打在 `McpOAuthService` 与 `McpOAuthUserService` 两个服务上。**这里没有「不返 `ResultVo` 的那一个」了**:原先替 AS 落地的 `McpOAuthCallbackController` 随 F6 一起删掉,换票变成这六个里的一个普通 JSON 接口(见 §5.9 的 exchange 组)。
+> 发现与登记的逻辑在 `McpOAuthServiceImpl` 有自己的 49 个用例(§5.6),按人的授权流程在 `McpOAuthUserServiceImpl` 有 77 个(§5.9),这里钉的是**用户在页面上读到的那一段文字**:失败时 `ApiErrors` 的策略(数据库细节不外泄、应用自己写的话原样保留)只有这一层会应用,而这条特性的失败大多是服务层精心写出来的一长句(`run discovery first`、`set oauthConfig.authorizationServer`、`save the OAuth client`)——被控制器包一层前缀就等于把「下一步该做什么」扔掉。这一层接六个管理面接口:发现、登记客户端、`authorize-url`、`exchange`、`status`、`revoke`,六个都返回 `ResultVo`,打桩相应地打在 `McpOAuthService` 与 `McpOAuthUserService` 两个服务上。AS 回调不落在 admin:换票是这六个里的一个普通 JSON 接口,由页面带着 `code`/`state` 主动提交(见 §5.9 的 exchange 组)。
 
 | 编号 | 用例 | 输入 | 期望 |
 |------|------|------|------|
@@ -400,9 +401,9 @@
 | MOC-15 | 换票:没有登录态时服务那句拒绝不被前缀包住 | `BizException("Authorization is per user and this request carries no user identity")` | `code=500` 且 `message` 与原文逐字相等(这句是「为什么这次没成」的唯一答案,套上前缀等于把它埋进一句通用错误里) |
 | MOC-16 | 换票:无 message 的异常落到兜底文案 | `McpOAuthExchangeRequest()` 全空 + `RuntimeException()` | `message` 等于 `Failed to complete the authorization`(兜底只在无话可说时出场;注意 `authorized=false` 不是异常,它照样回 `code=200`) |
 
-### 5.9 McpOAuthUserServiceImpl(按人的授权码流程,P2-3)
+### 5.9 McpOAuthUserServiceImpl(按人的授权码流程)
 
-> 设计口径见 `prod_doc/mcp-management.zh-CN.md` §3.6(英文版同节)。这一层的被测前提是「AS 是一个被打桩的远端」:`remoteJsonFetcher.postForm` 以 URL 为 key 的 `Map<String, RemoteFetch>` 回答,**未登记的地址不会被调用**,所以「该不该发这一枪」本身就是断言。四组分别是发起 13、换票 32、状态 7、撤销 10——第十四轮把中间那组从「回调换发(handleCallback)」改成「换票(exchange)」并补了 7 条,理由见 `mcp-management` §7.13;第十五轮又补了 4 条(编号接在末尾的 MOU-59～MOU-62,但**排进各自所属那组的表里**,这样已有的编号与文中的交叉引用一个都不用挪),钉的是「一个用户占不满整份在途预算」「自造的 `error` 不能替别人取消授权」「`state` 已过期时 AS 的拒绝理由照样回给页面」「AS 省略 `scope` 时回答与库里那份一致」,理由见 `mcp-management` §7.14。桩里 `jwtUtil.getUserIdFromToken` 给 userId=7、租户 1,并在 `RequestContextHolder` 里放一个带这枚 token 的请求属性——**换票的身份就从这里来**,想测「没有登录态」就 `resetRequestAttributes()`;issuer `https://as.example.com`,MCP url `http://mcp.example.com:3000/mcp`,回跳 `http://localhost:8000/mcp/oauth/callback`(前端路由,不是 admin 的地址);`stateStore` 用**真的** `McpOAuthStateStore` 而不是 mock(它的「取走即失效」正是要被这条链路依赖的行为),aes 桩是 `"enc:" + value` 便于反推明文。
+> 设计口径见 `prod_doc/mcp-management.zh-CN.md` §3.6(英文版同节)。这一层的被测前提是「AS 是一个被打桩的远端」:`remoteJsonFetcher.postForm` 以 URL 为 key 的 `Map<String, RemoteFetch>` 回答,**未登记的地址不会被调用**,所以「该不该发这一枪」本身就是断言。五组分别是发起 13、换票 32、状态 7、撤销 12、访问令牌 13,合计 77;用例编号按 MOU-01… 连续排,但**每条写进它所属那一组的表里**,所以表里的编号不连续而交叉引用始终指得对。其中有四条钉的是「一个用户占不满整份在途预算」「自造的 `error` 不能替别人取消授权」「`state` 已过期时 AS 的拒绝理由照样回给页面」「AS 省略 `scope` 时回答与库里那份一致」。桩里 `jwtUtil.getUserIdFromToken` 给 userId=7、租户 1,并在 `RequestContextHolder` 里放一个带这枚 token 的请求属性——**换票的身份就从这里来**,想测「没有登录态」就 `resetRequestAttributes()`;issuer `https://as.example.com`,MCP url `http://mcp.example.com:3000/mcp`,回跳 `http://localhost:8000/mcp/oauth/callback`(前端路由,不是 admin 的地址);`stateStore` 用**真的** `McpOAuthStateStore` 而不是 mock(它的「取走即失效」正是要被这条链路依赖的行为),aes 桩是 `"enc:" + value` 便于反推明文。
 
 **发起(authorizeUrl,13 个)**
 
@@ -471,7 +472,7 @@
 | MOU-47 | 只看自己的行 | — | `verify(credentialMapper).selectByUserAndMcp(1L, 7L, mcpId)`(租户与用户都进条件,少一个就是别人的授权) |
 | MOU-48 | 非 OAuth 服务不提供授权状态 | authType=`NONE` | 报 `BizException`(不问一个没有授权概念的地址) |
 
-**撤销(revoke,10 个)**
+**撤销(revoke,12 个)**
 
 | 编号 | 用例 | 输入 | 期望 |
 |------|------|------|------|
@@ -485,10 +486,32 @@
 | MOU-56 | 换过密钥后密文解不开:本地照清,理由说清是解不开 | 行里有 at/rt,`aesUtil.decrypt` 抛异常 | `revoked=true`、`upstreamRevoked=false`、message 含 `could not be decrypted`,`never()` postForm,行仍写 REVOKED 且两份密文为 null:撤销是用户唯一的出路,AES 密钥轮换不能把一条授权锁死在库里(与 MOU-48 的区别是那里**没有**密文,这里是**读不出**,话术必须分得开) |
 | MOU-57 | 没授权过也回答已撤销,但不写库 | 无行 | `revoked=true`、`upstreamRevoked=false`、message 含 `nothing to revoke`,零写入(对「本来就什么都没有」报错,是给用户一个修不了的问题) |
 | MOU-58 | 撤销不动别人的行 | — | 只 `selectByUserAndMcp(1L, 7L, mcpId)` 一次(整条链路只写自己那一行,不出现全表 update) |
+| MOU-63 | 撤销成功留下一条 REVOKE/OK 审计 | 注册行有 revocationEndpoint、上游回 200 | 恰好一条审计:`action=REVOKE`、`outcome=OK`、`tenantId=1`、`userId=7`、`mcpId`,且 `sessionId=null`(这是人在页面上做的一次决定,不是一次运行花掉的令牌) |
+| MOU-64 | 上游拒绝撤销也照样留下这笔审计 | 上游回 403 | 仍有一条 `action=REVOKE`:审计记的是本方做了什么(自己那份已清掉),不是上游配不配合——否则运维可依据的那行会凭空缺失 |
+
+**访问令牌(accessToken,运行时,13 个)**
+
+> 这一组是 agent-service 在运行时打的那一枪,回答决定了一次工具调用带不带人的身份,所以拒绝之间必须分得开:`401` 表示这个人要重新授权,`503` 表示只需要重试。选错要么把一次网络抖动渲染成一张同意页,要么把一条已经死掉的授权留在库里。
+
+| 编号 | 用例 | 输入 | 期望 |
+|------|------|------|------|
+| MOU-65 | 服务行已被删:按「找不到」回答 | `mcpServerMapper.selectById(mcpId)` 返回 null | `BizException`,message 含 `not found`(不拿 null 去比租户,免得空指针冒充一次越权) |
+| MOU-66 | 服务不是逐人授权:没有令牌可发 | authType=`STATIC_HEADER` | message 含 `no per-user token`,`verify(fetcher, never()).postForm(...)` |
+| MOU-67 | 会话解析不出人:401 并记下这一笔 | `sessionOwnerResolver.resolve("web-1")` 返回 null | `code=401`、message 含 `no user identity`、审计 `outcome=NEEDS_CONSENT`,且 `never()` 查凭据行 |
+| MOU-68 | 会话与服务不同租户:403,连凭据都不去查 | 服务 `tenantId=2`、会话归属 `tenantId=1` | `code=403`,`never()` `selectByUserAndMcp`、`never()` postForm(凭据行按服务的租户取键,少了这一刀,B 租户就能花掉 A 租户同一个 userId 的令牌) |
+| MOU-69 | 还没授权过的账号:401 指向授权 | `selectByUserAndMcp(1L, 7L, mcpId)` 返回 null | `code=401`、message 含 `not authorized for your account` |
+| MOU-70 | 令牌仍在有效期:直接从库里给出,不打 AS | 行 `accessExpiresAt=now+1h` | `accessToken="at-1"`、`expiresAtEpochSecond` 等于该时刻的 epoch、`never()` postForm、零写入;审计 `outcome=OK` 并带 `userId=7` 与 `sessionId="web-1"` |
+| MOU-71 | 用户自己撤销过的:拒绝但不改写状态 | 行 `status=REVOKED`、两份密文为 null | `code=401`、message 含 `revoked`、零写入、`never()` postForm(改成 `NEEDS_CONSENT` 会抹掉这行仅存的事实——这个人是主动收回的) |
+| MOU-72 | 过期就刷新:表单带 resource 与密钥,轮换后的成对写回 | 行 `accessExpiresAt=now-5min`,AS 回 `at-2` / `rt-2` / `expires_in=3600` | `accessToken="at-2"`;表单 `grant_type=refresh_token`、`refresh_token="rt-1"`、`client_id="harnax-web"`、`client_secret="s3cret"`、`resource=http://mcp.example.com:3000/mcp`(RFC 8707 §2.3:换回来的令牌要重新绑回当初同意的那个 resource);更新行 `accessTokenEnc="enc:at-2"`、`refreshTokenEnc="enc:rt-2"`、`status=ACTIVE`、`lastError=null`;审计 `action=REFRESH` |
+| MOU-73 | 刷新回答里没有 `expires_in`:沿用库里那个性命期 | AS 只回 `{"access_token":"at-2"}`,行 `accessExpiresAt=now+30s` | `expiresAtEpochSecond` 与更新行的 `accessExpiresAt` 都等于原来那个时刻(留 null 会被读成「一直有效,直到哪次被拒」,而这一侧永远听不到那次拒绝) |
+| MOU-74 | AS 认 `invalid_grant`:标成待重新授权 | 过期行 + `RemoteFetch(400, {"error":"invalid_grant"})` | `code=401`、message 含 `authorize this MCP server again`、更新行 `status=NEEDS_CONSENT` |
+| MOU-75 | 上游 5xx 不动用户的授权:那是重试不是重新授权 | 过期行 + `RemoteFetch(503)` | `code=503`、message 含 `unavailable right now`、更新行 `status` 仍是 `ACTIVE` |
+| MOU-76 | 客户端密钥解不开:说清是配置坏了,503 可修 | `aesUtil.decrypt("enc:s3cret")` 抛异常 | `code=503`、message 含 `re-save the OAuth client`、`never()` postForm(要重新登记客户端,叫这个人去重新授权是错的——读不出的是那条注册) |
+| MOU-77 | refresh token 解不开:这次才真要重新授权 | `aesUtil.decrypt("enc:rt-1")` 抛异常 | `code=401`、message 含 `cannot be decrypted`、更新行 `status=NEEDS_CONSENT`、`never()` postForm |
 
 ### 5.10 McpOAuthStateStore(一次性 state 的存放)
 
-> 第十四轮之后,这个类不再是一扇「没有 JWT 的门」唯一的凭据:换票要带身份,`state` 降级成「把这份 AS 回答配回那次发起」的那条一次性线索。它因此不需要集成环境就能测全:真实行为就是「放进去、取一次、取不到第二次、到点自己消失、装不下就拒、数得出某一个用户在途几条」。`McpOAuthUserServiceImplTest` 用的是它的真实例(§5.9),这里测的是它自己的规则。
+> 换票要带登录身份,`state` 只承担一件事:把这份 AS 回答配回那一次发起,是一条一次性线索。它因此不需要集成环境就能测全:真实行为就是「放进去、取一次、取不到第二次、到点自己消失、装不下就拒、数得出某一个用户在途几条」。`McpOAuthUserServiceImplTest` 用的是它的真实例(§5.9),这里测的是它自己的规则。
 
 | 编号 | 用例 | 输入 | 期望 |
 |------|------|------|------|
@@ -500,9 +523,9 @@
 | MOS-06 | 未过期就能读到,内容按放进去的算 | put 后读 | 拿回 `tenantId=1`、`userId=7`、`codeVerifier="verifier"`、`expired=false`(换票时要比对归属、要拿去 AS 换 token 的就是这几项) |
 | MOS-07 | countFor 只数这个用户的,并且先清掉已过期的 | 三条:自己的、别人的(`userId=8`)、自己的一条已过期 | `countFor(7)==1`、`countFor(8)==1`、`countFor(9)==0`(没有在途授权的人不该被上限挡住),且 `size()==2`——这次计数顺手做的那趟 sweep 已经把过期条目带出表。`MAX_PENDING` 是共享预算,发起侧要靠这个数才能给每人也划一条(§5.9 MOU-59) |
 
-### 5.11 环境参数绑定守卫(第十七轮,`AgentServiceImplTest.EnvBindingGuardTests`)
+### 5.11 环境参数绑定守卫(`AgentServiceImplTest.EnvBindingGuardTests`)
 
-> 三件事在同一个入口上：绑的工具解析不到、引用的变量解析不到、必填参数留空。它们过去都能存进去，代价要到运行期才付——少一个工具、或者一个参数永远拿到空。所以守卫放在 `updateAgent` 这条写入口，测的也是它（打桩 mapper、`argumentCaptor` 取真正要落库的那份 JSON），而不是私有的 `serializeEnvBindings`。
+> 三件事在同一个入口上：绑的工具解析不到、引用的变量解析不到、必填参数留空。三条里任何一条存进去都要到运行期才显形——少一个工具、或者一个参数永远拿到空。所以守卫放在 `updateAgent` 这条写入口，测的也是它（打桩 mapper、`argumentCaptor` 取真正要落库的那份 JSON），而不是私有的 `serializeEnvBindings`。
 >
 > `resolveBindableTools` 是照着 AGT-18 / AGT-19 那两条 MCP 用例平移的，判据一致（`selectByIds` 已排除 `active=0`，再比租户）；`assertEnvBindingsBindable` 用 `envVariableService.getRowWithinTenant(id)?.tenantId` 比对，理由是引用型快照不存值，id 失效就等于这个参数什么都不发。比的是**租户**而不是创建者：`getEnvVariable` 只认自己建的行（与列表、下拉同口径），绑定解析若跟着收，共享智能体里所有者填的那些变量就成了「运行取得到、表单存不进」。
 
@@ -523,7 +546,7 @@
 | EBG-13 | CLI 的必填参数只有掩码文本 | `required=1` 的 `TOKEN` 带 `customValue="abc****wxyz"` | BizException;`batchInsert` never()。编辑回来的表单把接口掩码当值提交,存下就是那串字面量 |
 | EBG-14 | 平台级工具行可以绑 | selectByIds 返回 `tenant_id` 为平台哨兵的行,当前租户 1 | 保存通过。「工具按平台登记、人人可用」与「引用别人的密钥」是两件事,判据只在后者那边 |
 | EBG-15 | CLI 引用别的租户的变量 | CLI 绑定带 `envVarId=7`,该行 tenantId=2 | BizException,message 含 `7`;`cliBindingMapper.batchInsert` never()。CLI 的绑定同样整份并进沙箱环境,少比一次租户就是把别人的密钥送进去 |
-| EBG-16 | 引用一个已停用的变量 | `envVarId=7` 且该行 `enabled=0` | BizException,message 含变量名 `OPENAI_KEY`;`batchInsert` never()。停用侧已改为对在用引用返回 null,存进去等于表单显示已填、运行拿到空 |
+| EBG-16 | 引用一个已停用的变量 | `envVarId=7` 且该行 `enabled=0` | BizException,message 含变量名 `OPENAI_KEY`;`batchInsert` never()。停用侧对在用引用返回 null,于是存进去等于表单显示已填、运行拿到空 |
 | EBG-17 | 同一个键挂两个来源 | 一个工具两条绑定同为 `OPENAI_KEY`,分别指向 envVarId 7 与 8 | BizException,message 含 `OPENAI_KEY`;`batchInsert` never()。环境参数的唯一键是 `(tenant_id, creator, active_env_key)`，同租户两人各持一个同名键是合法数据,而下发按名字装 map,用谁的凭据全看数组顺序 |
 | EBG-18 | 同一个键两条同源**照旧可存** | 两条绑定同为 `API_KEY` 且都不带值（`envValue=""`） | 保存通过,`batchInsert` 被调用。表单是按服务自己声明的参数逐行建绑定的,声明里写两遍同名参数就是这种形状;拒掉等于那类智能体永久存不进,而两个来源的歧义并不存在 |
 
@@ -542,7 +565,7 @@
 | SKL-03 | 更新不改名不查重 | request.name=原名 | 不调用 getByNameAndRepo 查重 |
 | SKL-04 | 更新不存在 skill | selectById=null | BizException `Skill not found` |
 | SKL-05 | batchSaveSkillsDetailed 空列表 | [] | 返回空的 SkillInstallResponse(savedCount=0),不触发任何 mapper |
-| SKL-06 | batchSaveSkillsDetailed 已存在的技能 | 名称已存在 | 从源覆盖写入并记入 updated,不再静默计数 |
+| SKL-06 | batchSaveSkillsDetailed 已存在的技能 | 名称已存在 | 从源覆盖写入并记入 `updated`;响应按 installed / updated / failed / flagged 四个桶回答，没有只加计数的静默路径 |
 | SKL-07 | batchSaveSkillsDetailed 单条失败不中断 | 第 1 条抛异常,第 2 条正常 | 第 2 条仍插入;失败项进 failed 并带原因,complete=false |
 | SKL-10 | 仓库创建重名 | selectByName 非 null | BizException `Repository name already exists` |
 | SKL-11 | fetchRemoteSkills 仓库不存在 | selectById=null | BizException `Skill repository not found` |
@@ -647,9 +670,9 @@
 | ENV-09 | getDecryptedValue 不存在 | selectById=null | null |
 | ENV-10 | getDecryptedValue 解密失败 | decrypt 抛异常 | null(warn) |
 | ENV-11 | listForAgentConfig 过滤禁用 | enabled=0 的记录 | 不出现在结果中 |
-| ENV-12 | 被引用的变量删不掉(第十七轮) | `agentMapper.selectByEnvVarRef(1)` 返回一条 `customer-support` | 抛异常,message 同时含数量 `1 agent(s)` 与 agent 名;`deleteById` never()。引用型快照不存值(`AgentServiceImpl.serializeEnvBindings`),删掉变量就等于那个 agent 的这个参数永久为空,而界面此前看不出区别 |
+| ENV-12 | 被引用的变量删不掉 | `agentMapper.selectByEnvVarRef(1)` 返回一条 `customer-support` | 抛异常,message 同时含数量 `1 agent(s)` 与 agent 名;`deleteById` never()。引用型快照不存值(`AgentServiceImpl.serializeEnvBindings`),删掉变量就等于那个 agent 的这个参数永久为空,而界面区分不出来 |
 
-> 删除接口对外的答案另有一组用例(`EnvVariableControllerTest` 的 DeleteEndpoint,2 条)：守卫那句「被 N 个 agent 绑着：名字…」必须**原样**到达页面(压成 "Failed to delete env variable" 就等于守卫白做),而数据库异常必须被 `ApiErrors` 打平成那句通用兜底、不外泄 SQL 片段。同一个套件里此前只有一条「任何异常 → Failed to delete env variable」,加了守卫之后它已经不成立。写 SQL 侧的 `selectByEnvVarRef` 一次查三张绑定表的 `$[*].envVarId`,`env_bindings` 是 TEXT 所以前置 `CASE WHEN JSON_VALID`,**没有跑过真库**,只按 MySQL 语义读码核对。
+> 删除接口对外的答案另有一组用例(`EnvVariableControllerTest` 的 DeleteEndpoint,4 条)：成功、服务返回 false、守卫那句「被 N 个 agent 绑着：名字…」必须**原样**到达页面(压成 "Failed to delete env variable" 就等于守卫白做),以及数据库异常必须被 `ApiErrors` 打平成那句通用兜底、不外泄 SQL 片段。写 SQL 侧的 `selectByEnvVarRef` 一次查三张绑定表的 `$[*].envVarId`,`env_bindings` 是 TEXT 所以前置 `CASE WHEN JSON_VALID`,**没有跑过真库**,只按 MySQL 语义读码核对。
 
 ---
 
@@ -668,7 +691,7 @@
 | TEN-09 | 多管理员时可移除 | admin 数=2 | 删除成功 |
 | TEN-10 | 唯一管理员降级被拒 | updateUserRole: admin→member 且唯一 | BizException `error.tenant.cannot_remove_only_admin`(降级保护) |
 | TEN-11 | 同角色更新不触发保护 | admin→admin | 直接 updateRole |
-| TEN-12 | UserTenantService.updateUserRole 无降级保护 | 唯一 admin 降级 | 现状:直接成功 —— 与 TenantServiceImpl 行为不一致,**建议评审统一**(测试先固化现状并 @Disabled 标注待定) |
+| TEN-12 | UserTenantService.updateUserRole 无降级保护 | 唯一 admin 降级 | 现状:直接成功(`UserTenantServiceImplTest` 的 admin→member 用例断言 `updateRole` 被调用并返回 true)—— 与 TenantServiceImpl 行为不一致,**建议评审统一** |
 
 ---
 
@@ -706,70 +729,96 @@
 | TS-08 | start==end 边界 | 相同时间 | 至少输出 1 个点 |
 | TS-09 | end<start 边界 | 反向区间 | 输出空列表,不抛 |
 | TS-10 | fillDimensionTimePoints 补零携带维度名 | model 维度 2 个模型、部分时点缺数据 | 缺失点补 0 且带 modelId/modelName |
-| TS-11 | 已知缺陷:维度无 sample 数据 NPE | dimData 为空 | 现状抛 NPE —— **建议修复**;测试用 @Disabled("BUG-待修复") 记录 |
-| TS-12 | 已知缺陷:mapper 返回 null NPE | aggregateByModel=null | `modelData!!` NPE —— 同上标记 |
+| TS-11 | 维度无样本数据 | dimData 为空 | **未覆盖**:`TokenStatsServiceImpl` 的 `response.timeSeriesData!!`(:93 与 :195)在这条路径上抛 NPE,现有 21 条用例都不走到它 |
+| TS-12 | mapper 返回 null | `aggregateByModel`=null | **未覆盖**:同文件 :50 的 `modelData!!` 抛 NPE,并列的还有 :55 的 `sessionData!!` 与 :59 的 `agentData!!` |
 
 ---
 
 ## 15. 评审发现的问题清单(建议随测试一并修复)
 
-1. **TokenStatsServiceImpl**:多处 `!!` 断言(TS-11/TS-12),mapper 返回 null 或维度无数据时 NPE,应改为空集合兜底。
-2. **AgentServiceImpl.updateAgent**:"Agent not found" 抛 RuntimeException 而非 BizException,HTTP 层语义变成 500;建议统一为 BizException(AGT-03)。
+1. **TokenStatsServiceImpl**:多处 `!!` 断言(TS-11/TS-12 标的就是这两条未覆盖路径),mapper 返回 null 或维度无数据时 NPE,应改为空集合兜底。
+2. **AgentServiceImpl**:`throw RuntimeException("Agent not found")` 出现在 :160、:208、:215 三处而非 BizException,HTTP 层语义变成 500;建议统一为 BizException(AGT-03)。
 3. **UserTenantServiceImpl.updateUserRole 与 TenantServiceImpl.updateUserRole 行为不一致**:前者无"唯一管理员降级保护"(TEN-12),存在绕过风险,建议收敛为一处实现。
-4. ~~**SkillServiceImpl.batchSaveSkills**:git 拉取后过滤不到目标 skill 时不报错且 savedCount 仍 +1,调用方无法感知失败(SKL-06)。~~ **已修复**:接口改为返回 `SkillInstallResponse`(installed / updated / failed / flagged 四个桶),源里找不到的名字进 `failed` 并带原因,webui、小程序与 harnax-cli 三个调用方均已按该结构分级提示,详见 `prod_doc/skill-management.zh-CN.md` 的 P1-11 与 R3-14。
-5. **AuthServiceImpl.login 校验顺序**:先校验用户/密码、后校验验证码,使验证码无法防护用户名枚举与密码爆破;建议验证码前置(AUTH-15 固化现状,调整后同步改用例)。
-6. **AuthServiceImpl.logout expireTime**:`plusNanos(expiration * 1_000_000)` 换算易错,建议改 `plusSeconds(expiration / 1000)` 或 Duration.ofMillis,配合 AUTH-25。
-7. **JwtUtil 默认 secret 仅 23 字节**:HS256 要求 ≥32 字节,默认配置下启动即抛 WeakKeyException;建议在配置校验时显式给出提示(JWT-08)。
-8. **SessionServiceImpl.updateSession**:`request.sessionDescription` 写入 `description` 字段,与 create 路径(写 sessionDescription)不对称,建议核对实体字段语义(SES-05)。
+4. **AuthServiceImpl.login 校验顺序**::55 先 `BCrypt.checkpw`,:59 起才校验验证码,使验证码无法防护用户名枚举与密码爆破;建议验证码前置(AUTH-15 固化现状,调整后同步改用例)。
+5. **AuthServiceImpl.logout expireTime**:`plusNanos(expiration * 1_000_000)`(:274)换算易错,建议改 `plusSeconds(expiration / 1000)` 或 Duration.ofMillis,配合 AUTH-25。
+6. **JwtUtil 的字段初始密钥只有 22 字节**:HS256 要求 ≥32 字节。`application.yml:81` 与 compose 传给容器的默认值都是 68 字节、够用,所以这条只在不经 Spring 装配直接 `new JwtUtil()` 时暴露——`JwtUtilTest` 因此反射注入 ≥32 字节;建议把初始值也提到 ≥32,或在启动校验时显式给出提示(JWT-08)。
+7. **SessionServiceImpl.updateSession**:`request.sessionDescription` 写入 `description` 字段(:253),与 create 路径(写 `sessionDescription`,:192)不对称,建议核对实体字段语义(SES-05)。
 
-## 16. 落地建议
+## 16. 测试组织与写法约定
 
-- 建议在 `harnax-admin/src/test/kotlin` 下按包镜像组织:`service/impl/AuthServiceImplTest.kt` 等;Loader/Util 属 L1 优先落地(约 40 个用例,零 mock 成本)。
-- MockK 处理静态依赖:`mockkStatic(::loadSkillsFromGit)`、`mockkObject(UserContextUtil)`;`TenantContext` 在 `@BeforeEach/@AfterEach` set/clear。
-- 已知缺陷用例统一 `@Disabled("BUG: 见 docs/unit-test-cases.md #15-x")` 标注,修复后启用。
-- 用例编号(AUTH-01 等)写入测试方法 `@DisplayName`,便于文档与代码互查。
+- 测试目录按主代码包镜像组织在 `harnax-admin/src/test/kotlin/com/agnetix/harnax/admin/` 下，`service/impl`、`controller`、`util`、`i18n`、`security`、`context`、`skill/loader` 各有对应套件。`util` 与 `loader` 这一层（`AesUtilTest`、`JwtUtilTest`、`TenantResolverTest`、`UserContextUtilTest`、`RemoteJsonFetcherTest`、`SecretFieldEncryptorTest`、`McpOAuthStateStoreTest`、`McpSessionOwnerResolverTest`、`SkillLoaderTest`）不碰数据库：`McpOAuthStateStoreTest`/`AesUtilTest` 这类是纯对象断言，`SkillLoaderTest` 用 `@TempDir` 造真 zip，`RemoteJsonFetcherTest` 用 JDK 自带 `HttpServer` 起一个本机随机端口的真服务来验出站护栏。
+- 静态依赖用 Mockito 的 `mockStatic(...)`，作用域收在一个 `use {}` 块里——仓里两处都这么写：`WechatLoginServiceTest` 对 `ILinkClient.builder`，`EmailToolBoxTest` 对 `Transport`（每用例各开一把）。`UserContextUtil` 这类走实例注入，不 mock 静态。`RequestContextHolder` 在 `@BeforeEach` 放一个带 `Authorization: Bearer <token>` 的请求属性，`TenantContext` 在 `@BeforeEach/@AfterEach` set/clear。
+- 用例编号（AUTH-01 等）只存在于本文档：全仓没有任何 `@DisplayName` 带编号前缀，测试方法用 `@DisplayName` 写行为描述（如 `updateUserRole - Downgrade from admin to member`）。文档与代码互查靠「类名 + 被调方法名」，两边都用中文/英文动作名而不是编号。
+- `@Disabled` 在仓里只有一处：`EmailToolBoxIntegrationTest` 的类级标注，理由写明「requires real SMTP server」，它属于「要真环境才跑」而不是「已知缺陷留案」。已知缺陷在本文档标 **未覆盖** 并给出抛点位置（如 §14 的 TS-11/TS-12 指到 `TokenStatsServiceImpl` 的 `!!` 行），不靠注释掉的测试传递。
 
 ## 17. 测试基线与 Mockito-Kotlin 匹配器陷阱
 
-基线(2026-09 第十次校准,来自一次 `TESTCONTAINERS_RYUK_DISABLED=true mvn -o -pl harnax-admin -am test` 全绿实跑,两个模块的数字是同一次数的):`harnax-admin` 单测 **1775** 个全绿 = 上一轮记的 1768 + 第十五轮净加的 7(`McpOAuthUserServiceImplTest` 58→62 四条换票分支、`McpServerServiceImplTest` 40→42 两条凭据清理条件、`McpOAuthStateStoreTest` 6→7 一条 `countFor`);再往前是 1768 = 1760 + 第十四轮净加的 8(`McpOAuthUserServiceImplTest` 51→58:「回调换发」22 条改写成「换票」29 条,新增的是归属不符、无登录上下文、`state` 认不出来时不查库、回来的 `state` 没有 `code`、上游原话按预算截断、响应体不含令牌材料、目标服务由 pending 决定;`McpOAuthControllerTest` 13→16;`McpOAuthServiceImplTest` 47→49,默认回调地址两条;`McpOAuthCallbackControllerTest` 4→0,随被删的控制器一起删除),其中 `McpOAuthUserServiceImplTest` 58(§5.9)、`McpOAuthStateStoreTest` 6(§5.10)、`McpOAuthControllerTest` 16(§5.8);再往前是 1754 + 第十三轮 review 补的 6(`RemoteJsonFetcherTest` 14→16 两条真 HTTP 用例、`McpOAuthUserServiceImplTest` 47→51 四条);再往前是 1684 + 第十一轮新增的 `McpOAuthControllerTest` 6 个;第十轮掩码回写批次加了 7 个(`AgentToolServiceImplTest` 36→39、`SecretFieldEncryptorTest` 环境参数组 +2、`CliServiceImplTest` +1、`EnvVariableServiceImplTest` +1),于是 1677 → 1684;再往前是 1653 + 第八轮新增的 `McpOAuthServiceImplTest` 17 + `RemoteJsonFetcherTest` 5 + `McpServerServiceImplTest.AuthTypeTests` 2 = 1677,以及 1608 + P2-2 的 `McpOAuthServiceImplTest` 30 + `RemoteJsonFetcherTest` 9 + `SecretFieldEncryptorTest` 内 `ResolveSecretTests` 6 = 1653,以及 1598 + `AuthTypeTests` 10 = 1608。`harnax-entity` 21 个测试类共 232 个全绿(20 个 `*MapperTest` + 不依赖 Docker 的 `MapperXmlParseTest`),第十四轮未动它;第十五轮按 `^\s*@Test\b` 重数过,仍是 232——**注意 `grep -c '@Test'` 会连类上的 `@Testcontainers` 一起数**(这 20 个类每个多算 1,一共虚高 20,第十五轮就被它骗过一次,以为旧值少记了)。更早记的 210 是个**没跟上实情的旧值**:P2-1 新增的三个 Mapper 套件与第四轮补的租户用例都没并进那个数,按同一口径实测一次才对——这条也是给自己提的醒:基线数字要么每次实跑重数,要么别写。
+基线来自一次实跑：`mvn -o -pl harnax-admin,harnax-agent/harnax-agent-service -am test`（13 个 reactor 节点，1 分 20 秒），配下方「容器包排除」那条 `-Dtest`。表里的每一列都取自这一次跑：
 
-数这几个数不能看 surefire XML 的 `tests` 属性:类里有 `@Nested` 时,顶层 `<testsuite>` 会报 `tests="0"`,真实数量只在 `<testcase>` 元素里。本轮新增的三个套件全是 `@Nested` 分组,所以校准一律用 `grep -c '<testcase>'`。同样不能汇总的是 per-class `.txt` 里那行 `Tests run:`——带 `@Nested` 的外层类那儿就是 0,第十二轮按它加只得 42。还有一个坑是 `target/surefire-reports` 会留着上一次跑 IT 的报告:本次 `mvn test` 根本不跑 `**/*IT.class`,那些文件是陈旧的,照单全数会把 `admin.it.*IT` 的用例一起算进单测。可复现的口径是「只取实跑当天新写的 `TEST-*.xml`、排除 `*admin.it.*`,再数 `<testcase>`」,第十二轮这样得到 84 个套件共 1754 个用例,第十三轮同口径得到 1760,第十四轮 83 个套件共 1768(少的那个套件是被删掉的 `McpOAuthCallbackControllerTest`)。第十四轮还撞出一个新坑:**改掉一个 `@Nested` 内部类的名字,Kotlin 的增量编译不会删掉它旧的 class 文件**。`CallbackTests` 改名 `ExchangeTests` 之后,`target/test-classes` 里两个 class 并存,而外层类的 `InnerClasses` 属性只剩新名字,JUnit 平台在**发现阶段**抛 `IncompatibleClassChangeError: ... disagree on InnerClasses attribute`,surefire 报「TestEngine with ID 'junit-jupiter' encountered a critical issue during test discovery」——整个 `harnax-admin` 模块一个用例都没跑,却看不到任何失败断言。它不是代码缺陷,是构建产物陈旧,处理办法是删掉 `harnax-admin/target/test-classes`(或直接 `mvn clean`)再跑;认出来的办法是看报错里那个内部类名在源码里还在不在。
+| 模块 | 顶层测试类 | 用例 | 失败 / 错误 | 跳过 |
+|------|-----------|------|------------|------|
+| `harnax-admin` | 93 | 2150 | 0 / 0 | 0 |
+| `harnax-agent/harnax-harness-core` | 27 | 326 | 0 / 0 | 0 |
+| `harnax-agent/harnax-agent-service` | 14 | 186 | 0 / 0 | 0 |
+| `harnax-protocol` | 4 | 103 | 0 / 0 | 0 |
+| `harnax-auth` | 9 | 97 | 0 / 0 | 0 |
+| `harnax-agent/harnax-tools-sdk` | 4 | 34 | 0 / 0 | 0 |
+| `harnax-tools-external/harnax-tools-buildin` | 3 | 24 | 0 / 0 | 2 |
+| `harnax-agent/harnax-agent-utils` | 1 | 19 | 0 / 0 | 0 |
+| `harnax-common` | 1 | 15 | 0 / 0 | 0 |
+| `harnax-entity` | 1 | 2 | 0 / 0 | 0 |
+| **合计** | **157** | **2956** | **0 / 0** | **2** |
 
-第十六轮(MCP 运行侧全链路复核)**未执行编译、也未跑任何单元测试**(按要求节省本机资源),按上一条的纪律就不改上面那个数,只登记增量:落在 `harnax-admin` 里的用例变化只有一处——`McpServerServiceImplTest` +4(MCS-25～MCS-28),下次实跑若全绿即并入。同轮另改的两个套件不在这个口径里:`McpConfigAdaptorImplTest`(harnax-agent-service,7 → 6,两条「查库兜底」用例随那条路径一起删)、`InternalTokenProviderTest`(harnax-auth,+3,`typ` 断言 / 用户 JWT 判外部 / 无身份 bearer 被拒)。
+口径边界要写明三件事：
 
-第十八轮(P2-4 换发 + P3 运行侧注入 + stdio 关闭)**实跑过**,同口径数字:`harnax-admin` 单测 **1830** 全绿(上一记 1775 是第十五轮的数,第十六轮记的 +4 增量本轮一并进来),`harnax-agent-service` **141** 全绿(`McpConfigAdaptorImplTest` 的 2 条 `AuthTypeTests` 是记完 139 之后补的,同一轮内一起实跑过)。本轮新增或扩出的套件:`admin/util/McpSessionOwnerResolverTest` 新增 10、`McpOAuthUserServiceImplTest` 62 → 75(新增 `AccessTokenTests` 13,守换发侧 401 / 403 / 503 的分别是谁)、`McpServerServiceImplTest` 42 → 46(新增 `StdioGateTests` 4)、`InternalApiControllerTest` +6(`McpAuthDeliveryTests` 3 + `McpAccessTokenTests` 3)、运行侧 `AdminMcpAccessTokenSourceFactoryTest` 新增 6、`McpConfigAdaptorImplTest` 6 → 8(新增 `AuthTypeTests` 2,补上「下发的 authType 到底有没有落到实体」这一格)。
+- 「顶层测试类」与报告文件数不是一回事：一个 `@Nested` 内部类各写一份 `TEST-*.xml`，`harnax-admin` 的 93 个顶层类对应 554 份文件。
+- 跳过的 2 条全部来自 `EmailToolBoxIntegrationTest`（类级 `@Disabled`，要真 SMTP 才跑，见 §16），其余模块 0 跳过。
+- 这条命令覆盖 13 个节点，其余模块不在表里：`harnax-scheduler`、`harnax-session-router`、`harnax-channel-service`、`harnax-client` 各有自己的跑法。表里 `harnax-entity` 那 2 条只是不碰容器的 `MapperXmlParseTest`；同一模块把容器包放开的完整口径是 `mvn -o -pl harnax-entity test` —— 25 个测试类 / 84 份报告 / **247 条全绿**（5 分 3 秒），其中 24 个 `*MapperTest` 各起一个 MySQL 8 容器，共 245 条。
 
-本机没有 Docker,所以 `harnax-entity` 的 21 个 `*MapperTest` 与 `harnax-admin` 的 29 个 `admin.it.*IT` **一个都没跑**(全绿数字只覆盖上面两个模块的单测)。可用的排除写法:`-Dtest='!com.agnetix.harnax.mapper.**,!com.agnetix.harnax.admin.it.**' -Dsurefire.failIfNoSpecifiedTests=false`,配 `-am` 用。上面提到的 `IncompatibleClassChangeError` 这轮又撞上一次,原因是改构造函数参数留下陈旧 `target/test-classes`,加 `-am` 时记得 `clean`。
+数这几个数有四条判据，每条都会静默把数错：
 
-四个新坑,都真实花过时间:
+1. 类里有 `@Nested` 时，顶层 `<testsuite>` 恒报 `tests="0"`，真实数量只在 `<testcase>` 元素里 —— 一律 `grep -c '<testcase>'`。
+2. per-class `.txt` 里那行 `Tests run:` 同样不能汇总：带 `@Nested` 的外层类那儿就是 0。
+3. `target/surefire-reports` 会留着上一趟（包括 IT）的报告：`mvn test` 根本不跑 `**/*IT.class`，照单全数会把 `admin.it.*IT` 的用例算进单测。可复现口径是「只取本次实跑新写的 `TEST-*.xml`、排除 `*admin.it.*`、数 `<testcase>`」。
+4. `grep -c '@Test'` 会连类上的 `@Testcontainers`、`@TestMethodOrder` 一起数（`harnax-entity` 那 24 个 `*MapperTest` 每个虚高 1）—— 按 `^\s*@Test\s*$` 逐行匹配。
+
+另有两条与构建产物相关的判据：
+
+- **改掉一个 `@Nested` 内部类的名字，Kotlin 的增量编译不会删掉它旧的 class 文件**。两个 class 并存而外层类的 `InnerClasses` 属性只剩新名字时，JUnit 平台在**发现阶段**抛 `IncompatibleClassChangeError: ... disagree on InnerClasses attribute`，surefire 报「TestEngine with ID 'junit-jupiter' encountered a critical issue during test discovery」—— 整个 `harnax-admin` 模块一个用例都没跑，却看不到任何失败断言。它不是代码缺陷，是构建产物陈旧；认出来的办法是看报错里那个内部类名在源码里还在不在，处理办法是删掉 `harnax-admin/target/test-classes`（或直接 `mvn clean`）再跑。改构造函数参数之后同理。
+- **依赖 Testcontainers 的包要从 `-Dtest` 里排除**，否则它们在单测阶段以 `ExceptionInInitializerError → Could not find a valid Docker environment` 红掉：`-Dtest='!com.agnetix.harnax.mapper.**,!com.agnetix.harnax.admin.it.**,!com.agnetix.harnax.channel.service.it.**' -Dsurefire.failIfNoSpecifiedTests=false`，配 `-am` 用。被排除的那一面是 `harnax-entity` 的 24 个 `*MapperTest`（245 条用例）与 `harnax-admin` 的 41 个 `com.agnetix.harnax.admin.it.*IT`，两者都要容器里的真 MySQL，走 `mvn -pl harnax-entity test` 或 `-Pintegration-test` 单独跑。
+
+Mockito-Kotlin 匹配器与 Kotlin 类型侧另有四条判据：
 
 1. **Mockito 对可空 `Long` 返回 0,而不是 null**。`JwtUtil.getTenantIdFromToken(token): Long?` 在 Kotlin 里编译成 `java.lang.Long`,Mockito 的默认应答把包装类型也当基础类型,于是 `tenantFromToken() ?: DEFAULT` 里的 `?:` 永不生效,当前租户变成 **0**,一次撞红 20 多个与租户无关的断言(`page`、`getMcpServer`、`deleteMcpServer` 全在)。生产侧本来不会有这个问题(真实现无声明时返回 null),但代码里 `tenantId > 0` 才是「有声明」的正确读法,补上之后测试与生产口径一致。用例侧要显式 `whenever(jwtUtil.getTenantIdFromToken(any())).thenReturn(null)` 才能表达「令牌没带声明」。
-2. **给服务/控制器加构造参数,会让用 `@InjectMocks` 的整个测试类全红**(`InjectMocksException: Parameter specified as non-null is null ... parameter mcpStdioPolicy`),不是只红用到它的那一个用例。这轮在 `InternalApiControllerTest` 与 `McpServerServiceImplTest` 各撞一次;两个文件里都已有注释写明了这条纪律,加参数时必须同步补 `@Mock`,并且 mock 的返回值若被非空参数消费(如 `BizException(refusalReason())`)还要额外桩一个非 null。
+2. **给服务/控制器加构造参数,会让用 `@InjectMocks` 的整个测试类全红**(`InjectMocksException: Parameter specified as non-null is null ... parameter mcpStdioPolicy`),不是只红用到它的那一个用例——`InternalApiControllerTest` 与 `McpServerServiceImplTest` 就是这一类文件。两个文件里都已有注释写明了这条纪律,加参数时必须同步补 `@Mock`,并且 mock 的返回值若被非空参数消费(如 `BizException(refusalReason())`)还要额外桩一个非 null。
 3. **跨模块的 `val` 不能 smart cast**:`harnax-entity` 里 `McpDetailDto.authType: String?` 在本模块 `if (!it.isNullOrBlank())` 之后仍然只是 `String?`,直接赋值报 Assignment type mismatch。先落到一个局部 `val` 再判断。
 4. **KDoc 里写路径通配会吞掉注释**:`/** ... \`/api/admin/internal/**\` ... */` 里的 `/*` 在 Kotlin 里是**嵌套块注释的开头**(KDoc 注释可嵌套),于是整个文件的注释往后不闭合,报错却是「Unclosed comment」和「Missing '}'」,指向的行号毫无关系。文档字符串里的路径写成 `/api/admin/internal` 或改用行注释。
 
-`harnax-entity` 的 `*MapperTest` 与 `harnax-admin` 的 `*IT`(29 个)走 Testcontainers,**要跑起来只有两个条件**:本机 Docker 可用,且带 `TESTCONTAINERS_RYUK_DISABLED=true`——本机能拉到 `mysql:8.0`,但拉不到 `testcontainers/ryuk:0.12.0`,不设这个环境变量就会在 ryuk 拉镜像阶段失败,看起来像「环境不可用」。此前把它们记成「环境失败、不计入回归」是**错误归因**:真正的根因是 `PlanNoteMapper.xml` 的注释体里出现连续连字符,XML 注释不允许,MyBatis 解析该文件失败;三个服务的 `mybatis.mapper-locations` 都是 `classpath*:mapper/*.xml`,一个文件解析不了就建不起 `SqlSessionFactory`,于是整片集成测试一起红。详细后果见 `prod_doc/mcp-authorization-design.zh-CN.md` §11。跑法:
+`harnax-entity` 的 `*MapperTest`(24 个类、245 条用例)与 `harnax-admin` 的 `com.agnetix.harnax.admin.it.*IT`(41 个类)都用 Testcontainers 起一个真 MySQL 8，Docker 可用时直接跑，不需要额外环境变量：
 
 ```
-TESTCONTAINERS_RYUK_DISABLED=true mvn -o test -pl harnax-entity
+mvn -o test -pl harnax-entity
+mvn -o verify -pl harnax-admin -am -Pintegration-test -Dit.test=<类名> -Dtest=<类名> \
+  -Dsurefire.failIfNoSpecifiedTests=false -Dfailsafe.failIfNoSpecifiedTests=false
 ```
 
-注意 `harnax-entity` 的 Mapper 测试用的是手写 `schema-test.sql`,**根本不碰 Flyway**,所以它们全绿不能证明迁移可执行。证明在 `harnax-admin` 的 `*IT`:surefire 默认排除 `**/*IT.class`,要 `-Pintegration-test` 交给 failsafe 跑,而 IT 是真起 `HarnaxAdminApplication`、`spring.flyway.enabled=true` 打到一个全新 MySQL 8:
+四条判据：
 
-```
-TESTCONTAINERS_RYUK_DISABLED=true mvn -o verify -pl harnax-admin -am -Pintegration-test \
-  -Dtest=HealthInfoIT -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false \
-  -Dit.test=HealthInfoIT -Dfailsafe.failIfNoSpecifiedTests=false
-```
+- `-am` 必带，否则兄弟模块从 `~/.m2` 的旧 SNAPSHOT 解析，跑出来的红绿都不是工作区这一份。
+- `-Dtest` 与 `-Dit.test` 要给同一个值（或一个故意不匹配的值）：surefire 那份 `<exclude>**/*IT.class</exclude>` 会被命令行的 `-Dtest` 覆盖，不给就整套单测先来一遍。
+- 两个 `failIfNoSpecifiedTests=false` 都要给，缺一个会在别的模块以「no tests matching」红掉。
+- 只跑某几个 IT 类时，`harnax-channel-service` 的 `com.agnetix.harnax.channel.service.it.**` 也要一并排除，否则它在单测阶段以 `ExceptionInInitializerError → Could not find a valid Docker environment` 出现（当 Docker 确实不可用时）。
 
-(`-am` 必带,否则兄弟模块的 SNAPSHOT 解析不到;`-Dtest=` 指向那个 IT 是为了让 surefire 什么都不跑,否则 1760 个单测会先来一遍。)实测:`HealthInfoIT` 3/3 绿,耗时 92s——即 admin 的 schema 基线在全新 MySQL 8 上重放成功,含 `mcp_oauth_client` 的生成列 `active_client_id` 与 `utf8mb4_bin` 两列。
+两条容器侧既有纪律：mapper XML 的注释体里不能出现连续连字符（XML 注释不允许），因为三个服务的 `mybatis.mapper-locations` 都是 `classpath*:mapper/*.xml`，一个文件解析不了就建不起 `SqlSessionFactory`，整片测试一起红；`harnax-scheduler` 的 IT 由该模块 pom 固定 fork 成 `-Duser.timezone=UTC`，因为 Testcontainers 的 MySQL 是 UTC，而 mapper 用 `NOW()` 去比 Java 侧 `LocalDateTime.now()` 写进去的 `DATETIME`，开发机 +08:00 时所有「很老」的种子行都会被记成 8 小时后的未来。
+
+注意 `harnax-entity` 的 Mapper 测试用的是手写 `schema-test.sql`，**根本不碰 Flyway**，所以它们全绿不能证明迁移可执行。可执行的证据在 `harnax-admin` 的 `*IT`：它们真起 `HarnaxAdminApplication`、`spring.flyway.enabled=true`，打到一个全新 MySQL 8，把 admin 的 schema 基线整份重放一遍——生成列 `active_client_id`、`issuer` 与 `callback_url` 上的 `utf8mb4_bin` 这类 MySQL 8 专属形状都在重放范围内。`schema-test.sql` 与基线之间的漂移由 `SchemaBaselineDriftIT` 守，而它只在 `-Pintegration-test` 下跑。
 
 防复发:`MapperXmlParseTest`(纯 JVM,不依赖 Docker)把 classpath 上所有 mapper XML 过一遍解析,并单独检查注释体里的 `--`——解析器只会报「not well-formed」,不指出是注释问题,所以这一步要自己查。
 
-此前 21 个红灯全是既有问题,根因集中在三类,记录以免重犯:
+Mockito 与断言口径侧另有三条判据，都会以「整片红」而不是「一条红」的形态出现：
 
-1. **裸 Mockito 匹配器在 Kotlin 里触发 NPE**:`ArgumentCaptor.capture()`、`ArgumentMatchers.eq(...)`、`isNull(...)` 返回平台类型,Kotlin 会插入 `checkNotNullParameter` 非空校验,抛 `NullPointerException: capture(...) must not be null`;一次失败还会污染同一 `mock()` 所在的后续用例,表现为 `UnfinishedVerification` / `InvalidUseOfMatchers`。改用 mockito-kotlin 等价物:`argumentCaptor<T>()` + `.firstValue`、`org.mockito.kotlin.eq`。第十轮在 `AgentToolServiceImplTest` 上又踩了一次,路径是那里的 `import org.mockito.ArgumentMatchers.*`——通配 import 里的裸 `eq` 优先级低于任何显式 import,所以这类文件必须单独写一行 `import org.mockito.kotlin.eq`,否则一次失败会顺着同一 `@Mock` 把后面几个用例一起带成 `UnfinishedVerification`。
-2. **`any()` 不匹配 null**:mockito-kotlin 的 `any()` 编译为 `ArgumentMatchers.any(T::class.java)`,对可空参数实际收不到值,于是桩永不生效、被测试方法走进真实分支。可空参数用 `anyOrNull()`(如 `AgentTaskLogService.page` 的 5 个过滤参数)。
-3. **桩覆盖不全或断言与实现口径不符**:`initSystemKeys()` 遍历 `listOf("channel-service", "scheduler")`,只 stub 一个服务时另一个仍会插 Key(用例口径见 KEY-37);`AgentTaskServiceImpl.toggleTaskStatus` 的状态由 scheduler 侧持有并回写,本地不抢着 `updateStatus`,用例因此断言 `verify(schedulerClient).startTask(1L)`。同一类问题在 `AgentTaskLogMapperTest` 还有两例(本次修的是用例,不是 mapper):`AgentTaskLogMapper.xml` 的 `updateById` 带 `WHERE id = #{id} AND status IN (3, 4)`,即「只回写仍在跑的那条」,调用方只有 `SchedulerServiceImpl` 且都传运行中的日志——用例却拿种子行(已完成)断言更新返回 1,现改为「插一条 status=3 的行、更新它拿到 1」并补一条「已完成行更新返回 0 且原值不动」;另一例是单边界时间过滤用 `startTime.toString() >= "2026-07-02"` 做字典序比较,`toString()` 带时分秒时结论随格式漂移,现改 `LocalDateTime` 的 `isBefore` / `isAfter`。
+1. **裸 Mockito 匹配器在 Kotlin 里触发 NPE**:`ArgumentCaptor.capture()`、`ArgumentMatchers.eq(...)`、`isNull(...)` 返回平台类型,Kotlin 会插入 `checkNotNullParameter` 非空校验,抛 `NullPointerException: capture(...) must not be null`;一次失败还会污染同一 `mock()` 所在的后续用例,表现为 `UnfinishedVerification` / `InvalidUseOfMatchers`。改用 mockito-kotlin 等价物:`argumentCaptor<T>()` + `.firstValue`、`org.mockito.kotlin.eq`。最容易复发的形状是文件里写了 `import org.mockito.ArgumentMatchers.*`——通配 import 里的裸 `eq` 优先级低于任何显式 import,所以这类文件必须单独写一行 `import org.mockito.kotlin.eq`。
+2. **`any()` 不匹配 null**:mockito-kotlin 的 `any()` 编译为 `ArgumentMatchers.any(T::class.java)`,对可空参数实际收不到值,于是桩永不生效、被测试方法走进真实分支。可空参数用 `anyOrNull()`,例如 `AgentTaskControllerTest` 里 `crudService.page(...)` 的五个过滤参数。
+3. **桩覆盖不全或断言与实现口径不符**:`ApiKeyServiceImpl.initSystemKeys()` 遍历 `listOf("channel-service", "scheduler")`,只 stub 一个服务时另一个仍会插 Key(用例口径见 KEY-37)。同一条判据的形状是:被测 SQL 的 `WHERE ... status IN (3, 4)` 这类「只回写仍在跑的那条」语义,拿已完成状态的种子行去断言更新返回 1 必然对不上——要插一条运行中的行断言返回 1,再补一条已完成行断言返回 0 且原值不动。时间边界过滤同理:`LocalDateTime.toString()` 带时分秒,拿它和 `"2026-07-02"` 做字典序比较会随格式漂移,判据写成 `isBefore` / `isAfter`。
 
-生产侧同步:`AgentTaskController` 的 7 个 catch 块补齐 `"Prefix: ${e.message}"`,与 `TokenStatsController` / `InternalApiController` 既有约定一致——用例早就按约定断言,是代码偏离约定,不是用例写错。
+错误信息的口径也是一条约定而非一次修复:`AgentTaskController`(harnax-scheduler)的 7 个 catch 块都拼 `"Prefix: ${e.message}"`,与 `TokenStatsController` / `InternalApiController` 同一种写法——用例按这个约定断言。
