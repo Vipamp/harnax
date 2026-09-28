@@ -259,32 +259,43 @@ agentBuilder.addMiddleware(processLogMiddleware)
 ### 7.1 ToolBox 抽象基类
 
 **职责**：
-- 自动扫描子类 `@NeedConfirmed` 注解方法，注册为需确认工具
-- 提供 `execute()` 方法封装调用，自动记录工具调用日志（开始/结束时间、参数、结果）
-- 通过 `UserIdentifier` 和 `SessionMetaContext` 注入运行时上下文
+- 持有 `init()` 注入的运行时上下文：`ToolCallLogAdaptor`、`SessionMetaContext`、`UserIdentifier`
+- 提供 `execute()` 包裹工具方法，按调用成败各写一条 `tool_call_log`（`toolName` 为 `{ToolBox.name()}::{方法名}`，含参数、结果、起止时间与耗时），随后把异常原样抛出
+- 未 `init()` 时跳过写日志并 warn；`userIdentifier()` 在未初始化时抛 `IllegalStateException`
+
+`needConfirm` 的判定不在这个基类里：`ToolRegistry` 从 `@ToolMeta.needConfirm` 读出标记，装配时由 `HarnessAgentLauncher` 落成 PermissionEngine 的 ASK 规则。
 
 ### 7.2 内置工具
 
-| 类名 | 工具名 | 说明 |
+| 类名 | Bean 名 | 说明 |
 |------|--------|------|
-| `TimeToolBox` | `datetime-tool-box` | `getDate()` 和 `getDatetime()`，标记为 `@NeedConfirmed` |
+| `TimeToolBox` | `time-tool-box` | `getDate()` 与 `getDatetime()`，均为 `@Tool(readOnly = true)` + `@ToolMeta(needConfirm = false)` |
 
 ### 7.3 ToolCallContext
 
 工具运行上下文，通过 `ToolExecutionContext` 注入：
 
 ```kotlin
-data class SessionMetaContext(val agentId: Long, val sessionId: String)
-data class UserIdentifier(val userId: Long)
+data class SessionMetaContext(
+    val agentId: Long?,        // 团队主管没有对应的 agent 行，此时为 null
+    val sessionId: String,
+    val tenantId: Long? = null,
+) : ToolCallContext
+
+data class UserIdentifier(
+    val userId: Long? = null,  // 调用方是服务或未绑定用户的密钥时为 null
+) : ToolCallContext
 ```
+
+声明位置：`harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolCallContext.kt`。
 
 ---
 
 ## 8. 会话持久化（Session）
 
-### 8.1 AgentStateStore（agentscope 2.0.0）
+### 8.1 AgentStateStore
 
-2.0.0 引入 `AgentStateStore` 替代 `Session`，Key 模型从单一 `SessionKey` 变为 `(userId, sessionId, key)` 三元组。
+`AgentStateStore` 的 Key 模型是 `(userId, sessionId, key)` 三元组。
 
 ### 8.2 SessionLoader
 

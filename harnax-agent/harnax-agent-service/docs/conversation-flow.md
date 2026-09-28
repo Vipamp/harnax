@@ -235,7 +235,7 @@ HarnessAgentBuilder()
     .systemPrompt(agentSpec.systemPrompt)
     .reminder(harnessConfig.reminder)
     .workspace(harnessConfig.workspace)
-    .session(mysqlSession)                    <- MysqlSession 分布式会话
+    .stateStore(stateStore)                   <- AgentStateStore（MysqlAgentStateStore）
 ```
 
 ### 第 2 步：配置 Chat Model
@@ -259,11 +259,18 @@ for each McpSpec in agentSpec.mcpServices:
 ### 第 4 步：注册工具
 
 ```
-for each ToolBox in TOOL_SET (当前只有 TimeToolBox):
-    tool.init(toolCallLogAdaptor, sessionMetaContext, userIdentifier)
-    agentBuilder.addTool(tool)
-    if tool 有 @NeedConfirmed 注解 -> 加入 dangerousTools 集合
+for each ToolSpec in agentSpec.toolSpecs:                 // 工具按 agent 绑定逐条装配，没有硬编码清单
+    toolConfigAdaptor.getToolConfig(toolId) -> ToolConfig
+    ToolConfig.status == 0 -> 跳过（管理员已停用）
+    toolRegistry.createToolBoxInstance(beanName) -> ToolBox  // 同一 beanName 只注册一次
+    toolBox.init(toolCallLogAdaptor, SessionMetaContext(agentId, sessionId, tenantId), userIdentifier)
+    agentBuilder.addTool(toolBox)                          // addTool 装载该 ToolBox 的全部 @Tool 方法
+    if toolConfig.needConfirm == 1 || toolSpec.needConfirm:
+        needConfirmedTools.add(toolConfig.name)            // 用 @Tool.name，PermissionEngine 按名字匹配
+// 收尾：ToolBox 里未被本 agent 授权的方法（未被选中的兄弟方法、被停用的方法）从 toolkit 移除
 ```
+
+团队场景另挂角色工具：lead 用 `TeamLeadToolBox`，member 用 `TeamMemberToolBox`。
 
 ### 第 5 步：注册技能
 
@@ -273,45 +280,58 @@ for each SkillSpec in agentSpec.skills:
     agentBuilder.addSkill(skill)
 ```
 
-### 第 6 步：注册 Hooks
+### 第 6 步：注册 Middleware 与权限规则
 
 ```
-HOOK_SET 包含两个 Hook：
+框架的执行拦截点是 `MiddlewareBase`；危险工具拦截不自建中间件，
+交给内置的 PermissionEngine 按规则判定。
 
-ProcessLogHook (priority=500)
-    监听: PreCallEvent, PreActingEvent, ActingChunkEvent,
-          PostActingEvent, PostCallEvent, ErrorEvent
-    作用: 通过 ProcessLogAdaptor 记录每个生命周期事件
+agentBuilder.addMiddleware(TokenStatsMiddleware(tokenStatAdaptor, tokenStatBuilder))
+agentBuilder.addMiddleware(ProcessLogMiddleware())
+    // 两次 addMiddleware 都是每次 build 新建实例：中间件把本轮归因（agent/session/tenant）
+    // 存在字段里，共享实例会让并发会话互相改写对方的记账。
 
-ConfirmToolsHook (priority=0)
-    监听: PostReasoningEvent
-    作用: 检查推理结果中的 ToolUseBlock，如果工具名在 dangerousTools 中
-          -> event.stopAgent() 暂停 agent 循环，等待用户确认
+PermissionContextState 规则：
+    ALLOW <- 框架自带工具（plan_enter/plan_write/plan_exit、todo_write、
+             agent_spawn/agent_send/agent_list、task_output/task_list）+ 团队工具名
+             没有显式 ALLOW，DEFAULT 模式下这些内部工具会被判 ASK 而卡住
+    ASK   <- needConfirmedTools（工具名来自 @Tool.name）
+
+@ToolMeta(dangerousInput = true) 的方法再包一层 DangerousInputCheckingTool，
+在 checkPermissions() 里扫描字符串入参中的危险命令与路径；
+已有 ASK 规则的工具跳过包装——ASK 在 checkPermissions 之前触发，包装是冗余的。
 ```
 
 ### 第 7 步：配置计划（Plan）
 
 ```
 if chatSpec.enablePlan:
-    PlanNotebook(CustomerPlanNoteStorage(planNoteAdaptor))
-    agentBuilder.planNotebook(planNotebook)
+    agentBuilder.enablePlan(true)        <- 框架的 plan 模式开关
 ```
 
 ### 第 8 步：配置沙箱（Sandbox）
 
 ```
-if harnessConfig.sandbox.enabled:
-    |-- 创建 SnapshotSpec（MinIO 远程 或 本地）
-    |-- DockerFilesystemSpec(image, workspaceRoot, isolationScope=SESSION)
-    |-- MysqlCompatibleSandboxStateStore（适配 MySQL session key 格式）
-    |-- SandboxDistributedOptions
+if 非主管 and harnessConfig.sandbox.enabled and snapshotSpec != null:
+    |-- DockerFilesystemSpec
+    |     .image(resolvedSandboxImage)   <- 选中 CLI 包时按包组合解析出的镜像，否则 harnessConfig.sandbox.image
+    |     .workspaceRoot(...)  .environment(cliEnv)
+    |     .isolationScope(harnessConfig.sandbox.isolationScope)  .snapshotSpec(snapshotSpec)
+    |   -> agentBuilder.filesystem(dockerSpec)
+    |-- DistributedStore.builder()
+    |     .agentStateStore(stateStore)
+    |     .baseStore(MinioBaseStore 或 InMemoryStore)
+    |     .sandboxSnapshotSpec(snapshotSpec)
+    |   -> agentBuilder.distributedStore(...)
     |
     +-- if keepAlive=true:
           保存 keepAliveSnapshotSpec 传给 HarnessAgentWrapper
           （不在 agent 层面注入，而是在 wrapper.callStreamInternal 中注入）
 
-if sandbox 关闭 but MinIO 启用:
-    RemoteFilesystemSpec(MinioBaseStore)  <- 仅文件存储，无 Docker 隔离
+主管不装配 filesystem：它没有自己的工作区，框架自带的文件/shell/子代理工具一并关掉。
+
+if 沙箱关闭 but MinIO 启用 and 非主管:
+    RemoteFilesystemSpec(MinioBaseStore).isolationScope(SESSION)  <- 仅文件存储，无 Docker 隔离
 ```
 
 ### 第 9 步：构建 & 包装
@@ -320,14 +340,21 @@ if sandbox 关闭 but MinIO 启用:
 val harnessAgent = agentBuilder.build()  // -> agentscope 的 HarnessAgent
 
 return HarnessAgentWrapper(
-    harnessAgent,
-    sessionId,
-    dangerousTools,
-    tokenStatBuilder,
-    keepAliveSandboxManager,     // keepAlive 沙箱管理器
-    keepAliveSnapshotSpec,        // keepAlive 快照规格
-    sandboxImage,                 // Docker 镜像名
-    sandboxWorkspaceRoot,         // 工作区根路径
+    harnessAgent = agent,
+    mcpClients = mcpClients,
+    dangerousTools = needConfirmedTools + dangerousInputTools,
+    sessionId = sessionId,
+    keepAliveSandboxManager = keepAliveSandboxManager,
+    keepAliveSnapshotSpec = snapshotSpec,
+    sandboxImage = resolvedSandboxImage,
+    sandboxEnv = cliEnv,
+    sandboxWorkspaceRoot = harnessConfig.sandbox.workspaceRoot,
+    sandboxNetwork = harnessConfig.sandbox.network,
+    permissionMode = chatSpec.permissionMode,
+    configuredPermissionContext = builtPermCtx,
+    // 成员的产出由主管那条流负责，这两个成员侧传 null
+    outputFileDetector = if (teamRole is TeamRole.Member) null else outputFileDetector,
+    outputFileStore = if (teamRole is TeamRole.Member) null else outputFileStore,
 )
 ```
 
@@ -379,9 +406,9 @@ callStreamInternal(msg, options)
     |       |  |                                                      |
     |       |  |  Reason (LLM 推理)                                   |
     |       |  |     |                                                |
-    |       |  |  PostReasoningEvent -> ConfirmToolsHook 检查         |
-    |       |  |     |-- 有危险工具 -> stopAgent() 暂停               |
-    |       |  |     +-- 无危险工具 -> 继续                           |
+    |       |  |  Reason 之后由 PermissionEngine 判 ALLOW/ASK/DENY    |
+    |       |  |     |-- ASK -> 发 REQUIRE_USER_CONFIRM，本轮暂停     |
+    |       |  |     +-- ALLOW/DENY 之外的裁决 -> 继续                |
     |       |  |     |                                                |
     |       |  |  Act (执行工具)                                      |
     |       |  |     |-- SandboxLifecycleMiddleware                   |
@@ -393,7 +420,7 @@ callStreamInternal(msg, options)
     |       |  |     |                                                |
     |       |  |  Observe (观察结果)                                  |
     |       |  |     |                                                |
-    |       |  |  SessionPersistenceHook 自动保存会话到 MySQL          |
+    |       |  |  每步之后框架自动把会话状态落 MySQL                  |
     |       |  |     |                                                |
     |       |  |  循环... 直到 LLM 不再产生工具调用                   |
     |       |  +------------------------------------------------------+
@@ -475,24 +502,26 @@ TOOL_RESULT                         ->    ToolResultChatEvent(toolId, toolName, 
 ## 工具确认流程
 
 ```
-1. Agent 推理产出工具调用
+1. Agent 推理产出工具调用，PermissionEngine 按工具名命中 ASK 规则
        |
-2. ConfirmToolsHook.onEvent(PostReasoningEvent)
-   -> 检查 ToolUseBlock 中的工具名是否在 dangerousTools 中
-   -> 是: event.stopAgent() 暂停循环
+2. 框架发出 REQUIRE_USER_CONFIRM 事件，本轮停在 ASKING 状态（待确认调用随会话状态持久化）
        |
-3. ChatEventConverter 看到 isLast=true 的 REASONING 事件含 ToolUseBlock
-   -> 有危险工具: 发射 ToolConfirmChatEvent（不发射 CallToolChatEvent）
+3. ChatEventConverter 把事件里的 toolCalls 转成 ToolConfirmChatEvent
+   每个 PendingCallTool = toolId + toolName + arguments + isDangerous
+   isDangerous = 工具名 ∈ dangerousTools（= needConfirmedTools + dangerousInput 包装的工具）
        |
-4. 客户端收到 ToolConfirmChatEvent，展示确认 UI
+4. 客户端展示确认 UI，POST /api/agent/confirm（对外统一经 Router 的 /api/router/agent/confirm）
+   |-- toolResults 非空：按工具逐个裁决，toolId 对齐 ASKING 的 ToolUseBlock
+   +-- toolResults 为空：bulk 模式，isConfirmed 一次性裁决全部待确认工具
        |
-5. 客户端调用 confirm 接口（统一经 Router 代理）
-   |-- isConfirmed=true:
-   |     agent.callStream()  <- 无 msg，恢复暂停的 agent 继续执行
-   +-- isConfirmed=false:
-         构造 ToolResultBlock("Operation cancelled by user")
-         agent.callStream(msg=cancelResult)  <- 将取消结果反馈给 agent
+5. runner 把裁决列表写进 Msg.metadata[METADATA_CONFIRM_RESULTS]
+   agent.callStream(msg) 恢复暂停的 agent 继续 ReAct 循环
+   团队场景 request.childRunId 非空时走 confirmMemberRun：只登记裁决，
+   被恢复的 member 输出仍回到 lead 那条流上。
 ```
+
+等待期间流被切断（空闲超时、关页、进程退出）时，下一次订阅从持久化状态找回 ASKING 调用并重发同一张确认卡片；
+若此时已无待确认工具，`/confirm` 返回 ErrorChatEvent 提示重发消息。
 
 ---
 
@@ -546,8 +575,8 @@ clearSession 时:
 ### Session 存储
 
 ```
-MysqlSession -> session_record 表
-SessionPersistenceHook (agentscope 内置) 在每次 ReAct 循环步骤后自动保存
+SessionLoader.load(MysqlSessionConfig) -> MysqlAgentStateStore -> session_record 表
+框架在每步 ReAct 之后自动把会话状态写入 session_record；harnessConfig.enableSessionPersistence=false 时关掉
 ```
 
 ### Agent 缓存
@@ -656,7 +685,7 @@ HarnessAutoConfiguration (@Configuration)
     +-- @Bean HarnessAgentLauncher
           +-- initLauncher()
                 |-- 创建 KeepAliveSandboxManager (if sandbox.enabled && sandbox.keepAlive)
-                |-- SessionLoader.load(sessionConfig) -> MysqlSession
+                |-- SessionLoader.load(sessionConfig) -> AgentStateStore
                 +-- MinIO bucket 初始化
 ```
 
@@ -688,14 +717,15 @@ Session Router (port 8081)
               |         |-- HarnessAgentBuilder
               |         |    .name, .description, .maxIters, .systemPrompt, .model
               |         |    .addMcp(McpClient)       -- for each MCP service
-              |         |    .addTool(TimeToolBox)     -- from TOOL_SET
+              |         |    .addTool(ToolBox)         -- per agentSpec.toolSpecs, dedup by beanName
               |         |    .addSkill(AgentSkill)     -- from SkillAdaptor
-              |         |    .addHook(ProcessLogHook)  -- from HOOK_SET
-              |         |    .addHook(ConfirmToolsHook)
-              |         |    .enablePlan(PlanNotebook) -- if enabled
+              |         |    .addMiddleware(ProcessLogMiddleware)
+              |         |    .addMiddleware(TokenStatsMiddleware)
+              |         |    .permissionContext(...)   -- ALLOW framework tools, ASK needConfirm tools
+              |         |    .enablePlan(true)         -- if chatSpec.enablePlan
               |         |    .filesystem(DockerFilesystemSpec) -- if sandbox enabled
-              |         |    .sandboxDistributed(SandboxDistributedOptions)
-              |         |    .session(MysqlSession)
+              |         |    .distributedStore(DistributedStore)
+              |         |    .stateStore(AgentStateStore)
               |         |    .build() -> HarnessAgent
               |         +-- Wraps in HarnessAgentWrapper
               |
@@ -705,9 +735,9 @@ Session Router (port 8081)
                    |-- harnessAgent.stream(msgs, options, ctx)
                    |    |
                    |    |  [agentscope ReAct loop: Reason -> Act -> Observe -> ...]
-                   |    |  SessionPersistenceHook auto-saves after each step
-                   |    |  ProcessLogHook logs each lifecycle event
-                   |    |  ConfirmToolsHook pauses on dangerous tools
+                   |    |  session persists after each step (switch: enableSessionPersistence)
+                   |    |  ProcessLogMiddleware logs each lifecycle event
+                   |    |  PermissionEngine ASK rule pauses tools needing confirmation
                    |    |
                    |    v
                    |-- ChatEventConverter.convert() -> Flux<ChatEvent>
