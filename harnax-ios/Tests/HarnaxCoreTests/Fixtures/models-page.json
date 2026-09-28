@@ -1,0 +1,67 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "pageNum": 1,
+    "pageSize": 20,
+    "total": 3,
+    "records": [
+      {
+        "id": 21,
+        "name": "通义千问 Max",
+        "modelName": "qwen-max",
+        "providerId": 3,
+        "providerName": "阿里云百炼",
+        "description": "旗舰对话模型，强制思考",
+        "modelType": "chat",
+        "tags": ["internet", "reasoning", "tool"],
+        "supportInternet": 1,
+        "supportReasoning": 1,
+        "thinkingMode": 2,
+        "supportTool": 1,
+        "supportMcp": 0,
+        "supportVision": 0,
+        "price": 12.5,
+        "status": 1,
+        "isPublic": 1,
+        "creator": "heqingsong",
+        "createTime": "2026-09-02 08:30:00",
+        "updateTime": "2026-09-19 20:12:44"
+      },
+      {
+        "id": 22,
+        "name": "向量模型",
+        "modelName": "text-embedding-v3",
+        "providerId": 3,
+        "providerName": "阿里云百炼",
+        "modelType": "embedding",
+        "tags": [],
+        "status": 1,
+        "isPublic": 0,
+        "creator": "luwen",
+        "createTime": "2026-09-05 10:00:00",
+        "updateTime": "2026-09-05 10:00:00"
+      },
+      {
+        "id": 23,
+        "name": null,
+        "modelName": "   ",
+        "providerId": 3,
+        "description": null,
+        "modelType": "chat",
+        "tags": ["reasoning"],
+        "supportReasoning": 1,
+        "price": 0.0,
+        "status": 0,
+        "creator": "heqingsong",
+        "createTime": "2026-07-11 12:00:00",
+        "updateTime": "2026-07-11 12:00:00"
+      }
+    ],
+    "hasNext": false,
+    "hasPrevious": false,
+    "pages": 1
+  },
+  "timestamp": 1790592457110,
+  "isSuccess": true
+}

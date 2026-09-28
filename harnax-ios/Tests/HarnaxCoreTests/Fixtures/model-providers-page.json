@@ -1,0 +1,40 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "pageNum": 1,
+    "pageSize": 8,
+    "total": 2,
+    "records": [
+      {
+        "id": 3,
+        "type": "dashscope",
+        "name": "阿里云百炼",
+        "description": "生产环境主账号",
+        "apiKey": "sk****3f9c",
+        "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "status": 1,
+        "isPublic": 1,
+        "creator": "heqingsong",
+        "createTime": "2026-08-30 09:14:02",
+        "updateTime": "2026-09-18 16:41:07"
+      },
+      {
+        "id": 4,
+        "type": "ollama",
+        "name": "   ",
+        "description": null,
+        "status": 0,
+        "isPublic": 0,
+        "creator": "luwen",
+        "createTime": "2026-09-01 11:00:00",
+        "updateTime": "2026-09-01 11:00:00"
+      }
+    ],
+    "hasNext": false,
+    "hasPrevious": false,
+    "pages": 1
+  },
+  "timestamp": 1790592457109,
+  "isSuccess": true
+}
