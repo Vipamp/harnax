@@ -226,3 +226,87 @@
 "model.validation.url" = "That base URL does not look right.";
 "model.validation.price" = "Enter a price, or leave it empty for zero.";
 "model.validation.price.negative" = "The price cannot be negative.";
+
+/* ---- skills: source types ---- */
+"skill.type.git" = "Git";
+"skill.type.npm" = "npm";
+"skill.type.zip" = "ZIP archive";
+"skill.type.builtin" = "Built in";
+"skill.type.other" = "Other";
+/* ---- skills: source list ---- */
+"skill.source.search" = "Search sources";
+"skill.source.empty" = "No source matches this filter.";
+"skill.source.skills" = "%d enabled skill(s)";
+"skill.source.never" = "Never synced";
+"skill.source.readonly" = "Built-in sources can be neither synced nor deleted.";
+"skill.source.sync" = "Sync";
+"skill.source.install" = "Reinstall all";
+"skill.source.delete.title" = "Delete this source?";
+"skill.source.delete.blockedTitle" = "Cannot delete";
+"skill.source.delete.blocked" = "%d enabled skill(s) still come from this source. Disable them first.";
+"skill.source.upload" = "Upload ZIP";
+"skill.source.upload.title" = "Upload a skill archive";
+"skill.source.upload.name" = "Source name";
+"skill.source.upload.pick" = "Choose a ZIP file";
+"skill.source.upload.again" = "Choose another file";
+"skill.source.upload.confirm" = "Upload and install";
+"skill.source.upload.needName" = "Name the source before uploading.";
+"skill.source.upload.needFile" = "Pick a ZIP archive first.";
+"skill.source.upload.unreadable" = "That file could not be read.";
+/* ---- skills: sync modal ---- */
+"skill.sync.title" = "Sync skills";
+"skill.sync.hint" = "Nothing is written yet. This is what the source holds right now - pick the skills to store, then read the result before closing.";
+"skill.sync.empty" = "The source holds no skill files.";
+"skill.sync.all" = "Select all";
+"skill.sync.none" = "Clear";
+"skill.sync.new" = "New";
+"skill.sync.exists" = "Overwrite";
+"skill.sync.files" = "%d file(s)";
+"skill.sync.new.count" = "%d of them are new";
+"skill.sync.submit" = "Install selected (%d)";
+"skill.sync.pickOne" = "Select at least one skill.";
+"skill.sync.status.success" = "Last sync complete";
+"skill.sync.status.partial" = "Last sync partial";
+"skill.sync.status.failed" = "Last sync failed";
+"skill.sync.status.empty" = "Last sync found nothing";
+/* ---- skills: install report ---- */
+"skill.install.title" = "Install result";
+"skill.install.unknown" = "The source was stored. No install was reported.";
+"skill.install.saved" = "%d skill(s) stored";
+"skill.install.noneSaved" = "Nothing was stored - %d skill(s) failed.";
+"skill.install.partial" = "%d stored, %d failed";
+"skill.install.flagged" = "%d skill(s) stored disabled, pending review";
+"skill.install.sourceError" = "The source could not be opened.";
+"skill.install.empty" = "The source held nothing to store.";
+"skill.install.nothing" = "Nothing changed - the source offered no skill.";
+/* ---- skills: install buckets ---- */
+"skill.bucket.installed" = "New";
+"skill.bucket.updated" = "Overwritten";
+"skill.bucket.flagged" = "Disabled pending review";
+"skill.bucket.failed" = "Failed";
+"skill.bucket.stale" = "No longer in the source";
+/* ---- skills: stored skill table ---- */
+"skill.table.title" = "Skills";
+"skill.table.search" = "Search skills";
+"skill.table.empty" = "This source has stored no skill yet.";
+"skill.table.emptyFiltered" = "No skill matches this filter.";
+"skill.table.unnamed" = "Untitled skill";
+"skill.table.syncTime" = "Synced";
+/* ---- skills: binding gate ---- */
+"skill.bound.title" = "Bound skills stay enabled";
+"skill.bound.agent" = "This skill is bound to %d agent(s), so it cannot be disabled here.";
+"skill.bound.team" = "This skill is bound to %d team(s), so it cannot be disabled here.";
+"skill.bound.both" = "This skill is bound to %d agent(s) and %d team(s), so it cannot be disabled here.";
+"skill.bound.none" = "Nothing binds this skill.";
+"skill.bound.agents" = "Agents %d";
+"skill.bound.teams" = "Teams %d";
+/* ---- skills: detail ---- */
+"skill.detail.tab.body" = "Skill file";
+"skill.detail.tab.files" = "Resources";
+"skill.detail.source" = "Source";
+"skill.detail.noBody" = "This skill stores no skill.md body.";
+"skill.detail.noFiles" = "This skill has no resource files.";
+"skill.detail.fileCount" = "%d file(s)";
+"skill.detail.expand" = "Expand all";
+"skill.detail.collapse" = "Collapse all";
+/* ---- not in this build ---- */

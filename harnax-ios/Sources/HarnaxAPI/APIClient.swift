@@ -71,7 +71,7 @@ public actor APIClient {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(language(), forHTTPHeaderField: "Accept-Language")
         if let body = endpoint.body {
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(endpoint.contentType ?? "application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = body
         }
         guard endpoint.authenticated else { return request }

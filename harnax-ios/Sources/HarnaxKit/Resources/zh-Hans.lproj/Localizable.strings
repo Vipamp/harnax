@@ -227,3 +227,87 @@
 "model.validation.url" = "基础地址格式不正确。";
 "model.validation.price" = "请填写单价，留空按 0 计。";
 "model.validation.price.negative" = "单价不能为负数。";
+
+/* ---- 技能：来源类型 ---- */
+"skill.type.git" = "Git";
+"skill.type.npm" = "npm";
+"skill.type.zip" = "ZIP 压缩包";
+"skill.type.builtin" = "内置";
+"skill.type.other" = "其他";
+/* ---- 技能：来源列表 ---- */
+"skill.source.search" = "搜索来源";
+"skill.source.empty" = "没有符合筛选条件的来源。";
+"skill.source.skills" = "%d 个已启用技能";
+"skill.source.never" = "从未同步";
+"skill.source.readonly" = "内置来源不能同步，也不能删除。";
+"skill.source.sync" = "同步";
+"skill.source.install" = "全部重装";
+"skill.source.delete.title" = "删除这个来源？";
+"skill.source.delete.blockedTitle" = "无法删除";
+"skill.source.delete.blocked" = "仍有 %d 个已启用技能来自这个来源，请先停用它们。";
+"skill.source.upload" = "上传 ZIP";
+"skill.source.upload.title" = "上传技能压缩包";
+"skill.source.upload.name" = "来源名称";
+"skill.source.upload.pick" = "选择 ZIP 文件";
+"skill.source.upload.again" = "重新选择文件";
+"skill.source.upload.confirm" = "上传并安装";
+"skill.source.upload.needName" = "请先给来源命名。";
+"skill.source.upload.needFile" = "请先选择 ZIP 压缩包。";
+"skill.source.upload.unreadable" = "无法读取该文件。";
+/* ---- 技能：同步面板 ---- */
+"skill.sync.title" = "同步技能";
+"skill.sync.hint" = "此刻还没有写入。下面是来源当前持有的技能 —— 勾选要存储的技能，再看安装结果，然后关闭。";
+"skill.sync.empty" = "来源里没有技能文件。";
+"skill.sync.all" = "全选";
+"skill.sync.none" = "清空";
+"skill.sync.new" = "新增";
+"skill.sync.exists" = "覆盖";
+"skill.sync.files" = "%d 个文件";
+"skill.sync.new.count" = "其中 %d 个是新增";
+"skill.sync.submit" = "安装所选（%d）";
+"skill.sync.pickOne" = "至少勾选一个技能。";
+"skill.sync.status.success" = "上次同步完整";
+"skill.sync.status.partial" = "上次同步有失败";
+"skill.sync.status.failed" = "上次同步失败";
+"skill.sync.status.empty" = "上次同步没有内容";
+/* ---- 技能：安装结果 ---- */
+"skill.install.title" = "安装结果";
+"skill.install.unknown" = "来源已保存，但未报告安装情况。";
+"skill.install.saved" = "已存储 %d 个技能";
+"skill.install.noneSaved" = "没有技能写入 —— %d 个失败。";
+"skill.install.partial" = "已存储 %d 个，失败 %d 个";
+"skill.install.flagged" = "%d 个技能已存储但被停用，待复核";
+"skill.install.sourceError" = "无法打开该来源。";
+"skill.install.empty" = "来源里没有可存储的技能。";
+"skill.install.nothing" = "没有变化 —— 来源未提供技能。";
+/* ---- 技能：安装分桶 ---- */
+"skill.bucket.installed" = "新增";
+"skill.bucket.updated" = "已覆盖";
+"skill.bucket.flagged" = "停用待复核";
+"skill.bucket.failed" = "失败";
+"skill.bucket.stale" = "来源里已不存在";
+/* ---- 技能：右侧技能表 ---- */
+"skill.table.title" = "技能";
+"skill.table.search" = "搜索技能";
+"skill.table.empty" = "这个来源还没有存储任何技能。";
+"skill.table.emptyFiltered" = "没有符合筛选条件的技能。";
+"skill.table.unnamed" = "未命名技能";
+"skill.table.syncTime" = "同步于";
+/* ---- 技能：绑定门禁 ---- */
+"skill.bound.title" = "被绑定的技能保持启用";
+"skill.bound.agent" = "该技能被 %d 个智能体绑定，无法在此停用。";
+"skill.bound.team" = "该技能被 %d 个团队绑定，无法在此停用。";
+"skill.bound.both" = "该技能被 %d 个智能体和 %d 个团队绑定，无法在此停用。";
+"skill.bound.none" = "没有实体绑定该技能。";
+"skill.bound.agents" = "智能体 %d";
+"skill.bound.teams" = "团队 %d";
+/* ---- 技能：详情 ---- */
+"skill.detail.tab.body" = "技能文件";
+"skill.detail.tab.files" = "资源文件";
+"skill.detail.source" = "来源";
+"skill.detail.noBody" = "该技能没有存储 skill.md 正文。";
+"skill.detail.noFiles" = "该技能没有资源文件。";
+"skill.detail.fileCount" = "%d 个文件";
+"skill.detail.expand" = "全部展开";
+"skill.detail.collapse" = "全部收起";
+/* ---- 未开放 ---- */

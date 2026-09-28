@@ -20,6 +20,9 @@ public struct Endpoint: Sendable {
     public let query: [URLQueryItem]
     public let body: Data?
     public let base: APIBase
+    /// `nil` means JSON. The ZIP skill source route is the one endpoint whose body is
+    /// `multipart/form-data`, and its value has to carry the boundary.
+    public let contentType: String?
     /// Login and refresh are the two endpoints that must be sent without a bearer token.
     public let authenticated: Bool
 
@@ -29,6 +32,7 @@ public struct Endpoint: Sendable {
         query: [URLQueryItem] = [],
         body: Data? = nil,
         base: APIBase = .admin,
+        contentType: String? = nil,
         authenticated: Bool = true
     ) {
         self.method = method
@@ -36,6 +40,7 @@ public struct Endpoint: Sendable {
         self.query = query
         self.body = body
         self.base = base
+        self.contentType = contentType
         self.authenticated = authenticated
     }
 
