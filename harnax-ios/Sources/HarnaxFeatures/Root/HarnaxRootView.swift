@@ -58,7 +58,13 @@ struct HarnaxTabView: View {
     @ViewBuilder
     private func screen(for tab: HarnaxTab) -> some View {
         switch tab {
-        case .agents: AgentListView(agents: model.dependencies.agents)
+        case .agents:
+            AgentHomeView(
+                agents: model.dependencies.agents,
+                teams: model.dependencies.teams,
+                sessionRefresher: model.dependencies.sessionRefresher,
+                account: model.account
+            )
         case .me: MeView(model: model)
         case .chat, .context, .system: SoonView(titleKey: tab.titleKey)
         }

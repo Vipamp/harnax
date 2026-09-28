@@ -6,7 +6,7 @@ import HarnaxFeatures
 @MainActor
 final class AppModelTests: XCTestCase {
     private func makeModel(_ auth: FakeAuth = FakeAuth()) -> (AppModel, FakeAuth) {
-        let model = AppModel(dependencies: HarnaxDependencies(auth: auth, agents: FakeAgents()))
+        let model = AppModel(dependencies: HarnaxDependencies(auth: auth, agents: FakeAgents(), teams: FakeTeams(), sessionRefresher: FakeRefresher()))
         return (model, auth)
     }
 

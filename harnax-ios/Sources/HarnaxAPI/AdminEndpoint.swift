@@ -6,7 +6,6 @@ import HarnaxCore
 public enum AdminEndpoint {
     public static let cliLoginPath = "/api/admin/auth/cli-login"
     public static let profilePath = "/api/admin/auth/me"
-    public static let agentsPagePath = "/api/admin/agents/page"
 
     /// `authenticated: false` keeps a wrong password from being treated as an expired session.
     public static func cliLogin(_ request: LoginRequest) throws -> Endpoint {
@@ -20,16 +19,5 @@ public enum AdminEndpoint {
 
     public static var profile: Endpoint {
         Endpoint(.get, path: profilePath)
-    }
-
-    public static func agentsPage(num: Int, size: Int) -> Endpoint {
-        Endpoint(
-            .get,
-            path: agentsPagePath,
-            query: [
-                URLQueryItem(name: "pageNum", value: String(num)),
-                URLQueryItem(name: "pageSize", value: String(size)),
-            ]
-        )
     }
 }

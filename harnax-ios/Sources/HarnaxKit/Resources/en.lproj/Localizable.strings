@@ -11,6 +11,16 @@
 "state.empty.hint" = "Pull to refresh once there is data.";
 "state.error.title" = "Something went wrong";
 "state.error.hint" = "Check your connection, then try again.";
+"state.filter.all" = "All";
+"state.badge.enabled" = "Enabled";
+"state.badge.disabled" = "Stopped";
+"state.badge.shared" = "Public";
+"state.action.enable" = "Enable";
+"state.action.disable" = "Disable";
+"state.action.delete" = "Delete";
+"state.action.refresh" = "Refresh sessions";
+"state.delete.checking" = "Checking…";
+"state.delete.confirm" = "Delete %@";
 
 /* ---- errors ---- */
 "error.offline" = "You appear to be offline.";
@@ -49,9 +59,6 @@
 "agent.segment.agents" = "Agents";
 "agent.segment.teams" = "Teams";
 "agent.segment.tasks" = "Scheduled";
-"agent.badge.enabled" = "Enabled";
-"agent.badge.disabled" = "Stopped";
-"agent.badge.public" = "Public";
 "agent.sessionCount" = "%d sessions";
 "agent.chip.model" = "Model %@";
 "agent.chip.tools" = "Tools %d";
@@ -61,6 +68,53 @@
 "agent.action.chat" = "Chat";
 "agent.action.edit" = "Edit";
 "agent.create" = "New agent";
+"agent.search" = "Search agents";
+"agent.empty" = "No agents yet";
+"agent.empty.filtered" = "No agents match this search or filter";
+"agent.delete.title" = "Delete this agent?";
+"agent.delete.note" = "This cannot be undone. Its sessions, tool and skill bindings are removed with it.";
+"agent.section.tools" = "Tools";
+"agent.section.mcp" = "MCP servers";
+"agent.section.skills" = "Skills";
+"agent.section.cli" = "CLI packages";
+"agent.section.sessions" = "Sessions";
+"agent.binding.toolFallback" = "Tool #%d";
+"agent.binding.sessionFallback" = "Session #%d";
+"agent.binding.unnamed" = "Unnamed";
+"agent.binding.confirm" = "Needs confirmation";
+
+/* ---- teams ---- */
+"team.search" = "Search teams";
+"team.empty" = "No teams yet";
+"team.empty.filtered" = "No teams match this search or filter";
+"team.chip.leadModel" = "Lead %@";
+"team.chip.members" = "Members %d";
+"team.chip.skills" = "Lead skills %d";
+"team.stale.count" = "%d unavailable";
+"team.section.members" = "Members";
+"team.section.skills" = "Lead skills";
+"team.binding.memberFallback" = "Agent #%d";
+"team.binding.skillFallback" = "Skill #%d";
+"team.binding.unavailable" = "Deleted or disabled";
+"team.delete.title" = "Delete this team?";
+"team.delete.clear" = "Nothing binds this team, so the delete will go through.";
+"team.delete.blocked" = "%d session(s) still bind this team, so deleting it will be refused. Delete those sessions first.";
+"team.delete.loadFailed" = "Failed to load the related list, please retry";
+
+/* ---- related-session refresh ---- */
+"session.title" = "Refresh related sessions";
+"session.hint.agent" = "Agent \"%@\" was saved. The checked sessions pick up the new configuration immediately; the rest do so within about 30 minutes.";
+"session.hint.cli" = "CLI \"%@\" was updated. The checked sessions pick up the new package immediately; the rest do so within about 30 minutes.";
+"session.hint.team" = "Team \"%@\" was saved. The checked sessions pick up the new lead and members immediately; the rest do so within about 30 minutes.";
+"session.type.channel" = "Channel";
+"session.type.session" = "Session";
+"session.empty" = "No related sessions";
+"session.submit" = "Refresh selected (%d)";
+"session.skip" = "Skip";
+"session.later" = "Later";
+"session.outcome.all" = "Refreshed %d session(s)";
+"session.outcome.partial" = "%d refreshed, %d failed";
+"session.outcome.failed" = "Not refreshed";
 
 /* ---- me ---- */
 "me.title" = "Me";

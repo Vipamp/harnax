@@ -30,6 +30,16 @@ public struct PagedState<Element: Decodable & Sendable>: Sendable {
     }
 }
 
+public extension PagedState where Element: Identifiable, Element.ID == Int64? {
+    /// Drops one row after the server confirmed its deletion, and takes one off the total so `hasMore`
+    /// does not keep promising a page that has shrunk out of existence.
+    mutating func removeRow(id: Int64) {
+        let before = elements.count
+        elements.removeAll { $0.id == id }
+        if elements.count != before { total = max(0, total - 1) }
+    }
+}
+
 public extension PagedState where Element: Identifiable {
     /// Appends and drops rows already on screen. `List` keys on `id`, so a duplicated row from a shifted
     /// page would otherwise render twice under the same identity.

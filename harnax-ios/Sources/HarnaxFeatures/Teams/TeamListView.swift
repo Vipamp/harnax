@@ -2,26 +2,21 @@ import SwiftUI
 import HarnaxCore
 import HarnaxKit
 
-/// C1 — the record cards, the console's two list filters, and the three writes a card can do.
+/// C2 — the team list. Same card shape as an agent, same three writes, plus the pre-flight that names how
+/// many sessions would block a delete.
 ///
-/// Every field the card and its drill-down show comes off the list row, because
-/// `GET /api/admin/agents/page` already fills the four binding lists and the session list per row; there
-/// is no detail endpoint in this screen's path.
-public struct AgentListView: View {
-    @StateObject private var vm: AgentListViewModel
-    private let agents: any AgentCataloging
+/// `GET /api/admin/teams/page` fills the lead's skills and the members per row, so the drill-down costs
+/// nothing extra.
+public struct TeamListView: View {
+    @StateObject private var vm: TeamListViewModel
     private let refresher: any SessionRefreshing
     private let account: AccountSnapshot?
 
-    /// Which card the drill-down is open for. Held as a row rather than a flag because the row is what the
-    /// sheet reads.
-    @State private var drillDown: AgentSummary?
+    @State private var drillDown: TeamSummary?
     @State private var refreshTarget: SessionRefreshTarget?
-    @State private var pendingDelete: AgentSummary?
 
-    public init(agents: any AgentCataloging, sessionRefresher: any SessionRefreshing, account: AccountSnapshot?) {
-        _vm = StateObject(wrappedValue: AgentListViewModel(agents: agents))
-        self.agents = agents
+    public init(teams: any TeamCataloging, sessionRefresher: any SessionRefreshing, account: AccountSnapshot?) {
+        _vm = StateObject(wrappedValue: TeamListViewModel(teams: teams))
         self.refresher = sessionRefresher
         self.account = account
     }
@@ -29,7 +24,7 @@ public struct AgentListView: View {
     public var body: some View {
         content
             .harnaxScreen()
-            .searchable(text: $vm.keyword, prompt: Text(verbatim: hx("agent.search")))
+            .searchable(text: $vm.keyword, prompt: Text(verbatim: hx("team.search")))
             .toolbar {
                 ToolbarItem(placement: .primaryAction) { filterMenu }
             }
@@ -37,27 +32,31 @@ public struct AgentListView: View {
                 if vm.phase == .loading { await vm.refresh() }
             }
             .refreshable { await vm.refresh() }
-            .sheet(item: $drillDown) { AgentBindingsSheet(agent: $0) }
+            .sheet(item: $drillDown) { TeamBindingsSheet(team: $0) }
             .sheet(item: $refreshTarget) { target in
                 HXSessionRefreshSheet(target: target, refresher: refresher)
             }
             .confirmationDialog(
-                Text(verbatim: hx("agent.delete.title")),
+                Text(verbatim: hx("team.delete.title")),
                 isPresented: Binding(
-                    get: { pendingDelete != nil },
-                    set: { if !$0 { pendingDelete = nil } }
+                    get: { vm.deleteTarget != nil },
+                    set: { if !$0 { vm.cancelDelete() } }
                 ),
                 titleVisibility: .visible,
-                presenting: pendingDelete
-            ) { agent in
+                presenting: vm.deleteTarget
+            ) { target in
                 Button(role: .destructive) {
-                    Task { await vm.delete(agent) }
+                    Task { await vm.confirmDelete() }
                 } label: {
-                    HXText("state.delete.confirm", hxPresented(agent.name) ?? "")
+                    HXText("state.delete.confirm", target.team.title ?? "")
                 }
                 Button(role: .cancel) {} label: { HXText("common.cancel") }
-            } message: { _ in
-                Text(verbatim: hx("agent.delete.note"))
+            } message: { target in
+                // The count is the whole point of asking first: a blocked delete needs a different sentence
+                // from a free one.
+                Text(verbatim: target.boundSessions > 0
+                    ? hx("team.delete.blocked", target.boundSessions)
+                    : hx("team.delete.clear"))
             }
     }
 
@@ -84,10 +83,10 @@ public struct AgentListView: View {
         case .loading:
             HXStateView(.loading)
         case .empty:
-            // A filter that matches nothing is not the same sentence as an account with no agents.
+            // A filter that matches nothing is not the same sentence as an account with no teams.
             HXStateView(
                 .empty,
-                message: vm.isFiltered ? hx("agent.empty.filtered") : hx("agent.empty"),
+                message: vm.isFiltered ? hx("team.empty.filtered") : hx("team.empty"),
                 retry: { Task { await vm.refresh() } }
             )
         case let .failed(message):
@@ -105,16 +104,17 @@ public struct AgentListView: View {
                 }
                 // Row identity is the array index: a page may carry rows whose `id` the backend left null,
                 // and two nil ids under one `ForEach` identity would drop a card.
-                ForEach(Array(vm.items.enumerated()), id: \.offset) { index, agent in
-                    AgentRecordCard(
-                        agent: agent,
-                        enabled: vm.status(of: agent),
-                        isPending: agent.id.flatMap(vm.pendingIDs.contains) ?? false,
-                        canManage: (account?.canManage(creator: agent.creator)) ?? false,
-                        onToggle: { value in Task { await vm.setStatus(value, for: agent) } },
-                        onDrillDown: { drillDown = agent },
-                        onRefresh: { refreshTarget = refreshTarget(for: agent) },
-                        onDelete: { pendingDelete = agent }
+                ForEach(Array(vm.items.enumerated()), id: \.offset) { index, team in
+                    TeamRecordCard(
+                        team: team,
+                        enabled: vm.status(of: team),
+                        isPending: team.id.flatMap(vm.pendingIDs.contains) ?? false,
+                        isChecking: team.id == vm.deleteTarget?.team.id && vm.isCheckingDelete,
+                        canManage: (account?.canManage(creator: team.creator)) ?? false,
+                        onToggle: { value in Task { await vm.setStatus(value, for: team) } },
+                        onDrillDown: { drillDown = team },
+                        onRefresh: { refreshTarget = vm.refreshTarget(for: team) },
+                        onDelete: { Task { await vm.requestDelete(team) } }
                     )
                     .onAppear {
                         if index == vm.items.count - 1 { Task { await vm.loadMore() } }
@@ -129,25 +129,14 @@ public struct AgentListView: View {
             .padding(.bottom, HXLayout.tabBarClearance)
         }
     }
-
-    /// The panel reads its own list, so the card only names the subject.
-    private func refreshTarget(for agent: AgentSummary) -> SessionRefreshTarget? {
-        guard let id = agent.id else { return nil }
-        let catalog = agents
-        return SessionRefreshTarget(
-            id: id,
-            name: hxPresented(agent.name) ?? "",
-            source: .agent
-        ) {
-            await catalog.relatedSessions(id: id)
-        }
-    }
 }
 
-struct AgentRecordCard: View {
-    let agent: AgentSummary
+struct TeamRecordCard: View {
+    let team: TeamSummary
     let enabled: Bool
     let isPending: Bool
+    /// The pre-flight read is on the wire, so the row shows progress instead of looking inert.
+    let isChecking: Bool
     let canManage: Bool
     let onToggle: (Bool) -> Void
     let onDrillDown: () -> Void
@@ -157,10 +146,10 @@ struct AgentRecordCard: View {
     var body: some View {
         HXCard {
             HStack(alignment: .top, spacing: 12) {
-                HXAvatar(name: agent.name ?? "")
+                HXAvatar(name: team.title ?? "")
                 VStack(alignment: .leading, spacing: 7) {
                     titleRow
-                    if let description = hxPresented(agent.description) {
+                    if let description = hxPresented(team.description) {
                         Text(verbatim: description)
                             .font(.footnote)
                             .foregroundStyle(Color.hx(.textSecondary))
@@ -169,7 +158,7 @@ struct AgentRecordCard: View {
                     if hasChips {
                         drillButton
                     }
-                    let byline = AgentRowMeta.byline(for: agent)
+                    let byline = RowMeta.byline(creator: team.creator, createTime: team.createTime)
                     if !byline.isEmpty {
                         Text(verbatim: byline)
                             .font(.caption)
@@ -183,12 +172,12 @@ struct AgentRecordCard: View {
 
     private var titleRow: some View {
         HStack(spacing: 6) {
-            Text(verbatim: hxPresented(agent.name) ?? "")
+            Text(verbatim: team.title ?? "")
                 .font(.headline)
                 .foregroundStyle(Color.hx(.textPrimary))
                 .lineLimit(1)
             HXBadge(enabled ? "state.badge.enabled" : "state.badge.disabled", tone: enabled ? .success : .textTertiary)
-            if agent.isShared {
+            if team.isShared {
                 HXChip(hx("state.badge.shared"), tone: .indigo)
             }
             Spacer(minLength: 0)
@@ -196,12 +185,15 @@ struct AgentRecordCard: View {
         .padding(.trailing, 34)
     }
 
-    private var hasChips: Bool {
-        agent.modelName?.isEmpty == false
-            || agent.toolCount > 0 || agent.skillCount > 0 || agent.mcpCount > 0 || agent.cliCount > 0
+    private var unavailableCount: Int {
+        team.memberList.filter(\.isUnavailable).count + team.skillList.filter(\.isUnavailable).count
     }
 
-    /// The counts are the entry point to the detail the web console shows in a hover popover.
+    private var hasChips: Bool {
+        team.leadModelName != nil || !team.memberList.isEmpty || !team.skillList.isEmpty
+    }
+
+    /// The counts are the entry point to the members and lead skills the console shows in its expanded row.
     private var drillButton: some View {
         Button(action: onDrillDown) {
             HXFlow(spacing: 6) { chips }
@@ -212,20 +204,17 @@ struct AgentRecordCard: View {
 
     @ViewBuilder
     private var chips: some View {
-        if let model = hxPresented(agent.modelName), !model.isEmpty {
-            HXChip(hx("agent.chip.model", model), tone: .brand)
+        if let model = team.leadModelName {
+            HXChip(hx("team.chip.leadModel", model), tone: .brand)
         }
-        if agent.toolCount > 0 {
-            HXChip(hx("agent.chip.tools", agent.toolCount))
+        if !team.memberList.isEmpty {
+            HXChip(hx("team.chip.members", team.memberList.count), tone: .purple)
         }
-        if agent.skillCount > 0 {
-            HXChip(hx("agent.chip.skills", agent.skillCount), tone: .purple)
+        if !team.skillList.isEmpty {
+            HXChip(hx("team.chip.skills", team.skillList.count))
         }
-        if agent.mcpCount > 0 {
-            HXChip(hx("agent.chip.mcp", agent.mcpCount))
-        }
-        if agent.cliCount > 0 {
-            HXChip(hx("agent.chip.cli", agent.cliCount), tone: .warning)
+        if unavailableCount > 0 {
+            HXChip(hx("team.stale.count", unavailableCount), tone: .danger)
         }
     }
 
@@ -239,10 +228,13 @@ struct AgentRecordCard: View {
             Button(action: onRefresh) { HXText("state.action.refresh") }
 
             if canManage {
-                Button(role: .destructive, action: onDelete) { HXText("state.action.delete") }
+                Button(role: .destructive, action: onDelete) {
+                    HXText(isChecking ? "state.delete.checking" : "state.action.delete")
+                }
+                .disabled(isChecking)
             }
         } label: {
-            Image(systemName: isPending ? "hourglass" : "ellipsis")
+            Image(systemName: isPending || isChecking ? "hourglass" : "ellipsis")
                 .foregroundStyle(Color.hx(.textTertiary))
                 .frame(width: 30, height: 30)
                 .background(Color.hx(.surfaceAlt), in: Circle())

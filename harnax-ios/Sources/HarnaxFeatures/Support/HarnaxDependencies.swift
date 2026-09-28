@@ -8,10 +8,19 @@ import HarnaxKit
 public struct HarnaxDependencies: Sendable {
     public let auth: any AuthFlowing
     public let agents: any AgentCataloging
+    public let teams: any TeamCataloging
+    public let sessionRefresher: any SessionRefreshing
 
-    public init(auth: any AuthFlowing, agents: any AgentCataloging) {
+    public init(
+        auth: any AuthFlowing,
+        agents: any AgentCataloging,
+        teams: any TeamCataloging,
+        sessionRefresher: any SessionRefreshing
+    ) {
         self.auth = auth
         self.agents = agents
+        self.teams = teams
+        self.sessionRefresher = sessionRefresher
     }
 
     public static func live() -> HarnaxDependencies {
@@ -29,9 +38,14 @@ public struct HarnaxDependencies: Sendable {
             // next launch.
             language: { AcceptLanguage.current() }
         )
+        // One admin surface, three protocols: the agent, team and session-refresh routes all sit behind the
+        // same client and the same auth session.
+        let admin = AdminClient(client: client)
         return HarnaxDependencies(
             auth: AuthFlow(client: client, session: session, configs: configs),
-            agents: AdminClient(client: client)
+            agents: admin,
+            teams: admin,
+            sessionRefresher: admin
         )
     }
 }
@@ -44,12 +58,6 @@ public enum AcceptLanguage {
     }
 
     public static func value(for language: HarnaxLanguage) -> String {
-        switch language {
-        case .zhHans: return "zh-CN"
-        case .en: return "en-US"
-        case .system:
-            guard let code = Locale.current.language.languageCode?.identifier else { return "en-US" }
-            return code == "zh" ? "zh-CN" : "en-US"
-        }
+        language.prefersChinese ? "zh-CN" : "en-US"
     }
 }

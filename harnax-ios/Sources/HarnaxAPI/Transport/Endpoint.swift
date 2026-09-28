@@ -45,3 +45,21 @@ public struct Endpoint: Sendable {
         return components?.url
     }
 }
+
+extension Endpoint {
+    /// The query every admin list route shares. Both filters are optional server-side
+    /// (`AgentController.kt:47-54`), so an unused one is left off the URL instead of sent blank.
+    static func pageItems(num: Int, size: Int, name: String?, status: Int?) -> [URLQueryItem] {
+        var items = [
+            URLQueryItem(name: "pageNum", value: String(num)),
+            URLQueryItem(name: "pageSize", value: String(size)),
+        ]
+        if let name, !name.isEmpty {
+            items.append(URLQueryItem(name: "name", value: name))
+        }
+        if let status {
+            items.append(URLQueryItem(name: "status", value: String(status)))
+        }
+        return items
+    }
+}

@@ -61,11 +61,84 @@ final class FakeAuth: AuthFlowing, @unchecked Sendable {
 /// and still shows up in `requests`, so an extra call reads as a wrong number rather than a crash.
 final class FakeAgents: AgentCataloging, @unchecked Sendable {
     private(set) var requests: [(num: Int, size: Int)] = []
+    private(set) var filters: [(name: String?, status: Int?)] = []
     var replies: [Result<Page<AgentSummary>, APIError>] = []
 
-    func page(num: Int, size: Int) async -> Result<Page<AgentSummary>, APIError> {
+    private(set) var statusCalls: [(id: Int64, enabled: Bool)] = []
+    var statusReplies: [Result<EmptyResponse, APIError>] = []
+    private(set) var deleteCalls: [Int64] = []
+    var deleteReplies: [Result<EmptyResponse, APIError>] = []
+
+    private(set) var relatedRequests: [Int64] = []
+    var relatedReply: Result<[RelatedSession], APIError> = .success([])
+
+    func page(name: String?, status: Int?, num: Int, size: Int) async -> Result<Page<AgentSummary>, APIError> {
         requests.append((num: num, size: size))
+        filters.append((name: name, status: status))
         return replies.isEmpty ? .failure(.decoding) : replies.removeFirst()
+    }
+
+    func setStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> {
+        statusCalls.append((id: id, enabled: enabled))
+        return statusReplies.isEmpty ? .success(EmptyResponse()) : statusReplies.removeFirst()
+    }
+
+    func delete(id: Int64) async -> Result<EmptyResponse, APIError> {
+        deleteCalls.append(id)
+        return deleteReplies.isEmpty ? .success(EmptyResponse()) : deleteReplies.removeFirst()
+    }
+
+    func relatedSessions(id: Int64) async -> Result<[RelatedSession], APIError> {
+        relatedRequests.append(id)
+        return relatedReply
+    }
+}
+
+/// The team surface, with the same reply-queue discipline as `FakeAgents`.
+final class FakeTeams: TeamCataloging, @unchecked Sendable {
+    private(set) var requests: [(num: Int, size: Int)] = []
+    private(set) var filters: [(name: String?, status: Int?)] = []
+    var replies: [Result<Page<TeamSummary>, APIError>] = []
+
+    private(set) var statusCalls: [(id: Int64, enabled: Bool)] = []
+    var statusReplies: [Result<EmptyResponse, APIError>] = []
+    private(set) var deleteCalls: [Int64] = []
+    var deleteReplies: [Result<EmptyResponse, APIError>] = []
+
+    private(set) var relatedRequests: [Int64] = []
+    var relatedReply: Result<[RelatedSession], APIError> = .success([])
+
+    func teamPage(name: String?, status: Int?, num: Int, size: Int) async -> Result<Page<TeamSummary>, APIError> {
+        requests.append((num: num, size: size))
+        filters.append((name: name, status: status))
+        return replies.isEmpty ? .failure(.decoding) : replies.removeFirst()
+    }
+
+    func setTeamStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> {
+        statusCalls.append((id: id, enabled: enabled))
+        return statusReplies.isEmpty ? .success(EmptyResponse()) : statusReplies.removeFirst()
+    }
+
+    func deleteTeam(id: Int64) async -> Result<EmptyResponse, APIError> {
+        deleteCalls.append(id)
+        return deleteReplies.isEmpty ? .success(EmptyResponse()) : deleteReplies.removeFirst()
+    }
+
+    func teamRelatedSessions(id: Int64) async -> Result<[RelatedSession], APIError> {
+        relatedRequests.append(id)
+        return relatedReply
+    }
+}
+
+/// The refresh endpoint answers `200` with a per-session verdict, so a test needs to control the lines,
+/// not just the outcome.
+final class FakeRefresher: SessionRefreshing, @unchecked Sendable {
+    private(set) var batches: [[String]] = []
+    var reply: Result<[SessionRefreshOutcome], APIError> = .success([])
+
+    func refreshSessions(_ ids: [String]) async -> Result<[SessionRefreshOutcome], APIError> {
+        batches.append(ids)
+        return reply
     }
 }
 
@@ -78,11 +151,27 @@ enum PageStub {
         total: Int? = nil,
         pageSize: Int = 20
     ) throws -> Page<AgentSummary> {
+        try page(AgentSummary.self, records, pageNum: pageNum, total: total, pageSize: pageSize)
+    }
+
+    static func page<T: Decodable>(
+        _ type: T.Type,
+        _ records: [[String: Any]],
+        pageNum: Int = 1,
+        total: Int? = nil,
+        pageSize: Int = 20
+    ) throws -> Page<T> {
         let bodies = try records.map { try JSONSerialization.data(withJSONObject: $0) }
             .map { String(decoding: $0, as: UTF8.self) }
             .joined(separator: ",")
         let body = #"{"pageNum":\#(pageNum),"pageSize":\#(pageSize),"total":\#(total ?? records.count),"records":[\#(bodies)]}"#
-        return try JSONDecoder().decode(Page<AgentSummary>.self, from: Data(body.utf8))
+        return try JSONDecoder().decode(Page<T>.self, from: Data(body.utf8))
+    }
+
+    /// A wire array of objects — the related-session list and the refresh verdicts both arrive this way.
+    static func list<T: Decodable>(_ type: [T].Type, _ records: [[String: Any]]) throws -> [T] {
+        let data = try JSONSerialization.data(withJSONObject: records)
+        return try JSONDecoder().decode([T].self, from: data)
     }
 }
 
@@ -90,5 +179,12 @@ extension AgentSummary {
     static func stub(_ fields: [String: Any]) throws -> AgentSummary {
         let data = try JSONSerialization.data(withJSONObject: fields)
         return try JSONDecoder().decode(AgentSummary.self, from: data)
+    }
+}
+
+extension TeamSummary {
+    static func stub(_ fields: [String: Any]) throws -> TeamSummary {
+        let data = try JSONSerialization.data(withJSONObject: fields)
+        return try JSONDecoder().decode(TeamSummary.self, from: data)
     }
 }

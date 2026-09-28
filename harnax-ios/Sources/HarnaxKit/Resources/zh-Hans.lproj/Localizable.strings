@@ -11,6 +11,16 @@
 "state.empty.hint" = "有数据后下拉刷新即可查看。";
 "state.error.title" = "出错了";
 "state.error.hint" = "请检查网络后重试。";
+"state.filter.all" = "全部";
+"state.badge.enabled" = "启用";
+"state.badge.disabled" = "停用";
+"state.badge.shared" = "公开";
+"state.action.enable" = "启用";
+"state.action.disable" = "停用";
+"state.action.delete" = "删除";
+"state.action.refresh" = "刷新关联会话";
+"state.delete.checking" = "校验中…";
+"state.delete.confirm" = "删除 %@";
 
 /* ---- 错误 ---- */
 "error.offline" = "当前网络不可用，请检查网络连接。";
@@ -49,9 +59,6 @@
 "agent.segment.agents" = "智能体";
 "agent.segment.teams" = "团队";
 "agent.segment.tasks" = "定时任务";
-"agent.badge.enabled" = "启用";
-"agent.badge.disabled" = "停用";
-"agent.badge.public" = "公开";
 "agent.sessionCount" = "%d 个会话";
 "agent.chip.model" = "模型 %@";
 "agent.chip.tools" = "工具 %d";
@@ -61,6 +68,54 @@
 "agent.action.chat" = "对话";
 "agent.action.edit" = "编辑";
 "agent.create" = "新建智能体";
+
+"agent.search" = "搜索智能体";
+"agent.empty" = "暂无智能体";
+"agent.empty.filtered" = "没有符合条件的智能体";
+"agent.delete.title" = "确认删除该智能体？";
+"agent.delete.note" = "删除后不可恢复，其会话与工具、技能绑定会一并移除。";
+"agent.section.tools" = "工具";
+"agent.section.mcp" = "MCP 服务";
+"agent.section.skills" = "技能";
+"agent.section.cli" = "CLI 包";
+"agent.section.sessions" = "会话";
+"agent.binding.toolFallback" = "工具 #%d";
+"agent.binding.sessionFallback" = "会话 #%d";
+"agent.binding.unnamed" = "未命名";
+"agent.binding.confirm" = "需确认";
+
+/* ---- 团队 ---- */
+"team.search" = "搜索团队";
+"team.empty" = "暂无团队";
+"team.empty.filtered" = "没有符合条件的团队";
+"team.chip.leadModel" = "主管模型 %@";
+"team.chip.members" = "成员 %d";
+"team.chip.skills" = "主管技能 %d";
+"team.stale.count" = "%d 项引用失效";
+"team.section.members" = "成员";
+"team.section.skills" = "主管技能";
+"team.binding.memberFallback" = "智能体 #%d";
+"team.binding.skillFallback" = "技能 #%d";
+"team.binding.unavailable" = "已删除或已停用";
+"team.delete.title" = "确认删除该团队？";
+"team.delete.clear" = "当前没有会话绑定该团队，删除可以正常执行。";
+"team.delete.blocked" = "仍有 %d 个会话绑定该团队，删除会被拒绝；请先删除这些会话。";
+"team.delete.loadFailed" = "关联会话列表加载失败，请重试";
+
+/* ---- 关联会话刷新 ---- */
+"session.title" = "刷新关联会话";
+"session.hint.agent" = "智能体「%@」已保存。勾选的会话立即应用新配置，未勾选的将在约 30 分钟内自动生效。";
+"session.hint.cli" = "CLI「%@」已更新。勾选的会话立即装载新包，未勾选的将在约 30 分钟内自动生效。";
+"session.hint.team" = "团队「%@」已保存。勾选的会话立即采用新的主管与成员，未勾选的将在约 30 分钟内自动生效。";
+"session.type.channel" = "渠道";
+"session.type.session" = "会话";
+"session.empty" = "没有关联会话";
+"session.submit" = "刷新所选（%d）";
+"session.skip" = "跳过";
+"session.later" = "稍后处理";
+"session.outcome.all" = "已刷新 %d 个会话";
+"session.outcome.partial" = "%d 个已刷新，%d 个失败";
+"session.outcome.failed" = "刷新失败";
 
 /* ---- 我的 ---- */
 "me.title" = "我的";

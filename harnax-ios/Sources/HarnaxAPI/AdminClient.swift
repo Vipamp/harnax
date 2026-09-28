@@ -1,16 +1,12 @@
 import Foundation
 import HarnaxCore
 
-/// Reads the admin domain M0 lists. The feature layer gets one method per list screen and never sees a
-/// path, a header or an envelope.
-public struct AdminClient: AgentCataloging {
+/// The seam behind every admin domain facade. Each domain adds its own `extension AdminClient: …` in its
+/// own file, so one client with its header injection and token refresh serves all of them.
+public struct AdminClient {
     let client: APIClient
 
     public init(client: APIClient) {
         self.client = client
-    }
-
-    public func page(num: Int, size: Int) async -> Result<Page<AgentSummary>, APIError> {
-        await client.send(Page<AgentSummary>.self, AdminEndpoint.agentsPage(num: num, size: size))
     }
 }

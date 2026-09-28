@@ -22,6 +22,10 @@ public struct RelatedSession: Decodable, Equatable, Identifiable, Sendable {
 
     public var id: String { sessionId ?? "" }
     public var isChannel: Bool { sourceType == "channel" }
+    /// The console shows the channel or session title, and the id stands in when the row carries none
+    /// (`harnax-webui/src/pages/agent/components/AgentRefreshModal.tsx:200-212`).
+    public var displayName: String { hxPresented(sourceName) ?? id }
+    public var ownerName: String? { hxPresented(agentName) }
 }
 
 /// One line of `POST /api/admin/agents/refresh-sessions`. The endpoint answers `200` with a per-session
@@ -33,6 +37,8 @@ public struct SessionRefreshOutcome: Decodable, Equatable, Identifiable, Sendabl
 
     public var id: String { sessionId ?? "" }
     public var failed: Bool { success == false }
+    /// The router's own sentence for a refused refresh; the panel shows it on the row rather than in a banner.
+    public var reason: String? { hxPresented(error) }
 }
 
 public struct SessionRefreshRequest: Encodable, Sendable {

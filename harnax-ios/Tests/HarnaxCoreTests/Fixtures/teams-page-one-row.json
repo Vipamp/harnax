@@ -1,0 +1,58 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "pageNum": 1,
+    "pageSize": 20,
+    "total": 1,
+    "records": [
+      {
+        "id": 5,
+        "name": "投研团队",
+        "description": "公告解析到估值报告",
+        "systemPrompt": "",
+        "modelId": 7,
+        "modelName": "qwen3.7-max",
+        "skillList": [
+          {
+            "skillId": 12,
+            "skillName": "公告解析",
+            "skillDescription": "读取交易所公告",
+            "repositoryId": 2,
+            "repositoryName": "qoder-skills",
+            "skillAvailable": true
+          },
+          { "skillId": 15, "skillName": "估值表", "skillAvailable": false }
+        ],
+        "memberList": [
+          {
+            "agentId": 11,
+            "agentName": "数据抓取",
+            "agentDescription": "抓取行情与公告",
+            "delegationDescription": "负责取数",
+            "agentStatus": 1,
+            "agentAvailable": true
+          },
+          {
+            "agentId": 12,
+            "agentName": "估值分析",
+            "agentDescription": "估值分析",
+            "agentStatus": 0,
+            "agentAvailable": false
+          }
+        ],
+        "status": 1,
+        "isPublic": 0,
+        "tenantId": 1,
+        "creator": "heqingsong",
+        "createTime": "2026-09-20 09:12:04",
+        "updateTime": "2026-09-26 15:30:00"
+      }
+    ],
+    "hasNext": false,
+    "hasPrevious": false,
+    "pages": 1
+  },
+  "timestamp": 1790592457109,
+  "isSuccess": true
+}

@@ -18,7 +18,7 @@ final class APIClientTests: XCTestCase {
     func testHeadersCarryTokenTenantAndLanguage() async throws {
         let harness = await signedInHarness(language: "en-US")
         harness.transport.enqueue(200, Wire.agents(total: 0, ids: []))
-        _ = await harness.agents.page(num: 1, size: 20)
+        _ = await harness.agents.page(name: nil, status: nil, num: 1, size: 20)
 
         let request = try XCTUnwrap(harness.transport.requests.first)
         XCTAssertEqual(headerValue(request, "Authorization"), "Bearer tok-1")
@@ -32,7 +32,7 @@ final class APIClientTests: XCTestCase {
     func testPageQueryParametersReachTheURL() async throws {
         let harness = await signedInHarness()
         harness.transport.enqueue(200, Wire.agents(total: 0, ids: []))
-        _ = await harness.agents.page(num: 3, size: 20)
+        _ = await harness.agents.page(name: nil, status: nil, num: 3, size: 20)
 
         let request = try XCTUnwrap(harness.transport.requests.first)
         let query = queryItems(of: try XCTUnwrap(request.url))
@@ -76,7 +76,7 @@ final class APIClientTests: XCTestCase {
         harness.transport.enqueue(200, Wire.refreshed(token: "tok-2", expiresIn: 3600))
         harness.transport.enqueue(200, Wire.agents(total: 0, ids: []))
 
-        let page = await harness.agents.page(num: 1, size: 20)
+        let page = await harness.agents.page(name: nil, status: nil, num: 1, size: 20)
         XCTAssertNotNil(page.value)
 
         let requests = harness.transport.requests
@@ -91,7 +91,7 @@ final class APIClientTests: XCTestCase {
         try await harness.signIn()
         harness.transport.enqueue(200, Wire.agents(total: 0, ids: []))
 
-        _ = await harness.agents.page(num: 1, size: 20)
+        _ = await harness.agents.page(name: nil, status: nil, num: 1, size: 20)
         XCTAssertEqual(harness.transport.callCount, 1)
     }
 
@@ -102,12 +102,12 @@ final class APIClientTests: XCTestCase {
         harness.transport.enqueue(200, Wire.refreshed(token: "tok-2", expiresIn: 3600))
         harness.transport.enqueue(200, Wire.agents(total: 1, ids: [11]))
 
-        let page = await harness.agents.page(num: 1, size: 20)
+        let page = await harness.agents.page(name: nil, status: nil, num: 1, size: 20)
         XCTAssertEqual(page.value?.records.first?.id, Int64(11))
 
         let requests = harness.transport.requests
         XCTAssertEqual(requests.count, 3)
-        XCTAssertEqual(requests[2].url?.path, AdminEndpoint.agentsPagePath)
+        XCTAssertEqual(requests[2].url?.path, AgentEndpoint.pagePath)
         XCTAssertEqual(headerValue(requests[2], "Authorization"), "Bearer tok-2")
     }
 
@@ -119,7 +119,7 @@ final class APIClientTests: XCTestCase {
         harness.transport.enqueue(200, Wire.refreshed(token: "tok-2", expiresIn: 3600))
         harness.transport.enqueue(401, Wire.unauthorized)
 
-        let page = await harness.agents.page(num: 1, size: 20)
+        let page = await harness.agents.page(name: nil, status: nil, num: 1, size: 20)
         XCTAssertEqual(page.failure, APIError.unauthorized)
         XCTAssertEqual(harness.transport.callCount, 3)
     }
@@ -136,7 +136,7 @@ final class APIClientTests: XCTestCase {
         harness.transport.enqueue(401, Wire.unauthorized)
         harness.transport.enqueue(401, Wire.unauthorized)
 
-        let page = await harness.agents.page(num: 1, size: 20)
+        let page = await harness.agents.page(name: nil, status: nil, num: 1, size: 20)
         let token = try await harness.session.accessToken()
         let tenant = try await harness.session.tenantID()
         let stored = try await harness.configs.current()
@@ -151,7 +151,7 @@ final class APIClientTests: XCTestCase {
         let harness = await signedInHarness()
         harness.transport.enqueueFailure(URLError(.timedOut))
 
-        let page = await harness.agents.page(num: 1, size: 20)
+        let page = await harness.agents.page(name: nil, status: nil, num: 1, size: 20)
         XCTAssertEqual(page.failure, APIError.timeout)
     }
 
@@ -159,7 +159,7 @@ final class APIClientTests: XCTestCase {
         let harness = await signedInHarness()
         harness.transport.enqueueFailure(URLError(.cannotConnectToHost))
 
-        let page = await harness.agents.page(num: 1, size: 20)
+        let page = await harness.agents.page(name: nil, status: nil, num: 1, size: 20)
         XCTAssertEqual(page.failure, APIError.offline)
     }
 
@@ -171,7 +171,7 @@ final class APIClientTests: XCTestCase {
         )
         harness.transport.enqueue(200, Wire.agents(total: 0, ids: []))
 
-        _ = await harness.agents.page(num: 1, size: 20)
+        _ = await harness.agents.page(name: nil, status: nil, num: 1, size: 20)
         let url = try XCTUnwrap(harness.transport.requests.first?.url)
         XCTAssertEqual(url.absoluteString, "https://harnax.example.com/api/admin/agents/page?pageNum=1&pageSize=20")
     }

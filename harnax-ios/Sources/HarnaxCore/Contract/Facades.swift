@@ -81,6 +81,19 @@ public struct AccountSnapshot: Codable, Equatable, Sendable {
             isAdministrator: isAdministrator
         )
     }
+
+    /// The one rule behind edit and delete on every management screen: an administrator reaches any row,
+    /// anyone else only the rows they created. Whether the row is public plays no part, and the
+    /// enable/disable switch is not gated by this either — both match the web console
+    /// (`harnax-webui/src/utils/permissionUtil.ts:111-123`).
+    ///
+    /// A row that names no creator is not manageable: the console would answer `undefined === undefined`
+    /// and hand out permission to an unattributed row.
+    public func canManage(creator: String?) -> Bool {
+        if isAdministrator { return true }
+        guard let creator = hxPresented(creator), !username.isEmpty else { return false }
+        return creator == username
+    }
 }
 
 /// `unknown` is the restore-in-progress state, kept separate from `signedOut` so the app does not flash
@@ -107,6 +120,33 @@ public protocol AuthFlowing: Sendable {
     func save(serverConfiguration: ServerConfig) async -> Result<Void, APIError>
 }
 
+/// Everything the agent card screen does, read and write.
+///
+/// There is no per-row detail call: `GET /api/admin/agents/page` already fills the four binding lists and
+/// the session list for each row (`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AgentServiceImpl.kt:265-395`),
+/// which is where the card, its drill-down sheets and a later edit form all read from.
+///
+/// `name` is a keyword the backend matches with `LIKE`, `status` the raw 0/1 flag; both are optional
+/// (`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/AgentController.kt:36-55`).
 public protocol AgentCataloging: Sendable {
-    func page(num: Int, size: Int) async -> Result<Page<AgentSummary>, APIError>
+    func page(name: String?, status: Int?, num: Int, size: Int) async -> Result<Page<AgentSummary>, APIError>
+    func setStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError>
+    func delete(id: Int64) async -> Result<EmptyResponse, APIError>
+    /// Who has this agent's configuration loaded right now. A failure here must never be rendered as an
+    /// empty list — the two mean opposite things (`harnax-webui/src/pages/team/index.tsx:147-158`).
+    func relatedSessions(id: Int64) async -> Result<[RelatedSession], APIError>
+}
+
+/// The team surface, with the same four capabilities. One client conforms to both protocols, so the team
+/// methods carry their domain in the name — identical signatures with a different return type could not
+/// sit on the same type.
+///
+/// Backend: `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/TeamController.kt:33-125`
+public protocol TeamCataloging: Sendable {
+    func teamPage(name: String?, status: Int?, num: Int, size: Int) async -> Result<Page<TeamSummary>, APIError>
+    func setTeamStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError>
+    func deleteTeam(id: Int64) async -> Result<EmptyResponse, APIError>
+    /// Teams only ever produce `sourceType == "session"` rows
+    /// (`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/TeamServiceImpl.kt:207-220`).
+    func teamRelatedSessions(id: Int64) async -> Result<[RelatedSession], APIError>
 }

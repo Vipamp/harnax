@@ -17,6 +17,10 @@ enum HarnaxDebugScreen: String {
     case agents
     case agentsEmpty
     case agentsFailed
+    case agentBindings
+    case teams
+    case teamBindings
+    case refreshSheet
     case me
     case appearance
     case soon
@@ -75,7 +79,9 @@ struct HarnaxDebugView: View {
         self.screen = screen
         let model = AppModel(dependencies: HarnaxDependencies(
             auth: HarnaxDebugAuth(screen: screen),
-            agents: HarnaxDebugAgents(screen: screen)
+            agents: HarnaxDebugAgents(screen: screen),
+            teams: HarnaxDebugTeams(),
+            sessionRefresher: HarnaxDebugRefresher()
         ))
         model.tab = screen.tab
         _model = StateObject(wrappedValue: model)
@@ -93,9 +99,25 @@ struct HarnaxDebugView: View {
                 }
             }
             .harnaxThemed()
+        case .teams:
+            // The team column sits behind a segment on the real tab; framed on its own it captures without
+            // a finger to switch segments.
+            NavigationStack {
+                TeamListView(
+                    teams: model.dependencies.teams,
+                    sessionRefresher: model.dependencies.sessionRefresher,
+                    account: model.account
+                )
+            }
+            .harnaxThemed()
+        case .agentBindings, .teamBindings, .refreshSheet:
+            // Presented surfaces get their own hosting, so this is the capture that can show whether the
+            // app-level theme reaches them.
+            Color.hx(.background)
+                .ignoresSafeArea()
+                .sheet(isPresented: .constant(true)) { presented }
+                .harnaxThemed()
         case .serverSheet:
-            // `A1` opens the addresses as a sheet. Presented surfaces get their own hosting, so this is the
-            // one capture that can show whether the app-level theme reaches them.
             Color.hx(.background)
                 .ignoresSafeArea()
                 .sheet(isPresented: .constant(true)) {
@@ -104,6 +126,26 @@ struct HarnaxDebugView: View {
                 .harnaxThemed()
         default:
             HarnaxRootView(model: model)
+        }
+    }
+
+    @ViewBuilder
+    private var presented: some View {
+        switch screen {
+        case .agentBindings:
+            if let agent = HarnaxDebugRecord.agent {
+                AgentBindingsSheet(agent: agent)
+            }
+        case .teamBindings:
+            if let team = HarnaxDebugRecord.team {
+                TeamBindingsSheet(team: team)
+            }
+        case .refreshSheet:
+            if let target = HarnaxDebugRecord.refreshTarget {
+                HXSessionRefreshSheet(target: target, refresher: HarnaxDebugRefresher())
+            }
+        default:
+            EmptyView()
         }
     }
 }
@@ -159,13 +201,73 @@ struct HarnaxDebugAuth: AuthFlowing {
 struct HarnaxDebugAgents: AgentCataloging {
     let screen: HarnaxDebugScreen
 
-    func page(num: Int, size: Int) async -> Result<Page<AgentSummary>, APIError> {
+    func page(name: String?, status: Int?, num: Int, size: Int) async -> Result<Page<AgentSummary>, APIError> {
         if screen == .agentsFailed { return .failure(.offline) }
-        let json = screen == .agentsEmpty ? HarnaxDebugPages.emptyJSON : HarnaxDebugPages.recordsJSON
+        let json = screen == .agentsEmpty ? HarnaxDebugPages.emptyJSON : HarnaxDebugPages.agentsJSON
         guard let data = json.data(using: .utf8),
               let page = try? JSONDecoder().decode(Page<AgentSummary>.self, from: data)
         else { return .failure(.decoding) }
         return .success(page)
+    }
+
+    func setStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> { .success(EmptyResponse()) }
+
+    func delete(id: Int64) async -> Result<EmptyResponse, APIError> { .success(EmptyResponse()) }
+
+    func relatedSessions(id: Int64) async -> Result<[RelatedSession], APIError> {
+        HarnaxDebugPages.decodeRelatedSessions(HarnaxDebugPages.relatedJSON)
+    }
+}
+
+struct HarnaxDebugTeams: TeamCataloging {
+    func teamPage(name: String?, status: Int?, num: Int, size: Int) async -> Result<Page<TeamSummary>, APIError> {
+        guard let data = HarnaxDebugPages.teamsJSON.data(using: .utf8),
+              let page = try? JSONDecoder().decode(Page<TeamSummary>.self, from: data)
+        else { return .failure(.decoding) }
+        return .success(page)
+    }
+
+    func setTeamStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> { .success(EmptyResponse()) }
+
+    func deleteTeam(id: Int64) async -> Result<EmptyResponse, APIError> { .success(EmptyResponse()) }
+
+    func teamRelatedSessions(id: Int64) async -> Result<[RelatedSession], APIError> {
+        HarnaxDebugPages.decodeRelatedSessions(HarnaxDebugPages.relatedJSON)
+    }
+}
+
+struct HarnaxDebugRefresher: SessionRefreshing {
+    func refreshSessions(_ ids: [String]) async -> Result<[SessionRefreshOutcome], APIError> {
+        HarnaxDebugPages.decodeOutcomes(HarnaxDebugPages.outcomesJSON)
+    }
+}
+
+/// The single row the drill-down captures open on. Decoded once from the same fixture the list serves, so
+/// a screenshot cannot show a row the list would never have produced.
+@MainActor
+enum HarnaxDebugRecord {
+    private static let debugAgents = HarnaxDebugAgents(screen: .agents)
+
+    static var agent: AgentSummary? { rows(AgentSummary.self, HarnaxDebugPages.agentsJSON).first }
+    static var team: TeamSummary? { rows(TeamSummary.self, HarnaxDebugPages.teamsJSON).first }
+
+    static var refreshTarget: SessionRefreshTarget? {
+        guard let agent, let id = agent.id else { return nil }
+        let catalog = debugAgents
+        return SessionRefreshTarget(
+            id: id,
+            name: agent.title ?? "",
+            source: .agent
+        ) {
+            await catalog.relatedSessions(id: id)
+        }
+    }
+
+    private static func rows<T: Decodable>(_ type: T.Type, _ json: String) -> [T] {
+        guard let data = json.data(using: .utf8),
+              let page = try? JSONDecoder().decode(Page<T>.self, from: data)
+        else { return [] }
+        return page.records
     }
 }
 
@@ -174,17 +276,50 @@ private enum HarnaxDebugPages {
     {"pageNum":1,"pageSize":20,"total":0,"records":[]}
     """
 
-    /// One row per card variant the list can actually receive: shared, disabled, count-free, long copy,
-    /// the all-null row, and a row whose `createTime` the backend did not format.
-    static let recordsJSON = """
+    static func decodeRelatedSessions(_ json: String) -> Result<[RelatedSession], APIError> {
+        guard let data = json.data(using: .utf8),
+              let rows = try? JSONDecoder().decode([RelatedSession].self, from: data)
+        else { return .failure(.decoding) }
+        return .success(rows)
+    }
+
+    static func decodeOutcomes(_ json: String) -> Result<[SessionRefreshOutcome], APIError> {
+        guard let data = json.data(using: .utf8),
+              let rows = try? JSONDecoder().decode([SessionRefreshOutcome].self, from: data)
+        else { return .failure(.decoding) }
+        return .success(rows)
+    }
+
+    /// One card per variant the list can actually receive: shared, disabled, a row with nothing but a
+    /// name, and a row whose `createTime` the backend did not format. The key names are the DTO's own —
+    /// a made-up shape decodes to a card with counts and no names.
+    static let agentsJSON = """
     {"pageNum":1,"pageSize":20,"total":47,"records":[
-      {"id":1,"name":"Support Desk","description":"Answers product questions in the help channel and opens a ticket when it cannot.","modelName":"qwen3.7-max","status":1,"isPublic":1,"sessionCount":128,"creator":"admin","createTime":"2026-09-12 10:24:31","mcpList":[{"id":1},{"id":2}],"skillList":[{"id":3}],"toolList":[{"id":7},{"id":8},{"id":9}],"cliList":[{"id":4}]},
-      {"id":2,"name":"Release Manager","description":"Tracks the release train, pings owners before a cut-off slips.","modelName":"qwen3.7-max","status":1,"isPublic":0,"sessionCount":42,"creator":"liwei","createTime":"2026-09-08 18:02:09","mcpList":[],"skillList":[{"id":5},{"id":6}],"toolList":[],"cliList":[]},
-      {"id":3,"name":"Data Analyst","description":"Reads the warehouse and writes the weekly metric digest.","modelName":"deepseek-v4","status":1,"isPublic":1,"sessionCount":0,"creator":"admin","createTime":"2026-08-31 09:15:00","mcpList":[{"id":3}],"skillList":[],"toolList":[{"id":11}],"cliList":[{"id":2},{"id":5}]},
-      {"id":4,"name":"Contract Review","description":"Long-form review that has to wrap over two lines at a small width without breaking the badge row above it.","modelName":"qwen3.7-max","status":0,"isPublic":0,"sessionCount":7,"creator":"zhaomin","createTime":"2026-08-19 14:47:55","mcpList":[],"skillList":[{"id":9}],"toolList":[],"cliList":[]},
-      {"id":5,"name":"Empty Agent","description":null,"modelName":null,"status":1,"isPublic":null,"sessionCount":null,"creator":null,"createTime":null,"mcpList":null,"skillList":null,"toolList":null,"cliList":null},
-      {"id":6,"name":null,"description":null,"modelName":"glm-5","status":null,"isPublic":null,"sessionCount":null,"creator":"admin","createTime":"not-a-date","mcpList":[],"skillList":[],"toolList":[],"cliList":[]}
+      {"id":11,"name":"Support Desk","description":"Answers product questions in the help channel and opens a ticket when it cannot.","modelId":3,"modelName":"qwen3.7-max","status":1,"isPublic":1,"creator":"admin","createTime":"2026-09-12 10:24:31","sessionCount":128,"sessionList":[{"id":881,"title":"Weekly digest","sessionId":"sess-8842","sessionDescription":"web · 3 hours ago"},{"id":872,"sessionId":"sess-8790"}],"mcpList":[{"mcpId":4,"mcpName":"amap-maps","mcpDescription":"Maps and routing","envBindings":[{"envKey":"AMAP_KEY","envValue":"******","envVarId":9,"envVarName":"amap-key"}]}],"skillList":[{"repositoryId":2,"repositoryName":"qoder-skills","skillId":5,"skillName":"Glossary","skillDescription":"Domain terms"},{"repositoryId":2,"skillId":7,"skillName":"Polish"}],"toolList":[{"toolId":2,"toolName":"webSearch","toolDisplayName":"Web Search","toolDisplayNameZh":"联网搜索","toolDescription":"Public web lookup","needConfirm":true,"envBindings":[{"envKey":"SEARCH_QUOTA","customValue":"50"}]},{"toolId":3,"toolName":"writeFile","toolDisplayName":"write-file"},{"toolId":9,"toolName":"   ","toolDisplayName":""}],"cliList":[{"cliId":1,"cliName":"harnax-cli","cliDescription":"Cluster ops","version":"1.30.0","skillList":[{"skillId":21,"skillName":"Notice parser"}]}]},
+      {"id":12,"name":"Release Manager","description":"Tracks the release train and pings owners before a cut-off slips.","modelId":3,"modelName":"qwen3.7-max","status":1,"isPublic":0,"creator":"liwei","createTime":"2026-09-08 18:02:09","sessionCount":42,"mcpList":[],"skillList":[{"skillId":6,"skillName":"Changelog"}],"toolList":[],"cliList":[]},
+      {"id":13,"name":"Contract Review","description":"Long-form review that has to wrap over two lines at a small width without breaking the badge row above it.","modelId":8,"modelName":"deepseek-v4","status":0,"isPublic":0,"creator":"zhaomin","createTime":"2026-08-19 14:47:55","sessionCount":7,"mcpList":[],"skillList":[],"toolList":[],"cliList":[]},
+      {"id":14,"name":null,"description":null,"modelName":"glm-5","status":null,"isPublic":null,"creator":null,"createTime":"not-a-date","sessionCount":null,"mcpList":[],"skillList":[],"toolList":[],"cliList":[]}
     ]}
+    """
+
+    /// A lead whose model reference outlives the model row, one disabled member and one gone skill.
+    static let teamsJSON = """
+    {"pageNum":1,"pageSize":20,"total":2,"records":[
+      {"id":5,"name":"Research Desk","description":"From exchange notices to a valuation report.","systemPrompt":"","modelId":7,"modelName":"qwen3.7-max","skillList":[{"skillId":12,"skillName":"Notice parser","skillDescription":"Reads exchange filings","repositoryId":2,"repositoryName":"qoder-skills","skillAvailable":true},{"skillId":15,"skillName":"Valuation sheet","skillAvailable":false}],"memberList":[{"agentId":11,"agentName":"Data Fetch","agentDescription":"Pulls quotes and filings","delegationDescription":"Owns the data path","agentStatus":1,"agentAvailable":true},{"agentId":12,"agentName":"Valuation","agentDescription":"Values the positions","agentStatus":0,"agentAvailable":false}],"status":1,"isPublic":0,"tenantId":1,"creator":"admin","createTime":"2026-09-20 09:12:04","updateTime":"2026-09-26 15:30:00"},
+      {"id":6,"name":"Stopped Desk","description":null,"systemPrompt":"","modelId":0,"modelName":null,"skillList":[],"memberList":[{"agentId":13,"agentName":"","agentStatus":1,"agentAvailable":true}],"status":0,"isPublic":1,"tenantId":1,"creator":"liwei","createTime":"2026-09-01 08:00:00"}
+    ]}
+    """
+
+    /// Both row kinds the refresh endpoint answers with, plus the trimmed long id.
+    static let relatedJSON = """
+    [{"sessionId":"sess-8842","sourceType":"channel","sourceName":"Support WeChat (wechat)"},
+     {"sessionId":"sess-8790-and-its-own-identifier-is-long-enough-to-truncate","sourceType":"session","sourceName":"","agentName":"Support Desk"}]
+    """
+
+    /// One clean line and one refusal, so the panel is captured in the shape a partial failure leaves it in.
+    static let outcomesJSON = """
+    [{"sessionId":"sess-8842","success":true},
+     {"sessionId":"sess-8790-and-its-own-identifier-is-long-enough-to-truncate","success":false,"error":"No system API key available"}]
     """
 }
 #endif

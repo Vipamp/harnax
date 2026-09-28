@@ -31,4 +31,19 @@ public enum HarnaxLanguage: String, CaseIterable, Identifiable, Sendable {
         case .zhHans: return "zh-Hans"
         }
     }
+
+    /// Which side of a bilingual data column the user reads. Backend rows carry both, and only the
+    /// device-language case can be answered by the OS.
+    public var prefersChinese: Bool {
+        switch self {
+        case .zhHans: return true
+        case .en: return false
+        case .system: return Locale.current.language.languageCode?.identifier == "zh"
+        }
+    }
+}
+
+public extension HarnaxLanguage {
+    /// The picked language, or the device's when the app is set to follow it.
+    static var effective: HarnaxLanguage { HarnaxCatalog.shared.language }
 }

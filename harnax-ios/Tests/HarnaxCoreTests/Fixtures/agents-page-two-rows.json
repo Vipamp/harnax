@@ -10,21 +10,76 @@
         "id": 11,
         "name": "翻译助手",
         "description": "中英互译，保留术语表",
+        "systemPrompt": "你是翻译助手，回答前检索术语表。",
+        "modelId": 3,
         "modelName": "qwen-plus",
+        "modelPrice": 12.5,
         "status": 1,
         "isPublic": 1,
-        "sessionCount": 3,
+        "owner": "heqingsong",
         "creator": "heqingsong",
-        "createTime": "2026-09-12T10:20:30",
-        "skillList": [{ "id": 5, "name": "术语表" }, { "id": 7, "name": "润色" }],
-        "toolList": [{ "id": 2 }, { "id": 3 }, { "id": 9 }],
-        "cliList": [{ "id": 1, "name": "harnax-cli" }]
+        "createTime": "2026-09-12 10:20:30",
+        "updateTime": "2026-09-20 18:04:11",
+        "sessionCount": 3,
+        "mcpList": [
+          {
+            "mcpId": 4,
+            "mcpName": "amap-maps",
+            "mcpDescription": "地图与路径",
+            "envBindings": [
+              { "envKey": "AMAP_KEY", "envValue": "******", "envVarId": 9, "envVarName": "amap-key" },
+              { "envKey": "AMAP_REGION", "customValue": "cn-hangzhou" }
+            ]
+          }
+        ],
+        "skillList": [
+          {
+            "repositoryId": 2,
+            "repositoryName": "qoder-skills",
+            "skillId": 5,
+            "skillName": "术语表",
+            "skillDescription": "领域术语对照"
+          },
+          { "repositoryId": 2, "repositoryName": "qoder-skills", "skillId": 7, "skillName": "润色" }
+        ],
+        "toolList": [
+          {
+            "toolId": 2,
+            "toolName": "webSearch",
+            "toolDisplayName": "Web Search",
+            "toolDisplayNameZh": "联网搜索",
+            "toolDescription": "检索公开网页",
+            "needConfirm": true,
+            "envBindings": [{ "envKey": "SEARCH_QUOTA", "customValue": "50" }]
+          },
+          { "toolId": 3, "toolName": "writeFile", "toolDisplayName": "write-file" },
+          { "toolId": 9, "toolName": "   ", "toolDisplayName": "", "toolDisplayNameZh": null }
+        ],
+        "cliList": [
+          {
+            "cliId": 1,
+            "cliName": "harnax-cli",
+            "cliDescription": "集群运维",
+            "version": "1.30.0",
+            "envBindings": [{ "envKey": "KUBECONFIG", "envValue": "/etc/k/config", "envVarId": 12, "envVarName": "kube" }],
+            "skillList": [{ "skillId": 21, "skillName": "公告解析" }]
+          }
+        ],
+        "sessionList": [
+          { "id": 881, "title": "周报生成", "sessionId": "s-8842", "sessionDescription": "web · 3 小时前" },
+          { "id": 872, "sessionId": "s-8790" },
+          { "id": 865, "title": "   ", "sessionId": "s-8712" }
+        ]
       },
       {
         "id": 12,
         "name": "停用中的智能体",
         "description": null,
-        "status": 0
+        "status": 0,
+        "mcpList": [],
+        "skillList": [],
+        "toolList": [],
+        "cliList": []
       }
     ],
     "hasNext": false,
