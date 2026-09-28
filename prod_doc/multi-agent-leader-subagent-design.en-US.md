@@ -216,13 +216,13 @@ This project (a self-hosted agent system, a personal project) chose a **tightene
 
 | External recommendation | This project's choice | What it buys | What it costs |
 |-------------------------|------------------------|--------------|---------------|
-| Lead keeps process skills | No execution skills for the lead at all | Zero execution entry point on the lead side; a simple acceptance gate (V2) | The lead may lack acceptance methodology → F5 risk |
+| Lead keeps process skills | No execution skills for the lead at all | Zero execution entry point on the lead side; acceptance is a plain assembly-list check | The lead may lack acceptance methodology → F5 risk |
 | Lead keeps small-response read-only MCP/tools | The lead connects to no MCP at all | Unique credential exit; clean OAuth scoping (F9 disappears) | The lead can only trust member reports → F5 risk |
 | Decide delegation by task size | Fixed single-level serial delegation in the first release | Event correlation, confirmation resume, and cancellation propagation are verifiable | The parallel payoff on breadth tasks is forfeited (the F3-related upside too) |
 
 Put plainly: **this project trades "zero lead capability" for "zero holes in the permission and audit boundary"**. That is a deliberately stricter setting, not a general recommendation. If F5 actually materializes (the lead cannot accept member artifacts), the first thing to relax is **read-only, small-response** verification capability — not write capability.
 
-Full decision and acceptance list: [multi-agent-team-design.en-US.md](./multi-agent-team-design.en-US.md) (D3/D5/D6, §5, V2/V3/V10).
+The Team domain's current wording lives in [multi-agent-team-design.en-US.md](./multi-agent-team-design.en-US.md): product boundary and the lead's shape in its §2, the lead/member capability boundary in §5, stop/failure/budget in §9.3, explicit non-goals in §11.
 
 ---
 
@@ -233,7 +233,7 @@ Full decision and acceptance list: [multi-agent-team-design.en-US.md](./multi-ag
 - Why asked: one sentence tells whether you actually designed multi-agent or copied an architecture diagram.
 - Follow-ups: then how does it judge whether a member did it right? → why not give it read-only tools? → how do you define the permission boundary? → how is cost counted?
 - Anchor: give the tests first (response size + side effects), then our choice (tightened to zero, in order to keep the credential exit unique), then volunteer the cost (F5, and which class you'd relax first).
-- Backing: §0, §3.2, §10 here; the Team design doc §5, V2, V10.
+- Backing: §0, §3.2, §10 here; the Team design doc §2, §5.
 - Risk: 🟢 Well supported. Admitting where your option is sub-optimal is a plus.
 
 **Chain 2 — "Is multi-agent always better than single-agent?"**
@@ -249,7 +249,7 @@ Full decision and acceptance list: [multi-agent-team-design.en-US.md](./multi-ag
 - Why asked: tests real production experience.
 - Follow-ups: does a timeout move it to background? → after an interruption, are side-effecting operations replayed? → how does cancellation propagate? → will the lead's model pick up a failed member's work?
 - Anchor: three gates (steps / deadline / budget) → stop must block new delegation → no automatic replay of side-effecting operations → no silent member-model fallback (F10).
-- Backing: §8 F7/F8/F10; the Team design doc §9.3, V9, V12.
+- Backing: §8 F7/F8/F10 here; the Team design doc §9.3.
 - Risk: 🔴 If pressed for exact thresholds, stay qualitative per the wording rule; do not invent numbers.
 
 **Chain 4 — "How do Skills and MCP get distributed across agents?"**
@@ -257,7 +257,7 @@ Full decision and acceptance list: [multi-agent-team-design.en-US.md](./multi-ag
 - Why asked: only people who actually did capability assembly get tripped by this detail.
 - Follow-ups: why treat skills and tools separately? → if the lead doesn't load member tools, how does it delegate? → where do member credentials come from?
 - Anchor: skills enter the instruction layer and don't refill context, so both sides get them; tools execute actions, so split by side effects; member capabilities come from **each member's own full assembly**, not pruning from the lead's set (mounting the union of member tools/MCP onto the lead is an explicit rejection).
-- Backing: §3.3, §4; the Team design doc §10.3.
+- Backing: §3.3, §4 here; the Team design doc §6.3 (each member is assembled in full from its own configuration), §6.5 (member credentials come from its creator's identity).
 - Risk: 🟢 The highest-signal question here; answering concretely is a clear plus.
 
 ---
