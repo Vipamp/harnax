@@ -1090,22 +1090,23 @@ CREATE TABLE IF NOT EXISTS `example` (
 
 ### 25.1 目录与命名
 
-- 所有脚本位于 `resources/db/migration/`
-- 命名格式：`V{version}__{description}.sql`，全小写短横线描述
-  - 结构变更：`V2__add_example_table.sql`
-  - 数据初始化：`V3__seed_default_data.sql`（`seed` 前缀）
-- 版本号单调递增，**禁止跳号复用、禁止修改已执行脚本、禁止删除历史脚本**
+- 每个服务模块在自己的 `resources/db/migration/` 下只有一份 schema 基线（`harnax-admin`、`harnax-scheduler` 为 `V1__init_schema.sql`，`harnax-session-router` 为 `V1__create_session_router_tables.sql`），给出该模块 schema 的最终形态：建表语句带最终的列、索引、唯一键与注释，其后是启动所需的初始化数据
+- 命名格式：`V{version}__{description}.sql`，全小写短横线描述，基线固定占 `V1`
+  - 结构、索引、注释与启动初始化数据都写进这一份基线，初始化数据放在建表语句之后，不为它单独开脚本
+  - 只有不能重建的库才写前向增量，版本号从 `V2` 起递增（`V2__add_example_column.sql`），攒够后再折回一份新基线
+- 变更默认折进基线并重建库，历史不向下传；走前向增量时**不得改动已执行的 `V1`**（那张库已按旧形态建好，改一个字启动即 checksum 不符）
 
 ### 25.2 脚本编写规则
 
-- 建表一律 `CREATE TABLE IF NOT EXISTS`
+- 建表一律 `CREATE TABLE IF NOT EXISTS`，唯一的既有例外是 `harnax-scheduler` 基线里那 11 张 `QRTZ_*`，它们沿用 Quartz 官方脚本的裸 `CREATE TABLE`
 - 结构变更使用 `ALTER TABLE ADD COLUMN ... AFTER ...`，**禁止 DROP + CREATE 重建表**
 - 一个脚本只做一类变更，文件头部注释说明变更目的
 - 初始化数据使用 `INSERT IGNORE`，保证幂等可重放
+- 基线里不写数据修复语句（回填、改名、归属重判）：新库没有待修的行
 - 逻辑删除优先于删除数据；确需清理数据须单独脚本并评审
 
 ```sql
--- V3: Add i18n support columns
+-- V2: Add i18n support columns
 ALTER TABLE `product`
     ADD COLUMN `display_name_zh` varchar(200) DEFAULT NULL COMMENT 'Display name (Chinese, for i18n zh-CN locale)'
     AFTER `display_name`;
@@ -1134,12 +1135,12 @@ spring:
 
 Mapper 集成测试（Testcontainers）使用 `src/test/resources/schema-test.sql` 初始化：
 
-- 包含被测表的完整结构（与生产表结构保持一致）
+- DDL 段取自所属模块的 schema 基线，不是另一份手工维护的表结构
 - 每表预置 3~5 条数据，覆盖三类场景：
   - 正常数据（`active = 1, status = 1`）
   - 已删除数据（`active = 0`，验证逻辑删除过滤）
   - 已禁用数据（`status = 0`，验证状态筛选）
-- 生产表结构变更（新增迁移脚本）时，必须同步更新 `schema-test.sql`
+- 基线变更后重新生成该文件的 DDL 段（生产基线的初始化 INSERT 不进测试库，测试数据由本文件自己播种）；`SchemaBaselineDriftIT` 拿 Flyway 建出的真实表与列集合与它做双向差集，漂了就红
 
 ## 二十七、敏感数据存储
 

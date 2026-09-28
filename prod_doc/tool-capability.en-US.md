@@ -239,7 +239,7 @@ Timeout is an assembly-side property, not a tool property. `HarnessAgentWrapper`
 
 ## 7. Data Model
 
-Columns and indexes are defined by the latest DDL under `harnax-admin/src/main/resources/db/migration/` (currently up to V50). `agent_tool`'s final shape is V40: platform-scoped, name-identified, additive; `tool_call_log.tenant_id` is V50.
+Columns and indexes come from admin's schema baseline `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql`: that one script holds every table and column definition, with no later version to stack on top of it. `agent_tool` is platform-scoped, identified by name (`uk_agent_tool_name`) and additive; `tool_call_log`'s `tenant_id` is a nullable column declared, together with the `idx_tenant_ts (tenant_id, ts)` index, inside that table's own create statement.
 
 ### 7.1 agent_tool
 
@@ -266,7 +266,7 @@ There is no tenant column, no type column, no HTTP columns, no schema columns an
 
 | Column | Meaning |
 | --- | --- |
-| `agent_id`, `tool_id` | Composite unique key `uk_agent_tool_binding_agent_id_tool_id` (V18): at most one row per agent-tool pair |
+| `agent_id`, `tool_id` | Composite unique key `uk_agent_tool_binding_agent_id_tool_id`: at most one row per agent-tool pair |
 | `need_confirm` | Binding-level confirmation, OR-ed with `agent_tool.need_confirm` at runtime |
 | `env_bindings` | JSON array snapshot whose elements carry `envKey`, `envValue`, `envVarId`, `envVarName`, `customValue` |
 | `create_time` / `update_time` | Written on save |
@@ -279,7 +279,7 @@ The tool's env parameter definition table: `tool_id` points at `agent_tool.id`, 
 
 ### 7.4 tool_call_log
 
-`agent_id` (nullable; NULL for a lead run), `tenant_id` (nullable; NULL when unattributed), `session_id`, `tool_name` (`<group>::<method>`), `args` (JSON), `result`, `success`, `start_time`, `end_time`, `duration`, `ts`. `ToolCallLogMapper` has `insert` only: a row is written once, never read back, and never pruned together with its session or agent. Indexes: `idx_agent_id`, `idx_session_id`, `idx_tool_name`, `idx_ts`, plus `idx_tenant_ts` from V50.
+`agent_id` (nullable; NULL for a lead run), `tenant_id` (nullable; NULL when unattributed), `session_id`, `tool_name` (`<group>::<method>`), `args` (JSON), `result`, `success`, `start_time`, `end_time`, `duration`, `ts`. `ToolCallLogMapper` has `insert` only: a row is written once, never read back, and never pruned together with its session or agent. Indexes: `idx_agent_id`, `idx_session_id`, `idx_tool_name`, `idx_ts` and `idx_tenant_ts (tenant_id, ts)`.
 
 ### 7.5 Relation to env_variable
 
@@ -418,6 +418,6 @@ Select the tool in the agent panel, fill the env values, run one turn, and check
 | Team tool groups | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/team/TeamToolBoxes.kt` |
 | Turn timeout | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentWrapper.kt`, `harnax-agent/harnax-agent-service/src/main/resources/application.yml` |
 | Entities and mappers | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentTool.kt`, `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentToolBinding.kt`, `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentToolEnvParam.kt`, `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/ToolCallLogEntity.kt`, `harnax-entity/src/main/resources/mapper/AgentToolMapper.xml`, `harnax-entity/src/main/resources/mapper/ToolCallLogMapper.xml` |
-| DDL | `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql`, `harnax-admin/src/main/resources/db/migration/V40__tool_registry_platform_scoped.sql`, `harnax-admin/src/main/resources/db/migration/V50__scope_stats_and_logs_to_a_tenant.sql` |
+| DDL | `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` (the columns, keys and defaults of `agent_tool`, `agent_tool_binding`, `agent_tool_env_param` and `tool_call_log` are all written in this one baseline) |
 | Frontend | `harnax-webui/src/pages/tool/index.tsx`, `harnax-webui/src/pages/agent/components/ToolConfigPanel.tsx`, `harnax-webui/src/services/ant-design-pro/tool.ts` |
 | Process wiring | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/HarnaxAdminApplication.kt`, `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/AgentServiceApplication.kt` |

@@ -9,7 +9,7 @@ package com.agnetix.harnax.agent.adaptor.token
 class TokenStat(
     /** Null when no `agent` row stands behind the run — a team's lead. */
     val agentId: Long?,
-    /** Tenant owning the run, from `AgentSpec.tenantId`; null when admin delivered none (V50). */
+    /** Tenant owning the run, from `AgentSpec.tenantId`; null when admin delivered none. */
     val tenantId: Long? = null,
     val modelId: Long,
     val sessionId: String,

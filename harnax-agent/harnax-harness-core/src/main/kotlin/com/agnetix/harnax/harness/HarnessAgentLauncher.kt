@@ -463,7 +463,7 @@ class HarnessAgentLauncher(
         // Registered after the tool sweep, so nothing on the ordinary path removes them: that sweep only
         // walks ToolBoxes known to the registry, and these are built here.
         // One context for both roles: what a box logs is this run's attribution, and the spec it came
-        // from already carries the run's own tenant (V50).
+        // from already carries the run's own tenant.
         val teamSessionMeta = SessionMetaContext(agentSpec.attributableAgentId, sessionId, agentSpec.tenantId)
         val teamToolNames: Set<String> = when (teamRole) {
             is TeamRole.Lead -> {

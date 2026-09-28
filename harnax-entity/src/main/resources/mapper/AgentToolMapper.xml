@@ -2,7 +2,7 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.agnetix.harnax.mapper.AgentToolMapper">
 
-    <!-- No tenant_id and no timeout_seconds: the table is platform-scoped (V40) and the tool-level
+    <!-- No tenant_id and no timeout_seconds: the table is platform-scoped and the tool-level
          timeout is gone with @ToolMeta(timeoutSeconds) — the whole-turn timeout is set at assembly. -->
     <resultMap id="AgentToolResultMap" type="com.agnetix.harnax.entity.AgentTool">
         <id column="id" property="id"/>

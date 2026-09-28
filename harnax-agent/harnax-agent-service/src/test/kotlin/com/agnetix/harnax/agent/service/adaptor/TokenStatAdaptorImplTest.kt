@@ -16,7 +16,7 @@ import java.time.ZoneId
 /**
  * Unit tests for TokenStatAdaptorImpl.
  *
- * This is the only place a run's tenant becomes a column: V50 made every aggregation read
+ * This is the only place a run's tenant becomes a column: every aggregation reads
  * `tenant_id = ?`, so dropping the field here does not error — the consumption simply stops showing up
  * in the workspace that paid for it. The tests read the row the mapper was handed rather than stubbing a
  * matcher, because the claim is about the whole written row.

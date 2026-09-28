@@ -17,7 +17,7 @@ import kotlin.test.assertTrue
 
 /**
  * Agent name uniqueness (AGENT-04): the service guards that turn a clash into a refusal, and the
- * `uk_agent_tenant_active_name` key from V43 behind them.
+ * `uk_agent_tenant_active_name` key behind them.
  *
  * The name is scoped per tenant because the list query is: outside one tenant a name identifies no
  * agent, so a global key would refuse creates no caller could have collided with.

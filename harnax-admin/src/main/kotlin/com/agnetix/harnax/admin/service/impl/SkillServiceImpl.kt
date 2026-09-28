@@ -404,8 +404,8 @@ class SkillServiceImpl(
     /**
      * Teams per skill, same shape and same reason as [boundAgentCounts].
      *
-     * A lead's skills hang off the team row since V34, so a skill can be in use with no agent binding
-     * at all; [requireUnbound] refuses to disable one either way and the page has to show the same.
+     * A lead's skills hang off the team row, so a skill can be in use with no agent binding at all;
+     * [requireUnbound] refuses to disable one either way and the page has to show the same.
      */
     private fun boundTeamCounts(skillIds: List<Long>): Map<Long, Int> {
         if (skillIds.isEmpty()) return emptyMap()

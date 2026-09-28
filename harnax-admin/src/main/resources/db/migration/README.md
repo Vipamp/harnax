@@ -1,123 +1,93 @@
-# Flyway Database Migration
+# Flyway Schema Baseline
 
 ## Directory Structure
 
 ```
 db/
-└── migration/              # All migration scripts (V1__, V2__, etc.)
-    ├── V1__init_schema.sql # Initial database schema (executed once on first run)
-    └── README.md           # This file
+└── migration/
+    ├── V1__init_schema.sql   # the module's whole schema, in final form
+    └── README.md             # this file
 ```
 
-## How It Works
+Each service module owns exactly one baseline, applied against its own database and recorded in its
+own history table:
 
-### All Migrations in One Directory
+| Module | Baseline | Database | History table |
+| --- | --- | --- | --- |
+| `harnax-admin` | `V1__init_schema.sql` | `harnax_admin` | `flyway_schema_history` |
+| `harnax-scheduler` | `V1__init_schema.sql` | `harnax_scheduler` | `flyway_schema_history_scheduler` |
+| `harnax-session-router` | `V1__create_session_router_tables.sql` | `harnax_router` | `flyway_schema_history` (cluster profile only — `local` mode uses `db/sqlite-init.sql`) |
 
-All migration scripts are located in `db/migration/` directory:
+The baseline states the schema as it is: every `CREATE TABLE` with its final columns, indexes, unique
+keys and comments, followed by the initial data the system needs to boot. Admin's initial data is the
+default tenant, its `admin` account, that account's tenant membership, and the built-in CLI skill
+repository row.
 
-- **Initial Schema** (`V1__init_schema.sql`):
-  - **Purpose**: Creates the initial database structure
-  - **Execution**: Runs only once when the database is first created
-  - **Contains**: All initial table definitions
+## Changing the Schema
 
-- **Incremental Migrations** (`V2__*.sql`, `V3__*.sql`, etc.):
-  - **Purpose**: Apply schema changes after initial deployment
-  - **Execution**: Runs in version order (V1, V2, V3, ...)
-  - **Naming Convention**: `V{version}__{description}.sql`
-    - Example: `V2__add_user_preferences.sql`
-    - Example: `V3__modify_agent_table.sql`
+Two paths, and a change goes down one of them — not both.
 
-## Creating New Migrations
+**Rebuild (the default).** Edit the baseline in place, then recreate the database. This is what every
+`harnax-deploy` environment does, and it is why the history is not carried forward: a fresh install and a
+rebuilt install end at the same shape because they run the same single script.
 
-When you need to modify the database schema:
+Along with editing the baseline:
 
-1. **Create a new SQL file** in `db/migration/` directory
-2. **Follow naming convention**: `V{next_version}__{description}.sql`
-3. **Write standard SQL** (no DROP TABLE, use ALTER TABLE)
+1. Regenerate `harnax-entity/src/test/resources/schema-test.sql`. Its DDL block is copied from this
+   baseline rather than hand-maintained; `SchemaBaselineDriftIT` compares the fixture against the
+   schema Flyway actually built and fails on any drift.
+2. Re-run the mapper tests (`mvn -o -pl harnax-entity -am test`) and the drift guard
+   (`mvn -o -pl harnax-admin -am -Pintegration-test verify`).
 
-### Example
+**Forward migration.** Write `V2__*.sql` — the next number, an `ALTER`-style delta, nothing that drops
+data — only when a database exists that must not be rebuilt. Then leave `V1` alone: it is the shape
+that database already has. Once such deltas accumulate and every environment is disposable again, fold
+them into a new baseline and rebuild, which restarts history at `V1`.
 
-```sql
--- V2__add_user_preferences.sql
--- Add user preferences table
+## Adopting the Baseline on an Existing Database
 
-CREATE TABLE IF NOT EXISTS `user_preferences` (
-    `id` BIGINT NOT NULL AUTO_INCREMENT,
-    `user_id` BIGINT NOT NULL,
-    `theme` VARCHAR(20) DEFAULT 'light',
-    `language` VARCHAR(10) DEFAULT 'en',
-    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`),
-    KEY `idx_user_id` (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='User preferences table';
-```
+A database that replayed a longer history cannot simply switch to the consolidated baseline: its
+history rows name scripts that are no longer on the classpath, and its `V1` checksum no longer matches.
+Drop the schema and let the baseline rebuild it.
+
+`harnax-admin` alone runs Flyway with `repair-on-migrate: true`, so it would realign the checksum and
+clear the unresolved history rows instead of failing — but that leaves the schema unverified against
+the baseline by anything other than the drift guard, so a rebuild is still the required action.
+`harnax-scheduler` and `harnax-session-router` have no repair configured and fail outright.
 
 ## Configuration
 
-Flyway is configured in `application.yml`:
+`harnax-admin/src/main/resources/application.yml`:
 
 ```yaml
 spring:
   flyway:
-    enabled: true
+    enabled: ${FLYWAY_ENABLED:true}
     locations: classpath:db/migration
     baseline-on-migrate: true
     baseline-version: 0
     validate-on-migrate: true
-    clean-disabled: true
+    repair-on-migrate: true
+    clean-disabled: ${FLYWAY_CLEAN_DISABLED:true}
+    sql-migration-prefixes: V
+    repeatable-sql-migration-prefixes: R
 ```
 
-All migration scripts are loaded from `db/migration/` directory and executed in version order.
+`baseline-on-migrate` with `baseline-version: 0` matters for the database created by
+`harnax-deploy/sql/init-databases.sql`: that script creates the schema, so Flyway finds a non-empty schema
+only when it is also brand new, and baselining at 0 makes it apply `V1` rather than mark the schema as
+already migrated.
 
-## Workflow
+## Notes
 
-### First Deployment (Fresh Database)
-
-1. Flyway creates `flyway_schema_history` table
-2. Scans `db/migration/` for all migration scripts
-3. Executes `V1__init_schema.sql` to create initial tables
-4. Executes subsequent migration scripts in version order (V2, V3, ...)
-5. Records all executed versions in history table
-
-### Subsequent Deployments
-
-1. Flyway checks `flyway_schema_history` for current version
-2. Scans `db/migration/` for new scripts
-3. Executes new migrations in version order
-4. Updates history table
-
-## Important Notes
-
-- **Never modify** executed migration scripts
-- **Never delete** migration scripts from history
-- **Always increment** version numbers
-- **Use ALTER TABLE** for schema changes, not DROP + CREATE
-- **Test migrations** on a copy of production data before deploying
-
-## Verification
-
-Check migration status:
-
-```bash
-# Via application logs (on startup)
-# Look for: "Flyway: Current version of schema `harnax`: X"
-
-# Or query the history table
-SELECT * FROM flyway_schema_history ORDER BY installed_rank DESC;
-```
-
-## Rollback
-
-Flyway Community Edition does not support automatic rollback. For rollbacks:
-
-1. Create a new migration script to reverse the change
-2. Example: `V3__rollback_add_user_preferences.sql`
-3. Or manually execute SQL to revert changes
-
-## Best Practices
-
-1. **One change per migration**: Keep migrations focused and small
-2. **Descriptive names**: Make the purpose clear from the filename
-3. **Add comments**: Explain why the change is needed
-4. **Test thoroughly**: Verify migrations work on empty and populated databases
-5. **Backup before deploying**: Always backup production database before migration
+- The baseline is written so that a fresh install and a rebuilt install converge: nothing in it depends
+  on rows that only a replayed history would have produced. Data-repair statements — backfills,
+  renames, re-attribution — have no place in it for exactly that reason, since a new schema has no rows
+  to repair.
+- Keep `DROP` and `DROP TABLE` out of the baseline body; tables are written `CREATE TABLE IF NOT EXISTS`.
+  A rebuild starts from an empty schema either way, so the clause costs nothing and keeps the script
+  re-runnable against a schema that was partially created. The one existing exception is the 11 `QRTZ_*`
+  tables in `harnax-scheduler/src/main/resources/db/migration/V1__init_schema.sql`, which keep the bare
+  `CREATE TABLE` of Quartz's own script.
+- Verify a change against the running stack before relying on it; startup logs the applied version:
+  `Current version of schema`.

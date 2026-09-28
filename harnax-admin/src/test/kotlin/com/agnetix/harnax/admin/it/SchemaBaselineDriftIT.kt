@@ -12,30 +12,31 @@ import javax.sql.DataSource
  * Keeps the mapper-layer schema baseline in step with the migrations.
  *
  * Two schemas build the same tables two different ways: admin's ITs (and production) replay
- * `db/migration/V*.sql`, while `harnax-entity`'s mapper tests run the hand-maintained
- * `schema-test.sql`. Nothing linked them, and the link is load-bearing — a table the baseline lacks makes
- * every mapper over it fail with `BadSqlGrammar`, and a column the baseline lacks fails only the query that
- * happens to name it, which is how `selectPackageObjects` would have died had the baseline kept
- * `package_object` out. The drift has been repaired by hand twice already (AGENT-19 mirrored `cli` and
- * `agent_cli_binding`, the env round mirrored two binding tables), so this is the check that stops needing
- * somebody to remember it.
+ * `db/migration/V*.sql`, while `harnax-entity`'s mapper tests run `schema-test.sql`. Nothing linked them,
+ * and the link is load-bearing — a table the baseline lacks makes every mapper over it fail with
+ * `BadSqlGrammar`, and a column the baseline lacks fails only the query that happens to name it. That
+ * silence cost two hand repairs before this check existed (AGENT-19 mirrored `cli` and `agent_cli_binding`,
+ * the env round mirrored two binding tables).
+ *
+ * Since the migrations consolidated into one schema baseline per module, `schema-test.sql`'s DDL block is
+ * generated from admin's baseline rather than maintained beside it, so what this class guards is the edit
+ * that bypasses the generation: somebody changing one file and not the other. It is still worth guarding,
+ * because the two files reach MySQL by different routes and only the mapper fixture is read as text.
  *
  * The migrated schema is the authoritative side because it is the one the application actually runs on, and
- * reading it from `information_schema` means this class never reimplements `ALTER TABLE` semantics — column
- * renames, generated columns and drops all resolve themselves in the live schema, where they would
- * otherwise be a parser to get wrong here.
+ * reading tables and columns from `information_schema` means this class never reimplements `ALTER TABLE`
+ * semantics — column renames, generated columns and drops all resolve themselves in the live schema.
  *
- * Tables and columns are only half the schema, though, and not the half that has been drifting. V43, V45,
- * V46 and V49 are uniqueness work: between them they add four unique keys and drop four — V46 replaces the
- * key V45 had just created — and a diff over table and column names calls every one of those changes a
- * match. The last checks of this
- * class therefore compare the keys themselves — name, ordered columns, uniqueness. There the
- * `information_schema` shortcut is not available for the interesting half: `ALTER … ADD UNIQUE KEY` and
- * `ALTER … DROP INDEX` and MySQL's removal of a key when its last column is dropped only make sense in
- * version order, so `db/migration` is replayed rather than read statement by statement. That is a parser,
- * which is exactly what the paragraph above warns about, so the parser is bounded to the shapes the tree
- * actually contains and `the migration replay understands every index statement in the tree` fails the run
- * the moment it meets one it has not modelled — an incomplete replay is a red test, never a silent pass.
+ * Tables and columns are only half the schema, though, and not the half that drifted. Uniqueness work
+ * changes keys without touching a single name, and a diff over table and column names calls every one of
+ * those changes a match. The last checks of this class therefore compare the keys themselves — name,
+ * ordered columns, uniqueness. There the `information_schema` shortcut is not available for the interesting
+ * half: `ALTER … ADD UNIQUE KEY`, `ALTER … DROP INDEX` and MySQL's removal of a key when its last column is
+ * dropped only make sense in version order, so `db/migration` is replayed rather than read statement by
+ * statement. That is a parser, which is exactly what the paragraph above warns about, so the parser is
+ * bounded to the shapes the tree actually contains and `the migration replay understands every index
+ * statement in the tree` fails the run the moment it meets one it has not modelled — an incomplete replay is
+ * a red test, never a silent pass.
  */
 class SchemaBaselineDriftIT : BaseAdminIT() {
 
@@ -173,8 +174,8 @@ class SchemaBaselineDriftIT : BaseAdminIT() {
 
         /**
          * MySQL drops a key outright once the last column it covers goes, and otherwise only loses that
-         * part. V34 leans on the first rule: `team.lead_agent_id` goes without a matching `DROP INDEX`, and
-         * its index goes with it.
+         * part. A migration that drops a column with no matching `DROP INDEX` leans on the first rule and
+         * takes the index with it.
          */
         fun dropColumn(column: String) {
             columns.remove(column)
@@ -290,9 +291,9 @@ class SchemaBaselineDriftIT : BaseAdminIT() {
         when {
             // Data and DML say nothing about keys.
             NO_KEY_EFFECT_PREFIX.containsMatchIn(flat) -> Unit
-            // V28 has no `ADD INDEX IF NOT EXISTS` in MySQL, so it builds its ALTER as a string and runs
-            // it through PREPARE. The guard only decides whether a live server already has the index, so
-            // replaying the payload is what the migration ends up meaning.
+            // MySQL has no `ADD INDEX IF NOT EXISTS`, so a guarded migration builds its ALTER as a string
+            // and runs it through PREPARE. The guard only decides whether a live server already has the
+            // index, so replaying the payload is what the migration ends up meaning.
             SESSION_DDL_PREFIX.containsMatchIn(flat) -> embeddedDdl(flat).forEach { applyStatement(parse, it.flatten()) }
             else -> parse.unparsed += "statement `$flat`"
         }
@@ -379,8 +380,8 @@ class SchemaBaselineDriftIT : BaseAdminIT() {
             state.columns.add(column)
             when {
                 INLINE_PK.containsMatchIn(bare) -> state.add(PRIMARY, listOf(column), true)
-                // `key_hash VARCHAR(64) NOT NULL UNIQUE` (V1's api_key) creates a unique index MySQL names
-                // after the column, which the baseline spells out as `UNIQUE KEY key_hash (key_hash)`.
+                // `col VARCHAR(64) NOT NULL UNIQUE` creates a unique index MySQL names after the column,
+                // which a schema source spells out as `UNIQUE KEY col (col)`.
                 INLINE_UNIQUE.containsMatchIn(bare) -> state.add(column, listOf(column), true)
                 KEY_TOKEN.containsMatchIn(bare) -> unparsed += "column line `$item`"
             }
@@ -537,7 +538,7 @@ class SchemaBaselineDriftIT : BaseAdminIT() {
         return out.toString()
     }
 
-    /** Statements a session variable carries as a string rather than inline (see V28). */
+    /** Statements a session variable carries as a string rather than inline: the PREPARE/EXECUTE shape. */
     private fun embeddedDdl(text: String): List<String> {
         val found = mutableListOf<String>()
         var i = 0
@@ -759,55 +760,13 @@ class SchemaBaselineDriftIT : BaseAdminIT() {
         /**
          * Key drift the guard reports and this commit does not repair.
          *
-         * All 27 items predate the key comparison: V43, V45, V46, V49 and V50 are already identical on both
-         * sides, which is what let the uniqueness rounds pass the old table-and-column check. Each entry is
-         * a real mismatch rather than an exception to the rule, so each line states what makes it invisible
-         * to a test today and which edit removes it. `the tolerated key drift list still describes real
-         * drift` fails as soon as one stops being true, so a fixed item cannot outlive its fix — and nothing
-         * here may grow to cover a fresh change, which has to be mirrored instead of listed.
+         * Empty: the mapper fixture's DDL block is generated from admin's schema baseline, so the four
+         * groups that used to sit here — the name-only index pairs, the unique keys the fixture had
+         * invented, the indexes it had never mirrored, and the pre-unique-key shape `agent_skill_binding`
+         * kept on purpose — all went in the same edit. `the tolerated key drift list still describes real
+         * drift` fails as soon as an entry stops being true, and nothing here may grow to cover a fresh
+         * change: that has to be generated into the fixture instead of listed.
          */
-        val TOLERATED_KEY_DRIFT = setOf(
-            // Same columns, same uniqueness, different name: the baseline follows `idx_<table>_<column>`
-            // where the migration named the key `idx_<column>`. MySQL chooses the identical plan either way
-            // and no statement in this repo names an index — `USE`, `FORCE` and `IGNORE INDEX` appear
-            // nowhere — so nothing observable differs until somebody asserts on a plan.
-            "team.idx_tenant_id", // name-only pair of baseline's idx_team_tenant_id; rename that baseline key to remove
-            "team_member.idx_member_agent_id", // name-only pair of idx_team_member_agent_id; rename that baseline key to remove
-            "team_artifact.idx_session_id", // name-only pair of idx_team_artifact_session_id; rename that baseline key to remove
-            "team_artifact.idx_tenant_id", // name-only pair of idx_team_artifact_tenant_id; rename that baseline key to remove
-            "token_stats.idx_agent_id", // name-only pair of idx_token_stats_agent_id; rename that baseline key to remove
-            "token_stats.idx_chat_model_id", // name-only pair of idx_token_stats_chat_model_id; rename that baseline key to remove
-            "token_stats.idx_session_id", // name-only pair of idx_token_stats_session_id; rename that baseline key to remove
-            "token_stats.idx_ts", // name-only pair of idx_token_stats_ts; rename that baseline key to remove
-            "team.idx_team_tenant_id", // the baseline-side half of the name-only pair above; rename it to idx_tenant_id to remove
-            "team_member.idx_team_member_agent_id", // baseline-side half of a name-only pair; rename it to idx_member_agent_id to remove
-            "team_artifact.idx_team_artifact_session_id", // baseline-side half of a name-only pair; rename it to idx_session_id to remove
-            "team_artifact.idx_team_artifact_tenant_id", // baseline-side half of a name-only pair; rename it to idx_tenant_id to remove
-            "token_stats.idx_token_stats_agent_id", // baseline-side half of a name-only pair; rename it to idx_agent_id to remove
-            "token_stats.idx_token_stats_chat_model_id", // baseline-side half of a name-only pair; rename it to idx_chat_model_id to remove
-            "token_stats.idx_token_stats_session_id", // baseline-side half of a name-only pair; rename it to idx_session_id to remove
-            "token_stats.idx_token_stats_ts", // baseline-side half of a name-only pair; rename it to idx_ts to remove
-            // Unique keys the fixture invented: production accepts the second row the baseline refuses, so
-            // a test that leans on one is testing the fixture. No mapper test names any of them today —
-            // nothing in `harnax-entity/src/test` asserts a duplicate-key error on these — so each only
-            // needs its line deleted, which is a baseline change of its own and does not ride in here.
-            "model_provider.uk_type", // V1 gave model_provider no key on `type` at all; delete the baseline line to remove
-            "sys_token_blacklist.uk_token_hash", // V1 keyed this on idx_token_lookup (token_hash, expire_time), non-unique; delete to remove
-            "sys_user.uk_email", // no migration ever made email unique; delete the baseline line to remove
-            "sys_user.uk_phone", // no migration ever made phone unique; delete the baseline line to remove
-            "tenant.uk_name", // V1's tenant carries a primary key and nothing else; delete the baseline line to remove
-            "user_tenant.uk_user_tenant", // V1 gave user_tenant two plain indexes, no unique pair; delete to remove
-            // Indexes V1 and V16 created and the baseline never mirrored. A missing index costs speed,
-            // never a row, so no mapper test can tell; both remove by copying the KEY line across.
-            "agent_skill_binding.idx_agent_skill_binding_skill_id", // V16's skill_id index, absent from the fixture; add it to remove
-            "sys_token_blacklist.idx_token_lookup", // V1's (token_hash, expire_time) lookup index; add it, and drop uk_token_hash with it
-            "sys_token_blacklist.idx_username", // V1's username index; add it to remove
-            // V33 replaced idx_agent_skill_binding_agent_id with UNIQUE (agent_id, skill_id), and the
-            // baseline header for this table says the unique key is kept out on purpose so the duplicate
-            // rows the guards must tolerate stay testable. Both entries end together, when those rows move
-            // to a table with no such claim or the deviation is dropped.
-            "agent_skill_binding.uk_agent_skill_binding_agent_id_skill_id", // the UNIQUE V33 added, excluded from the fixture by design
-            "agent_skill_binding.idx_agent_skill_binding_agent_id", // the key V33 dropped, kept by that same design; goes with the line above
-        )
+        val TOLERATED_KEY_DRIFT = emptySet<String>()
     }
 }

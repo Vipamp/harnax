@@ -29,7 +29,7 @@
 
     <!-- insert: the only statement with a production caller (`ProcessLogAdaptorImpl`). `tenant_id` can
          only be written here — the runtime is where the tenant is known, and a row that arrives without
-         one stays NULL and out of the tenant-scoped reads rather than being guessed at (V50). -->
+         one stays NULL and out of the tenant-scoped reads rather than being guessed at. -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO process_log (
         agent_id, tenant_id, agent_name, session_id, message, log_type, stack_trace, ts

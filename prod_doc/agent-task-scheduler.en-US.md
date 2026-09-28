@@ -15,12 +15,12 @@
    history table is `flyway_schema_history_scheduler`.
 2. **The datasource is this service's own `harnax_scheduler` database**, named literally in the default URL
    of `application.yml`. The 11 `QRTZ_*` tables and the three business tables live there, created by this
-   module's two scripts (`V1__quartz_tables.sql` + `V2__agent_task_domain.sql`), and that database has only
-   this one migration tool. The three same-named tables in `harnax_admin` are dropped with
-   `DROP TABLE IF EXISTS` at startup by admin's `V39__drop_agent_task_tables.sql`: admin's
-   `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` replays those three `CREATE TABLE`
-   statements on every fresh deployment, so without convergence an operator looking for task tables in that
-   database finds an empty one.
+   module's only migration script,
+   `harnax-scheduler/src/main/resources/db/migration/V1__init_schema.sql`, and that database has only this one
+   migration tool. Admin's `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` neither creates
+   these three tables nor drops them, so a freshly deployed `harnax_admin` holds none of this domain's
+   same-named tables; an `harnax_admin` created before the split may still hold the three empty ones, and
+   removing them is operator work (see item 10 of the deployment checklist).
 3. **Quartz runs in JDBC cluster mode**: a shared JobStore plus `isClustered = true`, with the `QRTZ_*`
    tables as the single scheduling truth. One cron fire is delivered exactly once across the cluster and
    executed by exactly one node. The failover window is 22.5 to 52.5 seconds, derived from
@@ -128,17 +128,16 @@ database and need no cross-service call.
 
 ### 3.1 Notable points of the business tables
 
-`V2__agent_task_domain.sql` is the schema source of truth for the three business tables. Column for column
-it matches the three same-named tables in
-`harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` (the two definitions are meant to stay
-comparable), with exactly four differences:
+`harnax-scheduler/src/main/resources/db/migration/V1__init_schema.sql` is the schema source of truth for the
+three business tables, and the only definition of them in this repository — admin's baseline does not describe
+these tables, so there is no second copy to keep comparable with. The three facts this file states about the
+domain:
 
 - `agent_task_log.session_id` is `VARCHAR(128)` (the four-segment task session id is longer);
 - the two sweep indexes on `agent_task_execution`, `(status, create_time)` and `(create_time)`, are inlined
   into the `CREATE TABLE`;
-- the file contains no removal statements; what happens to the same-named tables on the `harnax_admin` side
-  is not its concern;
-- the header comment.
+- the file contains no removal statements; what happens to leftover same-named tables on the `harnax_admin`
+  side is not its concern.
 
 Constraints that determine read behaviour:
 
@@ -286,7 +285,7 @@ both read as "still running", and they are only settled to `2 timeout` after one
 (`timeout × 1.5`).
 
 It must be configured together with the container's `stop_grace_period`: compose says `400s` and the
-arithmetic is in the comments of `docker-new/docker-compose.yml` and `application.yml` — execution timeout 300
+arithmetic is in the comments of `harnax-deploy/docker-compose.yml` and `application.yml` — execution timeout 300
 \+ session-clear ceiling `min(clear-session-timeout, timeout)` 60 \+ the two calls' connect allowance 20 \+
 settling the row and releasing the lock 12 = 392, rounded up. **Changing `SCHEDULER_TIMEOUT` or
 `SCHEDULER_CLEAR_SESSION_TIMEOUT` means changing `stop_grace_period` in the same edit.**
@@ -652,7 +651,7 @@ verify a user login JWT** — it verifies with `harnax.auth.internal.shared-secr
 tokens with the different key `jwt.secret`.
 
 **The deployment layer remains part of defence in depth**: compose only does `expose: ["8084"]` and publishes
-no host port; `docker-new/nginx.conf` has no `/api/scheduler/` location, with a comment at that position
+no host port; `harnax-deploy/nginx.conf` has no `/api/scheduler/` location, with a comment at that position
 prohibiting its re-addition. The gate is the second layer, not the only one.
 
 ### 8.3 Outbound calls from the scheduler
@@ -759,16 +758,16 @@ shared by admin/agent/channel, so one edit does not take down three services).
 
 ## 12. Deployment and operations checklist
 
-Image and topology: `docker-new/Dockerfile.scheduler` (`eclipse-temurin:21-jre-alpine`, `TZ=Asia/Shanghai`,
+Image and topology: `harnax-deploy/Dockerfile.scheduler` (`eclipse-temurin:21-jre-alpine`, `TZ=Asia/Shanghai`,
 non-root user, `EXPOSE 8084`, a container-level healthcheck against `/actuator/health/liveness`); the
-`scheduler` section of `docker-new/docker-compose.yml` (`expose: ["8084"]`, no `container_name`,
+`scheduler` section of `harnax-deploy/docker-compose.yml` (`expose: ["8084"]`, no `container_name`,
 `stop_grace_period: 400s`, volume `scheduler-logs`, mounted `/etc/localtime`, `depends_on` mysql healthy +
-admin/router started). `docker-new` is the only usable deployment entry in this repository.
+admin/router started). `harnax-deploy` is the only usable deployment entry in this repository.
 
 Shipping one version that touches this domain:
 
 1. Confirm the `harnax_scheduler` database exists and is granted (already in
-   `docker-new/sql/init-databases.sql`; that script only runs when MySQL initialises an empty data directory,
+   `harnax-deploy/sql/init-databases.sql`; that script only runs when MySQL initialises an empty data directory,
    so an existing deployment needs those two statements plus `FLUSH PRIVILEGES` applied by hand).
 2. Three `.env` checks: set `SCHEDULER_DB_URL` only when the database must differ (unset means compose's
    default `harnax_scheduler`), admin and the scheduler hold the **same `HARNAX_AUTH_SECRET` value**, and
@@ -781,8 +780,9 @@ Shipping one version that touches this domain:
    `status IN (3,4)` counting 0 in `agent_task_log` — an execution spanning the stop/start boundary never
    settles: its log row is in the database connected before the stop, the restarted scheduler looks for it in
    its own database, and `finishExecution` / `markStopping` / `expireStale` all affect 0 rows.
-4. Start **one** scheduler replica and let Flyway apply `V1` + `V2`.
-5. Verify the tables: three `agent_task*` + 11 `QRTZ_*` + two rows in `flyway_schema_history_scheduler`.
+4. Start **one** scheduler replica and let Flyway apply this module's baseline,
+   `harnax-scheduler/src/main/resources/db/migration/V1__init_schema.sql`.
+5. Verify the tables: three `agent_task*` + 11 `QRTZ_*` + one row in `flyway_schema_history_scheduler`.
    **`agent_task_log` must be present even when empty** — `selectTaskList` self-joins it for `lastRunStatus` /
    `lastRunTime`, and a missing table is a 500 on the list page.
 6. Let reconciliation run one round (wait for the 60-second sweep, or create a task so admin's forward
@@ -794,28 +794,31 @@ Shipping one version that touches this domain:
 8. Start the second replica (`--scale scheduler=2`) and read back `harnax_scheduler.QRTZ_SCHEDULER_STATE`:
    check that each of the two `INSTANCE_NAME`s advances its `LAST_CHECKIN_TIME` every 15 seconds,
    **do not count rows**.
-9. For a node-by-node rolling update use `docker-new/roll-scheduler.sh`: it holds one cross-process mutex for
+9. For a node-by-node rolling update use `harnax-deploy/roll-scheduler.sh`: it holds one cross-process mutex for
    the whole flow (stop and start one node at a time, waiting for each new container to be healthy) and reads
    back the SQL above at the end. **The lock's key names the cluster, not the directory the script sits in**:
    it takes `COMPOSE_PROJECT_NAME`, falling back to "the basename of the directory holding the compose file",
    lower-cased and trimmed to the character set compose allows, then suffixed with the docker daemon name —
    that is compose's own project-name rule, and in this repository all three worktrees call that directory
-   `docker-new`, so keying on the checkout directory name would let one cluster hold several locks.
+   `harnax-deploy`, so keying on the checkout directory name would let one cluster hold several locks.
    `LOCK_BASE_DIR` defaults to `/tmp` (deliberately not `$TMPDIR`: that would give every GUI login its own
    per-user lock directory, and cron and sudo deployments land on yet other values, and different values are
    different locks and one unguarded cluster), and **every caller must pass the same value**. `GRACE` and
    `HEALTH_WAIT` correspond to `stop_grace_period` and the health wait respectively.
-10. Handle the same-named tables of this domain in `harnax_admin`: the three `agent_task*` are dropped with
-    `DROP TABLE IF EXISTS` at startup by admin's `V39__drop_agent_task_tables.sql`; the 11 `QRTZ_*` exist only
-    in installations that pointed `QUARTZ_JOB_STORE=jdbc` at `harnax_admin`, and since this service's scheduler
-    does not connect to that database, operators drop them in place. Not one read path of this domain points
-    there.
+10. Handle the same-named tables of this domain in `harnax_admin`: admin's baseline neither creates the three
+    `agent_task*` tables nor drops them, so no step converges them automatically — an installation that created
+    `harnax_admin` before the split and also pointed `QUARTZ_JOB_STORE=jdbc` at it may still hold those three
+    plus the 11 `QRTZ_*`. This service's scheduler does not connect to that database and not one read path of
+    this domain points there, so operators drop them in place.
 11. Rollback: point the scheduler's datasource back to `harnax_admin`, with `QUARTZ_JOB_STORE=memory` and
     `SCHEDULER_FLYWAY_ENABLED=false` (both `application.yml` and compose read this key), and explicitly accept
     that "tasks created or changed while the datasource pointed at `harnax_scheduler` do not come back with
     it" — once that database has been written to, a rollback is not a `revert`. Returning to the
-    `harnax_admin` database also requires recreating the three tables, which is exactly what
-    `V39__drop_agent_task_tables.sql` covers.
+    `harnax_admin` database also requires the three tables to exist there first (admin's baseline does not
+    create them): operator DDL is the clean path, and temporarily setting `SCHEDULER_FLYWAY_ENABLED=true` so
+    this module's baseline builds them there works too, provided that database's
+    `flyway_schema_history_scheduler` ledger matches its actual schema — otherwise `validate-on-migrate`
+    refuses the boot first.
 
 ## 13. Explicitly out of scope and boundaries
 
@@ -871,10 +874,10 @@ Shipping one version that touches this domain:
 | Health and metrics | `harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/health/SchedulerHealthIndicator.kt`, `harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/health/QuartzJobInventory.kt`, `harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/health/SchedulerStatus.kt`, `harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/metrics/SchedulerMetrics.kt` |
 | Entities and statements | `harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/entity/AgentTask.kt`, `harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/entity/AgentTaskLog.kt`, `harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/entity/AgentTaskExecution.kt`, `harnax-scheduler/src/main/resources/mapper/AgentTaskMapper.xml`, `harnax-scheduler/src/main/resources/mapper/AgentTaskLogMapper.xml`, `harnax-scheduler/src/main/resources/mapper/AgentTaskExecutionMapper.xml` |
 | Response envelopes | `harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/dto/Page.kt`, `harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/dto/AgentTaskResponse.kt`, `harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/dto/AgentTaskLogResponse.kt` |
-| Schema | `harnax-scheduler/src/main/resources/db/migration/V1__quartz_tables.sql`, `harnax-scheduler/src/main/resources/db/migration/V2__agent_task_domain.sql`, `harnax-admin/src/main/resources/db/migration/V39__drop_agent_task_tables.sql` |
+| Schema | `harnax-scheduler/src/main/resources/db/migration/V1__init_schema.sql` (the only definition of this domain's 14 tables), `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` (which holds none of this domain's tables) |
 | Runtime configuration | `harnax-scheduler/src/main/resources/application.yml` |
 | Task session id grammar | `harnax-common/src/main/kotlin/com/agnetix/harnax/common/session/TaskSessionId.kt` |
 | Admin-side authentication + forwarding | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/AgentTaskController.kt`, `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/SchedulerClientImpl.kt`, `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/SchedulerClient.kt` |
 | Admin-side agent-spec lookup | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt` (`resolveFromTask`) |
 | MCP identity for task sessions | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/McpSessionOwnerResolver.kt` |
-| Deployment | `docker-new/Dockerfile.scheduler`, `docker-new/docker-compose.yml`, `docker-new/roll-scheduler.sh`, `docker-new/nginx.conf`, `docker-new/sql/init-databases.sql` |
+| Deployment | `harnax-deploy/Dockerfile.scheduler`, `harnax-deploy/docker-compose.yml`, `harnax-deploy/roll-scheduler.sh`, `harnax-deploy/nginx.conf`, `harnax-deploy/sql/init-databases.sql` |

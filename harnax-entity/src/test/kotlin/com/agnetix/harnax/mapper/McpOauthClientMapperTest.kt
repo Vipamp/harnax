@@ -220,7 +220,7 @@ open class McpOauthClientMapperTest {
             loaded.active = 0
             mcpOauthClientMapper.updateById(loaded)
 
-            // 与 mcp_server 的 V15/V23 同一写法：active=0 时生成列为 NULL，唯一索引忽略 NULL
+            // 与 mcp_server 的生成列同一写法：active=0 时生成列为 NULL，唯一索引忽略 NULL
             assertNotNull(insertClient(11L, "https://re.example.com", "cid-re"))
             assertEquals(1, mcpOauthClientMapper.selectByTenantAndIssuer(11L, "https://re.example.com")?.active)
             assertEquals(client.id + 1, mcpOauthClientMapper.selectByTenantAndIssuer(11L, "https://re.example.com")?.id)

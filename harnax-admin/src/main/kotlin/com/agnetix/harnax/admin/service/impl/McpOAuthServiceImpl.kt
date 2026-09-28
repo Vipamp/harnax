@@ -520,7 +520,7 @@ class McpOAuthServiceImpl(
         private const val REVOCATION_ENDPOINT_FIELD = "revocation_endpoint"
         private val REQUIRED_ENDPOINT_FIELDS = listOf(AUTHORIZATION_ENDPOINT_FIELD, TOKEN_ENDPOINT_FIELD)
 
-        /** Widths from V26: `mcp_oauth_client.issuer` is 255, every URL column on either table is 500. */
+        /** Widths from the schema baseline: `mcp_oauth_client.issuer` is 255, every URL column on either table is 500. */
         private const val ISSUER_MAX_LEN = 255
         private const val URL_MAX_LEN = 500
         private const val MAX_DETAIL_CHARS = 600

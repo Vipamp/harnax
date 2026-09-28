@@ -108,8 +108,8 @@ class AgentServiceImpl(
     override fun createAgent(request: AgentCreateRequest): Boolean = try {
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
 
-        // Checked before the insert so a clash is a usable message rather than the SQL error the
-        // unique key V43 adds would raise - the same two-layer shape as uk_mcp_server_tenant_active_name
+        // Checked before the insert so a clash is a usable message rather than the SQL error
+        // uk_agent_tenant_active_name raises - the same two-layer shape as uk_mcp_server_tenant_active_name
         val tenantId = currentTenantId()
         if (agentMapper.selectByName(request.name!!, tenantId) != null) {
             throw BizException("Agent name already exists")
@@ -529,7 +529,7 @@ class AgentServiceImpl(
      *
      * Skills carry no env: unlike [saveToolBindings] / [saveMcpBindings], whose bindings are resolved
      * on delivery, a skill binding has nothing beyond the pair of ids — the reserved `env_bindings`
-     * column was dropped by V36 once it was clear no consumer would arrive.
+     * column was dropped once it was clear no consumer would arrive.
      */
     private fun saveSkillBindings(agentId: Long, skillList: String?) {
         skillBindingMapper.deleteByAgentId(agentId)
@@ -638,7 +638,7 @@ class AgentServiceImpl(
      * - One key filled from two sources. Delivery emits one `{envKey, envValue}` pair per binding row
      *   and the runtime folds those pairs into a name-keyed map (`AgentSpecResolver.parseEnvBindings`,
      *   where the last row wins), so which credential actually reaches the tool is decided by ordering.
-     *   Key uniqueness is scoped to one creator since V46, so this is reachable: two users can each hold
+     *   Key uniqueness is scoped to one creator, so this is reachable: two users can each hold
      *   an `OPENAI_KEY`, and an agent shared across them would otherwise pick one by accident.
      * - A reference that does not resolve. Only the pointer is stored, and delivery follows it with
      *   `getDecryptedValue(envVarId, agentTenantId)`, which answers null for a row that is gone, disabled,

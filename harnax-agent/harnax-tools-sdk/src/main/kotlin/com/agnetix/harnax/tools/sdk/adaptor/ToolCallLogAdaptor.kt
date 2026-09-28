@@ -24,7 +24,7 @@ data class ToolCallInfo(
 
     /**
      * Tenant owning the call, from [com.agnetix.harnax.tools.sdk.SessionMetaContext.tenantId] — what
-     * `tool_call_log.tenant_id` gets (V50). Null records the call unattributed rather than guessing.
+     * `tool_call_log.tenant_id` gets. Null records the call unattributed rather than guessing.
      */
     val tenantId: Long? = null,
 )

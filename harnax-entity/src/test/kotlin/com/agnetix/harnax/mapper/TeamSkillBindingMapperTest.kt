@@ -20,9 +20,9 @@ import kotlin.test.assertTrue
 
 /**
  * Reads and writes of the lead's skill bindings: `team_skill_binding` has the same shape as
- * `agent_skill_binding`, but in the entity test database only the team copy carries
- * `UNIQUE(team_id, skill_id)` — the agent copy is deliberately left as it was before V33 so
- * [AgentSkillBindingMapperTest] can prove `COUNT(DISTINCT ...)` with duplicate rows.
+ * `agent_skill_binding`, and the entity test database — a copy of the consolidated schema baseline —
+ * gives each its own unique pair key: `UNIQUE(team_id, skill_id)` here, `UNIQUE(agent_id, skill_id)`
+ * in [AgentSkillBindingMapperTest], whose grouped count therefore rests on that key.
  * What this class pins is the team side on its own: fetching by team, replacing the whole set,
  * clearing bindings when a skill goes, a repeat binding not reaching the database, and the grouped
  * count the skill list reads.

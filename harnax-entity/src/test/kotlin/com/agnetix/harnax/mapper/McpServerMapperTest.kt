@@ -348,7 +348,7 @@ open class McpServerMapperTest {
         @Test
         @DisplayName("uk_mcp_server_tenant_active_name - Guards active names per tenant")
         fun `unique key should guard active names per tenant`() {
-            // Given - V23 的生成列让已删除行退出唯一键，互斥只发生在同租户的有效行之间
+            // Given - mcp_server 的生成列让已删除行退出唯一键，互斥只发生在同租户的有效行之间
             val first = insertServer("Guard MCP", 55L)
 
             // When & Then

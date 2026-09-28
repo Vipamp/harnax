@@ -15,7 +15,7 @@ import org.mockito.kotlin.any
 /**
  * Unit tests for ProcessLogAdaptorImpl.
  *
- * V50 gave `process_log` a tenant column, and this conversion is the only step that can still fill it.
+ * `process_log` has a nullable tenant column, and this conversion is the only step that can fill it.
  * A dropped field there leaves every later line unattributed without a single error in the log, so the
  * written row itself is the thing under test.
  */

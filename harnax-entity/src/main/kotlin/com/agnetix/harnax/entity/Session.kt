@@ -27,7 +27,7 @@ class Session : Serializable {
 
     /**
      * The agent this conversation runs on, or null for a team session: a team's lead is the `team` row
-     * itself since V34, so no agent row stands in for it.
+     * itself, so no agent row stands in for it.
      */
     @Schema(description = "Associated agent ID, null for a team session")
     var agentId: Long? = null

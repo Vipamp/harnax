@@ -1,7 +1,7 @@
 package com.agnetix.harnax.entity
 
 /**
- * Values of `mcp_server.auth_type` (migration V25).
+ * Values of `mcp_server.auth_type`.
  *
  * Shared because two processes read it: admin decides what to store and deliver, the agent runtime
  * branches on it to choose between a static header and a per-user bearer token.

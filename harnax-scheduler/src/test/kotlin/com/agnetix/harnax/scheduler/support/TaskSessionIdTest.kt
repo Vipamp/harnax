@@ -115,7 +115,7 @@ class TaskSessionIdTest {
 
     @Test
     fun `even the widest possible id fits the column that stores it`() {
-        // `agent_task_log.session_id` is VARCHAR(128) since V2 of the scheduler schema; a real id is far
+        // `agent_task_log.session_id` is VARCHAR(128) in the scheduler schema baseline; a real id is far
         // shorter, and this is the pathological end of that range.
         val id = TaskSessionId.of(Long.MAX_VALUE, Long.MAX_VALUE)
 

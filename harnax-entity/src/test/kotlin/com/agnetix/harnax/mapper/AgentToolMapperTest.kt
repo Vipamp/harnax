@@ -23,7 +23,7 @@ import kotlin.test.assertTrue
 /**
  * AgentToolMapper Integration Tests
  *
- * The table is platform-scoped and additive (V40): the sync resolves a declaration by `name`, so the
+ * The table is platform-scoped and additive: the sync resolves a declaration by `name`, so the
  * write-side cases here go through `insert` / `updateById` — there is no delete on this mapper.
  *
  * @author agnetix

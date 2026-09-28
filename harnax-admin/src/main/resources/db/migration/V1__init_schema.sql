@@ -1,539 +1,727 @@
--- Harnax Database Initialization Script
--- All tables for the Harnax platform (merged from V1~V16)
-
--- ============================================
--- System Tables
--- ============================================
-
--- User table
-CREATE TABLE IF NOT EXISTS `sys_user`
-(
-    `id`              bigint       NOT NULL AUTO_INCREMENT COMMENT 'User ID',
-    `tenant_id`       bigint       DEFAULT NULL COMMENT 'Tenant ID (primary tenant)',
-    `username`        varchar(50)  NOT NULL,
-    `password`        varchar(100) NOT NULL,
-    `nickname`        varchar(50)  NOT NULL,
-    `email`           varchar(100) NOT NULL,
-    `phone`           varchar(20)  NOT NULL,
-    `gender`          tinyint      DEFAULT '2' COMMENT 'Gender (0: Male, 1: Female, 2: Unknown)',
-    `avatar`          varchar(255) DEFAULT '' COMMENT 'Avatar URL',
-    `status`          tinyint      DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
-    `is_admin`        tinyint      DEFAULT '0' COMMENT 'Is admin (0: No, 1: Yes)',
-    `active`          tinyint      DEFAULT '1' COMMENT 'Active status (0: Inactive, 1: Active)',
-    `last_login_time` datetime     DEFAULT NULL COMMENT 'Last login time',
-    `create_time`     datetime     DEFAULT CURRENT_TIMESTAMP,
-    `update_time`     datetime     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`),
-    KEY               `idx_tenant_id` (`tenant_id`)
-) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='User table';
-
--- Token blacklist table
-CREATE TABLE IF NOT EXISTS `sys_token_blacklist`
-(
-    `id`          bigint       NOT NULL AUTO_INCREMENT COMMENT 'Blacklist ID',
-    `token`       varchar(512) NOT NULL COMMENT 'JWT Token',
-    `token_hash`  varchar(64)  NOT NULL COMMENT 'Token hash (SHA256)',
-    `username`    varchar(50)           DEFAULT NULL,
-    `user_id`     bigint                DEFAULT NULL COMMENT 'User ID',
-    `reason`      varchar(50)           DEFAULT 'logout' COMMENT 'Blacklist reason (logout/revoke/ban/expired)',
-    `expire_time` datetime     NOT NULL COMMENT 'Token expiration time',
-    `create_time` datetime     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `create_ip`   varchar(50)           DEFAULT NULL COMMENT 'Client IP address',
-    PRIMARY KEY (`id`),
-    KEY           `idx_expire_time` (`expire_time`),
-    KEY           `idx_user_id` (`user_id`),
-    KEY           `idx_username` (`username`),
-    KEY           `idx_token_lookup` (`token_hash`,`expire_time`)
-) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Token blacklist table';
-
--- Tenant table
-CREATE TABLE IF NOT EXISTS `tenant`
-(
-    `id`          bigint       NOT NULL AUTO_INCREMENT COMMENT 'Tenant ID',
-    `name`        varchar(100) NOT NULL COMMENT 'Tenant name',
-    `status`      tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
-    `creator`     varchar(100) NOT NULL COMMENT 'Creator',
-    `active`      tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
-    `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
-    `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
-    PRIMARY KEY (`id`)
-) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Tenant table';
-
--- User-Tenant relationship table
-CREATE TABLE IF NOT EXISTS `user_tenant`
-(
-    `id`        BIGINT      NOT NULL AUTO_INCREMENT COMMENT 'Relationship ID',
-    `user_id`   BIGINT      NOT NULL COMMENT 'User ID',
-    `tenant_id` BIGINT      NOT NULL COMMENT 'Tenant ID',
-    `role`      VARCHAR(50) NOT NULL DEFAULT 'member' COMMENT 'Role (admin/member)',
-    `status`    TINYINT(1)  NOT NULL DEFAULT 1 COMMENT 'Status (0: Disabled, 1: Enabled)',
-    `joined_at` DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Join time',
-    PRIMARY KEY (`id`),
-    KEY `idx_tenant_id` (`tenant_id`),
-    KEY `idx_user_id` (`user_id`)
-) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='User-Tenant relationship table';
-
--- ============================================
--- Business Tables
--- ============================================
-
--- MCP Server table
-CREATE TABLE IF NOT EXISTS `mcp_server`
-(
-    `id`          bigint       NOT NULL AUTO_INCREMENT COMMENT 'MCP Server ID',
-    `tenant_id`   bigint       NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
-    `name`        varchar(100) NOT NULL COMMENT 'MCP Server name',
-    `description` text COMMENT 'MCP Server description',
-    `type`        varchar(20)  NOT NULL COMMENT 'MCP type (stdio/sse/streamablehttp)',
-    `command`     varchar(500)          DEFAULT NULL COMMENT 'Command (for stdio type)',
-    `url`         varchar(500)          DEFAULT NULL COMMENT 'URL (for sse/streamablehttp type)',
-    `headers`     text                  DEFAULT NULL COMMENT 'HTTP headers JSON: [{"key":"Authorization","value":"Bearer xxx","secret":true}]',
-    `envs`        text                  DEFAULT NULL COMMENT 'Env vars JSON: [{"key":"API_KEY","value":"sk-xxx","secret":true}]',
-    `status`      tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
-    `is_public`   tinyint               DEFAULT '0' COMMENT 'Public visibility (0: Private, 1: Public)',
-    `creator`     varchar(100)          DEFAULT NULL,
-    `active`      tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
-    `create_time` datetime              DEFAULT CURRENT_TIMESTAMP,
-    `update_time` datetime              DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`),
-    KEY           `idx_tenant_id` (`tenant_id`)
-) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='MCP Server table';
-
--- Skill Repository table
-CREATE TABLE IF NOT EXISTS `skill_repository`
-(
-    `id`            bigint       NOT NULL AUTO_INCREMENT COMMENT 'Repository ID',
-    `tenant_id`     bigint       NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
-    `name`          varchar(100) NOT NULL,
-    `url`           varchar(500)          DEFAULT NULL,
-    `description`   text,
-    `status`        tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
-    `is_public`     tinyint               DEFAULT '0' COMMENT 'Public visibility (0: Private, 1: Public)',
-    `creator`       varchar(100)          DEFAULT NULL,
-    `active`        tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
-    `create_time`   datetime              DEFAULT CURRENT_TIMESTAMP,
-    `update_time`   datetime              DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    `branch`        varchar(100)          DEFAULT 'main',
-    `source_type`   VARCHAR(20)  NOT NULL DEFAULT 'GIT' COMMENT 'Source type: GIT / NPM / ZIP',
-    `source_config` text                  COMMENT 'Source configuration JSON',
-    `version`       varchar(100)          COMMENT 'Version identifier',
-    `storage_path`  varchar(500)          COMMENT 'Content storage path',
-    PRIMARY KEY (`id`),
-    KEY             `idx_tenant_id` (`tenant_id`)
-) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Skill Repository table';
-
--- Skill table
-CREATE TABLE IF NOT EXISTS `skill`
-(
-    `id`            bigint       NOT NULL AUTO_INCREMENT COMMENT 'Skill ID',
-    `tenant_id`     bigint       NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
-    `name`          varchar(100) NOT NULL,
-    `repository_id` bigint       NOT NULL COMMENT 'Repository ID',
-    `description`   text,
-    `skillmd`       text COMMENT 'skill.md content',
-    `resources`     text,
-    `storage_path`  varchar(500)          COMMENT 'Content storage path',
-    `version`       varchar(100)          COMMENT 'Skill version',
-    `status`        tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
-    `is_public`     tinyint               DEFAULT '0' COMMENT 'Public visibility (0: Private, 1: Public)',
-    `creator`       varchar(100)          DEFAULT NULL,
-    `active`        tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
-    `create_time`   datetime              DEFAULT CURRENT_TIMESTAMP,
-    `update_time`   datetime              DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`),
-    KEY             `idx_tenant_id` (`tenant_id`)
-) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Skill table';
-
--- Model Provider table
-CREATE TABLE IF NOT EXISTS `model_provider`
-(
-    `id`          bigint       NOT NULL AUTO_INCREMENT COMMENT 'Provider ID',
-    `tenant_id`   bigint       NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
-    `type`        varchar(50)  NOT NULL COMMENT 'Provider type (dashscope/openai/ollama)',
-    `name`        varchar(100) NOT NULL COMMENT 'Display name',
-    `description` varchar(500)          DEFAULT NULL COMMENT 'Provider description',
-    `api_key`     varchar(500)          DEFAULT NULL COMMENT 'API key',
-    `base_url`    varchar(500)          DEFAULT NULL COMMENT 'API base URL',
-    `status`      tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
-    `is_public`   tinyint(1) DEFAULT '1' COMMENT 'Public visibility (0: Private, 1: Public)',
-    `creator`     varchar(100) NOT NULL COMMENT 'Creator',
-    `active`      tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
-    `create_time` datetime              DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
-    `update_time` datetime              DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
-    PRIMARY KEY (`id`),
-    KEY           `idx_tenant_id` (`tenant_id`)
-) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Model Provider table';
-
--- Model table
-CREATE TABLE IF NOT EXISTS `model`
-(
-    `id`                bigint       NOT NULL AUTO_INCREMENT COMMENT 'Model ID',
-    `tenant_id`         bigint       NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
-    `name`              varchar(100) NOT NULL COMMENT 'Model name',
-    `model_name`        varchar(100) NOT NULL COMMENT 'Model identifier',
-    `provider_id`       bigint       NOT NULL COMMENT 'Model Provider ID',
-    `description`       text COMMENT 'Model description',
-    `model_type`        varchar(20)  NOT NULL COMMENT 'Model type (chat/embedding)',
-    `support_internet`  tinyint(1) DEFAULT '0' COMMENT 'Support internet search (0: No, 1: Yes)',
-    `support_reasoning` tinyint(1) DEFAULT '0' COMMENT 'Support reasoning (0: No, 1: Yes)',
-    `support_tool`      tinyint(1) DEFAULT '0' COMMENT 'Support tools (0: No, 1: Yes)',
-    `support_mcp`       tinyint(1) DEFAULT '0' COMMENT 'Support MCP (0: No, 1: Yes)',
-    `support_vision`    tinyint(1) DEFAULT '0' COMMENT 'Support vision (0: No, 1: Yes)',
-    `price`             decimal(10, 4)        DEFAULT '0.0000' COMMENT 'Price (CNY per million tokens)',
-    `status`            tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
-    `is_public`         tinyint(1) DEFAULT '1' COMMENT 'Public visibility (0: Private, 1: Public)',
-    `creator`           varchar(100)          DEFAULT NULL COMMENT 'Creator',
-    `active`            tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
-    `create_time`       datetime              DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
-    `update_time`       datetime              DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
-    PRIMARY KEY (`id`),
-    KEY                 `idx_provider_id` (`provider_id`),
-    KEY                 `idx_tenant_id` (`tenant_id`)
-) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Model table';
-
--- Agent table
-CREATE TABLE IF NOT EXISTS `agent`
-(
-    `id`            bigint       NOT NULL AUTO_INCREMENT COMMENT 'Agent ID',
-    `tenant_id`     bigint       NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
-    `name`          varchar(100) NOT NULL,
-    `description`   text,
-    `system_prompt` text COMMENT 'System prompt (Markdown format)',
-    `model_id`      bigint                DEFAULT NULL COMMENT 'Model ID',
-    `mcp_list`      text COMMENT 'MCP list (JSON format)',
-    `skill_list`    text COMMENT 'Skill list (JSON format)',
-    `tool_list`     text COMMENT 'Tool list (JSON format)',
-    `owner`         varchar(100)          DEFAULT NULL,
-    `status`        tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
-    `is_public`     tinyint               DEFAULT '0' COMMENT 'Public visibility (0: Private, 1: Public)',
-    `creator`       varchar(100)          DEFAULT NULL,
-    `active`        tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
-    `create_time`   datetime              DEFAULT CURRENT_TIMESTAMP,
-    `update_time`   datetime              DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`),
-    KEY             `idx_tenant_id` (`tenant_id`)
-) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Agent table';
-
--- Session table
-CREATE TABLE IF NOT EXISTS `session`
-(
-    `id`                  bigint       NOT NULL AUTO_INCREMENT COMMENT 'Session ID',
-    `tenant_id`           bigint       NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
-    `title`               varchar(100) NOT NULL,
-    `session_description` text,
-    `session_id`          varchar(100) NOT NULL COMMENT 'Unique session identifier',
-    `agent_id`            bigint                DEFAULT NULL COMMENT 'Agent ID',
-    `name`                varchar(100)          DEFAULT NULL,
-    `description`         text,
-    `system_prompt`       text COMMENT 'System prompt (Markdown format)',
-    `model_id`            bigint                DEFAULT NULL COMMENT 'Model ID',
-    `enable_think`        tinyint(1) DEFAULT '0' COMMENT 'Enable deep thinking (0: No, 1: Yes)',
-    `enable_search`       tinyint(1) DEFAULT '0' COMMENT 'Enable internet search (0: No, 1: Yes)',
-    `enable_plan`         tinyint(1) DEFAULT '0' COMMENT 'Enable planning (0: No, 1: Yes)',
-    `permission_mode`     VARCHAR(20)  NOT NULL DEFAULT 'DEFAULT' COMMENT 'Permission mode (DEFAULT/ACCEPT_EDITS/EXPLORE/BYPASS/DONT_ASK)',
-    `mcp_list`            text COMMENT 'MCP list (JSON format)',
-    `skill_list`          text COMMENT 'Skill list (JSON format)',
-    `owner`               varchar(100)          DEFAULT NULL,
-    `status`              tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
-    `is_public`           tinyint(1) DEFAULT '0' COMMENT 'Public visibility (0: Private, 1: Public)',
-    `creator`             varchar(100)          DEFAULT NULL,
-    `active`              tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
-    `create_time`         datetime              DEFAULT CURRENT_TIMESTAMP,
-    `update_time`         datetime              DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`),
-    KEY                   `idx_creator` (`creator`),
-    KEY                   `idx_tenant_id` (`tenant_id`)
-) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Session table';
-
--- Plan Note table
-CREATE TABLE IF NOT EXISTS `plan_note`
-(
-    `id`               bigint       NOT NULL AUTO_INCREMENT COMMENT 'Plan ID',
-    `session_id`       varchar(128) NOT NULL COMMENT 'Session ID',
-    `plan_id`          varchar(128) NOT NULL COMMENT 'Plan identifier',
-    `name`             varchar(256) NOT NULL COMMENT 'Plan name',
-    `description`      text COMMENT 'Plan description',
-    `expected_outcome` text COMMENT 'Expected outcome',
-    `subtasks`         text COMMENT 'Subtasks list (JSON format)',
-    `created_at`       varchar(64) DEFAULT NULL COMMENT 'Creation timestamp',
-    `finished_at`      varchar(64) DEFAULT NULL COMMENT 'Completion timestamp',
-    `cost_timeseconds` bigint      DEFAULT '0' COMMENT 'Execution time (seconds)',
-    `status`           varchar(32) DEFAULT 'TODO' COMMENT 'Status (TODO, IN_PROGRESS, DONE, ABANDONED)',
-    PRIMARY KEY (`id`),
-    KEY                `idx_session_id` (`session_id`),
-    KEY                `idx_plan_id` (`plan_id`)
-) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Plan Note table';
-
--- Process Log table
-CREATE TABLE IF NOT EXISTS `process_log`
-(
-    `id`          bigint NOT NULL AUTO_INCREMENT COMMENT 'Log ID',
-    `agent_id`    bigint       DEFAULT NULL COMMENT 'Agent ID',
-    `agent_name`  varchar(255) DEFAULT NULL COMMENT 'Agent name',
-    `session_id`  varchar(255) DEFAULT NULL COMMENT 'Session ID',
-    `message`     text COMMENT 'Log message',
-    `log_type`    varchar(20)  DEFAULT 'INFO' COMMENT 'Log type (INFO/WARN/ERROR)',
-    `stack_trace` text COMMENT 'Exception stack trace',
-    `ts`          datetime     DEFAULT NULL COMMENT 'Timestamp',
-    PRIMARY KEY (`id`),
-    KEY           `idx_agent_id` (`agent_id`),
-    KEY           `idx_session_id` (`session_id`),
-    KEY           `idx_log_type` (`log_type`),
-    KEY           `idx_ts` (`ts`)
-) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Process Log table';
-
--- Token Statistics table
-CREATE TABLE IF NOT EXISTS `token_stats`
-(
-    `id`            bigint NOT NULL AUTO_INCREMENT COMMENT 'Stats ID',
-    `agent_id`      bigint         DEFAULT NULL COMMENT 'Agent ID',
-    `session_id`    varchar(255)   DEFAULT NULL COMMENT 'Session ID',
-    `chat_model_id` bigint         DEFAULT NULL COMMENT 'Chat Model ID',
-    `input_token`   bigint         DEFAULT '0' COMMENT 'Input token count',
-    `output_token`  bigint         DEFAULT '0' COMMENT 'Output token count',
-    `total_token`   bigint         DEFAULT '0' COMMENT 'Total token count',
-    `ts`            datetime       DEFAULT NULL,
-    `fee`           decimal(10, 0) DEFAULT NULL,
-    PRIMARY KEY (`id`),
-    KEY             `idx_agent_id` (`agent_id`),
-    KEY             `idx_session_id` (`session_id`),
-    KEY             `idx_chat_model_id` (`chat_model_id`),
-    KEY             `idx_ts` (`ts`)
-) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Token Statistics table';
-
--- Tool Call Log table
-CREATE TABLE IF NOT EXISTS `tool_call_log`
-(
-    `id`         bigint NOT NULL AUTO_INCREMENT COMMENT 'Log ID',
-    `agent_id`   bigint       DEFAULT NULL COMMENT 'Agent ID',
-    `session_id` varchar(255) DEFAULT NULL COMMENT 'Session ID',
-    `tool_name`  varchar(255) DEFAULT NULL,
-    `args`       text COMMENT 'Tool arguments (JSON format)',
-    `result`     text,
-    `success`    tinyint(1) DEFAULT '1' COMMENT 'Execution result (1: Success, 0: Failed)',
-    `start_time` datetime     DEFAULT NULL,
-    `end_time`   datetime     DEFAULT NULL,
-    `duration`   bigint       DEFAULT '0',
-    `ts`         datetime     DEFAULT NULL,
-    PRIMARY KEY (`id`),
-    KEY          `idx_agent_id` (`agent_id`),
-    KEY          `idx_session_id` (`session_id`),
-    KEY          `idx_tool_name` (`tool_name`),
-    KEY          `idx_ts` (`ts`)
-) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Tool Call Log table';
-
--- ============================================
--- Channel Table
--- ============================================
-
-CREATE TABLE IF NOT EXISTS `channel` (
-    `id`                 BIGINT(20)   NOT NULL AUTO_INCREMENT                       COMMENT 'ID',
-    `tenant_id`          BIGINT(20)   NOT NULL DEFAULT 1                             COMMENT 'Tenant ID',
-    `name`               VARCHAR(100) NOT NULL                                       COMMENT 'Channel name',
-    `type`               VARCHAR(20)  NOT NULL                                       COMMENT 'Channel type: wecom/wechat/feishu/dingtalk/http',
-    `agent_id`           BIGINT(20)   NOT NULL                                       COMMENT 'Associated Agent ID',
-    `callback_key`       VARCHAR(100) NOT NULL                                       COMMENT 'Callback key (for generating callback URL)',
-    `session_id`         VARCHAR(64)  NOT NULL                                       COMMENT 'Immutable session ID (UUID), generated on creation',
-    `communication_mode` VARCHAR(20)  NOT NULL DEFAULT 'webhook'                     COMMENT 'Communication mode: webhook/websocket/long_polling',
-    `permission_mode`    VARCHAR(20)  NOT NULL DEFAULT 'DEFAULT'                     COMMENT 'Permission mode (DEFAULT/ACCEPT_EDITS/EXPLORE/BYPASS/DONT_ASK)',
-    `enabled`            TINYINT(1)   NOT NULL DEFAULT 1                             COMMENT 'Auto-start with service (0: No, 1: Yes)',
-    `config_json`        TEXT         DEFAULT NULL                                   COMMENT 'Channel-specific configuration JSON',
-    `description`        TEXT         DEFAULT NULL                                   COMMENT 'Description',
-    `creator`            VARCHAR(100) NOT NULL DEFAULT 'system'                      COMMENT 'Creator',
-    `status`             TINYINT(1)   NOT NULL DEFAULT 1                             COMMENT 'Enabled (0: Disabled, 1: Enabled)',
-    `active`             TINYINT(1)   NOT NULL DEFAULT 1                             COMMENT 'Logical delete (0: Deleted, 1: Active)',
-    `create_time`        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP             COMMENT 'Creation time',
-    `update_time`        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
-    PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_callback_key` (`callback_key`),
-    KEY `idx_agent_id` (`agent_id`),
-    KEY `idx_type_enabled_status_active` (`type`, `enabled`, `status`, `active`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Channel configuration table';
-
--- ============================================
--- API Key Table
--- ============================================
-
-CREATE TABLE IF NOT EXISTS `api_key` (
-    `id`                BIGINT AUTO_INCREMENT PRIMARY KEY,
-    `name`              VARCHAR(128) NOT NULL COMMENT 'API Key name',
-    `key_type`          VARCHAR(16)  NOT NULL DEFAULT 'TEMPORARY' COMMENT 'Key type: PERMANENT, TEMPORARY or SYSTEM',
-    `user_id`           BIGINT       NULL COMMENT 'Associated user ID (for PERMANENT keys)',
-    `raw_key_encrypted` VARCHAR(256) NULL COMMENT 'AES-encrypted raw key (for PERMANENT/SYSTEM keys only)',
-    `service_name`      VARCHAR(64)  NULL COMMENT 'Service name (for SYSTEM keys, e.g. channel-service)',
-    `key_hash`          VARCHAR(64)  NOT NULL UNIQUE COMMENT 'SHA-256 hash of the raw key',
-    `key_prefix`        VARCHAR(32)  NOT NULL COMMENT 'Key prefix for display (e.g. hnx_sk_live_xxxx)',
-    `scopes`            VARCHAR(512) NOT NULL COMMENT 'Comma-separated scopes (e.g. api:chat,api:session)',
-    `tenant_id`         BIGINT       NULL COMMENT 'Tenant ID',
-    `rate_limit`        INT          NULL DEFAULT 60 COMMENT 'Rate limit per minute',
-    `enabled`           TINYINT(1)   NOT NULL DEFAULT 1 COMMENT 'Whether enabled (0:disabled, 1:enabled)',
-    `expires_at`        DATETIME     NULL COMMENT 'Expiration time',
-    `creator`           VARCHAR(64)  NULL COMMENT 'Creator',
-    `active`            INT          NOT NULL DEFAULT 1 COMMENT 'Active status (0:deleted, 1:active)',
-    `create_time`       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `update_time`       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX `idx_name` (`name`),
-    INDEX `idx_key_hash` (`key_hash`),
-    INDEX `idx_enabled` (`enabled`),
-    INDEX `idx_key_type` (`key_type`),
-    INDEX `idx_user_id` (`user_id`),
-    INDEX `idx_service_name` (`service_name`),
-    UNIQUE INDEX `uk_user_permanent` (`user_id`, `key_type`),
-    UNIQUE INDEX `uk_service_system` (`service_name`, `key_type`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='API Key table (supports PERMANENT / TEMPORARY / SYSTEM types)';
-
--- ============================================
--- Agent Tool Table
--- ============================================
-
+-- Harnax admin schema baseline
+--
+-- Consolidated from the V1~V50 migration history. Derived mechanically: the 50 scripts were
+-- replayed in version order into an empty schema on MySQL 8.0 and the resulting DDL was taken
+-- with mysqldump --no-data, so this file is the exact net schema of that history, not a rewrite.
+--
+-- What the incremental history had accumulated and this file drops:
+-- - The hand-entered CLI plugin model (V10/V11 tables and seed) replaced by package registration
+--   in V35, which DROPs cli_plugin, agent_cli_plugin_binding and cli_skill_binding.
+-- - The seeded `harnax-cli` skill row (V12, content rewritten by V14) retired by V37. Its host
+--   repository row is kept below, since BuiltinRepository.CLI_SKILLS still identifies it by name.
+-- - The agent task domain tables V1 created and V39 dropped once that domain moved to
+--   harnax-scheduler.
+-- - Column-level backfills (V22/V24/V44/V47/V49/V50) and the unique-key hardening that came with
+--   them; on an empty schema those are no-ops, and their DDL is folded into the table definitions.
+--
+-- Applying this file assumes an empty schema. It is not a rewrite of an applied migration: the
+-- environments that had run V1~V50 are rebuilt rather than carried forward.
+/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+/*!40103 SET TIME_ZONE='+00:00' */;
+/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `agent` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Agent ID',
+  `tenant_id` bigint NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
+  `name` varchar(100) NOT NULL,
+  `description` text,
+  `system_prompt` text COMMENT 'System prompt (Markdown format)',
+  `model_id` bigint DEFAULT NULL COMMENT 'Model ID',
+  `owner` varchar(100) DEFAULT NULL,
+  `status` tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
+  `is_public` tinyint DEFAULT '0' COMMENT 'Public visibility (0: Private, 1: Public)',
+  `creator` varchar(100) DEFAULT NULL,
+  `active` tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `active_name` varchar(100) GENERATED ALWAYS AS (if((`active` = 1),`name`,NULL)) VIRTUAL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_agent_tenant_active_name` (`tenant_id`,`active_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Agent table';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `agent_cli_binding` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `agent_id` bigint NOT NULL,
+  `cli_id` bigint NOT NULL,
+  `env_bindings` text COMMENT 'JSON array of env binding snapshots',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_agent_cli_binding_agent_id_cli_id` (`agent_id`,`cli_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `agent_mcp_binding` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `agent_id` bigint NOT NULL,
+  `mcp_id` bigint NOT NULL,
+  `env_bindings` text COMMENT 'JSON array of env binding snapshots',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_agent_mcp_binding_agent_id_mcp_id` (`agent_id`,`mcp_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `agent_skill_binding` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `agent_id` bigint NOT NULL,
+  `skill_id` bigint NOT NULL,
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_agent_skill_binding_agent_id_skill_id` (`agent_id`,`skill_id`),
+  KEY `idx_agent_skill_binding_skill_id` (`skill_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE IF NOT EXISTS `agent_tool` (
-    `id`                  bigint       NOT NULL AUTO_INCREMENT COMMENT 'Tool ID',
-    `tenant_id`           bigint       NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
-    `name`                varchar(100) NOT NULL COMMENT 'Tool identifier name (snake_case, unique per tenant)',
-    `display_name`        varchar(200)          DEFAULT NULL COMMENT 'Display name',
-    `description`         text COMMENT 'Tool description (sent to LLM)',
-    `type`                varchar(20)  NOT NULL COMMENT 'Tool type: BUILTIN / CUSTOM / HTTP',
-    `bean_name`           varchar(200)          DEFAULT NULL COMMENT 'Spring Bean name (for BUILTIN/CUSTOM type)',
-    `http_url`            varchar(500)          DEFAULT NULL COMMENT 'HTTP request URL (for HTTP type)',
-    `http_method`         varchar(10)           DEFAULT 'POST' COMMENT 'HTTP method (for HTTP type)',
-    `http_headers`        text COMMENT 'HTTP headers JSON (for HTTP type)',
-    `envs`                text COMMENT 'Environment variables JSON: [{"key":"API_KEY","value":"sk-xxx","secret":true}]',
-    `required_env_keys`   varchar(1000)         DEFAULT NULL COMMENT 'Required env variable key list, JSON array: ["API_KEY","SECRET"]',
-    `input_schema`        text COMMENT 'Input parameter JSON Schema (for HTTP type)',
-    `output_schema`       text COMMENT 'Output result JSON Schema (for HTTP type)',
-    `read_only`           tinyint(1)            DEFAULT '0' COMMENT 'Is read-only tool (0: No, 1: Yes)',
-    `need_confirm`        tinyint(1)            DEFAULT '0' COMMENT 'Requires human confirmation (0: No, 1: Yes)',
-    `timeout_seconds`     int                   DEFAULT '30' COMMENT 'Timeout in seconds',
-    `status`              tinyint(1)            DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
-    `is_public`           tinyint(1)            DEFAULT '1' COMMENT 'Public visibility (0: Private, 1: Public)',
-    `creator`             varchar(100)          DEFAULT NULL COMMENT 'Creator',
-    `active`              tinyint(1)            DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
-    `create_time`         datetime              DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
-    `update_time`         datetime              DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
-    PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_tenant_name` (`tenant_id`, `name`, `active`),
-    KEY `idx_tenant_id` (`tenant_id`)
-) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Agent Tool definition table';
-
--- ============================================
--- Environment Variable Table
--- ============================================
-
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Tool ID',
+  `name` varchar(100) NOT NULL COMMENT 'Tool identifier name (snake_case, unique across the platform)',
+  `display_name` varchar(200) DEFAULT NULL COMMENT 'Display name',
+  `display_name_zh` varchar(200) DEFAULT NULL COMMENT 'Display name (Chinese, for i18n zh-CN locale)',
+  `description` text COMMENT 'Tool description (sent to LLM)',
+  `bean_name` varchar(200) DEFAULT NULL COMMENT 'Spring Bean name of the builtin tool',
+  `method_name` varchar(100) DEFAULT NULL COMMENT 'Java method name (one record per @Tool method)',
+  `required_env_param_keys` varchar(1000) DEFAULT NULL COMMENT 'Required environment parameter keys, JSON array',
+  `read_only` tinyint(1) DEFAULT '0' COMMENT 'Is read-only tool (0: No, 1: Yes)',
+  `need_confirm` tinyint(1) DEFAULT '0' COMMENT 'Requires human confirmation (0: No, 1: Yes)',
+  `is_required` tinyint NOT NULL DEFAULT '0' COMMENT 'Is mandatory tool (0: optional, 1: required)',
+  `status` tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
+  `creator` varchar(100) DEFAULT NULL COMMENT 'Creator',
+  `active` tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_agent_tool_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Agent Tool definition table';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `agent_tool_binding` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `agent_id` bigint NOT NULL,
+  `tool_id` bigint NOT NULL,
+  `need_confirm` tinyint DEFAULT '0',
+  `env_bindings` text COMMENT 'JSON array of env binding snapshots',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_agent_tool_binding_agent_id_tool_id` (`agent_id`,`tool_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `agent_tool_env_param` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Env entry ID',
+  `tool_id` bigint NOT NULL COMMENT 'FK to agent_tool.id',
+  `env_param_name` varchar(200) NOT NULL COMMENT 'Environment parameter name',
+  `description` varchar(500) DEFAULT NULL COMMENT 'Human-readable description shown in Admin UI',
+  `required` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Is required (0: No, 1: Yes)',
+  `secret` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Is sensitive (0: No, 1: Yes, encrypted storage)',
+  `default_value` text COMMENT 'Default value (required when required=1)',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_tool_env_param_name` (`tool_id`,`env_param_name`),
+  KEY `idx_tool_id` (`tool_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Agent Tool environment variable definitions';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `api_key` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `name` varchar(128) NOT NULL COMMENT 'API Key name',
+  `key_type` varchar(16) NOT NULL DEFAULT 'TEMPORARY' COMMENT 'Key type: PERMANENT, TEMPORARY or SYSTEM',
+  `user_id` bigint DEFAULT NULL COMMENT 'Associated user ID (for PERMANENT keys)',
+  `raw_key_encrypted` varchar(256) DEFAULT NULL COMMENT 'AES-encrypted raw key (for PERMANENT/SYSTEM keys only)',
+  `service_name` varchar(64) DEFAULT NULL COMMENT 'Service name (for SYSTEM keys, e.g. channel-service)',
+  `key_hash` varchar(64) NOT NULL COMMENT 'SHA-256 hash of the raw key',
+  `key_prefix` varchar(32) NOT NULL COMMENT 'Key prefix for display (e.g. hnx_sk_live_xxxx)',
+  `scopes` varchar(512) NOT NULL COMMENT 'Comma-separated scopes (e.g. api:chat,api:session)',
+  `tenant_id` bigint DEFAULT NULL COMMENT 'Tenant ID',
+  `rate_limit` int DEFAULT '60' COMMENT 'Rate limit per minute',
+  `enabled` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Whether enabled (0:disabled, 1:enabled)',
+  `expires_at` datetime DEFAULT NULL COMMENT 'Expiration time',
+  `creator` varchar(64) DEFAULT NULL COMMENT 'Creator',
+  `active` int NOT NULL DEFAULT '1' COMMENT 'Active status (0:deleted, 1:active)',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `key_hash` (`key_hash`),
+  UNIQUE KEY `uk_user_permanent` (`user_id`,`key_type`),
+  UNIQUE KEY `uk_service_system` (`service_name`,`key_type`),
+  KEY `idx_name` (`name`),
+  KEY `idx_key_hash` (`key_hash`),
+  KEY `idx_enabled` (`enabled`),
+  KEY `idx_key_type` (`key_type`),
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_service_name` (`service_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='API Key table (supports PERMANENT / TEMPORARY / SYSTEM types)';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `channel` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'ID',
+  `tenant_id` bigint NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
+  `name` varchar(100) NOT NULL COMMENT 'Channel name',
+  `type` varchar(20) NOT NULL COMMENT 'Channel type: wecom/wechat/feishu/dingtalk/http',
+  `agent_id` bigint NOT NULL COMMENT 'Associated Agent ID',
+  `callback_key` varchar(100) NOT NULL COMMENT 'Callback key (for generating callback URL)',
+  `session_id` varchar(64) NOT NULL COMMENT 'Immutable session ID (UUID), generated on creation',
+  `communication_mode` varchar(20) NOT NULL DEFAULT 'webhook' COMMENT 'Communication mode: webhook/websocket/long_polling',
+  `permission_mode` varchar(20) NOT NULL DEFAULT 'DEFAULT' COMMENT 'Permission mode (DEFAULT/ACCEPT_EDITS/EXPLORE/BYPASS/DONT_ASK)',
+  `enabled` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Auto-start with service (0: No, 1: Yes)',
+  `config_json` text COMMENT 'Channel-specific configuration JSON',
+  `description` text COMMENT 'Description',
+  `creator` varchar(100) NOT NULL DEFAULT 'system' COMMENT 'Creator',
+  `status` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Enabled (0: Disabled, 1: Enabled)',
+  `active` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Logical delete (0: Deleted, 1: Active)',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
+  `enable_think` tinyint NOT NULL DEFAULT '0' COMMENT 'Enable thinking mode (0:no, 1:yes)',
+  `enable_search` tinyint NOT NULL DEFAULT '0' COMMENT 'Enable web search (0:no, 1:yes)',
+  `enable_plan` tinyint NOT NULL DEFAULT '0' COMMENT 'Enable plan mode (0:no, 1:yes)',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_callback_key` (`callback_key`),
+  KEY `idx_agent_id` (`agent_id`),
+  KEY `idx_type_enabled_status_active` (`type`,`enabled`,`status`,`active`),
+  KEY `idx_session_id` (`session_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Channel configuration table';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `cli` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `name` varchar(128) NOT NULL COMMENT 'CLI name, e.g. kubectl',
+  `description` varchar(512) DEFAULT '' COMMENT 'CLI description',
+  `version` varchar(64) DEFAULT '' COMMENT 'CLI version, e.g. 1.30.0',
+  `check_command` varchar(512) DEFAULT '' COMMENT 'Command to verify installation',
+  `skill_id` bigint DEFAULT NULL COMMENT 'FK to skill.id: the SKILL.md shipped inside the package',
+  `env_params` text COMMENT 'Environment variable declarations (JSON)',
+  `status` tinyint DEFAULT '1' COMMENT '0:disabled, 1:enabled',
+  `active` tinyint DEFAULT '1' COMMENT '0:deleted, 1:active',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `package_digest` char(64) NOT NULL DEFAULT '' COMMENT 'sha256 of the whole package zip: package identity, MinIO object key, re-registration test',
+  `payload_digest` char(64) NOT NULL DEFAULT '' COMMENT 'Canonical sha256 of payload/ plus deps: the sandbox image fingerprint. Deliberately not package_digest — editing only SKILL.md must not rebuild live containers',
+  `package_object` varchar(256) NOT NULL DEFAULT '' COMMENT 'MinIO object key of the package',
+  `deps_apt` varchar(512) DEFAULT NULL COMMENT 'apt packages installed alongside the payload (JSON array)',
+  `runtime_env` varchar(1024) DEFAULT NULL COMMENT 'Env slots the platform injects at container creation, JSON object of name to literal value or platform slot (e.g. HARNAX_URL -> platform.adminUrl)',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_cli_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE IF NOT EXISTS `env_variable` (
-    `id`          bigint       NOT NULL AUTO_INCREMENT COMMENT 'ID',
-    `tenant_id`   bigint       NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
-    `env_key`     varchar(200) NOT NULL COMMENT 'Environment variable key',
-    `env_value`   text         NOT NULL COMMENT 'Environment variable value',
-    `description` varchar(500) DEFAULT NULL COMMENT 'Description',
-    `sensitive`   tinyint(1)   DEFAULT '0' COMMENT 'Sensitive flag (0: No, 1: Yes)',
-    `enabled`     TINYINT(1)   NOT NULL DEFAULT 1 COMMENT 'Enabled status (0: Disabled, 1: Enabled)',
-    `creator`     varchar(100) DEFAULT NULL COMMENT 'Creator',
-    `active`      tinyint(1)   DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
-    `create_time` datetime     DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
-    `update_time` datetime     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
-    PRIMARY KEY (`id`),
-    KEY `idx_tenant_id` (`tenant_id`),
-    KEY `idx_creator` (`creator`),
-    KEY `idx_enabled` (`enabled`),
-    UNIQUE KEY `uk_tenant_key_active` (`tenant_id`, `env_key`, `active`)
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'ID',
+  `tenant_id` bigint NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
+  `env_key` varchar(200) NOT NULL COMMENT 'Environment variable key',
+  `env_value` text NOT NULL COMMENT 'Environment variable value',
+  `description` varchar(500) DEFAULT NULL COMMENT 'Description',
+  `sensitive` tinyint(1) DEFAULT '0' COMMENT 'Sensitive flag (0: No, 1: Yes)',
+  `enabled` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Enabled status (0: Disabled, 1: Enabled)',
+  `creator` varchar(100) DEFAULT NULL COMMENT 'Creator',
+  `active` tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
+  `active_env_key` varchar(200) GENERATED ALWAYS AS (if((`active` = 1),`env_key`,NULL)) VIRTUAL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_env_tenant_creator_active_key` (`tenant_id`,`creator`,`active_env_key`),
+  KEY `idx_creator` (`creator`),
+  KEY `idx_enabled` (`enabled`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Environment Variable';
-
--- ============================================
--- Mobile Platform Tables
--- ============================================
-
--- Mobile session table
-CREATE TABLE IF NOT EXISTS `mp_session` (
-    `id`                BIGINT          NOT NULL AUTO_INCREMENT  COMMENT 'ID',
-    `user_id`           BIGINT          NOT NULL                 COMMENT 'User ID (FK to sys_user)',
-    `session_name`      VARCHAR(255)    NOT NULL DEFAULT ''      COMMENT 'Session name',
-    `router_session_id` VARCHAR(128)    NOT NULL DEFAULT ''      COMMENT 'Corresponding router session ID',
-    `agent_id`          BIGINT          NOT NULL DEFAULT 0       COMMENT 'Associated Agent ID',
-    `status`            TINYINT         NOT NULL DEFAULT 1       COMMENT 'Status (0:archived, 1:active)',
-    `create_time`       DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
-    `update_time`       DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
-    PRIMARY KEY (`id`),
-    INDEX `idx_mp_session_user_id` (`user_id`),
-    INDEX `idx_mp_session_status` (`status`),
-    INDEX `idx_mp_session_agent_id` (`agent_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Mobile chat sessions';
-
--- Mobile chat message table
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `mcp_call_log` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `tenant_id` bigint NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
+  `user_id` bigint DEFAULT NULL COMMENT 'sys_user.id; NULL when the session owner could not be resolved',
+  `mcp_id` bigint NOT NULL COMMENT 'mcp_server.id',
+  `session_id` varchar(255) DEFAULT NULL COMMENT 'Runtime session the call came from',
+  `tool_name` varchar(255) DEFAULT NULL COMMENT 'Tool name for call-level audit; NULL for token issuance',
+  `action` varchar(20) NOT NULL DEFAULT 'ISSUE' COMMENT 'ISSUE/REFRESH/REVOKE/CALL',
+  `outcome` varchar(20) NOT NULL COMMENT 'OK/AUTH_FAILED/NEEDS_CONSENT/ERROR',
+  `latency_ms` bigint DEFAULT '0',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_mcp_call_log_tenant_mcp_time` (`tenant_id`,`mcp_id`,`create_time`),
+  KEY `idx_mcp_call_log_session` (`session_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='MCP authorization and call audit';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `mcp_oauth_client` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `tenant_id` bigint NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
+  `issuer` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL COMMENT 'Authorization server issuer, exact string from metadata',
+  `client_id` varchar(255) NOT NULL COMMENT 'client_id from manual registration, DCR, or client ID metadata document',
+  `client_secret_enc` text COMMENT 'AES ciphertext; NULL for public clients (PKCE only)',
+  `registration_source` varchar(20) NOT NULL DEFAULT 'MANUAL' COMMENT 'MANUAL/DCR/ID_METADATA',
+  `authorization_endpoint` varchar(500) DEFAULT NULL COMMENT 'Discovery snapshot',
+  `token_endpoint` varchar(500) DEFAULT NULL COMMENT 'Discovery snapshot',
+  `registration_endpoint` varchar(500) DEFAULT NULL COMMENT 'Discovery snapshot; NULL means no DCR support',
+  `revocation_endpoint` varchar(500) DEFAULT NULL COMMENT 'Discovery snapshot; NULL means revoke locally only (RFC 7009 not supported)',
+  `scopes_supported` text COMMENT 'Discovery snapshot, comma-separated',
+  `callback_url` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL COMMENT 'Exact redirect_uri registered at the AS; no prefix matching',
+  `creator` varchar(100) DEFAULT '',
+  `active` tinyint NOT NULL DEFAULT '1' COMMENT '0:deleted, 1:active',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `active_client_id` varchar(255) GENERATED ALWAYS AS (if((`active` = 1),`client_id`,NULL)) VIRTUAL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_mcp_oauth_client_tenant_issuer_client` (`tenant_id`,`issuer`,`active_client_id`),
+  KEY `idx_mcp_oauth_client_tenant_issuer` (`tenant_id`,`issuer`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='OAuth client registration per tenant and authorization server';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `mcp_server` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'MCP Server ID',
+  `tenant_id` bigint NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
+  `name` varchar(100) NOT NULL COMMENT 'MCP Server name',
+  `description` text COMMENT 'MCP Server description',
+  `type` varchar(20) NOT NULL COMMENT 'MCP type (stdio/sse/streamablehttp)',
+  `command` varchar(500) DEFAULT NULL COMMENT 'Command (for stdio type)',
+  `url` varchar(500) DEFAULT NULL COMMENT 'URL (for sse/streamablehttp type)',
+  `auth_type` varchar(20) NOT NULL DEFAULT 'NONE' COMMENT 'Upstream auth method: NONE/STATIC_HEADER/BASIC/OAUTH2',
+  `oauth_config` text COMMENT 'Non-sensitive OAuth config JSON (no client credentials, no tokens)',
+  `headers` text COMMENT 'HTTP headers JSON: [{"key":"Authorization","value":"Bearer xxx","secret":true}]',
+  `env_params` text COMMENT 'Environment parameters JSON',
+  `status` tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
+  `is_public` tinyint DEFAULT '1' COMMENT 'Public visibility (0: Private, 1: Public)',
+  `creator` varchar(100) DEFAULT NULL,
+  `active` tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `active_name` varchar(100) GENERATED ALWAYS AS (if((`active` = 1),`name`,NULL)) VIRTUAL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_mcp_server_tenant_active_name` (`tenant_id`,`active_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='MCP Server table';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `mcp_user_credential` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `tenant_id` bigint NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
+  `user_id` bigint NOT NULL COMMENT 'sys_user.id',
+  `mcp_id` bigint NOT NULL COMMENT 'mcp_server.id',
+  `access_token_enc` text COMMENT 'AES ciphertext; cleared on revoke',
+  `refresh_token_enc` text COMMENT 'AES ciphertext; never leaves the admin process',
+  `access_expires_at` datetime DEFAULT NULL COMMENT 'Expiry of the stored access token; past due is treated as missing',
+  `scopes` varchar(512) DEFAULT NULL COMMENT 'Scopes actually granted, which may be narrower than requested',
+  `status` varchar(20) NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE/NEEDS_CONSENT/REVOKED',
+  `last_error` varchar(512) DEFAULT NULL COMMENT 'Redacted failure reason; must never contain a token fragment',
+  `last_refreshed_at` datetime DEFAULT NULL,
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_mcp_user_credential_tenant_user_mcp` (`tenant_id`,`user_id`,`mcp_id`),
+  KEY `idx_mcp_user_credential_mcp` (`mcp_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Per-user OAuth grant for an MCP server';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `model` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Model ID',
+  `tenant_id` bigint NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
+  `name` varchar(100) NOT NULL COMMENT 'Model name',
+  `model_name` varchar(100) NOT NULL COMMENT 'Model identifier',
+  `provider_id` bigint NOT NULL COMMENT 'Model Provider ID',
+  `description` text COMMENT 'Model description',
+  `model_type` varchar(20) NOT NULL COMMENT 'Model type (chat/embedding)',
+  `support_internet` tinyint(1) DEFAULT '0' COMMENT 'Support internet search (0: No, 1: Yes)',
+  `support_reasoning` tinyint(1) DEFAULT '0' COMMENT 'Support reasoning (0: No, 1: Yes)',
+  `thinking_mode` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Thinking mode (0:not supported, 1:optional, 2:required)',
+  `support_tool` tinyint(1) DEFAULT '0' COMMENT 'Support tools (0: No, 1: Yes)',
+  `support_mcp` tinyint(1) DEFAULT '0' COMMENT 'Support MCP (0: No, 1: Yes)',
+  `support_vision` tinyint(1) DEFAULT '0' COMMENT 'Support vision (0: No, 1: Yes)',
+  `price` decimal(10,4) DEFAULT '0.0000' COMMENT 'Price (CNY per million tokens)',
+  `status` tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
+  `is_public` tinyint(1) DEFAULT '1' COMMENT 'Public visibility (0: Private, 1: Public)',
+  `creator` varchar(100) DEFAULT NULL COMMENT 'Creator',
+  `active` tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
+  PRIMARY KEY (`id`),
+  KEY `idx_provider_id` (`provider_id`),
+  KEY `idx_tenant_id` (`tenant_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Model table';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `model_provider` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Provider ID',
+  `tenant_id` bigint NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
+  `type` varchar(50) NOT NULL COMMENT 'Provider type (dashscope/openai/ollama)',
+  `name` varchar(100) NOT NULL COMMENT 'Display name',
+  `description` varchar(500) DEFAULT NULL COMMENT 'Provider description',
+  `api_key` varchar(500) DEFAULT NULL COMMENT 'API key',
+  `base_url` varchar(500) DEFAULT NULL COMMENT 'API base URL',
+  `status` tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
+  `is_public` tinyint(1) DEFAULT '1' COMMENT 'Public visibility (0: Private, 1: Public)',
+  `creator` varchar(100) NOT NULL COMMENT 'Creator',
+  `active` tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
+  PRIMARY KEY (`id`),
+  KEY `idx_tenant_id` (`tenant_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Model Provider table';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE IF NOT EXISTS `mp_chat_message` (
-    `id`               BIGINT       NOT NULL AUTO_INCREMENT  COMMENT 'ID',
-    `session_id`       BIGINT       NOT NULL                 COMMENT 'Session ID (FK to mp_session)',
-    `role`             VARCHAR(32)  NOT NULL DEFAULT 'user'  COMMENT 'Message role (user/assistant/system)',
-    `content`          MEDIUMTEXT                            COMMENT 'Plain text content',
-    `segments_json`    MEDIUMTEXT                            COMMENT 'Message segments (JSON array)',
-    `token_usage_json` TEXT                                  COMMENT 'Token usage info (JSON object)',
-    `image_urls_json`  TEXT                                  COMMENT 'Image URLs (JSON array)',
-    `create_time`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
-    PRIMARY KEY (`id`),
-    INDEX `idx_mp_chat_message_session_id` (`session_id`)
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'ID',
+  `session_id` bigint NOT NULL COMMENT 'Session ID (FK to mp_session)',
+  `role` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'user' COMMENT 'Message role (user/assistant/system)',
+  `content` mediumtext COLLATE utf8mb4_unicode_ci COMMENT 'Plain text content',
+  `segments_json` mediumtext COLLATE utf8mb4_unicode_ci COMMENT 'Message segments (JSON array)',
+  `token_usage_json` text COLLATE utf8mb4_unicode_ci COMMENT 'Token usage info (JSON object)',
+  `image_urls_json` text COLLATE utf8mb4_unicode_ci COMMENT 'Image URLs (JSON array)',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
+  PRIMARY KEY (`id`),
+  KEY `idx_mp_chat_message_session_id` (`session_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Mobile chat messages';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `mp_session` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'ID',
+  `user_id` bigint NOT NULL COMMENT 'User ID (FK to sys_user)',
+  `session_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Session name',
+  `router_session_id` varchar(128) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'Corresponding router session ID',
+  `agent_id` bigint NOT NULL DEFAULT '0' COMMENT 'Associated Agent ID',
+  `status` tinyint NOT NULL DEFAULT '1' COMMENT 'Status (0:archived, 1:active)',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
+  PRIMARY KEY (`id`),
+  KEY `idx_mp_session_user_id` (`user_id`),
+  KEY `idx_mp_session_status` (`status`),
+  KEY `idx_mp_session_agent_id` (`agent_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Mobile chat sessions';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `plan_note` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Plan ID',
+  `session_id` varchar(128) NOT NULL COMMENT 'Session ID',
+  `plan_id` varchar(128) NOT NULL COMMENT 'Plan identifier',
+  `name` varchar(256) NOT NULL COMMENT 'Plan name',
+  `description` text COMMENT 'Plan description',
+  `expected_outcome` text COMMENT 'Expected outcome',
+  `subtasks` text COMMENT 'Subtasks list (JSON format)',
+  `created_at` varchar(64) DEFAULT NULL COMMENT 'Creation timestamp',
+  `finished_at` varchar(64) DEFAULT NULL COMMENT 'Completion timestamp',
+  `cost_timeseconds` bigint DEFAULT '0' COMMENT 'Execution time (seconds)',
+  `status` varchar(32) DEFAULT 'TODO' COMMENT 'Status (TODO, IN_PROGRESS, DONE, ABANDONED)',
+  PRIMARY KEY (`id`),
+  KEY `idx_session_id` (`session_id`),
+  KEY `idx_plan_id` (`plan_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Plan Note table';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `process_log` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Log ID',
+  `agent_id` bigint DEFAULT NULL COMMENT 'Agent ID',
+  `agent_name` varchar(255) DEFAULT NULL COMMENT 'Agent name',
+  `session_id` varchar(255) DEFAULT NULL COMMENT 'Session ID',
+  `message` text COMMENT 'Log message',
+  `log_type` varchar(20) DEFAULT 'INFO' COMMENT 'Log type (INFO/WARN/ERROR)',
+  `stack_trace` text COMMENT 'Exception stack trace',
+  `ts` datetime DEFAULT NULL COMMENT 'Timestamp',
+  `tenant_id` bigint DEFAULT NULL COMMENT 'Tenant ID',
+  PRIMARY KEY (`id`),
+  KEY `idx_agent_id` (`agent_id`),
+  KEY `idx_session_id` (`session_id`),
+  KEY `idx_log_type` (`log_type`),
+  KEY `idx_ts` (`ts`),
+  KEY `idx_tenant_ts` (`tenant_id`,`ts`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Process Log table';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `session` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Session ID',
+  `tenant_id` bigint NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
+  `title` varchar(100) NOT NULL,
+  `session_description` text,
+  `session_id` varchar(100) NOT NULL COMMENT 'Unique session identifier',
+  `agent_id` bigint DEFAULT NULL COMMENT 'Agent ID',
+  `name` varchar(100) DEFAULT NULL,
+  `description` text,
+  `system_prompt` text COMMENT 'System prompt (Markdown format)',
+  `model_id` bigint DEFAULT NULL COMMENT 'Model ID',
+  `enable_think` tinyint(1) DEFAULT '0' COMMENT 'Enable deep thinking (0: No, 1: Yes)',
+  `enable_search` tinyint(1) DEFAULT '0' COMMENT 'Enable internet search (0: No, 1: Yes)',
+  `enable_plan` tinyint(1) DEFAULT '0' COMMENT 'Enable planning (0: No, 1: Yes)',
+  `permission_mode` varchar(20) NOT NULL DEFAULT 'DEFAULT' COMMENT 'Permission mode (DEFAULT/ACCEPT_EDITS/EXPLORE/BYPASS/DONT_ASK)',
+  `owner` varchar(100) DEFAULT NULL,
+  `status` tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
+  `is_public` tinyint(1) DEFAULT '0' COMMENT 'Public visibility (0: Private, 1: Public)',
+  `creator` varchar(100) DEFAULT NULL,
+  `active` tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `team_id` bigint DEFAULT NULL COMMENT 'Team ID when this session runs in team mode, NULL for an ordinary agent session',
+  PRIMARY KEY (`id`),
+  KEY `idx_creator` (`creator`),
+  KEY `idx_tenant_id` (`tenant_id`),
+  KEY `idx_team_id` (`team_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Session table';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `skill` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Skill ID',
+  `tenant_id` bigint NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
+  `name` varchar(100) NOT NULL,
+  `repository_id` bigint NOT NULL COMMENT 'Repository ID',
+  `description` text,
+  `skillmd` mediumtext COMMENT 'skill.md content',
+  `resources` mediumtext COMMENT 'Bundled resource files as JSON (path -> content)',
+  `version` varchar(100) DEFAULT NULL COMMENT 'Skill version',
+  `status` tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
+  `is_public` tinyint DEFAULT '0' COMMENT 'Public visibility (0: Private, 1: Public)',
+  `creator` varchar(100) DEFAULT NULL,
+  `active` tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `active_name` varchar(100) GENERATED ALWAYS AS (if((`active` = 1),`name`,NULL)) VIRTUAL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_skill_repo_active_name` (`repository_id`,`active_name`),
+  KEY `idx_tenant_id` (`tenant_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Skill table';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `skill_repository` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Repository ID',
+  `tenant_id` bigint NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
+  `name` varchar(100) NOT NULL,
+  `url` varchar(500) DEFAULT NULL,
+  `description` text,
+  `status` tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
+  `is_public` tinyint DEFAULT '0' COMMENT 'Public visibility (0: Private, 1: Public)',
+  `creator` varchar(100) DEFAULT NULL,
+  `active` tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `branch` varchar(100) DEFAULT 'main',
+  `source_type` varchar(20) NOT NULL DEFAULT 'GIT' COMMENT 'Source type: GIT / NPM / ZIP',
+  `source_config` text COMMENT 'Source configuration JSON',
+  `version` varchar(100) DEFAULT NULL COMMENT 'Version identifier',
+  `active_name` varchar(100) GENERATED ALWAYS AS (if((`active` = 1),`name`,NULL)) VIRTUAL,
+  `builtin_guard` tinyint GENERATED ALWAYS AS (if(((`active` = 1) and (`name` = _utf8mb4'builtin-cli-skills')),1,NULL)) VIRTUAL,
+  `last_sync_time` datetime DEFAULT NULL COMMENT 'When the last sync finished, NULL until the first run',
+  `last_sync_status` varchar(16) DEFAULT NULL COMMENT 'SUCCESS / PARTIAL / FAILED / EMPTY, NULL until the first run',
+  `last_sync_detail` mediumtext COMMENT 'Last sync report as JSON: saved/installed/updated/failed/flagged/error',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_skill_repository_tenant_active_name` (`tenant_id`,`active_name`),
+  UNIQUE KEY `uk_skill_repository_builtin_guard` (`builtin_guard`),
+  KEY `idx_tenant_id` (`tenant_id`),
+  KEY `idx_skill_repository_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Skill Repository table';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `sys_token_blacklist` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Blacklist ID',
+  `token` varchar(512) NOT NULL COMMENT 'JWT Token',
+  `token_hash` varchar(64) NOT NULL COMMENT 'Token hash (SHA256)',
+  `username` varchar(50) DEFAULT NULL,
+  `user_id` bigint DEFAULT NULL COMMENT 'User ID',
+  `reason` varchar(50) DEFAULT 'logout' COMMENT 'Blacklist reason (logout/revoke/ban/expired)',
+  `expire_time` datetime NOT NULL COMMENT 'Token expiration time',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `create_ip` varchar(50) DEFAULT NULL COMMENT 'Client IP address',
+  PRIMARY KEY (`id`),
+  KEY `idx_expire_time` (`expire_time`),
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_username` (`username`),
+  KEY `idx_token_lookup` (`token_hash`,`expire_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Token blacklist table';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `sys_user` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'User ID',
+  `tenant_id` bigint DEFAULT NULL COMMENT 'Tenant ID (primary tenant)',
+  `username` varchar(50) NOT NULL,
+  `password` varchar(100) NOT NULL,
+  `nickname` varchar(50) NOT NULL,
+  `email` varchar(100) NOT NULL,
+  `phone` varchar(20) NOT NULL,
+  `gender` tinyint DEFAULT '2' COMMENT 'Gender (0: Male, 1: Female, 2: Unknown)',
+  `avatar` varchar(255) DEFAULT '' COMMENT 'Avatar URL',
+  `status` tinyint DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
+  `is_admin` tinyint DEFAULT '0' COMMENT 'Is admin (0: No, 1: Yes)',
+  `active` tinyint DEFAULT '1' COMMENT 'Active status (0: Inactive, 1: Active)',
+  `last_login_time` datetime DEFAULT NULL COMMENT 'Last login time',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `active_username` varchar(50) GENERATED ALWAYS AS (if((`active` = 1),`username`,NULL)) VIRTUAL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_active_username` (`active_username`),
+  KEY `idx_tenant_id` (`tenant_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='User table';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `team` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Team ID',
+  `tenant_id` bigint NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
+  `name` varchar(100) NOT NULL COMMENT 'Team name',
+  `description` text COMMENT 'Team description',
+  `status` tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
+  `is_public` tinyint DEFAULT '0' COMMENT 'Public visibility (0: Private, 1: Public)',
+  `creator` varchar(100) DEFAULT NULL COMMENT 'Creator',
+  `active` tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `system_prompt` text NOT NULL COMMENT 'System prompt of the lead, team orchestration rules included',
+  `model_id` bigint NOT NULL COMMENT 'FK to model.id, the model the lead runs on',
+  PRIMARY KEY (`id`),
+  KEY `idx_tenant_id` (`tenant_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Multi-agent team table';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `team_artifact` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Artifact ID',
+  `file_id` varchar(64) NOT NULL COMMENT 'Opaque artifact reference (UUID), stable for the user and the lead',
+  `tenant_id` bigint NOT NULL DEFAULT '1' COMMENT 'Owning tenant',
+  `session_id` varchar(100) NOT NULL COMMENT 'Root team session this artifact belongs to',
+  `team_id` bigint NOT NULL COMMENT 'FK to team.id',
+  `member_agent_id` bigint NOT NULL COMMENT 'FK to agent.id — the member that produced it',
+  `child_session_id` varchar(100) NOT NULL COMMENT 'Member child session that produced it (its own state and sandbox scope)',
+  `file_name` varchar(255) NOT NULL COMMENT 'Original file name; may repeat across artifacts',
+  `mime_type` varchar(100) NOT NULL DEFAULT 'application/octet-stream' COMMENT 'MIME type',
+  `size_bytes` bigint NOT NULL DEFAULT '0' COMMENT 'Size in bytes',
+  `object_key` varchar(500) NOT NULL COMMENT 'Internal MinIO object key, never accepted from the model',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_file_id` (`file_id`),
+  KEY `idx_session_id` (`session_id`),
+  KEY `idx_tenant_id` (`tenant_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Team artifact handoff metadata table';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `team_member` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Member binding ID',
+  `team_id` bigint NOT NULL COMMENT 'FK to team.id',
+  `member_agent_id` bigint NOT NULL COMMENT 'FK to agent.id — the member agent',
+  `delegation_description` varchar(500) NOT NULL DEFAULT '' COMMENT 'What this member is responsible for in this team; defaults to the agent description, never written back to it',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_team_member` (`team_id`,`member_agent_id`),
+  KEY `idx_member_agent_id` (`member_agent_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Team member binding table';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `team_skill_binding` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Binding ID',
+  `team_id` bigint NOT NULL COMMENT 'FK to team.id',
+  `skill_id` bigint NOT NULL COMMENT 'FK to skill.id',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_team_skill_binding_team_id_skill_id` (`team_id`,`skill_id`),
+  KEY `idx_team_skill_binding_skill_id` (`skill_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Skills the lead of a team is given';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `tenant` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Tenant ID',
+  `name` varchar(100) NOT NULL COMMENT 'Tenant name',
+  `status` tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
+  `creator` varchar(100) NOT NULL COMMENT 'Creator',
+  `active` tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Tenant table';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `token_stats` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Stats ID',
+  `agent_id` bigint DEFAULT NULL COMMENT 'Agent ID',
+  `session_id` varchar(255) DEFAULT NULL COMMENT 'Session ID',
+  `chat_model_id` bigint DEFAULT NULL COMMENT 'Chat Model ID',
+  `input_token` bigint DEFAULT '0' COMMENT 'Input token count',
+  `output_token` bigint DEFAULT '0' COMMENT 'Output token count',
+  `total_token` bigint DEFAULT '0' COMMENT 'Total token count',
+  `ts` datetime DEFAULT NULL,
+  `fee` decimal(10,0) DEFAULT NULL,
+  `tenant_id` bigint DEFAULT NULL COMMENT 'Tenant ID',
+  PRIMARY KEY (`id`),
+  KEY `idx_agent_id` (`agent_id`),
+  KEY `idx_session_id` (`session_id`),
+  KEY `idx_chat_model_id` (`chat_model_id`),
+  KEY `idx_ts` (`ts`),
+  KEY `idx_tenant_ts` (`tenant_id`,`ts`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Token Statistics table';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `tool_call_log` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Log ID',
+  `agent_id` bigint DEFAULT NULL COMMENT 'Agent ID',
+  `session_id` varchar(255) DEFAULT NULL COMMENT 'Session ID',
+  `tool_name` varchar(255) DEFAULT NULL,
+  `args` text COMMENT 'Tool arguments (JSON format)',
+  `result` text,
+  `success` tinyint(1) DEFAULT '1' COMMENT 'Execution result (1: Success, 0: Failed)',
+  `start_time` datetime DEFAULT NULL,
+  `end_time` datetime DEFAULT NULL,
+  `duration` bigint DEFAULT '0',
+  `ts` datetime DEFAULT NULL,
+  `tenant_id` bigint DEFAULT NULL COMMENT 'Tenant ID',
+  PRIMARY KEY (`id`),
+  KEY `idx_agent_id` (`agent_id`),
+  KEY `idx_session_id` (`session_id`),
+  KEY `idx_tool_name` (`tool_name`),
+  KEY `idx_ts` (`ts`),
+  KEY `idx_tenant_ts` (`tenant_id`,`ts`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Tool Call Log table';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `user_tenant` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Relationship ID',
+  `user_id` bigint NOT NULL COMMENT 'User ID',
+  `tenant_id` bigint NOT NULL COMMENT 'Tenant ID',
+  `role` varchar(50) NOT NULL DEFAULT 'member' COMMENT 'Role (admin/member)',
+  `status` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
+  `joined_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Join time',
+  PRIMARY KEY (`id`),
+  KEY `idx_tenant_id` (`tenant_id`),
+  KEY `idx_user_id` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='User-Tenant relationship table';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
--- ============================================
--- Agent Task Tables
--- ============================================
+/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+/*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Agent Task - Scheduled agent execution
-CREATE TABLE IF NOT EXISTS `agent_task` (
-    `id`              BIGINT AUTO_INCREMENT PRIMARY KEY,
-    `tenant_id`       BIGINT DEFAULT 1,
-    `name`            VARCHAR(128) NOT NULL COMMENT 'Task name',
-    `agent_id`        BIGINT NOT NULL COMMENT 'Associated Agent ID',
-    `agent_name`      VARCHAR(128) COMMENT 'Agent name snapshot',
-    `prompt`          TEXT NOT NULL COMMENT 'Prompt content for scheduled execution',
-    `cron_expression` VARCHAR(128) NOT NULL COMMENT 'Cron expression',
-    `task_status`     TINYINT NOT NULL DEFAULT 0 COMMENT '0=paused, 1=running',
-    `concurrent`      TINYINT NOT NULL DEFAULT 0 COMMENT '0=no concurrent, 1=allow concurrent',
-    `timeout_seconds` INT DEFAULT 300 COMMENT 'Timeout in seconds, default 5 minutes',
-    `description`     VARCHAR(512) DEFAULT '' COMMENT 'Task description',
-    `is_public`       TINYINT DEFAULT 0,
-    `creator`         VARCHAR(64) DEFAULT '',
-    `active`          TINYINT DEFAULT 1,
-    `create_time`     DATETIME DEFAULT CURRENT_TIMESTAMP,
-    `update_time`     DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX `idx_tenant_id` (`tenant_id`),
-    INDEX `idx_agent_id` (`agent_id`),
-    UNIQUE KEY `uk_name` (`name`)
-) COMMENT='Agent scheduled tasks';
-
--- Agent Task execution log
-CREATE TABLE IF NOT EXISTS `agent_task_log` (
-    `id`              BIGINT AUTO_INCREMENT PRIMARY KEY,
-    `task_id`         BIGINT NOT NULL COMMENT 'Associated agent_task.id',
-    `task_name`       VARCHAR(128) COMMENT 'Task name',
-    `prompt`          TEXT COMMENT 'Prompt for this execution',
-    `response`        TEXT COMMENT 'Agent response content',
-    `session_id`      VARCHAR(64) COMMENT 'Temporary session ID',
-    `status`          TINYINT DEFAULT 1 COMMENT '0=failed, 1=success, 2=timeout',
-    `error_info`      TEXT COMMENT 'Exception information',
-    `token_usage`     VARCHAR(512) COMMENT 'Token usage JSON',
-    `start_time`      DATETIME COMMENT 'Start time',
-    `end_time`        DATETIME COMMENT 'End time',
-    `duration_ms`     BIGINT COMMENT 'Execution duration (milliseconds)',
-    `creator`         VARCHAR(64) DEFAULT '',
-    `create_time`     DATETIME DEFAULT CURRENT_TIMESTAMP,
-    INDEX `idx_task_id` (`task_id`),
-    INDEX `idx_status` (`status`),
-    INDEX `idx_create_time` (`create_time`)
-) COMMENT='Agent task execution log';
-
--- Agent task execution guard for multi-instance deployment
-CREATE TABLE IF NOT EXISTS `agent_task_execution` (
-    `id`              BIGINT AUTO_INCREMENT PRIMARY KEY,
-    `task_id`         BIGINT NOT NULL COMMENT 'Associated agent_task.id',
-    `trigger_time`    DATETIME NOT NULL COMMENT 'Trigger time (for deduplication)',
-    `instance_id`     VARCHAR(128) DEFAULT '' COMMENT 'Execution instance identifier',
-    `start_time`      DATETIME COMMENT 'Actual start time',
-    `end_time`        DATETIME COMMENT 'Execution end time',
-    `status`          TINYINT DEFAULT 0 COMMENT '0=running, 1=success, 2=failed',
-    `create_time`     DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY `uk_task_trigger` (`task_id`, `trigger_time`),
-    INDEX `idx_task_id` (`task_id`),
-    INDEX `idx_trigger_time` (`trigger_time`)
-) COMMENT='Agent task execution lock (multi-instance dedup)';
 
 -- ============================================
 -- Initial Data
@@ -552,3 +740,12 @@ VALUES (1, 'Default Organization', 1, 'system', 1, '2026-05-01 11:10:40', '2026-
 -- Admin user-tenant relationship
 INSERT IGNORE INTO `user_tenant` (`id`, `user_id`, `tenant_id`, `role`, `status`, `joined_at`)
 VALUES (1, 1, 1, 'admin', 1, '2026-05-01 11:10:42');
+
+-- Repository that owns the skills shipped inside CLI packages. Read-only through the management
+-- APIs, written by CliPackageAutoRegistrar. `source_type` = 'BUILTIN' is what keeps it off the remote-fetch
+-- path, and `builtin_guard` — a generated column carrying 1 only for an active row named exactly this, and
+-- unique among those — is what makes a second live copy of this row impossible.
+INSERT INTO `skill_repository` (`tenant_id`, `name`, `url`, `description`, `status`, `is_public`,
+                                `creator`, `active`, `branch`, `source_type`, `source_config`, `version`)
+SELECT 1, 'builtin-cli-skills', '', '内置 CLI 技能仓库（系统初始化创建，只读）', 1, 1, 'SYSTEM', 1, 'main', 'BUILTIN', '', '1.0.0'
+WHERE NOT EXISTS (SELECT 1 FROM `skill_repository` WHERE `name` = 'builtin-cli-skills');

@@ -8,8 +8,8 @@ import java.time.LocalDateTime
  * Agent-Skill binding entity.
  * Represents a skill association with an agent. There is no per-skill environment channel: unlike
  * [AgentToolBinding] and [AgentMcpBinding], whose `env_bindings` admin resolves into plaintext on
- * delivery, skills resolve none — so the reserved column was dropped (V36) rather than kept as a
- * promise nothing reads.
+ * delivery, skills resolve none — so there is no `env_bindings` column on this table rather than a
+ * reserved promise nothing reads.
  */
 @Schema(description = "Agent Skill Binding entity")
 class AgentSkillBinding : Serializable {

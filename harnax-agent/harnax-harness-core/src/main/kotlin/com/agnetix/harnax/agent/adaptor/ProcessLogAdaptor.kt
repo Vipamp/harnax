@@ -21,7 +21,7 @@ data class ProcessLog(
     val timestamp: Long,
 
     /**
-     * Tenant owning the run, from `AgentSpec.tenantId` — what `process_log.tenant_id` gets (V50). Null
+     * Tenant owning the run, from `AgentSpec.tenantId` — what `process_log.tenant_id` gets. Null
      * stores the line unattributed rather than guessing a workspace for it.
      */
     val tenantId: Long? = null,

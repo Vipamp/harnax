@@ -17,7 +17,7 @@
 
 ## 2. 授权数据模型
 
-迁移脚本在 `harnax-admin/src/main/resources/db/migration/`，本域用到的是 `V25__add_mcp_oauth_columns.sql`（`mcp_server` 的两列）与 `V26__add_mcp_oauth_tables.sql`（三张表）；除此之外还要看这个目录下编号最高的脚本，列集合以它给出的最终形态为准。这四张表的 DDL 在 `harnax-entity/src/test/resources/schema-test.sql` 里另有一份测试基线（`mcp_server`、`mcp_oauth_client`、`mcp_user_credential`、`mcp_call_log` 各一段），它和迁移脚本之间没有任何自动同步机制，两边的列定义要手工对齐；列集合以下按 admin 侧建表脚本的真实 DDL 列出。
+建表 DDL 在 admin 的 schema 基线 `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` 这一个脚本里：本域用到的四张表——`mcp_server`（`auth_type` 与 `oauth_config` 两列就在它的建表语句中）、`mcp_oauth_client`、`mcp_user_credential`、`mcp_call_log`——都由它一次写完，没有需要往上叠加的后续版本，列集合以它给出的形态为准。`harnax-entity/src/test/resources/schema-test.sql` 里另有一份 mapper 集成测试基线（这四张表各一段），它的建表段落正是 admin 这份基线的表定义块复制过去的，两边因此不会各写各的；admin 基线一改就重新生成那一段。生产初数据的 INSERT 刻意不进这份测试基线：它自带的夹具要自己分配用户、租户、智能体与会话，带固定 id 的播种行会和这些夹具相撞。列集合以下按 admin 基线里真实的 DDL 列出。
 
 ### 2.1 `mcp_server` 上的两个授权列
 
@@ -29,7 +29,7 @@
 - `oauth_config` 与 `headers` 同性质：文本 JSON、不加密、明文回显给前端。因此里面**不允许**出现任何密钥——`client_id`/`client_secret` 属于 `mcp_oauth_client`，令牌属于 `mcp_user_credential`。白名单由类型本身保证：反序列化时多出来的键落不进 `McpOAuthConfig`，也就写不进这一列。
 - `oauth_config` 只在 `auth_type=OAUTH2` 时允许写入（`writeOAuthConfig` 对非 OAuth 服务带配置是报错）；行的 `auth_type` 不是 `OAUTH2` 时这一列被清成 NULL，界面于是不会继续显示一份它用不到的 scope 清单；`authorizationServer` 非空时必须是 `http(s)` 且有 host，因为发现阶段 admin 会真的去请求这个地址。
 - 读这一列的授权路径（`McpOAuthUserServiceImpl.readConfig`）解析失败时报错「重新保存该服务的 OAuth 设置」，而不是当作未配置——一行坏 JSON 静默当成没配，用户会看到「授权服务器未知」而配了东西的人完全不知道为什么。
-- `auth_type` 不参与任何索引，`V25` 不做数据回填：`NONE` 与 `STATIC_HEADER` 走同一条代码路径，`headers` 里除了凭据还混着路由用的普通头，回填出来的标签和真正的决策分不开。要区分由管理员显式选。
+- `auth_type` 不参与任何索引，schema 与代码也不按别的列推导它的取值：基线给的是 `NOT NULL DEFAULT 'NONE'`，落成其他标签一定是管理员显式选的。原因是 `NONE` 与 `STATIC_HEADER` 走同一条代码路径，`headers` 里除了凭据还混着路由用的普通头，推导出来的标签和真正的决策分不开。
 
 ### 2.2 `mcp_oauth_client`：AS 侧的客户端身份，按 (租户, issuer) 共享
 
@@ -390,7 +390,7 @@ request.setHeader("Authorization", "Bearer ${source.accessToken(mcpId)}")
 
 | 主题 | 文件 |
 |------|------|
-| 授权数据模型 | `harnax-admin/src/main/resources/db/migration/V25__add_mcp_oauth_columns.sql`、`harnax-admin/src/main/resources/db/migration/V26__add_mcp_oauth_tables.sql`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/McpAuthTypes.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/McpOauthClient.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/McpUserCredential.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/McpCallLog.kt` |
+| 授权数据模型 | `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/McpAuthTypes.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/McpOauthClient.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/McpUserCredential.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/McpCallLog.kt` |
 | Mapper 与 SQL | `harnax-entity/src/main/kotlin/com/agnetix/harnax/mapper/McpOauthClientMapper.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/mapper/McpUserCredentialMapper.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/mapper/McpCallLogMapper.kt`、`harnax-entity/src/main/resources/mapper/McpOauthClientMapper.xml`、`harnax-entity/src/main/resources/mapper/McpUserCredentialMapper.xml`、`harnax-entity/src/main/resources/mapper/McpCallLogMapper.xml` |
 | 授权码 + PKCE + 换发与刷新 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/McpOAuthUserServiceImpl.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/McpOAuthUserService.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/McpOAuthStateStore.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/McpOAuthController.kt` |
 | 发现与客户端登记 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/McpOAuthServiceImpl.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/RemoteJsonFetcher.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/McpOAuthConfig.kt` |

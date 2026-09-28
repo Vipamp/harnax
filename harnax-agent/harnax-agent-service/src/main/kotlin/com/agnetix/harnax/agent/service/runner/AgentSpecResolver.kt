@@ -222,7 +222,7 @@ class AgentSpecResolver(
         val builder = AgentSpec.builder()
             .id(specInfo.agentId)
             // Admin read it off the agent (or team) row; it is the only source of the tenant for the
-            // token/tool-call/process rows this run writes, and the runtime has no DB lookup for it (V50).
+            // token/tool-call/process rows this run writes, and the runtime has no DB lookup for it.
             .tenantId(specInfo.tenantId)
             .name(specInfo.agentName)
             .description(specInfo.description)

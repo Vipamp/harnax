@@ -1936,7 +1936,7 @@ class AgentServiceImplTest {
         @DisplayName("updateAgent - Collapse repeated CLI ids within one request")
         fun `updateAgent should dedupe repeated cli ids`() {
             // Given - `cliList` is what the agent wizard rebuilds from a multi-select, so repeats do
-            // reach here; V41's uk_agent_cli_binding_agent_id_cli_id would reject the batch outright
+            // reach here; uk_agent_cli_binding_agent_id_cli_id would reject the batch outright
             `when`(cliMapper.selectByIds(listOf(3L, 4L))).thenReturn(
                 listOf(
                     Cli().apply {

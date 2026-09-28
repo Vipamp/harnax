@@ -826,7 +826,7 @@ class McpServerServiceImplTest {
         @Test
         @DisplayName("createMcpServer - 不传 authType 时落 NONE")
         fun `createMcpServer should default auth type to NONE`() {
-            // Given - V25 之前建的行都是「静态 headers」语义,缺省必须是 NONE 而不是报错
+            // Given - 不带 authType 的行都是「静态 headers」语义,缺省必须是 NONE 而不是报错
             val request = McpServerCreateRequest(
                 name = "Plain MCP",
                 type = "streamablehttp",

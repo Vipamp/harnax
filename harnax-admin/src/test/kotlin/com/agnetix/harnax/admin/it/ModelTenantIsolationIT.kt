@@ -15,8 +15,9 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 /**
- * Model and provider tenancy (A.4): `tenant_id` has existed on both tables since V1, but no insert ever
- * wrote it, so every row landed in the DDL default and every read filtered on the caller instead.
+ * Model and provider tenancy (A.4): `tenant_id` has existed on both tables since the schema baseline,
+ * but no insert ever wrote it, so every row landed in the DDL default and every read filtered on the
+ * caller instead.
  *
  * The rule being proven is the pair the list query uses: a row belongs to one tenant, and `is_public`
  * says whether the rest of the platform may *use* it. Publication never moves ownership — writing,

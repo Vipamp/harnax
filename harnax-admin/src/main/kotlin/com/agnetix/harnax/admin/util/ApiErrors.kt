@@ -17,9 +17,9 @@ import java.sql.SQLException
  * which quotes the schema, the table and the statement, and a wrapped command output (an
  * `npm install` log is easily thousands of lines).
  *
- * `V15__skill_source_integrity.sql` added unique indexes, so a duplicate name now hits one on a
- * regular path instead of only under a race. Messages the application authored for a human (a
- * [BizException], loader validation, archive guard rails) are kept, because hiding them would
+ * The skill and skill-repository rows carry unique name indexes, so a duplicate name hits one on a
+ * regular path instead of only under a race. Messages the application authored for a human
+ * (a [BizException], loader validation, archive guard rails) are kept, because hiding them would
  * replace an actionable answer with a shrug.
  */
 object ApiErrors {
@@ -35,7 +35,7 @@ object ApiErrors {
     private const val GENERIC_DUPLICATE = "The submitted name is already in use"
 
     /**
-     * Unique indexes added by `V15__skill_source_integrity.sql` and `V23__add_mcp_server_name_unique_key.sql`,
+     * The unique name indexes the schema baseline carries for skill, skill repository and MCP server,
      * mapped to the rule each enforces.
      *
      * Naming the index keeps the answer specific: a bare "already exists" does not say whether the

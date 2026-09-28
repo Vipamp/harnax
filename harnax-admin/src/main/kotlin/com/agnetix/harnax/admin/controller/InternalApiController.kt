@@ -371,9 +371,9 @@ class InternalApiController(
         val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
             ?: throw IllegalArgumentException("Session not found: $sessionId")
         if (session.teamId != null) {
-            // There is no agent to resolve: since V34 a team's lead is the `team` row and the session
-            // carries no agent_id. Answering here would either say "Agent not found: 0" or, if a lead
-            // agent row were ever reintroduced, hand back a configuration nobody configured.
+            // There is no agent to resolve: a team's lead is the `team` row and the session carries no
+            // agent_id. Answering here would either say "Agent not found: 0" or, if a lead agent row
+            // were ever reintroduced, hand back a configuration nobody configured.
             throw IllegalArgumentException("Session $sessionId runs as a team, resolve it with /team-spec/{sessionId}")
         }
         val agentId = session.agentId
@@ -855,7 +855,7 @@ class InternalApiController(
             // The holder's own tenant (agent row, or the team row for a lead) — same rule as the env
             // bindings below: taken from the database, never from the request, which carries none. The
             // runtime stamps it onto `token_stats` / `tool_call_log` / `process_log` so consumption
-            // lands in the workspace that paid for it (V50).
+            // lands in the workspace that paid for it.
             tenantId = agentTenantId,
             agentName = agentName,
             description = description,

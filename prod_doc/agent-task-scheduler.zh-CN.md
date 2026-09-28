@@ -11,11 +11,11 @@
    CRUD 规则、调度、执行、回收、对账全在本模块（`harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/`
    下 40 个 `.kt`），Flyway 自管，记录表 `flyway_schema_history_scheduler`。
 2. **数据源是本服务自有的 `harnax_scheduler` 库**，`application.yml` 的默认 URL 就写着它。11 张
-   `QRTZ_*` 与三张业务表都在那里，由本模块的两张脚本建出来（`V1__quartz_tables.sql` +
-   `V2__agent_task_domain.sql`），这个库里只有这一个迁移工具。`harnax_admin` 库里的同名三张表由 admin 的
-   `V39__drop_agent_task_tables.sql` 随启动 `DROP TABLE IF EXISTS`：admin 的
-   `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` 每次全新
-   部署都会重放出那三条 `CREATE TABLE`，不收敛的话运维在这个库里找任务表会找到一张空的。
+   `QRTZ_*` 与三张业务表都在那里，由本模块唯一的迁移脚本
+   `harnax-scheduler/src/main/resources/db/migration/V1__init_schema.sql` 建出来，这个库里只有这一个迁移工具。
+   admin 的 `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` 既不建这三张表、也不删它们，
+   所以一次全新部署的 `harnax_admin` 里没有本域同名表；改造前就建好的 `harnax_admin` 可能还留着三张空表，
+   删除归运维（见「部署与运维 checklist」第 10 条）。
 3. **Quartz 用 JDBC 集群模式**：共享 JobStore + `isClustered = true`，`QRTZ_*` 表是唯一调度真相。
    一次 cron 触发在全集群只投递一次、只由一个节点执行。故障接管窗口 22.5~52.5 秒（由
    `JobStoreSupport.calcFailedIfAfter` 与 `clusterCheckinInterval = 15000` 推出，见「Quartz 集群配置」中对
@@ -109,14 +109,13 @@ admin 的 Flyway 不涉及它。
 
 ### 3.1 业务表要点
 
-`V2__agent_task_domain.sql` 是三张业务表的 schema 真相源，逐列与
-`harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` 里同名
-三张表对齐（两份定义要保持可比对），差别只有四处：
+`harnax-scheduler/src/main/resources/db/migration/V1__init_schema.sql` 是三张业务表的 schema 真相源，
+也是本仓库里唯一的一份定义——admin 的 baseline 不描述这三张表，所以没有第二份可与之比对。这份文件关于
+本域的三条事实：
 
 - `agent_task_log.session_id` 为 `VARCHAR(128)`（四段式任务会话 id 更长）；
 - `agent_task_execution` 的两条清扫索引 `(status, create_time)` 与 `(create_time)` 内联在建表语句里；
-- 本文件不含任何移除语句，`harnax_admin` 侧同名表的处置不属于它；
-- 文件头注释。
+- 文件不含任何移除语句，`harnax_admin` 侧遗留同名表的处置不属于它。
 
 决定读行为的约束：
 
@@ -246,7 +245,7 @@ cron 与手动两条路径同时成立；不做的话一次 SIGTERM 会留下 `a
 `expireStale`（`timeout × 1.5`）才被定成 `2 timeout`。
 
 它必须与容器的 `stop_grace_period` 一起配：compose 里是 `400s`，算式写在
-`docker-new/docker-compose.yml` 与 `application.yml` 的注释里——执行超时 300 + 会话清理上限
+`harnax-deploy/docker-compose.yml` 与 `application.yml` 的注释里——执行超时 300 + 会话清理上限
 `min(clear-session-timeout, timeout)` 60 + 两次调用的 connect 预扣 20 + 定态写回与释放锁 12 = 392，
 向上取整。**改 `SCHEDULER_TIMEOUT` 或 `SCHEDULER_CLEAR_SESSION_TIMEOUT` 就要在同一改动里改
 `stop_grace_period`。**
@@ -560,7 +559,7 @@ compose 的健康检查因此不受影响。
 `@InternalOnly`），是另一个设计。另外即使打开，`UnifiedAuthFilter` 也**验不了用户的登录 JWT**——它用
 `harnax.auth.internal.shared-secret` 验签，而 admin 签用户 token 用的是另一个 key `jwt.secret`。
 
-**部署层仍是纵深的一部分**：compose 只 `expose: ["8084"]`、不发布宿主端口；`docker-new/nginx.conf` 没有
+**部署层仍是纵深的一部分**：compose 只 `expose: ["8084"]`、不发布宿主端口；`harnax-deploy/nginx.conf` 没有
 `/api/scheduler/` 的 location，原位留着禁止回加的注释。门禁是第二层，不是唯一一层。
 
 ### 8.3 scheduler 的出站
@@ -661,15 +660,15 @@ scheduler 侧保持与客户端今天看到的一致。两个 case 刻意按原�
 
 ## 12. 部署与运维 checklist
 
-镜像与拓扑：`docker-new/Dockerfile.scheduler`（`eclipse-temurin:21-jre-alpine`、`TZ=Asia/Shanghai`、
+镜像与拓扑：`harnax-deploy/Dockerfile.scheduler`（`eclipse-temurin:21-jre-alpine`、`TZ=Asia/Shanghai`、
 非 root 用户、`EXPOSE 8084`、容器级 healthcheck 打 `/actuator/health/liveness`）；
-`docker-new/docker-compose.yml` 的 `scheduler` 段（`expose: ["8084"]`、无 `container_name`、
+`harnax-deploy/docker-compose.yml` 的 `scheduler` 段（`expose: ["8084"]`、无 `container_name`、
 `stop_grace_period: 400s`、volume `scheduler-logs`、挂载 `/etc/localtime`、
-`depends_on` mysql healthy + admin/router started）。`docker-new` 是本仓库唯一可用的部署入口。
+`depends_on` mysql healthy + admin/router started）。`harnax-deploy` 是本仓库唯一可用的部署入口。
 
 上线一次带本域改动的版本：
 
-1. 确认 `harnax_scheduler` 库已建好并授权（`docker-new/sql/init-databases.sql` 已含；该脚本只在 MySQL
+1. 确认 `harnax_scheduler` 库已建好并授权（`harnax-deploy/sql/init-databases.sql` 已含；该脚本只在 MySQL
    首次初始化空数据目录时执行，已有部署要手工补那两行 + `FLUSH PRIVILEGES`）。
 2. `.env` 侧检查三件事：需要换库时才设 `SCHEDULER_DB_URL`（不设走 compose 默认的
    `harnax_scheduler`）、admin 与 scheduler **同值的 `HARNAX_AUTH_SECRET`**、**所有 scheduler 节点
@@ -681,8 +680,9 @@ scheduler 侧保持与客户端今天看到的一致。两个 case 刻意按原�
    `agent_task_log` 里 `status IN (3,4)` 为 0——一次横跨停启时刻的
    执行永远定不了态：它的日志行写在停机前连的那个库，重启后的 scheduler 在自己的库里找它，
    `finishExecution` / `markStopping` / `expireStale` 全部 0 行。
-4. 起**一个** scheduler 副本，让 Flyway 把 `V1` + `V2` 应用出来。
-5. 核对表：三张 `agent_task*` + 11 张 `QRTZ_*` + `flyway_schema_history_scheduler` 两行。
+4. 起**一个** scheduler 副本，让 Flyway 应用本模块的基线
+   `harnax-scheduler/src/main/resources/db/migration/V1__init_schema.sql`。
+5. 核对表：三张 `agent_task*` + 11 张 `QRTZ_*` + `flyway_schema_history_scheduler` 一行。
    **`agent_task_log` 即使空着也必须在**——`selectTaskList` 自联它取 `lastRunStatus` / `lastRunTime`，
    缺表是列表页 500。
 6. 让对账跑一轮（等 60 秒清扫，或建一个任务由 admin 转发触发），核对被调度的任务是 0 个：
@@ -692,22 +692,24 @@ scheduler 侧保持与客户端今天看到的一致。两个 case 刻意按原�
    CLI `task list|get|create|trigger|stop`、小程序任务页。
 8. 起第二副本（`--scale scheduler=2`），回读 `harnax_scheduler.QRTZ_SCHEDULER_STATE`：看两个
    `INSTANCE_NAME` 各自的 `LAST_CHECKIN_TIME` 每 15 秒前进，**别数行数**。
-9. 逐台滚动用 `docker-new/roll-scheduler.sh`：它持一把跨进程互斥锁跑完整个流程（一台台停—起，
+9. 逐台滚动用 `harnax-deploy/roll-scheduler.sh`：它持一把跨进程互斥锁跑完整个流程（一台台停—起，
    每起一台等新容器健康），结尾回读上面那条 SQL。**锁的键名的是集群而不是脚本所在目录**：取
    `COMPOSE_PROJECT_NAME`，未设时取「持有 compose 文件的那个目录的 basename」，小写并裁成 compose
    允许的字符集，再拼上 docker daemon 名——compose 的项目名规则就是这样，而本仓库三个 worktree 里
-   那个目录都叫 `docker-new`，用检出目录名当键会让一个集群持有多把锁。`LOCK_BASE_DIR` 默认 `/tmp`
+   那个目录都叫 `harnax-deploy`，用检出目录名当键会让一个集群持有多把锁。`LOCK_BASE_DIR` 默认 `/tmp`
    （刻意不是 `$TMPDIR`：那会让每一次 GUI 登录持有一个各自的用户级锁目录，cron 与 sudo 部署又落在另
    一个值上，两个不同的值就是两把锁、一个无人看守的集群），**每一个调用方都要传同一个值**。
    `GRACE` 与 `HEALTH_WAIT` 分别对应 `stop_grace_period` 与健康等待。
-10. 处理 `harnax_admin` 库里的本域同名表：三张 `agent_task*` 由 admin 的
-    `V39__drop_agent_task_tables.sql` 随启动自动 `DROP TABLE IF EXISTS`；11 张 `QRTZ_*` 只有把
-    `QUARTZ_JOB_STORE=jdbc` 指向 `harnax_admin` 的安装才会建出来，本服务的 scheduler 不连那个库，
-    由运维就地 DROP。本域的运行读路径没有任何一条指向那里。
+10. 处理 `harnax_admin` 库里的本域同名表：admin 的基线既不建这三张 `agent_task*` 也不删它们，所以没有任何
+    一步会自动收口——改造前就建好、并且把 `QUARTZ_JOB_STORE=jdbc` 指向过它的安装，库里可能还留着三张
+    `agent_task*` 和 11 张 `QRTZ_*`。本服务的 scheduler 不连那个库，本域的运行读路径没有任何一条指向那里，
+    删除由运维就地执行。
 11. 回滚：把 scheduler 的数据源指回 `harnax_admin` + `QUARTZ_JOB_STORE=memory` +
     `SCHEDULER_FLYWAY_ENABLED=false`（`application.yml` 与 compose 都读这个键），并明确接受
     「数据源指向 `harnax_scheduler` 期间新建或改过的任务不会跟着回来」——那个库一旦被写过，回滚就不是一次
-    `revert`。回到 `harnax_admin` 库还要先重建三张表（`V39__drop_agent_task_tables.sql` 覆盖的正是它们）。
+    `revert`。回到 `harnax_admin` 库还要先让那三张表在那里存在（admin 的基线不建它们）：运维手工建表最干净，
+    临时把 `SCHEDULER_FLYWAY_ENABLED` 开成 true 让本模块的基线在那个库上建出来也行，前提是该库的
+    `flyway_schema_history_scheduler` 台账与实际 schema 对得上，否则 `validate-on-migrate` 会先拦下来。
 
 ## 13. 明确不做与边界
 
@@ -763,10 +765,10 @@ scheduler 侧保持与客户端今天看到的一致。两个 case 刻意按原�
 | 健康与指标 | `harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/health/SchedulerHealthIndicator.kt`、`harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/health/QuartzJobInventory.kt`、`harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/health/SchedulerStatus.kt`、`harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/metrics/SchedulerMetrics.kt` |
 | 实体与语句 | `harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/entity/AgentTask.kt`、`harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/entity/AgentTaskLog.kt`、`harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/entity/AgentTaskExecution.kt`、`harnax-scheduler/src/main/resources/mapper/AgentTaskMapper.xml`、`harnax-scheduler/src/main/resources/mapper/AgentTaskLogMapper.xml`、`harnax-scheduler/src/main/resources/mapper/AgentTaskExecutionMapper.xml` |
 | 响应外壳 | `harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/dto/Page.kt`、`harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/dto/AgentTaskResponse.kt`、`harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/dto/AgentTaskLogResponse.kt` |
-| schema | `harnax-scheduler/src/main/resources/db/migration/V1__quartz_tables.sql`、`harnax-scheduler/src/main/resources/db/migration/V2__agent_task_domain.sql`、`harnax-admin/src/main/resources/db/migration/V39__drop_agent_task_tables.sql` |
+| schema | `harnax-scheduler/src/main/resources/db/migration/V1__init_schema.sql`（本域全部 14 张表的唯一定义）、`harnax-admin/src/main/resources/db/migration/V1__init_schema.sql`（其中没有本域的表） |
 | 运行配置 | `harnax-scheduler/src/main/resources/application.yml` |
 | 任务会话 id 语法 | `harnax-common/src/main/kotlin/com/agnetix/harnax/common/session/TaskSessionId.kt` |
 | admin 侧鉴权 + 转发 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/AgentTaskController.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/SchedulerClientImpl.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/SchedulerClient.kt` |
 | admin 侧 agent-spec 反查 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt`（`resolveFromTask`） |
 | 任务会话的 MCP 身份 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/McpSessionOwnerResolver.kt` |
-| 部署 | `docker-new/Dockerfile.scheduler`、`docker-new/docker-compose.yml`、`docker-new/roll-scheduler.sh`、`docker-new/nginx.conf`、`docker-new/sql/init-databases.sql` |
+| 部署 | `harnax-deploy/Dockerfile.scheduler`、`harnax-deploy/docker-compose.yml`、`harnax-deploy/roll-scheduler.sh`、`harnax-deploy/nginx.conf`、`harnax-deploy/sql/init-databases.sql` |

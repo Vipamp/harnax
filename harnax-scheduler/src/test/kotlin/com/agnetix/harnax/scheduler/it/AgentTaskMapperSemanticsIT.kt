@@ -26,11 +26,11 @@ import java.time.LocalDateTime
  * three reasons for that are worth stating because they are the reason a moved test is not a copied one:
  *
  * **The schema is Flyway's.** Those suites built their database from `harnax-entity`'s `schema-test.sql`, which
- * is a hand-maintained copy of admin's DDL. Here the container is migrated by this module's own
- * `V1`/`V2`, so what is under test is the schema the service actually ships — including the 128-character
- * `session_id` of contract C1, which the old copy still had at 64. The case named
- * `the schema is owned by the migration and not by the IT init script` pins that, and it is the only one here
- * that is not a copy of something.
+ * is a hand-maintained copy of admin's DDL. Here the container is migrated by this module's own baseline
+ * (`harnax-scheduler/src/main/resources/db/migration/V1__init_schema.sql`), so what is under test is the schema
+ * the service actually ships — including the 128-character `session_id` of contract C1, which the old copy
+ * still had at 64. The case named `the schema is owned by the migration and not by the IT init script` pins
+ * that, and it is the only one here that is not a copy of something.
  *
  * **There are no seed rows anywhere in this module.** The old suite could ask for log id 1 and get the row
  * `schema-test.sql` had inserted. The other ITs of this package count rows — IT-1 counts what one reconcile
@@ -88,12 +88,13 @@ class AgentTaskMapperSemanticsIT : BaseSchedulerIT() {
 
     /**
      * The trap this release could have walked into: `BaseSchedulerIT` runs its init script *before* Flyway, so
-     * a duplicate `CREATE TABLE IF NOT EXISTS` of these three in `schema-it.sql` would have won and V2 would
-     * have no-oped over it — leaving the ITs on the pre-C1 64-character `session_id` while production ran on
-     * 128. Asserting the width is asserting that the migration, not a test resource, built this database.
+     * a duplicate `CREATE TABLE IF NOT EXISTS` of these three in `schema-it.sql` would have won and the
+     * baseline would have no-oped over it — leaving the ITs on the pre-C1 64-character `session_id` while
+     * production ran on 128. Asserting the width is asserting that the migration, not a test resource, built
+     * this database.
      */
     @Test
-    @DisplayName("表结构来自 V2 迁移而不是 IT 初始化脚本")
+    @DisplayName("表结构来自迁移基线而不是 IT 初始化脚本")
     fun `the schema is owned by the migration and not by the IT init script`() {
         assertEquals(
             128,

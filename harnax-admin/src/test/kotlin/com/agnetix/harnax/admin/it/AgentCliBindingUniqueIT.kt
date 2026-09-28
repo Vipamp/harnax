@@ -9,7 +9,7 @@ import org.springframework.dao.DuplicateKeyException
 import org.springframework.jdbc.core.JdbcTemplate
 
 /**
- * Checks the `UNIQUE(agent_id, cli_id)` key V41 puts on `agent_cli_binding`.
+ * Checks the `UNIQUE(agent_id, cli_id)` key `agent_cli_binding` carries in the schema baseline.
  *
  * Same shape as [AgentSkillBindingUniqueIT], and for the same reason: `saveCliBindings` collapses the
  * list now, so the service layer would pass with or without this key. Asserted through SQL because the

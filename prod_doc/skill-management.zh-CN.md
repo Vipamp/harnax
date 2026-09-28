@@ -36,13 +36,13 @@
 | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentWrapper.kt` | 容器句柄就绪时触发投影：`projectSkills`、`deliveredSkills` |
 | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/skill/SandboxSkillProjector.kt` | 沙箱技能文件的投影与逐轮收敛 |
 | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/`、`harnax-entity/src/main/resources/mapper/` | 实体、Mapper 接口与 XML 语句 |
-| `harnax-admin/src/main/resources/db/migration/` | 建表与列定义 DDL，编号至 `V50__scope_stats_and_logs_to_a_tenant.sql` |
+| `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` | admin 的 schema 基线：整个 admin 库的建表与列定义都在这一个脚本里 |
 | `harnax-webui/src/pages/skill/`、`harnax-webui/src/services/ant-design-pro/skillSource.ts` | 管理台技能页与来源服务调用 |
 | `harnax-cli/cmd/skill.go` | 命令行侧调用 `/api/admin/skills` 与 `/api/admin/skill-repositories` |
 
 ## 3. 数据模型
 
-表结构以 `harnax-admin/src/main/resources/db/migration/` 下的 DDL 为准（截至 `V50`）。
+表结构以 admin 的 schema 基线 `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` 为准：这一个脚本就是全部建表与列定义，没有需要往上叠加的后续版本。
 
 ### 3.1 skill_repository（技能来源）
 
@@ -581,12 +581,6 @@ CLI 包自带的技能走同一个解析器、同一个租户基准，另外多�
 - `harnax-entity/src/main/resources/mapper/AgentSkillBindingMapper.xml`
 - `harnax-entity/src/main/resources/mapper/TeamSkillBindingMapper.xml`
 - `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql`
-- `harnax-admin/src/main/resources/db/migration/V9__skill_content_in_mysql.sql`
-- `harnax-admin/src/main/resources/db/migration/V15__skill_source_integrity.sql`
-- `harnax-admin/src/main/resources/db/migration/V31__skill_repository_last_sync.sql`
-- `harnax-admin/src/main/resources/db/migration/V33__add_skill_binding_unique_key.sql`
-- `harnax-admin/src/main/resources/db/migration/V34__team_owns_lead_config.sql`
-- `harnax-admin/src/main/resources/db/migration/V35__cli_package_registration.sql`
 
 运行侧（harnax-agent）
 

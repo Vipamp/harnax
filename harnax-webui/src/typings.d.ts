@@ -421,7 +421,7 @@ message?: string;
     status: number;
     /** 绑定该技能的 agent 数。被 agent 或团队主管绑定的技能都不能停用/删除（后端同一条规则） */
     boundAgentCount?: number;
-    /** 主管技能直接挂在 team 上（V34），只被团队绑定时 agent 数为零但开关仍必须锁住 */
+    /** 主管技能直接挂在 team 上，只被团队绑定时 agent 数为零但开关仍必须锁住 */
     boundTeamCount?: number;
     isPublic?: number;
     creator?: string;

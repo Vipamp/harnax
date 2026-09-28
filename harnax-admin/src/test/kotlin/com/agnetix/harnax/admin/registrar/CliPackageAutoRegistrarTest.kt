@@ -242,7 +242,7 @@ runtimeEnv:
         this.packageDigest = packageDigest
     }
 
-    /** A row the registrar never wrote: the `cli` page's hand-entered leftovers, which V38 retires. */
+    /** A row the registrar never wrote: the `cli` page's hand-entered leftovers, retired by the baseline rebuild. */
     private fun leftoverRow(
         id: Long,
         name: String,

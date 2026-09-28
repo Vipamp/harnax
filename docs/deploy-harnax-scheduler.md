@@ -15,7 +15,7 @@
 | 依赖 | 要求 | 说明 |
 |---|---|---|
 | JDK | 21 | |
-| MySQL | `harnax_scheduler` 库（本服务自有） | **本服务独占这个库**：11 张 `QRTZ_*` 集群表 + `agent_task` / `agent_task_log` / `agent_task_execution` 三张业务表都在这里面，表结构全部由本服务的 Flyway 建（`V1__quartz_tables.sql` + `V2__agent_task_domain.sql`，记在自有的 `flyway_schema_history_scheduler`），没有任何别的工具往这个库写表。所以迁移开关（`SCHEDULER_FLYWAY_ENABLED`，未设时回退 `FLYWAY_ENABLED`）默认 `true` 且**必须保持开**——关掉就一张表都没有，`QUARTZ_JOB_STORE=jdbc` 的节点直接起不来。库与授权由 `docker-new/sql/init-databases.sql` 预建（存量部署要手工补那两行，那脚本只在 MySQL 首次初始化空数据目录时执行）。历史注：这三张业务表原本就在 `harnax_admin` 里，发布 1 建的那 11 张 `QRTZ_*` 也临时落在同一处（那是当时的中间态，spec 的修正 C），到发布 2 才一起搬进本库——见「发布 2 切口」 |
+| MySQL | `harnax_scheduler` 库（本服务自有） | **本服务独占这个库**：11 张 `QRTZ_*` 集群表 + `agent_task` / `agent_task_log` / `agent_task_execution` 三张业务表都在这里面，表结构全部由本服务的 Flyway 建（`harnax-scheduler/src/main/resources/db/migration/V1__init_schema.sql`，记在自有的 `flyway_schema_history_scheduler`），没有任何别的工具往这个库写表。所以迁移开关（`SCHEDULER_FLYWAY_ENABLED`，未设时回退 `FLYWAY_ENABLED`）默认 `true` 且**必须保持开**——关掉就一张表都没有，`QUARTZ_JOB_STORE=jdbc` 的节点直接起不来。库与授权由 `harnax-deploy/sql/init-databases.sql` 预建（已有部署要手工补那两行，那脚本只在 MySQL 首次初始化空数据目录时执行）。改造前就建好的 `harnax_admin` 里可能还留着这个域的同名表与一批 `QRTZ_*`，没有任何读路径指向那里，删除归运维（「发布 2 切口」第 8 步） |
 | router | 必须可达 | 执行入口 `SCHEDULER_ROUTER_URL` |
 | admin | 必须可达 | 会话管理与系统 Key 获取 |
 | Redis / MinIO | 不需要 | |
@@ -29,7 +29,7 @@
 
 | 模式 | 定位 | 后果 |
 |---|---|---|
-| `jdbc` | **当前默认与目标形态**：`V1__quartz_tables.sql` 由本服务的 Flyway 建表，`isClustered=true` + `clusterCheckinInterval=15000` + `acquireTriggersWithinLock=true` | 多实例安全：一次触发全集群只有一个节点抢到；故障接管与 misfire 补偿都由引擎负责 |
+| `jdbc` | **当前默认与目标形态**：`harnax-scheduler/src/main/resources/db/migration/V1__init_schema.sql` 由本服务的 Flyway 建表，`isClustered=true` + `clusterCheckinInterval=15000` + `acquireTriggersWithinLock=true` | 多实例安全：一次触发全集群只有一个节点抢到；故障接管与 misfire 补偿都由引擎负责 |
 | `memory` | **逃生门，不是运行形态**：本地无库启动、以及回滚（见下一节） | 该实例**不是集群成员**：它读不到也写不进共享 store，自己按自己的 cron 各 fire 一次。同一发 cron 被两台同时 fire 时**全集群只执行一次**：每一发（cron 与 one-shot 都是）都要过 `AbstractAgentTaskJob` 的 `AgentTaskExecutionGuard.tryAcquireLock(taskId, triggerTime)`，`uk_task_trigger(task_id, trigger_time)` 只让一台赢，`agent_task_log` 也就一行（这正是集群化前的多实例形态，见 `prod_doc/agent-task-scheduler.zh-CN.md` §2.1）。真正的代价是三样：赢家由一次 INSERT 抢出来、不是由调度器决定；这台**没有故障接管也没有 misfire 补偿**，它停机期间错过的触发永久跳过；它的 schedule 是私有的，一次只落到 jdbc 那台的 CRUD 会让两台跑着**不同的 cron 表达式**——不同表达式就是不同触发时点，也就不同 `trigger_time`，这才是真会成对写 `agent_task_log` 的那条路径 |
 
 `org.quartz.jobStore.class` 故意**不写**：Boot 注入 DataSource 后会强制覆盖成 `LocalDataSourceJobStore`，写死 `JobStoreTX` 反而连不上 Spring 管理的数据源。
@@ -52,14 +52,14 @@ SCHEDULER_FLYWAY_ENABLED=false     # compose 与手工部署是同一个键；�
 副本数**不由 compose 决定**：`docker-compose.yml` 里 scheduler 既没有 `deploy.replicas`，也**故意没有 `container_name`**（固定名唯一，Docker 会直接拒绝 `--scale`）。数字只从命令行来，一共三处会写它：`roll-scheduler.sh`（`SCHEDULER_REPLICAS`，默认 2）、`deploy-all.sh` 的冷启动 `up -d --scale scheduler=$SCHEDULER_REPLICAS`、以及你自己手敲的 `up`（`build.sh` 收尾打的那条、与 `docker-compose.yml` 头部 usage 里那条，都只是这第三处的样子——两处都已带 `--scale`，别再删掉它）。**任何不带 `--scale` 的 `up` 都是在要求 1 个副本，compose 会把服务缩回一台**——所以从脚本之外拉起这个服务时，`--scale` 必须带上。
 
 ```bash
-docker-compose -f docker-new/docker-compose.yml up -d --scale scheduler=2 --no-recreate scheduler
+docker-compose -f harnax-deploy/docker-compose.yml up -d --scale scheduler=2 --no-recreate scheduler
 ```
 
-发布新版本走 `docker-new/roll-scheduler.sh`（`deploy-service.sh scheduler` 的第 4 步就是它）。它先补齐到 `SCHEDULER_REPLICAS`、再逐台 `docker stop -t <grace>` + `rm` + `up --no-recreate` 换掉，全程集群里至少有一台在跑。
+发布新版本走 `harnax-deploy/roll-scheduler.sh`（`deploy-service.sh scheduler` 的第 4 步就是它）。它先补齐到 `SCHEDULER_REPLICAS`、再逐台 `docker stop -t <grace>` + `rm` + `up --no-recreate` 换掉，全程集群里至少有一台在跑。
 
 **禁止对 scheduler 用 `--force-recreate`**：`up -d --force-recreate scheduler` 一次重建该 service 的**所有**副本，等于最长 400s（一台容器从 SIGTERM 到被 SIGKILL 的宽限）全集群无调度。这期间 `QRTZ_TRIGGERS` 里堆起来的过期触发会走 misfire 路径，而 `concurrent=0` 的任务用的正是 `withMisfireHandlingInstructionDoNothing`——**堆起来的触发被直接丢弃**，发布于是静默跳过本该跑的定时任务，和 400s 宽限「绝不丢执行」的初衷正好相反。同理，`SCHEDULER_REPLICAS=1` 的滚动会被脚本拒绝：一台都停的话，就没有第二台可接管了。
 
-**`docker-new/deploy-all.sh` 是同一条越界里更长的那一档，它照做不误**：第 5 步 `down` 停掉全部副本，第 6 步才 `up -d --scale`，中间要过 mysql 的健康门（`healthcheck` 最坏 10s×5）再起一台 JVM——全集群无调度的窗口比一次 `--force-recreate` 只长不短，堆在 `QRTZ_TRIGGERS` 里的那些发同样按 DoNothing 丢弃。它不做成滚动形态是刻意的：这是一次全新集群的冷启动（所有服务都要换镜像），逐台滚动那条路径需要「有副本在跑时换镜像」这个前提，此刻并不成立，`roll-scheduler.sh` 也不负责拉起 redis/minio/mysql。所以这里的规则是运维的而不是代码的：**只在安静时段跑 `deploy-all.sh`**；如果这次只动了 scheduler 的镜像，就走 `deploy-service.sh scheduler`（它以 `roll-scheduler.sh` 收尾，全程至少一台在跑，不丢触发）。脚本在 `down` 前会把这句话打一遍，`roll-scheduler.sh` 的那把滚动锁也**故意不覆盖** `deploy-all.sh`——一把锁拦不住一次设计上就要清空整栈的部署。
+**`harnax-deploy/deploy-all.sh` 是同一条越界里更长的那一档，它照做不误**：第 5 步 `down` 停掉全部副本，第 6 步才 `up -d --scale`，中间要过 mysql 的健康门（`healthcheck` 最坏 10s×5）再起一台 JVM——全集群无调度的窗口比一次 `--force-recreate` 只长不短，堆在 `QRTZ_TRIGGERS` 里的那些发同样按 DoNothing 丢弃。它不做成滚动形态是刻意的：这是一次全新集群的冷启动（所有服务都要换镜像），逐台滚动那条路径需要「有副本在跑时换镜像」这个前提，此刻并不成立，`roll-scheduler.sh` 也不负责拉起 redis/minio/mysql。所以这里的规则是运维的而不是代码的：**只在安静时段跑 `deploy-all.sh`**；如果这次只动了 scheduler 的镜像，就走 `deploy-service.sh scheduler`（它以 `roll-scheduler.sh` 收尾，全程至少一台在跑，不丢触发）。脚本在 `down` 前会把这句话打一遍，`roll-scheduler.sh` 的那把滚动锁也**故意不覆盖** `deploy-all.sh`——一把锁拦不住一次设计上就要清空整栈的部署。
 
 集群成员的直接读数是 `QRTZ_SCHEDULER_STATE`（在 `harnax_scheduler` 库，本服务的数据源就指那里）：
 
@@ -83,7 +83,7 @@ SELECT INSTANCE_NAME, LAST_CHECKIN_TIME, CHECKIN_INTERVAL FROM harnax_scheduler.
 
 ## 优雅停机
 
-- 本模块 compose 有 `stop_grace_period: 400s`，`application.yml` 显式写了 `spring.quartz.wait-for-jobs-to-complete-on-shutdown: ${QUARTZ_WAIT_FOR_JOBS:true}`（Boot 的默认是 `false`，必须写出来）。**400 是一串求和的上取整**：chat 读超时 300 + `clearSession` 上限 60 + 两次调用各 10s 的 connect 预扣 20 + 定态写回 8 + Spring 关停钩子 4 = 392。逐项推导写在 `docker-new/docker-compose.yml` 的 scheduler 段注释里，改 `SCHEDULER_TIMEOUT` 或 `SCHEDULER_CLEAR_SESSION_TIMEOUT` 都要回到那里重算，别让注释变成谎话。
+- 本模块 compose 有 `stop_grace_period: 400s`，`application.yml` 显式写了 `spring.quartz.wait-for-jobs-to-complete-on-shutdown: ${QUARTZ_WAIT_FOR_JOBS:true}`（Boot 的默认是 `false`，必须写出来）。**400 是一串求和的上取整**：chat 读超时 300 + `clearSession` 上限 60 + 两次调用各 10s 的 connect 预扣 20 + 定态写回 8 + Spring 关停钩子 4 = 392。逐项推导写在 `harnax-deploy/docker-compose.yml` 的 scheduler 段注释里，改 `SCHEDULER_TIMEOUT` 或 `SCHEDULER_CLEAR_SESSION_TIMEOUT` 都要回到那里重算，别让注释变成谎话。
 - 宽限和 `waitForJobsToCompleteOnShutdown` 必须成对：等任务的前提是内核没先 SIGKILL；`docker stop -t` 的默认 10s 会把一次跑到一半的执行切成 `agent_task_log` 的 `status=3` 与 `agent_task_execution` 的 `status=0`，等 housekeeping 最坏 2× 超时后才回收。
 - **`roll-scheduler.sh` 里有一份同一个数**（`SCHEDULER_STOP_GRACE`，默认 400），滚动时逐台花掉这个窗口；两处要一起改——滚动超时短于 `stop_grace_period` 等于在 mid-run 上 SIGKILL，正是这个宽限要挡的事。
 - **保护范围 = 本模块的全部执行路径**：cron 与手动执行现在是同一类对象。`/tasks/{id}/trigger` 与 `/tasks/{id}/run-once` 都只往共享 store 投一枚 one-shot job（组 `AgentTaskGroup_ONCE`、非 durable、`startNow()`），由 Quartz worker 就地跑完，所以 `waitForJobsToCompleteOnShutdown` 有东西可等、这 400s 对两条路径同样生效。两副本下仍然猜不出是哪台忙——admin 那一发落到 DNS 选中的任一台，所以滚动必须假设两台都可能忙，逐台给满宽限。
@@ -112,7 +112,7 @@ SELECT INSTANCE_NAME, LAST_CHECKIN_TIME, CHECKIN_INTERVAL FROM harnax_scheduler.
 | `SCHEDULER_DB_URL` | 空（用上面的 yml 默认值） | **compose 侧的连接串只由它决定**。它故意不是 admin / agent-service / channel-service 共用的那条 `DB_URL`：那三个服务靠 `DB_URL` 打同一句 `harnax_admin`，scheduler 复用同一变量的话，改一处就带走三个不该动的服务 |
 | `SPRING_DATASOURCE_USERNAME` / `SPRING_DATASOURCE_PASSWORD` | `root` / `123456` | compose 侧走 `DB_USERNAME` / `DB_PASSWORD`（与 admin 同一个 MySQL 用户，它对两库都有权限，见 `init-databases.sql`） |
 | `DB_POOL_SIZE` / `DB_POOL_MIN_IDLE` | `30` / `3` | Hikari。30 是按下界选的：≥ `QUARTZ_THREAD_COUNT`(10) 个 worker（每个在一次 fire 里占一条连接）+ 业务查询 + 集群 checkin，全走这一个池。**`QUARTZ_THREAD_COUNT` 与它要一起动**——只加 worker 不加池不会多出容量，只是把等待从调度线程挪到 30s 的 connection-timeout 上。与 admin 的 20/5 不同 |
-| `FLYWAY_ENABLED` | `true` | 本服务的迁移**必须开**：关掉就一张表都没有。它建的是本库的全部两张脚本（`V1__quartz_tables.sql` 的 11 张 `QRTZ_*` + `V2__agent_task_domain.sql` 的三张业务表），历史记在自有的 `flyway_schema_history_scheduler`——这个库里只有这一个迁移工具，admin 的 `flyway_schema_history` 在 `harnax_admin`，两边不再同库。它同时是调度节点迁移的**回退位**而不是决定位——`application.yml` 读的是 `${SCHEDULER_FLYWAY_ENABLED:${FLYWAY_ENABLED:true}}`，所以只要 `SCHEDULER_FLYWAY_ENABLED` 设了值，改这个 admin 同名的键就不起作用（它原本就是防着「手工恢复时顺手改了 admin 那个值，把调度节点停了迁移」） |
+| `FLYWAY_ENABLED` | `true` | 本服务的迁移**必须开**：关掉就一张表都没有。它建的是本库的全部表结构（`harnax-scheduler/src/main/resources/db/migration/V1__init_schema.sql`：11 张 `QRTZ_*` + 三张业务表），历史记在自有的 `flyway_schema_history_scheduler`——这个库里只有这一个迁移工具，admin 的 `flyway_schema_history` 在 `harnax_admin`，两个库各有自己的台账。它同时是调度节点迁移的**回退位**而不是决定位——`application.yml` 读的是 `${SCHEDULER_FLYWAY_ENABLED:${FLYWAY_ENABLED:true}}`，所以只要 `SCHEDULER_FLYWAY_ENABLED` 设了值，改这个 admin 同名的键就不起作用（它防的就是「手工恢复时顺手改了 admin 那个值，把调度节点停了迁移」） |
 | `SCHEDULER_FLYWAY_ENABLED` | `true` | 本服务迁移的决定位，compose 与手工部署同一个键：`application.yml` 的 `spring.flyway.enabled` 外层就是它。compose 里另有 `SPRING_FLYWAY_ENABLED: "${SCHEDULER_FLYWAY_ENABLED:-true}"`，那是一条显式 env 覆盖、优先级仍高于 yml，两条路径因此不会分叉成两个开关。`=false` 是回滚的逃生门（见「回滚」一节） |
 
 ### 调度与下游
@@ -178,7 +178,7 @@ SELECT INSTANCE_NAME, LAST_CHECKIN_TIME, CHECKIN_INTERVAL FROM harnax_scheduler.
 
 这一步把本服务的数据源从 `harnax_admin` 换进自有的 `harnax_scheduler`，是整个改造里唯一需要停服的动作，也是唯一不能滚动做的动作。
 
-**它不搬任何数据。** 用户确认没有历史包袱，spec 的 D8（迁任务定义、不迁历史日志）因此取消：没有迁移脚本，没有自校验查询，也没有"历史清空 / 最近运行两列变空"这类要公告的损失——没有东西可失去。新库从空开始，**切口后由用户在界面重建任务**。旧库 `harnax_admin` 里的 `agent_task` / `agent_task_log` / `agent_task_execution` 与 11 张 `QRTZ_*` 在切口后没有任何活着的读者，**当场 DROP 即可，不需要观察期**。三张业务表的那一刀已合进 admin 的 `V39__drop_agent_task_tables.sql`（admin 起 Flyway 就删，从头重放的老库与全新安装因此收敛到同一终态）；`QRTZ_*` 仍归运维就地执行——那 11 张表只在跑过发布 1 的安装里出现过，全新部署的 `harnax_admin` 里没有它们。
+**它不搬任何数据。** 用户确认没有历史包袱，spec 的 D8（迁任务定义、不迁历史日志）因此取消：没有迁移脚本，没有自校验查询，也没有"历史清空 / 最近运行两列变空"这类要公告的损失——没有东西可失去。新库从空开始，**切口后由用户在界面重建任务**。旧库 `harnax_admin` 里的 `agent_task` / `agent_task_log` / `agent_task_execution` 与 11 张 `QRTZ_*` 在切口后没有任何活着的读者，**当场 DROP 即可，不需要观察期**。这一刀全部归运维就地执行：admin 的 `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` 既不建这三张表也不删它们，所以 admin 启动不会替谁收尾，全新部署的 `harnax_admin` 里本来就没有本域的任何表——只有建库早于这次改造、且把 `QUARTZ_JOB_STORE=jdbc` 指向过它的安装，才有东西可删。
 
 **为什么 admin 与 scheduler 必须一起下线**——两条理由都与数据无关，所以"先把库换过去、代码以后再合"这种分两批的做法在这里不成立：
 
@@ -188,41 +188,41 @@ SELECT INSTANCE_NAME, LAST_CHECKIN_TIME, CHECKIN_INTERVAL FROM harnax_scheduler.
 ### 顺序
 
 1. 停 scheduler 的**全部副本** + admin。窗口内堆积的 cron 走 misfire 路径，`concurrent=0` 用的是 `withMisfireHandlingInstructionDoNothing`——**那一发被跳过，不是延后补跑**，公告要这么写。
-2. 起**一个** scheduler 副本，数据源指向 `harnax_scheduler`。库与授权由 `docker-new/sql/init-databases.sql` 预建（存量部署要手工补建库 + `GRANT` + `FLUSH PRIVILEGES`，那个脚本只在 MySQL 首次初始化空数据目录时跑），Flyway 在这个空库里应用 `V1__quartz_tables.sql` + `V2__agent_task_domain.sql`。
-3. 核对建出来的表：三张 `agent_task*` + 11 张 `QRTZ_*` + `flyway_schema_history_scheduler` 的两行。**`agent_task_log` 哪怕注定是空的也必须在**——`AgentTaskMapper.xml` 的 `selectTaskList` 自联这张表取 `lastRunStatus` / `lastRunTime`，缺表是列表页 500，不是"某一列空着"。
+2. 起**一个** scheduler 副本，数据源指向 `harnax_scheduler`。库与授权由 `harnax-deploy/sql/init-databases.sql` 预建（已有部署要手工补建库 + `GRANT` + `FLUSH PRIVILEGES`，那个脚本只在 MySQL 首次初始化空数据目录时跑），Flyway 在这个空库里应用 `harnax-scheduler/src/main/resources/db/migration/V1__init_schema.sql`。
+3. 核对建出来的表：三张 `agent_task*` + 11 张 `QRTZ_*` + `flyway_schema_history_scheduler` 的一行。**`agent_task_log` 哪怕注定是空的也必须在**——`AgentTaskMapper.xml` 的 `selectTaskList` 自联这张表取 `lastRunStatus` / `lastRunTime`，缺表是列表页 500，不是"某一列空着"。
 4. 让对账跑一轮（等 60s 的集群清扫，或建一个任务由 admin 转发触发 `/reload`），核对结果是 **0 个被调度的任务**：`/actuator/health` 的 `scheduledJobCount`（读 store，匿名可用），或 `GET /api/scheduler/tasks/status` 的 `scheduledTaskCount`——后者从 C4 起要带内部 JWT，别按匿名端点 curl 它。非 0 说明这台连的还是旧库。
 5. 起 admin（发布 2 版本），三客户端主链路各跑一遍：webui 列表/创建/编辑/启停/删除/立即执行/日志轮询、CLI `task list|get|create|trigger|stop`、小程序任务页。
 6. 起第二副本（`--scale scheduler=2`，或 `roll-scheduler.sh`），回读 `harnax_scheduler.QRTZ_SCHEDULER_STATE`：要看到的是**两个 `INSTANCE_NAME` 各自的 `LAST_CHECKIN_TIME` 每 15s 前进**，不是"两行"（见「双实例与逐台滚动」）。
 7. 用户在界面重建任务。
-8. 旧库收尾：三张 `agent_task*` 由 admin 的 `V39__drop_agent_task_tables.sql` 删除（起一次 admin 即生效，不用手工）；11 张 `QRTZ_*` 由运维就地 DROP，且只在跑过发布 1 的安装里有东西可删。
+8. 旧库收尾：三张 `agent_task*` 与 11 张 `QRTZ_*` 都由运维就地 DROP——admin 的 baseline 既不建也不删它们，起多少次 admin 都不会替这一步收尾。只有建库早于这次改造、并把 `QUARTZ_JOB_STORE=jdbc` 指向过 `harnax_admin` 的安装里有东西可删。
 
 ### 回滚
 
 ```bash
 SPRING_DATASOURCE_URL=…/harnax_admin…      # compose 侧改的是 SCHEDULER_DB_URL
-QUARTZ_JOB_STORE=memory                    # 不去接旧库里那批发布 1 留下的 QRTZ_*
-SCHEDULER_FLYWAY_ENABLED=false             # 否则它会拿 V2 去碰 harnax_admin
+QUARTZ_JOB_STORE=memory                    # 不去接旧库里那批遗留的 QRTZ_*
+SCHEDULER_FLYWAY_ENABLED=false             # 否则它会拿本模块的基线去碰 harnax_admin
 ```
 
-三个都要：`QUARTZ_JOB_STORE=memory` 让这台节点不进集群、不往一张已经没有活着的对端承诺同源更新的旧 store 里写调度真相（离集群的完整代价见「Quartz 存储模式」）；`SCHEDULER_FLYWAY_ENABLED=false` 是因为 V2 对旧库虽是 `IF NOT EXISTS` 的空转，却会把 V2 记进旧库的 `flyway_schema_history_scheduler`，让一个回滚状态看起来像应用过发布 2 的 schema。**并且要说清**：只把 URL 指回去**不等于回到发布 1 的行为**——C4 的门禁与 C1 的四段 id 都在代码里，旧 admin 与新 scheduler 仍然互相读不懂，要退就得连镜像一起退、两个服务同时退。回滚的残留是明确的：切口之后新建/改过的任务只存在于 `harnax_scheduler`，不会跟着回到旧库，也没有合并路径。
+三个都要：`QUARTZ_JOB_STORE=memory` 让这台节点不进集群、不往一张已经没有活着的对端承诺同源更新的旧 store 里写调度真相（离集群的完整代价见「Quartz 存储模式」）；`SCHEDULER_FLYWAY_ENABLED=false` 是因为本模块的基线对旧库虽是 `IF NOT EXISTS` 的空转，却会把这一次应用记进旧库的 `flyway_schema_history_scheduler`，让一个回滚状态看起来像本服务自己建起来的库。**并且要说清**：只把 URL 指回去**不等于回到发布 1 的行为**——C4 的门禁与 C1 的四段 id 都在代码里，旧 admin 与新 scheduler 仍然互相读不懂，要退就得连镜像一起退、两个服务同时退。回滚的残留是明确的：切口之后新建/改过的任务只存在于 `harnax_scheduler`，不会跟着回到旧库，也没有合并路径。
 
-> **这条退路有截止日期，而且到期是自动的**：上面三步只在 `harnax_admin` 的三张 `agent_task*` 还在时成立，而 V39 之后 admin 一启动就把它们删掉——第 8 步不再是一次能拖着的运维动作。要留这条退路就别合 V39；合了之后再退，指回旧库就连表都没有，得先把表建回来（运维手工建表是干净的一条；把 `SCHEDULER_FLYWAY_ENABLED` 临时开成 true 让 V1+V2 在旧 URL 上重放也行，但前提是旧库那张 `flyway_schema_history_scheduler` 台账还在——被一起删过就得先把它对齐，否则 validate 会先拦下来），然后再关回去。11 张 `QRTZ_*` 是同一个道理，只是它们在旧库存在与否取决于这个安装有没有跑过发布 1。
+> **这条退路的期限握在运维手里**：上面三步只在 `harnax_admin` 的三张 `agent_task*` 还在时成立。admin 的 baseline 既不建也不删它们，所以没有任何一次启动会自动收掉这条路——它失效于第 8 步的 DROP 真的被执行那一刻，在此之前拖着它是一份可选，而不是欠账。表已经删了再退，指回旧库就连表都没有，得先把表建回来（运维手工建表是干净的一条；把 `SCHEDULER_FLYWAY_ENABLED` 临时开成 true 让本模块的基线在旧 URL 上建出来也行，但前提是旧库那张 `flyway_schema_history_scheduler` 台账与实际 schema 对得上——台账被一起删过就得先把它对齐，否则 validate 会先拦下来），然后再关回去。11 张 `QRTZ_*` 是同一个道理，只是它们在旧库存在与否取决于这个安装有没有把 `QUARTZ_JOB_STORE=jdbc` 指向过 `harnax_admin`。
 
 ## 全新部署一次（2026-09-16 实测）
 
-`bash docker-new/deploy-all.sh` 一把梭（Maven 全模块 → webui `npm run build` → 产物入 `docker-new/dist` → 沙箱镜像 → 6 个服务镜像 `--no-cache` → `down` → `up -d --scale scheduler=${SCHEDULER_REPLICAS:-2}`）。**开跑前有两件事不做就一定失败**：
+`bash harnax-deploy/deploy-all.sh` 一把梭（Maven 全模块 → webui `npm run build` → 产物入 `harnax-deploy/dist` → 沙箱镜像 → 6 个服务镜像 `--no-cache` → `down` → `up -d --scale scheduler=${SCHEDULER_REPLICAS:-2}`）。**开跑前有两件事不做就一定失败**：
 
-1. **`docker-new/.env` 里那两个占位密钥必须换掉真值**。`ADMIN_INTERNAL_API_SECRET` 与 `HARNAX_AUTH_SECRET` 一旦还是仓库里公开的 `change-me-in-production-min-32-chars!!`，router 在 `CACHE_TYPE=redis` 下会被 `harnax-session-router/.../config/PlaceholderSecretCheck.kt` 在 `@PostConstruct` 里直接 `error(...)`——**容器起不来，不是降级起来**。顺手给 `HARNAX_AES_SECRET_KEY` 一个**恰好 32 字节**的值（`AesUtil` 只告警不拦，但空库时是唯一次没有代价的设定时机：晚设会让已加密的模型 key / MCP header 读不出来）。
-2. **"清空数据库"在这套部署里等价于移走 bind mount**。MySQL 的数据在 `${MYSQL_DATA_DIR:-./data/mysql}`，`sql/init-databases.sql` 只在**目录为空**时由 `docker-entrypoint-initdb.d` 执行一次；删库名、`TRUNCATE`、或只重启容器都不会让 `harnax_scheduler` 重新出现（它连库都不建，建表是 scheduler 自己的 Flyway）。做法：`docker compose -f docker-new/docker-compose.yml down` 之后把 `docker-new/data/mysql` 改名（比 `rm -rf` 可回退），再起来，五个库（`harnax_admin` / `harnax` / `agentscope` / `harnax_router` / `harnax_scheduler`）与授权会由脚本重建。Redis 只有派生状态，跟着 `docker volume rm docker-new_redis-data` 一起清掉最省事（`down` 不动卷）。
+1. **`harnax-deploy/.env` 里那两个占位密钥必须换掉真值**。`ADMIN_INTERNAL_API_SECRET` 与 `HARNAX_AUTH_SECRET` 一旦还是仓库里公开的 `change-me-in-production-min-32-chars!!`，router 在 `CACHE_TYPE=redis` 下会被 `harnax-session-router/.../config/PlaceholderSecretCheck.kt` 在 `@PostConstruct` 里直接 `error(...)`——**容器起不来，不是降级起来**。顺手给 `HARNAX_AES_SECRET_KEY` 一个**恰好 32 字节**的值（`AesUtil` 只告警不拦，但空库时是唯一次没有代价的设定时机：晚设会让已加密的模型 key / MCP header 读不出来）。
+2. **"清空数据库"在这套部署里等价于移走 bind mount**。MySQL 的数据在 `${MYSQL_DATA_DIR:-./data/mysql}`，`sql/init-databases.sql` 只在**目录为空**时由 `docker-entrypoint-initdb.d` 执行一次；删库名、`TRUNCATE`、或只重启容器都不会让 `harnax_scheduler` 重新出现（它连库都不建，建表是 scheduler 自己的 Flyway）。做法：`docker compose -f harnax-deploy/docker-compose.yml down` 之后把 `harnax-deploy/data/mysql` 改名（比 `rm -rf` 可回退），再起来，五个库（`harnax_admin` / `harnax` / `agentscope` / `harnax_router` / `harnax_scheduler`）与授权会由脚本重建。Redis 只有派生状态，跟着 `docker volume rm harnax-deploy_redis-data` 一起清掉最省事（`down` 不动卷）。
 
 实测结论（`kotlin-dev` @ `d60eab3`）：
 
-- 11 个容器全 `healthy`；`harnax_scheduler` 恰好 15 张表 = 11 张 `QRTZ_*` + `agent_task` / `agent_task_log` / `agent_task_execution` + `flyway_schema_history_scheduler`，V1、V2 均 `success=1`；`harnax_admin` 的 Flyway 到 V28。
-- `QRTZ_SCHEDULER_STATE` 两行、各按 15s 前进；`docker kill docker-new-scheduler-2` 之后存活副本 **21s** 打出 `ClusterManager: detected 1 failed or restarted instances` → `Freed 1 acquired trigger(s)`，`up -d --scale scheduler=2` 后重新两行。**接管窗口不是纸面推的了**（推算过程见 spec §11 第 2 条）。
+- 11 个容器全 `healthy`；`harnax_scheduler` 恰好 15 张表 = 11 张 `QRTZ_*` + `agent_task` / `agent_task_log` / `agent_task_execution` + `flyway_schema_history_scheduler`，本域的表全部出自本服务的基线 `harnax-scheduler/src/main/resources/db/migration/V1__init_schema.sql`；`harnax_admin` 共 35 张 = 基线的 34 张 + 自己的 `flyway_schema_history`，其中没有本域的任何表（`QRTZ_*` 与 `agent_task*` 在 `harnax_admin` 里一张都没有）。**这组数与台账行数出自 2026-09-28 按合并后单份基线的清库重部署实测**：三个 schema 的启动日志都是 `Migrating schema … to version "1 - …"` → `Successfully applied 1 migration … now at version v1`，台账各一行且 `success=1`，没有校验和与 validate 报错，`Tomcat started on port` 每个服务恰好一条；`QRTZ_SCHEDULER_STATE` 两行（两副本都登记进集群）。这一回核的前置条件就是上面第 2 条清库重部署——老台账与新基线的校验和必然不符，服务会拒绝启动。
+- `QRTZ_SCHEDULER_STATE` 两行、各按 15s 前进；`docker kill harnax-deploy-scheduler-2` 之后存活副本 **21s** 打出 `ClusterManager: detected 1 failed or restarted instances` → `Freed 1 acquired trigger(s)`，`up -d --scale scheduler=2` 后重新两行。**接管窗口不是纸面推的了**（推算过程见 spec §11 第 2 条）。
 - 观测面无漂移：`scheduler.jobs.scheduled`=0（空库），`scheduler.reconcile.rounds{outcome=success}` 每分钟一次、没有 `failure` 标签，`scheduler.reconcile.drift` 从未被采样。
 - 界面链路通：`https://localhost/` 200（80 端口 301 跳 443），`/api/admin/auth/cli-login` 拿到 JWT，`GET /api/admin/agent-tasks/page` 与 `GET /api/admin/agent-tasks/{id}/logs` 经 admin 转发到 scheduler 均 200 且 `Page` 形状完好。webui 调用的 11 条 agent-task 路径与 admin `AgentTaskController` 暴露的一一对得上，搬迁没漏路由。
 - **仍未覆盖**：spec §11 的第 3/4/5/7 条（带执行中任务重启、执行中点"停止"、界面建任务/立即执行、OAuth MCP 的 C5 回归）。它们的前置是库里有一个 agent，而建 agent 要真实的模型 API Key——这一步只能由使用方给。
-- 两条新登记的记账：`harnax_admin` 里会被历史迁移重放出三张 0 行的孤儿 `agent_task*` 表（spec §9 F16，**已由 admin 的 `V39__drop_agent_task_tables.sql` 收口**）；两副本冷启动时系统 sweep 撞一次重复键、20ms 后自愈，代价是一条带 SQL 字样的 WARN（spec §9 F17）。
+- 两条已登记的记账：建库早于这次改造的 `harnax_admin` 里可能留着三张 0 行的孤儿 `agent_task*` 表（spec §9 F16；admin 的基线不建它们，所以全新安装里根本没有，已存在的库里的那些由运维删）；两副本冷启动时系统 sweep 撞一次重复键、20ms 后自愈，代价是一条带 SQL 字样的 WARN（spec §9 F17）。
 
 ## 常见问题
 
@@ -246,6 +246,6 @@ SCHEDULER_FLYWAY_ENABLED=false             # 否则它会拿 V2 去碰 harnax_ad
 - `docs/superpowers/specs/2026-09-11-scheduler-cluster-design.md`：真集群（JDBC JobStore、2 实例、D6 停机语义）的设计与里程碑
 - `docs/superpowers/plans/2026-09-14-scheduler-jdbc-cluster.md`：发布 1 的实现计划（里程碑 S2，QRTZ 集群 + reconcile + 部署形态）
 - `docs/superpowers/plans/2026-09-14-scheduler-domain-migration.md`：发布 2 的实现计划（里程碑 S3，域搬迁 + C1/C4/C5 + 上面「发布 2 切口」那一节的出处）
-- `docker-new/roll-scheduler.sh`：逐台滚动脚本，头部注释是这段拓扑规则的出处
+- `harnax-deploy/roll-scheduler.sh`：逐台滚动脚本，头部注释是这段拓扑规则的出处
 - `docs/deploy-harnax-session-router.md`：router 部署（执行入口）
 - `docs/deploy-harnax-agent-service.md`：运行时侧的 MCP 与身份语义

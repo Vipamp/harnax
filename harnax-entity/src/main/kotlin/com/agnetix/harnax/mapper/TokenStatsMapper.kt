@@ -13,7 +13,7 @@ import org.apache.ibatis.annotations.Param
  * sits once in the shared `tenantAndTimeWindow` fragment that all 20 aggregations include, which is the
  * only reason adding a 21st statement cannot quietly come out unscoped.
  *
- * Rows inserted with a NULL `tenant_id` (V50: a run nothing attributed it to) match no read here. That is
+ * Rows inserted with a NULL `tenant_id` (a run nothing attributed it to) match no read here. That is
  * the trade for not guessing a tenant on the way in.
  */
 @Mapper

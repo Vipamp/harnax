@@ -8,8 +8,8 @@ import java.time.LocalDateTime
  * Model entity
  *
  * Tenant-scoped like the provider it belongs to: a row is visible to its own tenant and, when
- * `is_public`, to every tenant (see `selectModelList`). `tenant_id` exists since V1 and is stamped
- * from the caller's tenant on create.
+ * `is_public`, to every tenant (see `selectModelList`). `tenant_id` is a column of the table and is
+ * stamped from the caller's tenant on create.
  */
 @Schema(description = "Model entity")
 class Model : Serializable {

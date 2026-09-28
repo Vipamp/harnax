@@ -149,7 +149,7 @@
 |------|------|------|------|
 | SES-01 | 标题重复 | countByTitle>0 | BizException `Session name already exists, please use another name` |
 | SES-02 | agent 不存在 | getAgent=null | BizException `Agent not found`(注意被外层 catch 包装为 RuntimeException `Failed to create session: ...`,断言最终异常类型与 message) |
-| SES-03 | 创建复制 agent 字段 | agent 含 name/description/systemPrompt/modelId/owner | Session 实体对应字段一致;sessionId 前缀 `web-`;status=1、isPublic=0(agent 与 session 上的 `mcp_list` / `skill_list` 已由 `V21` 删除,创建会话不再复制能力清单) |
+| SES-03 | 创建复制 agent 字段 | agent 含 name/description/systemPrompt/modelId/owner | Session 实体对应字段一致;sessionId 前缀 `web-`;status=1、isPublic=0(agent 与 session 上的 `mcp_list` / `skill_list` 两列已不在 schema 里,创建会话不再复制能力清单) |
 | SES-04 | 更新不存在会话 | selectById=null | BizException `Session not found` |
 | SES-05 | 更新字段映射 | 传 sessionDescription | 写入实体 description 字段(命名不一致点,固化行为) |
 | SES-06 | chat config 会话不存在 | selectBySessionIdAndStatus=null | BizException `Session not found or disabled` |
@@ -175,7 +175,7 @@
 | AGT-06 | saveToolBindings 先删后插 | toolList=[{id:1}] | InOrder: deleteByAgentId → insert |
 | AGT-07 | toolList 条目缺 id 跳过 | [{id:null}, {id:2}] | 只插入 toolId=2 |
 | AGT-08 | needConfirm 透传 | binding 请求 needConfirm=true / false / null | 分别存 1 / 0 / 0;不再查工具实体(运行时取 `agent_tool.needConfirm` 与绑定值的或,绑定层只能加严) |
-| AGT-09 | 同一请求内重复 toolId 去重 | [{id:1}, {id:1}, {id:2}] | 只插入 toolId=1、2 各一条(取首次出现),配合 `V18` 的 (agent_id, tool_id) 唯一键 |
+| AGT-09 | 同一请求内重复 toolId 去重 | [{id:1}, {id:1}, {id:2}] | 只插入 toolId=1、2 各一条(取首次出现),配合 `uk_agent_tool_binding_agent_id_tool_id` |
 | AGT-10 | skillList 解析 | "1,,x,3" | 只插入 1、3;空串与非数字跳过 |
 | AGT-11 | serializeEnvBindings 空入参 | null / 空列表 | 返回 null |
 | AGT-12 | serializeEnvBindings 引用优先 | envVarId=5 且 customValue="abc" | 两个都带时按引用处理：JSON 只写 `envVarId` / `envVarName`，`customValue` 被丢弃（第十七轮之前这行写的是「customValue 优先」，与 `if (envVarId != null) … else if` 的实现一直相反） |
@@ -183,7 +183,7 @@
 | AGT-14 | parseEnvBindingsJson 脏数据 | "not-json" | 返回 null,不抛 |
 | AGT-15 | parseEnvBindingsJson 敏感变量掩码 | envVar.sensitive=1 | displayValue="******" |
 | AGT-16 | parseEnvBindingsJson 变量已删除回退快照 | getRowWithinTenant=null | 使用存储的 snapshotValue。**只对历史行成立**：新写入的引用条目没有 snapshotValue 可兜，界面与下发都拿不到值（下发侧剩一句 warn），见 §5.11 与 `mcp-management` §7.16 |
-| AGT-17 | 同一请求内重复 mcpId 去重 | mcpList=[{id:3},{id:3},{id:4}] | 只插入 mcpId=3、4 各一条(取首次出现),配合 `V19` 的 (agent_id, mcp_id) 唯一键;绑定行已无 `enableSkip` 字段(`V20` 连同列一起删除) |
+| AGT-17 | 同一请求内重复 mcpId 去重 | mcpList=[{id:3},{id:3},{id:4}] | 只插入 mcpId=3、4 各一条(取首次出现),配合 `uk_agent_mcp_binding_agent_id_mcp_id`;绑定行已无 `enableSkip` 字段(schema 里也没有这一列) |
 | AGT-18 | 绑定的 mcpId 解析不到 | mcpList=[{id:9}],`mcpServerMapper.selectByIds([9])` 返回空(服务已删/不存在) | BizException,message 含 `9`;`mcpBindingMapper.batchInsert` never()(存得进去但 `agent-spec` 解析不出来的绑定从此造不出来) |
 | AGT-19 | 绑定的 mcpId 属别的租户 | selectByIds 返回 tenantId=2 的行,当前租户为默认的 1 | BizException;`batchInsert` never()。判定口径与 `McpServerService.getMcpServer` 一致(`selectByIds` 已排除 `active=0`,再比租户) |
 | AGT-20 | 创建时打上当前租户 | TenantContext 设为 7 | argumentCaptor 捕获的实体 tenantId=7;落库列由 `AgentMapperTest` 的 `insert should persist tenant id` 补齐(此前 `AgentMapper.xml` 的 insert 无 `tenant_id`,这行只是意图声明) |
@@ -246,7 +246,7 @@
 | MCS-09 | 列表查询带租户 | TenantContext 里设了 7 | `selectMcpServerList` 末位参数取到 7;未设租户时回落到 1(`TenantContext.getTenantId() ?: 1`,与 `CliServiceImpl` 同口径),Mapper 侧该参数可空、为空即不拼 `AND tenant_id = ?` |
 | MCS-10 | 单行读取按租户 | selectById 返回 tenantId=2 的行,当前租户 1 | `getMcpServer` 返回 null(由控制器转 404/未找到),不把别租户的配置读出来 |
 | MCS-11 | 删除按租户 | 同上,id 猜对了 | `deleteMcpServer` 拒绝,`deleteById` 与级联清绑定都不执行 |
-| MCS-12 | 改名查重按租户 | 更新时传新名,查重 stub 为 `selectByName(新名, 行内 tenantId)` | 命中即 BizException;stub 带第二个参数本身就是断言 —— 查重漏掉租户就等于允许跨租户抢名(库层由 `V23` 兜底) |
+| MCS-12 | 改名查重按租户 | 更新时传新名,查重 stub 为 `selectByName(新名, 行内 tenantId)` | 命中即 BizException;stub 带第二个参数本身就是断言 —— 查重漏掉租户就等于允许跨租户抢名(库层由 `uk_mcp_server_tenant_active_name` 兜底) |
 | MCS-13 | authType 缺省 | 创建请求不传 `authType` | 落库为 `NONE`,不是空串也不是 null(运行侧按值分支,空值等于未定义行为) |
 | MCS-14 | 未知 authType | 传 `BEARER` | 直接拒。`McpAuthTypes.SUPPORTED` 之外的值不许入库——入库就等于下发给运行时一个它认不得的分支 |
 | MCS-15 | BASIC 先拒 | 传 `BASIC` | 拒,错误信息含 `not wired into the runtime yet`。列上能写、运行时不生效的认证方式是假开关(P4 接上后再放开) |
@@ -258,13 +258,13 @@
 | MCS-21 | 改 type 时一并校验 | 把 OAUTH2 服务改成 stdio | 拒且 `verify(mcpServerMapper, never()).updateById(any())`:校验必须早于任何写,不能先落库再回滚口径 |
 | MCS-22 | 删除级联凭据 | 正常删除 | `verify(mcpUserCredentialMapper).deleteByMcpId(1L)`。服务没了还留着用户对它的 token,是纯债 |
 | MCS-23 | 没离开 OAUTH2 就不动凭据 | 原行 `authType=OAUTH2`,请求只改 description | `verify(mcpUserCredentialMapper, never()).deleteByMcpId(anyLong())`——清理的条件是「这次请求把 OAuth 关掉了」,不是「这行现在是 OAuth」 |
-| MCS-24 | 本来不是 OAuth 的服务也不去清 | 原行 authType 是 `NONE`(夹具不设这一列,取实体的默认值),请求只改 description | 同上 never():判据是 `wasOAuth`——原行的 `auth_type` 是不是 `OAUTH2`,不是「这行有没有 authType 值」。V25 那一列是 `NOT NULL DEFAULT 'NONE'`、实体字段也是非空 `String`,不存在「老行 authType 为 null」;把 `NONE` 当成「刚离开 OAUTH2」就会去删一张与此无关的表 |
+| MCS-24 | 本来不是 OAuth 的服务也不去清 | 原行 authType 是 `NONE`(夹具不设这一列,取实体的默认值),请求只改 description | 同上 never():判据是 `wasOAuth`——原行的 `auth_type` 是不是 `OAUTH2`,不是「这行有没有 authType 值」。schema 给这一列的是 `NOT NULL DEFAULT 'NONE'`、实体字段也是非空 `String`,不存在「老行 authType 为 null」;把 `NONE` 当成「刚离开 OAUTH2」就会去删一张与此无关的表 |
 | MCS-25 | 换成 stdio 清掉网络型字段 | 原行 `streamablehttp` 带 `url` 与加密 `headers`,请求 `type=stdio` + 非空 `command` | 捕获实体 `type=stdio`、`url == ""`(实体非空)、`headers == null`。`updateById` 无条件写全列,残留的 url 会永远躺在行上,而运行时按 `type` 分派根本不看它——一台服务变成两段配置拼出来的,没人发现得了 |
 | MCS-26 | 换成网络型清掉 stdio 字段 | 原行 `stdio` 带 `command` 与加密 `envParams`,请求 `type=sse` + 非空 `url` | 捕获实体 `type=sse`、`command == ""`、`envParams == null`。与 MCS-25 同一刀的两侧,少一侧就还剩一半残留 |
 | MCS-27 | OAuth 服务换 url 清逐人凭据 | 原行 `OAUTH2` + `url=:8080/mcp`,请求改 `url=:9090/mcp`(不改 authType) | `verify(mcpUserCredentialMapper).deleteByMcpId(1L)`,且捕获实体仍是 `OAUTH2`、`oauthConfig` 非空。RFC 8707 把令牌与 resource 地址绑死,旧地址换到的凭据不可能再被接受——不清就是 `status` 永远回答「已授权」而换票必失败 |
 | MCS-28 | url 原样重提不算换地址 | 原行 `OAUTH2` + `url=:8080/mcp`,请求带同一个 url | `verify(mcpUserCredentialMapper, never()).deleteByMcpId(anyLong())`。编辑表单每次都把填着的 url 提交回去,把「带着但相同」读成搬迁,等于每次保存都把全租户的用户登出 |
 
-> 唯一键与租户过滤的 SQL 行为另有 `McpServerMapperTest`:`selectByName should limit the lookup to the given tenant`、`unique key should guard active names per tenant`(同租户重名 `assertThrows<DuplicateKeyException>`、别租户可同名、软删后可复用)、`selectMcpServerList should filter by tenant`。该类走 Testcontainers,跑法见 §17(本机 Docker + `TESTCONTAINERS_RYUK_DISABLED=true`),已计入回归。`schema-test.sql` 已同步 `V23` 的生成列与唯一键。V26 的三张 OAuth 表各有对应用例:`McpOauthClientMapperTest`(8,含 `issuer` 精确匹配与复用取最小 id)、`McpUserCredentialMapperTest`(7,含撤销时把两个密文列写回 NULL、重新授权复用同一行)、`McpCallLogMapperTest`(3,只有 insert)。
+> 唯一键与租户过滤的 SQL 行为另有 `McpServerMapperTest`:`selectByName should limit the lookup to the given tenant`、`unique key should guard active names per tenant`(同租户重名 `assertThrows<DuplicateKeyException>`、别租户可同名、软删后可复用)、`selectMcpServerList should filter by tenant`。该类走 Testcontainers,跑法见 §17(本机 Docker + `TESTCONTAINERS_RYUK_DISABLED=true`),已计入回归。`schema-test.sql` 的 DDL 段取自 admin 的 schema 基线 `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql`,生成列与唯一键因此与生产同源、不再两头对齐。`mcp_oauth_client`、`mcp_user_credential`、`mcp_call_log` 三张 OAuth 表各有对应用例:`McpOauthClientMapperTest`(8,含 `issuer` 精确匹配与复用取最小 id)、`McpUserCredentialMapperTest`(7,含撤销时把两个密文列写回 NULL、重新授权复用同一行)、`McpCallLogMapperTest`(3,只有 insert)。
 
 ### 5.4 InternalApiController(配置下发)
 
@@ -279,7 +279,7 @@
 | IAD-05 | status 随配置下发 | mcp_server.status=0 | `McpDetailDto.status=0` 原样下发,由运行侧决定跳过 |
 | IAD-06 | 别租户的 MCP 不下发 | 绑定 mcpId=7 的行 tenantId=2,agent tenantId=1 | `mcpDetails` 与 `mcpList` 两半都不出现该条,且 `verifyNoInteractions(secretFieldEncryptor)`——别租户的凭据连解密都不发生 |
 
-> **口径差的关闭方式**:下发用的 `selectByIds` 仍然不带租户条件(内部调用没有可信的 `X-Tenant-ID`,注入不进来),但 `agent.tenant_id` 已由 P1-5 真正落库,于是 `buildAgentSpecResponse` 拿到 agent 归属后在内存里比一刀(IAD-06)。第四轮的绑定校验挡新写入,这一刀清掉 `V23` 之前存下的跨租户绑定。与 `McpServerServiceImpl` 的可见性口径一致:`is_public` 只在租户内成立,不存在跨租户共享。
+> **口径差的关闭方式**:下发用的 `selectByIds` 仍然不带租户条件(内部调用没有可信的 `X-Tenant-ID`,注入不进来),但 `agent.tenant_id` 已由 P1-5 真正落库,于是 `buildAgentSpecResponse` 拿到 agent 归属后在内存里比一刀(IAD-06)。第四轮的绑定校验挡新写入,这一刀把库里已经存在的跨租户绑定挡在下发之外。与 `McpServerServiceImpl` 的可见性口径一致:`is_public` 只在租户内成立,不存在跨租户共享。
 
 ### 5.5 SecretFieldEncryptor(敏感字段加解密与掩码沿用)
 
@@ -504,7 +504,7 @@
 
 > 三件事在同一个入口上：绑的工具解析不到、引用的变量解析不到、必填参数留空。它们过去都能存进去，代价要到运行期才付——少一个工具、或者一个参数永远拿到空。所以守卫放在 `updateAgent` 这条写入口，测的也是它（打桩 mapper、`argumentCaptor` 取真正要落库的那份 JSON），而不是私有的 `serializeEnvBindings`。
 >
-> `resolveBindableTools` 是照着 AGT-18 / AGT-19 那两条 MCP 用例平移的，判据一致（`selectByIds` 已排除 `active=0`，再比租户）；`assertEnvBindingsBindable` 用 `envVariableService.getRowWithinTenant(id)?.tenantId` 比对，理由是引用型快照不存值，id 失效就等于这个参数什么都不发。比的是**租户**而不是创建者：`getEnvVariable` 自 V46 起只认自己建的行（与列表、下拉同口径），绑定解析若跟着收，共享智能体里所有者填的那些变量就成了「运行取得到、表单存不进」。
+> `resolveBindableTools` 是照着 AGT-18 / AGT-19 那两条 MCP 用例平移的，判据一致（`selectByIds` 已排除 `active=0`，再比租户）；`assertEnvBindingsBindable` 用 `envVariableService.getRowWithinTenant(id)?.tenantId` 比对，理由是引用型快照不存值，id 失效就等于这个参数什么都不发。比的是**租户**而不是创建者：`getEnvVariable` 只认自己建的行（与列表、下拉同口径），绑定解析若跟着收，共享智能体里所有者填的那些变量就成了「运行取得到、表单存不进」。
 
 | 编号 | 用例 | 输入 | 期望 |
 |------|------|------|------|
@@ -524,7 +524,7 @@
 | EBG-14 | 平台级工具行可以绑 | selectByIds 返回 `tenant_id` 为平台哨兵的行,当前租户 1 | 保存通过。「工具按平台登记、人人可用」与「引用别人的密钥」是两件事,判据只在后者那边 |
 | EBG-15 | CLI 引用别的租户的变量 | CLI 绑定带 `envVarId=7`,该行 tenantId=2 | BizException,message 含 `7`;`cliBindingMapper.batchInsert` never()。CLI 的绑定同样整份并进沙箱环境,少比一次租户就是把别人的密钥送进去 |
 | EBG-16 | 引用一个已停用的变量 | `envVarId=7` 且该行 `enabled=0` | BizException,message 含变量名 `OPENAI_KEY`;`batchInsert` never()。停用侧已改为对在用引用返回 null,存进去等于表单显示已填、运行拿到空 |
-| EBG-17 | 同一个键挂两个来源 | 一个工具两条绑定同为 `OPENAI_KEY`,分别指向 envVarId 7 与 8 | BizException,message 含 `OPENAI_KEY`;`batchInsert` never()。V46 之后同租户两人各持一个同名键是合法数据,而下发按名字装 map,用谁的凭据全看数组顺序 |
+| EBG-17 | 同一个键挂两个来源 | 一个工具两条绑定同为 `OPENAI_KEY`,分别指向 envVarId 7 与 8 | BizException,message 含 `OPENAI_KEY`;`batchInsert` never()。环境参数的唯一键是 `(tenant_id, creator, active_env_key)`，同租户两人各持一个同名键是合法数据,而下发按名字装 map,用谁的凭据全看数组顺序 |
 | EBG-18 | 同一个键两条同源**照旧可存** | 两条绑定同为 `API_KEY` 且都不带值（`envValue=""`） | 保存通过,`batchInsert` 被调用。表单是按服务自己声明的参数逐行建绑定的,声明里写两遍同名参数就是这种形状;拒掉等于那类智能体永久存不进,而两个来源的歧义并不存在 |
 
 > EBG-17 与 EBG-18 是一对：守卫只拒「同一个键两个来源」，不拒「同一个键重复出现」。只写前一条，看不出闸是不是开得太宽。
@@ -762,7 +762,7 @@ TESTCONTAINERS_RYUK_DISABLED=true mvn -o verify -pl harnax-admin -am -Pintegrati
   -Dit.test=HealthInfoIT -Dfailsafe.failIfNoSpecifiedTests=false
 ```
 
-(`-am` 必带,否则兄弟模块的 SNAPSHOT 解析不到;`-Dtest=` 指向那个 IT 是为了让 surefire 什么都不跑,否则 1760 个单测会先来一遍。)实测:`HealthInfoIT` 3/3 绿,耗时 92s——即 `V1..V26` 在全新 MySQL 8 上按序执行成功,含 `V26` 的生成列 `active_client_id` 与 `utf8mb4_bin` 两列。
+(`-am` 必带,否则兄弟模块的 SNAPSHOT 解析不到;`-Dtest=` 指向那个 IT 是为了让 surefire 什么都不跑,否则 1760 个单测会先来一遍。)实测:`HealthInfoIT` 3/3 绿,耗时 92s——即 admin 的 schema 基线在全新 MySQL 8 上重放成功,含 `mcp_oauth_client` 的生成列 `active_client_id` 与 `utf8mb4_bin` 两列。
 
 防复发:`MapperXmlParseTest`(纯 JVM,不依赖 Docker)把 classpath 上所有 mapper XML 过一遍解析,并单独检查注释体里的 `--`——解析器只会报「not well-formed」,不指出是注释问题,所以这一步要自己查。
 

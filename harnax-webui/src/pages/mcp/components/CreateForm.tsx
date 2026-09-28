@@ -31,7 +31,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
     { label: intl.formatMessage({ id: 'pages.mcp.type.streamablehttp', defaultMessage: 'Streamable HTTP' }), value: 'streamablehttp' },
   ];
 
-  // 运行时只认 McpAuthTypes.SUPPORTED 这三个；V25 里的 BASIC 写进来会被 resolveAuthType 拒掉，给了选项就是让人配一个存不下的值
+  // 运行时只认 McpAuthTypes.SUPPORTED 这三个；schema 声明的 BASIC 写进来会被 resolveAuthType 拒掉，给了选项就是让人配一个存不下的值
   const authTypeOptions = [
     { label: intl.formatMessage({ id: 'pages.mcp.oauth.auth.none', defaultMessage: 'None (no upstream credential)' }), value: 'NONE' },
     { label: intl.formatMessage({ id: 'pages.mcp.oauth.auth.staticHeader', defaultMessage: 'Static header (shared service credential)' }), value: 'STATIC_HEADER' },

@@ -16,7 +16,7 @@ data class AgentSpec(
     /**
      * The tenant owning this agent, delivered by admin from the agent (or team) row.
      *
-     * It exists for the three tables V50 attributed: a token, tool-call or process row is only knowable
+     * It exists for the three attributed tables: a token, tool-call or process row is only knowable
      * as one tenant's at the moment it is written, and this is the only place the runtime can read it
      * from. Null means admin sent no tenant at all — a spec built by an older admin — and the write side
      * then stores NULL rather than guessing a workspace the run may not belong to.

@@ -109,11 +109,11 @@ abstract class BaseSchedulerIT {
             .withDatabaseName("harnax_scheduler_it")
             .withUsername("root")
             .withPassword("it_test")
-            // Release 2 moved the three task tables into this module's own Flyway history, so V2 creates them
-            // here exactly as it does in production. The init script is left with the one table no migration
-            // owns (`it_cluster_fire`); duplicating a migration's DDL in it would win the race against
-            // Flyway — Testcontainers runs it first, and V2's `IF NOT EXISTS` then no-ops over it — leaving
-            // the ITs on a schema the release never shipped.
+            // This module's Flyway owns the three task tables, so its baseline (db/migration/V1__init_schema.sql)
+            // creates them here exactly as it does in production. The init script is left with the one table no
+            // migration owns (`it_cluster_fire`); duplicating a migration's DDL in it would win the race against
+            // Flyway — Testcontainers runs it first, and the baseline's `IF NOT EXISTS` then no-ops over it —
+            // leaving the ITs on a schema the service never ships.
             .withInitScript("schema-it.sql")
 
         init {

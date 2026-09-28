@@ -22,11 +22,12 @@ import kotlin.test.assertTrue
  *
  * A channel carries its own conversation: `chn-{uuid}` is minted at creation and stamped on the channel
  * row, and that id is what the runtime keys the chat state, the plans and the sandbox container by. There
- * is no `session` row to lose — V28's own comment says a channel session never lives in `session` — so the
- * only cleanup available for it is the release admin asks the router to perform. Before this round
- * `ChannelServiceImpl.deleteChannel` was a bare `deleteById`, so the row went away while the conversation
- * kept running under a name nobody could point at any more: the router answers session ownership from the
- * soft-deleted row's `tenant_id`, so it went on routing to a session whose channel no page listed.
+ * is no `session` row to lose — a channel session lives on the `channel` row's `session_id`, never in
+ * `session` — so the only cleanup available for it is the release admin asks the router to perform.
+ * Before this round `ChannelServiceImpl.deleteChannel` was a bare `deleteById`, so the row went away
+ * while the conversation kept running under a name nobody could point at any more: the router answers
+ * session ownership from the soft-deleted row's `tenant_id`, so it went on routing to a session whose
+ * channel no page listed.
  *
  * The cascade has an order, and this class pins the whole of it:
  *  - the release is asked for with the channel's own session id, before any local row is written;

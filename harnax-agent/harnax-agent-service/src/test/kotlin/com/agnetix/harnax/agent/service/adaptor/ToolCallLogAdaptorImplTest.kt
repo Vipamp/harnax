@@ -15,7 +15,7 @@ import tools.jackson.databind.ObjectMapper
 /**
  * Unit tests for ToolCallLogAdaptorImpl.
  *
- * `tool_call_log.tenant_id` (V50) can only come from the info object the toolbox built, and the toolbox
+ * `tool_call_log.tenant_id` can only come from the info object the toolbox built, and the toolbox
  * built it from the session meta the launcher carried. This is the last hop, and the one a silent null
  * would make invisible rather than wrong-looking.
  */

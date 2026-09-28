@@ -239,7 +239,7 @@ harness 侧的 `ToolCallLogAdaptor` 由 `HarnessAutoConfiguration` 通过 `Objec
 
 ## 7. 数据模型
 
-列集合与索引以 `harnax-admin/src/main/resources/db/migration/` 下的最新 DDL 为准（当前到 V50）。`agent_tool` 的最终形态见 V40：平台作用域、按名字标识、只增不删；`tool_call_log.tenant_id` 见 V50。
+列集合与索引以 admin 的 schema 基线 `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` 为准：这一个脚本就是全部建表与列定义，没有需要往上叠加的后续版本。`agent_tool` 的形态是平台作用域、按名字标识（`uk_agent_tool_name`）、只增不删；`tool_call_log` 的 `tenant_id` 是一个可空列，与 `idx_tenant_ts (tenant_id, ts)` 一起写在这张表自己的建表语句里。
 
 ### 7.1 agent_tool
 
@@ -266,7 +266,7 @@ harness 侧的 `ToolCallLogAdaptor` 由 `HarnessAutoConfiguration` 通过 `Objec
 
 | 列 | 含义 |
 | --- | --- |
-| `agent_id`, `tool_id` | 组合唯一键 `uk_agent_tool_binding_agent_id_tool_id`（V18），一个 agent 对一个工具最多一行 |
+| `agent_id`, `tool_id` | 组合唯一键 `uk_agent_tool_binding_agent_id_tool_id`，一个 agent 对一个工具最多一行 |
 | `need_confirm` | 绑定级确认，运行时与 `agent_tool.need_confirm` 取或 |
 | `env_bindings` | JSON 数组快照，元素含 `envKey`、`envValue`、`envVarId`、`envVarName`、`customValue` |
 | `create_time` / `update_time` | 保存时写 |
@@ -279,7 +279,7 @@ harness 侧的 `ToolCallLogAdaptor` 由 `HarnessAutoConfiguration` 通过 `Objec
 
 ### 7.4 tool_call_log
 
-`agent_id`（可空，lead 运行为 NULL）、`tenant_id`（可空，未归属即 NULL）、`session_id`、`tool_name`（`组名::方法名`）、`args`（JSON）、`result`、`success`、`start_time`、`end_time`、`duration`、`ts`。`ToolCallLogMapper` 只有 `insert`：行写一次，永不读回，也不随 session 或 agent 清理。索引有 `idx_agent_id`、`idx_session_id`、`idx_tool_name`、`idx_ts` 与 V50 加的 `idx_tenant_ts`。
+`agent_id`（可空，lead 运行为 NULL）、`tenant_id`（可空，未归属即 NULL）、`session_id`、`tool_name`（`组名::方法名`）、`args`（JSON）、`result`、`success`、`start_time`、`end_time`、`duration`、`ts`。`ToolCallLogMapper` 只有 `insert`：行写一次，永不读回，也不随 session 或 agent 清理。索引有 `idx_agent_id`、`idx_session_id`、`idx_tool_name`、`idx_ts` 与 `idx_tenant_ts (tenant_id, ts)`。
 
 ### 7.5 与 env_variable 的关系
 
@@ -418,6 +418,6 @@ class OrderToolBox : ToolBox() {
 | 团队工具组 | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/team/TeamToolBoxes.kt` |
 | 整轮超时 | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentWrapper.kt`、`harnax-agent/harnax-agent-service/src/main/resources/application.yml` |
 | 实体与 Mapper | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentTool.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentToolBinding.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentToolEnvParam.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/ToolCallLogEntity.kt`、`harnax-entity/src/main/resources/mapper/AgentToolMapper.xml`、`harnax-entity/src/main/resources/mapper/ToolCallLogMapper.xml` |
-| DDL | `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql`、`harnax-admin/src/main/resources/db/migration/V40__tool_registry_platform_scoped.sql`、`harnax-admin/src/main/resources/db/migration/V50__scope_stats_and_logs_to_a_tenant.sql` |
+| DDL | `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql`（`agent_tool`、`agent_tool_binding`、`agent_tool_env_param`、`tool_call_log` 的列、键与缺省都写在这一个基线里） |
 | 前端 | `harnax-webui/src/pages/tool/index.tsx`、`harnax-webui/src/pages/agent/components/ToolConfigPanel.tsx`、`harnax-webui/src/services/ant-design-pro/tool.ts` |
 | 进程装配 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/HarnaxAdminApplication.kt`、`harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/AgentServiceApplication.kt` |

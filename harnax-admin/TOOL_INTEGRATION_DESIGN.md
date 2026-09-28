@@ -1,6 +1,6 @@
 # Harnax 工具（Tools）集成设计方案
 
-> 本文为早期设计方案，仅作历史归档，其中的字段与流程已被实现取代：工具绑定的 `enable_skip` 已由 `V17__drop_tool_binding_enable_skip.sql` 删除，内置工具的新增 / 更新 / 删除统一由 admin 启动时的代码注册收敛。
+> 本文为早期设计方案，仅作历史归档，其中的字段与流程已被实现取代：工具绑定的 `enable_skip` 已不在 schema 基线里（见 `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` 的工具绑定表），内置工具的新增 / 更新 / 删除统一由 admin 启动时的代码注册收敛。
 > 自定义工具（CUSTOM）与 HTTP 工具两类已整体下线，工具只剩内置一类：`agent_tool` 不再有 `type`、`is_public`、`http_url`、`http_method`、`http_headers`、`input_schema`、`output_schema` 这些列，admin 也不对外提供任何工具写接口。当前设计见 `prod_doc/tool-integration-design.zh-CN.md`（英文 `prod_doc/tool-integration-design.en-US.md`），使用口径见 `prod_doc/tool-capability.zh-CN.md`（英文 `prod_doc/tool-capability.en-US.md`）。
 
 ## 一、背景与现状分析

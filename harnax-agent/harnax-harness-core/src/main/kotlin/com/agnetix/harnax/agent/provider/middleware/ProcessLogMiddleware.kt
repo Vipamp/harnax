@@ -43,7 +43,7 @@ class ProcessLogMiddleware : MiddlewareBase {
     ) {
         this.adaptor = adaptor
         // One builder for the whole run: `agentId` and `tenantId` are the run's attribution and never
-        // change mid-stream, so they are set here rather than on each of the emit sites below (V50).
+        // change mid-stream, so they are set here rather than on each of the emit sites below.
         this.builder = ProcessLogBuilder(agentId, agentName, sessionId, tenantId)
     }
 

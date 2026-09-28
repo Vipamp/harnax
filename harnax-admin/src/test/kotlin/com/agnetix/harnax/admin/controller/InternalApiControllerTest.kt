@@ -597,7 +597,7 @@ class InternalApiControllerTest {
         @Test
         @DisplayName("getAgentSpec - 团队会话被明确拒绝而不是去查 agent 0")
         fun `getAgentSpec should refuse a team session`() {
-            // 团队会话不再有 agent_id（V34 起主管就是 team 行）。落到通用解析上就会去查
+            // 团队会话不再有 agent_id（主管就是 team 行）。落到通用解析上就会去查
             // agent 0，报错也指不到真正该走的那条路
             `when`(sessionMapper.selectBySessionIdAndStatus("web-team", 1)).thenReturn(
                 Session().apply {
@@ -879,7 +879,7 @@ class InternalApiControllerTest {
         @Test
         @DisplayName("getAgentSpec - 别租户的 MCP 服务两半都不下发")
         fun `getAgentSpec should drop an MCP server of another tenant`() {
-            // Given - V23 之前存下的跨租户绑定：selectByIds 没有租户条件，只能拿 agent 自己的租户比
+            // Given - 按租户唯一键落地前就存下的跨租户绑定：selectByIds 没有租户条件，只能拿 agent 自己的租户比
             stubWebSession()
             `when`(mcpBindingMapper.selectByAgentId(100L)).thenReturn(
                 listOf(

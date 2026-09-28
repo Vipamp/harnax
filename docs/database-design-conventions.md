@@ -1,6 +1,6 @@
 # Harnax 数据库设计规范
 
-本文档基于 `harnax-admin` 的 Flyway 迁移脚本（`db/migration/V1 ~ V14`）与 [数据库迁移说明](../harnax-admin/src/main/resources/db/migration/README.md) 整理，适用于 Harnax 平台所有 MySQL 数据库设计。
+本文档基于 `harnax-admin` 的 schema 基线 `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` 与 [数据库迁移说明](../harnax-admin/src/main/resources/db/migration/README.md) 整理，适用于 Harnax 平台所有 MySQL 数据库设计。
 
 **文档版本**: v1.0
 **适用范围**: `harnax-admin` 主库及相关服务库
@@ -89,7 +89,7 @@
 
 ### 3.4 唯一约束与逻辑删除的配合
 
-**不要**把 `active` 放进唯一键。`UNIQUE KEY (tenant_id, name, active)` 只允许每个键留一条已删行：第一次逻辑删除把 `(tenant, name, 0)` 占住，之后「删了再建、再删」的第二次删除直接撞这个键报 duplicate——`env_variable` 就是这一形状（V45 之前删第二个同名变量必然失败）。仓内 `skill`（V15）、`mcp_server`（V23）、`agent`（V43）、`env_variable`（V45）都已换成生成列写法：
+**不要**把 `active` 放进唯一键。`UNIQUE KEY (tenant_id, name, active)` 只允许每个键留一条已删行：第一次逻辑删除把 `(tenant, name, 0)` 占住，之后「删了再建、再删」的第二次删除直接撞这个键报 duplicate——`env_variable` 在旧键形态下就是这一形状（删第二个同名变量必然失败）。仓内 `agent`、`mcp_server`、`skill`、`env_variable` 现在都写成生成列（四张表的建表语句都在 `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql`）：
 
 ```sql
 `active_name` VARCHAR(100) GENERATED ALWAYS AS (IF(active = 1, name, NULL)) VIRTUAL,
@@ -100,8 +100,8 @@ UNIQUE KEY `uk_tenant_active_name` (`tenant_id`, `active_name`)
 - 存活行的约束强度不变：同租户内 `active = 1` 的行仍然唯一
 - 把已删行改回 `active = 1` 会重新撞键，这是预期行为：不允许两行同名复活
 - 唯一键左前缀已含 `tenant_id`，原有的 `idx_tenant_id` 一并删除
-- 加键前若存量已有重复的存活行，先改名（如 `原名#dup-<id>`）再加键，不删任何行（见 V43）
-- 只放宽「已删行」这一侧时不需要回填：旧键已保证存活行唯一，新键只改变删除之后的行为（见 V45）
+- 加键前若存量已有重复的存活行，先改名（如 `原名#dup-<id>`）再加键，不删任何行
+- 只放宽「已删行」这一侧时不需要回填：旧键已保证存活行唯一，新键只改变删除之后的行为
 
 ## 四、数据类型规范
 
@@ -213,56 +213,77 @@ CREATE TABLE IF NOT EXISTS `example` (
 
 ### 9.1 目录与命名
 
-- 所有脚本位于 `harnax-admin/src/main/resources/db/migration/`
-- 命名格式：`V{version}__{description}.sql`，全小写短横线描述
-  - 结构变更：`V15__add_example_table.sql`
-  - 数据初始化：`V11__seed_harnax_cli_plugin.sql`（`seed` 前缀）
-- 版本号单调递增，**禁止跳号复用、禁止修改已执行脚本、禁止删除历史脚本**
+- 每个服务模块只有一份 schema 基线，位于该模块的 `src/main/resources/db/migration/`：
 
-### 9.2 脚本编写规则
+| 模块 | 基线脚本 | 库 | 历史表 |
+|------|----------|-----|--------|
+| `harnax-admin` | `V1__init_schema.sql` | `harnax_admin` | `flyway_schema_history` |
+| `harnax-scheduler` | `V1__init_schema.sql` | `harnax_scheduler` | `flyway_schema_history_scheduler` |
+| `harnax-session-router` | `V1__create_session_router_tables.sql` | `harnax_router` | `flyway_schema_history`（仅 cluster profile；`local` 模式走 `db/sqlite-init.sql`） |
 
-- 建表一律 `CREATE TABLE IF NOT EXISTS`
+- 基线给出该模块 schema 的**最终形态**：每张表的建表语句带最终的列、索引、唯一键与注释，其后是系统启动所需的初始化数据。
+- 命名格式仍是 `V{version}__{description}.sql`，全小写；基线固定占 `V1`，只有前向迁移才占用后续版本号。
+- 描述用动词开头的短语（`add_example_table`、`scope_stats_to_a_tenant`），初始化数据用 `seed` 前缀。
+
+### 9.2 变更落法
+
+两条路，一次变更只走一条。
+
+**重建（默认）**：把变更折进基线本身，然后重建库。`harnax-deploy` 环境一律按这条走，历史不向下传。折进基线的同时：
+
+- 重新生成 `harnax-entity/src/test/resources/schema-test.sql`——它的 DDL 段取自 admin 基线，不是手工对照；`SchemaBaselineDriftIT` 拿 Flyway 真正建出的库与该文件比对，漂了就红。
+- 重跑 `mvn -o -pl harnax-entity -am test` 与 `mvn -o -pl harnax-admin -am -Pintegration-test verify`。
+
+**前向迁移**：只在确实存在不能重建的库时才写 `V{next}__*.sql`。此时**不得改动 `V1`**——那张库已经按 `V1` 的旧形态建好了，改一个字启动即 checksum 不符。等这些增量攒够、环境又都可丢弃时，折回一份新基线并重建，历史从 `V1` 重新开始。
+
+两条路共用的编写规则：
+
+- 建表一律 `CREATE TABLE IF NOT EXISTS`，唯一的既有例外是 `harnax-scheduler` 基线里那 11 张 `QRTZ_*`，它们沿用 Quartz 官方脚本的裸 `CREATE TABLE`
 - 结构变更使用 `ALTER TABLE ADD COLUMN ... AFTER ...`，**禁止 DROP + CREATE 重建表**
 - 一个脚本只做一类变更，文件头部注释说明变更目的
 - 初始化数据使用 `INSERT IGNORE`，保证幂等可重放
 - 逻辑删除优先于删除数据；确需清理数据须单独脚本并评审
+- 基线里不写数据修复语句（回填、改名、归属重判）：新库没有待修的行，写了也没有对象
 
 ```sql
--- V3: Add i18n support columns
-ALTER TABLE `agent_tool`
-    ADD COLUMN `display_name_zh` varchar(200) DEFAULT NULL COMMENT 'Display name (Chinese, for i18n zh-CN locale)'
-    AFTER `display_name`;
+-- V2: Add the retry budget to the scheduled task table
+ALTER TABLE `agent_task`
+    ADD COLUMN `retry_budget` int DEFAULT '0' COMMENT 'Retry budget (0: no retry)'
+    AFTER `task_status`;
 ```
 
 ### 9.3 配置与验证
 
-`application.yml` 关键配置：
+`harnax-admin/src/main/resources/application.yml`：
 
 ```yaml
 spring:
   flyway:
-    enabled: true
+    enabled: ${FLYWAY_ENABLED:true}
     locations: classpath:db/migration
     baseline-on-migrate: true
     baseline-version: 0
     validate-on-migrate: true
-    clean-disabled: true
+    repair-on-migrate: true
+    clean-disabled: ${FLYWAY_CLEAN_DISABLED:true}
 ```
 
-- 部署后通过 `flyway_schema_history` 表确认版本
-- 社区版不支持自动回滚：回滚需新写反向迁移脚本
-- 生产执行迁移前必须备份；先在数据副本上验证
+- `baseline-on-migrate` + `baseline-version: 0` 是必需的：库由 `harnax-deploy/sql/init-databases.sql` 预建，Flyway 见到的是一张空库，基线版本设 0 才会应用 `V1` 而不是把库判定为「已迁移」。
+- `repair-on-migrate` 只有 `harnax-admin` 开着；`harnax-scheduler` 与 `harnax-session-router` 没有配，历史里出现类路径上已不存在的脚本时直接失败。
+- **跑过长历史的库不能直接换基线**：它的历史行指向已不存在的脚本，`V1` 的校验和也不再相符。按策略是删库重建，不是就地修复。
+- 部署后通过 `flyway_schema_history` 表确认版本；社区版不支持自动回滚，回滚需新写反向脚本。
+- 生产执行迁移前必须备份；先在数据副本上验证。
 
 ## 十、测试库规范（schema-test.sql）
 
 Mapper 集成测试（Testcontainers）使用 `harnax-entity/src/test/resources/schema-test.sql` 初始化：
 
-- 包含被测表的完整结构（与生产表结构保持一致）
+- DDL 段取自 admin 的 schema 基线（`harnax-admin/src/main/resources/db/migration/V1__init_schema.sql`），不是另一份手工维护的表结构
 - 每表预置 3~5 条数据，覆盖三类场景：
   - 正常数据（`active = 1, status = 1`）
   - 已删除数据（`active = 0`，验证逻辑删除过滤）
   - 已禁用数据（`status = 0`，验证状态筛选）
-- 生产表结构变更（新增迁移脚本）时，必须同步更新 `schema-test.sql`
+- 基线变更后重新生成该文件的 DDL 段（生产基线里的初始化 INSERT 不进测试库，测试数据由本文件自己播种）；`SchemaBaselineDriftIT` 会拿 Flyway 建出的真实表与列集合与它做双向差集，漂了就红
 
 ## 十一、敏感数据存储
 
@@ -293,13 +314,13 @@ Mapper 集成测试（Testcontainers）使用 `harnax-entity/src/test/resources/
 
 **迁移**：
 
-- [ ] 新增 Flyway 脚本，版本号递增，命名清晰
+- [ ] 变更默认折进所属模块的基线（`V1__init_schema.sql`）并重建库；确有不能重建的库才新写 `V{n}__*.sql` 增量脚本，且不动 `V1`
 - [ ] `CREATE TABLE IF NOT EXISTS` / `ALTER TABLE`，无破坏性操作
-- [ ] 种子数据 `INSERT IGNORE` 幂等
-- [ ] 同步更新 `schema-test.sql` 并补充 Mapper 集成测试
+- [ ] 种子数据 `INSERT IGNORE` 幂等；基线内不放数据修复语句
+- [ ] 重新生成 `schema-test.sql` 的 DDL 段并补充 Mapper 集成测试
 
 ---
 
 **文档版本**: v1.0
-**整理依据**: `db/migration/V1__init_schema.sql` ~ `V14`、`db/migration/README.md`、`openspec/vipclaw-admin-rules.md`（v2.1）
+**整理依据**: `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql`、`harnax-admin/src/main/resources/db/migration/README.md`、`openspec/vipclaw-admin-rules.md`（v2.1）
 **维护者**: Harnax 团队

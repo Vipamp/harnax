@@ -28,7 +28,7 @@ data class AgentSpecInfoResponse(
 
     @Schema(
         description = "Tenant owning the agent, read from the agent row — never from a request header. " +
-            "Null on a spec from before V50, and the runtime then records its rows unattributed rather than guessing",
+            "Null when admin delivers no tenant, and the runtime then records its rows unattributed rather than guessing",
     )
     val tenantId: Long? = null,
 

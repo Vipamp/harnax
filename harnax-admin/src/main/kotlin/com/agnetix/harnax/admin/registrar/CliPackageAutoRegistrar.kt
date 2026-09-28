@@ -50,7 +50,7 @@ import java.time.Instant
  *   deleted with the bindings ([pruneMissingPackages]) — `active = 0`, the convention every skill delete
  *   uses, so a re-registered package gets a fresh skill row rather than the old one. Only rows the
  *   registrar itself wrote are candidates, so a leftover of the retired CLI page survives here and is
- *   retired by V38 instead.
+ *   retired by the rebuild from the schema baseline instead.
  * - Two packages declaring one name: the higher manifest version wins, because an upgrade that left the
  *   old file on the shelf must not depend on the directory listing order. Same name, same version, two
  *   files: neither is registered, since nothing says which one the operator means.
@@ -333,9 +333,9 @@ class CliPackageAutoRegistrar(
      * Three brakes, because this is the only place the platform deletes a CLI an agent may still be
      * configured with: a run that failed to read any package has no evidence to prune on; the registrar
      * only ever deletes a row it wrote itself, which an empty `packageDigest` proves it did not (rows
-     * created by the retired CLI page are retired by V38, not pruned here); and a stale set as large as
-     * the live set reads far more like an unmounted volume than like the operator retiring half the
-     * platform, so it is refused with an ERROR instead of executed.
+     * created by the retired CLI page are retired by the rebuild from the schema baseline, not pruned
+     * here); and a stale set as large as the live set reads far more like an unmounted volume than like
+     * the operator retiring half the platform, so it is refused with an ERROR instead of executed.
      */
     private fun pruneMissingPackages(
         registered: Set<String>,

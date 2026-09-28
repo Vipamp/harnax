@@ -954,7 +954,7 @@ class SkillServiceImplTest {
         @Test
         @DisplayName("toggleSkillStatus - Refuse to disable a skill a team lead binds")
         fun `toggleSkillStatus should refuse to disable a skill a team lead binds`() {
-            // 主管技能直接挂在 team 上（V34），停用守卫只看 agent 绑定就会让团队侧静默少一份技能
+            // 主管技能直接挂在 team 上，停用守卫只看 agent 绑定就会让团队侧静默少一份技能
             `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
             `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
             `when`(teamSkillBindingMapper.selectTeamBindingCounts(listOf(1L))).thenReturn(listOf(teamBindingCount(1L)))
@@ -1104,7 +1104,7 @@ class SkillServiceImplTest {
         @Test
         @DisplayName("deleteSkill - Refuse to delete a skill a team lead binds")
         fun `deleteSkill should refuse to delete a skill a team lead binds`() {
-            // 团队的主管技能直接挂在 team 上（V34），删掉这一行就等于把那个团队的负责人换掉了，
+            // 团队的主管技能直接挂在 team 上，删掉这一行就等于把那个团队的负责人换掉了，
             // 而运维此刻看的是技能页，不是团队页
             `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
             `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
@@ -1686,8 +1686,8 @@ class SkillServiceImplTest {
 
         /**
          * The old split: the count came from `agent_skill_binding` alone while the guard also weighed
-         * `team_skill_binding`. A lead's skills hang off the team row since V34, so a skill could read
-         * "0 agents" on the page and still be refused on the switch. Both numbers now travel together.
+         * `team_skill_binding`. A lead's skills hang off the team row, so a skill could read "0 agents"
+         * on the page and still be refused on the switch. Both numbers now travel together.
          */
         @Test
         @DisplayName("convertToResponses - team count is non-zero when only a lead binds it")

@@ -32,12 +32,12 @@ spring:
     time-zone: GMT+8
     default-property-inclusion: non_null
 
-  # Flyway owns this service's schema end to end: V1__quartz_tables.sql (the QRTZ_* cluster store) and
-  # V2__agent_task_domain.sql (the three task tables) both apply against harnax_scheduler, from one ledger.
+  # Flyway owns this service's schema end to end: the module's single baseline, db/migration/V1__init_schema.sql,
+  # creates the QRTZ_* cluster store and the three task tables in harnax_scheduler, from one ledger.
   # The dedicated history table name is no longer a collision-avoidance measure — this database has exactly
   # one migrator — it is kept because it says whose ledger this is and because it is the same key on both
   # sides of the cut, so a node rolled back onto harnax_admin still reads its own history there.
-  # `baseline-on-migrate` stays off on purpose — the history table is new, so V1 applies
+  # `baseline-on-migrate` stays off on purpose — the history table is new, so the baseline applies
   # clean, and baselining would let a half-migrated schema pass as complete.
   # The switch is SCHEDULER_FLYWAY_ENABLED, with admin's FLYWAY_ENABLED only as the fallback it nests to
   # (the same shape `spring.quartz.auto-startup` uses below). compose sets SPRING_FLYWAY_ENABLED directly
@@ -61,7 +61,7 @@ spring:
     auto-startup: ${SCHEDULER_QUARTZ_AUTO_STARTUP:${scheduler.enabled:true}}
     # `never`, and there is no setting to argue with: Boot's `always` runs the bundled Quartz script on
     # every start, and that script begins with DROP TABLE IF EXISTS — on a cluster that deletes the
-    # schedule state every node shares each time one node restarts. V1__quartz_tables.sql creates it once.
+    # schedule state every node shares each time one node restarts. db/migration/V1__init_schema.sql creates it once.
     # For completeness about the default: Boot's own value for this key is `embedded`, so with a MySQL
     # datasource the script would not run even if this line were absent. Pinning `never` is therefore defence
     # against someone setting it to `always`, not the only barrier between this cluster and that DROP.
@@ -199,7 +199,7 @@ scheduler:
   # Ceiling for the session cleanup that follows the router call (DELETE /api/router/agent/session/{id});
   # effective value is min(this, timeout-seconds). It does not share timeout-seconds on purpose: that
   # would let one execution hold its Quartz worker for twice the timeout. The container's
-  # stop_grace_period (docker-new/docker-compose.yml) is derived from
+  # stop_grace_period (harnax-deploy/docker-compose.yml) is derived from
   # timeout + min(this, timeout) + 20 (the connect allowances) + 12 (write-back and shutdown hooks), so
   # raising this one means raising that one in the same change.
   clear-session-timeout-seconds: ${SCHEDULER_CLEAR_SESSION_TIMEOUT:60}

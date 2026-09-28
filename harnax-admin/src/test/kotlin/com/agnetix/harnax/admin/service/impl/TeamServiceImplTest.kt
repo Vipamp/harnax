@@ -54,8 +54,8 @@ import org.springframework.web.context.request.ServletRequestAttributes
  * TeamServiceImpl Unit Tests.
  *
  * The service is the only place a team can be made unresolvable, so most of the value here is in the
- * save-time refusals. Since V34 the lead's own configuration — prompt, model, skills — is saved here too,
- * which adds a second thing that can be written badly: none of it has a fallback at runtime.
+ * save-time refusals. The lead's own configuration — prompt, model, skills — is saved here too, which
+ * adds a second thing that can be written badly: none of it has a fallback at runtime.
  */
 @ExtendWith(MockitoExtension::class)
 @MockitoSettings(strictness = Strictness.LENIENT)

@@ -36,13 +36,13 @@ Installation has partial-success semantics: only some skills of a source may be 
 | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentWrapper.kt` | projection trigger once the container handle exists: `projectSkills`, `deliveredSkills` |
 | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/skill/SandboxSkillProjector.kt` | skill file projection and per-turn convergence |
 | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/`, `harnax-entity/src/main/resources/mapper/` | entities, mapper interfaces and XML statements |
-| `harnax-admin/src/main/resources/db/migration/` | DDL for tables and columns, numbered up to `V50__scope_stats_and_logs_to_a_tenant.sql` |
+| `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` | admin's schema baseline: every table and column definition in the admin database lives in this one script |
 | `harnax-webui/src/pages/skill/`, `harnax-webui/src/services/ant-design-pro/skillSource.ts` | console skill pages and source service calls |
 | `harnax-cli/cmd/skill.go` | command-line calls to `/api/admin/skills` and `/api/admin/skill-repositories` |
 
 ## 3. Data Model
 
-Table structure is defined by the DDL under `harnax-admin/src/main/resources/db/migration/` (through `V50`).
+Table structure is defined by admin's schema baseline `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql`: that one script holds every table and column definition, and there is no later version to stack on top of it.
 
 ### 3.1 skill_repository (skill source)
 
@@ -581,12 +581,6 @@ Entities and persistence
 - `harnax-entity/src/main/resources/mapper/AgentSkillBindingMapper.xml`
 - `harnax-entity/src/main/resources/mapper/TeamSkillBindingMapper.xml`
 - `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql`
-- `harnax-admin/src/main/resources/db/migration/V9__skill_content_in_mysql.sql`
-- `harnax-admin/src/main/resources/db/migration/V15__skill_source_integrity.sql`
-- `harnax-admin/src/main/resources/db/migration/V31__skill_repository_last_sync.sql`
-- `harnax-admin/src/main/resources/db/migration/V33__add_skill_binding_unique_key.sql`
-- `harnax-admin/src/main/resources/db/migration/V34__team_owns_lead_config.sql`
-- `harnax-admin/src/main/resources/db/migration/V35__cli_package_registration.sql`
 
 Runtime (harnax-agent)
 

@@ -224,7 +224,7 @@ class EnvVariableCrudIT : BaseAdminIT() {
                     exchange(HttpMethod.POST, "/api/admin/env-variables", mapOf("envKey" to shared, "envValue" to "theirs-$suffix"), intruderToken),
                 ),
             )
-            // Since V46 the key is unique per creator: a second person in the same tenant reusing it is no longer a clash
+            // The key is unique per creator: a second person in the same tenant reusing it is no longer a clash
             assertOk(postJson("/api/admin/env-variables", mapOf("envKey" to shared, "envValue" to "mine-$suffix")))
 
             val rows = jdbc.queryForList(
@@ -331,7 +331,7 @@ class EnvVariableCrudIT : BaseAdminIT() {
         val key = "IT_ENV_PER_USER_$suffix"
         try {
             assertEquals(1, insertRow(tenant, key, 1, creator = "it_a"))
-            // A second creator in the same tenant using the same key: exactly the case V46 relaxed
+            // A second creator in the same tenant using the same key: exactly what uk_env_tenant_creator_active_key allows
             assertEquals(1, insertRow(tenant, key, 1, creator = "it_b"))
             // The same creator inserting it twice still collides
             assertThrows<DuplicateKeyException> { insertRow(tenant, key, 1, creator = "it_a") }

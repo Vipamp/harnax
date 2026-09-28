@@ -9,7 +9,7 @@ import org.springframework.dao.DuplicateKeyException
 import org.springframework.jdbc.core.JdbcTemplate
 
 /**
- * Checks the `UNIQUE(agent_id, skill_id)` key V33 puts on `agent_skill_binding`.
+ * Checks the `UNIQUE(agent_id, skill_id)` key `agent_skill_binding` carries in the schema baseline.
  *
  * The wizard's write path de-duplicates ids before it inserts, so this is the half that has to hold
  * no matter which caller arrives: `POST /skills/batch` on the CLI side and any future binding writer

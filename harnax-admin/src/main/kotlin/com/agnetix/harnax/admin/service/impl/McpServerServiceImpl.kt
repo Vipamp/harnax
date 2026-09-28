@@ -389,13 +389,13 @@ class McpServerServiceImpl(
     }
 
     /**
-     * An omitted auth type is NONE, i.e. exactly the behaviour every row had before V25.
+     * An omitted auth type is NONE, i.e. exactly the behaviour every row without an explicit label has.
      */
     private fun resolveAuthType(raw: String?): String {
         val authType = raw?.takeIf { hasText(it) } ?: McpAuthTypes.NONE
         if (authType !in McpAuthTypes.SUPPORTED) {
             val reason = if (authType == McpAuthTypes.BASIC) {
-                "$authType is stored by V25 but not wired into the runtime yet"
+                "$authType is declared by the schema but not wired into the runtime yet"
             } else {
                 "only ${McpAuthTypes.SUPPORTED.joinToString("/")} are accepted"
             }
