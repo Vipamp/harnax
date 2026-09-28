@@ -21,6 +21,7 @@ enum HarnaxDebugScreen: String {
     case teams
     case teamBindings
     case refreshSheet
+    case context
     case me
     case appearance
     case soon
@@ -33,6 +34,7 @@ enum HarnaxDebugScreen: String {
         switch self {
         case .me: return .me
         case .soon: return .chat
+        case .context: return .context
         default: return .agents
         }
     }
@@ -108,6 +110,12 @@ struct HarnaxDebugView: View {
                     sessionRefresher: model.dependencies.sessionRefresher,
                     account: model.account
                 )
+            }
+            .harnaxThemed()
+        case .context:
+            // The segment row is this tab's whole navigation shape, so the shell is framed on its own.
+            NavigationStack {
+                ContextView()
             }
             .harnaxThemed()
         case .agentBindings, .teamBindings, .refreshSheet:
