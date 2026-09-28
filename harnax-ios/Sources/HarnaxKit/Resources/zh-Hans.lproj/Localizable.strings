@@ -310,4 +310,85 @@
 "skill.detail.fileCount" = "%d 个文件";
 "skill.detail.expand" = "全部展开";
 "skill.detail.collapse" = "全部收起";
+
+/* ---- 环境变量：列表 ---- */
+"env.var.search" = "搜索 Key 或描述";
+"env.var.empty" = "还没有环境变量。";
+"env.var.empty.filtered" = "没有符合筛选条件的变量。";
+"env.var.effect" = "改动对运行中的会话最迟 30 分钟后生效";
+"env.var.noValue" = "未填值";
+"env.var.create" = "新建环境变量";
+"env.var.edit" = "编辑环境变量";
+"env.var.delete.title" = "删除这个变量？";
+"env.var.delete.note" = "删除后智能体再也读不到它，且不可恢复。";
+"env.var.unchanged" = "还没改动任何字段。";
+
+/* ---- 环境变量：表单 ---- */
+"env.var.key.label" = "Key";
+"env.var.key.hint" = "以字母或下划线开头，只能包含字母、数字和下划线。";
+"env.var.key.placeholder" = "例如：API_KEY、DATABASE_URL";
+"env.var.key.required" = "请填写 Key。";
+"env.var.key.long" = "Key 不能超过 200 个字符。";
+"env.var.key.invalid" = "Key 必须以字母或下划线开头，仅包含字母、数字和下划线。";
+"env.var.value.label" = "Value";
+"env.var.value.placeholder" = "输入变量值";
+"env.var.value.required" = "请填写 Value。";
+"env.var.value.long" = "值不能超过 8192 个字符。";
+"env.var.value.keep" = "留空则保持当前值";
+"env.var.value.masked" = "当前值为 %@";
+"env.var.note.label" = "描述";
+"env.var.note.placeholder" = "描述用途（可选）";
+"env.var.note.long" = "描述不能超过 500 个字符。";
+"env.var.sensitive.hint" = "敏感值只在服务端保存明文，列表里显示脱敏文本。";
+
+/* ---- API Key：列表 ---- */
+"apikey.title" = "API Key 管理";
+"apikey.search" = "搜索名称";
+"apikey.create" = "创建 API Key";
+"apikey.empty" = "还没有 API Key。";
+"apikey.empty.filtered" = "没有符合条件的 Key。";
+"apikey.noKey" = "没有可显示的 Key";
+"apikey.chip.expires" = "%@ 到期";
+"apikey.badge.expired" = "已过期";
+"apikey.action.edit" = "编辑";
+"apikey.action.regenerate" = "重新生成";
+"apikey.delete.title" = "删除这个 API Key？";
+"apikey.delete.note" = "此操作不可恢复，正在使用它的客户端会立刻失效。";
+"apikey.regenerate.title" = "确认重新生成？";
+"apikey.regenerate.note" = "重新生成会让当前 Key 立即失效，所有使用它的客户端都要换成新 Key。";
+"apikey.regenerate.confirm" = "重新生成「%@」";
+
+/* ---- API Key：表单 ---- */
+"apikey.create.title" = "创建 API Key";
+"apikey.edit.title" = "编辑 API Key";
+"apikey.name.label" = "名称";
+"apikey.name.placeholder" = "给这个 Key 起个名字";
+"apikey.name.required" = "请填写名称。";
+"apikey.name.long" = "名称不超过 128 字符。";
+"apikey.name.readonly" = "名称创建之后不能再改。";
+"apikey.scopes.label" = "权限范围";
+"apikey.scopes.hint" = "chat 只能发起对话；manager 还能改配置。";
+"apikey.scopes.required" = "请至少选择一项权限。";
+"apikey.scope.chat" = "对话（chat）";
+"apikey.scope.manager" = "管理（manager）";
+"apikey.rate.label" = "限流";
+"apikey.rate.placeholder" = "例如：60";
+"apikey.rate.hint" = "每分钟允许的请求数，留空表示不限流。";
+"apikey.rate.invalid" = "限流要填一个整数。";
+"apikey.rate.range" = "限流要在 1 到 10000 之间。";
+"apikey.tenant.label" = "租户";
+"apikey.tenant.placeholder" = "租户 ID";
+"apikey.tenant.hint" = "只有管理员能指定，留空则归属当前租户。";
+"apikey.tenant.invalid" = "租户 ID 要是一个正整数。";
+"apikey.expires.label" = "设置过期时间";
+"apikey.expires.hint" = "到期即不可用；不设置则长期有效。";
+"apikey.expires.at" = "到期时间";
+
+/* ---- API Key：新 Key 只显示一次 ---- */
+"apikey.published.once" = "完整 Key 只显示这一次，离开后就再也看不到。";
+"apikey.published.label" = "完整 Key";
+"apikey.published.prefix" = "列表里会显示为 %@";
+"apikey.published.hint" = "现在把它复制到自己的客户端里；关掉这个面板只能靠重新生成换一把新的。";
+"apikey.published.copied" = "已复制";
+
 /* ---- 未开放 ---- */

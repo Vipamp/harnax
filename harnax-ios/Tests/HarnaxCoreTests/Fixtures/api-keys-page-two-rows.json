@@ -1,0 +1,32 @@
+{
+  "code": 200,
+  "message": "success",
+  "timestamp": 1759026100000,
+  "data": {
+    "pageNum": 1,
+    "pageSize": 20,
+    "total": 2,
+    "records": [
+      {
+        "id": 7,
+        "name": "ci-pipeline",
+        "keyPrefix": "hnx_sk_live_...9f3c",
+        "scopes": "chat,manager",
+        "tenantId": 1,
+        "rateLimit": 120,
+        "enabled": 1,
+        "expiresAt": "2026-12-31 23:59:59",
+        "creator": "admin",
+        "createTime": "2026-09-12 10:20:30",
+        "updateTime": "2026-09-26 08:01:02"
+      },
+      {
+        "name": "no-id-row",
+        "keyPrefix": "hnx_sk_live_...5dXk",
+        "scopes": "chat",
+        "enabled": 0,
+        "createTime": "2026-09-13T08:00:00"
+      }
+    ]
+  }
+}

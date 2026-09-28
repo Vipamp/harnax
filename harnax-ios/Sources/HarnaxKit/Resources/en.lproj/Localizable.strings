@@ -309,4 +309,85 @@
 "skill.detail.fileCount" = "%d file(s)";
 "skill.detail.expand" = "Expand all";
 "skill.detail.collapse" = "Collapse all";
+
+/* ---- env variables: list ---- */
+"env.var.search" = "Search key or description";
+"env.var.empty" = "No environment variables yet.";
+"env.var.empty.filtered" = "No variables match the filters.";
+"env.var.effect" = "Running sessions pick this up within 30 minutes";
+"env.var.noValue" = "No value";
+"env.var.create" = "New variable";
+"env.var.edit" = "Edit variable";
+"env.var.delete.title" = "Delete this variable?";
+"env.var.delete.note" = "Agents will never read it again, and this cannot be undone.";
+"env.var.unchanged" = "Nothing has changed yet.";
+
+/* ---- env variables: form ---- */
+"env.var.key.label" = "Key";
+"env.var.key.hint" = "Start with a letter or underscore; letters, digits and underscores only.";
+"env.var.key.placeholder" = "e.g. API_KEY, DATABASE_URL";
+"env.var.key.required" = "Enter a key.";
+"env.var.key.long" = "Key cannot exceed 200 characters.";
+"env.var.key.invalid" = "Key must start with a letter or underscore and hold only letters, digits and underscores.";
+"env.var.value.label" = "Value";
+"env.var.value.placeholder" = "Enter the value";
+"env.var.value.required" = "Enter a value.";
+"env.var.value.long" = "Value cannot exceed 8192 characters.";
+"env.var.value.keep" = "Leave empty to keep the current value";
+"env.var.value.masked" = "Stored value is %@";
+"env.var.note.label" = "Description";
+"env.var.note.placeholder" = "What this is for (optional)";
+"env.var.note.long" = "Description cannot exceed 500 characters.";
+"env.var.sensitive.hint" = "Sensitive values stay server-side; the list shows a mask.";
+
+/* ---- API keys: list ---- */
+"apikey.title" = "API Keys";
+"apikey.search" = "Search by name";
+"apikey.create" = "Create API key";
+"apikey.empty" = "No API keys yet.";
+"apikey.empty.filtered" = "No keys match the filters.";
+"apikey.noKey" = "No key to show";
+"apikey.chip.expires" = "Expires %@";
+"apikey.badge.expired" = "Expired";
+"apikey.action.edit" = "Edit";
+"apikey.action.regenerate" = "Regenerate";
+"apikey.delete.title" = "Delete this API key?";
+"apikey.delete.note" = "This cannot be undone, and clients using it stop working at once.";
+"apikey.regenerate.title" = "Regenerate this key?";
+"apikey.regenerate.note" = "Regenerating invalidates the current key at once; every client has to switch to the new one.";
+"apikey.regenerate.confirm" = "Regenerate \"%@\"";
+
+/* ---- API keys: form ---- */
+"apikey.create.title" = "Create API key";
+"apikey.edit.title" = "Edit API key";
+"apikey.name.label" = "Name";
+"apikey.name.placeholder" = "Name this key";
+"apikey.name.required" = "Enter a name.";
+"apikey.name.long" = "Name cannot exceed 128 characters.";
+"apikey.name.readonly" = "The name cannot be changed after creation.";
+"apikey.scopes.label" = "Scopes";
+"apikey.scopes.hint" = "chat only starts conversations; manager also changes configuration.";
+"apikey.scopes.required" = "Pick at least one scope.";
+"apikey.scope.chat" = "Chat (chat)";
+"apikey.scope.manager" = "Manager (manager)";
+"apikey.rate.label" = "Rate limit";
+"apikey.rate.placeholder" = "e.g. 60";
+"apikey.rate.hint" = "Requests allowed per minute; empty means no limit.";
+"apikey.rate.invalid" = "Rate limit has to be a whole number.";
+"apikey.rate.range" = "Rate limit has to be between 1 and 10000.";
+"apikey.tenant.label" = "Tenant";
+"apikey.tenant.placeholder" = "Tenant ID";
+"apikey.tenant.hint" = "Administrators only; empty keeps the current tenant.";
+"apikey.tenant.invalid" = "Tenant ID has to be a positive whole number.";
+"apikey.expires.label" = "Set an expiry";
+"apikey.expires.hint" = "The key stops working at that time; leave off for no expiry.";
+"apikey.expires.at" = "Expires at";
+
+/* ---- API keys: the raw key shows once ---- */
+"apikey.published.once" = "This is the only time the full key is shown.";
+"apikey.published.label" = "Full key";
+"apikey.published.prefix" = "The list will show it as %@";
+"apikey.published.hint" = "Copy it into your client now; once this sheet closes the only way back is to regenerate.";
+"apikey.published.copied" = "Copied";
+
 /* ---- not in this build ---- */

@@ -1,0 +1,32 @@
+{
+  "code": 200,
+  "message": "success",
+  "timestamp": 1759026030000,
+  "data": {
+    "pageNum": 1,
+    "pageSize": 20,
+    "total": 2,
+    "records": [
+      {
+        "id": 31,
+        "envKey": "OPENAI_API_KEY",
+        "envValue": "sk-****c7",
+        "description": "翻译助手使用的密钥",
+        "sensitive": 1,
+        "enabled": 1,
+        "creator": "admin",
+        "createTime": "2026-09-20 09:14:02",
+        "updateTime": "2026-09-25 18:40:11"
+      },
+      {
+        "id": 32,
+        "envKey": "LOG_LEVEL",
+        "envValue": "debug",
+        "sensitive": 0,
+        "enabled": 0,
+        "creator": "alice",
+        "createTime": "2026-09-21 12:00:00"
+      }
+    ]
+  }
+}

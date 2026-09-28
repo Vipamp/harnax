@@ -1,0 +1,11 @@
+{
+  "code": 200,
+  "message": "success",
+  "timestamp": 1759026200000,
+  "data": {
+    "id": 8,
+    "name": "ci-pipeline",
+    "rawKey": "hnx_sk_live_Dx8Yq2mLpT9vKc4ZbN7rQe1sWu3oAh6Fj0gJ5dXk",
+    "keyPrefix": "hnx_sk_live_...5dXk"
+  }
+}

@@ -10,6 +10,7 @@ final class LocalizationKeyTests: XCTestCase {
     private static let namespaces = [
         "common", "state", "tab", "login", "server", "me",
         "context", "env", "agent", "team", "task", "chat", "model", "tool", "skill", "mcp", "cli",
+        "apikey",
         "channel", "cron", "token", "monitor", "log", "error", "auth", "session",
     ]
 
