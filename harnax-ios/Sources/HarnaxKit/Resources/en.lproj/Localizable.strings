@@ -4,6 +4,7 @@
 "common.confirm" = "Done";
 "common.close" = "Close";
 "common.save" = "Save";
+"common.copy" = "Copy";
 
 "state.loading" = "Loading…";
 "state.empty.title" = "Nothing here yet";
@@ -80,6 +81,13 @@
 "me.server.address" = "Server address";
 "me.logout" = "Sign out";
 "me.logout.confirm" = "Sign out on this device?";
+
+/* ---- context tab ---- */
+"context.domain.model" = "Models";
+"context.domain.tool" = "Tools";
+"context.domain.mcp" = "MCP";
+"context.domain.skill" = "Skills";
+"context.domain.cli" = "CLI";
 
 /* ---- not in this build ---- */
 "soon.title" = "Not in this build yet";

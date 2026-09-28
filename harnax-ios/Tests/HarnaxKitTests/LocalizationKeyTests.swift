@@ -9,7 +9,7 @@ final class LocalizationKeyTests: XCTestCase {
     /// an icon name inside a screen has to avoid these prefixes.
     private static let namespaces = [
         "common", "state", "tab", "login", "server", "me",
-        "agent", "team", "task", "chat", "model", "skill", "mcp", "cli",
+        "context", "agent", "team", "task", "chat", "model", "tool", "skill", "mcp", "cli",
         "channel", "cron", "token", "monitor", "log", "error", "auth", "session",
     ]
 

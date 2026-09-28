@@ -4,6 +4,7 @@
 "common.confirm" = "确定";
 "common.close" = "关闭";
 "common.save" = "保存";
+"common.copy" = "复制";
 
 "state.loading" = "加载中…";
 "state.empty.title" = "暂无内容";
@@ -80,6 +81,13 @@
 "me.server.address" = "服务器地址";
 "me.logout" = "退出登录";
 "me.logout.confirm" = "退出当前设备的登录状态？";
+
+/* ---- 上下文 ---- */
+"context.domain.model" = "模型";
+"context.domain.tool" = "工具";
+"context.domain.mcp" = "MCP";
+"context.domain.skill" = "技能";
+"context.domain.cli" = "CLI";
 
 /* ---- 未开放 ---- */
 "soon.title" = "本版本暂未开放";
