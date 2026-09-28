@@ -362,7 +362,8 @@
   - `UserMessageLog{message, timestamp, source}` `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/chat/MessageLog.kt:34-40`
   - `AssistantMessageLog{thinking, text, toolUseLog[{name,input}], timestamp, source}` `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/chat/MessageLog.kt:42-52-55`
   - `ToolResultMessageLog{name, result, ...}` `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/chat/MessageLog.kt:57-64`
-- 时间格式：后端序列化为 `yyyy-MM-dd HH:mm:ss.SSS`，解析失败回退当前时间。锚点 `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/chat/MessageLogConverter.kt:20-38`；USER 取 `msg.textContent` `:44-45`；ASSISTANT 组装 `:59-67`。
+- 时间格式：`timestamp` 上线是 **Long epoch 毫秒**（`MessageLog.kt:13,28,36,46,60`）。`yyyy-MM-dd HH:mm:ss.SSS` 只是**入向**的 `Msg.timestamp`，被 `MessageLogConverter.kt:20-38` 解析后即丢弃，从不上线；两个既有消费方都直接把该值喂给 `new Date()`（`harnax-webui/src/pages/session/components/ChatWindow.tsx:764`、`harnax-wechat-app/miniprogram/pages/session/chat/index.ts:32-37`）。
+- 解析失败静默回退 `System.currentTimeMillis()`（`MessageLogConverter.kt:29,36`），因此**多条日志可以共享同一时间戳**；团队回放的 `interleave` 又刻意不拆开 assistant 与其 tool 行，序列**本身就不是时间单调**（`TeamHistoryReplay.kt:91-122`，`TeamHistoryReplayTest.kt:114` 断言 `[100, 200, 500, 300, 600]`）。结论：客户端只按数组下标顺序消费，绝不按 timestamp 重排，也不拿它单独当 id。
 
 ### 前端映射算法（iOS 需 1:1 复刻）
 

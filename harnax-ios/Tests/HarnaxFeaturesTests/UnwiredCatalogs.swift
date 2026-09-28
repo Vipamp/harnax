@@ -1,12 +1,13 @@
 import Foundation
 import HarnaxCore
 
-/// The five context-tab catalogs for tests that never open the tab.
+/// One double per tab a test never opens: `UnwiredCatalogs` for the five context catalogs, `UnwiredChat` for
+/// the four chat dependencies and `UnwiredSystem` for the three system catalogs.
 ///
 /// `AppModelTests` builds a `HarnaxDependencies` to exercise restore, login and the tab bar; the catalogs
 /// it carries exist only because the composition root holds them. Every method fails rather than returning
-/// an empty page, so a screen that reaches this object in a test shows up as a failing call instead of a
-/// list that quietly renders nothing.
+/// an empty page, so a screen that reaches one of these objects in a test shows up as a failing call instead
+/// of a list that quietly renders nothing.
 struct UnwiredCatalogs: ModelCataloging, ToolCataloging, SkillCataloging, McpCataloging, CliCataloging {
     private func unwired() -> APIError {
         .business(code: -1, message: "this test never wires the context tab")
@@ -168,4 +169,114 @@ struct UnwiredCatalogs: ModelCataloging, ToolCataloging, SkillCataloging, McpCat
     func cliRelatedSessions(id: Int64) async -> Result<[RelatedSession], APIError> { .failure(unwired()) }
 
     func setCliStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> { .failure(unwired()) }
+}
+
+/// The four chat-tab dependencies for tests that never open the tab.
+///
+/// Same rule as `UnwiredCatalogs`: every method fails, so a screen reaching this object in a test shows up as
+/// a failing call rather than as a list or a stream that quietly renders nothing.
+struct UnwiredChat: SessionCataloging, ChatHistoryReading, AgentCommanding, AgentStreaming {
+    private func unwired() -> APIError {
+        .business(code: -1, message: "this test never wires the chat tab")
+    }
+
+    func sessionPage(
+        keyword: String?,
+        status: Int?,
+        num: Int,
+        size: Int
+    ) async -> Result<Page<SessionSummary>, APIError> { .failure(unwired()) }
+
+    func renameSession(_ session: SessionSummary, to title: String) async -> Result<EmptyResponse, APIError> {
+        .failure(unwired())
+    }
+
+    func setSessionStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> { .failure(unwired()) }
+
+    func deleteSession(id: Int64) async -> Result<EmptyResponse, APIError> { .failure(unwired()) }
+
+    func clearMessages(sessionId: String) async -> Result<AgentCommandReply, APIError> { .failure(unwired()) }
+
+    func history(sessionId: String) async -> Result<[ChatHistoryLog], APIError> { .failure(unwired()) }
+
+    func command(_ request: CommandAgentRequest) async -> Result<AgentCommandReply, APIError> { .failure(unwired()) }
+
+    func chat(_ request: ChatAgentRequest) async -> AsyncThrowingStream<ChatEvent, any Error> {
+        AsyncThrowingStream { $0.finish(throwing: unwired()) }
+    }
+
+    func confirm(_ request: ConfirmAgentRequest) async -> AsyncThrowingStream<ChatEvent, any Error> {
+        AsyncThrowingStream { $0.finish(throwing: unwired()) }
+    }
+}
+
+/// The three system-tab catalogs for tests that never open the tab.
+///
+/// Same rule as the other two doubles: every method fails, so a screen reaching this object in a test shows up
+/// as a failing call rather than as a list that quietly renders nothing.
+struct UnwiredSystem: EnvVarCataloging, ApiKeyCataloging, ChannelCataloging {
+    private func unwired() -> APIError {
+        .business(code: -1, message: "this test never wires the system tab")
+    }
+
+    func envVarPage(keyword: String?, num: Int, size: Int) async -> Result<Page<EnvVarSummary>, APIError> {
+        .failure(unwired())
+    }
+
+    func createEnvVar(_ draft: EnvVarDraft) async -> Result<EmptyResponse, APIError> { .failure(unwired()) }
+
+    func updateEnvVar(id: Int64, _ change: EnvVarChange) async -> Result<EmptyResponse, APIError> {
+        .failure(unwired())
+    }
+
+    func setEnvVarStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> { .failure(unwired()) }
+
+    func deleteEnvVar(id: Int64) async -> Result<EmptyResponse, APIError> { .failure(unwired()) }
+
+    func apiKeyPage(
+        keyword: String?,
+        enabled: Int?,
+        num: Int,
+        size: Int
+    ) async -> Result<Page<ApiKeySummary>, APIError> { .failure(unwired()) }
+
+    func createApiKey(_ draft: ApiKeyDraft) async -> Result<ApiKeyCreatedSummary, APIError> { .failure(unwired()) }
+
+    func updateApiKey(id: Int64, _ change: ApiKeyChange) async -> Result<EmptyResponse, APIError> {
+        .failure(unwired())
+    }
+
+    func setApiKeyStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> { .failure(unwired()) }
+
+    func deleteApiKey(id: Int64) async -> Result<EmptyResponse, APIError> { .failure(unwired()) }
+
+    func regenerateApiKey(id: Int64) async -> Result<ApiKeyCreatedSummary, APIError> { .failure(unwired()) }
+
+    func channelPage(
+        keyword: String?,
+        type: String?,
+        status: Int?,
+        num: Int,
+        size: Int
+    ) async -> Result<Page<ChannelSummary>, APIError> { .failure(unwired()) }
+
+    func createChannel(_ draft: ChannelDraft) async -> Result<EmptyResponse, APIError> { .failure(unwired()) }
+
+    func updateChannel(id: Int64, _ change: ChannelChange) async -> Result<EmptyResponse, APIError> {
+        .failure(unwired())
+    }
+
+    func setChannelStatus(id: Int64, running: Bool) async -> Result<EmptyResponse, APIError> {
+        .failure(unwired())
+    }
+
+    func deleteChannel(id: Int64) async -> Result<EmptyResponse, APIError> { .failure(unwired()) }
+
+    func sandboxStatuses(sessionIds: [String]) async -> Result<SandboxStatusMap, APIError> { .failure(unwired()) }
+
+    func startWechatLogin(id: Int64) async -> Result<WechatQrCode, APIError> { .failure(unwired()) }
+
+    func wechatLoginStatus(id: Int64) async -> Result<WechatLoginUpdate, APIError> { .failure(unwired()) }
+
+    func cancelWechatLogin(id: Int64) async -> Result<EmptyResponse, APIError> { .failure(unwired()) }
 }

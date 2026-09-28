@@ -6,8 +6,10 @@ import HarnaxFeatures
 @MainActor
 final class AppModelTests: XCTestCase {
     private func makeModel(_ auth: FakeAuth = FakeAuth()) -> (AppModel, FakeAuth) {
-        // Nothing here opens the 上下文 tab, so its five catalogs share one failing double.
+        // Nothing here opens the 上下文, the chat or the system tab, so their catalogs share failing doubles.
         let unwired = UnwiredCatalogs()
+        let chat = UnwiredChat()
+        let system = UnwiredSystem()
         let model = AppModel(dependencies: HarnaxDependencies(
             auth: auth,
             agents: FakeAgents(),
@@ -17,7 +19,14 @@ final class AppModelTests: XCTestCase {
             tools: unwired,
             mcp: unwired,
             skills: unwired,
-            clis: unwired
+            clis: unwired,
+            envVars: system,
+            apiKeys: system,
+            channels: system,
+            sessions: chat,
+            chatHistory: chat,
+            commands: chat,
+            streaming: chat
         ))
         return (model, auth)
     }

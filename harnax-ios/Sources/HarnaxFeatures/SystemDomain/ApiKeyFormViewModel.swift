@@ -180,7 +180,6 @@ public final class ApiKeyFormViewModel: ObservableObject {
                 return
             }
             let body = change ?? ApiKeyChange()
-            isSaving = false
             switch await catalog.updateApiKey(id: id, body) {
             case .success:
                 // No key comes back from this route, so nothing is published and the sheet simply closes.
@@ -191,7 +190,6 @@ public final class ApiKeyFormViewModel: ObservableObject {
             return
         }
         let body = draft ?? ApiKeyDraft(name: name.trimmed, scopes: submittedScopes)
-        isSaving = false
         switch await catalog.createApiKey(body) {
         case let .success(created):
             finish(created: created, error: nil)
@@ -203,6 +201,9 @@ public final class ApiKeyFormViewModel: ObservableObject {
     /// A duplicated name is the ordinary failure on create, and the server's sentence names the key it
     /// clashed with (`ApiKeyServiceImpl.kt:65-67`), so it is shown as it arrived.
     private func finish(created: ApiKeyCreatedSummary?, error: APIError?) {
+        // After the reply, not before: clearing it earlier reopens save()'s re-entrancy guard mid-flight,
+        // and on create the response is the only place the raw key ever appears.
+        isSaving = false
         if let error {
             saved = false
             published = nil

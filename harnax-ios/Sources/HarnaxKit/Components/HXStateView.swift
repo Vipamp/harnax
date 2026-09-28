@@ -24,16 +24,10 @@ public struct HXStateView: View {
             HXText(titleKey)
                 .font(.headline)
                 .foregroundStyle(Color.hx(.textPrimary))
-            HXText(subtitleKey)
+            subtitle
                 .font(.footnote)
                 .foregroundStyle(Color.hx(.textSecondary))
                 .multilineTextAlignment(.center)
-            if let message {
-                Text(verbatim: message)
-                    .font(.footnote)
-                    .foregroundStyle(Color.hx(.textTertiary))
-                    .multilineTextAlignment(.center)
-            }
             if let retry {
                 Button {
                     retry()
@@ -77,8 +71,19 @@ public struct HXStateView: View {
         }
     }
 
-    private var subtitleKey: String {
-        kind == .empty ? "state.empty.hint" : "state.error.hint"
+    /// Either the caller's own sentence or the kind's generic hint — never both, so a screen that has said
+    /// why it failed does not then get told to check its network. Loading has nothing to add to its title.
+    @ViewBuilder
+    private var subtitle: some View {
+        if let message {
+            Text(verbatim: message)
+        } else {
+            switch kind {
+            case .loading: EmptyView()
+            case .empty: HXText("state.empty.hint")
+            case .error: HXText("state.error.hint")
+            }
+        }
     }
 }
 

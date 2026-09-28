@@ -71,7 +71,12 @@ struct HarnaxTabView: View {
                 dependencies: model.dependencies,
                 account: model.account
             )
-        case .chat, .system: SoonView(titleKey: tab.titleKey)
+        case .chat: ChatTabView(dependencies: model.dependencies)
+        case .system:
+            SystemHomeView(
+                dependencies: model.dependencies,
+                account: model.account
+            )
         }
     }
 }

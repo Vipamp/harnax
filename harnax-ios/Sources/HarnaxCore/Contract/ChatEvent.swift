@@ -51,6 +51,23 @@ public struct ChatEventSource: Codable, Sendable, Equatable {
     public let memberAgentName: String
     public let childRunId: String
     public let childSessionId: String
+
+    /// Decoding is the only way a marker arrives, but a fixture has to be able to name one too.
+    public init(
+        teamId: Int64,
+        teamName: String,
+        memberAgentId: Int64,
+        memberAgentName: String,
+        childRunId: String,
+        childSessionId: String
+    ) {
+        self.teamId = teamId
+        self.teamName = teamName
+        self.memberAgentId = memberAgentId
+        self.memberAgentName = memberAgentName
+        self.childRunId = childRunId
+        self.childSessionId = childSessionId
+    }
 }
 
 /// A file the run produced in the sandbox workspace, carried by the end frame.

@@ -1,4 +1,5 @@
 import Foundation
+import HarnaxCore
 
 /// The two tool routes the read-only screen touches. Both are GETs under `/api/admin/tools`, and there is
 /// nothing else to model: this API has no write path (`AgentToolController.kt:13-15`).
@@ -11,10 +12,9 @@ enum ToolEndpoint {
             URLQueryItem(name: "pageNum", value: String(num)),
             URLQueryItem(name: "pageSize", value: String(size)),
         ]
-        // An unused filter is left off the URL rather than sent blank: an empty `keyword` would reach the
-        // server as a pattern that matches every row, which is the same answer as not sending it — but
-        // `status=` is not.
-        if let keyword, !keyword.isEmpty {
+        // An unused filter is left off the URL rather than sent blank — and "unused" includes a keyword
+        // that is only spaces, which would otherwise reach the server as a pattern matching almost nothing.
+        if let keyword = hxPresented(keyword) {
             items.append(URLQueryItem(name: "keyword", value: keyword))
         }
         if let status {

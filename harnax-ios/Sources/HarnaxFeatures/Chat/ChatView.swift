@@ -23,11 +23,13 @@ public struct ChatView: View {
     public init(
         streaming: any AgentStreaming,
         commands: (any AgentCommanding)? = nil,
+        history: (any ChatHistoryReading)? = nil,
         conversation: ChatConversation
     ) {
         _vm = StateObject(wrappedValue: ChatViewModel(
             streaming: streaming,
             commands: commands,
+            history: history,
             conversation: conversation
         ))
         self.conversation = conversation
@@ -40,7 +42,10 @@ public struct ChatView: View {
         }
         .harnaxScreen()
         .navigationTitle(vm.conversation.title)
-        .task(id: conversation) { vm.bind(conversation) }
+        .task(id: conversation) {
+            vm.bind(conversation)
+            await vm.load()
+        }
         .onDisappear { vm.detach() }
     }
 
@@ -82,8 +87,21 @@ public struct ChatView: View {
     @ViewBuilder
     private var rows: some View {
         if vm.transcript.turns.isEmpty {
-            HXStateView(.empty, message: hx("chat.empty.hint"))
+            // Three different screens share one shape here — an unread conversation, a failed read and a
+            // genuinely empty one all have no rows — so they are told apart rather than collapsed into the
+            // empty state, which would read as though the session had nothing in it.
+            if let failure = vm.historyFailure {
+                HXStateView(.error, message: failure) {
+                    Task { await vm.load() }
+                }
                 .padding(.top, 40)
+            } else if vm.isLoadingHistory {
+                HXStateView(.loading)
+                    .padding(.top, 40)
+            } else {
+                HXStateView(.empty, message: hx("chat.empty.hint"))
+                    .padding(.top, 40)
+            }
         } else {
             LazyVStack(alignment: .leading, spacing: 12) {
                 ForEach(vm.transcript.turns) { turn in

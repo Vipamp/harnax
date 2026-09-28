@@ -67,4 +67,13 @@ extension Endpoint {
         }
         return items
     }
+
+    /// A caller-supplied value going into one path segment. Opaque ids reach the path as often as the query,
+    /// and `URLComponents(string:)` encodes nothing it is handed, so a value carrying a `/` or a `?` would
+    /// silently be read as another segment or as a query. `/`, `?` and `#` are the three characters a path
+    /// segment must never contain.
+    static func segment(_ value: String) -> String {
+        let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#"))
+        return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
+    }
 }

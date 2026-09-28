@@ -31,9 +31,16 @@ enum HarnaxDebugScreen: String {
     case contextSkillDetail
     case contextCli
     case contextCliDetail
+    case sessions
+    case sessionsFailed
+    case sessionRename
+    case chat
+    case system
+    case envVars
+    case apiKeys
+    case channels
     case me
     case appearance
-    case soon
 
     static var current: HarnaxDebugScreen? {
         HarnaxDebugLaunch.value(for: "FIXTURE").flatMap(HarnaxDebugScreen.init(rawValue:))
@@ -41,9 +48,11 @@ enum HarnaxDebugScreen: String {
 
     fileprivate var tab: HarnaxTab {
         if rawValue.hasPrefix("context") { return .context }
+        if rawValue.hasPrefix("session") { return .chat }
         switch self {
         case .me: return .me
-        case .soon: return .chat
+        case .chat: return .chat
+        case .system, .envVars, .apiKeys, .channels: return .system
         default: return .agents
         }
     }
@@ -85,6 +94,9 @@ enum HarnaxDebugEntrance {
 struct HarnaxDebugView: View {
     let screen: HarnaxDebugScreen
     @StateObject private var model: AppModel
+    /// The rename sheet submits through the list's own model, so the capture hosts one. It reads nothing
+    /// until a screen asks it to, so carrying it on the other captures costs no call.
+    @StateObject private var sessionsVM = SessionListViewModel(sessions: HarnaxDebugSessions(screen: .sessions))
 
     init(screen: HarnaxDebugScreen) {
         self.screen = screen
@@ -97,7 +109,14 @@ struct HarnaxDebugView: View {
             tools: HarnaxDebugTools(),
             mcp: HarnaxDebugMcp(),
             skills: HarnaxDebugSkills(),
-            clis: HarnaxDebugClis()
+            clis: HarnaxDebugClis(),
+            envVars: HarnaxDebugEnvVars(),
+            apiKeys: HarnaxDebugApiKeys(),
+            channels: HarnaxDebugChannels(),
+            sessions: HarnaxDebugSessions(screen: screen),
+            chatHistory: HarnaxDebugHistory(),
+            commands: HarnaxDebugCommands(),
+            streaming: HarnaxDebugStreaming()
         ))
         model.tab = screen.tab
         _model = StateObject(wrappedValue: model)
@@ -124,6 +143,24 @@ struct HarnaxDebugView: View {
                     sessionRefresher: model.dependencies.sessionRefresher,
                     account: model.account
                 )
+            }
+            .harnaxThemed()
+        case .envVars, .apiKeys, .channels:
+            // All three lists hang behind the hub row on the real tab. Framed alone, each captures without a
+            // finger to open it.
+            NavigationStack {
+                switch screen {
+                case .envVars:
+                    EnvVarListView(catalog: model.dependencies.envVars, account: model.account)
+                case .apiKeys:
+                    ApiKeyListView(catalog: model.dependencies.apiKeys, account: model.account)
+                default:
+                    ChannelListView(
+                        catalog: model.dependencies.channels,
+                        agents: model.dependencies.agents,
+                        account: model.account
+                    )
+                }
             }
             .harnaxThemed()
         case .context:
@@ -153,10 +190,10 @@ struct HarnaxDebugView: View {
                 }
             }
             .harnaxThemed()
-        case .contextMcpDetail, .contextSkillTable, .contextSkillDetail:
+        case .contextMcpDetail, .contextSkillTable, .contextSkillDetail, .chat:
             NavigationStack { pushed }
                 .harnaxThemed()
-        case .agentBindings, .teamBindings, .refreshSheet, .contextToolDetail, .contextCliDetail:
+        case .agentBindings, .teamBindings, .refreshSheet, .contextToolDetail, .contextCliDetail, .sessionRename:
             // Presented surfaces get their own hosting, so this is the capture that can show whether the
             // app-level theme reaches them.
             Color.hx(.background)
@@ -198,6 +235,10 @@ struct HarnaxDebugView: View {
             if let cli = HarnaxDebugRecord.cli {
                 CliDetailSheet(clis: model.dependencies.clis, cli: cli)
             }
+        case .sessionRename:
+            if let session = HarnaxDebugRecord.session {
+                SessionRenameSheet(vm: sessionsVM, session: session)
+            }
         default:
             EmptyView()
         }
@@ -217,6 +258,15 @@ struct HarnaxDebugView: View {
         case .contextSkillDetail:
             if let id = HarnaxDebugRecord.skill?.id {
                 SkillDetailView(id: id, skills: model.dependencies.skills)
+            }
+        case .chat:
+            if let session = HarnaxDebugRecord.session, let sessionId = hxPresented(session.sessionId) {
+                ChatView(
+                    streaming: model.dependencies.streaming,
+                    commands: model.dependencies.commands,
+                    history: model.dependencies.chatHistory,
+                    conversation: ChatConversation(id: sessionId, title: session.displayName ?? "")
+                )
             }
         default:
             EmptyView()
@@ -507,6 +557,137 @@ struct HarnaxDebugClis: CliCataloging {
     func setCliStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
 }
 
+/// The environment-variable list. Only the page read answers; every write fails, so a capture that ever
+/// reached for a row's menu shows an error banner rather than a list that appeared to have acted.
+struct HarnaxDebugEnvVars: EnvVarCataloging {
+    func envVarPage(keyword: String?, num: Int, size: Int) async -> Result<Page<EnvVarSummary>, APIError> {
+        HarnaxDebugPages.decode(HarnaxDebugPages.envVarsJSON, Page<EnvVarSummary>.self)
+    }
+
+    func createEnvVar(_ draft: EnvVarDraft) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
+
+    func updateEnvVar(id: Int64, _ change: EnvVarChange) async -> Result<EmptyResponse, APIError> {
+        .failure(.offline)
+    }
+
+    func setEnvVarStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
+
+    func deleteEnvVar(id: Int64) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
+}
+
+/// The API Key list. The two reads that would hand back a raw key are the ones a screenshot cannot press,
+/// so they fail with everything else and the one-time sheet stays unreachable.
+struct HarnaxDebugApiKeys: ApiKeyCataloging {
+    func apiKeyPage(
+        keyword: String?,
+        enabled: Int?,
+        num: Int,
+        size: Int
+    ) async -> Result<Page<ApiKeySummary>, APIError> {
+        HarnaxDebugPages.decode(HarnaxDebugPages.apiKeysJSON, Page<ApiKeySummary>.self)
+    }
+
+    func createApiKey(_ draft: ApiKeyDraft) async -> Result<ApiKeyCreatedSummary, APIError> { .failure(.offline) }
+
+    func updateApiKey(id: Int64, _ change: ApiKeyChange) async -> Result<EmptyResponse, APIError> {
+        .failure(.offline)
+    }
+
+    func setApiKeyStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
+
+    func deleteApiKey(id: Int64) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
+
+    func regenerateApiKey(id: Int64) async -> Result<ApiKeyCreatedSummary, APIError> { .failure(.offline) }
+}
+
+/// The channel list.
+///
+/// The page read and the sandbox lookup both answer, because the row's running badge, its type/mode chips and
+/// its sandbox chip are all on screen in one capture. Every write and the whole scan path fail: a screenshot
+/// cannot open a form or hold a phone over a QR, and the point of the failing doubles is that a capture which
+/// ever reached one shows a banner instead of an action that appears to have worked.
+struct HarnaxDebugChannels: ChannelCataloging {
+    func channelPage(
+        keyword: String?,
+        type: String?,
+        status: Int?,
+        num: Int,
+        size: Int
+    ) async -> Result<Page<ChannelSummary>, APIError> {
+        HarnaxDebugPages.decode(HarnaxDebugPages.channelsJSON, Page<ChannelSummary>.self)
+    }
+
+    func createChannel(_ draft: ChannelDraft) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
+
+    func updateChannel(id: Int64, _ change: ChannelChange) async -> Result<EmptyResponse, APIError> {
+        .failure(.offline)
+    }
+
+    func setChannelStatus(id: Int64, running: Bool) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
+
+    func deleteChannel(id: Int64) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
+
+    func sandboxStatuses(sessionIds: [String]) async -> Result<SandboxStatusMap, APIError> {
+        HarnaxDebugPages.decode(HarnaxDebugPages.sandboxJSON, SandboxStatusMap.self)
+    }
+
+    func startWechatLogin(id: Int64) async -> Result<WechatQrCode, APIError> { .failure(.offline) }
+
+    func wechatLoginStatus(id: Int64) async -> Result<WechatLoginUpdate, APIError> { .failure(.offline) }
+
+    func cancelWechatLogin(id: Int64) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
+}
+
+/// The conversation list.
+///
+/// Only the page read answers; the four writes fail, so a capture that ever reached for a row's menu shows
+/// an error banner rather than a list that appeared to have acted.
+struct HarnaxDebugSessions: SessionCataloging {
+    let screen: HarnaxDebugScreen
+
+    func sessionPage(
+        keyword: String?,
+        status: Int?,
+        num: Int,
+        size: Int
+    ) async -> Result<Page<SessionSummary>, APIError> {
+        if screen == .sessionsFailed { return .failure(.offline) }
+        return HarnaxDebugPages.decode(HarnaxDebugPages.sessionsJSON, Page<SessionSummary>.self)
+    }
+
+    func renameSession(_ session: SessionSummary, to title: String) async -> Result<EmptyResponse, APIError> {
+        .failure(.offline)
+    }
+
+    func setSessionStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
+
+    func deleteSession(id: Int64) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
+
+    func clearMessages(sessionId: String) async -> Result<AgentCommandReply, APIError> { .failure(.offline) }
+}
+
+/// The chat window's opening read, which is what fills the transcript before this build can stream anything.
+struct HarnaxDebugHistory: ChatHistoryReading {
+    func history(sessionId: String) async -> Result<[ChatHistoryLog], APIError> {
+        HarnaxDebugPages.decode(HarnaxDebugPages.historyJSON, [ChatHistoryLog].self)
+    }
+}
+
+struct HarnaxDebugCommands: AgentCommanding {
+    func command(_ request: CommandAgentRequest) async -> Result<AgentCommandReply, APIError> { .failure(.offline) }
+}
+
+/// A screenshot cannot press send, so the stream reports the same refusal every other unfaked write does.
+struct HarnaxDebugStreaming: AgentStreaming {
+    func chat(_ request: ChatAgentRequest) async -> AsyncThrowingStream<ChatEvent, any Error> { unfaked() }
+
+    func confirm(_ request: ConfirmAgentRequest) async -> AsyncThrowingStream<ChatEvent, any Error> { unfaked() }
+
+    private func unfaked() -> AsyncThrowingStream<ChatEvent, any Error> {
+        AsyncThrowingStream { $0.finish(throwing: APIError.offline) }
+    }
+}
+
 /// The single row the drill-down captures open on. Decoded once from the same fixture the list serves, so
 /// a screenshot cannot show a row the list would never have produced.
 @MainActor
@@ -514,6 +695,7 @@ enum HarnaxDebugRecord {
     private static let debugAgents = HarnaxDebugAgents(screen: .agents)
 
     static var agent: AgentSummary? { rows(AgentSummary.self, HarnaxDebugPages.agentsJSON).first }
+    static var session: SessionSummary? { rows(SessionSummary.self, HarnaxDebugPages.sessionsJSON).first }
     static var team: TeamSummary? { rows(TeamSummary.self, HarnaxDebugPages.teamsJSON).first }
     static var tool: ToolSummary? { rows(ToolSummary.self, HarnaxDebugPages.toolsJSON).first }
     static var cli: CliSummary? { rows(CliSummary.self, HarnaxDebugPages.cliJSON).first }
@@ -675,6 +857,74 @@ private enum HarnaxDebugPages {
     /// The three columns only the detail read adds.
     static let cliDetailJSON = """
     {"id":3,"name":"harnax-cli","description":"Harnax 平台命令行工具包","version":"1.4.0","checkCommand":"harnax --version","packageDigest":"9f2c41d7ab53e0c18f6b4d2a7c5e9130b8f4a6c2d0e5b7a91c3f5d8e0a2b4c6f","payloadDigest":"1b7e53c4092dfa86c3e1f9b47a0d52e8c6b1a9f4d0e7c2b5a8f3d6c1b4e9a2f0","envParams":[{"id":11,"envParamName":"HARNAX_TOKEN","description":"平台下发的短期令牌","required":true,"secret":true,"defaultValue":"hur****abcd"}],"depsApt":["curl","ca-certificates","git"],"runtimeEnv":{"HARNAX_URL":"platform.adminUrl","CLI_HOME":"/opt/harnax","PYTHONUNBUFFERED":"1"},"skill":{"skillId":27,"skillName":"harnax-cli","skillDescription":"怎么用这个命令行包"},"status":1,"createTime":"2026-09-12 10:20:30","updateTime":"2026-09-26 08:41:07"}
+    """
+
+    /// One card per variant the conversation list can receive: a plain agent row with both binding lists, a
+    /// shared team row whose description has to wrap, a stopped row whose optional columns the server
+    /// dropped, and a row with neither `id` nor `sessionId` — the shape that leaves a card with no write and
+    /// no conversation to open. `mcpList`/`skillList` are on every row because the DTO declares them
+    /// non-optional, which is what the server's own default makes them.
+    static let sessionsJSON = """
+    {"pageNum":1,"pageSize":20,"total":4,"records":[
+      {"id":21,"title":"翻译一组周报","sessionDescription":"把上周的三条客户反馈翻成英文，并给出对内版本","sessionId":"web-3f2a9c41","agentId":11,"name":"Support Desk","description":"Answers product questions in the help channel","modelId":3,"modelName":"qwen3.7-max","enableThink":1,"enableSearch":0,"permissionMode":"DEFAULT","mcpList":[{"mcpId":4,"mcpName":"amap-maps","mcpDescription":"Maps and routing"}],"skillList":[{"repositoryId":2,"repositoryName":"qoder-skills","skillId":5,"skillName":"Glossary"},{"skillId":7,"skillName":"Polish"}],"status":1,"isPublic":0,"creator":"admin","createTime":"2026-09-26 10:24:31","updateTime":"2026-09-27 08:02:11"},
+      {"id":22,"title":"Research Desk · 交易所公告","sessionDescription":"从公告到估值表的整条链路，这一条要跑三个成员，所以这行说明会很长，用来检查它换行的时候会不会把上面那排徽章挤走。","sessionId":"web-77c04e18","teamId":5,"name":"Research Desk","modelId":7,"modelName":"qwen3.7-max","permissionMode":"ACCEPT_EDITS","mcpList":[],"skillList":[{"skillId":12,"skillName":"Notice parser"}],"status":1,"isPublic":1,"creator":"liwei","createTime":"2026-09-25 18:02:09"},
+      {"id":23,"title":"合同条款复核","sessionId":"web-1a5d80f3","agentId":13,"name":"Contract Review","modelName":"deepseek-v4","mcpList":[],"skillList":[],"status":0,"isPublic":0,"creator":"zhaomin","createTime":"2026-08-19 14:47:55"},
+      {"title":"","mcpList":[],"skillList":[],"createTime":"not-a-date"}
+    ]}
+    """
+
+    /// Four rows in the order the endpoint answers them: a question, an answer that thought first and then
+    /// called a tool, that call's result, and the closing sentence the result fed.
+    static let historyJSON = """
+    [
+      {"role":"USER","message":"帮我把这条反馈翻成英文","timestamp":1762500000000},
+      {"role":"ASSISTANT","thinking":"先对齐术语口径，再给对内和对外两版。","text":"对外版本：","toolUseLog":[{"name":"shell","input":{"command":"ls skills"}}],"timestamp":1762500001000},
+      {"role":"TOOL","name":"shell","result":"Glossary\\nPolish","timestamp":1762500002000},
+      {"role":"ASSISTANT","thinking":"","text":"英文稿已经能读；对内版本保留原来的说法，只调整了语序。","toolUseLog":[],"timestamp":1762500003000}
+    ]
+    """
+
+    /// A plain value, a sensitive one the server has already masked, a stopped row whose description the
+    /// console left blank, and a row with no key at all — the last one also carries an unformatted
+    /// `createTime`, so the byline has to fall back rather than print a date it never parsed.
+    static let envVarsJSON = """
+    {"pageNum":1,"pageSize":20,"total":4,"records":[
+      {"id":31,"envKey":"AMAP_KEY","envValue":"9f2c4a71b8e04d5aa3c1","description":"高德地图服务的访问密钥","sensitive":0,"enabled":1,"creator":"admin","createTime":"2026-09-20 10:12:04","updateTime":"2026-09-27 15:30:00"},
+      {"id":32,"envKey":"SMTP_PASSWORD","envValue":"******","description":"126 邮箱 SMTP 登录口令","sensitive":1,"enabled":1,"creator":"liwei","createTime":"2026-09-18 08:41:19"},
+      {"id":33,"envKey":"SEARCH_QUOTA","envValue":"50","description":"   ","sensitive":0,"enabled":0,"creator":"admin","createTime":"2026-09-11 19:05:00"},
+      {"envKey":"   ","envValue":null,"sensitive":null,"enabled":null,"creator":null,"createTime":"not-a-date"}
+    ]}
+    """
+
+    /// One key with a single scope and an expiry, one with both scopes and no rate limit, one already
+    /// expired, and one whose name and prefix the server sent blank.
+    static let apiKeysJSON = """
+    {"pageNum":1,"pageSize":20,"total":4,"records":[
+      {"id":7,"name":"CI 流水线","keyPrefix":"hnx_a1b2c3d4e5f6...9d2c","scopes":"chat","tenantId":1,"rateLimit":60,"enabled":1,"expiresAt":"2026-12-31 23:59:59","creator":"admin","createTime":"2026-09-21 09:30:00","updateTime":"2026-09-21 09:30:00"},
+      {"id":8,"name":"Ops console","keyPrefix":"hnx_77aa3bb9cc44...01ef","scopes":"chat,manager","tenantId":1,"rateLimit":null,"enabled":1,"expiresAt":null,"creator":"liwei","createTime":"2026-09-05 13:07:44"},
+      {"id":9,"name":"Old notebook","keyPrefix":"hnx_0011aabbccdd...4455","scopes":"chat","tenantId":2,"rateLimit":10,"enabled":1,"expiresAt":"2026-08-15 00:00:00","creator":"admin","createTime":"2026-06-02 11:00:00"},
+      {"name":"   ","keyPrefix":"   ","scopes":"","enabled":0,"creator":null,"createTime":"not-a-date"}
+    ]}
+    """
+
+    /// Five rows: a running 飞书 websocket with a masked secret, a stopped 钉钉 stream, a personal 微信 whose
+    /// scan has written a token, a 企微 row whose three capability columns are all null, and a blank row whose
+    /// `createTime` the formatter has to refuse. Together they put the type/mode chip pair, the WeChat bound
+    /// badge, both switch readings and the unknown sandbox badge on one screen.
+    static let channelsJSON = """
+    {"pageNum":1,"pageSize":20,"total":5,"records":[
+      {"id":11,"tenantId":1,"name":"飞书助理","type":"feishu","typeDisplayName":"飞书","agentId":3,"agentName":"客服助手","sessionId":"chn-1f0a9c66-2b4d-4c11-9a3e-7d5c1b0a4e21","communicationMode":"websocket","permissionMode":"DEFAULT","enabled":1,"status":1,"configJson":"{\\"appId\\":\\"cli_a9f3c81d44e0\\",\\"appSecret\\":\\"******3c81\\"}","enableThink":1,"enableSearch":0,"enablePlan":0,"description":"飞书群里的客服入口","creator":"admin","createTime":"2026-09-20 10:12:04","updateTime":"2026-09-26 18:02:11"},
+      {"id":12,"tenantId":1,"name":"钉钉值班群","type":"dingtalk","typeDisplayName":"钉钉","agentId":5,"agentName":"运维值班","sessionId":"chn-6b1d02ce-8f4a-4b7e-93c1-0a2d5e7f9b44","communicationMode":"stream","permissionMode":"DEFAULT","enabled":1,"status":0,"configJson":"{\\"appId\\":\\"ding24ab77\\",\\"appSecret\\":\\"******91ab\\"}","enableThink":0,"enableSearch":1,"enablePlan":0,"description":"告警转发的钉钉群","creator":"liwei","createTime":"2026-09-14 09:31:20"},
+      {"id":13,"tenantId":1,"name":"个人微信","type":"wechat","typeDisplayName":"微信","agentId":3,"agentName":"客服助手","sessionId":"chn-a33f7e01-6c25-4f18-8b0d-2e94c17fa553","communicationMode":"long_polling","permissionMode":"DEFAULT","enabled":1,"status":1,"configJson":"{\\"botToken\\":\\"wx_5c41b9a702d8\\",\\"userId\\":\\"oGZQ0uAb1234\\",\\"baseUrl\\":\\"https://wx.example.com\\"}","enableThink":1,"enableSearch":0,"enablePlan":1,"description":"扫码绑定的个人号","creator":"system","createTime":"2026-09-24 21:07:45"},
+      {"id":14,"tenantId":1,"name":"企微机器人","type":"wecom","typeDisplayName":"企业微信","agentId":7,"agentName":"周报助手","sessionId":"chn-c07b52d8-1a94-4e6d-82f0-39bb15d74e06","communicationMode":"websocket","permissionMode":"DEFAULT","enabled":0,"status":1,"configJson":"{\\"botId\\":\\"aibot_9c14d\\",\\"secret\\":\\"******77ab\\"}","enableThink":null,"enableSearch":null,"enablePlan":null,"creator":"system","createTime":"2026-09-08 16:20:03"},
+      {"name":"   ","type":"   ","agentId":null,"agentName":null,"sessionId":null,"communicationMode":null,"enabled":null,"status":null,"configJson":null,"creator":null,"createTime":"not-a-date"}
+    ]}
+    """
+
+    /// The runtime answers for the four rows above: one active, one idle, and the other two missing from the
+    /// map entirely, which is what the unknown badge is for.
+    static let sandboxJSON = """
+    {"chn-1f0a9c66-2b4d-4c11-9a3e-7d5c1b0a4e21":{"active":true},"chn-6b1d02ce-8f4a-4b7e-93c1-0a2d5e7f9b44":{"active":false}}
     """
 }
 #endif

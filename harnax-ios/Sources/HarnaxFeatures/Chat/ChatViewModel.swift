@@ -49,6 +49,12 @@ public final class ChatViewModel: ObservableObject {
     @Published public private(set) var conversation: ChatConversation
     @Published public private(set) var isStreaming = false
     @Published public private(set) var stopNotice: StopNotice?
+    /// The stored rows are on their way. The screen shows a loading state rather than an empty conversation,
+    /// because the two look identical until the call comes back.
+    @Published public private(set) var isLoadingHistory = false
+    /// Why the stored rows could not be read, resolved copy. Kept apart from `stopNotice`, which is about an
+    /// answer that stopped mid-flight: an unopened conversation never had one.
+    @Published public private(set) var historyFailure: String?
     /// The user is looking at the tail, so new rows should be pulled into view. False from the moment they
     /// scroll up past `nearBottomThreshold` until they come back down.
     @Published public private(set) var isAnchoredToBottom = true
@@ -59,18 +65,24 @@ public final class ChatViewModel: ObservableObject {
 
     private let streaming: any AgentStreaming
     private let commands: (any AgentCommanding)?
+    private let history: (any ChatHistoryReading)?
     private var streamTask: Task<Void, Never>?
+    /// The conversation whose rows are already on screen. A reload is a re-entry, not a refresh.
+    private var loadedConversationID: String?
 
     /// `commands` is the console's second leg of a stop: the read is aborted locally, and `INTERRUPT` tells
     /// the server to stop billing the run (`ChatWindow.tsx:2401-2405`). A host that has no command channel
-    /// wired yet still gets a working abort, so the dependency is optional.
+    /// wired yet still gets a working abort, so the dependency is optional. `history` is optional for the
+    /// same reason: a host that has not wired it starts on an empty transcript instead of failing to build.
     public init(
         streaming: any AgentStreaming,
         commands: (any AgentCommanding)? = nil,
+        history: (any ChatHistoryReading)? = nil,
         conversation: ChatConversation
     ) {
         self.streaming = streaming
         self.commands = commands
+        self.history = history
         self.conversation = conversation
     }
 
@@ -80,6 +92,34 @@ public final class ChatViewModel: ObservableObject {
 
     /// The answer currently on screen, open or closed.
     public var answer: ChatTurn? { transcript.turns.last }
+
+    // MARK: - history
+
+    /// The conversation's stored rows, replayed into the transcript. The console does the same on open
+    /// (`ChatWindow.tsx:740-933`), and this is called from the screen's `.task`.
+    ///
+    /// Rows never overwrite work already on screen: if a turn started while the read was in flight, or the
+    /// user moved on to another conversation, what came back is stale and gets dropped.
+    public func load() async {
+        guard let history else { return }
+        let sessionID = conversation.id
+        guard loadedConversationID != sessionID, !isStreaming else { return }
+        isLoadingHistory = true
+        defer { isLoadingHistory = false }
+        let result = await history.history(sessionId: sessionID)
+        guard conversation.id == sessionID else { return }
+        switch result {
+        case let .success(logs):
+            loadedConversationID = sessionID
+            historyFailure = nil
+            // A turn that started while the read was in flight owns the screen now.
+            guard transcript.turns.isEmpty else { return }
+            transcript = ChatTranscript(replaying: logs)
+            scrollToBottomID += 1
+        case let .failure(error):
+            historyFailure = ErrorMessage.text(for: error)
+        }
+    }
 
     // MARK: - turn
 
@@ -125,6 +165,8 @@ public final class ChatViewModel: ObservableObject {
         self.conversation = conversation
         transcript = ChatTranscript()
         stopNotice = nil
+        historyFailure = nil
+        loadedConversationID = nil
         draft = ""
         isAnchoredToBottom = true
         scrollToBottomID += 1

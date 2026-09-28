@@ -17,7 +17,7 @@ enum ApiKeyEndpoint {
             URLQueryItem(name: "pageNum", value: String(num)),
             URLQueryItem(name: "pageSize", value: String(size)),
         ]
-        if let keyword, !keyword.isEmpty {
+        if let keyword = hxPresented(keyword) {
             items.append(URLQueryItem(name: "keyword", value: keyword))
         }
         if let enabled {

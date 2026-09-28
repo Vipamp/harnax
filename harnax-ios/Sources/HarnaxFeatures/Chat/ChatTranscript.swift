@@ -145,6 +145,8 @@ public struct ChatTranscript: Equatable {
     private var segmentCounter = 0
     private var turnCounter = 0
     private var synthesizedCounter = 0
+    /// Numbering for the ids a replayed call has to be given (`ChatWindow.tsx:881`).
+    private var replayToolSeq = 0
     /// A closing frame (`isLast`) ends the run its kind was growing: the next delta opens a new block rather
     /// than extending one the model already signed off. One seal per kind, which is what the console's two
     /// accumulator resets amount to (`ChatWindow.tsx:1422-1428`, `:1444-1485`).
@@ -152,6 +154,142 @@ public struct ChatTranscript: Equatable {
     private var thinkingSealed = false
 
     public init() {}
+
+    /// The stored transcript of a session, replayed row by row the way the console maps it
+    /// (`harnax-webui/src/pages/session/components/ChatWindow.tsx:759-930`).
+    ///
+    /// Rows are consumed in array order and never re-sorted: the team merge interleaves the lead's rows with
+    /// the members', so the list is not time-ordered even though every row is stamped. Consecutive ASSISTANT
+    /// rows aggregate into one bubble — one bubble per user turn, as while streaming — and a USER row closes
+    /// the bubble before it. Every turn this produces is already over, so the fold's `isTerminated` reads
+    /// true and a later `send` writes into a fresh bubble rather than into history.
+    public init(replaying logs: [ChatHistoryLog]) {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        /// The assistant bubble later rows still land in, as an index into `turns`.
+        var answer: Int?
+        for (index, log) in logs.enumerated() {
+            // A member row is the server's merged output (`TeamHistoryReplay.kt:36-56`) and its bubble needs
+            // the console's run grouping and delegate-card claim. Not this build: what the user sees of a
+            // member's work is the text inside the lead's own `team_delegate` card.
+            guard !log.isMemberOutput else { continue }
+            let stamp = Self.millis(log.timestamp, now: now)
+            let rowID = Self.rowID(role: log.roleKey ?? "row", stamp: stamp, index: index)
+            switch log {
+            case let .user(message, _, _):
+                // A user row ends the answer it prompted (`ChatWindow.tsx:775-776`).
+                answer = nil
+                let segment = nextSegment(.text(message))
+                turns.append(ChatTurn(
+                    id: rowID,
+                    role: .user,
+                    segments: [segment],
+                    outcome: .ended,
+                    timestamp: Self.date(stamp)
+                ))
+            case let .assistant(thinking, text, calls, _, _):
+                let at: Int
+                if let open = answer {
+                    at = open
+                } else {
+                    turns.append(ChatTurn(id: rowID, role: .assistant, outcome: .ended, timestamp: Self.date(stamp)))
+                    at = turns.count - 1
+                    answer = at
+                }
+                replayAssistant(
+                    thinking: thinking, text: text, calls: calls, rowID: rowID,
+                    following: logs, after: index, into: at
+                )
+            case .system, .tool, .unknown:
+                // The console draws neither a system row nor a bare tool result: a result only ever reaches
+                // the screen through the call it belongs to (`ChatWindow.tsx:911-929`).
+                break
+            }
+        }
+    }
+
+    /// One stored assistant row into the bubble it belongs to, in the console's order: thinking, then one card
+    /// per call, then the text (`ChatWindow.tsx:836-902`).
+    ///
+    /// A call's result is looked for among the TOOL rows that follow *this* row in an unbroken run, because a
+    /// row can name several calls and their results come back one after another
+    /// (`ChatWindow.tsx:855-861`). One that finds no result closes as interrupted: that turn was cut, and a
+    /// replayed card must not sit there claiming to still be working (`:890-893`).
+    private mutating func replayAssistant(
+        thinking: String,
+        text: String,
+        calls: [ChatHistoryLog.Call],
+        rowID: String,
+        following logs: [ChatHistoryLog],
+        after row: Int,
+        into target: Int
+    ) {
+        if !thinking.isEmpty {
+            if turns[target].segments.last?.thinking != nil {
+                let at = turns[target].segments.count - 1
+                let merged = (turns[target].segments[at].thinking ?? "") + "\n\n" + thinking
+                turns[target].segments[at].kind = .thinking(merged)
+            } else {
+                let segment = nextSegment(.thinking(thinking))
+                turns[target].segments.append(segment)
+            }
+        }
+        var results: [ResultRow] = []
+        for follow in logs.dropFirst(row + 1) {
+            guard case let .tool(name, result, _, _) = follow else { break }
+            // A member's result answers a member's call, and those rows belong to another bubble.
+            if follow.isMemberOutput { break }
+            results.append(ResultRow(name: name, message: result))
+        }
+        for call in calls {
+            guard let name = hxPresented(call.name) else { continue }
+            guard !Self.planTools.contains(name) else { continue }
+            replayToolSeq += 1
+            var run = ChatToolRun(
+                toolId: "\(rowID)-t\(replayToolSeq)",
+                toolName: name,
+                arguments: call.input
+            )
+            // A result that names no tool pairs with the first call still unclaimed, the way the console's
+            // `!r.log.name || r.log.name === toolName` test reads (`ChatWindow.tsx:884-886`).
+            if let at = results.firstIndex(where: { !$0.used && ($0.name.isEmpty || $0.name == name) }) {
+                results[at].used = true
+                // A stored result row carries no success flag — the outcome lived in the stream's
+                // `ToolResultEvent` — so a replayed card reads as completed.
+                run.result = ChatToolRun.Result(message: results[at].message, succeeded: true)
+            } else {
+                run.interrupted = true
+            }
+            let segment = nextSegment(.tool(run))
+            turns[target].segments.append(segment)
+        }
+        if !text.isEmpty {
+            let segment = nextSegment(.text(text))
+            turns[target].segments.append(segment)
+        }
+    }
+
+    /// A stored tool result, waiting for the call it answers.
+    private struct ResultRow {
+        let name: String
+        let message: String
+        var used = false
+    }
+
+    /// `log.timestamp || Date.now()` (`ChatWindow.tsx:764`): a row the server left unstamped, or stamped with
+    /// the zero the JVM default carries, reads as now.
+    private static func millis(_ timestamp: Int64?, now: Int64) -> Int64 {
+        guard let timestamp, timestamp != 0 else { return now }
+        return timestamp
+    }
+
+    private static func date(_ millis: Int64) -> Date {
+        Date(timeIntervalSince1970: Double(millis) / 1000)
+    }
+
+    /// The console's row key, which the replayed tool ids hang off of (`ChatWindow.tsx:764`, `:881`).
+    private static func rowID(role: String, stamp: Int64, index: Int) -> String {
+        "\(role)-\(stamp)-\(index)"
+    }
 
     /// The blocks of the answer last on screen, newest last.
     public var segments: [ChatSegment] { turns.last?.segments ?? [] }

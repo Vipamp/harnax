@@ -17,7 +17,7 @@ enum EnvVarEndpoint {
             URLQueryItem(name: "pageNum", value: String(num)),
             URLQueryItem(name: "pageSize", value: String(size)),
         ]
-        if let keyword, !keyword.isEmpty {
+        if let keyword = hxPresented(keyword) {
             items.append(URLQueryItem(name: "keyword", value: keyword))
         }
         return Endpoint(.get, path: "\(root)/page", query: items)

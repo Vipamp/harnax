@@ -144,7 +144,7 @@ public final class EnvVarFormViewModel: ObservableObject {
             if trimmedKey.isEmpty { return "env.var.key.required" }
             if trimmedKey.count > Self.keyLimit { return "env.var.key.long" }
             if !EnvVarKeyPattern.isValid(trimmedKey) { return "env.var.key.invalid" }
-            if value.isEmpty { return "env.var.value.required" }
+            if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "env.var.value.required" }
         }
         if !value.isEmpty, value.count > Self.valueLimit { return "env.var.value.long" }
         if note.count > Self.noteLimit { return "env.var.note.long" }
