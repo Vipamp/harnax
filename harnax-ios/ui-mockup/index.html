@@ -1,0 +1,887 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Harnax iOS 界面草图 v1</title>
+<style>
+:root{
+  --bg:#f2f2f7; --card:#fff; --ink:#1c1c1e; --ink2:#3a3a3c; --muted:#8e8e93;
+  --line:rgba(60,60,67,.18); --fill:rgba(118,118,128,.12);
+  --blue:#0a7cff; --indigo:#4f6ef7; --green:#34c759; --orange:#ff9f0a; --red:#ff3b30;
+  --purple:#af52de; --teal:#30b0c7;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#e8e8ee;color:var(--ink);
+  font-family:-apple-system,"SF Pro Text","PingFang SC","Helvetica Neue",sans-serif;
+  -webkit-font-smoothing:antialiased}
+header.board{padding:28px 32px 8px}
+header.board h1{margin:0 0 6px;font-size:26px;letter-spacing:-.4px}
+header.board p{margin:2px 0;color:#55565a;font-size:14px;line-height:1.6;max-width:1100px}
+.legend{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0 4px}
+.legend span{font-size:12px;padding:4px 10px;border-radius:20px;background:#fff;border:1px solid var(--line);color:#48484a}
+h2.group{margin:34px 32px 12px;font-size:17px;color:#3c3c43;letter-spacing:-.2px}
+h2.group em{font-style:normal;color:var(--muted);font-weight:400;font-size:13px;margin-left:8px}
+.board-row{display:flex;flex-wrap:wrap;gap:26px;padding:0 32px 8px;align-items:flex-start}
+.unit{width:344px}
+.unit figcaption{margin:10px 4px 0;font-size:12.5px;color:#55565a;line-height:1.55}
+.unit figcaption b{display:block;font-size:13.5px;color:var(--ink);margin-bottom:3px}
+.unit figcaption code{background:#e6e6ee;padding:1px 4px;border-radius:4px;font-size:11px}
+
+/* phone shell */
+.phone{width:344px;height:708px;border-radius:40px;background:#0e0e10;padding:9px;
+  box-shadow:0 22px 46px rgba(0,0,0,.26),inset 0 0 0 1px rgba(255,255,255,.07)}
+.screen{position:relative;width:100%;height:100%;border-radius:32px;overflow:hidden;
+  background:var(--bg);display:flex;flex-direction:column;font-size:15px}
+.dark{background:#000;color:#f2f2f7}
+.status{height:44px;display:flex;align-items:center;justify-content:space-between;
+  padding:0 20px 0 26px;font-size:13px;font-weight:600;flex:0 0 auto}
+.status .r{display:flex;gap:5px;align-items:center}
+.dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.85}
+.sig{width:17px;height:11px;border:1.4px solid currentColor;border-radius:3px;position:relative;opacity:.9}
+.sig:after{content:"";position:absolute;right:-4px;top:2.5px;width:2px;height:4px;background:currentColor;border-radius:1px}
+
+/* nav */
+.nav{flex:0 0 auto;padding:2px 16px 8px;background:rgba(248,248,250,.92);
+  border-bottom:.5px solid var(--line);backdrop-filter:blur(12px)}
+.dark .nav{background:rgba(22,22,24,.9);border-color:#2a2a2e}
+.nav .bar{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:38px}
+.nav .back{color:var(--blue);font-size:15px;display:flex;align-items:center;gap:2px}
+.nav .c{font-size:16px;font-weight:600;text-align:center;flex:1}
+.nav .act{color:var(--blue);font-size:15px;display:flex;align-items:center;gap:3px}
+.nav .big{font-size:30px;font-weight:700;letter-spacing:-.7px;margin:2px 0 6px}
+.nav .sub{font-size:12.5px;color:var(--muted);margin:-2px 0 6px}
+.iconbtn{width:30px;height:30px;border-radius:50%;background:var(--fill);display:flex;
+  align-items:center;justify-content:center;font-size:14px;color:var(--ink2);flex:0 0 auto}
+.dark .iconbtn{color:#e8e8ed;background:rgba(255,255,255,.12)}
+.glyph{font-family:"SF Symbols",system-ui;line-height:1}
+
+/* body */
+.body{flex:1 1 auto;overflow:hidden;padding:11px 13px 12px;display:flex;flex-direction:column;gap:8px}
+.seg{display:flex;background:var(--fill);border-radius:9px;padding:2px;gap:2px}
+.seg i{flex:1;text-align:center;font-style:normal;font-size:12.5px;padding:6px 0;border-radius:7px;color:var(--ink2)}
+.seg i.on{background:#fff;color:var(--ink);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.dark .seg i.on{background:#48484a;color:#fff}
+
+/* cards & lists */
+.card{background:var(--card);border-radius:14px;padding:11px 12px;box-shadow:0 .5px 1px rgba(0,0,0,.05)}
+.dark .card{background:#1c1c1e}
+.card.top{display:flex;gap:9px;align-items:flex-start}
+.avatar{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+  color:#fff;font-size:15px;flex:0 0 auto}
+.card .h{display:flex;align-items:center;gap:6px;font-weight:600;font-size:15px}
+.card .d{font-size:12.5px;color:var(--muted);line-height:1.45;margin-top:3px}
+.tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.chip{font-size:11px;padding:3px 7px;border-radius:6px;background:var(--fill);color:var(--ink2)}
+.chip.b{background:rgba(10,124,255,.12);color:var(--blue)}
+.chip.g{background:rgba(52,199,89,.14);color:#1f8b3c}
+.chip.o{background:rgba(255,159,10,.15);color:#a35d00}
+.chip.r{background:rgba(255,59,48,.13);color:#c22
+}
+.chip.p{background:rgba(175,82,222,.13);color:#7d2f9e}
+.chip.dim{opacity:.5;text-decoration:line-through}
+.stat{display:flex;gap:14px;margin-top:9px;font-size:11.5px;color:var(--muted)}
+.stat b{display:block;font-size:15px;color:var(--ink);font-weight:650;letter-spacing:-.3px}
+.dark .stat b{color:#f2f2f7}
+.mini{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:8px;
+  padding-top:8px;border-top:.5px solid var(--line)}
+.mini .acts{display:flex;gap:12px;color:var(--blue)}
+
+.list{background:var(--card);border-radius:14px;overflow:hidden}
+.dark .list{background:#1c1c1e}
+.row{display:flex;align-items:center;gap:9px;padding:7px 12px;border-bottom:.5px solid var(--line)}
+.row:last-child{border-bottom:0}
+.row .t{font-size:14.5px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .t small{display:block;font-size:11px;color:var(--muted);font-weight:400;margin-top:1px;line-height:1.35;white-space:normal}
+.row .v{color:var(--muted);font-size:13px;white-space:nowrap}
+.row .chev{color:#c7c7cc;font-size:14px}
+.badge{font-size:11px;padding:2px 7px;border-radius:12px;background:var(--fill);color:var(--ink2)}
+.badge.on{background:rgba(52,199,89,.16);color:#1f8b3c}
+.badge.off{background:rgba(142,142,147,.16);color:var(--muted)}
+.badge.warn{background:rgba(255,159,10,.16);color:#a35d00}
+
+/* controls */
+.field{display:flex;align-items:center;gap:8px;padding:7px 0}
+.field .k{font-size:13px;color:var(--ink2);width:74px;flex:0 0 auto}
+.input{flex:1;background:var(--fill);border-radius:9px;padding:9px 11px;font-size:14px;color:var(--ink);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.input.ph{color:#aeaeb2}
+.dark .input{color:#f2f2f7}
+.area{background:var(--fill);border-radius:9px;padding:8px 10px;font-size:12.5px;color:var(--ink2);line-height:1.45;min-height:44px}
+.sw{width:44px;height:26px;border-radius:14px;background:#e5e5ea;position:relative;flex:0 0 auto}
+.sw:after{content:"";position:absolute;top:2px;left:2px;width:22px;height:22px;border-radius:50%;
+  background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.sw.on{background:var(--green)}
+.sw.on:after{left:20px}
+.sw.off{background:#d8d8dc;opacity:.7}
+.sw.grey{background:#d8d8dc}
+.btn{border-radius:12px;padding:12px;text-align:center;font-size:15.5px;font-weight:600;background:var(--blue);color:#fff}
+.btn.sec{background:var(--fill);color:var(--blue);font-weight:500}
+.btn.dang{background:rgba(255,59,48,.12);color:var(--red)}
+.btn.plain{background:#fff;border:1px solid var(--line);color:var(--ink2);font-weight:500}
+.btn.sm{padding:8px 10px;font-size:13px;border-radius:9px}
+.btn.dis{background:#d8d8dc;color:#fff}
+.row2{display:flex;gap:8px}
+.row2>*{flex:1}
+
+/* tab bar */
+.tabbar{flex:0 0 auto;display:flex;background:rgba(248,248,250,.94);border-top:.5px solid var(--line);
+  padding:6px 0 22px;backdrop-filter:blur(14px)}
+.dark .tabbar{background:rgba(22,22,24,.94);border-color:#2a2a2e}
+.tabbar i{flex:1;font-style:normal;display:flex;flex-direction:column;align-items:center;gap:3px;
+  font-size:10px;color:var(--muted)}
+.tabbar i b{font-size:17px;font-weight:400}
+.tabbar i.on{color:var(--blue)}
+.home{height:5px;width:120px;border-radius:3px;background:#000;opacity:.28;margin:6px auto 8px}
+.dark .home{background:#fff;opacity:.4}
+
+/* chat */
+.chat{flex:1;overflow:hidden;padding:9px 11px;display:flex;flex-direction:column;gap:8px}
+.t{max-width:84%;padding:8px 11px;border-radius:17px;font-size:13.5px;line-height:1.4}
+.t.u{align-self:flex-end;background:var(--blue);color:#fff;border-bottom-right-radius:6px}
+.t.a{align-self:flex-start;background:#fff;color:var(--ink);border-bottom-left-radius:6px}
+.dark .t.a{background:#1c1c1e;color:#f2f2f7}
+.t.meta{align-self:center;background:transparent;color:var(--muted);font-size:11px;padding:0}
+.think{align-self:flex-start;max-width:88%;background:rgba(142,142,147,.12);border-radius:14px;padding:8px 11px;font-size:12.5px;color:var(--ink2)}
+.think .hd{display:flex;align-items:center;gap:6px;font-weight:600;font-size:12px;color:var(--muted)}
+.think .bd{margin-top:5px;line-height:1.5;color:#6e6e73;font-size:12px}
+.dark .think{background:rgba(255,255,255,.08)}
+.tool{align-self:stretch;background:#fff;border-radius:14px;padding:10px 11px;border:.5px solid var(--line)}
+.dark .tool{background:#1c1c1e;border-color:#2c2c2e}
+.tool .hd{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600}
+.tool .st{margin-left:auto;font-size:11px;color:var(--muted)}
+.tool pre{margin:7px 0 0;background:#f4f5f7;border-radius:8px;padding:8px 9px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:11px;line-height:1.5;color:#3a3a3c;white-space:pre-wrap;word-break:break-all}
+.dark .tool pre{background:#000;color:#9de09d}
+.confirm{align-self:stretch;background:rgba(255,159,10,.09);border:1px solid rgba(255,159,10,.4);border-radius:14px;padding:11px}
+.confirm .hd{display:flex;gap:7px;align-items:center;font-size:13.5px;font-weight:650;color:#8a4f00}
+.confirm p{margin:6px 0 9px;font-size:12.5px;color:#6b5220;line-height:1.5}
+.confirm .row2 .btn{padding:9px;font-size:13.5px}
+.danger{color:var(--red);font-weight:600;font-size:11.5px}
+.member{border-left:3px solid var(--teal);padding-left:9px}
+.composer{flex:0 0 auto;border-top:.5px solid var(--line);background:#fff;padding:8px 10px 6px}
+.dark .composer{background:#1c1c1e;border-color:#2a2a2e}
+.composer .cav{background:var(--fill);border-radius:18px;padding:9px 12px;font-size:13.5px;color:#aeaeb2;
+  display:flex;align-items:center;gap:8px}
+.composer .cav span.send{margin-left:auto;width:28px;height:28px;border-radius:50%;background:var(--blue);
+  color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px}
+.toggles{display:flex;gap:6px;margin-top:7px;flex-wrap:wrap}
+.tg{font-size:11.5px;padding:4px 9px;border-radius:14px;border:1px solid var(--line);color:var(--ink2);display:flex;gap:4px;align-items:center}
+.tg.on{border-color:var(--blue);color:var(--blue);background:rgba(10,124,255,.08)}
+.tg.no{opacity:.42}
+.banner{background:rgba(255,59,48,.13);color:#c0271f;font-size:11.5px;padding:7px 11px;border-radius:10px;line-height:1.4}
+.dark .banner{color:#ff8f86}
+.banner.info{background:rgba(10,124,255,.1);color:#0a5cc0}
+.attach{display:flex;align-items:center;gap:8px;background:var(--fill);border-radius:10px;padding:8px 10px;font-size:12.5px}
+.attach .sz{margin-left:auto;color:var(--muted);font-size:11.5px}
+/* sheet */
+.sheet{position:absolute;left:0;right:0;bottom:0;background:#fff;border-radius:22px 22px 32px 32px;
+  padding:8px 15px 26px;box-shadow:0 -14px 40px rgba(0,0,0,.18);max-height:78%;overflow:hidden}
+.dark .sheet{background:#1c1c1e}
+.grab{width:36px;height:5px;border-radius:3px;background:#d1d1d6;margin:0 auto 10px}
+.sheet .sh{display:flex;align-items:center;font-size:16.5px;font-weight:650;margin-bottom:4px}
+.sheet .sh .x{margin-left:auto;color:var(--blue);font-size:14px;font-weight:400}
+.sheet p.ds{margin:0 0 10px;font-size:12.5px;color:var(--muted);line-height:1.5}
+.mask{position:absolute;inset:0;background:rgba(0,0,0,.32)}
+/* modal */
+.alert{position:absolute;left:34px;right:34px;top:50%;transform:translateY(-50%);background:#fff;
+  border-radius:14px;overflow:hidden;box-shadow:0 18px 44px rgba(0,0,0,.28);width:276px}
+.alert .ab{padding:18px 16px 14px;text-align:center}
+.alert .ab h4{margin:0 0 6px;font-size:16.5px}
+.alert .ab p{margin:0;font-size:12.8px;color:var(--ink2);line-height:1.5}
+.alert .aa{display:flex;border-top:.5px solid var(--line)}
+.alert .aa span{flex:1;padding:11px;text-align:center;font-size:15px;color:var(--blue)}
+.alert .aa span+.span,.alert .aa span+d{border-left:.5px solid var(--line)}
+.alert .aa .sep{border-left:.5px solid var(--line)}
+.alert .aa b{font-weight:600}
+/* chart */
+.chart{height:150px;position:relative;background:linear-gradient(#fff,#fff);border-radius:12px;padding:10px 10px 6px;border:.5px solid var(--line)}
+.dark .chart{background:#1c1c1e;border-color:#2c2c2e}
+.grid{position:absolute;left:10px;right:10px;border-top:.5px dashed #e3e3e8}
+svg.line{position:absolute;inset:10px 10px auto 10px;width:calc(100% - 20px);height:112px}
+.kpis{display:flex;gap:8px}
+.kpi{flex:1;background:#fff;border-radius:12px;padding:9px 10px}
+.dark .kpi{background:#1c1c1e}
+.kpi small{font-size:10.5px;color:var(--muted);display:block}
+.kpi b{font-size:16px;letter-spacing:-.4px}
+.kpi i{font-style:normal;font-size:10.5px;color:#1f8b3c}
+.axis{display:flex;justify-content:space-between;font-size:9.5px;color:#aeaeb2;padding:2px 4px 0}
+/* steps */
+.steps{display:flex;align-items:center;gap:4px;margin:2px 0 8px}
+.steps .s{flex:1;height:4px;border-radius:2px;background:#e0e0e5}
+.steps .s.on{background:var(--blue)}
+.steps .n{font-size:11px;color:var(--muted);white-space:nowrap}
+.bind{display:flex;align-items:center;gap:8px;padding:9px 11px;border-radius:12px;background:var(--fill)}
+.bind .x{margin-left:auto;color:var(--muted)}
+.tree{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.7;color:var(--ink2)}
+.tree .dir{color:var(--blue)}
+.qr{width:150px;height:150px;margin:6px auto 8px;border-radius:12px;background:
+  repeating-conic-gradient(#1c1c1e 0 25%,#fff 0 50%) 0 0/22px 22px;border:6px solid #fff;
+  box-shadow:0 0 0 .5px var(--line)}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--muted);
+  background:var(--fill);padding:4px 9px;border-radius:12px;margin:0 auto;width:max-content}
+.note{font-size:10.5px;color:var(--muted);line-height:1.45}
+.lockup{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2);
+  background:rgba(52,199,89,.1);padding:7px 9px;border-radius:9px}
+</style>
+</head>
+<body>
+<header class="board">
+  <h1>Harnax iOS · 界面草图 v1</h1>
+  <p>按 <code>harnax-ios/DESIGN.md</code> 的范围与 <code>specs/</code> 的字段口径画的静态草图，只定信息架构、控件形态与状态表现，不是视觉终稿。所有文案按 zh-CN，深色态在最后一组。</p>
+  <div class="legend">
+    <span>底部 5 tab：对话 / 智能体 / 上下文 / 系统 / 我的</span>
+    <span>列表=卡片流（对齐 Web 的 EntityCard）</span>
+    <span>跨实体流程=sheet 而不是新页面</span>
+    <span>后端拒绝 message 原样展示，不吞成通用报错</span>
+    <span>对话输入区开关由后端模型能力字段驱动</span>
+  </div>
+</header>
+
+<h2 class="group">A. 登录与首屏<em>对应 §5 鉴权、M0 里程碑</em></h2>
+<div class="board-row">
+
+  <figure class="unit">
+    <div class="phone"><div class="screen">
+      <div class="status"><span>9:41</span><span class="r"><span class="dot"></span><span class="dot"></span><span class="sig"></span></span></div>
+      <div class="nav" style="border:0;background:transparent"><div class="bar"></div></div>
+      <div class="body" style="padding:6px 22px 0">
+        <div style="text-align:center;margin:26px 0 22px">
+          <div class="avatar" style="width:62px;height:62px;border-radius:17px;background:linear-gradient(135deg,#4f6ef7,#0a7cff);margin:0 auto 12px;font-size:26px">◈</div>
+          <div style="font-size:22px;font-weight:700;letter-spacing:-.5px">Harnax</div>
+          <div style="font-size:12.5px;color:var(--muted);margin-top:4px">智能体管理台</div>
+        </div>
+        <div class="field" style="flex-direction:column;gap:6px;align-items:stretch">
+          <div class="input ph" style="padding:13px 12px">用户名</div>
+          <div class="input ph" style="padding:13px 12px">密码</div>
+        </div>
+        <div class="banner info" style="margin-top:4px">服务器 <code>http://10.0.0.12:28080</code> · ATS 例外域已配（开发期绕开 Nginx 直连 Admin/Router）</div>
+        <div class="btn" style="margin-top:12px">登 录</div>
+        <div class="btn sec sm" style="margin-top:8px;background:transparent">服务器地址设置</div>
+        <div style="flex:1"></div>
+        <div class="note" style="text-align:center;padding-bottom:14px">v1 用免验证码口 <code>POST /api/admin/auth/cli-login</code><br>登录页只摆用户名密码：后端 <code>login-methods</code> 宣传的手机号／邮箱两条实际都按 username 取用户</div>
+        <div class="home"></div>
+      </div>
+    </div></div>
+    <figcaption><b>A1 登录</b>凭据入 Keychain，受生物识别保护。<code>userInfo.isAdmin</code> 决定 API Key 等入口可见性（O5 照搬 Web 的管理员门禁）。</figcaption>
+  </figure>
+
+  <figure class="unit">
+    <div class="phone"><div class="screen">
+      <div class="status"><span>9:41</span><span class="r"><span class="dot"></span><span class="sig"></span></span></div>
+      <div class="nav">
+        <div class="bar">
+          <div class="iconbtn" style="background:transparent;font-size:19px;color:var(--blue)">⋯</div>
+          <div class="c">对话</div>
+          <div class="iconbtn">⊕</div>
+        </div>
+        <div class="big">对话</div>
+        <div class="seg"><i class="on">进行中 12</i><i>团队 5</i><i>渠道 3</i></div>
+      </div>
+      <div class="body">
+        <div class="input ph" style="padding:8px 11px">搜索会话</div>
+        <div class="card top">
+          <div class="avatar" style="background:linear-gradient(135deg,#4f6ef7,#7a5cf0)">R</div>
+          <div style="flex:1;min-width:0">
+            <div class="h">客服助手 · 周报生成<span class="badge on" style="margin-left:auto">流式中</span></div>
+            <div class="d">正在调用 <code>writeFile</code>，计划 4 步已完成 2 步…</div>
+            <div class="stat"><span><b>#s-8842</b>web</span><span><b>3</b>本轮工具</span><span><b>12.4k</b>tokens</span></span></div>
+          </div>
+        </div>
+        <div class="card top">
+          <div class="avatar" style="background:linear-gradient(135deg,#30b0c7,#0a7cff)">T</div>
+          <div style="flex:1;min-width:0">
+            <div class="h">投研团队 · 主管<span class="badge warn" style="margin-left:auto">待确认</span></div>
+            <div class="d">成员「数据抓取」回传 2 段结果；主管等一次工具批准</div>
+            <div class="stat"><span><b>4</b>成员</span><span><b>team</b>类型</span><span><b>2 分前</b></span></span></div>
+          </div>
+        </div>
+        <div class="card top">
+          <div class="avatar" style="background:linear-gradient(135deg,#ff9f0a,#ff6b3d)">W</div>
+          <div style="flex:1;min-width:0">
+            <div class="h">企微接入会话<span class="badge" style="margin-left:auto">已结束</span></div>
+            <div class="d">渠道 <code>wecom</code> 触发，附件 1 个</div>
+          </div>
+        </div>
+        <div class="banner">上次流式中断：已把消息状态从「流式中」落为「已中断」，待确认卡置灰</div>
+      </div>
+      <div class="tabbar"><i class="on"><b>◠</b>对话</i><i><b>◎</b>智能体</i><i><b>▤</b>上下文</i><i><b>⚙</b>系统</i><i><b>☺</b>我的</i></div>
+    </div></div>
+    <figcaption><b>A2 对话列表（tab 1）</b>13 个列表页共用一套游标式分页封装（内部仍是 <code>pageNum/pageSize</code>）。状态徽标取自会话真实状态，不自行推断。</figcaption>
+  </figure>
+
+  <figure class="unit">
+    <div class="phone"><div class="screen">
+      <div class="status"><span>9:41</span><span class="r"><span class="sig"></span></span></div>
+      <div class="nav">
+        <div class="bar"><span class="back">‹ 对话</span><span class="c">客服助手</span><span class="act">⋯</span></div>
+      </div>
+      <div class="chat">
+        <div class="t meta">14:02 · qwen3-max · 思考自动</div>
+        <div class="t u">帮我把上周工单汇总成周报，导出成 md 文件</div>
+        <div class="think">
+          <div class="hd">◐ 思考过程 <span style="font-weight:400">（点开展开 1.2k 字）</span> ⌄</div>
+        </div>
+        <div class="tool">
+          <div class="hd">⚒ queryTickets <span class="chip b">已合并结果</span><span class="st">1.8s</span></div>
+          <pre>入参 {range:"7d", status:"closed"}
+结果 共 42 条，按标签分 5 组（工具结果并进本卡，不独立成段）</pre>
+        </div>
+        <div class="t a">统计口径按标签分组完成，接下来生成文件。计划共 4 步：</div>
+        <div class="card" style="padding:10px 11px">
+          <div class="h" style="font-size:13.5px">☰ 当前计划 <span class="chip" style="margin-left:auto">2/4</span></div>
+          <div class="d" style="margin-top:6px;color:var(--ink2)">✓ 拉取工单 · ✓ 分类聚合 · <b>生成 md 周报</b> · 推送文件</div>
+        </div>
+        <div class="attach">📎 weekly-report.md <span class="sz">4.2 KB · 点按下载</span></div>
+      </div>
+      <div class="composer">
+        <div class="cav">补充说明或继续追问<span class="send">↑</span></div>
+        <div class="toggles">
+          <span class="tg on">◐ 思考：自动</span>
+          <span class="tg">⌕ 联网</span>
+          <span class="tg">☰ 计划</span>
+          <span class="tg no">▣ 视觉（模型不支持）</span>
+          <span class="tg">⌘ /</span>
+        </div>
+      </div>
+      <div class="home" style="margin-top:0"></div>
+    </div></div>
+    <figcaption><b>A3 对话全屏 · 稳态</b>五类可见分段：文本／思考折叠／工具调用合并卡／确认卡／计划卡（<code>tool_result</code> 在 Web 恒不渲染，iOS 并入调用卡）。附件行是 iOS 超出 Web 的一项：未开启对象存储时按 404 降级、只灰显不报错（O8）。</figcaption>
+  </figure>
+</div>
+
+<h2 class="group">B. 对话内的关键交互<em>确认状态机、slash、权限模式、成员归属</em></h2>
+<div class="board-row">
+
+  <figure class="unit">
+    <div class="phone"><div class="screen">
+      <div class="status"><span>9:41</span><span class="r"><span class="sig"></span></span></div>
+      <div class="nav"><div class="bar"><span class="back">‹</span><span class="c">投研团队</span><span class="act">⋯</span></div></div>
+      <div class="chat">
+        <div class="t u">抓一下这三个标的最近公告并对比估值</div>
+        <div class="tool member">
+          <div class="hd"><span class="chip p">成员 · 数据抓取</span><span class="st">childRunId 01</span></div>
+          <div class="d" style="font-size:12.5px;color:var(--ink2);margin-top:6px">已回传 2 段结果，公告清单 11 条</div>
+        </div>
+        <div class="tool member" style="border-left-color:var(--purple)">
+          <div class="hd"><span class="chip p">成员 · 估值分析</span><span class="st">childRunId 02</span></div>
+          <div class="d" style="font-size:12.5px;color:var(--ink2);margin-top:6px">正在调用 <code>webSearch</code></div>
+        </div>
+        <div class="confirm">
+          <div class="hd">⚠ 工具等待批准 <span class="danger">高危</span></div>
+          <p><b>shell</b> 将在沙箱执行：<code>python fetch.py --live</code>。批准只放行这一次。</p>
+          <div class="row2"><span class="btn sec" style="background:#fff;border:1px solid rgba(255,59,48,.4);color:var(--red)">全部拒绝</span><span class="btn" style="background:var(--orange)">批准</span></div>
+          <div class="btn plain sm" style="margin-top:7px">总是允许该工具</div>
+        </div>
+      </div>
+      <div class="composer"><div class="cav">主管阻塞等待批准，成员内联卡不阻塞<span class="send">↑</span></div></div>
+      <div class="home" style="margin-top:0"></div>
+    </div></div>
+    <figcaption><b>B1 工具确认 + 团队多路合并</b>成员事件按 <code>source.childRunId</code> 分组归属气泡。主管弹窗阻塞、成员内联不阻塞——并发竞争谁先出以实测为准。</figcaption>
+  </figure>
+
+  <figure class="unit">
+    <div class="phone"><div class="screen">
+      <div class="status"><span>9:41</span><span class="r"><span class="sig"></span></span></div>
+      <div class="nav"><div class="bar"><span class="back">‹</span><span class="c">客服助手</span><span class="act">⋯</span></div></div>
+      <div class="chat" style="opacity:.45">
+        <div class="t u">/</div>
+        <div class="t a">输入斜杠后展示命令面板</div>
+      </div>
+      <div class="sheet" style="padding-bottom:18px">
+        <div class="grab"></div>
+        <div class="sh">命令 <span class="x">取消</span></div>
+        <div class="list" style="margin-bottom:8px">
+          <div class="row"><span class="t"><b>/compact</b><small>压缩上下文</small></span><span class="badge off">后端未实现</span></div>
+          <div class="row"><span class="t"><b>/clear</b><small>清空会话（保留快照）</small></span><span class="chev">›</span></div>
+          <div class="row"><span class="t"><b>/interrupt</b><small>停止生成</small></span><span class="chev">›</span></div>
+          <div class="row"><span class="t"><b>/permission</b><small>切换权限模式</small></span><span class="chev">›</span></div>
+          <div class="row"><span class="t"><b>/stop_sandbox</b><small>停止沙箱</small></span><span class="chev">›</span></div>
+        </div>
+        <div class="seg" style="margin-bottom:8px"><i>DEFAULT</i><i class="on">ACCEPT_EDITS</i><i>EXPLORE</i><i>BYPASS</i><i>DONT_ASK</i></div>
+        <div class="note"><code>REFRESH</code>/<code>DENY</code> 不在 Web slash 表内；<code>COMPACT</code> 后端未实现，因此只列不禁用会误导，这里显式标灰。</div>
+      </div>
+      <div class="home"></div>
+    </div></div>
+    <figcaption><b>B2 slash 面板 + 权限模式</b>10 个命令一张表驱动，五档权限用分段控件。非法值后端无枚举校验，iOS 自己建枚举并在提交前拦。</figcaption>
+  </figure>
+
+  <figure class="unit">
+    <div class="phone"><div class="screen">
+      <div class="status"><span>9:41</span><span class="r"><span class="sig"></span></span></div>
+      <div class="nav"><div class="bar"><span class="back">‹</span><span class="c">客服助手</span><span class="act">⋯</span></div></div>
+      <div class="chat">
+        <div class="t a">已按你的要求整理完，下面是三份产物：</div>
+        <div class="attach">📄 a-summary.md <span class="sz">1.1 KB</span></div>
+        <div class="attach">📄 b-tickets.csv <span class="sz">88 KB</span></div>
+        <div class="attach" style="opacity:.5">📄 c-raw.json <span class="sz">对象存储未开启，暂不可下载</span></div>
+      </div>
+      <div class="sheet" style="max-height:62%">
+        <div class="grab"></div>
+        <div class="sh">Workspace <span class="x">完成</span></div>
+        <div class="p" style="margin:0 0 6px"><span class="seg"><i class="on">文件</i><i>团队产物</i></span></div>
+        <div class="tree">
+          <div class="dir">▾ output/</div>
+          <div>&nbsp;&nbsp;├─ a-summary.md</div>
+          <div>&nbsp;&nbsp;├─ b-tickets.csv</div>
+          <div>&nbsp;&nbsp;└─ <span class="dir">logs/</span></div>
+          <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ run-9931.log</div>
+        </div>
+        <div class="row2" style="margin-top:10px"><span class="btn sec">↑ 上传</span><span class="btn">↓ 下载所选</span></div>
+        <div class="note" style="margin-top:8px">目录优先排序；<code>symlink/unknown</code> 分支的交互以实测为准。</div>
+      </div>
+      <div class="home"></div>
+    </div></div>
+    <figcaption><b>B3 Workspace / 团队产物抽屉</b>router 的 <code>workspace/*</code> 与 admin 的 <code>team-artifacts</code> 两个来源，一个 sheet 两态切换。</figcaption>
+  </figure>
+</div>
+
+<h2 class="group">C. 智能体域<em>列表卡片流、5 步向导、四类绑定、跨实体副作用</em></h2>
+<div class="board-row">
+
+  <figure class="unit">
+    <div class="phone"><div class="screen">
+      <div class="status"><span>9:41</span><span class="r"><span class="sig"></span></span></div>
+      <div class="nav">
+        <div class="bar"><div class="iconbtn" style="background:transparent">☰</div><div class="c">智能体</div><div class="iconbtn">⊕</div></div>
+        <div class="big">智能体</div>
+        <div class="seg"><i class="on">智能体 8</i><i>团队 3</i><i>定时任务 6</i></div>
+      </div>
+      <div class="body">
+        <div class="card top">
+          <div class="avatar" style="background:linear-gradient(135deg,#4f6ef7,#0a7cff)">R</div>
+          <div style="flex:1;min-width:0">
+            <div class="h">客服助手 <span class="badge on">启用</span><span class="chip" style="margin-left:auto">公开</span></div>
+            <div class="d">面向企微群的工单问答，带文件产出</div>
+            <div class="tags"><span class="chip b">模型 qwen3-max</span><span class="chip">工具 3</span><span class="chip p">技能 2</span><span class="chip o">CLI 1</span></div>
+            <div class="mini"><span>heqingsong · 09-12</span><span class="acts"><b>对话</b><b>编辑</b><b>⋯</b></span></div>
+          </div>
+        </div>
+        <div class="card top">
+          <div class="avatar" style="background:linear-gradient(135deg,#8e8e93,#48484a)">P</div>
+          <div style="flex:1;min-width:0">
+            <div class="h">代码评审员 <span class="badge off">停用</span></div>
+            <div class="d">被 1 个团队引用，删除会被后端拒绝并原样列出引用</div>
+            <div class="tags"><span class="chip b">模型 gpt-4o</span><span class="chip">MCP 2</span></div>
+          </div>
+        </div>
+        <div class="note">列表行已带回四类绑定与全部会话，Web 侧不再调详情——iOS 列表模型按同一形状建，详情页不存在。</div>
+      </div>
+      <div class="tabbar"><i><b>◠</b>对话</i><i class="on"><b>◎</b>智能体</i><i><b>▤</b>上下文</i><i><b>⚙</b>系统</i><i><b>☺</b>我的</i></div>
+    </div></div>
+    <figcaption><b>C1 智能体列表</b>对齐 Web 的 EntityCard：图标＋名称＋描述＋状态＋公开标记＋创建人＋统计＋操作。智能体不显示类型标签。每行卡数与 pageSize 由小屏自定规则算。</figcaption>
+  </figure>
+
+  <figure class="unit">
+    <div class="phone"><div class="screen">
+      <div class="status"><span>9:41</span><span class="r"><span class="sig"></span></span></div>
+      <div class="nav"><div class="bar"><span class="back">‹ 取消</span><span class="c">新建智能体</span><span class="act">下一步 ›</span></div>
+        <div class="steps"><span class="n">1 基本</span><i class="s on"></i><span class="n">2 模型</span><i class="s on"></i><span class="n">3 提示</span><i class="s on"></i><span class="n">4 能力</span><i class="s"></i><span class="n">5 确认</span><i class="s"></i></div>
+      </div>
+      <div class="body">
+        <div class="field"><span class="k">名称</span><span class="input">客服助手</span></div>
+        <div class="field"><span class="k">模型</span><span class="input">qwen3-max ▾</span></div>
+        <div class="field"><span class="k">系统提示</span></div>
+        <div class="area">你是工单问答助手，回答前先检索知识库…</div>
+        <div class="list" style="margin-top:2px">
+          <div class="row"><span class="t">⚒ 工具<small>queryTickets · writeFile · sendMail</small></span><span class="v">3 ›</span></div>
+          <div class="row"><span class="t">◍ MCP<small>amap-maps（已授权）</small></span><span class="v">1 ›</span></div>
+          <div class="row"><span class="t">✦ 技能<small>周报生成 · 工单归类</small></span><span class="v">2 ›</span></div>
+          <div class="row"><span class="t">▣ CLI<small>harnax-cli</small></span><span class="v">1 ›</span></div>
+          <div class="row"><span class="t">⌨ 环境参数</span><span class="v">4 项 ›</span></div>
+        </div>
+      </div>
+      <div class="home"></div>
+    </div></div>
+    <figcaption><b>C2 5 步向导</b>请求侧四类用 <code>id</code>、响应侧是 <code>mcpId/toolId/cliId</code>，读写两套 key；技能提交是逗号串 <code>"1,2,3"</code> 而不是数组，空选＝后端清空全部；<code>isPublic</code> 非管理员编辑态禁用；新建体固定 <code>status:1</code>；MCP/CLI 不回填包默认值。</figcaption>
+  </figure>
+
+  <figure class="unit">
+    <div class="phone"><div class="screen">
+      <div class="status"><span>9:41</span><span class="r"><span class="sig"></span></span></div>
+      <div class="nav"><div class="bar"><span class="back">‹</span><span class="c">客服助手</span><span class="act"></span></div></div>
+      <div class="body" style="opacity:.45">
+        <div class="row"><span class="t">删除智能体</span><span class="chev">›</span></div>
+      </div>
+      <div class="mask"></div>
+      <div class="alert">
+        <div class="ab"><h4>无法删除</h4><p>该智能体被以下对象引用：团队「投研团队」、会话 7 个、渠道「企微接入」。请先解除引用。</p></div>
+        <div class="aa"><span class="sep">知道了</span></div>
+      </div>
+      <div class="home"></div>
+    </div></div>
+    <figcaption><b>C3 关联拦截</b>删除直接提交、不做前置查询，拒绝原因必须把后端 <code>message</code> 原样列出来，不能吞成「操作失败」。团队删除是先读 <code>related-sessions</code> 选文案、真拒绝仍来自后端。</figcaption>
+  </figure>
+
+  <figure class="unit">
+    <div class="phone"><div class="screen">
+      <div class="status"><span>9:41</span><span class="r"><span class="sig"></span></span></div>
+      <div class="nav"><div class="bar"><span class="back">‹</span><span class="c">保存配置</span><span class="act">跳过</span></div></div>
+      <div class="body" style="opacity:.4"><div class="note">配置已写入智能体，但既有会话仍持有旧快照。</div></div>
+      <div class="sheet">
+        <div class="grab"></div>
+        <div class="sh">刷新受影响会话 <span class="x">取消</span></div>
+        <p class="ds">不做这一步，新配置不会生效到已有会话。勾选要刷新的会话，刷新会重建其 agent 快照。</p>
+        <div class="list" style="margin-bottom:10px">
+          <div class="row"><span class="t">#s-8842 周报生成<small>web · 3 小时前</small></span><span class="iconbtn" style="background:var(--blue);color:#fff">✓</span></div>
+          <div class="row"><span class="t">#s-8790 企微接入<small>channel · 昨天</small></span><span class="iconbtn" style="background:var(--blue);color:#fff">✓</span></div>
+          <div class="row"><span class="t">#s-8712 试跑<small>task · 3 天前</small></span><span class="iconbtn">○</span></div>
+        </div>
+        <div class="btn">刷新所选 2 个会话</div>
+      </div>
+      <div class="home"></div>
+    </div></div>
+    <figcaption><b>C4 刷新受影响会话（共享 sheet）</b>保存智能体、停用 CLI 之后复用同一个组件：清单口 <code>AgentController.kt:94</code>、提交口 <code>:104</code>。</figcaption>
+  </figure>
+
+  <figure class="unit">
+    <div class="phone"><div class="screen">
+      <div class="status"><span>9:41</span><span class="r"><span class="sig"></span></span></div>
+      <div class="nav"><div class="bar"><span class="back">‹ 取消</span><span class="c">新建团队</span><span class="act">下一步 ›</span></div>
+        <div class="steps"><span class="n">1 基本</span><i class="s on"></i><span class="n">2 主管技能</span><i class="s on"></i><span class="n">3 成员</span><i class="s"></i></div>
+      </div>
+      <div class="body">
+        <div class="field"><span class="k">团队名</span><span class="input">投研团队</span></div>
+        <div class="card" style="padding:10px 11px">
+          <div class="h" style="font-size:13.5px">主管</div>
+          <div class="d">主管自带配置、只配 skill，不额外挂 agent 行（既定产品口径）</div>
+          <div class="tags"><span class="chip p">技能：公告解析</span><span class="chip p">技能：估值表</span></div>
+        </div>
+        <div class="list">
+          <div class="row"><span class="t">≡ 数据抓取<small>MCP 2 · 技能 1</small></span><span class="v">↑ ↓</span></div>
+          <div class="row"><span class="t">≡ 估值分析<small>工具 4</small></span><span class="v">↑ ↓</span></div>
+          <div class="row"><span class="t">≡ 报告撰写<small>技能 2</small></span><span class="v">↑ ↓</span></div>
+        </div>
+        <div class="note">成员顺序即编排顺序，拖拽与上下按钮二选一实现；编辑态 <code>isPublic</code> 不加门禁（照 Web）。</div>
+      </div>
+      <div class="home"></div>
+    </div></div>
+    <figcaption><b>C5 团队 3 步向导</b>第 3 步是成员智能体编排；团队与智能体在 iOS 里共用卡片流容器。</figcaption>
+  </figure>
+
+  <figure class="unit">
+    <div class="phone"><div class="screen">
+      <div class="status"><span>9:41</span><span class="r"><span class="sig"></span></span></div>
+      <div class="nav"><div class="bar"><div class="iconbtn" style="background:transparent">☰</div><div class="c">定时任务</div><div class="iconbtn">⊕</div></div></div>
+      <div class="body">
+        <div class="list">
+          <div class="row"><span class="t">每日工单巡检<small>客服助手 · <code>0 9 * * *</code></small></span><span class="badge on">运行中</span><span class="chev">›</span></div>
+          <div class="row"><span class="t">周报生成<small>客服助手 · 每周一 08:00</small></span><span class="badge off">停用</span><span class="chev">›</span></div>
+          <div class="row"><span class="t">估值快照<small>投研团队 · <code>*/30 * * * *</code></small></span><span class="badge warn">上次失败</span><span class="chev">›</span></div>
+        </div>
+        <div class="card">
+          <div class="h" style="font-size:13.5px">执行日志 · 估值快照</div>
+          <div class="tree" style="margin-top:6px">
+            <div>08:30:02 run 开始（触发方式 manual）</div>
+            <div>08:30:19 工具 webSearch 批准超时</div>
+            <div style="color:var(--red)">08:32:40 失败：确认等待超过 120s</div>
+          </div>
+          <div class="row2" style="margin-top:9px"><span class="btn sec sm">立即执行</span><span class="btn dang sm">停止运行</span></div>
+        </div>
+        <div class="note">cron 预设与自由表达式两种输入；日志页保留原始行不重排。</div>
+      </div>
+      <div class="tabbar"><i><b>◠</b>对话</i><i class="on"><b>◎</b>智能体</i><i><b>▤</b>上下文</i><i><b>⚙</b>系统</i><i><b>☺</b>我的</i></div>
+    </div></div>
+    <figcaption><b>C6 定时任务</b>「上次失败」是 v1.1 推送（O3）的两个事件源之一。</figcaption>
+  </figure>
+</div>
+
+<h2 class="group">D. 上下文域<em>两级列表、OAuth 回跳、技能两态、CLI kill switch</em></h2>
+<div class="board-row">
+
+  <figure class="unit">
+    <div class="phone"><div class="screen">
+      <div class="status"><span>9:41</span><span class="r"><span class="sig"></span></span></div>
+      <div class="nav">
+        <div class="bar"><div class="iconbtn" style="background:transparent">☰</div><div class="c">上下文</div><div class="iconbtn">⊕</div></div>
+        <div class="big">上下文</div>
+        <div class="seg"><i class="on">模型</i><i>工具</i><i>MCP</i><i>技能</i><i>CLI</i></div>
+      </div>
+      <div class="body">
+        <div class="card top">
+          <div class="avatar" style="background:linear-gradient(135deg,#0a7cff,#30b0c7)">阿</div>
+          <div style="flex:1"><div class="h">阿里云百炼 <span class="badge on">连通</span></div>
+            <div class="d">4 个模型 · qwen3-max / qwen3-vl / …</div></div>
+          <span class="chev">›</span>
+        </div>
+        <div class="card top">
+          <div class="avatar" style="background:linear-gradient(135deg,#af52de,#4f6ef7)">O</div>
+          <div style="flex:1"><div class="h">OpenAI <span class="badge warn">未测试</span></div>
+            <div class="d">2 个模型 · 供应商卡片即第一级</div></div>
+          <span class="chev">›</span>
+        </div>
+        <div class="banner info">第二级模型行含 <code>thinkingMode</code>（关闭／自动／强制）与能力位；删除供应商要走后端级联，级联面未实测</div>
+      </div>
+      <div class="tabbar"><i><b>◠</b>对话</i><i><b>◎</b>智能体</i><i class="on"><b>▤</b>上下文</i><i><b>⚙</b>系统</i><i><b>☺</b>我的</i></div>
+    </div></div>
+    <figcaption><b>D1 模型两级</b>供应商 → 模型与工具、MCP、技能共用「流式列表＋详情」容器；连通性测试按钮在第二级行内。</figcaption>
+  </figure>
+
+  <figure class="unit">
+    <div class="phone"><div class="screen">
+      <div class="status"><span>9:41</span><span class="r"><span class="sig"></span></span></div>
+      <div class="nav"><div class="bar"><span class="back">‹ 上下文</span><span class="c">amap-maps</span><span class="act">编辑</span></div></div>
+      <div class="body">
+        <div class="card">
+          <div class="h" style="font-size:13.5px">授权状态 <span class="chip g" style="margin-left:auto">已授权</span></div>
+          <div class="d">令牌按用户换发，运行侧注入到工具进程；stdio 类型已关闭。</div>
+          <div class="row2" style="margin-top:9px"><span class="btn sec sm">重新授权</span><span class="btn dang sm">撤销</span></div>
+        </div>
+        <div class="lockup">↺ 未完成授权时该行会显式提示，而不是静默少装工具</div>
+        <div class="list">
+          <div class="row"><span class="t">maps_geo<small>地址 → 坐标</small></span><span class="badge on">可用</span></div>
+          <div class="row"><span class="t">maps_search<small>关键字检索</small></span><span class="badge on">可用</span></div>
+          <div class="row"><span class="t">maps_distance<small>距离测量</small></span><span class="badge off">已停用</span></div>
+        </div>
+        <div class="note">OAuth 回跳在 iOS 改成 URL scheme（<code>ASWebAuthenticationSession</code>），不复用 Web 的 <code>/mcp/oauth/callback</code> 无布局页。</div>
+      </div>
+      <div class="home"></div>
+    </div></div>
+    <figcaption><b>D2 MCP 详情</b>工具列表 + OAuth 面板两态；未授权提示的可见性是已知缺口，草图里把它做成常驻行。</figcaption>
+  </figure>
+
+  <figure class="unit">
+    <div class="phone"><div class="screen">
+      <div class="status"><span>9:41</span><span class="r"><span class="sig"></span></span></div>
+      <div class="nav"><div class="bar"><span class="back">‹ 技能</span><span class="c">周报生成</span><span class="act">⋯</span></div>
+        <div class="seg"><i class="on">正文</i><i>文件树</i></div>
+      </div>
+      <div class="body">
+        <div class="card">
+          <div style="font-size:15px;font-weight:650;margin-bottom:5px">周报生成 SKILL</div>
+          <div class="d" style="color:var(--ink2);line-height:1.6"><b>用途</b>：把工单聚合结果写成 Markdown 周报。<br>1. 读取 <code>output/tickets.json</code><br>2. 按标签分组，统计数量与耗时<br>3. 输出 <code>weekly-report.md</code></div>
+        </div>
+        <div class="tags"><span class="chip">来源：仓库同步</span><span class="chip g">校验通过</span><span class="chip o">被 2 智能体引用</span><span class="chip">1 团队</span></div>
+        <div class="list">
+          <div class="row"><span class="t">停用技能</span><span class="sw off"></span></div>
+          <div class="row"><span class="t">上传替换</span><span class="chev">›</span></div>
+        </div>
+        <div class="note">停用是<b>唯一由客户端算的门</b>：用列表行自带的智能体／团队计数置灰；服务端还多查一路「CLI 包内置技能」，只能靠 message 呈现。</div>
+      </div>
+      <div class="tabbar"><i><b>◠</b>对话</i><i><b>◎</b>智能体</i><i class="on"><b>▤</b>上下文</i><i><b>⚙</b>系统</i><i><b>☺</b>我的</i></div>
+    </div></div>
+    <figcaption><b>D3 技能详情 · 正文态</b>Markdown 渲染 + 代码高亮；文件树态复用 B3 的树组件。仓库列表与技能列表是同一个两级容器。</figcaption>
+  </figure>
+
+  <figure class="unit">
+    <div class="phone"><div class="screen">
+      <div class="status"><span>9:41</span><span class="r"><span class="sig"></span></span></div>
+      <div class="nav"><div class="bar"><span class="back">‹ 上下文</span><span class="c">CLI</span><span class="act">⊕</span></div></div>
+      <div class="body" style="opacity:.5"><div class="list"><div class="row"><span class="t">harnax-cli<small>v1.4.0 · skill_id 已绑定</small></span><span class="chev">›</span></div></div></div>
+      <div class="sheet">
+        <div class="grab"></div>
+        <div class="sh">harnax-cli 1.4.0 <span class="x">关闭</span></div>
+        <div class="list" style="margin-bottom:10px">
+          <div class="row"><span class="t">双摘要校验<small>packageDigest / payloadDigest 一致</small></span><span class="badge on">通过</span></div>
+          <div class="row"><span class="t">货架投递<small>cli-packages/dist</small></span><span class="badge on">在架</span></div>
+          <div class="row"><span class="t">关联检查<small>被 3 个智能体绑定</small></span><span class="v">3 ›</span></div>
+        </div>
+        <div class="row" style="border-top:.5px solid var(--line);padding-left:0;padding-right:0">
+          <span class="t">Kill switch<small>停用后新装配不再装载，既有会话需刷新</small></span><span class="sw off"></span>
+        </div>
+        <div class="note" style="margin-top:8px">只留「读 + kill switch」两个写侧动作，登记与包注册不进 iOS（已裁定待下线）。CLI 页对全部登录用户可见，非管理员亦然。</div>
+      </div>
+      <div class="home"></div>
+    </div></div>
+    <figcaption><b>D4 CLI 详情抽屉</b>kill switch 走 sheet，停用成功后紧接着弹 C4 的刷新会话流程。</figcaption>
+  </figure>
+</div>
+
+<h2 class="group">E. 系统域<em>条件字段矩阵、三开关（O6）、扫码、一次性密钥、图表</em></h2>
+<div class="board-row">
+
+  <figure class="unit">
+    <div class="phone"><div class="screen">
+      <div class="status"><span>9:41</span><span class="r"><span class="sig"></span></span></div>
+      <div class="nav">
+        <div class="bar"><div class="iconbtn" style="background:transparent">☰</div><div class="c">系统</div><div class="iconbtn">⊕</div></div>
+        <div class="big">系统</div>
+      </div>
+      <div class="body">
+        <div class="list">
+          <div class="row"><span class="t">渠道<small>5 类型 × 4 接入模式</small></span><span class="v">5 ›</span></div>
+          <div class="row"><span class="t">API Key</span><span class="v">›</span></div>
+          <div class="row"><span class="t">环境变量</span><span class="v">12 ›</span></div>
+          <div class="row"><span class="t">Token 监控</span><span class="chev">›</span></div>
+        </div>
+        <div class="card">
+          <div class="h" style="font-size:13.5px">渠道</div>
+          <div class="row"><span class="t">企微客服 <span class="chip">websocket</span></span><span class="badge on">运行中</span><span class="chev">›</span></div>
+          <div class="row"><span class="t">个人微信 <span class="chip">long_polling</span></span><span class="badge warn">未扫码</span><span class="chev">›</span></div>
+          <div class="row"><span class="t">飞书告警 <span class="chip">webhook</span></span><span class="badge on">运行中</span><span class="chev">›</span></div>
+        </div>
+        <div class="note">API Key 入口按 Web 口径只对管理员显示（O5）；「我的永久 Key」不受此限制。用户管理与租户管理不进 iOS。</div>
+      </div>
+      <div class="tabbar"><i><b>◠</b>对话</i><i><b>◎</b>智能体</i><i><b>▤</b>上下文</i><i class="on"><b>⚙</b>系统</i><i><b>☺</b>我的</i></div>
+    </div></div>
+    <figcaption><b>E1 系统 tab</b>四个二级页一张分组列表；渠道列表带类型、接入模式、状态、启停与沙箱状态。</figcaption>
+  </figure>
+
+  <figure class="unit">
+    <div class="phone"><div class="screen">
+      <div class="status"><span>9:41</span><span class="r"><span class="sig"></span></span></div>
+      <div class="nav"><div class="bar"><span class="back">‹ 取消</span><span class="c">新建渠道</span><span class="act">保存</span></div></div>
+      <div class="body">
+        <div class="seg"><i class="on">企微</i><i>微信</i><i>飞书</i><i>钉钉</i><i style="opacity:.42;text-decoration:line-through">HTTP</i></div>
+        <div class="field"><span class="k">名称</span><span class="input">企微客服</span></div>
+        <div class="field"><span class="k">智能体</span><span class="input">客服助手 ▾</span></div>
+        <div class="field"><span class="k">接入模式</span><span class="input">websocket（唯一可选）</span></div>
+        <div class="field"><span class="k">Bot ID</span><span class="input">aib_xxx</span></div>
+        <div class="field"><span class="k">Bot Secret</span><span class="input">••••••••••</span></div>
+        <div class="card" style="padding:10px 12px">
+          <div class="h" style="font-size:13px">渠道级开关</div>
+          <div class="row" style="padding:7px 0"><span class="t">思考模式</span><span class="sw on"></span></div>
+          <div class="row" style="padding:7px 0"><span class="t">联网搜索</span><span class="sw off"></span></div>
+          <div class="row" style="padding:7px 0;border:0"><span class="t">计划模式</span><span class="sw on"></span></div>
+        </div>
+      </div>
+      <div class="home"></div>
+    </div></div>
+    <figcaption><b>E2 渠道条件字段表单（XL）</b>矩阵按 Web 复刻：飞书 webhook 才多出 <code>token</code>/<code>encodingAesKey</code>/<code>callbackUrl</code>，微信隐藏全部凭证，<code>configJson</code> 掩码回传＝不修改；HTTP 灰显不可提交（O7）；模式选择器在微信隐藏、编辑态对非微信类型显示——完全按 Web 矩阵复刻。三开关与类型无关，因此放通用段而不是条件段（O6：v1 就做，后端同步把三列补进渠道 DTO）。</figcaption>
+  </figure>
+
+  <figure class="unit">
+    <div class="phone"><div class="screen">
+      <div class="status"><span>9:41</span><span class="r"><span class="sig"></span></span></div>
+      <div class="nav"><div class="bar"><span class="back">‹</span><span class="c">个人微信</span><span class="act"></span></div></div>
+      <div class="body" style="opacity:.35"><div class="note">列表页背景</div></div>
+      <div class="sheet">
+        <div class="grab"></div>
+        <div class="sh">微信扫码绑定 <span class="x">取消</span></div>
+        <div class="qr"></div>
+        <div class="pill">◌ 等待扫码 · 状态每 2s 轮询</div>
+        <p class="ds" style="text-align:center;margin-top:10px">二维码有效期到期后自动刷新一次；过期未扫会提示重新获取。</p>
+        <div class="btn sec">我扫好了</div>
+        <div class="note" style="margin-top:8px">接口三件套 <code>wechat/login</code> / <code>wechat/status</code> / <code>wechat/cancel</code>；<code>status</code> 除 <code>active</code> 外的未知态渲染要实测。</div>
+      </div>
+      <div class="home"></div>
+    </div></div>
+    <figcaption><b>E3 微信扫码</b>唯一凭证就是「点列表微信图标扫码」，表单里不放任何输入项。</figcaption>
+  </figure>
+
+  <figure class="unit">
+    <div class="phone"><div class="screen">
+      <div class="status"><span>9:41</span><span class="r"><span class="sig"></span></span></div>
+      <div class="nav"><div class="bar"><span class="back">‹ 系统</span><span class="c">API Key</span><span class="act">⊕</span></div></div>
+      <div class="body">
+        <div class="card">
+          <div class="h" style="font-size:13.5px">原始 Key <span class="chip o" style="margin-left:auto">只显示这一次</span></div>
+          <div class="input" style="margin-top:7px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px">hk_live_9f3c8a2e17b4d0…（点按复制）</div>
+          <div class="d" style="margin-top:7px">关闭本页后无法再次取回原文；丢了只能 regenerate。</div>
+        </div>
+        <div class="list">
+          <div class="row"><span class="t">永久 Key（本人）<small>scope chat · 永不过期</small></span><span class="badge on">启用</span></div>
+          <div class="row"><span class="t">ci-pipeline<small>限流 60/min · 09-30 到期</small></span><span class="badge on">启用</span></div>
+          <div class="row"><span class="t">SYSTEM 内置<small>受保护</small></span><span class="badge off">不可编辑</span></div>
+        </div>
+        <div class="banner">regenerate 对 PERMANENT／SYSTEM <b>没有</b>服务端拦截——这是既定出口不是遗漏。二次确认必须写清「换钥会让既有引用立即失效」。</div>
+      </div>
+      <div class="tabbar"><i><b>◠</b>对话</i><i><b>◎</b>智能体</i><i><b>▤</b>上下文</i><i class="on"><b>⚙</b>系统</i><i><b>☺</b>我的</i></div>
+    </div></div>
+    <figcaption><b>E4 API Key</b>一次性原始 Key 只在创建与 regenerate 响应里出现；改／删／停三处会被保护键拒绝，文案直出后端。</figcaption>
+  </figure>
+
+  <figure class="unit">
+    <div class="phone"><div class="screen">
+      <div class="status"><span>9:41</span><span class="r"><span class="sig"></span></span></div>
+      <div class="nav"><div class="bar"><span class="back">‹</span><span class="c">Token 监控</span><span class="act">⟳</span></div>
+        <div class="seg" style="margin-top:2px"><i>今日</i><i class="on">近 7 天</i><i>自定义</i></div>
+        <div class="seg" style="margin-top:5px"><i class="on">按天</i><i>按周</i><i>按小时</i><i>维度：模型</i></div>
+      </div>
+      <div class="body">
+        <div class="kpis">
+          <div class="kpi"><small>总 tokens</small><b>1.84M</b> <i>+12%</i></div>
+          <div class="kpi"><small>调用次数</small><b>2,931</b> <i>+4%</i></div>
+          <div class="kpi"><small>失败</small><b>17</b></div>
+        </div>
+        <div class="chart" style="height:126px">
+          <div class="grid" style="top:34px"></div><div class="grid" style="top:66px"></div><div class="grid" style="top:98px"></div>
+          <svg class="line" viewBox="0 0 300 100" preserveAspectRatio="none">
+            <polyline points="0,80 50,62 100,70 150,38 200,46 250,20 300,28" fill="none" stroke="#0a7cff" stroke-width="2"/>
+            <polyline points="0,88 50,84 100,86 150,74 200,78 250,66 300,70" fill="none" stroke="#af52de" stroke-width="1.6" stroke-dasharray="3 3"/>
+          </svg>
+        </div>
+        <div class="axis"><span>09-22</span><span>09-24</span><span>09-26</span><span>09-28</span></div>
+        <div class="list">
+          <div class="row"><span class="t">qwen3-max<small>1.21M · 66%</small></span><span class="v">1,904 次</span></div>
+          <div class="row"><span class="t">gpt-4o<small>0.48M · 26%</small></span><span class="v">712 次</span></div>
+        </div>
+        <div class="note">一次进页并发 5 个请求、任一返回即重算；会话维度前端截 <code>slice(0,10)</code>；周维度按周一对齐（时区边界待实测）。</div>
+      </div>
+      <div class="tabbar"><i><b>◠</b>对话</i><i><b>◎</b>智能体</i><i><b>▤</b>上下文</i><i class="on"><b>⚙</b>系统</i><i><b>☺</b>我的</i></div>
+    </div></div>
+    <figcaption><b>E5 Token 监控</b>日期区间 + 粒度 + 维度三个筛选（Swift Charts 重绘同一份聚合结果，数值要与 Web 同源一致）。</figcaption>
+  </figure>
+</div>
+
+<h2 class="group">F. 我的、深色与异常态<em>O1 落位、主题、401</em></h2>
+<div class="board-row">
+
+  <figure class="unit">
+    <div class="phone"><div class="screen">
+      <div class="status"><span>9:41</span><span class="r"><span class="sig"></span></span></div>
+      <div class="nav"><div class="bar"><div class="iconbtn" style="background:transparent">☰</div><div class="c">我的</div><div class="iconbtn">⋯</div></div></div>
+      <div class="body">
+        <div class="card top">
+          <div class="avatar" style="background:linear-gradient(135deg,#4f6ef7,#af52de)">H</div>
+          <div style="flex:1"><div class="h">heqingsong <span class="chip b">管理员</span></div><div class="d">当前租户：默认工作区（id 1）</div></div>
+        </div>
+        <div class="list">
+          <div class="row"><span class="t">切换租户<small>仅多租户账号可见；切完替换 Keychain 里的 JWT 并全量重载</small></span><span class="v">默认工作区 ›</span></div>
+          <div class="row"><span class="t">我的永久 Key<small>对话凭据，一次性查看</small></span><span class="chev">›</span></div>
+          <div class="row"><span class="t">主题与语言</span><span class="v">跟随系统 · 简体中文 ›</span></div>
+          <div class="row"><span class="t">生物识别解锁<small>Face ID</small></span><span class="sw on"></span></div>
+          <div class="row"><span class="t">服务器地址<small>Admin 28080 · Router 28081</small></span><span class="chev">›</span></div>
+        </div>
+        <div class="btn dang">退出登录</div>
+        <div class="note">不含修改密码与个人资料编辑（Web 侧同样没有自助改密入口，需先补后端接口）。</div>
+      </div>
+      <div class="tabbar"><i><b>◠</b>对话</i><i><b>◎</b>智能体</i><i><b>▤</b>上下文</i><i><b>⚙</b>系统</i><i class="on"><b>☺</b>我的</i></div>
+    </div></div>
+    <figcaption><b>F1 我的</b>租户切换按 O1 落在这里、不进主导航。管理员可切进任意租户，列表要标明「以管理员身份进入」。</figcaption>
+  </figure>
+
+  <figure class="unit">
+    <div class="phone"><div class="screen dark">
+      <div class="status"><span>9:41</span><span class="r"><span class="sig"></span></span></div>
+      <div class="nav"><div class="bar"><span class="back">‹</span><span class="c" style="color:#f2f2f7">客服助手</span><span class="act">⋯</span></div></div>
+      <div class="chat">
+        <div class="t meta">14:20 · 断线已重连一次</div>
+        <div class="t u">把结论同步到飞书群</div>
+        <div class="tool">
+          <div class="hd" style="color:#f2f2f7">⚒ sendFeishu <span class="chip p">失败</span><span class="st" style="color:#98989d">重试 1/2</span></div>
+          <pre style="background:#000;color:#ff8f86">ResultVo.code=500 message="no adaptor registered"</pre>
+        </div>
+        <div class="confirm" style="background:rgba(255,159,10,.14);border-color:rgba(255,159,10,.5)">
+          <div class="hd" style="color:#ffd19a">⚠ 工具等待批准</div>
+          <p style="color:#e6c9a3">流被中断时确认卡要置灰，不能让用户对着永远转圈的界面。</p>
+        </div>
+      </div>
+      <div class="composer"><div class="cav" style="background:rgba(255,255,255,.1);color:#8e8e93">输入消息<span class="send">↑</span></div></div>
+      <div class="home"></div>
+    </div></div>
+    <figcaption><b>F2 深色 + 错误态</b>错误优先级：后端 <code>message</code> 直出（已按 <code>Accept-Language</code> 本地化）＞ 客户端错误码字典。业务层非 200 未被页面处理时冒到顶栏横幅。</figcaption>
+  </figure>
+
+  <figure class="unit">
+    <div class="phone"><div class="screen">
+      <div class="status"><span>9:41</span><span class="r"><span class="sig"></span></span></div>
+      <div class="nav"><div class="bar"><span class="back">‹</span><span class="c">对话</span><span class="act">⋯</span></div></div>
+      <div class="body">
+        <div class="banner">凭据已过期，请重新登录。当前页面路径已保留，登录成功后回跳原会话。</div>
+        <div class="list">
+          <div class="row"><span class="t">#s-8842 周报生成<small>已缓存渲染结果，重新登录后自动续流</small></span></div>
+          <div class="row"><span class="t">#s-8790 企微接入<small>401 走单独通道：清凭据不炸页面</small></span></div>
+        </div>
+        <div class="btn">重新登录</div>
+        <div class="note">三层错误：传输层（不可达／超时／证书）→ 协议层（非 2xx、401）→ 业务层（<code>ResultVo.code != 200</code>）。对话链路各跳超时取值不一，客户端要逐跳核对。</div>
+      </div>
+      <div class="tabbar"><i class="on"><b>◠</b>对话</i><i><b>◎</b>智能体</i><i><b>▤</b>上下文</i><i><b>⚙</b>系统</i><i><b>☺</b>我的</i></div>
+    </div></div>
+    <figcaption><b>F3 401 单独通道</b>清凭据、保留路径、登录后回跳，不做静默吞异常。</figcaption>
+  </figure>
+</div>
+
+<div style="height:40px"></div>
+</body>
+</html>
