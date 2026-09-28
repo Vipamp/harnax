@@ -73,7 +73,7 @@ harness:
   # === 沙箱配置 ===
   sandbox:
     enabled: false                  # 代码默认值。是否启用 Docker 沙箱
-    image: harnax-sandbox:py-node   # 沙箱容器镜像（由 build.sh Step 7 构建，不再是 python:3.11-slim）
+    image: harnax-sandbox:py-node   # 沙箱容器镜像（由 harnax-deploy/build.sh 的 Step 7 构建；compose 侧同名变量 SANDBOX_IMAGE）
     workspaceRoot: /workspace       # 容器内工作目录
     isolationScope: SESSION         # 隔离级别: SESSION / AGENT / GLOBAL（无效值会静默回退为 SESSION）
     keepAlive: false                # 代码默认值。容器保活（请求结束后不销毁容器）

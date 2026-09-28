@@ -46,7 +46,7 @@
 | MCP | `/api/admin/mcp/*` |
 | Skill | `/api/admin/skills/*` |
 | SkillRepo | `/api/admin/skill-repositories/*`（列表、详情、启停、删除、同步预览） |
-| SkillSource | `/api/admin/skill-sources/*`（新建与编辑仓库；旧版 DTO 只有 `name` / `url` / `branch`，收不下 `sourceType` 与 `sourceConfig`） |
+| SkillSource | `/api/admin/skill-sources/*`（新建与编辑仓库：写入口要带 `sourceType` 与 `sourceConfig`，只有 `name` / `url` / `branch` 三个字段的那套 DTO 装不下） |
 | Channel | `/api/admin/channels/*` |
 | User | `/api/admin/users/*` |
 | Tenant | `/api/admin/tenant/*` |
@@ -65,9 +65,9 @@
 
 > 小程序功能开发已暂停，以下条目只作记录、未排期。
 
-### TODO：Skill 仓库接口从 legacy 迁到 `skill-sources`
+### TODO：Skill 仓库接口统一到 `skill-sources`
 
-2026-09 已把**新建与编辑**迁到 `/api/admin/skill-sources`（原因见第三章表格），其余调用点仍走旧版 `/api/admin/skill-repositories`。admin 侧后续要把技能管理入口收敛到 `skill-sources` 一套（见 `prod_doc/skill-management.zh-CN.md` 的 9.5 节 TODO-5），旧接口下线后这些调用点会直接 404。
+`/api/admin/skill-sources` 与 `/api/admin/skill-repositories` 是并存的两套端点，读写同一批 `skill_repository` / `skill` 行：新建与编辑走前者（写入口要带 `sourceType` 与 `sourceConfig`），小程序其余调用点走后者。要统一到前者，否则后者一旦收口，这些调用点直接 404。
 
 `miniprogram/services/skill.ts` 中待迁移的 6 个调用点：
 

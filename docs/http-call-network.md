@@ -232,7 +232,7 @@ graph TB
 | `/ai/` | admin:8080 | SSE：禁用缓冲 |
 | `/` | 静态文件 | SPA fallback |
 
-> Scheduler 不在 nginx 路由表里，compose 也不再把它发布到宿主机：它以 `harnax.auth.enabled=false` 运行、自身端点无鉴权，
+> Scheduler 不在 nginx 路由表里，compose 也不把它发布到宿主机：它以 `harnax.auth.enabled=false` 运行、自身端点无鉴权，
 > 而任务与执行日志的属主校验在 admin 侧。对外可达即等于绕过这些校验；它只由 admin 经容器网络直连（见「Admin → Scheduler」）。
 
 ---

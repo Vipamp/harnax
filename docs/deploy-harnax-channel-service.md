@@ -61,14 +61,14 @@ channel-service (×N，见下文) ────┘
 | `CHANNEL_SYNC_INTERVAL_MS` | `10000` | 轮询周期 |
 | `CHANNEL_SYNC_MAX_STARTS` | `5` | 一轮最多启动几个监听器（防止刚连上就被限流）；`<=0` 表示不限 |
 | `CHANNEL_RESTART_BACKOFF_INITIAL_MS` | `2000` | 死掉的监听器首次重连等待 |
-| `CHANNEL_RESTART_BACKOFF_MAX_MS` | `300000` | 退避上限，**同时是「曾经健康足够久」的重置阈值** |
+| `CHANNEL_RESTART_BACKOFF_MAX_MS` | `300000` | 退避上限，**同时是重置阈值：连接保活满这个时长就算健康，下一次断开从初始退避重来** |
 | `CHANNEL_STALE_HEARTBEAT_MS` | `180000` | 状态是 CONNECTED 但这么久没心跳就重启；`0` 关闭该检测 |
 
 ## 入站消息处理与预算
 
 | 变量 | 默认 | 作用与调整提示 |
 |---|---|---|
-| `CHANNEL_TURN_POOL_SIZE` | `24` | 处理入站回合的线程池上限（取代原先共享的 `Dispatchers.IO`）。抬它要给 agent 侧留余量：每个在处理的回合都对应一条到 router 的长连接 |
+| `CHANNEL_TURN_POOL_SIZE` | `24` | 处理入站回合的线程池上限。抬它要给 agent 侧留余量：每个在处理的回合都对应一条到 router 的长连接 |
 | `CHANNEL_TURN_PER_CHANNEL` | `4` | 单个通道内最多并发多少个会话，防一个热门群吃满整池 |
 | `CHANNEL_SESSION_MAX_SESSIONS` | `10000` | 内存里保多少个对话（LRU 淘汰） |
 | `CHANNEL_SESSION_MAX_MESSAGES` | `500` | 每个对话保多少条消息 |

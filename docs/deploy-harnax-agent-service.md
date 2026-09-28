@@ -41,7 +41,7 @@
 | JDK | 21 | 构建产物按 Java 21 编译 |
 | MySQL | 8.0 | 两个库：`harnax_admin`（表结构由 **admin** 的 Flyway 维护）与 `agentscope`（会话 / 智能体状态）。**`agentscope` 这个库要预先存在**——库内的 `agent_state` 表由本服务启动时 `CREATE TABLE IF NOT EXISTS` 建，但建库不归它 |
 | Docker daemon | 必须可达 | 开启沙箱（`SANDBOX_ENABLED=true`）时要挂 `/var/run/docker.sock`，且容器内需有 `docker` CLI（镜像已装）：沙箱是通过 shell 调 `docker` 命令创建的，不是走 SDK。**裸 JVM 部署要自己保证 `docker` 在 PATH 上且当前用户可读 socket** |
-| 沙箱镜像 | `harnax-sandbox:py-node`（`SANDBOX_IMAGE` 默认值） | 由 `build.sh` Step 7 调根目录的 `sandbox-plugins/build.sh` 构建（**必须在仓库根目录执行**），这一步**不需要 Go**——旧的 `harnax-sandbox:latest` 插件镜像已删除。按 CLI 组合派生的 `harnax-sandbox:cli-<hash>` 不归构建期：本服务在首个用到它的会话前现场 `docker build`（相关变量见下文 `SANDBOX_CLI_PACKAGE_CACHE_DIR` 起三行），构建失败只影响那个会话 |
+| 沙箱镜像 | `harnax-sandbox:py-node`（`SANDBOX_IMAGE` 默认值） | 由 `build.sh` Step 7 调根目录的 `sandbox-plugins/build.sh` 构建（**必须在仓库根目录执行**），这一步**不需要 Go**。按 CLI 组合派生的 `harnax-sandbox:cli-<hash>` 不归构建期：本服务在首个用到它的会话前现场 `docker build`（相关变量见下文 `SANDBOX_CLI_PACKAGE_CACHE_DIR` 起三行），构建失败只影响那个会话 |
 | MinIO | 仅 `MINIO_ENABLED=true` 时需要 | 四个桶：`harnax-snapshots` / `harnax-store` / `harnax-output` / `harnax-cli-packages`（名字可改，见下文）。启动时会自动尝试建桶 |
 | Redis | **不需要** | 路由与实例注册状态由 router 持有 |
 
@@ -110,7 +110,7 @@
 | `SANDBOX_NETWORK` | 空（`bridge`） | 需要容器按域名访问其他服务时填自定义网络名，例如 `harnax-deploy_harnax-network` |
 | `SANDBOX_CLI_PACKAGE_CACHE_DIR` | `/tmp/harnax-agent/cli-packages` | CLI 包 payload 的解包与缓存目录，按 `packageDigest` 分片，是 `docker build` 的上下文。**容器内路径**，构建上下文由客户端打包成 tar 流给宿主 daemon，所以不必与宿主共享文件系统；容器重建后缓存丢失只会重新从 MinIO 拉一次 |
 | `SANDBOX_PLATFORM_ADMIN_URL` | 空（compose 里 `http://admin:8080`） | 包内 `${platform.adminUrl}` 的解析值，即沙箱内 CLI 回调 admin 的地址。**必须是容器可达的地址**。为空时该锚点解析不出值：受管 CLI 起得来但调不通 admin |
-| `SANDBOX_PLATFORM_INTERNAL_TOKEN` | 回退 `ADMIN_INTERNAL_API_SECRET` | 包内 `${platform.internalToken}` 的解析值。compose 不单独注入，靠的就是与 admin 同值的那个密钥变量；留过占位默认值会同时踩中「admin 拒收占位密钥」那条 401（见部署文档的密钥一致性） |
+| `SANDBOX_PLATFORM_INTERNAL_TOKEN` | 回退 `ADMIN_INTERNAL_API_SECRET` | 包内 `${platform.internalToken}` 的解析值。compose 不单独注入，靠的就是与 admin 同值的那个密钥变量；留着占位默认值会同时踩中「admin 拒收占位密钥」那条 401（见部署文档的密钥一致性） |
 | `MINIO_CLI_PACKAGE_BUCKET` | `harnax-cli-packages` | 取包用的桶，**必须与 admin 的 `minio.cli-package-bucket` 同值**（admin 登记时写进这个桶）。两侧读的是同一个环境变量名。**compose 目前不转发这个变量**，两服务都落在 yml 默认值上，因此在 `.env` 里设它不生效——真要换名得给 admin 与 agent-service 两个 `environment` 块同时加上 |
 
 ### 输出文件检测
@@ -135,10 +135,10 @@
 | `ROUTER_SERVICE_URL` | `http://localhost:8081` | router 地址 |
 | `ADMIN_SERVICE_URL` | `http://localhost:8080` | admin 地址 |
 | `LOG_LEVEL` | `INFO` | 本服务包级别日志 |
-| `MYBATIS_LOG_IMPL` | 代码默认 `StdOutImpl`；**compose 已改传 `Slf4jImpl`** | 默认会把每条 SQL 打到 stdout。打包部署现在默认安静，要恢复逐条输出就在 `.env` 里填回 `...stdout.StdOutImpl`，级别由 `MYBATIS_LOG_LEVEL` 控制 |
+| `MYBATIS_LOG_IMPL` | 代码默认 `StdOutImpl`；**compose 传 `Slf4jImpl`** | `StdOutImpl` 会把每条 SQL 打到 stdout，compose 传的是 `Slf4jImpl`，打包部署因此默认安静；要恢复逐条输出就在 `.env` 里填回 `...stdout.StdOutImpl`，级别由 `MYBATIS_LOG_LEVEL` 控制 |
 | `JWT_EXPIRATION` | `7200000` | 本服务签发的用户 token 有效期（毫秒），与 admin 的同名项不必相同但要保持合理 |
 | `AGENT_CACHE_MAX_SIZE` | `500` | 内存中缓存的 agent 实例数上限（键为 sessionId）。这个 key 不在 `application.yml` 里，只能靠 relaxed binding 注入 |
-| `DB_URL` / `SESSION_JDBC_URL` | compose 里的 mysql 地址 | 连接串已改成可在 `.env` 覆盖（原先是写死的），换外部数据库不必再编辑 compose |
+| `DB_URL` / `SESSION_JDBC_URL` | compose 里的 mysql 地址 | 连接串可在 `.env` 覆盖，换外部数据库不必编辑 compose |
 | `HARNAX_AUTH_ENABLED` | `true` | 入向统一鉴权开关。**不建议关**：关掉等于 8082 上所有接口裸奔 |
 | `HARNAX_AUTH_SKIP_PATHS` | `[]` | 免鉴权路径前缀列表。默认只跳过 `/health` 与 `/actuator`，因此 `curl /api/agent/health` 不带凭据会拿到 **401** |
 | `HARNAX_AUTH_TOKEN_TTL_SECONDS` | `300` | 出向服务间 token 有效期 |
@@ -160,7 +160,7 @@
 - 出向：本服务拿它作为 Bearer 调 admin 的 `/api/admin/internal/**`。
 - 回程：沙箱里的 `harnax-cli` 拿同一个值访问 admin 的**业务接口**（`/api/admin/**`，不是 internal）。
 
-第十八轮起，admin 侧不再接受**仍是占位默认值**的这串密钥走业务接口（那串字符在仓库里是公开的）。因此留着默认值的部署会看到：会话与内部调用正常，但沙箱内 CLI 的操作一律 401，且 admin 启动时有一条 WARN 点名这件事。修法：在 `harnax-deploy/.env` 里给它一个真值（≥32 字符），重启两侧容器——所有服务读同一个 `.env`，改一次即可。
+admin 侧不接受**仍是占位默认值**的这串密钥走业务接口（那串字符在仓库里是公开的）。留着默认值的部署会看到：会话与内部调用正常，但沙箱内 CLI 的操作一律 401，且 admin 启动时有一条 WARN 点名这件事。修法：在 `harnax-deploy/.env` 里给它一个真值（≥32 字符），重启两侧容器——所有服务读同一个 `.env`，改一次即可。
 
 > 与之相关但**不要顺手改**的是 `HARNAX_AES_SECRET_KEY`：那是 admin 侧的凭据加密密钥，只影响 admin，本服务没有也不需要它；换掉会让 admin 库里已存的 MCP / 工具凭据全部解不开（详见 `docs/deploy-harnax-admin.md`）。
 
@@ -242,7 +242,7 @@ curl -H "Authorization: Bearer <token>" http://localhost:8082/api/agent/health
 
 | 现象 | 先看什么 |
 |---|---|
-| 会话起不来，日志 `Failed to get agent spec from admin` | admin 是否可达、`ADMIN_INTERNAL_API_SECRET` 是否两边同值、是否已不再是占位值 |
+| 会话起不来，日志 `Failed to get agent spec from admin` | admin 是否可达、`ADMIN_INTERNAL_API_SECRET` 是否两边同值、是否已换成真值（占位值会被 admin 拒） |
 | 智能体没有 MCP 工具 | 汇总行 `bound MCP servers`（`was built with k of n bound MCP servers`），再看它前面每条单独 WARN（停用 / stdio 关闭 / 无用户身份 / 连不上） |
 | OAuth 类 MCP 一调用就提示「请重新授权」 | 该用户是否真在 MCP 详情页授权过；渠道会话本来就不支持 |
 | 沙箱创建失败 | `harnax-sandbox:py-node` 是否存在；Docker socket 是否挂上；`SANDBOX_NETWORK` 名字是否与实际网络一致 |
@@ -253,7 +253,7 @@ curl -H "Authorization: Bearer <token>" http://localhost:8082/api/agent/health
 
 ## 相关文档
 
-- `prod_doc/mcp-management.zh-CN.md` §7.17：MCP 换发与运行侧注入的实现口径
+- `prod_doc/mcp-management.zh-CN.md` §3.9（令牌换发的内部接口）与 §5.3（运行侧 OAuth 令牌注入）：实现口径
 - `prod_doc/mcp-authorization-design.zh-CN.md`：OAuth 2.1 方案与分期
 - `docs/deploy-harnax-admin.md`：`HARNAX_AES_SECRET_KEY`、`ADMIN_INTERNAL_API_SECRET`、`HARNAX_MCP_STDIO_ENABLED`
 - `docs/deploy-harnax-harness-core.md`：运行时（沙箱、快照、隔离粒度）的机制说明
