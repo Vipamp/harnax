@@ -1,0 +1,31 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "pageNum": 1,
+    "pageSize": 20,
+    "total": 2,
+    "records": [
+      {
+        "id": 11,
+        "name": "翻译助手",
+        "description": "中英互译，保留术语表",
+        "modelName": "qwen-plus",
+        "status": 1,
+        "isPublic": 1,
+        "sessionCount": 3
+      },
+      {
+        "id": 12,
+        "name": "停用中的智能体",
+        "description": null,
+        "status": 0
+      }
+    ],
+    "hasNext": false,
+    "hasPrevious": false,
+    "pages": 1
+  },
+  "timestamp": 1790592457109,
+  "isSuccess": true
+}

@@ -1,0 +1,16 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "id": 1,
+    "username": "admin",
+    "nickname": "System Admin",
+    "email": "admin@harnax.com",
+    "phone": "",
+    "isAdmin": 1,
+    "authMode": "jwt",
+    "expiresAt": 1790599645000
+  },
+  "timestamp": 1790592456861,
+  "isSuccess": true
+}

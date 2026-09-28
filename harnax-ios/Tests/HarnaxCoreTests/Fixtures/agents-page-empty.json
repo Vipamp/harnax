@@ -1,0 +1,15 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "pageNum": 1,
+    "pageSize": 2,
+    "total": 0,
+    "records": [],
+    "hasNext": false,
+    "hasPrevious": false,
+    "pages": 0
+  },
+  "timestamp": 1790592457109,
+  "isSuccess": true
+}

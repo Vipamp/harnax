@@ -1,0 +1,34 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzUxMiJ9.REDACTED.signature",
+    "tokenType": "Bearer",
+    "expiresIn": 7200,
+    "expiresAt": 1790599645734,
+    "userInfo": {
+      "userId": 1,
+      "username": "admin",
+      "nickname": "System Admin",
+      "avatar": "",
+      "email": "admin@harnax.com",
+      "phone": "",
+      "gender": 1,
+      "isAdmin": 1
+    },
+    "tenants": [
+      {
+        "id": 1,
+        "name": "Default Organization",
+        "status": 1,
+        "creator": "system",
+        "createTime": "2026-05-01T11:10:40",
+        "updateTime": "2026-05-07T15:32:08"
+      }
+    ],
+    "currentTenantId": 1,
+    "routerApiKey": "hnx_sk_live_REDACTED"
+  },
+  "timestamp": 1790592445754,
+  "isSuccess": true
+}
