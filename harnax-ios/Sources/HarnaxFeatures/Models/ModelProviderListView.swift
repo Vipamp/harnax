@@ -228,8 +228,11 @@ struct ModelProviderCard: View {
                 .foregroundStyle(Color.hx(.textTertiary))
         case let .loaded(counts):
             HXFlow(spacing: 6) {
-                HXChip(hx("model.provider.stats.total", counts.totalModels), tone: .brand)
-                HXChip(hx("model.provider.stats.enabled", counts.enabledModels), tone: .success)
+                HXChip(hxCount("model.provider.stats.total", counts.totalModels), tone: .brand)
+                HXChip(
+                    hx("model.provider.stats.enabled", counts.enabledModels),
+                    tone: counts.enabledModels > 0 ? .success : .textTertiary
+                )
                 HXChip(hx("model.provider.stats.disabled", counts.disabledModels), tone: .textTertiary)
             }
         case .unavailable:

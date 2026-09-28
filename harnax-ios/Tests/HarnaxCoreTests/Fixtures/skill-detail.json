@@ -1,0 +1,24 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "id": 41,
+    "name": "pdf-report",
+    "repositoryId": 12,
+    "repositoryName": "qoder-skills",
+    "repositoryUrl": "https://github.com/example/qoder-skills.git",
+    "repositoryBranch": "main",
+    "description": "从模板生成 PDF 报表",
+    "skillmd": "# PDF 报表\n\n读取 `templates/report.html` 并按参数渲染。\n\n## 用法\n\n- 传入 `--lang zh`\n",
+    "resources": "{\"scripts/render.py\":\"import sys\\n\\nprint(sys.argv[1])\\n\",\"scripts/lib/paper.css\":\"@page { size: A4; margin: 18mm; }\\n\",\"references/style-guide.md\":\"## 版式\\n\\nA4 纵向优先。\\n\"}",
+    "status": 1,
+    "boundAgentCount": 2,
+    "boundTeamCount": 1,
+    "isPublic": 1,
+    "creator": "heqingsong",
+    "createTime": "2026-09-21 10:04:12",
+    "updateTime": "2026-09-27 08:15:03"
+  },
+  "timestamp": 1790592457300,
+  "isSuccess": true
+}

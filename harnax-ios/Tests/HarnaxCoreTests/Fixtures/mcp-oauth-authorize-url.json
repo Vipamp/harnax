@@ -1,0 +1,15 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "authorizeUrl": "https://auth.example.com/realms/harnax/protocol/oauth/authorize?response_type=code&client_id=harnax-crm-client-7f3a&redirect_uri=http%3A%2F%2F127.0.0.1%3A28081%2Fmcp%2Foauth%2Fcallback&state=kQ7xW2pLd9AfR4mTs6VbNc1HyJgE3uZ0&code_challenge=E9mPLUSaVcQ0kZ3rTFh7yB2nXwD6sJgK1pVeR8tYuMs&code_challenge_method=S256&scope=mcp%3Atools+offline_access&resource=https%3A%2F%2Fcrm.example.com%2Fsse&audience=https%3A%2F%2Fcrm.example.com",
+    "issuer": "https://auth.example.com/realms/harnax",
+    "scopes": [
+      "mcp:tools",
+      "offline_access"
+    ],
+    "expiresIn": 300
+  },
+  "timestamp": 1759026030000,
+  "isSuccess": true
+}

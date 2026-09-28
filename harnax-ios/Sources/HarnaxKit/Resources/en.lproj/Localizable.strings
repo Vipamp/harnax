@@ -60,7 +60,8 @@
 "agent.segment.agents" = "Agents";
 "agent.segment.teams" = "Teams";
 "agent.segment.tasks" = "Scheduled";
-"agent.sessionCount" = "%d sessions";
+"agent.sessionCount.one" = "%d session";
+"agent.sessionCount.other" = "%d sessions";
 "agent.chip.model" = "Model %@";
 "agent.chip.tools" = "Tools %d";
 "agent.chip.skills" = "Skills %d";
@@ -146,7 +147,8 @@
 
 /* ---- environment parameters ---- */
 "env.title" = "Parameters";
-"env.count" = "%d params";
+"env.count.one" = "%d param";
+"env.count.other" = "%d params";
 "env.required" = "Required";
 "env.sensitive" = "Sensitive";
 "env.default" = "Default";
@@ -207,6 +209,7 @@
 "mcp.auth.staticHeader" = "Static header";
 "mcp.auth.oauth" = "OAuth 2.1 (per user)";
 "mcp.chip.headers" = "Headers %d";
+"mcp.unnamed" = "Unnamed server";
 
 /* ---- MCP: connectivity test ---- */
 "mcp.action.test" = "Test connectivity";
@@ -227,11 +230,13 @@
 "mcp.stdio.legacy" = "This row is still stdio, which the server refuses. It stays visible as legacy data and will not connect.";
 
 /* ---- MCP: tool list ---- */
-"mcp.tools.count" = "%d tools";
+"mcp.tools.count.one" = "%d tool";
+"mcp.tools.count.other" = "%d tools";
 "mcp.tools.disabled" = "Tool list is not fetched while the server is disabled";
 "mcp.tools.empty" = "No tools";
 "mcp.tool.noParams" = "No parameters";
-"mcp.tool.params" = "%d parameters";
+"mcp.tool.params.one" = "%d parameter";
+"mcp.tool.params.other" = "%d parameters";
 
 /* ---- MCP: per-user authorization ---- */
 "mcp.oauth.section" = "Your authorization";
@@ -318,7 +323,8 @@
 "model.provider.noDescription" = "No description";
 "model.provider.unnamed" = "Unnamed provider";
 "model.provider.stats.loading" = "Counting models…";
-"model.provider.stats.total" = "%d models";
+"model.provider.stats.total.one" = "%d model";
+"model.provider.stats.total.other" = "%d models";
 "model.provider.stats.enabled" = "%d enabled";
 "model.provider.stats.disabled" = "%d stopped";
 "model.provider.stats.unavailable" = "Counts are only shown for your own providers.";

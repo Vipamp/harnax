@@ -79,7 +79,7 @@ final class AgentBindingsPresenterTests: XCTestCase {
         ])])
         XCTAssertEqual(
             try section(confirmed, "agent.section.tools").badges,
-            [hx("agent.binding.confirm"), hx("env.count", 1)]
+            [hx("agent.binding.confirm"), hxCount("env.count", 1)]
         )
         let plain = try agent(["toolList": one(["toolId": 3, "toolName": "writeFile", "needConfirm": false])])
         XCTAssertTrue(try section(plain, "agent.section.tools").badges.isEmpty)
@@ -104,7 +104,7 @@ final class AgentBindingsPresenterTests: XCTestCase {
         let cli = try section(agent, "agent.section.cli")
         XCTAssertEqual(cli.title, "harnax-cli")
         XCTAssertEqual(cli.subtitle, "公告解析 · 估值表")
-        XCTAssertEqual(cli.badges, ["1.30.0", hx("env.count", 1)])
+        XCTAssertEqual(cli.badges, ["1.30.0", hxCount("env.count", 1)])
     }
 
     func testACPackagesOwnDescriptionWinsOverTheBundledSkillNames() throws {

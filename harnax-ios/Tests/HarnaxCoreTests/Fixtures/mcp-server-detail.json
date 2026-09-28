@@ -1,0 +1,29 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "id": 42,
+    "name": "crm-sse",
+    "description": "",
+    "type": "sse",
+    "command": "",
+    "url": "https://crm.example.com/sse",
+    "authType": "OAUTH2",
+    "oauthConfig": {
+      "authorizationServer": "https://auth.example.com/realms/harnax",
+      "scopes": [
+        "mcp:tools",
+        "offline_access"
+      ],
+      "audience": "https://crm.example.com",
+      "resourceIndicator": true
+    },
+    "status": 1,
+    "isPublic": 0,
+    "creator": "alice",
+    "createTime": "2026-09-22 11:35:44",
+    "updateTime": "2026-09-26 08:12:03"
+  },
+  "timestamp": 1759026030000,
+  "isSuccess": true
+}

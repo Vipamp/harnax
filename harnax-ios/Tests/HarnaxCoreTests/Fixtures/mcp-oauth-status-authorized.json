@@ -1,0 +1,16 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "authorized": true,
+    "status": "ACTIVE",
+    "scopes": [
+      "mcp:tools",
+      "offline_access"
+    ],
+    "accessExpiresAt": "2026-09-28 10:12:00",
+    "lastRefreshedAt": "2026-09-28 08:12:03"
+  },
+  "timestamp": 1759026030000,
+  "isSuccess": true
+}

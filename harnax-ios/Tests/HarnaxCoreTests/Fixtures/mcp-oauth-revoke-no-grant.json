@@ -1,0 +1,11 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "revoked": true,
+    "upstreamRevoked": false,
+    "message": "You have no authorization on this MCP server, so there was nothing to revoke"
+  },
+  "timestamp": 1759026030000,
+  "isSuccess": true
+}

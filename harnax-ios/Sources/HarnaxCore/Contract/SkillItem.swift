@@ -4,7 +4,10 @@ import Foundation
 /// (`SkillResponse.kt:12-44`).
 ///
 /// This DTO is the opposite shape from `SkillSourceResponse`: all but the two binding counters are
-/// `T? = null`, so every one of those keys can be absent on the wire and is optional here.
+/// `T? = null`, so those keys can be absent on the wire. In practice `fromEntity` fills every one of them
+/// from a non-null column except the repository trio, which is read off a source row that may be gone —
+/// an orphaned skill answers with no `repositoryName`, `repositoryUrl` or `repositoryBranch` at all
+/// (`SkillResponse.kt:64-66`).
 public struct SkillItem: Decodable, Identifiable, Equatable, Sendable {
     public let id: Int64?
     public let name: String?
@@ -13,8 +16,12 @@ public struct SkillItem: Decodable, Identifiable, Equatable, Sendable {
     public let repositoryUrl: String?
     public let repositoryBranch: String?
     public let description: String?
-    /// The `skill.md` body, as stored. Null on the paged endpoint, which does not select it; the detail
-    /// read does (`SkillController.kt:35-70`).
+    /// The `skill.md` body, as stored. Not a detail-only column: the paged read is a `SELECT *` with both
+    /// content columns in its result map (`SkillMapper.xml:12-13,85`) and the page conversion goes through
+    /// the same `fromEntity` (`SkillServiceImpl.kt:375-390`), so a table row carries the body too. The
+    /// column is a non-null `String` defaulting to `""` (`Skill.kt:29`), which is what an empty body looks
+    /// like on the wire — `hxPresented` reads it back as no body. The detail read buys a fresh row, not
+    /// extra columns.
     public let skillmd: String?
     /// A JSON *string* of `path -> content`, not an object: the column is stored as text and handed out
     /// verbatim, so the caller parses it (`harnax-webui/src/pages/skill/detail.tsx:192-224`).
@@ -38,9 +45,11 @@ public struct SkillItem: Decodable, Identifiable, Equatable, Sendable {
     public var detail: String? { hxPresented(description) }
     public var source: String? { hxPresented(repositoryName) }
 
-    /// "A bound skill can be neither disabled nor deleted from here" (`SkillResponse.kt:33-36`). The
-    /// guard is the counts themselves, not a server round trip, so the row can say why it is inert before
-    /// anything is tapped.
+    /// "A bound skill can be neither disabled nor deleted from here" (`SkillResponse.kt:33-36`). The two
+    /// counters are what the row can say before anything is tapped — but they are not the whole guard:
+    /// `requireUnbound` also refuses a skill a CLI package owns through `cli.skill_id`
+    /// (`SkillServiceImpl.kt:266-274`), and that predicate has no column on this DTO at all. Such a row
+    /// reads unbound here and is refused by the server's sentence on the write.
     public var isBound: Bool { boundAgentCount > 0 || boundTeamCount > 0 }
     public var bindings: Int { boundAgentCount + boundTeamCount }
 
@@ -147,8 +156,9 @@ public struct SkillSourceInstallResult: Decodable, Equatable, Sendable {
 
 /// Body of `POST /api/admin/skill-sources` (`SkillSourceCreateRequest.kt:7-41`).
 ///
-/// `sourceConfig` is the live carrier and `url` / `branch` are the legacy columns the DTO keeps for
-/// backward compatibility; the web console writes both (`RepositoryForm.tsx:85-95`).
+/// `sourceConfig` is the only carrier: the server mirrors `url` / `branch` back out of the normalised
+/// config itself (`SkillSourceServiceImpl.kt:144-148`), so sending them would only risk a value that
+/// contradicts the map. The two properties are optional and default to nil, and the encoder drops nils.
 public struct SkillSourceCreatePayload: Encodable, Sendable {
     public let name: String
     public let sourceType: String

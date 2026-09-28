@@ -50,6 +50,13 @@ public enum SkillSourceType: Sendable, Equatable {
 /// (`SkillSourceConfigs.forApi` drops `zipPath`). Every key is optional because each source type stores a
 /// different set: GIT writes `url`/`branch`, NPM writes `packageName`/`registry`, and the upload path adds
 /// `originalFilename` on top (`RepositoryForm.tsx:85-95`, `RepositoryList.tsx:417-425`).
+///
+/// The wire type is `Map<String, Any>` (`SkillSourceResponse.kt:20`) and `forApi` copies the stored object
+/// out unchanged, so a key this app knows may still carry a non-text value: `SkillSourceCreateRequest
+/// .sourceConfig` takes any JSON an API caller sends (`SkillSourceCreateRequest.kt:19`) and nothing on the
+/// way in narrows it. Reading that as a decode failure would blank every row in the list for one bad value
+/// in one config, so each key is read the way the server's own loaders read it — `as? String`, which yields
+/// nothing for a non-text value (`GitSkillLoader.kt:64-65`, `NpmSkillLoader.kt:43-45`).
 public struct SkillSourceConfig: Decodable, Equatable, Sendable {
     public let url: String?
     public let branch: String?
@@ -69,6 +76,29 @@ public struct SkillSourceConfig: Decodable, Equatable, Sendable {
         self.packageName = packageName
         self.registry = registry
         self.originalFilename = originalFilename
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        url = container.hxText(.url)
+        branch = container.hxText(.branch)
+        packageName = container.hxText(.packageName)
+        registry = container.hxText(.registry)
+        originalFilename = container.hxText(.originalFilename)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case url, branch, packageName, registry, originalFilename
+    }
+}
+
+/// A text column, or nothing when the value under that key is not text.
+///
+/// Deliberately not `try? decodeIfPresent([String: Any])`-style coercion: `12` rendered as `"12"` would put
+/// an address on the screen that nobody configured.
+private extension KeyedDecodingContainer {
+    func hxText(_ key: Key) -> String? {
+        (try? decodeIfPresent(String.self, forKey: key)) ?? nil
     }
 }
 
@@ -106,6 +136,11 @@ public struct SkillSourceSummary: Decodable, Identifiable, Equatable, Sendable {
     public let status: Int
     public let isPublic: Int
     public let creator: String
+    /// Kept as the server wrote it. These are `String`s here, not `LocalDateTime`s: `fromEntity` calls
+    /// `entity.createTime.toString()` (`SkillSourceResponse.kt:80-81`), so a source row arrives in the ISO
+    /// form with a `T` and with the seconds cut when they are zero (`2026-09-20T16:42`), while the Jackson
+    /// `yyyy-MM-dd HH:mm:ss` pattern (`application.yml:23`) only applies to the skill rows. One presenter
+    /// for both has to split on either separator.
     public let createTime: String
     public let updateTime: String
     public let lastSyncStatus: String?

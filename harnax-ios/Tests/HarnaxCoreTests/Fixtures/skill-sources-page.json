@@ -1,0 +1,121 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "pageNum": 1,
+    "pageSize": 4,
+    "total": 5,
+    "records": [
+      {
+        "id": 12,
+        "name": "qoder-skills",
+        "sourceType": "GIT",
+        "sourceConfig": {
+          "url": "https://github.com/example/qoder-skills.git",
+          "branch": "main"
+        },
+        "version": "1.0.0",
+        "url": "https://github.com/example/qoder-skills.git",
+        "branch": "main",
+        "description": "团队共享的技能仓库",
+        "status": 1,
+        "isPublic": 1,
+        "creator": "heqingsong",
+        "createTime": "2026-05-01T11:10:40",
+        "updateTime": "2026-09-27T08:15:03",
+        "lastSyncStatus": "PARTIAL",
+        "lastSyncTime": "2026-09-27T08:15:03",
+        "lastSyncDetail": {
+          "saved": 3,
+          "installed": ["pdf-report"],
+          "updated": ["code-review", "i18n-audit"],
+          "failed": [
+            {
+              "name": "translate",
+              "reason": "SKILL.md front matter has no name"
+            }
+          ],
+          "flagged": [
+            {
+              "name": "db-migrate",
+              "reasons": [
+                "recursively deletes a root-level path",
+                "pipes a remote payload straight into a shell"
+              ]
+            }
+          ],
+          "stale": ["legacy-docs"]
+        },
+        "enabledSkillCount": 3
+      },
+      {
+        "id": 13,
+        "name": "community-npm-skills",
+        "sourceType": "NPM",
+        "sourceConfig": {
+          "packageName": "@example/npm-skills",
+          "registry": "https://registry.npmjs.org"
+        },
+        "version": "",
+        "url": "",
+        "branch": "",
+        "description": "",
+        "status": 1,
+        "isPublic": 0,
+        "creator": "alice",
+        "createTime": "2026-09-20T16:42",
+        "updateTime": "2026-09-20T16:42:11",
+        "enabledSkillCount": 0
+      },
+      {
+        "id": 14,
+        "name": "contract-review-pack",
+        "sourceType": "ZIP",
+        "sourceConfig": {
+          "originalFilename": "contract-review.zip"
+        },
+        "version": "",
+        "url": "",
+        "branch": "",
+        "description": "",
+        "status": 0,
+        "isPublic": 0,
+        "creator": "bob",
+        "createTime": "2026-09-21T09:03:44",
+        "updateTime": "2026-09-21T09:03:58",
+        "lastSyncStatus": "EMPTY",
+        "lastSyncTime": "2026-09-21T09:03:58",
+        "lastSyncDetail": {
+          "saved": 0,
+          "installed": [],
+          "updated": [],
+          "failed": [],
+          "flagged": [],
+          "stale": [],
+          "error": "No SKILL.md found under the archive root"
+        },
+        "enabledSkillCount": 2
+      },
+      {
+        "id": 1,
+        "name": "builtin-cli-skills",
+        "sourceType": "BUILTIN",
+        "version": "1.0.0",
+        "url": "",
+        "branch": "main",
+        "description": "内置 CLI 技能仓库（系统初始化创建，只读）",
+        "status": 1,
+        "isPublic": 1,
+        "creator": "SYSTEM",
+        "createTime": "2026-05-01T11:10:40",
+        "updateTime": "2026-05-01T11:10:40",
+        "enabledSkillCount": 0
+      }
+    ],
+    "hasNext": true,
+    "hasPrevious": false,
+    "pages": 2
+  },
+  "timestamp": 1790592457110,
+  "isSuccess": true
+}

@@ -1,0 +1,10 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "authorized": false,
+    "scopes": []
+  },
+  "timestamp": 1759026030000,
+  "isSuccess": true
+}

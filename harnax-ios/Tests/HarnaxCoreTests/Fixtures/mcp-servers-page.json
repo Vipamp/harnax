@@ -1,0 +1,122 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "pageNum": 1,
+    "pageSize": 20,
+    "total": 4,
+    "pages": 1,
+    "hasPrevious": false,
+    "hasNext": false,
+    "records": [
+      {
+        "id": 41,
+        "name": "project-fs",
+        "description": "Streamable HTTP 上的项目文件服务",
+        "type": "streamablehttp",
+        "command": "",
+        "url": "https://mcp.example.com/fs/mcp",
+        "authType": "STATIC_HEADER",
+        "status": 1,
+        "isPublic": 1,
+        "creator": "admin",
+        "createTime": "2026-09-20 15:02:11",
+        "updateTime": "2026-09-28 09:14:02",
+        "headers": [
+          {
+            "key": "X-Trace-Id",
+            "value": "on",
+            "secret": false
+          },
+          {
+            "key": "Authorization",
+            "value": "Bea****T2c7",
+            "secret": true
+          },
+          {
+            "key": "X-API-Key",
+            "value": "******",
+            "secret": true
+          }
+        ]
+      },
+      {
+        "id": 42,
+        "name": "crm-sse",
+        "description": "",
+        "type": "sse",
+        "command": "",
+        "url": "https://crm.example.com/sse",
+        "authType": "OAUTH2",
+        "oauthConfig": {
+          "authorizationServer": "https://auth.example.com/realms/harnax",
+          "scopes": [
+            "mcp:tools",
+            "offline_access"
+          ],
+          "audience": "https://crm.example.com",
+          "resourceIndicator": true
+        },
+        "status": 1,
+        "isPublic": 0,
+        "creator": "alice",
+        "createTime": "2026-09-22 11:35:44",
+        "updateTime": "2026-09-26 08:12:03"
+      },
+      {
+        "id": 43,
+        "name": "legacy-local-fs",
+        "description": "本地进程模式，建自 stdio 开关收紧之前",
+        "type": "stdio",
+        "command": "npx -y @harnax/fs-mcp --root /srv/data",
+        "url": "",
+        "authType": "BASIC",
+        "status": 1,
+        "isPublic": 0,
+        "creator": "admin",
+        "createTime": "2026-03-12 12:00:00",
+        "updateTime": "2026-09-20 15:02:11",
+        "envParams": [
+          {
+            "id": 7,
+            "envParamName": "FS_ROOT",
+            "description": "允许访问的根目录",
+            "required": false,
+            "secret": false,
+            "defaultValue": "/srv/data"
+          },
+          {
+            "id": 8,
+            "envParamName": "FS_TOKEN",
+            "required": true,
+            "secret": true,
+            "defaultValue": "******"
+          },
+          {
+            "id": 9,
+            "envParamName": "FS_DEBUG",
+            "description": "调试开关",
+            "required": false,
+            "secret": true
+          }
+        ]
+      },
+      {
+        "id": 44,
+        "name": "paused-search",
+        "description": "上游欠费，临时停用",
+        "type": "sse",
+        "command": "",
+        "url": "https://search.example.com/sse",
+        "authType": "NONE",
+        "status": 0,
+        "isPublic": 1,
+        "creator": "admin",
+        "createTime": "2026-08-01 09:00:00",
+        "updateTime": "2026-09-28 19:05:31"
+      }
+    ]
+  },
+  "timestamp": 1759026030000,
+  "isSuccess": true
+}

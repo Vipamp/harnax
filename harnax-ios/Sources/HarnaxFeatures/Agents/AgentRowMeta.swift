@@ -13,7 +13,7 @@ public enum AgentRowMeta {
         var pieces: [String] = []
         let base = RowMeta.byline(creator: agent.creator, createTime: agent.createTime)
         if !base.isEmpty { pieces.append(base) }
-        if let sessions = agent.sessionCount, sessions > 0 { pieces.append(hx("agent.sessionCount", sessions)) }
+        if let sessions = agent.sessionCount, sessions > 0 { pieces.append(hxCount("agent.sessionCount", sessions)) }
         return pieces.joined(separator: " · ")
     }
 }

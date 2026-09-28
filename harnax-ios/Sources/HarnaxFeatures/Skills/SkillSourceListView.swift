@@ -14,12 +14,14 @@ public struct SkillSourceListView: View {
     @State private var uploading = false
     @State private var showReport = false
 
-    private let onSelect: (Int64?) -> Void
+    /// Hands back the picked source's id and the name to title the next screen with. The name travels here
+    /// rather than being re-read deeper down, because an empty table has no row to ask.
+    private let onSelect: (Int64?, String?) -> Void
     private let skills: any SkillCataloging
 
     public init(
         skills: any SkillCataloging,
-        onSelect: @escaping (Int64?) -> Void = { _ in }
+        onSelect: @escaping (Int64?, String?) -> Void = { _, _ in }
     ) {
         _vm = StateObject(wrappedValue: SkillSourceListViewModel(skills: skills))
         self.skills = skills
@@ -66,7 +68,9 @@ public struct SkillSourceListView: View {
             }
         }
         .task { await vm.refresh() }
-        .onChange(of: vm.selection) { onSelect(vm.selection) }
+        .onChange(of: vm.selection) { id in
+            onSelect(id, hxPresented(vm.items.first(where: { $0.id == id })?.title))
+        }
         .refreshable { await vm.refresh() }
         .sheet(item: $syncing) { source in
             SkillSyncSheet(source: source, skills: skills)

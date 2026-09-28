@@ -202,7 +202,7 @@ struct McpRecordCard: View {
 
     private var titleRow: some View {
         HStack(spacing: 6) {
-            Text(verbatim: server.title ?? "")
+            Text(verbatim: server.title ?? hx("mcp.unnamed"))
                 .font(.headline)
                 .foregroundStyle(Color.hx(.textPrimary))
                 .lineLimit(1)

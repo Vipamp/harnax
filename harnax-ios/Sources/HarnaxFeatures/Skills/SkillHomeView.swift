@@ -17,10 +17,12 @@ public struct SkillHomeView: View {
     }
 
     public var body: some View {
-        SkillSourceListView(skills: skills, onSelect: { openSource = $0.map(SkillSourceRoute.init) })
-            .navigationDestination(item: $openSource) { route in
-                SkillTableView(sourceID: route.id, skills: skills)
-            }
+        SkillSourceListView(skills: skills, onSelect: { id, name in
+            openSource = id.map { SkillSourceRoute(id: $0, name: name) }
+        })
+        .navigationDestination(item: $openSource) { route in
+            SkillTableView(sourceID: route.id, sourceName: route.name, skills: skills)
+        }
     }
 }
 
@@ -28,4 +30,5 @@ public struct SkillHomeView: View {
 /// skill detail one level deeper, and one stack may only carry one destination per type.
 private struct SkillSourceRoute: Identifiable, Hashable {
     let id: Int64
+    let name: String?
 }

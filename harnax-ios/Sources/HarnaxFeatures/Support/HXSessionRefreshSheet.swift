@@ -238,9 +238,13 @@ public struct HXSessionRefreshSheet: View {
                             HXChip(owner, tone: .indigo)
                         }
                     }
-                    Text(verbatim: Self.shortID(session.id))
-                        .font(.caption)
-                        .foregroundStyle(Color.hx(.textTertiary))
+                    // The id caption only earns its line when the title is a real name; a row that fell back
+                    // to the id as its title would otherwise print the same string twice.
+                    if session.displayName != session.id {
+                        Text(verbatim: Self.shortID(session.id))
+                            .font(.caption)
+                            .foregroundStyle(Color.hx(.textTertiary))
+                    }
                     if let reason = model.outcome(for: session)?.reason {
                         HXBanner("session.outcome.failed", message: reason, systemImage: "xmark.circle", tone: .danger)
                     }

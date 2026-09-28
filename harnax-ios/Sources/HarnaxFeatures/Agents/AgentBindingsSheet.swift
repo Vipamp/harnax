@@ -53,7 +53,7 @@ enum AgentBindingsPresenter {
                 rows: packages.map { cli in
                     var marks: [String] = []
                     if let version = cli.packageVersion { marks.append(version) }
-                    if cli.envCount > 0 { marks.append(hx("env.count", cli.envCount)) }
+                    if cli.envCount > 0 { marks.append(hxCount("env.count", cli.envCount)) }
                     return HXBindingRow(
                         title: cli.name ?? unnamed(),
                         subtitle: cli.description ?? (cli.skillNames.isEmpty ? nil : cli.skillNames.joined(separator: " · ")),
@@ -94,7 +94,7 @@ enum AgentBindingsPresenter {
     private static func badges(confirm: Bool, envCount: Int) -> [String] {
         var marks: [String] = []
         if confirm { marks.append(hx("agent.binding.confirm")) }
-        if envCount > 0 { marks.append(hx("env.count", envCount)) }
+        if envCount > 0 { marks.append(hxCount("env.count", envCount)) }
         return marks
     }
 }

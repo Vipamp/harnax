@@ -118,7 +118,7 @@ public struct EnvVarListView: View {
                 HXBanner("env.var.effect", systemImage: "clock", tone: .warning)
                 // The count is the server's total, not the length of the array: the page below it may hold
                 // twenty of a hundred rows.
-                Text(verbatim: hx("env.count", vm.total))
+                Text(verbatim: hxCount("env.count", vm.total))
                     .font(.caption)
                     .foregroundStyle(Color.hx(.textTertiary))
                     .frame(maxWidth: .infinity, alignment: .leading)

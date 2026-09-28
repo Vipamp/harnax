@@ -60,8 +60,10 @@ public protocol SkillCataloging: Sendable {
         size: Int
     ) async -> Result<Page<SkillItem>, APIError>
 
-    /// The detail read, and the only one: `skillmd` and the `resources` blob arrive together, so there is
-    /// no second call for file contents (`SkillController.kt:64-72`).
+    /// The detail read. It answers with `skillmd` and the `resources` blob together, so there is no second
+    /// call for file contents (`SkillController.kt:64-72`) — and it is the read the detail screen uses even
+    /// though the paged rows carry both columns too: here the row is the one this screen asked for, not one
+    /// that may have moved since the table was drawn.
     func skill(id: Int64) async -> Result<SkillItem, APIError>
 
     /// Refused while the row's own `boundAgentCount` / `boundTeamCount` are non-zero; the UI gates on the

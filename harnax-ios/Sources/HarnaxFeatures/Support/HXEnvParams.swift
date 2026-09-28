@@ -25,7 +25,7 @@ public struct HXEnvParamsChip: View {
             Button {
                 open = true
             } label: {
-                HXChip(hx("env.count", count), tone: .purple)
+                HXChip(hxCount("env.count", count), tone: .purple)
             }
             .buttonStyle(.plain)
             .sheet(isPresented: $open) {

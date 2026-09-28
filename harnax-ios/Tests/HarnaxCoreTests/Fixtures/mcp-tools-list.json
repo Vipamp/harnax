@@ -1,0 +1,47 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": [
+    {
+      "name": "read_file",
+      "parameters": [
+        {
+          "name": "path",
+          "type": "string",
+          "description": "Absolute path inside the allowed root"
+        },
+        {
+          "name": "offset",
+          "type": "integer",
+          "description": ""
+        }
+      ]
+    },
+    {
+      "name": "list_dir",
+      "parameters": []
+    },
+    {
+      "name": "tail_file",
+      "parameters": [
+        {
+          "name": "lines",
+          "type": "string",
+          "description": ""
+        }
+      ]
+    },
+    {
+      "name": "",
+      "parameters": [
+        {
+          "name": "query",
+          "type": "string",
+          "description": "Search text"
+        }
+      ]
+    }
+  ],
+  "timestamp": 1759026030000,
+  "isSuccess": true
+}

@@ -39,7 +39,7 @@ final class AgentRowMetaTests: XCTestCase {
         ])
         XCTAssertEqual(
             AgentRowMeta.byline(for: agent),
-            "heqingsong · 09-12 · " + hx("agent.sessionCount", 3)
+            "heqingsong · 09-12 · " + hxCount("agent.sessionCount", 3)
         )
     }
 

@@ -52,6 +52,12 @@ public func hx(_ key: String, _ args: any CVarArg...) -> String {
     HarnaxCatalog.shared.render(key, args)
 }
 
+/// Counted copy: `key.one` for a single item, `key.other` for the rest, with the count formatted in.
+/// English needs both forms; Chinese defines the two keys with the same value.
+public func hxCount(_ key: String, _ count: Int) -> String {
+    hx(count == 1 ? "\(key).one" : "\(key).other", count)
+}
+
 /// Localized text. Use this instead of `Text` — `Text("some.key")` treats its argument as a
 /// `LocalizedStringKey` and looks it up in the app bundle, where library keys do not live.
 public struct HXText: View {

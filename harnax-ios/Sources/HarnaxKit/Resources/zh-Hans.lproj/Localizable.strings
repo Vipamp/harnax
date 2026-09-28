@@ -60,7 +60,8 @@
 "agent.segment.agents" = "智能体";
 "agent.segment.teams" = "团队";
 "agent.segment.tasks" = "定时任务";
-"agent.sessionCount" = "%d 个会话";
+"agent.sessionCount.one" = "%d 个会话";
+"agent.sessionCount.other" = "%d 个会话";
 "agent.chip.model" = "模型 %@";
 "agent.chip.tools" = "工具 %d";
 "agent.chip.skills" = "技能 %d";
@@ -147,7 +148,8 @@
 
 /* ---- 环境变量参数 ---- */
 "env.title" = "参数";
-"env.count" = "%d 个参数";
+"env.count.one" = "%d 个参数";
+"env.count.other" = "%d 个参数";
 "env.required" = "必需";
 "env.sensitive" = "敏感";
 "env.default" = "默认值";
@@ -208,6 +210,7 @@
 "mcp.auth.staticHeader" = "静态 Header";
 "mcp.auth.oauth" = "OAuth 2.1（按用户）";
 "mcp.chip.headers" = "请求头 %d";
+"mcp.unnamed" = "未命名服务";
 
 /* ---- MCP：连通性测试 ---- */
 "mcp.action.test" = "测试连通性";
@@ -228,11 +231,13 @@
 "mcp.stdio.legacy" = "这条记录仍是 stdio。该类型已在服务端禁用，仅作为历史数据保留，服务端不会再连接它。";
 
 /* ---- MCP：工具列表 ---- */
-"mcp.tools.count" = "%d 个工具";
+"mcp.tools.count.one" = "%d 个工具";
+"mcp.tools.count.other" = "%d 个工具";
 "mcp.tools.disabled" = "服务已停用，未获取工具列表";
 "mcp.tools.empty" = "暂无工具";
 "mcp.tool.noParams" = "无参数";
-"mcp.tool.params" = "%d 个参数";
+"mcp.tool.params.one" = "%d 个参数";
+"mcp.tool.params.other" = "%d 个参数";
 
 /* ---- MCP：按用户授权 ---- */
 "mcp.oauth.section" = "你的授权";
@@ -319,7 +324,8 @@
 "model.provider.noDescription" = "暂无描述";
 "model.provider.unnamed" = "未命名厂商";
 "model.provider.stats.loading" = "正在统计模型…";
-"model.provider.stats.total" = "%d 个模型";
+"model.provider.stats.total.one" = "%d 个模型";
+"model.provider.stats.total.other" = "%d 个模型";
 "model.provider.stats.enabled" = "%d 个启用";
 "model.provider.stats.disabled" = "%d 个停用";
 "model.provider.stats.unavailable" = "仅本人创建的厂商可见模型统计。";

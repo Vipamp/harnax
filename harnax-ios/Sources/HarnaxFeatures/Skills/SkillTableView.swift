@@ -10,10 +10,12 @@ import HarnaxKit
 public struct SkillTableView: View {
     @StateObject private var vm: SkillTableViewModel
     private let sourceID: Int64?
+    private let sourceName: String?
     private let skills: any SkillCataloging
 
-    public init(sourceID: Int64?, skills: any SkillCataloging) {
+    public init(sourceID: Int64?, sourceName: String? = nil, skills: any SkillCataloging) {
         self.sourceID = sourceID
+        self.sourceName = sourceName
         self.skills = skills
         _vm = StateObject(wrappedValue: SkillTableViewModel(skills: skills))
     }
@@ -54,7 +56,9 @@ public struct SkillTableView: View {
         }
         .listStyle(.plain)
         .harnaxScreen()
-        .navigationTitle(Text(verbatim: hx("skill.table.title")))
+        // Named by its source: this screen and the list it pushed from would otherwise carry the same
+        // "Skills" title, and a stacked pair with one title cannot be told apart.
+        .navigationTitle(Text(verbatim: sourceName ?? hx("skill.table.title")))
         .searchable(text: $vm.keyword, prompt: Text(verbatim: hx("skill.table.search")))
         .refreshable { await vm.refresh() }
         .task { await vm.show(id: sourceID) }
@@ -66,8 +70,9 @@ public struct SkillTableView: View {
         }
     }
 
-    /// The source this table belongs to, named in the list so a pushed detail screen and a scrolled-off
-    /// header cannot disagree about whose skills are on screen.
+    /// The status filter. The source this table belongs to is named by the navigation title instead: a
+    /// header row scrolls away, and the pushed skill detail below has to agree with it about whose skills
+    /// are on screen.
     @ViewBuilder
     private var header: some View {
         HXSegmented(
@@ -82,6 +87,7 @@ public struct SkillTableView: View {
             )
         )
         .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
     }
 
     private func row(_ skill: SkillItem) -> some View {

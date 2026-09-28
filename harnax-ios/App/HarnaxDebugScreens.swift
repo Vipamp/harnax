@@ -211,8 +211,8 @@ struct HarnaxDebugView: View {
                 McpDetailView(mcp: model.dependencies.mcp, authorizer: SystemBrowserAuthorizer(), id: id)
             }
         case .contextSkillTable:
-            if let id = HarnaxDebugRecord.skillSource?.id {
-                SkillTableView(sourceID: id, skills: model.dependencies.skills)
+            if let source = HarnaxDebugRecord.skillSource {
+                SkillTableView(sourceID: source.id, sourceName: hxPresented(source.title), skills: model.dependencies.skills)
             }
         case .contextSkillDetail:
             if let id = HarnaxDebugRecord.skill?.id {

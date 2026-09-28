@@ -180,7 +180,7 @@ public struct McpDetailView: View {
                         .buttonStyle(.hxInline)
                     }
                 } else {
-                    HXChip(hx("mcp.tools.count", vm.tools.tools.count), tone: .purple)
+                    HXChip(hxCount("mcp.tools.count", vm.tools.tools.count), tone: .purple)
                     ForEach(Array(vm.tools.tools.enumerated()), id: \.offset) { _, tool in
                         McpToolCard(tool: tool)
                     }
@@ -314,7 +314,7 @@ struct McpToolCard: View {
                 if tool.parameters.isEmpty {
                     HXChip(hx("mcp.tool.noParams"))
                 } else {
-                    HXChip(hx("mcp.tool.params", tool.parameters.count), tone: .purple)
+                    HXChip(hxCount("mcp.tool.params", tool.parameters.count), tone: .purple)
                     HXFlow(spacing: 6) {
                         ForEach(Array(tool.parameters.enumerated()), id: \.offset) { _, parameter in
                             HXChip(parameter.label, tone: .teal)

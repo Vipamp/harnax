@@ -58,13 +58,16 @@ final class LocalizationKeyTests: XCTestCase {
         HarnaxCatalog.shared.language = .zhHans
         XCTAssertEqual(hx("common.retry"), "重试")
         XCTAssertEqual(hx("state.empty.title"), "暂无内容")
-        XCTAssertEqual(hx("agent.sessionCount", 3), "3 个会话")
+        XCTAssertEqual(hxCount("agent.sessionCount", 3), "3 个会话")
+        XCTAssertEqual(hxCount("agent.sessionCount", 1), "1 个会话")
     }
 
     func testEnglishCatalogActuallyResolves() {
         HarnaxCatalog.shared.language = .en
         XCTAssertEqual(hx("common.retry"), "Retry")
-        XCTAssertEqual(hx("agent.sessionCount", 12), "12 sessions")
+        XCTAssertEqual(hxCount("agent.sessionCount", 12), "12 sessions")
+        XCTAssertEqual(hxCount("agent.sessionCount", 1), "1 session")
+        XCTAssertEqual(hxCount("env.count", 1), "1 param")
     }
 
     func testSystemLanguageFallsBackToACatalogNotToTheKey() {
@@ -98,10 +101,20 @@ final class LocalizationKeyTests: XCTestCase {
     }
 
     /// Call-site keys (`hx("a.b")`, `HXText("a.b"`) plus bare dotted literals, which covers keys held in a
-    /// `var titleKey` and handed to `HXText` later.
+    /// `var titleKey` and handed to `HXText` later. `hxCount` claims the two plural forms of its base and
+    /// not the base, which holds no value.
     private static func usedKeys(in source: String) -> Set<String> {
         var found = Set<String>()
         let span = NSRange(source.startIndex..., in: source)
+        let counted = try! NSRegularExpression(pattern: #"\bhxCount\(\s*"([^"]+)""#)
+        let bases = Set(counted.matches(in: source, range: span).compactMap { match -> String? in
+            guard let range = Range(match.range(at: 1), in: source) else { return nil }
+            return String(source[range])
+        })
+        for base in bases {
+            found.insert(base + ".one")
+            found.insert(base + ".other")
+        }
         let callSite = try! NSRegularExpression(pattern: #"\b(?:hx|HXText)\(\s*"([^"]+)""#)
         for match in callSite.matches(in: source, range: span) {
             if let range = Range(match.range(at: 1), in: source) { found.insert(String(source[range])) }
@@ -110,6 +123,7 @@ final class LocalizationKeyTests: XCTestCase {
         for match in literal.matches(in: source, range: span) {
             guard let range = Range(match.range(at: 1), in: source) else { continue }
             let candidate = String(source[range])
+            if bases.contains(candidate) { continue }
             if namespaces.contains(where: { candidate.hasPrefix($0 + ".") }) { found.insert(candidate) }
         }
         return found
