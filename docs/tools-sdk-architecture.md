@@ -41,6 +41,7 @@ graph TB
 | `harnax-harness-core` | Agent 运行时 | 依赖 SDK，提供沙箱、会话、模型调用 |
 | `harnax-tools-buildin` | 内置工具 | 依赖 SDK，实现 TimeToolBox 等开箱即用的工具 |
 | `harnax-agent-service` | 组装服务 | 依赖 harness-core + tools-buildin，组装完整服务 |
+| `harnax-admin` | 管理面 | 依赖 SDK 与 buildin 两个模块：启动时按 `@Tool`/`@ToolMeta` 注解把工具同步进 `agent_tool` 表 |
 
 ## 4. harnax-tools-sdk 模块说明
 
@@ -52,8 +53,8 @@ graph TB
 
 | 类/接口 | 包路径 | 职责 |
 |---|---|---|
-| `ToolBox` | `sdk` | 抽象工具基类，提供 execute 模板方法、日志记录、NeedConfirmed 确认机制 |
-| `NeedConfirmed` | `sdk` | 注解，标记需要用户确认的工具方法 |
+| `ToolBox` | `sdk` | 抽象工具基类，提供 execute 模板方法、日志记录，确认位由 `@ToolMeta.needConfirm` 声明 |
+| `ToolMeta` | `sdk` | 方法级注解，声明展示名、环境参数定义、是否需确认、是否必须工具 |
 | `ToolCallContext` | `sdk` | 工具调用上下文接口 |
 | `SessionMetaContext` | `sdk` | 会话级上下文（agentId + sessionId） |
 | `UserIdentifier` | `sdk` | 用户标识（userId） |
@@ -107,9 +108,9 @@ graph TB
 ```kotlin
 package com.agnetix.harnax.tools.builtin
 
-import com.agnetix.harnax.tools.sdk.NeedConfirmed
 import com.agnetix.harnax.tools.sdk.ToolBox
 import com.agnetix.harnax.tools.sdk.ToolEnvContext
+import com.agnetix.harnax.tools.sdk.ToolMeta
 import io.agentscope.core.tool.Tool
 import io.agentscope.core.tool.ToolParam
 import org.springframework.stereotype.Component
@@ -131,7 +132,7 @@ class MyToolBox : ToolBox() {
     }
 
     @Tool(description = "需要确认的危险操作")
-    @NeedConfirmed
+    @ToolMeta(needConfirm = true)
     fun dangerousMethod(): String = execute {
         // 危险操作，执行前需用户确认
         "done"
@@ -168,28 +169,13 @@ HarnessAgentLauncher 使用 toolRegistry.getToolBox(beanName)
 - **Bean Name**：`ToolBox` 的 Spring Bean 名称（如 `time-tool-box`），来自注解同步，不需要手工填写
 - **需确认**：在智能体的工具绑定上勾选后，Agent 执行该工具前会暂停等待用户确认
 
-## 8. 迁移记录
+## 8. 工具域的代码分布与依赖
 
-### 从 harnax-harness-core 迁移至 harnax-tools-sdk
-
-| 原路径 | 新路径 | 包名变更 |
+| 模块 | 包 | 内容 |
 |---|---|---|
-| `provider/tool/ToolBox.kt` | `harnax-tools-sdk/.../sdk/ToolBox.kt` | `com.agnetix.harnax.agent.provider.tool` → `com.agnetix.harnax.tools.sdk` |
-| `provider/tool/ToolRegistry.kt` | `harnax-tools-sdk/.../sdk/registry/ToolRegistry.kt` | `com.agnetix.harnax.agent.provider.tool` → `com.agnetix.harnax.tools.sdk.registry` |
-| `provider/tool/ToolSpec.kt` | `harnax-tools-sdk/.../sdk/ToolSpec.kt` | `com.agnetix.harnax.agent.provider.tool` → `com.agnetix.harnax.tools.sdk` |
-| `provider/tool/ToolCallContext.kt` | `harnax-tools-sdk/.../sdk/ToolCallContext.kt` | `com.agnetix.harnax.agent.provider.tool` → `com.agnetix.harnax.tools.sdk` |
-| `adaptor/ToolCallLogAdaptor.kt` | `harnax-tools-sdk/.../sdk/adaptor/ToolCallLogAdaptor.kt` | `com.agnetix.harnax.agent.adaptor` → `com.agnetix.harnax.tools.sdk.adaptor` |
-| `adaptor/ToolConfigAdaptor.kt` | `harnax-tools-sdk/.../sdk/adaptor/ToolConfigAdaptor.kt` | `com.agnetix.harnax.agent.adaptor` → `com.agnetix.harnax.tools.sdk.adaptor` |
+| `harnax-agent/harnax-tools-sdk` | `com.agnetix.harnax.tools.sdk`（另有 `.registry`、`.adaptor`） | 契约与注册中心：`ToolBox`、`ToolMeta`、`ToolEnvParamDef`、`ToolSpec`、`ToolCallContext`、`ToolEnvContext`、`ToolMetaDescriptor`，加 `registry/ToolRegistry`、`adaptor/ToolCallLogAdaptor`、`adaptor/ToolConfigAdaptor` |
+| `harnax-tools-external/harnax-tools-buildin` | `com.agnetix.harnax.tools.builtin` | 内置实现：`TimeToolBox`、`EmailToolBox`。包名拼 `builtin`，模块与目录拼 `buildin`（`.../src/main/kotlin/com/agnetix/harnax/tools/buildin/TimeToolBox.kt:1`），两者不一致是现状，import 时以包名为准 |
 
-> 本表记录的是当次迁移的落点，不代表这些文件今天仍在。`provider/tool/HttpProxyToolBox.kt` 随之迁入 SDK 后，已随自定义工具与 HTTP 工具整体下线一并删除，见 `harnax-admin/TOOL_INTEGRATION_DESIGN.md`。
+注解的分工：`@Tool` 与 `@ToolParam` 来自 agentscope 框架，本域不声明；本域声明的是 `@ToolMeta`（`harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolMeta.kt:29`）与 `@ToolEnvParamDef`（`harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolEnvParamDef.kt:22`）。
 
-### 从 harnax-harness-core 迁移至 harnax-tools-buildin
-
-| 原路径 | 新路径 | 包名变更 |
-|---|---|---|
-| `provider/tool/InterToolboxes.kt` (TimeToolBox) | `harnax-tools-buildin/.../builtin/TimeToolBox.kt` | `com.agnetix.harnax.agent.provider.tool` → `com.agnetix.harnax.tools.builtin` |
-
-### 下游模块适配
-
-- `harnax-harness-core`：pom.xml 增加 `harnax-tools-sdk` 依赖，删除迁移文件，更新 import
-- `harnax-agent-service`：pom.xml 增加 `harnax-tools-buildin` 依赖，更新 import，scanBasePackages 新增 SDK 和 builtin 包
+Bean 的可见性靠组件扫描落到同一个根：`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/HarnaxAdminApplication.kt:11` 与 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/AgentServiceApplication.kt:9` 都把 `com.agnetix.harnax.tools` 列进 `scanBasePackages`，两侧因此都能实例化 `ToolBox` 子类，而不必各自再声明一遍。

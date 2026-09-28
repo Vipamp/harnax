@@ -17,7 +17,7 @@
     <description>Harnax Built-in Tools - TimeToolBox and other out-of-the-box agent tools</description>
 
     <dependencies>
-        <!-- Tools SDK: ToolBox base class, NeedConfirmed annotation -->
+        <!-- Tools SDK: ToolBox base class, @ToolMeta annotation -->
         <dependency>
             <groupId>com.agnetix</groupId>
             <artifactId>harnax-tools-sdk</artifactId>

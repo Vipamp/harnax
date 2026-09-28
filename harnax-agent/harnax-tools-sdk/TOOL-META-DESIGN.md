@@ -55,8 +55,8 @@ class EmailToolBox : ToolBox() {
                                       BuiltinToolAutoRegistrar
                                       （admin 模块，启动时执行）
                                                            |
-                                              upsertBuiltinTool()
-                                              (每个 @Tool 方法一条记录)
+                                    selectByName / insert / updateById
+                                       (每个 @Tool 方法一条记录)
                                                            |
                                                            v
                                                 +----------+----------+
@@ -76,9 +76,9 @@ class EmailToolBox : ToolBox() {
 | `displayName`    | String            | `""`     | 英文显示名称                               |
 | `displayNameZh`  | String            | `""`     | 中文显示名称                               |
 | `envParamDefs`   | ToolEnvParamDef[] | `[]`     | 环境参数定义（key、description、required 等）|
-| `timeoutSeconds` | Int               | `0`      | 执行超时时间（秒），0=使用系统默认           |
-| `isPublic`       | Boolean           | `true`   | 是否对所有用户公开                          |
-| `needConfirm`    | Boolean           | `false`  | 是否需要用户确认                            |
+| `needConfirm`    | Boolean           | `false`  | 执行前是否需要用户确认                      |
+| `dangerousInput` | Boolean           | `false`  | 是否扫描字符串入参中的危险命令与路径        |
+| `isRequired`     | Boolean           | `false`  | 是否为强制工具（始终装载，不出现在 UI 勾选列表）|
 
 ### 2. `@Tool`（方法级注解，来自 agentscope）
 
@@ -92,37 +92,42 @@ class EmailToolBox : ToolBox() {
 
 运行时数据类，由 `ToolRegistry` 通过反射构建：
 - 扫描所有 `@Tool` 注解的方法
-- 从方法读取 `@ToolMeta`（displayName/displayNameZh/envParamDefs/needConfirm/timeoutSeconds/isPublic）
-- 从方法读取 `@NeedConfirmed`（与 @ToolMeta.needConfirm 取或）
+- 从方法读取 `@ToolMeta`（displayName/displayNameZh/envParamDefs/needConfirm/dangerousInput/isRequired）
+- `needConfirm` 只来自 `@ToolMeta.needConfirm`（`harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/registry/ToolRegistry.kt:108`）
+- `toolName` 取 `@Tool.name`，为空时回落到方法名；`readOnly` 取 `@Tool.readOnly`
 - 组合为 `ToolMethodDescriptor` 列表
 
-关键数据结构：
-- `ToolMethodDescriptor`：methodName, toolName, displayName, displayNameZh, description, readOnly, needConfirm, envParamDescriptors, timeoutSeconds, isPublic
+关键数据结构（`harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolMetaDescriptor.kt`）：
+- `ToolMethodDescriptor`：methodName, toolName, displayName, displayNameZh, description, readOnly, needConfirm, envParamDescriptors, isRequired
 - `ToolEnvParamDescriptor`：key, description, required, secret, defaultValue
-- `ToolMetaDescriptor`：beanName, toolName, **methods**
+- `ToolMetaDescriptor`：beanName, **methods**
 
 ### 4. `BuiltinToolAutoRegistrar`（admin 模块）
 
-Spring `@Component`，监听 `ApplicationReadyEvent`：
-- 从 `ToolRegistry.getAllToolMeta()` 读取所有元数据
-- 为每个 `@Tool` **方法**构建一条 `AgentTool` 实体，调用 `upsertBuiltinTool()`
-- 每个方法的 `envParamDefs` 独立同步到 `agent_tool_env_param` 表
+Spring `@Component`，监听 `ApplicationReadyEvent`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/registrar/BuiltinToolAutoRegistrar.kt`）：
+- 从 `ToolRegistry.getAllToolMeta()` 读取所有元数据；扫描结果为空则直接跳过，`declaredNames` 保持空集
+- 先做名字冲突检查：两条声明共用一个 `@Tool.name` 时在任何写入之前抛异常拒绝启动同步
+- 每个 `@Tool` **方法**对应一条 `AgentTool` 记录，按 `name` 定位（`agentToolMapper.selectByName`）
+- 记录已存在时逐列比较代码拥有的列，只有差异才 `updateById`，并把差异列名写进日志；`id`、`createTime`、`creator` 保留
+- 代码里不再声明的记录不删——工具表只增不减，`registeredToolNames()` 把这类行挡在下发之外
+- 每个方法的 `envParamDefs` 按上一步拿到的记录 id 同步到 `agent_tool_env_param`：同名就地更新、新名插入、注解里已不再声明的删除
 
-### 5. `AgentToolMapper.upsertBuiltinTool()`（harnax-entity）
+### 5. 落库口径
 
-MyBatis Mapper 方法，使用 MySQL `INSERT ... ON DUPLICATE KEY UPDATE`：
-- 新记录：插入 `status=1, active=1, creator='SYSTEM'`
-- 已有记录：更新 `name, displayName, displayNameZh, description, readOnly, needConfirm, requiredEnvParamKeys, timeoutSeconds, isPublic`
-- **不覆盖 `status`**（保留管理员手动禁用的状态）
-- 唯一键：`(tenant_id, bean_name, method_name, active)`
+- 身份列：`agent_tool.name`，唯一键 `uk_agent_tool_name`（`harnax-admin/src/main/resources/db/migration/V1__init_schema.sql:104`）
+- 代码拥有的列：`name, display_name, display_name_zh, description, bean_name, method_name, read_only, need_confirm, is_required, required_env_param_keys, status, active`
+- 新行插入时带 `status=1, active=1, creator='SYSTEM'`
+- `timeout_seconds`/`is_public` 不在 `agent_tool` 表里：超时归装配侧，工具无租户可见性开关
 
 ## 工具粒度：每个 @Tool 方法 = 一条 agent_tool 记录
 
-- `bean_name` + `method_name` 共同标识一条记录
+- 记录身份是 `name`（即 `@Tool.name`），全平台唯一
+- `bean_name` + `method_name` 记录这条声明来自哪个 ToolBox 的哪个方法
 - 同一个 ToolBox 类的不同方法，对应不同的 agent_tool 记录
 - 每条记录可独立启用/禁用、独立设置 needConfirm
 - 每条记录可以有独立的环境参数（envParamDefs）
-- `HarnessAgentLauncher` 中同一 beanName 只 `addTool()` 一次（去重）
+- `HarnessAgentLauncher` 装载时同一 beanName 只 `addTool()` 一次（去重），
+  再按授权名单移除该 ToolBox 中未被授予的方法
 
 ## 术语说明
 
@@ -145,7 +150,7 @@ ToolRegistry 解析每个方法的 @Tool + @ToolMeta → ToolMetaDescriptor
 BuiltinToolAutoRegistrar 监听 ApplicationReadyEvent
          │
          ▼
-遍历每个 meta.methods → 构建 AgentTool 实体 → upsertBuiltinTool() → 写入数据库
+遍历每个 meta.methods → 按 name 定位记录 → insert 或有差异才 updateById
          │
          ▼
 Admin UI 自动展示新工具，无需手动操作

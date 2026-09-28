@@ -21,7 +21,12 @@ harnax-agent/
 │       ├── ToolMeta.kt             # 方法级元数据注解
 │       ├── ToolEnvParamDef.kt      # 环境参数定义注解
 │       ├── ToolMetaDescriptor.kt   # 运行时元数据模型
-│       ├── NeedConfirmed.kt        # 方法级注解（定义在 ToolBox.kt 中）
+│       ├── ToolSpec.kt             # 下发给运行时的工具规格
+│       ├── ToolCallContext.kt      # 调用上下文（含 SessionMetaContext、UserIdentifier）
+│       ├── ToolEnvContext.kt       # 环境参数读取（require / get）
+│       ├── adaptor/
+│       │   ├── ToolCallLogAdaptor.kt   # 调用日志出口（含 ToolCallInfo）
+│       │   └── ToolConfigAdaptor.kt    # 工具配置读取出口
 │       └── registry/
 │           └── ToolRegistry.kt     # Spring 自动发现注册中心
 │
@@ -172,10 +177,6 @@ class WeatherToolBox : ToolBox() {
 | `required`    | Boolean | `true`   | 是否为必填参数                     |
 
 > **重要**：没有 `@ToolParam` 的参数（如 `ToolEnvContext`、`RuntimeContext`）会被框架视为自动注入的上下文参数，不会出现在工具 JSON Schema 中，LLM 无法传值。
-
-### `@NeedConfirmed`（方法级注解，来自 tools-sdk）
-
-旧版注解，功能已合并到 `@ToolMeta.needConfirm`。仍可使用，与 `@ToolMeta.needConfirm` 取或。
 
 ### `@Component`（Spring 注解）
 
