@@ -121,14 +121,12 @@ export default [
         path: '/system/user',
         component: './user/management',
         access: 'canAccessUserManagement',
-        hideInMenu: true,
       },
       {
         name: 'tenant.management',
         path: '/system/tenant',
         component: './tenant/management',
         access: 'canAccessUserManagement',
-        hideInMenu: true,
       },
       {
         name: 'token.monitor',
