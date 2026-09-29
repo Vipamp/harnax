@@ -81,6 +81,40 @@ public actor AuthFlow: AuthFlowing {
         }
     }
 
+    /// Which tenants the account can enter. A read failure is the screen's to show — an empty list here would
+    /// otherwise look like a single-tenant account and hide the switcher.
+    public func tenantOptions() async -> Result<[TenantSummary], APIError> {
+        await client.send([TenantSummary].self, AdminEndpoint.tenants)
+    }
+
+    /// The switch is a token swap, so the session is the only thing that changes: the keychain gets the new
+    /// bearer, the tenant it was minted for, and a cached card naming it. Every screen reloads because the
+    /// root re-keys its tab tree on the tenant, not because anything here tells them.
+    public func switchTenant(to tenant: TenantSummary) async -> Result<Void, APIError> {
+        guard let id = tenant.id else { return .failure(.decoding) }
+        guard let endpoint = try? AdminEndpoint.switchTenant(SwitchTenantRequest(tenantId: id)) else {
+            return .failure(.decoding)
+        }
+        let response = await client.send(RefreshedToken.self, endpoint)
+        switch response {
+        case let .success(token):
+            do {
+                try await session.adopt(token, mintedFor: id)
+            } catch let error as APIError {
+                return .failure(error)
+            } catch {
+                return .failure(.unpackable)
+            }
+            if let cached = (try? await session.cachedAccount()) ?? nil {
+                try? await session.cache(account: cached.withTenant(id: id, name: tenant.name))
+            }
+            return .success(())
+        case let .failure(error):
+            if case .unauthorized = error { await logout() }
+            return .failure(error)
+        }
+    }
+
     public func serverConfiguration() async -> Result<ServerConfig, APIError> {
         do {
             return .success(try await configs.current())

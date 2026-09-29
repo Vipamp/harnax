@@ -24,7 +24,10 @@ public struct HarnaxRootView: View {
             case .signedOut:
                 LoginView(model: model)
             case .signedIn:
-                HarnaxTabView(model: model)
+                // The tenant is part of the tree's identity: a switch replaces the token, and every screen
+                // below has to re-read for the tenant the session is now in — the web console reaches for
+                // `window.location.reload()` for the same reason.
+                HarnaxTabView(model: model).id(model.account?.tenantID)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -125,6 +125,11 @@
 "me.section.server" = "Server";
 "me.tenant.current" = "Current tenant: %@ (id %@)";
 "me.tenant.unknown" = "Unknown tenant";
+"me.tenant.switch" = "Switch tenant";
+"me.tenant.choose" = "Choose a tenant to enter. Confirming moves this session there and every screen reloads.";
+"me.tenant.disabled" = "Disabled";
+"me.tenant.currentTag" = "Current";
+"me.tenant.readFailed" = "Failed to load the tenant list";
 "me.role.administrator" = "Administrator";
 "me.role.member" = "Member";
 "me.themeAndLanguage" = "Appearance & Language";

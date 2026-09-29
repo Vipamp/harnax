@@ -238,6 +238,9 @@ X 轴标签按粒度格式化（hour→`MM-DD HH:mm`，week/month→`MM-DD`/`YYY
 - 切换：`POST /api/admin/auth/switch-tenant`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/AuthController.kt:149-182`）。请求 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/request/SwitchTenantRequest.kt:10-14` 只有一个字段 `tenantId: Long @NotNull`。
 - 成功响应 `data` = `{ "accessToken": <新 JWT>, "tenantId": <请求值> }`；后端先校验 `isUserInTenant` 或当前为 admin，不满足则 `ResultVo.error("No access to this tenant")`（HTTP 200 + code 400）。
 - iOS 收到成功后必须：**替换本地 accessToken**（不是只换 X-Tenant-ID），再刷新 `currentUser`，再重放所有已加载页面数据。
+- 列表读的是成员关系：`harnax-entity/src/main/resources/mapper/UserTenantMapper.xml:16-21` 的谓词是 `WHERE user_id = ? AND status = 1 ORDER BY joined_at DESC`，那个 `status` 属于成员行；`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/UserTenantServiceImpl.kt:31-43` 把 membership 映射成 `TenantResponse` 时不看租户自身的 status。所以面板里会出现 `status = 0` 的租户行，且 `switch-tenant` 照样给它发令牌——iOS 用「已停用」芯片标注，但不禁用该行。
+- 切换响应没有 `expiresIn`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/AuthController.kt:172-177`），客户端只能沿用登录时算出的到期时刻，不能自己给新令牌定时长。
+- keychain 里的 `tenantId` 要按**请求值**写入：`harnax-ios/Sources/HarnaxAPI/APIClient.swift:87-89` 的 `X-Tenant-ID` 就是从这个键读出来的，写错等于把之后每个请求都发回旧租户（`TenantInterceptor.kt:28-58` 优先信这个头）。
 
 ### 2. TenantInterceptor 的 X-Tenant-ID 校验规则
 

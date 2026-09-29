@@ -55,4 +55,42 @@ final class AuthPayloadTests: XCTestCase {
         XCTAssertEqual(refreshed.tenantId, 7)
         XCTAssertEqual(refreshed.expiresIn, 7200)
     }
+
+    func testSwitchTenantRequestEncodesOnlyTheTenantId() throws {
+        let data = try JSONEncoder().encode(SwitchTenantRequest(tenantId: 7))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Int])
+        XCTAssertEqual(object, ["tenantId": 7])
+    }
+
+    /// `POST /auth/switch-tenant` answers `{accessToken, tenantId}` and nothing else
+    /// (`AuthController.kt:172-177`), so a missing lifetime has to decode as absent rather than fail the
+    /// whole switch.
+    func testTheSwitchReplyCarriesNoLifetime() throws {
+        let data = Data(#"{"accessToken":"a.b.c","tenantId":7}"#.utf8)
+        let refreshed = try JSONDecoder().decode(RefreshedToken.self, from: data)
+        XCTAssertEqual(refreshed.accessToken, "a.b.c")
+        XCTAssertEqual(refreshed.tenantId, 7)
+        XCTAssertNil(refreshed.expiresIn)
+    }
+
+    /// The switch moves the tenant, not the person: everything the identity card reads besides the tenant
+    /// pair stays byte for byte, including the administrator flag that gates the whole system tab.
+    func testWithTenantRewritesOnlyTheTenantPair() {
+        let account = AccountSnapshot(
+            username: "admin",
+            nickname: "System Admin",
+            email: "admin@harnax.com",
+            tenantID: 1,
+            tenantName: "Default",
+            isAdministrator: true
+        )
+        let moved = account.withTenant(id: 2, name: "Acme Workspace")
+
+        XCTAssertEqual(moved.tenantID, 2)
+        XCTAssertEqual(moved.tenantName, "Acme Workspace")
+        XCTAssertEqual(moved.username, account.username)
+        XCTAssertEqual(moved.nickname, account.nickname)
+        XCTAssertEqual(moved.email, account.email)
+        XCTAssertEqual(moved.isAdministrator, account.isAdministrator)
+    }
 }

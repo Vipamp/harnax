@@ -54,6 +54,14 @@ public struct TenantSummary: Decodable, Equatable, Sendable {
     public let id: Int64?
     public let name: String?
     public let status: Int?
+
+    /// The switch panel and its stand-ins hand rows in directly; a wire payload is not the only way to own
+    /// one.
+    public init(id: Int64?, name: String?, status: Int? = nil) {
+        self.id = id
+        self.name = name
+        self.status = status
+    }
 }
 
 /// `GET /api/admin/auth/me` payload — a `Map<String, Any?>` on the wire
@@ -73,11 +81,25 @@ public struct MeInfo: Decodable, Equatable, Sendable {
     public var isAdministrator: Bool { isAdmin == 1 }
 }
 
-/// `POST /api/admin/auth/refresh-token` payload (`TokenController.kt:56-62`).
+/// A replacement token from either `POST /api/admin/auth/refresh-token` (`TokenController.kt:56-62`) or
+/// `POST /api/admin/auth/switch-tenant` (`AuthController.kt:172-177`).
 ///
-/// No `expiresAt` on the wire — the client converts `expiresIn` against its own clock.
+/// No `expiresAt` on the wire — the client converts `expiresIn` against its own clock. The switch response
+/// answers only `{accessToken, tenantId}`, so `expiresIn` is nil there and the stored deadline carries over.
 public struct RefreshedToken: Decodable, Equatable, Sendable {
     public let accessToken: String?
     public let tenantId: Int64?
     public let expiresIn: Int64?
+}
+
+/// `POST /api/admin/auth/switch-tenant` body (`SwitchTenantRequest.kt:10-14`).
+///
+/// One field, and the backend re-reads the caller from the bearer token rather than trusting an id here, so
+/// the request cannot name a user.
+public struct SwitchTenantRequest: Encodable, Equatable, Sendable {
+    public let tenantId: Int64
+
+    public init(tenantId: Int64) {
+        self.tenantId = tenantId
+    }
 }

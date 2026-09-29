@@ -10,12 +10,18 @@ final class FakeAuth: AuthFlowing, @unchecked Sendable {
     private(set) var profileCalls = 0
     private(set) var logoutCalls = 0
     private(set) var serverConfigurationCalls = 0
+    private(set) var tenantOptionCalls = 0
+    private(set) var switchCalls: [TenantSummary] = []
 
     var authState: AuthState = .signedOut
     var loginResult: Result<AccountSnapshot, APIError> = .success(AccountSnapshot(username: "admin", tenantID: 1))
     var profileResult: Result<MeInfo, APIError>?
     var serverConfigurationResult: Result<ServerConfig, APIError> = .success(FakeAuth.devConfig)
     var saveResult: Result<Void, APIError> = .success(())
+    /// One row is the ordinary account, so the default leaves the switch entry hidden and every existing
+    /// `me` test blind to it.
+    var tenantOptionsResult: Result<[TenantSummary], APIError> = .success([])
+    var switchResult: Result<Void, APIError> = .success(())
 
     static let devConfig = try! ServerConfig(
         adminBaseURL: "http://127.0.0.1:28080",
@@ -49,6 +55,16 @@ final class FakeAuth: AuthFlowing, @unchecked Sendable {
     func serverConfiguration() async -> Result<ServerConfig, APIError> {
         serverConfigurationCalls += 1
         return serverConfigurationResult
+    }
+
+    func tenantOptions() async -> Result<[TenantSummary], APIError> {
+        tenantOptionCalls += 1
+        return tenantOptionsResult
+    }
+
+    func switchTenant(to tenant: TenantSummary) async -> Result<Void, APIError> {
+        switchCalls.append(tenant)
+        return switchResult
     }
 
     func save(serverConfiguration: ServerConfig) async -> Result<Void, APIError> {

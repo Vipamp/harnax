@@ -52,13 +52,18 @@ public actor AuthSession {
 
     /// `POST /api/admin/auth/cli-login` is the only path that also yields a router key; refresh responses
     /// carry neither, so their expiry is folded in through this overload.
-    public func adopt(_ token: RefreshedToken) throws {
+    ///
+    /// `tenantID` overrides what the response echoed. Only the tenant switch needs it: the `X-Tenant-ID`
+    /// header is read back off this key, and a header naming the tenant the user just left would send every
+    /// later request there (`TenantInterceptor.kt:42-56` trusts a verified header over the token claim).
+    public func adopt(_ token: RefreshedToken, mintedFor tenantID: Int64? = nil) throws {
         guard let accessToken = token.accessToken, !accessToken.isEmpty else {
             throw APIError.unauthorized
         }
         try store.setValue(accessToken, for: .accessToken)
-        if let tenantID = token.tenantId {
-            try store.setValue(String(tenantID), for: .tenantId)
+        let effectiveTenantID = tenantID ?? token.tenantId
+        if let effectiveTenantID {
+            try store.setValue(String(effectiveTenantID), for: .tenantId)
         }
         try persistExpiry(expiresIn: token.expiresIn, expiresAt: nil)
     }

@@ -126,6 +126,11 @@
 "me.section.server" = "服务器";
 "me.tenant.current" = "当前租户：%@（id %@）";
 "me.tenant.unknown" = "未知租户";
+"me.tenant.switch" = "切换租户";
+"me.tenant.choose" = "选择要进入的租户，确定后当前会话即切过去，所有页面会重新读取。";
+"me.tenant.disabled" = "已停用";
+"me.tenant.currentTag" = "当前";
+"me.tenant.readFailed" = "租户列表读取失败";
 "me.role.administrator" = "管理员";
 "me.role.member" = "成员";
 "me.themeAndLanguage" = "主题与语言";

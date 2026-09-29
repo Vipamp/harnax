@@ -82,6 +82,19 @@ public struct AccountSnapshot: Codable, Equatable, Sendable {
         )
     }
 
+    /// The card follows the token: after a switch the session's tenant is the chosen row, and `me` answers
+    /// no tenant fields at all, so nothing else would ever correct these two.
+    public func withTenant(id: Int64, name: String?) -> AccountSnapshot {
+        AccountSnapshot(
+            username: username,
+            nickname: nickname,
+            email: email,
+            tenantID: id,
+            tenantName: name,
+            isAdministrator: isAdministrator
+        )
+    }
+
     /// The one rule behind edit and delete on every management screen: an administrator reaches any row,
     /// anyone else only the rows they created. Whether the row is public plays no part, and the
     /// enable/disable switch is not gated by this either — both match the web console
@@ -118,6 +131,17 @@ public protocol AuthFlowing: Sendable {
     func profile() async -> Result<MeInfo, APIError>
     func serverConfiguration() async -> Result<ServerConfig, APIError>
     func save(serverConfiguration: ServerConfig) async -> Result<Void, APIError>
+
+    /// Which tenants this account may enter — the active `user_tenant` rows, newest join first
+    /// (`UserTenantMapper.xml:16-21` filters `status = 1`). One row is the common case, and F1 shows no
+    /// switcher then.
+    func tenantOptions() async -> Result<[TenantSummary], APIError>
+
+    /// Moves the session into another tenant. This is a new token, not a new header: the backend signs a
+    /// replacement JWT whose tenant claim is the requested one (`AuthController.kt:164-177`), and every
+    /// later request carries it. The row comes from the list just read, so the name it carries is what the
+    /// identity card can honestly show afterwards.
+    func switchTenant(to: TenantSummary) async -> Result<Void, APIError>
 }
 
 /// Everything the agent card screen does, read and write.

@@ -1,6 +1,16 @@
 import SwiftUI
 
+/// `.disabled()` alone leaves a filled button at full brand colour, so a form whose required fields are still
+/// empty offers a 确定 that reads as tappable and answers nothing. Press keeps its own depth; disabled goes
+/// visibly quieter.
+private func hxButtonOpacity(isPressed: Bool, isEnabled: Bool, pressed: CGFloat = 0.72) -> CGFloat {
+    if isPressed { return pressed }
+    return isEnabled ? 1 : 0.4
+}
+
 public struct HXPrimaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
     public init() {}
 
     public func makeBody(configuration: Configuration) -> some View {
@@ -10,12 +20,14 @@ public struct HXPrimaryButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
             .background(Color.hx(.brand), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-            .opacity(configuration.isPressed ? 0.72 : 1)
+            .opacity(hxButtonOpacity(isPressed: configuration.isPressed, isEnabled: isEnabled))
             .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
     }
 }
 
 public struct HXSecondaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
     public init() {}
 
     public func makeBody(configuration: Configuration) -> some View {
@@ -29,12 +41,14 @@ public struct HXSecondaryButtonStyle: ButtonStyle {
                 RoundedRectangle(cornerRadius: 13, style: .continuous)
                     .strokeBorder(Color.hx(.separator), lineWidth: 1)
             )
-            .opacity(configuration.isPressed ? 0.72 : 1)
+            .opacity(hxButtonOpacity(isPressed: configuration.isPressed, isEnabled: isEnabled))
             .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
     }
 }
 
 public struct HXDestructiveButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
     public init() {}
 
     public func makeBody(configuration: Configuration) -> some View {
@@ -44,13 +58,15 @@ public struct HXDestructiveButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
             .background(Color.hxFill(.danger, alpha: 0.14), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-            .opacity(configuration.isPressed ? 0.72 : 1)
+            .opacity(hxButtonOpacity(isPressed: configuration.isPressed, isEnabled: isEnabled))
             .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
     }
 }
 
 /// Small tap target used for the inline 对话/编辑/⋯ actions on a record card.
 public struct HXInlineButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
     public init() {}
 
     public func makeBody(configuration: Configuration) -> some View {
@@ -60,7 +76,7 @@ public struct HXInlineButtonStyle: ButtonStyle {
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .background(Color.hxFill(.brand, alpha: 0.12), in: Capsule())
-            .opacity(configuration.isPressed ? 0.6 : 1)
+            .opacity(hxButtonOpacity(isPressed: configuration.isPressed, isEnabled: isEnabled, pressed: 0.6))
     }
 }
 

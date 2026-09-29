@@ -28,6 +28,7 @@ enum HarnaxDebugScreen: String {
     case taskLogDetail
     case taskLogRunning
     case refreshSheet
+    case tenantSheet
     case context
     case contextTools
     case contextToolDetail
@@ -278,7 +279,7 @@ struct HarnaxDebugView: View {
             NavigationStack { pushed }
                 .harnaxThemed()
         case .agentBindings, .teamBindings, .refreshSheet, .contextToolDetail, .contextCliDetail, .sessionRename,
-             .taskForm, .taskLogs:
+             .taskForm, .taskLogs, .tenantSheet:
             // Presented surfaces get their own hosting, so this is the capture that can show whether the
             // app-level theme reaches them.
             Color.hx(.background)
@@ -329,6 +330,14 @@ struct HarnaxDebugView: View {
             // pause warning and target agent all visible at once.
             TaskFormView(row: HarnaxDebugRecord.task, catalog: model.dependencies.tasks) { _ in }
                 .background(HarnaxDebugScroll())
+        case .tenantSheet:
+            TenantSwitchSheet(
+                tenants: HarnaxDebugAuth.tenants,
+                currentID: model.account?.tenantID,
+                isBusy: false,
+                errorText: nil,
+                onConfirm: { _ in }
+            )
         case .taskLogs:
             if let task = HarnaxDebugRecord.task, let id = task.id {
                 TaskLogSheet(
@@ -424,6 +433,22 @@ struct HarnaxDebugAuth: AuthFlowing {
             routerBaseURL: ServerConfig.devRouterBaseURL
         ) else { return .failure(.invalidServerConfig(ServerConfig.devAdminBaseURL)) }
         return .success(config)
+    }
+
+    /// Three rows: the current one carries its badge, the plain one is the tap target, and a disabled
+    /// tenant row is exactly what the membership read does hand back.
+    static let tenants = [
+        TenantSummary(id: 1, name: "Primary Tenant", status: 1),
+        TenantSummary(id: 2, name: "Acme Workspace", status: 1),
+        TenantSummary(id: 3, name: "Retired Org", status: 0),
+    ]
+
+    func tenantOptions() async -> Result<[TenantSummary], APIError> {
+        .success(Self.tenants)
+    }
+
+    func switchTenant(to tenant: TenantSummary) async -> Result<Void, APIError> {
+        .success(())
     }
 
     func save(serverConfiguration: ServerConfig) async -> Result<Void, APIError> {

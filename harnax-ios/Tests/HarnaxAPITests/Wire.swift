@@ -58,6 +58,15 @@ enum Wire {
     "isAdmin":1,"authMode":"jwt","expiresAt":1790602105000}
     """
 
+    /// `GET /api/admin/auth/tenants` answers a bare `List<TenantResponse>` inside the usual envelope
+    /// (`AuthController.kt:131-144`).
+    static func tenants(_ rows: [(id: Int64, name: String, status: Int)]) -> String {
+        let body = rows.map { """
+        {"id":\($0.id),"name":"\($0.name)","status":\($0.status)}
+        """ }.joined(separator: ",")
+        return success("[\(body)]")
+    }
+
     static func agents(total: Int, ids: [Int64]) -> String {
         let rows = ids.map { """
         {"id":\($0),"name":"agent-\($0)","status":1}
