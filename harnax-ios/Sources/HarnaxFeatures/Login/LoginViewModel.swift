@@ -33,12 +33,15 @@ public final class LoginViewModel: ObservableObject {
         }
     }
 
-    public func submit() async {
-        guard !isSubmitting else { return }
+    /// Whether the session is now real. The caller needs the difference: a submit that never exchanged
+    /// leaves the gate standing, and only an exchange answers it.
+    @discardableResult
+    public func submit() async -> Bool {
+        guard !isSubmitting else { return false }
         let name = username.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, !password.isEmpty else {
             errorText = hx("login.needCredentials")
-            return
+            return false
         }
         errorText = nil
         isSubmitting = true
@@ -48,11 +51,13 @@ public final class LoginViewModel: ObservableObject {
         case let .success(account):
             signedInAccount = account
             password = ""
+            return true
         case let .failure(error):
             errorText = ErrorMessage.text(for: error)
             // The remedy for a long streak is retyping, so the field is emptied rather than left with
             // the text that just failed.
             if case .refillPassword = error { password = "" }
+            return false
         }
     }
 }

@@ -62,18 +62,29 @@ public final class AppModel: ObservableObject {
         authState = state
     }
 
+    /// Re-read the session. A gate that is up stays up: the keychain still holds the sign-in the guard is
+    /// standing in front of, so a plain re-read must not smuggle it past the prompt.
     public func sync() async {
+        if isAwaitingBiometric {
+            authState = .signedOut
+            return
+        }
         authState = await dependencies.auth.state()
-        // A password sign-in is always an answer, gate on or off.
+    }
+
+    /// The gate has exactly two answers: an unlock that went through, and credentials that actually
+    /// exchanged. Anything else — a cancel, a refused password, an empty form — leaves it standing.
+    public func answerGate() async {
         isAwaitingBiometric = false
         biometricFailure = nil
+        authState = await dependencies.auth.state()
     }
 
     /// `reason` is the caller's copy: the prompt text belongs to the screen, and this layer has no catalogue.
     public func unlockWithBiometrics(reason: String) async {
         switch await biometrics.unlock(reason: reason) {
         case .success:
-            await sync()
+            await answerGate()
         case .failure(.cancelled), .failure(.passwordFallback):
             biometricFailure = nil
         case .failure(.unavailable):

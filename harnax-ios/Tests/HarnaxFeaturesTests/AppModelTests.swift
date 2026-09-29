@@ -202,9 +202,20 @@ final class AppModelTests: XCTestCase {
         auth.authState = .signedIn(AccountSnapshot(username: "admin"))
         await model.restore()
         XCTAssertTrue(model.isAwaitingBiometric)
-        await model.sync()
+        await model.answerGate()
         XCTAssertFalse(model.isAwaitingBiometric)
         XCTAssertTrue(model.isSignedIn)
+    }
+
+    func testAReSignInWithoutCredentialsDoesNotOpenTheGate() async {
+        let (model, auth) = makeModel(biometrics: ScriptedBiometrics(), gateEnabled: true)
+        auth.authState = .signedIn(AccountSnapshot(username: "admin"))
+        await model.restore()
+        // What the screen does after a submit that never exchanged — blank fields, or a refused
+        // password: the keychain still holds the old session, and re-reading it is not an answer.
+        await model.sync()
+        XCTAssertTrue(model.isAwaitingBiometric, "the gate has two answers, and a failed attempt is neither")
+        XCTAssertFalse(model.isSignedIn)
     }
 
     func testSigningOutWithdrawsTheGate() async {

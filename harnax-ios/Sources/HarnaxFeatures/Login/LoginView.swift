@@ -106,10 +106,13 @@ public struct LoginView: View {
     private var submitButton: some View {
         Button {
             Task {
-                await vm.submit()
-                // One read of the session decides what the root shows, so a rejected credential simply
-                // leaves the screen where it is.
-                await model.sync()
+                // Only an exchange answers the guard. A blank form or a refused credential re-reads the
+                // session and leaves the gate exactly where it was — the stored sign-in is still behind it.
+                if await vm.submit() {
+                    await model.answerGate()
+                } else {
+                    await model.sync()
+                }
             }
         } label: {
             HXText(vm.isSubmitting ? "login.signingIn" : "login.submit")
