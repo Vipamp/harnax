@@ -5,7 +5,11 @@ import HarnaxFeatures
 
 @MainActor
 final class AppModelTests: XCTestCase {
-    private func makeModel(_ auth: FakeAuth = FakeAuth()) -> (AppModel, FakeAuth) {
+    private func makeModel(
+        _ auth: FakeAuth = FakeAuth(),
+        biometrics: any BiometricUnlocking = NoBiometricUnlock(),
+        gateEnabled: Bool = false
+    ) -> (AppModel, FakeAuth) {
         // Nothing here opens the context tab or the scheduled-task column, so those catalogs share one
         // failing double; the chat and system tabs have their own.
         let unwired = UnwiredCatalogs()
@@ -38,7 +42,7 @@ final class AppModelTests: XCTestCase {
             plan: chat,
             commands: chat,
             streaming: chat
-        ))
+        ), biometrics: biometrics, gateEnabled: gateEnabled)
         return (model, auth)
     }
 
@@ -108,5 +112,127 @@ final class AppModelTests: XCTestCase {
         await vm.submit()
         await model.sync()
         XCTAssertTrue(model.isSignedIn)
+    }
+
+    // MARK: - the launch guard
+
+    func testTheGuardSitsInFrontOfASessionTheKeychainAlreadyHolds() async {
+        let (model, auth) = makeModel(biometrics: ScriptedBiometrics(), gateEnabled: true)
+        auth.authState = .signedIn(AccountSnapshot(username: "admin"))
+        await model.restore()
+        XCTAssertTrue(model.isAwaitingBiometric)
+        XCTAssertFalse(model.isSignedIn, "the gate is what the root shows first")
+        XCTAssertEqual(auth.logoutCalls, 0, "a guard is not a sign-out — the stored token stays put")
+    }
+
+    func testNoGuardWhenTheDeviceHasNoBiometry() async {
+        let (model, auth) = makeModel(biometrics: NoBiometricUnlock(), gateEnabled: true)
+        auth.authState = .signedIn(AccountSnapshot(username: "admin"))
+        await model.restore()
+        XCTAssertFalse(model.isAwaitingBiometric)
+        XCTAssertTrue(model.isSignedIn)
+        XCTAssertFalse(model.biometricsAvailable, "and the settings switch has nothing to promise")
+    }
+
+    func testNoGuardWhenTheSwitchIsOff() async {
+        let (model, auth) = makeModel(biometrics: ScriptedBiometrics(), gateEnabled: false)
+        auth.authState = .signedIn(AccountSnapshot(username: "admin"))
+        await model.restore()
+        XCTAssertFalse(model.isAwaitingBiometric)
+        XCTAssertTrue(model.isSignedIn)
+        XCTAssertTrue(model.biometricsAvailable, "off is a choice, not a missing capability")
+    }
+
+    func testASuccessfulUnlockOpensTheSessionAndCarriesTheScreensCopy() async {
+        let biometrics = ScriptedBiometrics()
+        let (model, auth) = makeModel(biometrics: biometrics, gateEnabled: true)
+        auth.authState = .signedIn(AccountSnapshot(username: "admin"))
+        await model.restore()
+        await model.unlockWithBiometrics(reason: "解锁 Harnax")
+        XCTAssertEqual(biometrics.reasons, ["解锁 Harnax"], "the prompt text belongs to the screen")
+        XCTAssertTrue(model.isSignedIn)
+        XCTAssertFalse(model.isAwaitingBiometric)
+        XCTAssertNil(model.biometricFailure)
+    }
+
+    func testACancelKeepsTheGateAndSaysNothing() async {
+        let biometrics = ScriptedBiometrics(result: .failure(.cancelled))
+        let (model, auth) = makeModel(biometrics: biometrics, gateEnabled: true)
+        auth.authState = .signedIn(AccountSnapshot(username: "admin"))
+        await model.restore()
+        await model.unlockWithBiometrics(reason: "r")
+        XCTAssertTrue(model.isAwaitingBiometric, "tapping away is not an answer, just a pause")
+        XCTAssertNil(model.biometricFailure)
+    }
+
+    func testAPasswordFallbackKeepsTheGateAndSaysNothing() async {
+        let biometrics = ScriptedBiometrics(result: .failure(.passwordFallback))
+        let (model, auth) = makeModel(biometrics: biometrics, gateEnabled: true)
+        auth.authState = .signedIn(AccountSnapshot(username: "admin"))
+        await model.restore()
+        await model.unlockWithBiometrics(reason: "r")
+        XCTAssertNil(model.biometricFailure, "the form below the gate is exactly what that tap means")
+        XCTAssertTrue(model.isAwaitingBiometric)
+    }
+
+    func testAFailedUnlockKeepsTheGateAndSaysSo() async {
+        let biometrics = ScriptedBiometrics(result: .failure(.failed))
+        let (model, auth) = makeModel(biometrics: biometrics, gateEnabled: true)
+        auth.authState = .signedIn(AccountSnapshot(username: "admin"))
+        await model.restore()
+        await model.unlockWithBiometrics(reason: "r")
+        XCTAssertEqual(model.biometricFailure, .failed)
+        XCTAssertTrue(model.isAwaitingBiometric)
+        XCTAssertFalse(model.isSignedIn)
+    }
+
+    func testBiometryLostMidFlightWithdrawsTheGate() async {
+        let biometrics = ScriptedBiometrics(result: .failure(.unavailable))
+        let (model, auth) = makeModel(biometrics: biometrics, gateEnabled: true)
+        auth.authState = .signedIn(AccountSnapshot(username: "admin"))
+        await model.restore()
+        await model.unlockWithBiometrics(reason: "r")
+        XCTAssertEqual(model.biometricFailure, .unavailable)
+        XCTAssertFalse(model.isAwaitingBiometric, "a control that cannot deliver has to make way for the form")
+        XCTAssertFalse(model.isSignedIn)
+    }
+
+    func testAPasswordSignInAnswersTheGate() async {
+        let (model, auth) = makeModel(biometrics: ScriptedBiometrics(), gateEnabled: true)
+        auth.authState = .signedIn(AccountSnapshot(username: "admin"))
+        await model.restore()
+        XCTAssertTrue(model.isAwaitingBiometric)
+        await model.sync()
+        XCTAssertFalse(model.isAwaitingBiometric)
+        XCTAssertTrue(model.isSignedIn)
+    }
+
+    func testSigningOutWithdrawsTheGate() async {
+        let (model, auth) = makeModel(biometrics: ScriptedBiometrics(), gateEnabled: true)
+        auth.authState = .signedIn(AccountSnapshot(username: "admin"))
+        await model.restore()
+        await model.signOut()
+        XCTAssertFalse(model.isAwaitingBiometric)
+        XCTAssertNil(model.biometricFailure)
+    }
+}
+
+/// The guard's seam under test control: one canned outcome per attempt, and the prompt texts it was asked
+/// to show. File scope so the async requirement is not main-actor isolated.
+private final class ScriptedBiometrics: BiometricUnlocking, @unchecked Sendable {
+    private let result: Result<Void, BiometricUnlockFailure>
+    private(set) var reasons: [String] = []
+
+    init(available: Bool = true, result: Result<Void, BiometricUnlockFailure> = .success(())) {
+        self.available = available
+        self.result = result
+    }
+
+    var isAvailable: Bool { available }
+    private let available: Bool
+
+    func unlock(reason: String) async -> Result<Void, BiometricUnlockFailure> {
+        reasons.append(reason)
+        return result
     }
 }

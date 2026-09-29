@@ -948,3 +948,12 @@
 "chat.sandbox.stop.title" = "Stop Sandbox";
 "chat.sandbox.stop.note" = "This stops and destroys the sandbox container; its workspace snapshot is kept.";
 "chat.sandbox.stop.action" = "Stop";
+
+/* ---- biometric unlock of a stored sign-in ---- */
+"login.biometric.reason" = "Unlock Harnax";
+"login.biometric.submit" = "Unlock with biometrics";
+"login.biometric.hint" = "The sign-in saved on this device is untouched — unlock it to continue.";
+"login.biometric.failed" = "Unlock failed. Sign in with your password instead.";
+"login.biometric.unavailable" = "Biometrics are no longer available on this device. Sign in with your password.";
+"me.security.guard" = "Unlock at launch";
+"me.security.guard.hint" = "Asks for biometrics or the device passcode before a stored sign-in opens. Takes effect the next time the app starts.";

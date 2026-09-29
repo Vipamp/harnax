@@ -8,16 +8,16 @@ public enum HarnaxRoute: Hashable, Sendable {
     case serverAddress
 }
 
-/// F1 — who is signed in, which tenant the session is in, the two preferences this build owns, and signing
-/// out.
+/// F1 — who is signed in, which tenant the session is in, the preferences this build owns, and signing out.
 ///
-/// The permanent API key and biometric unlock are not on this screen: each needs a backend call that does not
-/// exist, and a row that does nothing is worse than no row.
+/// The permanent API key is not on this screen: it needs a backend call that does not exist, and a row that
+/// does nothing is worse than no row.
 public struct MeView: View {
     @ObservedObject var model: AppModel
     @StateObject private var vm: MeViewModel
     @ObservedObject private var catalog = HarnaxCatalog.shared
     @AppStorage(ThemeMode.storageKey) private var storedTheme = ThemeMode.system.rawValue
+    @AppStorage(BiometricGate.defaultsKey) private var storedBiometricGate = false
     @State private var showsLogoutPrompt = false
     @State private var showsTenants = false
 
@@ -64,11 +64,24 @@ public struct MeView: View {
                             "me.server.address",
                             subtitle: vm.serverLine.isEmpty ? nil : vm.serverLine,
                             systemImage: "network",
-                            divider: false,
+                            divider: model.biometricsAvailable,
                             trailing: { HXChevron() }
                         )
                     }
                     .buttonStyle(.plain)
+                    if model.biometricsAvailable {
+                        HXRow(
+                            "me.security.guard",
+                            subtitle: hx("me.security.guard.hint"),
+                            systemImage: "lock.shield",
+                            divider: false,
+                            trailing: {
+                                Toggle(hx("me.security.guard"), isOn: $storedBiometricGate)
+                                    .labelsHidden()
+                                    .toggleStyle(.switch)
+                            }
+                        )
+                    }
                 }
                 signOut
             }

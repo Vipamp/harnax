@@ -17,6 +17,7 @@ public struct LoginView: View {
         ScrollView {
             VStack(spacing: 18) {
                 header
+                if model.isAwaitingBiometric { gate }
                 fields
                 if let error = vm.errorText {
                     HXBanner("state.error.title", message: error, systemImage: "exclamationmark.triangle", tone: .danger)
@@ -54,6 +55,32 @@ public struct LoginView: View {
                 .foregroundStyle(Color.hx(.textSecondary))
         }
         .padding(.bottom, 6)
+    }
+
+    /// The guard from R4: a stored session, and one prompt between the device and it. The fields below are
+    /// not disabled — a password is always a valid answer, which is what keeps this a guard rather than a
+    /// lock the user can lose the key to.
+    private var gate: some View {
+        VStack(spacing: 10) {
+            Button {
+                Task { await model.unlockWithBiometrics(reason: hx("login.biometric.reason")) }
+            } label: {
+                HXText("login.biometric.submit")
+            }
+            .buttonStyle(.hxPrimary)
+            HXText("login.biometric.hint")
+                .font(.footnote)
+                .foregroundStyle(Color.hx(.textTertiary))
+                .multilineTextAlignment(.center)
+            if let failure = model.biometricFailure, failure == .failed || failure == .unavailable {
+                HXBanner(
+                    "state.error.title",
+                    message: hx(failure == .unavailable ? "login.biometric.unavailable" : "login.biometric.failed"),
+                    systemImage: "exclamationmark.triangle",
+                    tone: .danger
+                )
+            }
+        }
     }
 
     private var fields: some View {

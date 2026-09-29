@@ -949,3 +949,12 @@
 "chat.sandbox.stop.title" = "停止沙箱";
 "chat.sandbox.stop.note" = "这将停止并销毁沙箱容器，工作区快照会被保存。";
 "chat.sandbox.stop.action" = "停止";
+
+/* ---- 已存登录凭据的生物识别解锁 ---- */
+"login.biometric.reason" = "解锁 Harnax";
+"login.biometric.submit" = "使用生物识别解锁";
+"login.biometric.hint" = "本机已保存登录凭据，解锁后直接进入。";
+"login.biometric.failed" = "解锁失败，请改用密码登录。";
+"login.biometric.unavailable" = "这台设备已无法使用生物识别，请改用密码登录。";
+"me.security.guard" = "启动时解锁";
+"me.security.guard.hint" = "下次启动 app 时，先要求生物识别或设备密码，才打开已保存的登录。";
