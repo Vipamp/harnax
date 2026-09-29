@@ -174,6 +174,6 @@ final class TokenStatsContractTests: XCTestCase {
         let date = try XCTUnwrap(
             calendar.date(from: DateComponents(year: 2026, month: 9, day: 28, hour: 10, minute: 20, second: 30))
         )
-        XCTAssertEqual(hxTokenWindowString(date), "2026-09-28 10:20:30")
+        XCTAssertEqual(hxWallClockString(date), "2026-09-28 10:20:30")
     }
 }

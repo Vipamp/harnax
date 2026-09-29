@@ -62,6 +62,7 @@ struct HarnaxTabView: View {
             AgentHomeView(
                 agents: model.dependencies.agents,
                 teams: model.dependencies.teams,
+                tasks: model.dependencies.tasks,
                 sessionRefresher: model.dependencies.sessionRefresher,
                 account: model.account
             )

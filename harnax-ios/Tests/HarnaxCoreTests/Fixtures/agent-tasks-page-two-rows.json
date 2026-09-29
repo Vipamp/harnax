@@ -1,0 +1,50 @@
+{
+  "code": 200,
+  "message": "success",
+  "timestamp": 1759026030000,
+  "data": {
+    "pageNum": 1,
+    "pageSize": 20,
+    "total": 2,
+    "records": [
+      {
+        "id": 41,
+        "tenantId": 1,
+        "name": "每日晨报",
+        "agentId": 7,
+        "agentName": "翻译助手",
+        "prompt": "汇总昨天的构建失败并给出下一步建议",
+        "cronExpression": "0 0 9 * * ?",
+        "taskStatus": 1,
+        "concurrent": 0,
+        "timeoutSeconds": 300,
+        "description": "工作日每天早上九点跑一次",
+        "isPublic": 1,
+        "creator": "admin",
+        "active": 1,
+        "createTime": "2026-09-20 09:14:02",
+        "updateTime": "2026-09-25 18:40:11",
+        "lastRunStatus": 1,
+        "lastRunTime": "2026-09-25 09:00:03"
+      },
+      {
+        "id": 42,
+        "tenantId": 1,
+        "name": "依赖巡检",
+        "agentId": 9,
+        "agentName": "",
+        "prompt": "检查依赖是否有可用的新版本",
+        "cronExpression": "0 0 0 * * ?",
+        "taskStatus": 0,
+        "concurrent": 1,
+        "timeoutSeconds": 600,
+        "description": "",
+        "isPublic": 0,
+        "creator": "alice",
+        "active": 1,
+        "createTime": "2026-09-21 12:00:00",
+        "updateTime": "2026-09-24 22:15:00"
+      }
+    ]
+  }
+}

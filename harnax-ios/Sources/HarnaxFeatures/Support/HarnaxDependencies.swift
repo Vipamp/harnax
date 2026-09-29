@@ -9,6 +9,7 @@ public struct HarnaxDependencies: Sendable {
     public let auth: any AuthFlowing
     public let agents: any AgentCataloging
     public let teams: any TeamCataloging
+    public let tasks: any AgentTaskCataloging
     public let sessionRefresher: any SessionRefreshing
     public let models: any ModelCataloging
     public let tools: any ToolCataloging
@@ -30,6 +31,7 @@ public struct HarnaxDependencies: Sendable {
         auth: any AuthFlowing,
         agents: any AgentCataloging,
         teams: any TeamCataloging,
+        tasks: any AgentTaskCataloging,
         sessionRefresher: any SessionRefreshing,
         models: any ModelCataloging,
         tools: any ToolCataloging,
@@ -48,6 +50,7 @@ public struct HarnaxDependencies: Sendable {
         self.auth = auth
         self.agents = agents
         self.teams = teams
+        self.tasks = tasks
         self.sessionRefresher = sessionRefresher
         self.models = models
         self.tools = tools
@@ -79,14 +82,15 @@ public struct HarnaxDependencies: Sendable {
             // next launch.
             language: { AcceptLanguage.current() }
         )
-        // One admin surface, fifteen protocols: every `/api/admin/**` route family hangs off the same client,
-        // so the agent, team, refresh, five context domains, four system reads and the three session reads
+        // One admin surface, sixteen protocols: every `/api/admin/**` route family hangs off the same client,
+        // so the agent, team, task, refresh, five context domains, four system reads and the three session reads
         // share its header injection.
         let admin = AdminClient(client: client)
         return HarnaxDependencies(
             auth: AuthFlow(client: client, session: session, configs: configs),
             agents: admin,
             teams: admin,
+            tasks: admin,
             sessionRefresher: admin,
             models: admin,
             tools: admin,

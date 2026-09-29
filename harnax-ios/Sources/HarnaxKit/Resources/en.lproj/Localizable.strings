@@ -317,10 +317,6 @@
 "mcp.delete.bound" = "%d agent(s) bind this server. Deleting it removes those bindings as well.";
 "mcp.delete.loadFailed" = "Failed to load the bound agents, please retry";
 
-/* ---- not in this build ---- */
-"soon.title" = "Not in this build yet";
-"soon.hint" = "This area lands in a later milestone.";
-
 /* ---- models ---- */
 "model.provider.search" = "Search providers";
 "model.provider.empty" = "No providers yet";
@@ -727,3 +723,102 @@
 "monitor.empty" = "No token usage in this window.";
 "system.monitor.subtitle" = "Token use by model, agent and session";
 "state.action.reload" = "Reload";
+
+/* ---- scheduled tasks: list ---- */
+"task.title" = "Scheduled tasks";
+"task.search" = "Search by name";
+"task.count.one" = "%d task";
+"task.count.other" = "%d tasks";
+"task.empty" = "No scheduled tasks yet.";
+"task.empty.filtered" = "No task matches the filters.";
+"task.notice.title" = "Heads up";
+"task.badge.public" = "Public";
+"task.agent.none" = "No target agent";
+"task.switch.schedule" = "Schedule";
+"task.nextRun.at" = "Next run %@";
+"task.nextRun.none" = "Next run cannot be worked out";
+"task.nextRun.paused" = "Paused, no next run";
+"task.lastRun.never" = "Never run";
+"task.lastRun.unknown" = "Unknown";
+"task.lastRun.at" = "Last run %@";
+"task.lastRun.failed" = "Failed";
+"task.lastRun.succeeded" = "Success";
+"task.lastRun.timeout" = "Timeout";
+"task.lastRun.running" = "Running";
+"task.lastRun.stopping" = "Stopping";
+"task.lastRun.stopped" = "Stopped";
+"task.run.triggered" = "Run requested";
+"task.action.runNow" = "Run now";
+"task.action.edit" = "Edit";
+"task.delete.title" = "Delete this task?";
+"task.delete.confirm" = "Delete \"%@\"";
+"task.delete.note" = "The schedule goes with it, and the run history stops growing. This cannot be undone.";
+
+/* ---- scheduled tasks: form ---- */
+"task.form.create" = "New task";
+"task.form.edit" = "Edit task";
+"task.form.name" = "Name";
+"task.form.name.placeholder" = "What this task is for";
+"task.form.name.required" = "Enter a name.";
+"task.form.name.long" = "Name cannot exceed 128 characters.";
+"task.form.agent" = "Target agent";
+"task.form.agent.placeholder" = "Pick an agent";
+"task.form.agent.hint" = "Agents that are not running cannot be picked.";
+"task.form.agent.required" = "Pick a target agent.";
+"task.form.prompt" = "Prompt";
+"task.form.prompt.placeholder" = "What to send the agent on every run";
+"task.form.prompt.required" = "Enter the prompt to run.";
+"task.form.cron" = "Schedule";
+"task.form.cron.placeholder" = "0 0 9 * * ?";
+"task.form.cron.hint" = "Six or seven fields: second minute hour day month weekday [year]. One of day and weekday has to be ?.";
+"task.form.cron.required" = "Enter a schedule expression.";
+"task.form.cron.arity" = "A schedule expression needs 6 or 7 fields.";
+"task.form.cron.dayFields" = "Name either the day or the weekday, and use ? for the other.";
+"task.form.cron.preview" = "Next possible run %@";
+"task.form.timeout" = "Timeout";
+"task.form.timeout.placeholder" = "300";
+"task.form.timeout.hint" = "Seconds, from 30 to 3600. An empty box keeps the server default of 300.";
+"task.form.timeout.range" = "Timeout has to be between 30 and 3600 seconds.";
+"task.form.concurrent" = "Allow overlapping runs";
+"task.form.concurrent.hint" = "Off means a new run is refused while the previous one is still going.";
+"task.form.public" = "Visible to everyone";
+"task.form.public.hint" = "Others can see and run a public task, but only its creator can change it.";
+"task.form.description" = "Description";
+"task.form.description.placeholder" = "Optional note shown under the name";
+"task.form.description.hint" = "Up to 512 characters.";
+"task.form.note.long" = "Description cannot exceed 512 characters.";
+"task.form.pause.warning" = "Saving pauses this task. Turn its switch back on when you are done.";
+"task.form.unchanged" = "Nothing has changed, and saving still pauses the task.";
+"task.form.paused.notice" = "Saved. This task is paused now — turn its switch back on to resume.";
+
+/* ---- scheduled tasks: cron presets ---- */
+"cron.preset.every5min" = "Every 5 minutes";
+"cron.preset.everyHour" = "Every hour";
+"cron.preset.everyDay9" = "Every day at 9:00";
+"cron.preset.everyMonday9" = "Every Monday at 9:00";
+"cron.preset.everyDay0" = "Every day at 0:00";
+
+/* ---- scheduled tasks: execution log ---- */
+"task.log.action.logs" = "View execution log";
+"task.log.title" = "Execution log";
+"task.log.subject" = "Task: %@";
+"task.log.search" = "Search prompt, answer or error";
+"task.log.count.one" = "%d execution record";
+"task.log.count.other" = "%d execution records";
+"task.log.empty" = "This task has not run yet.";
+"task.log.empty.filtered" = "No runs match these filters.";
+"task.log.window" = "Filter by start time";
+"task.log.window.from" = "From";
+"task.log.window.to" = "To";
+"task.log.window.clear" = "Clear time window";
+"task.log.window.hint" = "The picker stops at the minute, so the end bound goes out at the top of it.";
+"task.log.stop" = "Stop";
+"task.log.stop.title" = "Stop this run?";
+"task.log.stop.note" = "This interrupts the agent execution that is in progress. It cannot be undone.";
+"task.log.stop.sent" = "The stop request was accepted. The next refresh shows how the run ended.";
+"task.log.started" = "Started";
+"task.log.ended" = "Ended";
+"task.log.duration" = "Duration";
+"task.log.session" = "Session";
+"task.log.response" = "Agent response";
+"task.log.error" = "Failure reason";

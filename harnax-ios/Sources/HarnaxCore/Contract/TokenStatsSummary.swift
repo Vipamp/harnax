@@ -372,7 +372,7 @@ public enum TokenGranularity: String, CaseIterable, Equatable, Sendable {
     public static let serverDefault: TokenGranularity = .day
 }
 
-/// A window boundary in the one text all five token-stats routes parse: `@DateTimeFormat`
+/// A window boundary in the one text these routes parse: `@DateTimeFormat`
 /// `yyyy-MM-dd HH:mm:ss` (`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/TokenStatsController.kt:44-49`),
 /// the same pattern the controller re-formats its own `LocalDateTime` values with (`:35`).
 ///
@@ -381,7 +381,10 @@ public enum TokenGranularity: String, CaseIterable, Equatable, Sendable {
 /// window in wall-clock terms and a UTC shift here would ask for a different twelve hours than the console asks
 /// for. `hxServerDateTime(_:)` deliberately refuses to guess a zone for the *read* side; the write side has to
 /// pick one to send anything at all, and this is the pick the console made.
-public func hxTokenWindowString(_ date: Date) -> String {
+///
+/// The agent-task log window sends its `startTimeFrom`/`startTimeTo` through this same function for the same
+/// reason (`AgentTaskLogMapper.xml:151-156` binds a `LocalDateTime` from the identical pattern).
+public func hxWallClockString(_ date: Date) -> String {
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")
     formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"

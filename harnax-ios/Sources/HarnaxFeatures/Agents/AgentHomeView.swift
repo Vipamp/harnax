@@ -4,9 +4,6 @@ import HarnaxKit
 
 /// C1/C2 — the 智能体 tab is a three-way switch between agents, teams and scheduled tasks, the shape the
 /// mockup's `.seg` row draws.
-///
-/// The scheduled column is the task domain (M4) and shows the placeholder until it lands; the tab bar keeps
-/// its three segments so the navigation shape does not move between milestones.
 public struct AgentHomeView: View {
     public enum Section: Int, CaseIterable, Identifiable, Sendable {
         case agents
@@ -27,17 +24,20 @@ public struct AgentHomeView: View {
     @State private var section: Section = .agents
     private let agents: any AgentCataloging
     private let teams: any TeamCataloging
+    private let tasks: any AgentTaskCataloging
     private let refresher: any SessionRefreshing
     private let account: AccountSnapshot?
 
     public init(
         agents: any AgentCataloging,
         teams: any TeamCataloging,
+        tasks: any AgentTaskCataloging,
         sessionRefresher: any SessionRefreshing,
         account: AccountSnapshot?
     ) {
         self.agents = agents
         self.teams = teams
+        self.tasks = tasks
         self.refresher = sessionRefresher
         self.account = account
     }
@@ -60,7 +60,7 @@ public struct AgentHomeView: View {
                 case .teams:
                     TeamListView(teams: teams, sessionRefresher: refresher, account: account)
                 case .tasks:
-                    SoonView(titleKey: Section.tasks.titleKey)
+                    TaskListView(catalog: tasks, account: account)
                 }
             }
         }

@@ -125,7 +125,7 @@ public final class TokenMonitorViewModel: ObservableObject {
     public var window: (start: String, end: String) {
         let end = now()
         let start = end.addingTimeInterval(TimeInterval(-range.dayOffset * 86_400))
-        return (hxTokenWindowString(start), hxTokenWindowString(end))
+        return (hxWallClockString(start), hxWallClockString(end))
     }
 
     /// All five routes, as the page entry and the range filter do it.

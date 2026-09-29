@@ -6,7 +6,8 @@ import HarnaxFeatures
 @MainActor
 final class AppModelTests: XCTestCase {
     private func makeModel(_ auth: FakeAuth = FakeAuth()) -> (AppModel, FakeAuth) {
-        // Nothing here opens the 上下文, the chat or the system tab, so their catalogs share failing doubles.
+        // Nothing here opens the context tab or the scheduled-task column, so those catalogs share one
+        // failing double; the chat and system tabs have their own.
         let unwired = UnwiredCatalogs()
         let chat = UnwiredChat()
         let system = UnwiredSystem()
@@ -14,6 +15,7 @@ final class AppModelTests: XCTestCase {
             auth: auth,
             agents: FakeAgents(),
             teams: FakeTeams(),
+            tasks: unwired,
             sessionRefresher: FakeRefresher(),
             models: unwired,
             tools: unwired,

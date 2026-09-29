@@ -20,6 +20,13 @@ enum HarnaxDebugScreen: String {
     case agentBindings
     case teams
     case teamBindings
+    case tasks
+    case tasksEmpty
+    case tasksFailed
+    case taskForm
+    case taskLogs
+    case taskLogDetail
+    case taskLogRunning
     case refreshSheet
     case context
     case contextTools
@@ -148,6 +155,7 @@ struct HarnaxDebugView: View {
             auth: HarnaxDebugAuth(screen: screen),
             agents: HarnaxDebugAgents(screen: screen),
             teams: HarnaxDebugTeams(),
+            tasks: HarnaxDebugTasks(screen: screen),
             sessionRefresher: HarnaxDebugRefresher(),
             models: HarnaxDebugModels(),
             tools: HarnaxDebugTools(),
@@ -167,7 +175,22 @@ struct HarnaxDebugView: View {
         _model = StateObject(wrappedValue: model)
     }
 
-    @ViewBuilder var body: some View {
+    var body: some View {
+        Group {
+            // Nothing renders until the launch stub has answered: a sheet builds its view model once and keeps
+            // the account it was handed at that moment, so a screen mounted a frame early would hold `nil` for
+            // the whole capture and every owner-only control would read as read-only.
+            if model.isRestoring {
+                Color.hx(.background).ignoresSafeArea()
+            } else {
+                screenView
+            }
+        }
+        .task { await model.restore() }
+    }
+
+    @ViewBuilder
+    private var screenView: some View {
         switch screen {
         case .server, .appearance:
             // Both rows live behind `Me`; their own stack is rebuilt here so a screenshot can frame them.
@@ -216,6 +239,14 @@ struct HarnaxDebugView: View {
                     .background(HarnaxDebugScroll())
             }
             .harnaxThemed()
+        case .tasks, .tasksEmpty, .tasksFailed:
+            // The task column is the third segment on the agents tab. Framed alone it captures in whatever
+            // state the fixture names — rows, the empty fact, or the failed read — with no finger to switch.
+            NavigationStack {
+                TaskListView(catalog: model.dependencies.tasks, account: model.account)
+                    .background(HarnaxDebugScroll())
+            }
+            .harnaxThemed()
         case .context:
             // The segment row is this tab's whole navigation shape, so the shell is framed on its own.
             NavigationStack {
@@ -243,10 +274,11 @@ struct HarnaxDebugView: View {
                 }
             }
             .harnaxThemed()
-        case .contextMcpDetail, .contextSkillTable, .contextSkillDetail, .chat:
+        case .contextMcpDetail, .contextSkillTable, .contextSkillDetail, .chat, .taskLogDetail, .taskLogRunning:
             NavigationStack { pushed }
                 .harnaxThemed()
-        case .agentBindings, .teamBindings, .refreshSheet, .contextToolDetail, .contextCliDetail, .sessionRename:
+        case .agentBindings, .teamBindings, .refreshSheet, .contextToolDetail, .contextCliDetail, .sessionRename,
+             .taskForm, .taskLogs:
             // Presented surfaces get their own hosting, so this is the capture that can show whether the
             // app-level theme reaches them.
             Color.hx(.background)
@@ -292,6 +324,21 @@ struct HarnaxDebugView: View {
             if let session = HarnaxDebugRecord.session {
                 SessionRenameSheet(vm: sessionsVM, session: session)
             }
+        case .taskForm:
+            // Seeded from the first row the list serves, so this is the edit sheet with its own row's values,
+            // pause warning and target agent all visible at once.
+            TaskFormView(row: HarnaxDebugRecord.task, catalog: model.dependencies.tasks) { _ in }
+                .background(HarnaxDebugScroll())
+        case .taskLogs:
+            if let task = HarnaxDebugRecord.task, let id = task.id {
+                TaskLogSheet(
+                    taskID: id,
+                    taskTitle: task.title,
+                    catalog: model.dependencies.tasks,
+                    account: model.account
+                )
+                .background(HarnaxDebugScroll())
+            }
         default:
             EmptyView()
         }
@@ -311,6 +358,20 @@ struct HarnaxDebugView: View {
         case .contextSkillDetail:
             if let id = HarnaxDebugRecord.skill?.id {
                 SkillDetailView(id: id, skills: model.dependencies.skills)
+            }
+        case .taskLogDetail, .taskLogRunning:
+            // The pane has no endpoint of its own — it renders the row the sheet already holds. The two
+            // captures differ only by the row: the newest closed one has both stamps and an answer, the live
+            // one has neither but is the only shape that offers the pane's own 停止.
+            let row = screen == .taskLogDetail ? HarnaxDebugRecord.taskLog : HarnaxDebugRecord.taskLogLive
+            if let row {
+                TaskLogDetailView(
+                    row: row,
+                    stoppable: row.stoppable(by: model.account),
+                    isStopping: false,
+                    onStop: {}
+                )
+                .background(HarnaxDebugScroll())
             }
         case .chat:
             if let session = HarnaxDebugRecord.session, let sessionId = hxPresented(session.sessionId) {
@@ -411,6 +472,56 @@ struct HarnaxDebugTeams: TeamCataloging {
     func teamRelatedSessions(id: Int64) async -> Result<[RelatedSession], APIError> {
         HarnaxDebugPages.decode(HarnaxDebugPages.relatedJSON, [RelatedSession].self)
     }
+}
+
+/// The scheduled tasks of the agents tab.
+///
+/// The three reads the captures perform all answer — the task page, one task's log, and the target-agent
+/// picker the form lists — and the page read is the one that varies with `-FIXTURE`, so the same three list
+/// states the other catalogs have are picked at launch rather than by a finger. Every write answers
+/// `.offline`: the four state changes and the stop are creator-gated on the wire
+/// (`§2.3`/`§5.5`), a screenshot cannot press one, and a capture that ever reached for a control should show
+/// a banner rather than a switch that looked like it had moved.
+struct HarnaxDebugTasks: AgentTaskCataloging {
+    let screen: HarnaxDebugScreen
+
+    func agentTaskPage(
+        name: String?,
+        taskStatus: Int?,
+        num: Int,
+        size: Int
+    ) async -> Result<Page<AgentTaskSummary>, APIError> {
+        if screen == .tasksFailed { return .failure(.offline) }
+        let json = screen == .tasksEmpty ? HarnaxDebugPages.emptyJSON : HarnaxDebugPages.tasksJSON
+        return HarnaxDebugPages.decode(json, Page<AgentTaskSummary>.self)
+    }
+
+    func agentTaskLogs(
+        taskID: Int64,
+        filter: AgentTaskLogFilter,
+        num: Int,
+        size: Int
+    ) async -> Result<Page<AgentTaskLog>, APIError> {
+        HarnaxDebugPages.decode(HarnaxDebugPages.taskLogsJSON, Page<AgentTaskLog>.self)
+    }
+
+    func agentTaskAgents() async -> Result<[AgentTaskAgentOption], APIError> {
+        HarnaxDebugPages.decode(HarnaxDebugPages.taskAgentsJSON, [AgentTaskAgentOption].self)
+    }
+
+    func createAgentTask(_ draft: AgentTaskDraft) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
+
+    func updateAgentTask(id: Int64, _ change: AgentTaskChange) async -> Result<EmptyResponse, APIError> {
+        .failure(.offline)
+    }
+
+    func setAgentTaskStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
+
+    func triggerAgentTask(id: Int64) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
+
+    func deleteAgentTask(id: Int64) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
+
+    func stopAgentTaskLog(id: Int64) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
 }
 
 struct HarnaxDebugRefresher: SessionRefreshing {
@@ -803,6 +914,12 @@ enum HarnaxDebugRecord {
     static var mcpServer: McpServerRow? { rows(McpServerRow.self, HarnaxDebugPages.mcpServersJSON).first }
     static var skillSource: SkillSourceSummary? { rows(SkillSourceSummary.self, HarnaxDebugPages.skillSourcesJSON).first }
     static var skill: SkillItem? { rows(SkillItem.self, HarnaxDebugPages.skillsJSON).first }
+    static var task: AgentTaskSummary? { rows(AgentTaskSummary.self, HarnaxDebugPages.tasksJSON).first }
+    /// The detail pane has no endpoint of its own, so the capture takes the newest run that has *closed*: the
+    /// first row is the one still going, and on it every block the pane exists to show reads empty.
+    static var taskLog: AgentTaskLog? { rows(AgentTaskLog.self, HarnaxDebugPages.taskLogsJSON).first { $0.endTime != nil } }
+    /// The newest run still going — the same fixture's head row, since a live row is always the newest one.
+    static var taskLogLive: AgentTaskLog? { rows(AgentTaskLog.self, HarnaxDebugPages.taskLogsJSON).first { $0.endTime == nil } }
 
     static var refreshTarget: SessionRefreshTarget? {
         guard let agent, let id = agent.id else { return nil }
@@ -855,6 +972,50 @@ private enum HarnaxDebugPages {
       {"id":5,"name":"Research Desk","description":"From exchange notices to a valuation report.","systemPrompt":"","modelId":7,"modelName":"qwen3.7-max","skillList":[{"skillId":12,"skillName":"Notice parser","skillDescription":"Reads exchange filings","repositoryId":2,"repositoryName":"qoder-skills","skillAvailable":true},{"skillId":15,"skillName":"Valuation sheet","skillAvailable":false}],"memberList":[{"agentId":11,"agentName":"Data Fetch","agentDescription":"Pulls quotes and filings","delegationDescription":"Owns the data path","agentStatus":1,"agentAvailable":true},{"agentId":12,"agentName":"Valuation","agentDescription":"Values the positions","agentStatus":0,"agentAvailable":false}],"status":1,"isPublic":0,"tenantId":1,"creator":"admin","createTime":"2026-09-20 09:12:04","updateTime":"2026-09-26 15:30:00"},
       {"id":6,"name":"Stopped Desk","description":null,"systemPrompt":"","modelId":0,"modelName":null,"skillList":[],"memberList":[{"agentId":13,"agentName":"","agentStatus":1,"agentAvailable":true}],"status":0,"isPublic":1,"tenantId":1,"creator":"liwei","createTime":"2026-09-01 08:00:00"}
     ]}
+    """
+
+    /// One card per shape the task list can receive. The entity answers every key but the two joined ones, so
+    /// the never-ran row is the only one that leaves `lastRunStatus`/`lastRunTime` off; the rest of the
+    /// nullability is the column set (`§2.1`), with the blank name and the unparseable date the console also
+    /// has to survive. Together these six rows put all six badges, both switch readings, the shared badge, the
+    /// read-only row, the missing target agent and the three next-run lines on one screen.
+    static let tasksJSON = """
+    {"pageNum":1,"pageSize":10,"total":6,"records":[
+      {"id":41,"tenantId":1,"name":"每日晨报","agentId":12,"agentName":"夜间归档","prompt":"汇总昨天的构建失败并给出下一步建议","cronExpression":"0 0 9 * * ?","taskStatus":1,"concurrent":1,"timeoutSeconds":300,"description":"工作日每天早上九点跑一次","isPublic":0,"creator":"admin","active":1,"createTime":"2026-09-20 09:14:02","updateTime":"2026-09-28 09:05:41","lastRunStatus":3,"lastRunTime":"2026-09-29 09:00:01"},
+      {"id":42,"tenantId":1,"name":"依赖巡检","agentId":7,"agentName":"翻译助手","prompt":"检查依赖是否有可用的新版本","cronExpression":"0 30 8 ? * MON","taskStatus":1,"concurrent":1,"timeoutSeconds":600,"description":"每周一早上检查一次","isPublic":1,"creator":"liwei","active":1,"createTime":"2026-09-21 12:00:00","updateTime":"2026-09-28 08:30:12","lastRunStatus":1,"lastRunTime":"2026-09-28 08:30:04"},
+      {"id":43,"tenantId":1,"name":"周报草稿","agentId":9,"agentName":"数据核对","prompt":"按上周的会话记录起草一份周报","cronExpression":"0 30 1 * * ?","taskStatus":0,"concurrent":0,"timeoutSeconds":900,"description":"停用的是因为上周它自己把自己跑超时了","isPublic":0,"creator":"admin","active":1,"createTime":"2026-09-15 20:02:00","updateTime":"2026-09-27 01:45:20","lastRunStatus":2,"lastRunTime":"2026-09-27 01:45:00"},
+      {"id":44,"tenantId":1,"name":"告警转发核对","agentId":null,"agentName":"","prompt":"核对昨天的告警是否都转到了值班群","cronExpression":"0 */15 9-18 * * ?","taskStatus":1,"concurrent":0,"timeoutSeconds":120,"description":"","isPublic":0,"creator":"zhaomin","active":1,"createTime":"2026-09-26 16:40:00","updateTime":"2026-09-26 16:40:00"},
+      {"id":45,"tenantId":1,"name":"数据口径同步","agentId":9,"agentName":"数据核对","prompt":"同步术语表的最新口径","cronExpression":"0 0 0 * * *","taskStatus":1,"concurrent":0,"timeoutSeconds":300,"description":"日与周两段都没写 ?，服务端放过、调度器不放","isPublic":1,"creator":"admin","active":1,"createTime":"2026-09-24 11:00:00","updateTime":"2026-09-25 10:00:00","lastRunStatus":7,"lastRunTime":"2026-09-25 10:00:00"},
+      {"tenantId":null,"name":"   ","agentId":null,"agentName":"","prompt":"","cronExpression":"","taskStatus":0,"concurrent":0,"timeoutSeconds":0,"description":"","isPublic":0,"creator":"   ","active":1,"createTime":"not-a-date","updateTime":null}
+    ]}
+    """
+
+    /// The same task's log, in the `create_time DESC` order the route answers it in. All six statuses are here
+    /// plus one number the enum does not name, and the two live rows are the ones without an end to report:
+    /// the entity declares `endTime` nullable and non-null inclusion drops the key rather than sending null.
+    ///
+    /// Each row is a state some write path can actually leave behind (`§5.2`): only a `1` carries an answer, since
+    /// a `0` comes from the catch that never assigns one; a `5` may carry both an answer and the stop text, because
+    /// `finalizeStopped` writes the executing thread's own result; a `2` is the reaper's guess, so it has neither
+    /// answer nor a duration it computed itself; a live `3`/`4` has `durationMs` 0, because nothing writes that
+    /// column before close-out; and both live rows are minutes old, since `expireStale` reclaims anything still
+    /// live 1.5x past `timeoutSeconds`. Two live rows are what task 41's 允许并发 is on for.
+    static let taskLogsJSON = """
+    {"pageNum":1,"pageSize":10,"total":7,"records":[
+      {"id":912,"taskId":41,"taskName":"每日晨报","prompt":"汇总昨天的构建失败并给出下一步建议","response":"","sessionId":"task-41-12-88b0d3f1","status":3,"errorInfo":"","tokenUsage":"","startTime":"2026-09-29 09:00:01","durationMs":0,"creator":"admin","createTime":"2026-09-29 09:00:01"},
+      {"id":911,"taskId":41,"taskName":"每日晨报","prompt":"汇总昨天的构建失败并给出下一步建议","response":"","sessionId":"task-41-12-5277ac04","status":4,"errorInfo":"Stopping...","tokenUsage":"","startTime":"2026-09-29 08:55:07","durationMs":0,"creator":"liwei","createTime":"2026-09-29 08:55:07"},
+      {"id":907,"taskId":41,"taskName":"每日晨报","prompt":"汇总昨天的构建失败并给出下一步建议","response":"构建失败共 3 条，其中 2 条已在今晨合并修复；剩余 1 条是 e2e 用例的环境依赖，建议为 harnax-deploy 增加 preflight。","sessionId":"task-41-12-1c7f4a90","status":1,"errorInfo":"","tokenUsage":"TokenUsage(inputTokens=1240, outputTokens=386, totalTokens=1626, costTime=68.4, timestamp=1759021275000)","startTime":"2026-09-28 09:00:02","endTime":"2026-09-28 09:01:15","durationMs":73000,"creator":"admin","createTime":"2026-09-28 09:01:15"},
+      {"id":906,"taskId":41,"taskName":"每日晨报","prompt":"汇总昨天的构建失败并给出下一步建议","response":"","sessionId":"task-41-12-d0e5b7a9","status":0,"errorInfo":"agent execution failed: HTTP 429 from model endpoint","tokenUsage":"","startTime":"2026-09-28 08:30:03","endTime":"2026-09-28 08:35:41","durationMs":338000,"creator":"admin","createTime":"2026-09-28 08:35:41"},
+      {"id":905,"taskId":41,"taskName":"每日晨报","prompt":"汇总昨天的构建失败并给出下一步建议","response":"已汇总 2 条，第 3 条尚未取回。","sessionId":"task-41-12-6b1d02ce","status":5,"errorInfo":"Task stopped by user","tokenUsage":"TokenUsage(inputTokens=410, outputTokens=133, totalTokens=543, costTime=45.8, timestamp=1758934852000)","startTime":"2026-09-27 09:00:04","endTime":"2026-09-27 09:00:52","durationMs":48000,"creator":"admin","createTime":"2026-09-27 09:00:52"},
+      {"id":904,"taskId":41,"taskName":"每日晨报","prompt":"汇总昨天的构建失败并给出下一步建议","response":"","sessionId":"task-41-12-a33f7e01","status":2,"errorInfo":"Auto-expired: no completion within 300s (likely service restart)","tokenUsage":"","startTime":"2026-09-26 09:00:01","endTime":"2026-09-26 09:10:01","durationMs":600000,"creator":"admin","createTime":"2026-09-26 09:10:01"},
+      {"id":903,"taskId":41,"taskName":"每日晨报","prompt":"汇总昨天的构建失败并给出下一步建议","response":"","sessionId":"task-41-12-c07b52d8","status":9,"errorInfo":"","tokenUsage":"","startTime":"2026-09-25 09:00:02","endTime":"2026-09-25 09:00:03","durationMs":1000,"creator":"zhaomin","createTime":"2026-09-25 09:00:03"}
+    ]}
+    """
+
+    /// The picker's whole source, and it is admin's list of *running* agents rather than the agent page — so
+    /// the task's own agent 12 is legitimately missing here and the form has to re-add it from the row.
+    static let taskAgentsJSON = """
+    [{"id":7,"name":"翻译助手"},{"id":9,"name":"数据核对"},{"id":10,"name":"   "}]
     """
 
     /// Both row kinds the refresh endpoint answers with, plus the trimmed long id.

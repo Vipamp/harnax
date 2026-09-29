@@ -1,14 +1,15 @@
 import Foundation
 import HarnaxCore
 
-/// One double per tab a test never opens: `UnwiredCatalogs` for the five context catalogs, `UnwiredChat` for
-/// the four chat dependencies and `UnwiredSystem` for the three system catalogs.
+/// One double per tab a test never opens: `UnwiredCatalogs` for the five context catalogs and the scheduled
+/// tasks, `UnwiredChat` for the four chat dependencies and `UnwiredSystem` for the three system catalogs.
 ///
 /// `AppModelTests` builds a `HarnaxDependencies` to exercise restore, login and the tab bar; the catalogs
 /// it carries exist only because the composition root holds them. Every method fails rather than returning
 /// an empty page, so a screen that reaches one of these objects in a test shows up as a failing call instead
 /// of a list that quietly renders nothing.
-struct UnwiredCatalogs: ModelCataloging, ToolCataloging, SkillCataloging, McpCataloging, CliCataloging {
+struct UnwiredCatalogs: ModelCataloging, ToolCataloging, SkillCataloging, McpCataloging, CliCataloging,
+    AgentTaskCataloging {
     private func unwired() -> APIError {
         .business(code: -1, message: "this test never wires the context tab")
     }
@@ -169,6 +170,48 @@ struct UnwiredCatalogs: ModelCataloging, ToolCataloging, SkillCataloging, McpCat
     func cliRelatedSessions(id: Int64) async -> Result<[RelatedSession], APIError> { .failure(unwired()) }
 
     func setCliStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> { .failure(unwired()) }
+
+    // MARK: - scheduled tasks
+
+    func agentTaskPage(
+        name: String?,
+        taskStatus: Int?,
+        num: Int,
+        size: Int
+    ) async -> Result<Page<AgentTaskSummary>, APIError> { .failure(unwiredTasks()) }
+
+    func createAgentTask(_ draft: AgentTaskDraft) async -> Result<EmptyResponse, APIError> {
+        .failure(unwiredTasks())
+    }
+
+    func updateAgentTask(id: Int64, _ change: AgentTaskChange) async -> Result<EmptyResponse, APIError> {
+        .failure(unwiredTasks())
+    }
+
+    func setAgentTaskStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> {
+        .failure(unwiredTasks())
+    }
+
+    func triggerAgentTask(id: Int64) async -> Result<EmptyResponse, APIError> { .failure(unwiredTasks()) }
+
+    func deleteAgentTask(id: Int64) async -> Result<EmptyResponse, APIError> { .failure(unwiredTasks()) }
+
+    func agentTaskAgents() async -> Result<[AgentTaskAgentOption], APIError> { .failure(unwiredTasks()) }
+
+    func agentTaskLogs(
+        taskID: Int64,
+        filter: AgentTaskLogFilter,
+        num: Int,
+        size: Int
+    ) async -> Result<Page<AgentTaskLog>, APIError> { .failure(unwiredTasks()) }
+
+    func stopAgentTaskLog(id: Int64) async -> Result<EmptyResponse, APIError> { .failure(unwiredTasks()) }
+
+    /// The scheduled-task screens hang off the agents tab, not the context tab, so a test that reaches one of
+    /// these nine routes by accident names the surface it stumbled into.
+    private func unwiredTasks() -> APIError {
+        .business(code: -1, message: "this test never wires the scheduled tasks")
+    }
 }
 
 /// The four chat-tab dependencies for tests that never open the tab.

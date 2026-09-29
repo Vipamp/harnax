@@ -26,8 +26,8 @@ final class TokenMonitorViewModelTests: XCTestCase {
     /// days before it.
     private func window(days: Int, granularity: TokenGranularity? = nil) -> TokenRead {
         TokenRead(
-            start: hxTokenWindowString(tokenTestInstant.addingTimeInterval(TimeInterval(-days * 86_400))),
-            end: hxTokenWindowString(tokenTestInstant),
+            start: hxWallClockString(tokenTestInstant.addingTimeInterval(TimeInterval(-days * 86_400))),
+            end: hxWallClockString(tokenTestInstant),
             granularity: granularity
         )
     }
