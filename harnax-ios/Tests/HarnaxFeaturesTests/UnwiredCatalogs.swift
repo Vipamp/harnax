@@ -2,12 +2,31 @@ import Foundation
 import HarnaxCore
 
 /// One double per tab a test never opens: `UnwiredCatalogs` for the five context catalogs and the scheduled
-/// tasks, `UnwiredChat` for the four chat dependencies and `UnwiredSystem` for the three system catalogs.
+/// tasks, `UnwiredChat` for the nine conversation dependencies, `UnwiredSystem` for the four system catalogs
+/// and `UnwiredSaving` for the two agent and team forms.
 ///
 /// `AppModelTests` builds a `HarnaxDependencies` to exercise restore, login and the tab bar; the catalogs
 /// it carries exist only because the composition root holds them. Every method fails rather than returning
 /// an empty page, so a screen that reaches one of these objects in a test shows up as a failing call instead
 /// of a list that quietly renders nothing.
+struct UnwiredSaving: AgentWriting, TeamWriting {
+    private func unwired() -> APIError {
+        .business(code: -1, message: "this test never opens a form")
+    }
+
+    func createAgent(_ draft: AgentSaveDraft) async -> Result<EmptyResponse, APIError> { .failure(unwired()) }
+
+    func updateAgent(id: Int64, _ draft: AgentSaveDraft) async -> Result<EmptyResponse, APIError> {
+        .failure(unwired())
+    }
+
+    func createTeam(_ draft: TeamSaveDraft) async -> Result<EmptyResponse, APIError> { .failure(unwired()) }
+
+    func updateTeam(id: Int64, _ draft: TeamSaveDraft) async -> Result<EmptyResponse, APIError> {
+        .failure(unwired())
+    }
+}
+
 struct UnwiredCatalogs: ModelCataloging, ToolCataloging, SkillCataloging, McpCataloging, CliCataloging,
     AgentTaskCataloging {
     private func unwired() -> APIError {

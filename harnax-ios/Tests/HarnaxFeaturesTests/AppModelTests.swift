@@ -11,10 +11,13 @@ final class AppModelTests: XCTestCase {
         let unwired = UnwiredCatalogs()
         let chat = UnwiredChat()
         let system = UnwiredSystem()
+        let saving = UnwiredSaving()
         let model = AppModel(dependencies: HarnaxDependencies(
             auth: auth,
             agents: FakeAgents(),
             teams: FakeTeams(),
+            agentWrite: saving,
+            teamWrite: saving,
             tasks: unwired,
             sessionRefresher: FakeRefresher(),
             models: unwired,

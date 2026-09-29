@@ -75,7 +75,7 @@ final class FakeAuth: AuthFlowing, @unchecked Sendable {
 
 /// Pages served in the order the test queues them. A request nobody queued answers as a decoding failure
 /// and still shows up in `requests`, so an extra call reads as a wrong number rather than a crash.
-final class FakeAgents: AgentCataloging, @unchecked Sendable {
+final class FakeAgents: AgentCataloging, AgentWriting, @unchecked Sendable {
     private(set) var requests: [(num: Int, size: Int)] = []
     private(set) var filters: [(name: String?, status: Int?)] = []
     var replies: [Result<Page<AgentSummary>, APIError>] = []
@@ -87,6 +87,11 @@ final class FakeAgents: AgentCataloging, @unchecked Sendable {
 
     private(set) var relatedRequests: [Int64] = []
     var relatedReply: Result<[RelatedSession], APIError> = .success([])
+
+    /// `nil` id means the create route. The draft is kept whole because the point of a form test is what
+    /// went on the wire — which groups were touched and which were left `nil`.
+    private(set) var saveCalls: [(id: Int64?, draft: AgentSaveDraft)] = []
+    var saveReplies: [Result<EmptyResponse, APIError>] = []
 
     func page(name: String?, status: Int?, num: Int, size: Int) async -> Result<Page<AgentSummary>, APIError> {
         requests.append((num: num, size: size))
@@ -104,6 +109,16 @@ final class FakeAgents: AgentCataloging, @unchecked Sendable {
         return deleteReplies.isEmpty ? .success(EmptyResponse()) : deleteReplies.removeFirst()
     }
 
+    func createAgent(_ draft: AgentSaveDraft) async -> Result<EmptyResponse, APIError> {
+        saveCalls.append((id: nil, draft: draft))
+        return saveReplies.isEmpty ? .success(EmptyResponse()) : saveReplies.removeFirst()
+    }
+
+    func updateAgent(id: Int64, _ draft: AgentSaveDraft) async -> Result<EmptyResponse, APIError> {
+        saveCalls.append((id: id, draft: draft))
+        return saveReplies.isEmpty ? .success(EmptyResponse()) : saveReplies.removeFirst()
+    }
+
     func relatedSessions(id: Int64) async -> Result<[RelatedSession], APIError> {
         relatedRequests.append(id)
         return relatedReply
@@ -111,7 +126,7 @@ final class FakeAgents: AgentCataloging, @unchecked Sendable {
 }
 
 /// The team surface, with the same reply-queue discipline as `FakeAgents`.
-final class FakeTeams: TeamCataloging, @unchecked Sendable {
+final class FakeTeams: TeamCataloging, TeamWriting, @unchecked Sendable {
     private(set) var requests: [(num: Int, size: Int)] = []
     private(set) var filters: [(name: String?, status: Int?)] = []
     var replies: [Result<Page<TeamSummary>, APIError>] = []
@@ -123,6 +138,9 @@ final class FakeTeams: TeamCataloging, @unchecked Sendable {
 
     private(set) var relatedRequests: [Int64] = []
     var relatedReply: Result<[RelatedSession], APIError> = .success([])
+
+    private(set) var saveCalls: [(id: Int64?, draft: TeamSaveDraft)] = []
+    var saveReplies: [Result<EmptyResponse, APIError>] = []
 
     func teamPage(name: String?, status: Int?, num: Int, size: Int) async -> Result<Page<TeamSummary>, APIError> {
         requests.append((num: num, size: size))
@@ -138,6 +156,16 @@ final class FakeTeams: TeamCataloging, @unchecked Sendable {
     func deleteTeam(id: Int64) async -> Result<EmptyResponse, APIError> {
         deleteCalls.append(id)
         return deleteReplies.isEmpty ? .success(EmptyResponse()) : deleteReplies.removeFirst()
+    }
+
+    func createTeam(_ draft: TeamSaveDraft) async -> Result<EmptyResponse, APIError> {
+        saveCalls.append((id: nil, draft: draft))
+        return saveReplies.isEmpty ? .success(EmptyResponse()) : saveReplies.removeFirst()
+    }
+
+    func updateTeam(id: Int64, _ draft: TeamSaveDraft) async -> Result<EmptyResponse, APIError> {
+        saveCalls.append((id: id, draft: draft))
+        return saveReplies.isEmpty ? .success(EmptyResponse()) : saveReplies.removeFirst()
     }
 
     func teamRelatedSessions(id: Int64) async -> Result<[RelatedSession], APIError> {

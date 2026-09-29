@@ -174,3 +174,25 @@ public protocol TeamCataloging: Sendable {
     /// (`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/TeamServiceImpl.kt:207-220`).
     func teamRelatedSessions(id: Int64) async -> Result<[RelatedSession], APIError>
 }
+
+/// The agent save routes, kept off `AgentCataloging` so a host that only lists agents never has to stand in
+/// for a form.
+///
+/// Neither route names the row it wrote — both answer `ResultVo<Void>` — so a create has to be followed by a
+/// re-read of the page. A duplicate name inside the tenant is refused with the server's own English sentence
+/// (`AgentServiceImpl.kt:101-120`), and a model the account cannot see is refused too.
+public protocol AgentWriting: Sendable {
+    func createAgent(_ draft: AgentSaveDraft) async -> Result<EmptyResponse, APIError>
+    /// `PUT /api/admin/agents/update/{id}`, with the id in the path and no `id` in the body. A field left nil
+    /// keeps its current value; a binding list left nil keeps that whole group.
+    func updateAgent(id: Int64, _ draft: AgentSaveDraft) async -> Result<EmptyResponse, APIError>
+}
+
+/// The team save routes, in the same shape.
+///
+/// Create demands at least one member (`TeamCreateRequest.kt:41-44`), and an update that sends `members`
+/// replaces the entire membership rather than diffing it.
+public protocol TeamWriting: Sendable {
+    func createTeam(_ draft: TeamSaveDraft) async -> Result<EmptyResponse, APIError>
+    func updateTeam(id: Int64, _ draft: TeamSaveDraft) async -> Result<EmptyResponse, APIError>
+}

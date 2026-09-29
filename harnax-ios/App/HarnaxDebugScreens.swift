@@ -156,6 +156,8 @@ struct HarnaxDebugView: View {
             auth: HarnaxDebugAuth(screen: screen),
             agents: HarnaxDebugAgents(screen: screen),
             teams: HarnaxDebugTeams(),
+            agentWrite: HarnaxDebugSaving(),
+            teamWrite: HarnaxDebugSaving(),
             tasks: HarnaxDebugTasks(screen: screen),
             sessionRefresher: HarnaxDebugRefresher(),
             models: HarnaxDebugModels(),
@@ -930,6 +932,22 @@ struct HarnaxDebugStreaming: AgentStreaming {
 
     private func unfaked() -> AsyncThrowingStream<ChatEvent, any Error> {
         AsyncThrowingStream { $0.finish(throwing: APIError.offline) }
+    }
+}
+
+/// The four save routes a capture cannot submit: no screenshot fills a wizard, so each answers the same
+/// refusal every other unfaked write does.
+struct HarnaxDebugSaving: AgentWriting, TeamWriting {
+    func createAgent(_ draft: AgentSaveDraft) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
+
+    func updateAgent(id: Int64, _ draft: AgentSaveDraft) async -> Result<EmptyResponse, APIError> {
+        .failure(.offline)
+    }
+
+    func createTeam(_ draft: TeamSaveDraft) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
+
+    func updateTeam(id: Int64, _ draft: TeamSaveDraft) async -> Result<EmptyResponse, APIError> {
+        .failure(.offline)
     }
 }
 
