@@ -1,4 +1,5 @@
 import Foundation
+import HarnaxAPI
 import HarnaxCore
 import SwiftUI
 
@@ -32,6 +33,8 @@ public final class AppModel: ObservableObject {
     /// Read once, at launch: switching the guard on in the settings screen takes effect next cold start,
     /// the same way every iOS app that asks to be re-authenticated behaves.
     private let gateEnabled: Bool
+    /// The token for the credentials-dropped observer, kept only so `deinit` can cancel it.
+    private var credentialsObserver: NSObjectProtocol?
 
     public init(
         dependencies: HarnaxDependencies,
@@ -42,6 +45,21 @@ public final class AppModel: ObservableObject {
         self.biometrics = biometrics
         self.biometricsAvailable = biometrics.isAvailable
         self.gateEnabled = gateEnabled
+        // Saving a different server address drops the credential the old host minted, and that happens inside
+        // the API layer, which has no way back into this object. Without the signal the root would keep
+        // rendering an account whose bearer is already gone.
+        credentialsObserver = NotificationCenter.default.addObserver(
+            forName: .harnaxCredentialsDropped,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in await self.sync() }
+        }
+    }
+
+    deinit {
+        if let credentialsObserver { NotificationCenter.default.removeObserver(credentialsObserver) }
     }
 
     public var account: AccountSnapshot? { authState.account }

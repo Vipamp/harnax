@@ -124,7 +124,8 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(harness.transport.callCount, 3)
     }
 
-    /// A refresh that itself fails has no user to report to, so the credentials are cleared instead.
+    /// A refresh the server refused with its own 401 has no future, so the credentials are cleared — while
+    /// the two addresses the user typed stay put.
     func testFailedRefreshClearsCredentialsButKeepsServerAddresses() async throws {
         let harness = APIHarness()
         try await harness.signInWithExpiry(farFuture)
@@ -145,6 +146,98 @@ final class APIClientTests: XCTestCase {
         XCTAssertNil(token)
         XCTAssertNil(tenant)
         XCTAssertEqual(stored, config)
+    }
+
+    /// A hop that never answered is not the server refusing the credential. The web console keeps the same
+    /// split (`harnax-webui/src/requestErrorConfig.ts:135-176`): a 401 *response* clears the token, a request
+    /// that came back with nothing only asks for a retry.
+    func testARefreshThatTimesOutKeepsTheSessionAndReportsTheTimeout() async throws {
+        let harness = APIHarness()
+        try await harness.signInWithExpiry(farFuture)
+        harness.transport.enqueue(401, Wire.unauthorized)
+        harness.transport.enqueueFailure(URLError(.timedOut))
+
+        let page = await harness.agents.page(name: nil, status: nil, num: 1, size: 20)
+        let token = try await harness.session.accessToken()
+
+        XCTAssertEqual(page.failure, APIError.timeout)
+        XCTAssertEqual(token, "tok-1", "a call that never landed cannot have revoked anything")
+        XCTAssertEqual(harness.transport.callCount, 2, "a refresh that failed has nothing to replay")
+    }
+
+    func testARefreshAgainstAnUnreachableHostKeepsTheSession() async throws {
+        let harness = APIHarness()
+        try await harness.signInWithExpiry(farFuture)
+        harness.transport.enqueue(401, Wire.unauthorized)
+        harness.transport.enqueueFailure(URLError(.cannotConnectToHost))
+
+        let page = await harness.agents.page(name: nil, status: nil, num: 1, size: 20)
+
+        XCTAssertEqual(page.failure, APIError.offline)
+        let token = try await harness.session.accessToken()
+        XCTAssertEqual(token, "tok-1")
+    }
+
+    /// 503 is the stack saying it is down. Reading that as a dead credential is how one restart logs
+    /// everybody out.
+    func testAServiceErrorOnTheRefreshRouteKeepsTheSession() async throws {
+        let harness = APIHarness()
+        try await harness.signInWithExpiry(farFuture)
+        harness.transport.enqueue(401, Wire.unauthorized)
+        harness.transport.enqueue(503, #"{"status":503,"message":"upstream down"}"#)
+
+        let page = await harness.agents.page(name: nil, status: nil, num: 1, size: 20)
+        let token = try await harness.session.accessToken()
+
+        XCTAssertEqual(page.failure, APIError.business(code: 503, message: "upstream down"))
+        XCTAssertEqual(token, "tok-1")
+    }
+
+    /// The device refusing to store the fresh token says nothing about the old one, and clearing here would
+    /// spend a still-valid session to report a local failure.
+    func testAKeychainThatRefusesTheFreshTokenKeepsTheSession() async throws {
+        let stack = KeychainStack()
+        try await stack.signIn()
+        stack.store.failWrite(-25308, for: .accessToken)
+        stack.transport.enqueue(401, Wire.unauthorized)
+        stack.transport.enqueue(200, Wire.refreshed(token: "tok-2", expiresIn: 3600))
+
+        let result = await stack.client.send([TenantSummary].self, AdminEndpoint.tenants)
+        let token = try await stack.session.accessToken()
+
+        XCTAssertEqual(result.failure, APIError.offline)
+        XCTAssertEqual(token, "tok-1", "the token still in the keychain is the one the server minted")
+    }
+
+    /// The byte route follows the same rule, because a stale token looks identical there.
+    func testARawCallWhoseRefreshOnlySawATimeoutKeepsTheSession() async throws {
+        let harness = APIHarness()
+        try await harness.signInWithExpiry(farFuture)
+        harness.transport.enqueue(401, Wire.unauthorized)
+        harness.transport.enqueueFailure(URLError(.timedOut))
+
+        let result = await harness.client.sendRaw(TeamArtifactEndpoint.download(fileId: "f-1", sessionId: "s-1"))
+
+        XCTAssertEqual(result.failure, APIError.timeout)
+        let token = try await harness.session.accessToken()
+        XCTAssertEqual(token, "tok-1")
+    }
+
+    /// Refused twice — with the old token and with the one the server just minted — is the clearest possible
+    /// answer about the credential, so the session ends instead of burning a refresh round trip on every
+    /// later call.
+    func testAReplayStillRefusedAfterAFreshTokenEndsTheSession() async throws {
+        let harness = APIHarness()
+        try await harness.signInWithExpiry(farFuture)
+        harness.transport.enqueue(401, Wire.unauthorized)
+        harness.transport.enqueue(200, Wire.refreshed(token: "tok-2", expiresIn: 3600))
+        harness.transport.enqueue(401, Wire.unauthorized)
+
+        let page = await harness.agents.page(name: nil, status: nil, num: 1, size: 20)
+        let token = try await harness.session.accessToken()
+
+        XCTAssertEqual(page.failure, APIError.unauthorized)
+        XCTAssertNil(token)
     }
 
     func testTransportTimeoutIsReportedAsTimeout() async throws {

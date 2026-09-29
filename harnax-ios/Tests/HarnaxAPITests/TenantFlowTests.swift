@@ -163,4 +163,74 @@ final class TenantFlowTests: XCTestCase {
         XCTAssertEqual(result.failure, APIError.decoding)
         XCTAssertEqual(harness.transport.callCount, 0, "a row with no id cannot be addressed, so nothing goes out")
     }
+
+    // MARK: - the write-back decides whether the header moves
+
+    /// The switch may only answer success once the persistent copy agrees with it. The card used to be
+    /// rewritten with `try?` after the token was already swapped (`AuthFlow.swift:108-110`), so a keychain
+    /// that refused it left the session in the new tenant while the cold-restore card named the old one.
+    func testACardTheKeychainRefusesToWriteDoesNotReportASuccessfulSwitch() async throws {
+        let stack = KeychainStack()
+        try await stack.signIn()
+        stack.store.failWrite(-25308, for: .cachedAccount)
+        stack.transport.enqueue(200, Wire.refreshed(token: "tok-2", expiresIn: nil, tenantID: 2))
+
+        let result = await stack.auth.switchTenant(to: TenantSummary(id: 2, name: "Acme Workspace", status: 1))
+        let token = try await stack.session.accessToken()
+        let tenant = try await stack.session.tenantID()
+
+        XCTAssertEqual(result.failure, APIError.unpackable)
+        XCTAssertEqual(token, "tok-1", "a bearer the persistent copy cannot match never moved")
+        XCTAssertEqual(tenant, "1")
+        let state = await stack.auth.state()
+        XCTAssertEqual(state.account?.tenantName, "Default")
+    }
+
+    /// Merging needs the card it merges into. A read that was refused cannot be answered by writing a card
+    /// blind, and it must not be answered with a success either.
+    func testACardThatCannotBeReadStopsTheSwitchBeforeTheHeaderMoves() async throws {
+        let stack = KeychainStack()
+        try await stack.signIn()
+        stack.store.failRead(-25308, for: .cachedAccount)
+        stack.transport.enqueue(200, Wire.refreshed(token: "tok-2", expiresIn: nil, tenantID: 2))
+
+        let result = await stack.auth.switchTenant(to: TenantSummary(id: 2, name: "Acme Workspace", status: 1))
+        let token = try await stack.session.accessToken()
+        let tenant = try await stack.session.tenantID()
+
+        XCTAssertNotNil(result.failure)
+        XCTAssertEqual(token, "tok-1")
+        XCTAssertEqual(tenant, "1")
+    }
+
+    /// The other direction of the same rule: when the bearer itself could not be stored, the card that had
+    /// already moved has to move back, or the screen would name a tenant the session never entered.
+    func testAKeychainThatRefusesTheNewTokenLeavesTheCardOnTheOldTenant() async throws {
+        let stack = KeychainStack()
+        try await stack.signIn()
+        stack.store.failWrite(-25308, for: .accessToken)
+        stack.transport.enqueue(200, Wire.refreshed(token: "tok-2", expiresIn: nil, tenantID: 2))
+
+        let result = await stack.auth.switchTenant(to: TenantSummary(id: 2, name: "Acme Workspace", status: 1))
+        let state = await stack.auth.state()
+
+        XCTAssertNotNil(result.failure)
+        XCTAssertEqual(state.account?.tenantName, "Default", "the card says where the session really is")
+        XCTAssertEqual(state.account?.tenantID, 1)
+    }
+
+    /// A session that never cached a card has nothing to rewrite, which is a missing entry rather than a
+    /// refusal, so the switch still goes through.
+    func testASwitchWithoutAnyCachedCardStillMovesTheSession() async throws {
+        let stack = KeychainStack()
+        try await stack.signIn()
+        try stack.store.setValue(nil, for: .cachedAccount)
+        stack.transport.enqueue(200, Wire.refreshed(token: "tok-2", expiresIn: nil, tenantID: 2))
+
+        let result = await stack.auth.switchTenant(to: TenantSummary(id: 2, name: "Acme Workspace", status: 1))
+        let token = try await stack.session.accessToken()
+
+        XCTAssertNil(result.failure)
+        XCTAssertEqual(token, "tok-2")
+    }
 }

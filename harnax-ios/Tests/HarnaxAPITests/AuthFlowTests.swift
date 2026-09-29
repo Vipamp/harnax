@@ -214,4 +214,259 @@ final class AuthFlowTests: XCTestCase {
         XCTAssertEqual(result.value?.adminBaseURL, ServerConfig.devAdminBaseURL)
         XCTAssertEqual(result.value?.routerBaseURL, ServerConfig.devRouterBaseURL)
     }
+
+    // MARK: - a keychain that refuses, as opposed to one that is empty
+
+    /// `KeychainStore` answers `errSecItemNotFound` with `nil` and every other OSStatus by throwing
+    /// (`Sources/HarnaxCore/Secrets/KeychainStore.swift:36-41`). A thrown -25308 is the keychain being
+    /// locked, not the account being absent, so cold restore must not settle on "nobody is signed in".
+    func testAKeychainThatRefusesTheTokenReadIsNotReportedAsSignedOut() async throws {
+        let stack = KeychainStack()
+        try await stack.signIn()
+        stack.store.failRead(-25308, for: .accessToken)
+
+        let state = await stack.auth.state()
+        XCTAssertEqual(state, .unknown, "a refused read says nothing about who is signed in")
+    }
+
+    /// The identity card is the second read `state()` does, and a lock there is the same non-answer.
+    func testAKeychainThatRefusesTheCardReadIsNotReportedAsAFreshInstall() async throws {
+        let stack = KeychainStack()
+        try await stack.signIn()
+        stack.store.failRead(-25308, for: .cachedAccount)
+
+        let state = await stack.auth.state()
+        XCTAssertEqual(state, .unknown)
+    }
+
+    /// `.unknown` is a wait rather than a verdict: once the keychain answers again the session is simply
+    /// there, so a store that was locked for one read never costs anyone their sign-in.
+    func testASessionLockedOutByOneReadComesBackWhenTheNextReadAnswers() async throws {
+        let stack = KeychainStack()
+        try await stack.signIn()
+        stack.store.failRead(-25308, for: .accessToken)
+        let locked = await stack.auth.state()
+        XCTAssertEqual(locked, .unknown)
+
+        stack.store.clearFaults()
+        let state = await stack.auth.state()
+        XCTAssertEqual(state.account?.username, "admin")
+    }
+
+    /// A blob this side cannot read is not a locked keychain — waiting on it would never resolve, and
+    /// signing in again is the only remedy, so that one still reads as signed out.
+    func testACorruptCachedCardIsStillTreatedAsSignedOut() async throws {
+        let stack = KeychainStack()
+        try await stack.signIn()
+        try stack.store.setValue("{ not json", for: .cachedAccount)
+
+        let state = await stack.auth.state()
+        XCTAssertEqual(state, .signedOut)
+    }
+
+    // MARK: - moving the stack a credential was minted for
+
+    /// A bearer is only good on the host that signed it. `DESIGN.md:81` puts the address entry before the
+    /// login and the sheet is reachable from `Me`, so a signed-in edit has to end the session the old stack
+    /// owns rather than send its token to a stranger.
+    func testMovingTheAdminAddressDropsTheCredentialTheOldHostMinted() async throws {
+        let harness = APIHarness()
+        try await harness.signIn()
+
+        let saved = await harness.auth.save(serverConfiguration: try ServerConfig(
+            adminBaseURL: "https://another.example.com",
+            routerBaseURL: ServerConfig.devRouterBaseURL
+        ))
+        let token = try await harness.session.accessToken()
+        let routerKey = try await harness.session.routerAPIKey()
+
+        XCTAssertNil(saved.failure)
+        XCTAssertNil(token, "the old stack's bearer has no business on the new one")
+        XCTAssertNil(routerKey)
+        let state = await harness.auth.state()
+        XCTAssertEqual(state, .signedOut)
+    }
+
+    /// The two addresses name one stack (`login.address.hint`) and the router key was minted by the login on
+    /// the admin side, so moving either one ends the whole session.
+    func testMovingOnlyTheRouterAddressDropsTheRouterKeyToo() async throws {
+        let harness = APIHarness()
+        try await harness.signIn()
+
+        _ = await harness.auth.save(serverConfiguration: try ServerConfig(
+            adminBaseURL: ServerConfig.devAdminBaseURL,
+            routerBaseURL: "https://router.example.com"
+        ))
+        let routerKey = try await harness.session.routerAPIKey()
+        let token = try await harness.session.accessToken()
+
+        XCTAssertNil(routerKey)
+        XCTAssertNil(token)
+    }
+
+    /// Re-saving what is already stored is a no-op; ending a session that still matches its host would be a
+    /// punishment with no crime.
+    func testSavingTheAddressThatIsAlreadyStoredKeepsTheSession() async throws {
+        let harness = APIHarness()
+        try await harness.signIn()
+        let current = try await harness.configs.current()
+
+        _ = await harness.auth.save(serverConfiguration: current)
+        let state = await harness.auth.state()
+
+        XCTAssertEqual(state.account?.username, "admin")
+        let kept = try await harness.session.accessToken()
+        XCTAssertEqual(kept, "tok-1")
+    }
+
+    /// The new address has to be durable before the old session is worth destroying, so a store that refused
+    /// the write leaves a signed-in user exactly where they were.
+    func testAnAddressTheStoreRefusedLeavesTheSessionAlone() async throws {
+        let stack = KeychainStack()
+        try await stack.signIn()
+        stack.store.failWrite(-25308, for: .adminBaseURL)
+
+        let saved = await stack.auth.save(serverConfiguration: try ServerConfig(
+            adminBaseURL: "https://another.example.com",
+            routerBaseURL: "https://another.example.com:28081"
+        ))
+        let token = try await stack.session.accessToken()
+
+        XCTAssertNotNil(saved.failure)
+        XCTAssertEqual(token, "tok-1")
+    }
+
+    /// The sheet that moved the address is not the screen holding the signed-in copy of the truth, so the
+    /// drop is announced for whoever owns the root.
+    func testMovingTheServerAnnouncesThatTheCredentialsAreGone() async throws {
+        let harness = APIHarness()
+        try await harness.signIn()
+        let heard = expectation(description: "credentials dropped")
+        let observer = NotificationCenter.default.addObserver(
+            forName: .harnaxCredentialsDropped,
+            object: nil,
+            queue: nil
+        ) { _ in heard.fulfill() }
+
+        _ = await harness.auth.save(serverConfiguration: try ServerConfig(
+            adminBaseURL: "https://another.example.com",
+            routerBaseURL: "https://another.example.com:28081"
+        ))
+        await fulfillment(of: [heard], timeout: 2)
+        NotificationCenter.default.removeObserver(observer)
+    }
+
+    /// An address that did not move ends nothing, so nothing is announced either — and a stray signal
+    /// would drop a healthy session out from under the root.
+    func testNothingIsAnnouncedWhenTheSessionWasNotEnded() async throws {
+        let harness = APIHarness()
+        let current = try await harness.configs.current()
+        var announcements = 0
+        let lock = NSLock()
+        let observer = NotificationCenter.default.addObserver(
+            forName: .harnaxCredentialsDropped,
+            object: nil,
+            queue: nil
+        ) { _ in
+            lock.lock()
+            announcements += 1
+            lock.unlock()
+        }
+
+        _ = await harness.auth.save(serverConfiguration: current)
+        NotificationCenter.default.removeObserver(observer)
+        XCTAssertEqual(announcements, 0)
+    }
+}
+
+/// A keychain that refuses one named slot, the way `KeychainStore` does when `SecItem` answers anything
+/// but `errSecItemNotFound` (`Sources/HarnaxCore/Secrets/KeychainStore.swift:40-41`). Shared with
+/// `TenantFlowTests` and `APIClientTests`, which need the same two failure shapes.
+final class FaultySecretStore: SecretStoring, @unchecked Sendable {
+    private let inner = MemorySecretStore()
+    private let lock = NSLock()
+    private var refusedReads: [SecretKey: Int] = [:]
+    private var refusedWrites: [SecretKey: Int] = [:]
+
+    func failRead(_ status: Int, for key: SecretKey) {
+        lock.lock()
+        refusedReads[key] = status
+        lock.unlock()
+    }
+
+    func failWrite(_ status: Int, for key: SecretKey) {
+        lock.lock()
+        refusedWrites[key] = status
+        lock.unlock()
+    }
+
+    func clearFaults() {
+        lock.lock()
+        refusedReads.removeAll()
+        refusedWrites.removeAll()
+        lock.unlock()
+    }
+
+    private func readStatus(for key: SecretKey) -> Int? {
+        lock.lock()
+        defer { lock.unlock() }
+        return refusedReads[key]
+    }
+
+    private func writeStatus(for key: SecretKey) -> Int? {
+        lock.lock()
+        defer { lock.unlock() }
+        return refusedWrites[key]
+    }
+
+    func value(for key: SecretKey) throws -> String? {
+        if let status = readStatus(for: key) { throw SecretStoreError.unexpectedStatus(status) }
+        return try inner.value(for: key)
+    }
+
+    func setValue(_ value: String?, for key: SecretKey) throws {
+        if let status = writeStatus(for: key) { throw SecretStoreError.unexpectedStatus(status) }
+        try inner.setValue(value, for: key)
+    }
+
+    func removeAll() throws {
+        try inner.removeAll()
+    }
+}
+
+/// The stack `APIHarness` builds, over a `FaultySecretStore` a test can make refuse.
+struct KeychainStack {
+    let store: FaultySecretStore
+    let transport: StubTransport
+    let session: AuthSession
+    let configs: ServerConfigStore
+    let client: APIClient
+    let auth: AuthFlow
+
+    init(now: Date = Date(timeIntervalSince1970: 1_790_592_457)) {
+        let store = FaultySecretStore()
+        let transport = StubTransport()
+        let clock = TestClock(now)
+        let session = AuthSession(store: store, now: clock.now)
+        let configs = ServerConfigStore(store: store)
+        let client = APIClient(
+            transport: transport,
+            session: session,
+            configs: configs,
+            refresher: TokenRefresher(transport: transport, configs: configs)
+        )
+        self.store = store
+        self.transport = transport
+        self.session = session
+        self.configs = configs
+        self.client = client
+        self.auth = AuthFlow(client: client, session: session, configs: configs, now: clock.now)
+    }
+
+    /// A session the client itself considers fresh, so only the server can say otherwise.
+    func signIn(token: String = "tok-1") async throws {
+        let body = Wire.login(token: token)
+        let response = try JSONDecoder().decode(Envelope<LoginResponse>.self, from: Data(body.utf8)).data!
+        try await session.signIn(response)
+    }
 }

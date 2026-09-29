@@ -30,10 +30,11 @@ public actor APIClient {
         do {
             try await refreshNow()
         } catch {
-            try? await session.signOut()
-            return .failure(.unauthorized)
+            return .failure(await settleRefresh(error))
         }
-        return await perform(type, endpoint)
+        let replay = await perform(type, endpoint)
+        await settleReplay(replay)
+        return replay
     }
 
     /// A body of bytes rather than an envelope: the team artifact download answers
@@ -51,10 +52,37 @@ public actor APIClient {
         do {
             try await refreshNow()
         } catch {
-            try? await session.signOut()
-            return .failure(.unauthorized)
+            return .failure(await settleRefresh(error))
         }
-        return await performRaw(endpoint)
+        let replay = await performRaw(endpoint)
+        await settleReplay(replay)
+        return replay
+    }
+
+    /// What a failed refresh means: only the server saying "this credential is dead" ends the session.
+    ///
+    /// A timeout, an unreachable host or a 5xx on the refresh route says something about the network, not
+    /// about the token — and the previous behaviour signed the user out of all of them. The backend only ever
+    /// rejects a refresh with its own 401 (`harnax-admin/.../TokenController.kt:31-68` requires the old token,
+    /// `JwtAuthenticationFilter.kt` answers `AuthenticationServiceException` for an invalid or blacklisted one),
+    /// and the web reference client does exactly this split: the 401 *response* branch clears the stored
+    /// token, while the branch with no response at all only asks the user to retry
+    /// (`harnax-webui/src/requestErrorConfig.ts:135-176`).
+    ///
+    /// So the refresh's own error goes back verbatim, which also keeps the caller honest: `AuthFlow.profile()`
+    /// and `switchTenant(to:)` treat `.unauthorized` as a session event, and an `.offline` reaching them means
+    /// "retry", not "log out".
+    private func settleRefresh(_ error: any Error) async -> APIError {
+        let failure = (error as? APIError) ?? URLSessionTransport.map(error)
+        guard case .unauthorized = failure else { return failure }
+        try? await session.signOut()
+        return .unauthorized
+    }
+
+    /// The refresh minted a token and the server still said 401: that is the second, and only other, place a
+    /// session is known to be dead.
+    private func settleReplay<T>(_ replay: Result<T, APIError>) async {
+        if case .failure(.unauthorized) = replay { try? await session.signOut() }
     }
 
     private func perform<T: Decodable>(_ type: T.Type, _ endpoint: Endpoint) async -> Result<T, APIError> {

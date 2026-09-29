@@ -1,4 +1,5 @@
 import XCTest
+import HarnaxAPI
 import HarnaxCore
 import HarnaxKit
 import HarnaxFeatures
@@ -225,6 +226,33 @@ final class AppModelTests: XCTestCase {
         await model.signOut()
         XCTAssertFalse(model.isAwaitingBiometric)
         XCTAssertNil(model.biometricFailure)
+    }
+
+    // MARK: - a session that ended underneath a screen
+
+    /// The address sheet is pushed from a tab the root has no reason to re-read, so a session ended by
+    /// moving the stack has to announce itself — otherwise the shell keeps showing an account the keychain
+    /// no longer holds, and every screen below it fails on its own schedule.
+    func testTheRootDropsToSignInWhenTheAddressChangeEndsTheSession() async throws {
+        let (model, auth) = makeModel()
+        auth.authState = .signedIn(AccountSnapshot(username: "admin"))
+        await model.restore()
+        XCTAssertTrue(model.isSignedIn)
+
+        auth.authState = .signedOut
+        NotificationCenter.default.post(name: .harnaxCredentialsDropped, object: nil)
+
+        // The handler hops onto the main actor, so the queued re-read has to be given its turn.
+        var settled = false
+        for _ in 0..<40 {
+            if !model.isSignedIn {
+                settled = true
+                break
+            }
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTAssertTrue(settled, "the root re-read the session the address change ended")
+        XCTAssertNil(model.account, "and it stopped showing an account the keychain no longer holds")
     }
 }
 
