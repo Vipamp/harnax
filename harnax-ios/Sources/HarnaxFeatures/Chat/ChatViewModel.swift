@@ -101,6 +101,10 @@ public final class ChatViewModel: ObservableObject {
     /// The confirm stream being read right now, and whether anything has come back over it yet. An answer
     /// whose stream yields no frame at all never reached the run, and the panel has to go back on screen.
     private var confirmRead: ConfirmRead?
+    /// A member answer's own leg. It runs beside the lead's read rather than instead of it, because the
+    /// resumed member output comes back on the lead's stream (`postMemberAnswer`).
+    private var memberAnswerRead: ConfirmRead?
+    private var memberAnswerTask: Task<Void, Never>?
     /// What the composer box held when the turn now reading took it out.
     private var consumedByOpenTurn: ConsumedComposer?
 
@@ -203,10 +207,12 @@ public final class ChatViewModel: ObservableObject {
         guard conversation.id == sessionID else { return }
         switch result {
         case let .success(logs):
-            loadedConversationID = sessionID
             historyFailure = nil
-            // A turn that started while the read was in flight owns the screen now.
+            // A turn that started while the read was in flight owns the screen now. Dropping these rows is
+            // right, but the conversation is not then "loaded" — marking it so would leave the screen short
+            // by its own history for the rest of the visit with nothing left to re-read.
             guard transcript.turns.isEmpty else { return }
+            loadedConversationID = sessionID
             transcript = ChatTranscript(replaying: logs)
             scrollToBottomID += 1
         case let .failure(error):
@@ -315,6 +321,9 @@ public final class ChatViewModel: ObservableObject {
         // A stop or a conversation switch is the user letting the turn go, not an answer that failed to
         // land: the settled panel stays settled rather than being handed back for another try.
         confirmRead = nil
+        memberAnswerTask?.cancel()
+        memberAnswerTask = nil
+        memberAnswerRead = nil
         // And the same for the composer: the request was accepted, so refilling the box would only set up
         // a duplicate run of a turn the router is already working on.
         consumedByOpenTurn = nil
@@ -451,6 +460,18 @@ public final class ChatViewModel: ObservableObject {
     private func settleAnswerDelivery(reason: String?) -> Bool {
         guard let attempt = confirmRead else { return false }
         confirmRead = nil
+        return deliver(attempt, reason: reason)
+    }
+
+    /// The same close-out for a member's leg, which is tracked apart because it runs beside the lead's read.
+    @discardableResult
+    private func settleMemberAnswer(reason: String?) -> Bool {
+        guard let attempt = memberAnswerRead else { return false }
+        memberAnswerRead = nil
+        return deliver(attempt, reason: reason)
+    }
+
+    private func deliver(_ attempt: ConfirmRead, reason: String?) -> Bool {
         guard !attempt.sawFrame else {
             // Delivered: the choices it carried are no longer anybody's pending decision.
             for tool in attempt.tools { confirmationChoices[tool.toolId] = nil }
@@ -525,9 +546,48 @@ public final class ChatViewModel: ObservableObject {
         let request = Self.confirmRequest(sessionID: conversation.id, pending: pending, answers: answers)
         var decisions: [String: ToolConfirmAnswer] = [:]
         for (tool, answer) in zip(tools, answers) { decisions[tool.toolId] = answer }
-        confirmRead = ConfirmRead(tools: tools)
         transcript.resolveConfirmation(decisions)
+        if pending.childRunId != nil {
+            postMemberAnswer(request, tools: tools)
+            return
+        }
+        confirmRead = ConfirmRead(tools: tools)
         start(with: .confirm(request))
+    }
+
+    /// Post a member's answer without becoming the reader.
+    ///
+    /// The member run is parked inside a tool call of the lead, whose stream is still open, and the resumed
+    /// output continues on that stream: the answer itself comes back as a bare End and nothing else
+    /// (`DefaultAgentRunner.kt:400-441`, and `ChatWindow.tsx:1294-1348` reads the body only for an ErrorEvent).
+    /// So this leg reads for the news of its own delivery and for nothing else. Folding that End into the
+    /// transcript would terminate the lead's live turn and drop every frame after it, and taking over
+    /// `streamTask` would leave the lead's read running with no handle left to stop it.
+    private func postMemberAnswer(_ request: ConfirmAgentRequest, tools: [ChatPendingTool]) {
+        guard let confirmer = confirming else { return }
+        let sessionID = conversation.id
+        memberAnswerRead = ConfirmRead(tools: tools)
+        memberAnswerTask = Task { [weak self] in
+            let stream = await confirmer.confirm(request)
+            do {
+                for try await event in stream {
+                    guard self?.conversation.id == sessionID, !Task.isCancelled else { return }
+                    self?.memberAnswerRead?.sawFrame = true
+                    if case let .failure(failure) = event {
+                        // The orchestrator says the run is not waiting on this answer any more — said out
+                        // loud rather than folded into a turn that is still running.
+                        self?.stopNotice = .failed(text: self?.errorSentence(failure) ?? "")
+                    }
+                    if case .end = event { break }
+                }
+            } catch {
+                guard let self, !Task.isCancelled, !(error is CancellationError) else { return }
+                self.settleMemberAnswer(reason: self.transportSentence(error))
+                return
+            }
+            guard let self, self.conversation.id == sessionID else { return }
+            self.settleMemberAnswer(reason: nil)
+        }
     }
 
     /// The body `POST /api/router/agent/confirm` takes for these answers.

@@ -225,6 +225,61 @@ final class ToolConfirmationTests: XCTestCase {
         XCTAssertEqual(request.isConfirmed, false, "a member run with a refusal in it is refused")
     }
 
+    /// Answering a member must not make the answer leg the screen's reader. The member run resumes inside the
+    /// lead's tool call and its words, and the lead's own after them, all arrive on the lead's socket, while
+    /// the answer itself comes back as one bare End (`DefaultAgentRunner.kt:400-441`). Taking over the read
+    /// folded that End into the live turn: the lead's socket closed, every later frame was dropped, and the
+    /// turn looked finished while the team was still working.
+    func testAnsweringAMemberLeavesTheLeadStreamReading() async throws {
+        let (vm, stream, confirmer) = makeModel()
+        try await park(on: vm, stream, frames: [
+            ChatFrames.memberConfirm(run: "run-9", rows: [ChatFrames.pending(id: "t-1", name: "read_file")]),
+        ])
+        XCTAssertTrue(vm.isStreaming, "the lead parked on the ask but its stream is still open")
+        try stream.latest.feed([ChatFrames.text("成员把文件读完了")])
+        await waitUntil("the lead's own words on screen") { vm.transcript.segments.contains {
+            if case .text = $0.kind { return true }
+            return false
+        } }
+
+        vm.submitConfirmation()
+        await waitUntil("the member answer to go out") { !confirmer.requests.isEmpty }
+        try confirmer.latest.feed([ChatFrames.end()])
+        await waitUntil("the member leg to let go") { confirmer.latest.isTerminated }
+
+        XCTAssertFalse(vm.transcript.isTerminated, "the bare End of the answer is not the lead's end")
+        XCTAssertTrue(vm.isStreaming)
+
+        try stream.latest.feed([ChatFrames.end()])
+        await waitUntil("the lead's end to close the turn") { vm.transcript.isTerminated }
+        let words = vm.transcript.segments.compactMap { segment -> String? in
+            if case let .text(message) = segment.kind { return message }
+            return nil
+        }
+        XCTAssertEqual(words, ["成员把文件读完了"])
+        XCTAssertNil(vm.pendingConfirmation, "the answered block is not pending any more")
+    }
+
+    /// A stop is the last word on that run, so the ask parked on it goes with it. The console nulls the
+    /// member answer handler when the stream closes for exactly this reason
+    /// (`ChatWindow.tsx:2378-2379`); leaving 「确定」 live would reopen a bubble the screen already calls
+    /// interrupted and open a read the router can only refuse.
+    func testStoppingATurnParkedOnAMemberAskRetiresTheAnswer() async throws {
+        let (vm, stream, confirmer) = makeModel()
+        try await park(on: vm, stream, frames: [
+            ChatFrames.memberConfirm(run: "run-9", rows: [ChatFrames.pending(id: "t-1", name: "read_file")]),
+        ])
+        XCTAssertNotNil(vm.pendingConfirmation)
+
+        vm.stop()
+        XCTAssertNil(vm.pendingConfirmation, "the ask went with the run the user gave up on")
+        XCTAssertFalse(vm.canAnswerConfirmation)
+        vm.submitConfirmation()
+        vm.answerAllConfirmation(.allowed)
+        await Task.yield()
+        XCTAssertTrue(confirmer.requests.isEmpty, "nothing goes out for a dead run")
+    }
+
     // MARK: - the resumed run
 
     /// The frames that come back are the same turn's continuation: they land in the bubble that parked, not

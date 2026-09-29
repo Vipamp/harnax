@@ -13,6 +13,20 @@ public enum ChatOutcome: Equatable {
     case interrupted
 }
 
+extension ChatOutcome {
+    /// Whether this turn's run was given up on rather than finished.
+    ///
+    /// A stop or the server's own `ErrorEvent` means nothing is coming back to that turn, while an `EndEvent`
+    /// can be a tool wait closing the stream around the pause (`HarnessAgentWrapper.kt:763-798`) — the answer
+    /// is what resumes it, so an ended turn is not abandoned.
+    public var isAbandoned: Bool {
+        switch self {
+        case .interrupted, .failed: return true
+        case .streaming, .ended: return false
+        }
+    }
+}
+
 /// One displayable block of an answer. The fold only ever grows or closes these; the screen switches on
 /// `kind` and never re-derives structure from the raw frames.
 public struct ChatSegment: Identifiable, Equatable {
@@ -463,9 +477,15 @@ public struct ChatTranscript: Equatable {
     /// The block the user may answer now: the newest one with a row nobody has decided.
     ///
     /// Read off the last turn only — a parked ask from an earlier turn is history by then, and answering it
-    /// would resume a run the conversation has left behind.
+    /// would resume a run the conversation has left behind. A turn closed by a stop or by the server's
+    /// `ErrorEvent` is out too: the console retires the answer handler at exactly that point rather than
+    /// leaving 「确定」 live on a run it has called dead (`ChatWindow.tsx:2378-2379`). An `EndEvent` does
+    /// not disqualify it — the run parks and the harness closes the stream around the wait
+    /// (`HarnessAgentWrapper.kt:763-798`), and the answer is what opens a new one.
     public var pendingConfirmation: ChatPendingConfirmation? {
-        guard let turn = turns.last, let index = unansweredConfirmation(turn) else { return nil }
+        guard let turn = turns.last, !turn.outcome.isAbandoned,
+            let index = unansweredConfirmation(turn)
+        else { return nil }
         let rows = turn.segments[index].rows
         return ChatPendingConfirmation(
             segmentID: turn.segments[index].id,
@@ -511,8 +531,9 @@ public struct ChatTranscript: Equatable {
         var settled: Set<Int> = []
         for row in rows { writeAnswer(row, answered: answered, into: &turn, claimed: &settled) }
         turns[index] = turn
-        guard answered else { return }
-        // The bubble this ask parked is the one the resumed run writes into.
+        // The bubble this ask parked is the one the resumed run writes into. An ask handed back is waiting
+        // again for the same reason: the answer reached nobody, so the run is still parked even though the
+        // read that failed to carry it closed the turn as interrupted.
         turns[index].outcome = .streaming
         textSealed = false
         thinkingSealed = false
