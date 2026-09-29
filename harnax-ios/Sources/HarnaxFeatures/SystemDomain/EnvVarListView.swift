@@ -31,14 +31,12 @@ public struct EnvVarListView: View {
 
     @StateObject private var vm: EnvVarListViewModel
     private let catalog: any EnvVarCataloging
-    private let account: AccountSnapshot?
 
     @State private var target: Target?
 
-    public init(catalog: any EnvVarCataloging, account: AccountSnapshot?) {
+    public init(catalog: any EnvVarCataloging) {
         _vm = StateObject(wrappedValue: EnvVarListViewModel(catalog: catalog))
         self.catalog = catalog
-        self.account = account
     }
 
     public var body: some View {
@@ -129,7 +127,6 @@ public struct EnvVarListView: View {
                         row: row,
                         enabled: vm.status(of: row),
                         isPending: row.id.flatMap(vm.pendingIDs.contains) ?? false,
-                        canManage: row.manageable(by: account),
                         onToggle: { value in Task { await vm.setStatus(value, for: row) } },
                         onEdit: { target = .edit(row) },
                         onDelete: { vm.beginDelete(row) }
@@ -155,7 +152,6 @@ public struct EnvVarRecordCard: View {
     private let row: EnvVarSummary
     private let enabled: Bool
     private let isPending: Bool
-    private let canManage: Bool
     private let onToggle: (Bool) -> Void
     private let onEdit: () -> Void
     private let onDelete: () -> Void
@@ -164,7 +160,6 @@ public struct EnvVarRecordCard: View {
         row: EnvVarSummary,
         enabled: Bool,
         isPending: Bool,
-        canManage: Bool,
         onToggle: @escaping (Bool) -> Void,
         onEdit: @escaping () -> Void,
         onDelete: @escaping () -> Void
@@ -172,7 +167,6 @@ public struct EnvVarRecordCard: View {
         self.row = row
         self.enabled = enabled
         self.isPending = isPending
-        self.canManage = canManage
         self.onToggle = onToggle
         self.onEdit = onEdit
         self.onDelete = onDelete
@@ -234,17 +228,19 @@ public struct EnvVarRecordCard: View {
         }
     }
 
+    /// No permission gate: the console's environment-variable page runs none over the whole action column
+    /// (`env-variable/index.tsx:140-248`), and the read already returns only this account's rows
+    /// (`EnvVariableServiceImpl.kt:40-57`), so anything the backend let through is the operator's to edit.
+    /// `specs/03-system-domain.md` says so in terms: 不要统一加 gate。
     private var menu: some View {
         Menu {
             Button { onToggle(!enabled) } label: {
                 HXText(enabled ? "state.action.disable" : "state.action.enable")
             }
-            .disabled(!canManage || isPending)
+            .disabled(isPending)
 
-            if canManage {
-                Button(action: onEdit) { HXText("env.var.edit") }
-                Button(role: .destructive, action: onDelete) { HXText("state.action.delete") }
-            }
+            Button(action: onEdit) { HXText("env.var.edit") }
+            Button(role: .destructive, action: onDelete) { HXText("state.action.delete") }
         } label: {
             Image(systemName: isPending ? "hourglass" : "ellipsis")
                 .foregroundStyle(Color.hx(.textTertiary))

@@ -228,7 +228,7 @@ struct HarnaxDebugView: View {
             NavigationStack {
                 switch screen {
                 case .envVars:
-                    EnvVarListView(catalog: model.dependencies.envVars, account: model.account)
+                    EnvVarListView(catalog: model.dependencies.envVars)
                 case .apiKeys:
                     ApiKeyListView(catalog: model.dependencies.apiKeys, account: model.account)
                 default:
@@ -270,9 +270,9 @@ struct HarnaxDebugView: View {
                 case .contextTools:
                     ToolListView(tools: model.dependencies.tools)
                 case .contextMcp:
-                    McpListView(mcp: model.dependencies.mcp)
+                    McpListView(mcp: model.dependencies.mcp, account: model.account)
                 case .contextSkill:
-                    SkillHomeView(skills: model.dependencies.skills)
+                    SkillHomeView(skills: model.dependencies.skills, account: model.account)
                 case .contextCli:
                     CliListView(
                         clis: model.dependencies.clis,

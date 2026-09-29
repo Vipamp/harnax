@@ -11,14 +11,20 @@ public struct McpListView: View {
     @StateObject private var vm: McpListViewModel
     private let mcp: any McpCataloging
     private let authorizer: any McpAuthorizing
+    private let account: AccountSnapshot?
 
     @State private var editor: McpFormTarget?
     @State private var openDetail: Int64?
 
-    public init(mcp: any McpCataloging, authorizer: any McpAuthorizing = SystemBrowserAuthorizer()) {
+    public init(
+        mcp: any McpCataloging,
+        authorizer: any McpAuthorizing = SystemBrowserAuthorizer(),
+        account: AccountSnapshot? = nil
+    ) {
         _vm = StateObject(wrappedValue: McpListViewModel(mcp: mcp))
         self.mcp = mcp
         self.authorizer = authorizer
+        self.account = account
     }
 
     public var body: some View {
@@ -37,7 +43,7 @@ public struct McpListView: View {
                 McpDetailView(mcp: mcp, authorizer: authorizer, id: id)
             }
             .sheet(item: $editor) { target in
-                McpFormView(mcp: mcp, mode: target.mode) {
+                McpFormView(mcp: mcp, mode: target.mode, account: account) {
                     await vm.refresh()
                 }
             }
@@ -110,6 +116,7 @@ public struct McpListView: View {
                     McpRecordCard(
                         server: server,
                         enabled: vm.status(of: server),
+                        canManage: account?.canManage(creator: server.creator) ?? false,
                         isPending: server.id.flatMap(vm.pendingIDs.contains) ?? false,
                         isTesting: server.id.flatMap(vm.testingIDs.contains) ?? false,
                         isCheckingDelete: server.id == vm.deleteTarget?.server.id && vm.isCheckingDelete,
@@ -157,6 +164,7 @@ struct McpFormTarget: Identifiable {
 struct McpRecordCard: View {
     let server: McpServerRow
     let enabled: Bool
+    let canManage: Bool
     let isPending: Bool
     let isTesting: Bool
     let isCheckingDelete: Bool
@@ -256,6 +264,9 @@ struct McpRecordCard: View {
         }
     }
 
+    /// The console gates this menu's edit and delete on the row's creator (`pages/mcp/index.tsx:110-111`) and
+    /// leaves the card's status switch open to anyone (`EntityCard/index.tsx:294-296`), so the probe and the
+    /// switch stay here for every row while the two writes appear only on a row this account owns.
     private var menu: some View {
         Menu {
             Button(action: onTest) {
@@ -263,17 +274,19 @@ struct McpRecordCard: View {
             }
             .disabled(isTesting)
 
-            Button(action: onEdit) { HXText("mcp.edit") }
-
             Button { onToggle(!enabled) } label: {
                 HXText(enabled ? "state.action.disable" : "state.action.enable")
             }
             .disabled(isPending)
 
-            Button(role: .destructive, action: onDelete) {
-                HXText(isCheckingDelete ? "state.delete.checking" : "state.action.delete")
+            if canManage {
+                Button(action: onEdit) { HXText("mcp.edit") }
+
+                Button(role: .destructive, action: onDelete) {
+                    HXText(isCheckingDelete ? "state.delete.checking" : "state.action.delete")
+                }
+                .disabled(isCheckingDelete)
             }
-            .disabled(isCheckingDelete)
         } label: {
             Image(systemName: isPending || isTesting || isCheckingDelete ? "hourglass" : "ellipsis")
                 .foregroundStyle(Color.hx(.textTertiary))

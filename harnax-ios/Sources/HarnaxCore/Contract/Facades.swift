@@ -96,9 +96,14 @@ public struct AccountSnapshot: Codable, Equatable, Sendable {
     }
 
     /// The one rule behind edit and delete on every management screen: an administrator reaches any row,
-    /// anyone else only the rows they created. Whether the row is public plays no part, and the
-    /// enable/disable switch is not gated by this either — both match the web console
-    /// (`harnax-webui/src/utils/permissionUtil.ts:111-123`).
+    /// anyone else only the rows they created. Whether the row is public plays no part.
+    ///
+    /// It does not by itself decide the enable/disable switch: a card leaves that open to anyone
+    /// (`EntityCard/index.tsx:294-296`), while a table action column gates the whole column including the
+    /// switch (`ModelListTable.tsx:238-244`, `channel/index.tsx:360`, `api-key/index.tsx:253`), and two
+    /// pages gate nothing at all (`env-variable/index.tsx:199-246`, and `team/index.tsx` never imports this
+    /// helper). So each screen gates the way its console does — `permissionUtil.ts:111-123` is the rule, not
+    /// a blanket over every control.
     ///
     /// A row that names no creator is not manageable: the console would answer `undefined === undefined`
     /// and hand out permission to an unattributed row.
@@ -106,6 +111,17 @@ public struct AccountSnapshot: Codable, Equatable, Sendable {
         if isAdministrator { return true }
         guard let creator = hxPresented(creator), !username.isEmpty else { return false }
         return creator == username
+    }
+
+    /// Whether this account may touch a row's `isPublic` at all — `isPublicSwitchDisabled`
+    /// (`permissionUtil.ts:29-75`), which disables the control rather than hiding the row.
+    ///
+    /// An administrator and a create always may. Anyone else may only pull their own private row out to
+    /// public: a public row does not go back to private at non-administrator hands, and a row somebody else
+    /// created is not theirs to publish or hide.
+    public func canChangeVisibility(creator: String?, currentlyPublic: Bool, isCreate: Bool) -> Bool {
+        if isAdministrator || isCreate { return true }
+        return canManage(creator: creator) && !currentlyPublic
     }
 }
 

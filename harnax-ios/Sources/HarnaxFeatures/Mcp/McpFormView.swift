@@ -17,8 +17,13 @@ struct McpFormView: View {
     @State private var showsURLConfirmation = false
     private let onSaved: () async -> Void
 
-    init(mcp: any McpCataloging, mode: McpFormViewModel.Mode, onSaved: @escaping () async -> Void) {
-        _vm = StateObject(wrappedValue: McpFormViewModel(mcp: mcp, mode: mode))
+    init(
+        mcp: any McpCataloging,
+        mode: McpFormViewModel.Mode,
+        account: AccountSnapshot? = nil,
+        onSaved: @escaping () async -> Void
+    ) {
+        _vm = StateObject(wrappedValue: McpFormViewModel(mcp: mcp, mode: mode, account: account))
         self.onSaved = onSaved
     }
 
@@ -293,6 +298,7 @@ struct McpFormView: View {
                     HXText("mcp.form.isPublic")
                 }
                 .toggleStyle(.switch)
+                .disabled(!vm.canChangeVisibility)
                 .padding(.horizontal, 13)
             }
             Text(verbatim: hx("mcp.form.isPublic.note"))

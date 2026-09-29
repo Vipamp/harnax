@@ -32,14 +32,14 @@ public final class ModelFormModel: ObservableObject {
     @Published public var supportsMcp = false
     @Published public var supportsVision = false
     @Published public var isPublic: Bool {
-        didSet { if isPublic != oldValue && !canNarrowVisibility { isPublic = true } }
+        didSet { if isPublic != oldValue && !canChangeVisibility { isPublic = oldValue } }
     }
     @Published public private(set) var error: String?
     @Published public private(set) var isSaving = false
 
     public let editing: ModelSummary?
     public let providerID: Int64
-    public let canNarrowVisibility: Bool
+    public let canChangeVisibility: Bool
     private let catalog: any ModelCataloging
 
     public init(catalog: any ModelCataloging, providerID: Int64, editing: ModelSummary?, account: AccountSnapshot?) {
@@ -57,11 +57,11 @@ public final class ModelFormModel: ObservableObject {
         supportsMcp = editing?.supportsMcp ?? false
         supportsVision = editing?.supportsVision ?? false
         isPublic = editing?.isShared ?? true
-        if account?.isAdministrator == true {
-            canNarrowVisibility = true
-        } else {
-            canNarrowVisibility = editing.map { !$0.isShared } ?? true
-        }
+        canChangeVisibility = account?.canChangeVisibility(
+            creator: editing?.creator,
+            currentlyPublic: editing?.isShared ?? false,
+            isCreate: editing == nil
+        ) ?? true
     }
 
     public var isEditing: Bool { editing != nil }
@@ -213,7 +213,7 @@ struct ModelFormSheet: View {
                                 EmptyView()
                             }
                             .labelsHidden()
-                            .disabled(!vm.canNarrowVisibility && vm.isPublic)
+                            .disabled(!vm.canChangeVisibility)
                             .tint(Color.hx(.brand))
                         }
                     }

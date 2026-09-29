@@ -314,7 +314,7 @@ struct ModelProviderCard: View {
             Button { onToggle(!enabled) } label: {
                 HXText(enabled ? "state.action.disable" : "state.action.enable")
             }
-            .disabled(!canManage || isPending)
+            .disabled(isPending)
 
             Button(action: onTest) { HXText("model.provider.test") }
 

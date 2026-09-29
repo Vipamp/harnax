@@ -93,7 +93,7 @@ public struct SystemHomeView: View {
         .navigationDestination(for: SystemRoute.self) { route in
             switch route {
             case .envVars:
-                EnvVarListView(catalog: dependencies.envVars, account: account)
+                EnvVarListView(catalog: dependencies.envVars)
             case .apiKeys:
                 ApiKeyListView(catalog: dependencies.apiKeys, account: account)
             case .channels:

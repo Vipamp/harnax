@@ -34,9 +34,9 @@ public struct ContextView: View {
             case .tool:
                 ToolListView(tools: dependencies.tools)
             case .mcp:
-                McpListView(mcp: dependencies.mcp)
+                McpListView(mcp: dependencies.mcp, account: account)
             case .skill:
-                SkillHomeView(skills: dependencies.skills)
+                SkillHomeView(skills: dependencies.skills, account: account)
             case .cli:
                 CliListView(clis: dependencies.clis, sessionRefresher: dependencies.sessionRefresher)
             }

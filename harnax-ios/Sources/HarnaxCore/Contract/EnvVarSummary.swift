@@ -35,17 +35,6 @@ public struct EnvVarSummary: Decodable, Identifiable, Equatable, Sendable {
     public var displayValue: String? { hxPresented(envValue) }
     public var note: String? { hxPresented(description) }
     public var title: String? { key }
-
-    /// Whether the row is a variable this account may edit, enable or delete.
-    ///
-    /// The console gates nothing here (`harnax-webui/src/pages/env-variable/index.tsx:140-248` has no
-    /// `hasOperationPermission` at all) because the backend already answers as *missing* for any row this
-    /// caller did not type: `getEnvVariable` keeps only `creator == currentUsername` inside the caller's
-    /// tenant (`EnvVariableServiceImpl.kt:43-57`). Same rule on iOS, for the same reason — a stricter
-    /// client gate would hide actions on rows the server would have accepted.
-    public func manageable(by account: AccountSnapshot?) -> Bool {
-        account?.canManage(creator: creator) ?? false
-    }
 }
 
 /// The create body (`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/EnvVariableCreateRequest.kt:9-30`).

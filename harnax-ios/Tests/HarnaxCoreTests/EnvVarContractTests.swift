@@ -98,18 +98,6 @@ final class EnvVarContractTests: XCTestCase {
         XCTAssertNil(json?["enabled"], "the update DTO has no enabled column at all")
     }
 
-    // MARK: - gating
-
-    /// `assertOwner` on the service side, `canManage` on this one: an administrator reaches every row,
-    /// everyone else only the rows they created.
-    func testManageFlagFollowsTheAccount() throws {
-        let row = page.records[0]
-        XCTAssertTrue(row.manageable(by: AccountSnapshot(username: "admin", isAdministrator: true)))
-        XCTAssertTrue(row.manageable(by: AccountSnapshot(username: "admin")))
-        XCTAssertFalse(row.manageable(by: AccountSnapshot(username: "alice")))
-        XCTAssertFalse(row.manageable(by: nil))
-    }
-
     // MARK: - helpers
 
     /// A row the way the wire makes it: a key the service left out is a key that is absent, not a nil argument.

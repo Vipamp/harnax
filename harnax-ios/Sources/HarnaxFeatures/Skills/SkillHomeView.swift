@@ -10,14 +10,16 @@ import HarnaxKit
 /// offset and a half-loaded page tail from the previous source cannot follow it across.
 public struct SkillHomeView: View {
     private let skills: any SkillCataloging
+    private let account: AccountSnapshot?
     @State private var openSource: SkillSourceRoute?
 
-    public init(skills: any SkillCataloging) {
+    public init(skills: any SkillCataloging, account: AccountSnapshot? = nil) {
         self.skills = skills
+        self.account = account
     }
 
     public var body: some View {
-        SkillSourceListView(skills: skills, onSelect: { id, name in
+        SkillSourceListView(skills: skills, account: account, onSelect: { id, name in
             openSource = id.map { SkillSourceRoute(id: $0, name: name) }
         })
         .navigationDestination(item: $openSource) { route in

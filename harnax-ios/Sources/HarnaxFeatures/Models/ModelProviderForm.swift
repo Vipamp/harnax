@@ -27,9 +27,9 @@ public final class ModelProviderFormModel: ObservableObject {
     @Published public private(set) var isSaving = false
 
     public let editing: ModelProviderSummary?
-    /// A member may publish their own provider but may not take a published one back to private
-    /// (`harnax-webui/src/utils/permissionUtil.ts:57-75`).
-    public let canNarrowVisibility: Bool
+    /// A member may publish their own private provider, may not take a published one back to private and may
+    /// not touch a row somebody else created (`permissionUtil.ts:29-75`, one rule for both model forms).
+    public let canChangeVisibility: Bool
     private let catalog: any ModelCataloging
 
     public init(catalog: any ModelCataloging, editing: ModelProviderSummary?, account: AccountSnapshot?) {
@@ -41,11 +41,11 @@ public final class ModelProviderFormModel: ObservableObject {
         self.secret = ""
         self.address = editing?.baseUrl ?? ""
         self.isPublic = editing?.isShared ?? true
-        if account?.isAdministrator == true {
-            canNarrowVisibility = true
-        } else {
-            canNarrowVisibility = editing.map { !$0.isShared } ?? true
-        }
+        canChangeVisibility = account?.canChangeVisibility(
+            creator: editing?.creator,
+            currentlyPublic: editing?.isShared ?? false,
+            isCreate: editing == nil
+        ) ?? true
     }
 
     public var isEditing: Bool { editing != nil }
@@ -164,7 +164,7 @@ struct ModelProviderFormSheet: View {
                                 EmptyView()
                             }
                             .labelsHidden()
-                            .disabled(!vm.canNarrowVisibility && vm.isPublic)
+                            .disabled(!vm.canChangeVisibility)
                             .tint(Color.hx(.brand))
                         }
                     }

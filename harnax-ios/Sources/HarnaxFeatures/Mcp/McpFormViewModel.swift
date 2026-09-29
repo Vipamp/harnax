@@ -156,6 +156,9 @@ public final class McpFormViewModel: ObservableObject {
     @Published public private(set) var isSaving = false
 
     public let mode: Mode
+    /// Whether this account may move the public/private switch at all — the same rule the two model forms
+    /// apply (`permissionUtil.ts:29-75`).
+    public let canChangeVisibility: Bool
 
     private let mcp: any McpCataloging
     private let original: McpServerRow?
@@ -164,7 +167,7 @@ public final class McpFormViewModel: ObservableObject {
     private var headersTouched = false
     private var envParamsTouched = false
 
-    public init(mcp: any McpCataloging, mode: Mode) {
+    public init(mcp: any McpCataloging, mode: Mode, account: AccountSnapshot? = nil) {
         self.mcp = mcp
         self.mode = mode
         switch mode {
@@ -204,6 +207,11 @@ public final class McpFormViewModel: ObservableObject {
             isPublic = row.isShared
             enabled = row.isEnabled
         }
+        canChangeVisibility = account?.canChangeVisibility(
+            creator: original?.creator,
+            currentlyPublic: original?.isShared ?? false,
+            isCreate: original == nil
+        ) ?? true
     }
 
     /// The transports this sheet may offer.

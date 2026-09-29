@@ -21,13 +21,16 @@ public struct SkillSourceListView: View {
     /// rather than being re-read deeper down, because an empty table has no row to ask.
     private let onSelect: (Int64?, String?) -> Void
     private let skills: any SkillCataloging
+    private let account: AccountSnapshot?
 
     public init(
         skills: any SkillCataloging,
+        account: AccountSnapshot? = nil,
         onSelect: @escaping (Int64?, String?) -> Void = { _, _ in }
     ) {
         _vm = StateObject(wrappedValue: SkillSourceListViewModel(skills: skills))
         self.skills = skills
+        self.account = account
         self.onSelect = onSelect
     }
 
@@ -151,7 +154,9 @@ public struct SkillSourceListView: View {
                 Spacer(minLength: 0)
                 HXStatusDot(tone: source.isEnabled ? .success : .textTertiary)
             }
-            menu(source)
+            if mayWrite(source) {
+                menu(source)
+            }
         }
         .padding(12)
         .background(
@@ -179,6 +184,15 @@ public struct SkillSourceListView: View {
         case .builtin: "skill.type.builtin"
         case .unknown: "skill.type.other"
         }
+    }
+
+    /// Whether this row carries an action menu at all.
+    ///
+    /// The console hides the whole cluster — switch, sync, install, edit, delete — rather than disabling each
+    /// control in it, on two conditions: the platform-owned row never has one, and anyone who is not an
+    /// administrator only gets one on their own rows (`RepositoryList.tsx:384,438`).
+    private func mayWrite(_ source: SkillSourceSummary) -> Bool {
+        !source.isPlatformOwned && (account?.canManage(creator: source.creator) ?? false)
     }
 
     @ViewBuilder

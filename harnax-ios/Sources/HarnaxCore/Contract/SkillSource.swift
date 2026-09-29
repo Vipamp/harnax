@@ -154,6 +154,16 @@ public struct SkillSourceSummary: Decodable, Identifiable, Equatable, Sendable {
     public var isShared: Bool { isPublic == 1 }
     public var title: String { hxPresented(name) ?? "" }
 
+    /// The seeded, platform-owned row the console offers no write on, sync and delete included
+    /// (`harnax-webui/src/pages/skill/components/RepositoryList.tsx:384,438`).
+    ///
+    /// Two keys, because the console tests the name while the seed writes the type: a row re-tagged by hand
+    /// stays read-only there, and a builtin row under another name stays read-only here.
+    public var isPlatformOwned: Bool { type.isBuiltin || name == Self.builtinRepositoryName }
+
+    /// `BUILTIN_CLI_SKILL_REPO` (`harnax-webui/src/constants/builtinRepository.ts:9`, `BuiltinRepository.kt:17`).
+    public static let builtinRepositoryName = "builtin-cli-skills"
+
     /// The address line under the name: `sourceConfig` is the live carrier and the plain `url` / `branch`
     /// columns are only the legacy fallback, which is why the config wins (`SkillSourceConfigs.kt:22-35`).
     public var endpoint: String? {
