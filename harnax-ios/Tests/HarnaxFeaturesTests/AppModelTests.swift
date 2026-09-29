@@ -27,7 +27,12 @@ final class AppModelTests: XCTestCase {
             channels: system,
             tokenStats: system,
             sessions: chat,
+            sessionCreate: chat,
+            sessionConfig: chat,
+            workspace: chat,
+            teamArtifacts: chat,
             chatHistory: chat,
+            plan: chat,
             commands: chat,
             streaming: chat
         ))

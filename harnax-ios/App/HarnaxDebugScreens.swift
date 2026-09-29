@@ -168,7 +168,12 @@ struct HarnaxDebugView: View {
             channels: HarnaxDebugChannels(),
             tokenStats: HarnaxDebugTokenStats(),
             sessions: HarnaxDebugSessions(screen: screen),
+            sessionCreate: HarnaxDebugSessionExtras(),
+            sessionConfig: HarnaxDebugSessionExtras(),
+            workspace: HarnaxDebugSessionExtras(),
+            teamArtifacts: HarnaxDebugSessionExtras(),
             chatHistory: HarnaxDebugHistory(),
+            plan: HarnaxDebugSessionExtras(),
             commands: HarnaxDebugCommands(),
             streaming: HarnaxDebugStreaming()
         ))
@@ -923,6 +928,62 @@ struct HarnaxDebugStreaming: AgentStreaming {
     private func unfaked() -> AsyncThrowingStream<ChatEvent, any Error> {
         AsyncThrowingStream { $0.finish(throwing: APIError.offline) }
     }
+}
+
+/// The five session reads and writes a capture cannot drive: no screenshot presses send, uploads a file, or
+/// picks an executor, so each answers the same refusal every other unfaked write does.
+struct HarnaxDebugSessionExtras: SessionCreating, SessionConfiguring, SessionWorkspaceReading,
+    TeamArtifactReading, PlanReading {
+    func sessionTitleTaken(_ title: String) async -> Result<Bool, APIError> { .failure(.offline) }
+
+    func executorChoices() async -> Result<SessionExecutorChoices, APIError> { .failure(.offline) }
+
+    func createSession(_ draft: SessionCreateDraft) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
+
+    func sessionConfig(sessionId: String) async -> Result<SessionSummary, APIError> { .failure(.offline) }
+
+    func updateSessionConfig(
+        sessionId: String,
+        _ change: SessionChatChange
+    ) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
+
+    func sandboxStatus(sessionId: String) async -> Result<SandboxStatus, APIError> { .failure(.offline) }
+
+    func workspaceFiles(sessionId: String, path: String) async -> Result<[WorkspaceFile], APIError> {
+        .failure(.offline)
+    }
+
+    func readWorkspaceFile(sessionId: String, path: String) async -> Result<WorkspaceFileContent, APIError> {
+        .failure(.offline)
+    }
+
+    func uploadWorkspaceFile(
+        sessionId: String,
+        path: String,
+        fileName: String,
+        mimeType: String,
+        payload: Data
+    ) async -> Result<WorkspaceUpload, APIError> { .failure(.offline) }
+
+    func downloadWorkspaceFile(sessionId: String, path: String) async -> Result<WorkspaceDownload, APIError> {
+        .failure(.offline)
+    }
+
+    func downloadAttachment(
+        _ attachment: ChatFileAttachment,
+        sessionId: String
+    ) async -> Result<WorkspaceDownload, APIError> { .failure(.offline) }
+
+    func teamArtifacts(sessionId: String) async -> Result<[TeamArtifact], APIError> { .failure(.offline) }
+
+    func downloadTeamArtifact(
+        fileId: String,
+        sessionId: String
+    ) async -> Result<TeamArtifactFile, APIError> { .failure(.offline) }
+
+    func planNotes(sessionId: String) async -> Result<[PlanNote], APIError> { .failure(.offline) }
+
+    func currentPlan(sessionId: String) async -> Result<CurrentPlan, APIError> { .failure(.offline) }
 }
 
 /// The single row the drill-down captures open on. Decoded once from the same fixture the list serves, so

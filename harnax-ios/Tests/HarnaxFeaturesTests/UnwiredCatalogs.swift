@@ -214,11 +214,12 @@ struct UnwiredCatalogs: ModelCataloging, ToolCataloging, SkillCataloging, McpCat
     }
 }
 
-/// The four chat-tab dependencies for tests that never open the tab.
+/// The chat tab's dependencies for tests that never open the tab.
 ///
 /// Same rule as `UnwiredCatalogs`: every method fails, so a screen reaching this object in a test shows up as
 /// a failing call rather than as a list or a stream that quietly renders nothing.
-struct UnwiredChat: SessionCataloging, ChatHistoryReading, AgentCommanding, AgentStreaming {
+struct UnwiredChat: SessionCataloging, ChatHistoryReading, AgentCommanding, AgentStreaming, SessionCreating,
+    SessionConfiguring, SessionWorkspaceReading, TeamArtifactReading, PlanReading {
     private func unwired() -> APIError {
         .business(code: -1, message: "this test never wires the chat tab")
     }
@@ -251,6 +252,67 @@ struct UnwiredChat: SessionCataloging, ChatHistoryReading, AgentCommanding, Agen
     func confirm(_ request: ConfirmAgentRequest) async -> AsyncThrowingStream<ChatEvent, any Error> {
         AsyncThrowingStream { $0.finish(throwing: unwired()) }
     }
+
+    // MARK: - new conversation
+
+    func sessionTitleTaken(_ title: String) async -> Result<Bool, APIError> { .failure(unwired()) }
+
+    func executorChoices() async -> Result<SessionExecutorChoices, APIError> { .failure(unwired()) }
+
+    func createSession(_ draft: SessionCreateDraft) async -> Result<EmptyResponse, APIError> { .failure(unwired()) }
+
+    // MARK: - conversation config
+
+    func sessionConfig(sessionId: String) async -> Result<SessionSummary, APIError> { .failure(unwired()) }
+
+    func updateSessionConfig(
+        sessionId: String,
+        _ change: SessionChatChange
+    ) async -> Result<EmptyResponse, APIError> { .failure(unwired()) }
+
+    // MARK: - workspace
+
+    func sandboxStatus(sessionId: String) async -> Result<SandboxStatus, APIError> { .failure(unwired()) }
+
+    func workspaceFiles(sessionId: String, path: String) async -> Result<[WorkspaceFile], APIError> {
+        .failure(unwired())
+    }
+
+    func readWorkspaceFile(sessionId: String, path: String) async -> Result<WorkspaceFileContent, APIError> {
+        .failure(unwired())
+    }
+
+    func uploadWorkspaceFile(
+        sessionId: String,
+        path: String,
+        fileName: String,
+        mimeType: String,
+        payload: Data
+    ) async -> Result<WorkspaceUpload, APIError> { .failure(unwired()) }
+
+    func downloadWorkspaceFile(sessionId: String, path: String) async -> Result<WorkspaceDownload, APIError> {
+        .failure(unwired())
+    }
+
+    func downloadAttachment(
+        _ attachment: ChatFileAttachment,
+        sessionId: String
+    ) async -> Result<WorkspaceDownload, APIError> { .failure(unwired()) }
+
+    // MARK: - team artifacts
+
+    func teamArtifacts(sessionId: String) async -> Result<[TeamArtifact], APIError> { .failure(unwired()) }
+
+    func downloadTeamArtifact(
+        fileId: String,
+        sessionId: String
+    ) async -> Result<TeamArtifactFile, APIError> { .failure(unwired()) }
+
+    // MARK: - plans
+
+    func planNotes(sessionId: String) async -> Result<[PlanNote], APIError> { .failure(unwired()) }
+
+    func currentPlan(sessionId: String) async -> Result<CurrentPlan, APIError> { .failure(unwired()) }
 }
 
 /// The four system-tab catalogs for tests that never open the tab.

@@ -21,7 +21,12 @@ public struct HarnaxDependencies: Sendable {
     public let channels: any ChannelCataloging
     public let tokenStats: any TokenStatsCataloging
     public let sessions: any SessionCataloging
+    public let sessionCreate: any SessionCreating
+    public let sessionConfig: any SessionConfiguring
+    public let workspace: any SessionWorkspaceReading
+    public let teamArtifacts: any TeamArtifactReading
     public let chatHistory: any ChatHistoryReading
+    public let plan: any PlanReading
     public let commands: any AgentCommanding
     /// The one dependency that is not on the admin surface: a streamed answer cannot go through the
     /// transport every other client shares, which waits for a whole body.
@@ -43,7 +48,12 @@ public struct HarnaxDependencies: Sendable {
         channels: any ChannelCataloging,
         tokenStats: any TokenStatsCataloging,
         sessions: any SessionCataloging,
+        sessionCreate: any SessionCreating,
+        sessionConfig: any SessionConfiguring,
+        workspace: any SessionWorkspaceReading,
+        teamArtifacts: any TeamArtifactReading,
         chatHistory: any ChatHistoryReading,
+        plan: any PlanReading,
         commands: any AgentCommanding,
         streaming: any AgentStreaming
     ) {
@@ -62,7 +72,12 @@ public struct HarnaxDependencies: Sendable {
         self.channels = channels
         self.tokenStats = tokenStats
         self.sessions = sessions
+        self.sessionCreate = sessionCreate
+        self.sessionConfig = sessionConfig
+        self.workspace = workspace
+        self.teamArtifacts = teamArtifacts
         self.chatHistory = chatHistory
+        self.plan = plan
         self.commands = commands
         self.streaming = streaming
     }
@@ -82,9 +97,9 @@ public struct HarnaxDependencies: Sendable {
             // next launch.
             language: { AcceptLanguage.current() }
         )
-        // One admin surface, sixteen protocols: every `/api/admin/**` route family hangs off the same client,
-        // so the agent, team, task, refresh, five context domains, four system reads and the three session reads
-        // share its header injection.
+        // One admin surface, twenty-one protocols: every `/api/admin/**` route family hangs off the same
+        // client, so the agent, team, task, refresh, five context domains, four system reads and the eight
+        // session reads and writes share its header injection.
         let admin = AdminClient(client: client)
         return HarnaxDependencies(
             auth: AuthFlow(client: client, session: session, configs: configs),
@@ -102,7 +117,12 @@ public struct HarnaxDependencies: Sendable {
             channels: admin,
             tokenStats: admin,
             sessions: admin,
+            sessionCreate: admin,
+            sessionConfig: admin,
+            workspace: admin,
+            teamArtifacts: admin,
             chatHistory: admin,
+            plan: admin,
             commands: admin,
             streaming: ChatStreamClient(
                 configs: configs,
