@@ -97,6 +97,7 @@ public final class SkillSyncModel: ObservableObject {
     /// caller had nothing to store" — and sending it would overwrite the source's sync report with a lie
     /// about a run that never happened (`SkillSourceInstallRequest.kt:6-11`).
     public func submit() async {
+        guard !isSubmitting else { return }
         guard !selectedNames.isEmpty else {
             submitError = hx("skill.sync.pickOne")
             return

@@ -102,26 +102,35 @@ enum CliDetailPresenter {
 @MainActor
 public final class CliDetailModel: ObservableObject {
     public enum Phase: Equatable {
+        case unaddressable
         case loading
         case ready
         case failed(String)
     }
 
-    @Published public private(set) var phase: Phase = .loading
+    @Published public private(set) var phase: Phase
     @Published public private(set) var detail: CliSummary?
     /// Set once the read answered, whether or not it answered well: the sheet distinguishes "still on the
     /// wire" from "nothing to show" the same way the drawer's `!detail && !loading` branch does.
     @Published public private(set) var hasAnswered = false
 
     private let clis: any CliCataloging
-    private let id: Int64
+    private let id: Int64?
 
-    public init(clis: any CliCataloging, id: Int64) {
+    /// `CliResponse.kt` declares the id a nullable `Long?`, so a page row can arrive without one. With no
+    /// address there is nothing to read, and inventing one would spend a request on a package nobody
+    /// registered and report the server's refusal as if the row had gone away.
+    public init(clis: any CliCataloging, id: Int64?) {
         self.clis = clis
         self.id = id
+        self.phase = id == nil ? .unaddressable : .loading
     }
 
     public func load() async {
+        guard let id else {
+            phase = .unaddressable
+            return
+        }
         phase = .loading
         switch await clis.cliDetail(id: id) {
         case let .success(detail):
@@ -148,7 +157,7 @@ public struct CliDetailSheet: View {
     private let fallbackTitle: String
 
     public init(clis: any CliCataloging, cli: CliSummary) {
-        _model = StateObject(wrappedValue: CliDetailModel(clis: clis, id: cli.id ?? 0))
+        _model = StateObject(wrappedValue: CliDetailModel(clis: clis, id: cli.id))
         self.fallbackTitle = cli.title ?? ""
     }
 
@@ -164,6 +173,8 @@ public struct CliDetailSheet: View {
     @ViewBuilder
     private var content: some View {
         switch model.phase {
+        case .unaddressable:
+            HXStateView(.empty, message: hx("cli.detail.noAddress"))
         case .loading:
             HXStateView(.loading)
         case let .failed(message):

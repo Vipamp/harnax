@@ -122,9 +122,10 @@ public struct ModelProviderListView: View {
                         tone: .danger
                     )
                 }
-                // Index identity, as everywhere else on this surface: a page may carry rows whose `id` the
-                // backend left null, and two nil ids under one identity would drop a card.
-                ForEach(Array(vm.items.enumerated()), id: \.offset) { index, provider in
+                // The provider's own identity: the counts a card shows are keyed the same way, so a row that
+                // moved must not keep the read of whoever held that slot before. This DTO declares `id`
+                // non-null (`ModelProviderResponse.kt:13-43`), so no row is unkeyable.
+                ForEach(vm.items, id: \.providerID) { provider in
                     ModelProviderCard(
                         provider: provider,
                         enabled: vm.status(of: provider),
@@ -139,7 +140,9 @@ public struct ModelProviderListView: View {
                         onDelete: { pendingDelete = provider }
                     )
                     .onAppear {
-                        if index == vm.items.count - 1 { Task { await vm.loadMore() } }
+                        if provider.providerID == vm.items.last?.providerID {
+                            Task { await vm.loadMore() }
+                        }
                     }
                 }
                 if vm.isAppending {

@@ -206,6 +206,7 @@
 "cli.empty" = "No registered CLI packages";
 "cli.empty.filtered" = "No CLI package matches this search or filter";
 "cli.action.detail" = "View declaration";
+"cli.detail.noAddress" = "This row carries no package id, so its declaration cannot be looked up";
 "cli.chip.skill" = "Skill %@";
 "cli.chip.digest" = "Digest %@";
 "cli.disable.title" = "Disable this CLI?";

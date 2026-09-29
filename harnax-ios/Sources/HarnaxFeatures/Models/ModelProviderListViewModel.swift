@@ -64,6 +64,16 @@ public final class ModelProviderListViewModel: ObservableObject {
     private let catalog: any ModelCataloging
     private var pages: PagedState<ModelProviderSummary>
     private var searchTask: Task<Void, Never>?
+    /// The identity of the query the screen is waiting for. `filter.didSet`, `.refreshable` and the retry
+    /// row all spawn a refresh, and a cancelled debounce cannot retract a read whose `await` has already
+    /// started — so without an identity the last answer to arrive wins `items`, `pageNum` and `total`, and
+    /// the rows on screen belong to the other query while paging continues from its page number.
+    private var refreshGeneration = 0
+    /// One page read on the wire at a time. A request that arrives while one is out neither overlaps it nor
+    /// is thrown away: it bumps the generation, which retires the answer on the wire, and the in-flight run
+    /// goes out again for the newer query before it returns.
+    private var isRefreshing = false
+    private var rerunRequested = false
 
     /// The console's provider page is fixed at eight cards (`harnax-webui/src/pages/model/index.tsx:52`),
     /// which is also what a two-column grid fills on one screen.
@@ -90,6 +100,21 @@ public final class ModelProviderListViewModel: ObservableObject {
     }
 
     public func refresh() async {
+        refreshGeneration += 1
+        guard !isRefreshing else {
+            rerunRequested = true
+            return
+        }
+        await runRefresh(generation: refreshGeneration)
+        while rerunRequested {
+            rerunRequested = false
+            await runRefresh(generation: refreshGeneration)
+        }
+    }
+
+    private func runRefresh(generation: Int) async {
+        isRefreshing = true
+        defer { isRefreshing = false }
         inlineError = nil
         if items.isEmpty { phase = .loading }
         switch await catalog.providerPage(
@@ -100,12 +125,15 @@ public final class ModelProviderListViewModel: ObservableObject {
             size: pages.pageSize
         ) {
         case let .success(page):
+            guard generation == refreshGeneration else { return }
             pages.replace(with: page)
             statusOverrides = statusOverrides.filter { pendingIDs.contains($0.key) }
             stats = [:]
             tests = [:]
             apply()
+            await readStats()
         case let .failure(error):
+            guard generation == refreshGeneration else { return }
             let text = ErrorMessage.text(for: error)
             if items.isEmpty {
                 phase = .failed(text)
@@ -130,6 +158,7 @@ public final class ModelProviderListViewModel: ObservableObject {
             inlineError = nil
             pages.append(with: page)
             apply()
+            await readStats()
         case let .failure(error):
             inlineError = ErrorMessage.text(for: error)
         }
@@ -144,6 +173,20 @@ public final class ModelProviderListViewModel: ObservableObject {
             stats[provider.providerID] = .loaded(loaded)
         } else {
             stats[provider.providerID] = .unavailable
+        }
+    }
+
+    /// Every row the page landed needs its counts, and neither page answer puts them there. A card's own
+    /// `onAppear` covers a row that appears, but not one that was already on screen when the page was
+    /// replaced — and a refresh discards the map, so those cards would sit on "loading" for the rest of
+    /// the session.
+    private func readStats() async {
+        let missing = items.filter { stats[$0.providerID] == nil || stats[$0.providerID] == .pending }
+        guard !missing.isEmpty else { return }
+        await withTaskGroup(of: Void.self) { group in
+            for provider in missing {
+                group.addTask { await self.loadStats(for: provider) }
+            }
         }
     }
 

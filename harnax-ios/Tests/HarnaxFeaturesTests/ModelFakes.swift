@@ -37,6 +37,13 @@ final class FakeModelCatalog: ModelCataloging, @unchecked Sendable {
     private(set) var modelSaveCalls: [(id: Int64?, body: ModelSaveRequest)] = []
     var modelSaveReplies: [Result<EmptyResponse, APIError>] = []
 
+    /// Both saves are parkable. A form has to be able to say what a second tap does while the first answer
+    /// is still out, and that window is otherwise far too short to look at (`FakeEnvVars` does the same for
+    /// its create and update).
+    var gateWrites = false
+
+    private var parked: [() -> Void] = []
+
     func providerPage(
         name: String?,
         type: String?,
@@ -66,7 +73,7 @@ final class FakeModelCatalog: ModelCataloging, @unchecked Sendable {
 
     func saveProvider(id: Int64?, request: ModelProviderSaveRequest) async -> Result<EmptyResponse, APIError> {
         providerSaveCalls.append((id: id, body: request))
-        return providerSaveReplies.isEmpty ? .success(EmptyResponse()) : providerSaveReplies.removeFirst()
+        return await write(\.providerSaveReplies)
     }
 
     func testProvider(id: Int64) async -> Result<Bool, APIError> {
@@ -99,7 +106,31 @@ final class FakeModelCatalog: ModelCataloging, @unchecked Sendable {
 
     func saveModel(id: Int64?, request: ModelSaveRequest) async -> Result<EmptyResponse, APIError> {
         modelSaveCalls.append((id: id, body: request))
-        return modelSaveReplies.isEmpty ? .success(EmptyResponse()) : modelSaveReplies.removeFirst()
+        return await write(\.modelSaveReplies)
+    }
+
+    /// Runs every parked save in the order it went out, each pulling its own next reply.
+    func releaseWrites() {
+        let waiting = parked
+        parked = []
+        for resume in waiting { resume() }
+    }
+
+    private func write(
+        _ queue: ReferenceWritableKeyPath<FakeModelCatalog, [Result<EmptyResponse, APIError>]>
+    ) async -> Result<EmptyResponse, APIError> {
+        guard gateWrites else { return next(from: queue) }
+        return await withCheckedContinuation { continuation in
+            parked.append { continuation.resume(returning: self.next(from: queue)) }
+        }
+    }
+
+    /// A save nobody queued still answers as a success, the way this double always has: the forms only care
+    /// that the stack took the write.
+    private func next(
+        from queue: ReferenceWritableKeyPath<FakeModelCatalog, [Result<EmptyResponse, APIError>]>
+    ) -> Result<EmptyResponse, APIError> {
+        self[keyPath: queue].isEmpty ? .success(EmptyResponse()) : self[keyPath: queue].removeFirst()
     }
 }
 

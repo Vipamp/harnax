@@ -19,6 +19,13 @@ final class FakeClis: CliCataloging, @unchecked Sendable {
     private(set) var relatedAgentRequests: [Int64] = []
     var relatedAgentsReply: Result<[RelatedAgent], APIError> = .success([])
 
+    /// The blast-radius read is parkable, because the switch's decision window sits inside it: `requestStatus`
+    /// is still judging while this call is out, and a second tap has to be refused there rather than ask the
+    /// same question twice.
+    var gateRelatedAgents = false
+
+    private var parked: [() -> Void] = []
+
     private(set) var relatedSessionRequests: [Int64] = []
     var relatedSessionsReply: Result<[RelatedSession], APIError> = .success([])
 
@@ -43,7 +50,17 @@ final class FakeClis: CliCataloging, @unchecked Sendable {
 
     func cliRelatedAgents(id: Int64) async -> Result<[RelatedAgent], APIError> {
         relatedAgentRequests.append(id)
-        return relatedAgentsReply
+        guard gateRelatedAgents else { return relatedAgentsReply }
+        return await withCheckedContinuation { continuation in
+            parked.append { continuation.resume(returning: self.relatedAgentsReply) }
+        }
+    }
+
+    /// Runs every parked read in the order it went out.
+    func releaseReads() {
+        let waiting = parked
+        parked = []
+        for resume in waiting { resume() }
     }
 
     func cliRelatedSessions(id: Int64) async -> Result<[RelatedSession], APIError> {

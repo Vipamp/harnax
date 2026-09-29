@@ -26,7 +26,7 @@ public struct SkillHomeView: View {
     }
 }
 
-/// Its own type rather than the bare id: `SkillTableView` already registers an `Int64` destination for the
+/// Its own type rather than the bare id: `SkillTableView` already registers a destination of its own for the
 /// skill detail one level deeper, and one stack may only carry one destination per type.
 private struct SkillSourceRoute: Identifiable, Hashable {
     let id: Int64

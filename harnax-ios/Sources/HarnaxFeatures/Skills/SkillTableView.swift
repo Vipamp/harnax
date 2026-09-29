@@ -65,9 +65,22 @@ public struct SkillTableView: View {
         .onChange(of: sourceID) { next in
             Task { await vm.show(id: next) }
         }
-        .navigationDestination(for: Int64.self) { id in
-            SkillDetailView(id: id, skills: skills)
+        .navigationDestination(for: SkillDetailRoute.self) { route in
+            SkillDetailView(id: route.id, skills: skills)
         }
+    }
+
+    /// The skill detail's address, as its own type. `SkillItem.id` is nullable (`SkillResponse.kt:13`), and a
+    /// link that sends an `Optional` to a stack holding one destination per type would match nothing: the row
+    /// looks tappable and the tap is swallowed. Wrapping the unwrapped id is what makes that mismatch a
+    /// compile error instead of a dead control, and it lets a row without an id drop the link entirely.
+    public struct SkillDetailRoute: Hashable {
+        public let id: Int64
+    }
+
+    /// The route a row offers, or `nil` when the row has no address to send.
+    static func detailRoute(for skill: SkillItem) -> SkillDetailRoute? {
+        skill.id.map { SkillDetailRoute(id: $0) }
     }
 
     /// The status filter. The source this table belongs to is named by the navigation title instead: a
@@ -94,11 +107,12 @@ public struct SkillTableView: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 4) {
-                    NavigationLink(value: skill.id) {
-                        Text(verbatim: skill.title ?? hx("skill.table.unnamed"))
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Color.hx(.textPrimary))
-                            .lineLimit(1)
+                    if let route = Self.detailRoute(for: skill) {
+                        NavigationLink(value: route) {
+                            detailTitle(skill)
+                        }
+                    } else {
+                        detailTitle(skill)
                     }
                     if let detail = skill.detail {
                         Text(verbatim: detail)
@@ -128,6 +142,16 @@ public struct SkillTableView: View {
         .padding(12)
         .background(Color.hx(.surface), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .disabled(skill.id == nil)
+    }
+
+    /// The row's first line. Shared by the linked and the unlinked case so an addressless row looks the same
+    /// as every other one except for the arrow.
+    @ViewBuilder
+    private func detailTitle(_ skill: SkillItem) -> some View {
+        Text(verbatim: skill.title ?? hx("skill.table.unnamed"))
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(Color.hx(.textPrimary))
+            .lineLimit(1)
     }
 
     /// The table's one write. The disable direction is gated on the row's own binding counts, so the menu

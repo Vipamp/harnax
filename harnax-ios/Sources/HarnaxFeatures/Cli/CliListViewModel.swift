@@ -131,6 +131,7 @@ public final class CliListViewModel: ObservableObject {
     ///    offers the refresh;
     /// 4. disabling is the direction that removes something, so it asks first and names who loses.
     public func requestStatus(_ enabled: Bool, for cli: CliSummary) async {
+        guard !isCheckingStatus else { return }
         guard let id = cli.id else { return }
         inlineError = nil
         isCheckingStatus = true

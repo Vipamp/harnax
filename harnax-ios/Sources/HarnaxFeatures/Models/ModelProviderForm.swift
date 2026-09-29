@@ -93,6 +93,7 @@ public final class ModelProviderFormModel: ObservableObject {
     /// still in the field (`ModelProviderServiceImpl.kt:63-66,96-101`).
     @discardableResult
     public func submit() async -> Bool {
+        guard !isSaving else { return false }
         if let problem = validate() {
             error = problem
             return false

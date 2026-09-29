@@ -207,6 +207,7 @@
 "cli.empty" = "暂无已登记的 CLI 包";
 "cli.empty.filtered" = "没有符合条件的 CLI 包";
 "cli.action.detail" = "查看声明";
+"cli.detail.noAddress" = "该行没有包 ID，无法查询它的声明";
 "cli.chip.skill" = "技能 %@";
 "cli.chip.digest" = "摘要 %@";
 "cli.disable.title" = "停用该 CLI？";

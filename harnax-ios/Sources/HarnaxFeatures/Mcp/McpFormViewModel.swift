@@ -387,6 +387,7 @@ public final class McpFormViewModel: ObservableObject {
     }
 
     public func save(acknowledgingURLChange: Bool = false) async -> McpFormResult {
+        guard !isSaving else { return .invalid([]) }
         let issues = validate()
         if !issues.isEmpty { return .invalid(issues) }
         if acknowledgingURLChange == false && movesAuthorizedResource { return .needsURLConfirmation }

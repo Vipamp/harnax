@@ -13,6 +13,9 @@ public struct SkillSourceListView: View {
     @State private var syncing: SkillSourceSummary?
     @State private var uploading = false
     @State private var showReport = false
+    /// What the open sheet draws. The view model's own report is published only until the sheet goes away, so
+    /// the sheet cannot read it through the dismissal it triggers on the way out.
+    @State private var reportToShow: SkillInstallReport?
 
     /// Hands back the picked source's id and the name to title the next screen with. The name travels here
     /// rather than being re-read deeper down, because an empty table has no row to ask.
@@ -68,8 +71,10 @@ public struct SkillSourceListView: View {
             }
         }
         .task { await vm.refresh() }
-        .onChange(of: vm.selection) { id in
-            onSelect(id, hxPresented(vm.items.first(where: { $0.id == id })?.title))
+        .onChange(of: vm.pendingOpen) { _, source in
+            guard let source else { return }
+            onSelect(source.id, hxPresented(source.title))
+            vm.didOpen()
         }
         .refreshable { await vm.refresh() }
         .sheet(item: $syncing) { source in
@@ -78,13 +83,14 @@ public struct SkillSourceListView: View {
         .sheet(isPresented: $uploading) {
             SkillUploadSheet(vm: vm)
         }
-        .sheet(isPresented: $showReport) {
-            if let report = vm.lastReport {
+        .sheet(isPresented: $showReport, onDismiss: { vm.dismissReport() }) {
+            if let report = reportToShow {
                 SkillReportSheet(report: report)
             }
         }
-        .onChange(of: vm.lastReport) {
-            showReport = vm.lastReport != nil
+        .onChange(of: vm.lastReport) { _, report in
+            reportToShow = report
+            showReport = report != nil
         }
         .confirmationDialog(
             Text(verbatim: deleteTitle),
@@ -153,7 +159,7 @@ public struct SkillSourceListView: View {
             in: RoundedRectangle(cornerRadius: 14, style: .continuous)
         )
         .contentShape(Rectangle())
-        .onTapGesture { vm.selection = source.id }
+        .onTapGesture { vm.open(source) }
     }
 
     @ViewBuilder

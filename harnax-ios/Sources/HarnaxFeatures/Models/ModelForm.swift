@@ -136,6 +136,7 @@ public final class ModelFormModel: ObservableObject {
 
     @discardableResult
     public func submit() async -> Bool {
+        guard !isSaving else { return false }
         if let problem = validate() {
             error = problem
             return false
