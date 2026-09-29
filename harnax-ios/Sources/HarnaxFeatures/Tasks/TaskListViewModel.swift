@@ -71,6 +71,12 @@ public final class TaskListViewModel: ObservableObject {
     private var pages: PagedState<AgentTaskSummary>
     private var searchTask: Task<Void, Never>?
     private var triggeredReloadTask: Task<Void, Never>?
+    /// Refresh identity and the one-in-flight rule, exactly as `AgentListViewModel` documents them. This
+    /// screen has three writers of the same rows — the keyword debounce, the three-second tick and the
+    /// delayed re-read after a run — so "whichever answer arrives last wins" is not a rare race here.
+    private var refreshGeneration = 0
+    private var isRefreshing = false
+    private var rerunRequested = false
     /// `§2.5`: three seconds, but only while the page holds a Running or Stopping row — the loop cancels itself
     /// the moment the data stops asking, which is what makes this poll data-driven rather than constant.
     private let pollInterval: Duration
@@ -106,10 +112,25 @@ public final class TaskListViewModel: ObservableObject {
     }
 
     public func refresh() async {
+        refreshGeneration += 1
+        guard !isRefreshing else {
+            rerunRequested = true
+            return
+        }
+        await runRefresh(generation: refreshGeneration)
+        while rerunRequested {
+            rerunRequested = false
+            await runRefresh(generation: refreshGeneration)
+        }
+    }
+
+    private func runRefresh(generation: Int) async {
+        isRefreshing = true
+        defer { isRefreshing = false }
         inlineError = nil
         noticeLines = []
         if items.isEmpty { phase = .loading }
-        await reload()
+        await reload(reporting: true, generation: generation)
     }
 
     /// The same page, read again without touching the banners.
@@ -118,16 +139,19 @@ public final class TaskListViewModel: ObservableObject {
     /// seconds after it appeared, and a failed tick is ignored outright — the console's own loop swallows it
     /// (`harnax-webui/src/pages/agent-task/components/TaskLogModal.tsx:107`), because a banner every three seconds
     /// over a list that is merely stale is worse than the staleness.
+    ///
+    /// It reads the query the screen settled on rather than asking for a new one, so it neither bumps the
+    /// generation nor queues a rerun: an answer that has been overtaken is dropped where it lands.
     private func silentReload() async {
-        await reload(reporting: false)
+        await reload(reporting: false, generation: refreshGeneration)
     }
 
-    private func reload(reporting: Bool = true) async {
+    private func reload(reporting: Bool, generation: Int) async {
         switch await catalog.agentTaskPage(name: keyword, taskStatus: filter.queryValue, num: 1, size: pages.pageSize) {
         case let .success(page):
-            absorb(page)
+            absorb(page, generation: generation)
         case let .failure(error):
-            guard reporting else { return }
+            guard reporting, generation == refreshGeneration else { return }
             let text = ErrorMessage.text(for: error)
             if items.isEmpty {
                 phase = .failed(text)
@@ -142,7 +166,8 @@ public final class TaskListViewModel: ObservableObject {
     /// An optimistic switch survives only while its own write is still in flight: once the request has answered,
     /// the page carries the very value the override was standing in for, and keeping the override would let a
     /// three-second poll leave a switch pointing the wrong way for good.
-    private func absorb(_ page: Page<AgentTaskSummary>) {
+    private func absorb(_ page: Page<AgentTaskSummary>, generation: Int) {
+        guard generation == refreshGeneration else { return }
         pages.replace(with: page)
         statusOverrides = statusOverrides.filter { pendingIDs.contains($0.key) }
         apply()
@@ -218,12 +243,7 @@ public final class TaskListViewModel: ObservableObject {
     /// accepted — so it lands as a banner over the rows that are still on screen.
     private func reloadAfterTrigger(id: Int64) async {
         triggeredIDs.remove(id)
-        switch await catalog.agentTaskPage(name: keyword, taskStatus: filter.queryValue, num: 1, size: pages.pageSize) {
-        case let .success(page):
-            absorb(page)
-        case let .failure(error):
-            inlineError = ErrorMessage.text(for: error)
-        }
+        await reload(reporting: true, generation: refreshGeneration)
     }
 
     public func beginDelete(_ row: AgentTaskSummary) {

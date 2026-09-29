@@ -44,6 +44,20 @@ final class FakeModelCatalog: ModelCataloging, @unchecked Sendable {
 
     private var parked: [() -> Void] = []
 
+    /// Not decoration, and the only log here that needs one: `providerStats` is the single member this
+    /// screen asks *concurrently*, because `ModelProviderListViewModel.readStats` fans the rows a page
+    /// landed out through a task group the way `TokenMonitorViewModel.load` does
+    /// (`FakeTokenStats` locks for the same reason). Two overlapping appends otherwise collapse into one,
+    /// and a paging test then sees the tail row's id where the first row's should be. Every other route
+    /// here is asked one at a time and stays unlocked.
+    private let lock = NSLock()
+
+    private func sync<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+    }
+
     func providerPage(
         name: String?,
         type: String?,
@@ -57,8 +71,9 @@ final class FakeModelCatalog: ModelCataloging, @unchecked Sendable {
     }
 
     func providerStats(id: Int64) async -> Result<ModelProviderStats, APIError> {
-        statsRequests.append(id)
-        return statsReply
+        let reply = statsReply
+        sync { statsRequests.append(id) }
+        return reply
     }
 
     func setProviderStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> {

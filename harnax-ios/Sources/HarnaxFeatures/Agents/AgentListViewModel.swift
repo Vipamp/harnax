@@ -39,6 +39,17 @@ public final class AgentListViewModel: ObservableObject {
     private let agents: any AgentCataloging
     private var pages: PagedState<AgentSummary>
     private var searchTask: Task<Void, Never>?
+    /// The identity of the query the screen is waiting for. `filter.didSet` spawns an unguarded
+    /// `Task { await refresh() }`, `.refreshable` and the retry row fire more, and a cancelled debounce
+    /// cannot retract a read whose `await` has already started — so with no identity the last answer to
+    /// arrive wins `items`, `pageNum` and `total`, and the rows on screen belong to the other query while
+    /// paging continues from its page number.
+    private var refreshGeneration = 0
+    /// One page read on the wire at a time. A request that arrives while one is out neither overlaps it nor
+    /// is discarded: it bumps the generation, which retires the answer on the wire, and the in-flight run
+    /// goes out again for the newer query before it returns.
+    private var isRefreshing = false
+    private var rerunRequested = false
 
     public init(agents: any AgentCataloging, pageSize: Int = 20) {
         self.agents = agents
@@ -56,14 +67,31 @@ public final class AgentListViewModel: ObservableObject {
     }
 
     public func refresh() async {
+        refreshGeneration += 1
+        guard !isRefreshing else {
+            rerunRequested = true
+            return
+        }
+        await runRefresh(generation: refreshGeneration)
+        while rerunRequested {
+            rerunRequested = false
+            await runRefresh(generation: refreshGeneration)
+        }
+    }
+
+    private func runRefresh(generation: Int) async {
+        isRefreshing = true
+        defer { isRefreshing = false }
         inlineError = nil
         if items.isEmpty { phase = .loading }
         switch await agents.page(name: keyword, status: filter.queryValue, num: 1, size: pages.pageSize) {
         case let .success(page):
+            guard generation == refreshGeneration else { return }
             pages.replace(with: page)
             statusOverrides = statusOverrides.filter { pendingIDs.contains($0.key) }
             apply()
         case let .failure(error):
+            guard generation == refreshGeneration else { return }
             let text = ErrorMessage.text(for: error)
             if items.isEmpty {
                 phase = .failed(text)

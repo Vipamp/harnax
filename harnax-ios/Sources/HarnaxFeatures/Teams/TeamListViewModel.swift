@@ -50,6 +50,11 @@ public final class TeamListViewModel: ObservableObject {
     private let teams: any TeamCataloging
     private var pages: PagedState<TeamSummary>
     private var searchTask: Task<Void, Never>?
+    /// Refresh identity and the one-in-flight rule, exactly as `AgentListViewModel` documents them: the
+    /// last answer to arrive must not be the one that wins the rows, the page counter and the total.
+    private var refreshGeneration = 0
+    private var isRefreshing = false
+    private var rerunRequested = false
 
     public init(teams: any TeamCataloging, pageSize: Int = 20) {
         self.teams = teams
@@ -67,14 +72,31 @@ public final class TeamListViewModel: ObservableObject {
     }
 
     public func refresh() async {
+        refreshGeneration += 1
+        guard !isRefreshing else {
+            rerunRequested = true
+            return
+        }
+        await runRefresh(generation: refreshGeneration)
+        while rerunRequested {
+            rerunRequested = false
+            await runRefresh(generation: refreshGeneration)
+        }
+    }
+
+    private func runRefresh(generation: Int) async {
+        isRefreshing = true
+        defer { isRefreshing = false }
         inlineError = nil
         if items.isEmpty { phase = .loading }
         switch await teams.teamPage(name: keyword, status: filter.queryValue, num: 1, size: pages.pageSize) {
         case let .success(page):
+            guard generation == refreshGeneration else { return }
             pages.replace(with: page)
             statusOverrides = statusOverrides.filter { pendingIDs.contains($0.key) }
             apply()
         case let .failure(error):
+            guard generation == refreshGeneration else { return }
             let text = ErrorMessage.text(for: error)
             if items.isEmpty {
                 phase = .failed(text)

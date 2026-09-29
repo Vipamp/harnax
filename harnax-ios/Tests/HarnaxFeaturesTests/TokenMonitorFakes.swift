@@ -6,9 +6,10 @@ import HarnaxCore
 /// nobody queued answers as a decoding failure and still shows up in the call log, so a sixth read reads as a
 /// wrong count rather than as a silent pass.
 ///
-/// The lock is not decoration. This is the only screen whose routes are asked *concurrently*
-/// (`TokenMonitorViewModel.load` fans out through a task group), so the logs and the queues are written by
-/// several tasks at once; every other fake here answers one request at a time and can stay unlocked.
+/// The lock is not decoration. Only two screens ask their routes *concurrently*: this one
+/// (`TokenMonitorViewModel.load` fans out through a task group) and the provider cards' counts
+/// (`ModelProviderListViewModel.readStats`, `FakeModelCatalog` locks the same way), so the logs and the queues
+/// are written by several tasks at once. Every other fake here answers one request at a time and stays unlocked.
 ///
 /// `gateAggregation` is the dial the superseded-window behaviour needs: the case worth testing is an old
 /// window's reply landing after a new window's five requests have gone out, and that only exists if one reply

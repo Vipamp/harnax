@@ -45,6 +45,11 @@ public final class SkillTableViewModel: ObservableObject {
     private let skills: any SkillCataloging
     private var pages: PagedState<SkillItem>
     private var searchTask: Task<Void, Never>?
+    /// Refresh identity and the one-in-flight rule, exactly as `AgentListViewModel` documents them: the
+    /// last answer to arrive must not be the one that wins the rows, the page counter and the total.
+    private var refreshGeneration = 0
+    private var isRefreshing = false
+    private var rerunRequested = false
 
     public init(skills: any SkillCataloging, pageSize: Int = 20) {
         self.skills = skills
@@ -76,11 +81,27 @@ public final class SkillTableViewModel: ObservableObject {
     }
 
     public func refresh() async {
-        guard let sourceID else {
+        refreshGeneration += 1
+        guard sourceID != nil else {
             items = []
             phase = .empty
             return
         }
+        guard !isRefreshing else {
+            rerunRequested = true
+            return
+        }
+        await runRefresh(generation: refreshGeneration)
+        while rerunRequested {
+            rerunRequested = false
+            await runRefresh(generation: refreshGeneration)
+        }
+    }
+
+    private func runRefresh(generation: Int) async {
+        guard let sourceID else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
         inlineError = nil
         if items.isEmpty { phase = .loading }
         switch await skills.skillPage(
@@ -91,10 +112,12 @@ public final class SkillTableViewModel: ObservableObject {
             size: pages.pageSize
         ) {
         case let .success(page):
+            guard generation == refreshGeneration else { return }
             pages.replace(with: page)
             statusOverrides = statusOverrides.filter { pendingIDs.contains($0.key) }
             apply()
         case let .failure(error):
+            guard generation == refreshGeneration else { return }
             let text = ErrorMessage.text(for: error)
             if items.isEmpty {
                 phase = .failed(text)
@@ -160,6 +183,8 @@ public final class SkillTableViewModel: ObservableObject {
     }
 
     private func reset() {
+        // The read on the wire answers for the source that has just been left behind.
+        refreshGeneration += 1
         keyword = ""
         filter = .all
         items = []
