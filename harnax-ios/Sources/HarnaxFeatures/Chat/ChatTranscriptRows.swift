@@ -20,17 +20,33 @@ struct ChatTurnRow: View {
         }
     }
 
+    /// The user's turn: the pictures they attached over the words they typed.
+    ///
+    /// A picture with no caption draws no bubble at all — the text segment is absent on that send, and an empty
+    /// coloured box would read as a message that failed to arrive.
     private var userBubble: some View {
         HStack(alignment: .top, spacing: 0) {
             Spacer(minLength: 48)
-            Text(verbatim: turn.segments.compactMap(\.text).joined(separator: "\n"))
-                .font(.body)
-                .foregroundStyle(Color.hx(.onBrand))
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-                .padding(.horizontal, 13)
-                .padding(.vertical, 10)
-                .background(Color.hx(.brand), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            VStack(alignment: .trailing, spacing: 6) {
+                if !turn.images.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(Array(turn.images.enumerated()), id: \.offset) { _, dataURL in
+                            ChatImageThumb(dataURL: dataURL)
+                        }
+                    }
+                }
+                let words = turn.segments.compactMap(\.text).joined(separator: "\n")
+                if !words.isEmpty {
+                    Text(verbatim: words)
+                        .font(.body)
+                        .foregroundStyle(Color.hx(.onBrand))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 10)
+                        .background(Color.hx(.brand), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+            }
         }
     }
 

@@ -18,24 +18,33 @@ import HarnaxKit
 public struct SessionListView: View {
     @StateObject private var vm: SessionListViewModel
     private let creating: (any SessionCreating)?
+    private let workspace: (any SessionWorkspaceReading)?
+    private let teamArtifacts: (any TeamArtifactReading)?
     private let onOpen: ((ChatConversation) -> Void)?
 
     @State private var renameTarget: SessionSummary?
     @State private var detailTarget: SessionSummary?
     @State private var isCreating = false
+    @State private var workspaceTarget: SessionSummary?
+    @State private var artifactsTarget: SessionSummary?
     @State private var pendingClear: SessionSummary?
     @State private var pendingDelete: SessionSummary?
 
     /// `creating` is the new-conversation route. A host that has not wired it gets no create button rather
     /// than a sheet that cannot submit — the same optional-dependency shape the chat window uses for its
-    /// command and history legs.
+    /// command and history legs. `workspace` and `teamArtifacts` open the two file drawers the card menu
+    /// offers; an unwired one simply leaves its item off the menu.
     public init(
         sessions: any SessionCataloging,
         creating: (any SessionCreating)? = nil,
+        workspace: (any SessionWorkspaceReading)? = nil,
+        teamArtifacts: (any TeamArtifactReading)? = nil,
         onOpen: ((ChatConversation) -> Void)? = nil
     ) {
         _vm = StateObject(wrappedValue: SessionListViewModel(sessions: sessions))
         self.creating = creating
+        self.workspace = workspace
+        self.teamArtifacts = teamArtifacts
         self.onOpen = onOpen
     }
 
@@ -58,6 +67,16 @@ public struct SessionListView: View {
             }
             .sheet(item: $detailTarget) { session in
                 SessionDetailSheet(session: session)
+            }
+            .sheet(item: $workspaceTarget) { session in
+                if let workspace, let sessionId = hxPresented(session.sessionId) {
+                    WorkspaceSheet(workspace: workspace, sessionId: sessionId)
+                }
+            }
+            .sheet(item: $artifactsTarget) { session in
+                if let teamArtifacts, let sessionId = hxPresented(session.sessionId) {
+                    TeamArtifactsSheet(reading: teamArtifacts, sessionId: sessionId)
+                }
             }
             .sheet(isPresented: $isCreating) {
                 if let creating {
@@ -186,11 +205,29 @@ public struct SessionListView: View {
             canWrite: vm.canWrite(session),
             onOpen: chatAction(for: session),
             onDetail: { detailTarget = session },
+            onWorkspace: workspaceAction(for: session),
+            onArtifacts: artifactsAction(for: session),
             onRename: { renameTarget = session },
             onToggle: { value in Task { await vm.setStatus(value, for: session) } },
             onClear: { pendingClear = session },
             onDelete: { pendingDelete = session }
         )
+    }
+
+    /// `nil` when this host has no workspace leg or the row has no business key to reach one with.
+    private func workspaceAction(for session: SessionSummary) -> (() -> Void)? {
+        guard workspace != nil, hxPresented(session.sessionId) != nil else { return nil }
+        return { workspaceTarget = session }
+    }
+
+    /// `nil` unless the row is a team conversation *and* this host has the artifact leg. A one-agent
+    /// conversation has no publishing member to read from, so the drawer could only ever report itself
+    /// empty — which is not worth an entry point.
+    private func artifactsAction(for session: SessionSummary) -> (() -> Void)? {
+        guard teamArtifacts != nil, session.teamId != nil, hxPresented(session.sessionId) != nil else {
+            return nil
+        }
+        return { artifactsTarget = session }
     }
 
     /// `nil` for a row the runtime cannot be reached through, which is what makes the card's text column
@@ -209,6 +246,8 @@ struct SessionRecordCard: View {
     let canWrite: Bool
     let onOpen: ((SessionSummary) -> Void)?
     let onDetail: () -> Void
+    var onWorkspace: (() -> Void)? = nil
+    var onArtifacts: (() -> Void)? = nil
     let onRename: () -> Void
     let onToggle: (Bool) -> Void
     let onClear: () -> Void
@@ -321,6 +360,13 @@ struct SessionRecordCard: View {
     private var menu: some View {
         Menu {
             Button(action: onDetail) { HXText("chat.detail.title") }
+
+            if let onWorkspace {
+                Button(action: onWorkspace) { HXText("chat.workspace.title") }
+            }
+            if let onArtifacts {
+                Button(action: onArtifacts) { HXText("chat.artifacts.title") }
+            }
 
             Button(action: onRename) { HXText("chat.action.rename") }
                 .disabled(!canWrite)

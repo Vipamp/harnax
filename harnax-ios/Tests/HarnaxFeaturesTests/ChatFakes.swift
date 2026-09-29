@@ -45,10 +45,80 @@ final class ScriptedChatStream: AgentStreaming, @unchecked Sendable {
 final class ScriptedAgentCommands: AgentCommanding, @unchecked Sendable {
     private(set) var requests: [CommandAgentRequest] = []
     var reply: Result<AgentCommandReply, APIError> = .success(AgentCommandReply(success: true))
+    /// Answers handed out in order before `reply` is used. A switch that goes optimistic and then has to come
+    /// back needs the first command to land and the second to refuse.
+    var replies: [Result<AgentCommandReply, APIError>] = []
 
     func command(_ request: CommandAgentRequest) async -> Result<AgentCommandReply, APIError> {
         requests.append(request)
-        return reply
+        return replies.isEmpty ? reply : replies.removeFirst()
+    }
+}
+
+/// The composer's config read: one row, or one failure.
+///
+/// The chat screen reads the conversation's model flags once on entry and then drives every switch from the
+/// command channel, so this fake records the admin write instead of performing it: a test asserts `writes`
+/// stays empty (`ChatWindow.tsx:2408-2430`).
+final class ScriptedSessionConfig: SessionConfiguring, @unchecked Sendable {
+    private(set) var requested: [String] = []
+    private(set) var writes: [String] = []
+    var row = SessionSummary()
+    var error: APIError?
+
+    func sessionConfig(sessionId: String) async -> Result<SessionSummary, APIError> {
+        requested.append(sessionId)
+        if let error { return .failure(error) }
+        return .success(row)
+    }
+
+    func updateSessionConfig(
+        sessionId: String,
+        _ change: SessionChatChange
+    ) async -> Result<EmptyResponse, APIError> {
+        writes.append(sessionId)
+        return .failure(.offline)
+    }
+}
+
+/// The sandbox status the stop-sandbox confirmation reads before it asks anything.
+final class ScriptedSandbox: SessionWorkspaceReading, @unchecked Sendable {
+    private(set) var statusRequested: [String] = []
+    var status: SandboxStatus = .unknown
+    var statusFails = false
+
+    func sandboxStatus(sessionId: String) async -> Result<SandboxStatus, APIError> {
+        statusRequested.append(sessionId)
+        return statusFails ? .failure(.offline) : .success(status)
+    }
+
+    func workspaceFiles(sessionId: String, path: String) async -> Result<[WorkspaceFile], APIError> {
+        .failure(.offline)
+    }
+
+    func readWorkspaceFile(sessionId: String, path: String) async -> Result<WorkspaceFileContent, APIError> {
+        .failure(.offline)
+    }
+
+    func uploadWorkspaceFile(
+        sessionId: String,
+        path: String,
+        fileName: String,
+        mimeType: String,
+        payload: Data
+    ) async -> Result<WorkspaceUpload, APIError> {
+        .failure(.offline)
+    }
+
+    func downloadWorkspaceFile(sessionId: String, path: String) async -> Result<WorkspaceDownload, APIError> {
+        .failure(.offline)
+    }
+
+    func downloadAttachment(
+        _ attachment: ChatFileAttachment,
+        sessionId: String
+    ) async -> Result<WorkspaceDownload, APIError> {
+        .failure(.offline)
     }
 }
 

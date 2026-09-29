@@ -14,6 +14,12 @@ public struct ChatView: View {
     /// and handed to `bind`. `@StateObject` keeps the first value it was given, which is exactly why the
     /// switch has to be observed rather than rebuilt.
     private let conversation: ChatConversation
+    /// The read behind the plan drawer. `nil` leaves the entry off the navigation bar, because a drawer that
+    /// can only ever fail is worse than no drawer at all.
+    private let plan: (any PlanReading)?
+    /// Whether the plan drawer is open. The composer's chip writes the session's plan *switch*; this is the
+    /// separate action of reading back the plan itself.
+    @State private var planOpen = false
 
     /// The named space the tail is measured in: the scroll view's own bounds, so a `maxY` reads as a
     /// distance from the bottom of what the user can see.
@@ -24,15 +30,21 @@ public struct ChatView: View {
         streaming: any AgentStreaming,
         commands: (any AgentCommanding)? = nil,
         history: (any ChatHistoryReading)? = nil,
+        config: (any SessionConfiguring)? = nil,
+        workspace: (any SessionWorkspaceReading)? = nil,
+        plan: (any PlanReading)? = nil,
         conversation: ChatConversation
     ) {
         _vm = StateObject(wrappedValue: ChatViewModel(
             streaming: streaming,
             commands: commands,
             history: history,
+            config: config,
+            workspace: workspace,
             conversation: conversation
         ))
         self.conversation = conversation
+        self.plan = plan
     }
 
     public var body: some View {
@@ -42,11 +54,39 @@ public struct ChatView: View {
         }
         .harnaxScreen()
         .navigationTitle(vm.conversation.title)
+        .toolbar {
+            if plan != nil {
+                ToolbarItem(placement: .primaryAction) { planButton }
+            }
+        }
+        .sheet(isPresented: $planOpen) {
+            if let plan {
+                PlanPanelView(
+                    sessionId: conversation.id,
+                    reading: plan,
+                    isEnabled: vm.composer.enablePlan,
+                    onClose: { planOpen = false }
+                )
+            }
+        }
         .task(id: conversation) {
             vm.bind(conversation)
+            // Two reads, one after the other: the rows on screen and the flags that decide which composer
+            // controls are real. The second is what the gating matrix reads off
+            // (`ChatWindow.tsx:718-737`), so it has to be re-taken for every conversation.
             await vm.load()
+            await vm.loadComposerConfig()
         }
         .onDisappear { vm.detach() }
+    }
+
+    // MARK: - plan drawer
+
+    private var planButton: some View {
+        Button { planOpen = true } label: {
+            Image(systemName: "list.bullet.clipboard")
+        }
+        .accessibilityLabel(hx("chat.plan.title"))
     }
 
     // MARK: - transcript
@@ -179,47 +219,287 @@ private extension View {
 
 // MARK: - input
 
+/// The console's `inputCard` (`ChatWindow.tsx:3459-3700`): the strip of pictures waiting to go, the text box,
+/// and the row of chips under it that writes the conversation's four settings.
 private struct ChatInputBar: View {
     @ObservedObject var vm: ChatViewModel
+    @State private var showsPhotoPicker = false
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 10) {
-            TextField(
-                hx(vm.isStreaming ? "chat.input.busy" : "chat.input.placeholder"),
-                text: $vm.draft,
-                axis: .vertical
-            )
-            .font(.body)
-            .foregroundStyle(Color.hx(.textPrimary))
-            .tint(Color.hx(.brand))
-            .lineLimit(2...6)
-            .submitLabel(.send)
-            .onSubmit { vm.send() }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(Color.hx(.surfaceAlt), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .strokeBorder(Color.hx(.separator), lineWidth: 1)
-            )
-
-            Button {
-                if vm.isStreaming {
-                    vm.stop()
-                } else {
-                    vm.send()
-                }
-            } label: {
-                Image(systemName: vm.isStreaming ? "stop.circle.fill" : "arrow.up.circle.fill")
-                    .font(.system(size: 30))
-                    .foregroundStyle(Color.hx(vm.isStreaming ? .danger : .brand))
+        VStack(alignment: .leading, spacing: 8) {
+            if let notice = vm.composerNotice {
+                HXBanner(
+                    "chat.composer.notice",
+                    message: notice.text,
+                    systemImage: Self.icon(for: notice.tone),
+                    tone: Self.slot(for: notice.tone)
+                )
+                // A toast times out on its own; a banner has to be put away. Tapping it away is also the only
+                // way the same sentence can be said twice in a row.
+                .onTapGesture { vm.composerNotice = nil }
             }
-            .buttonStyle(.plain)
-            .disabled(vm.isStreaming == false && vm.canSend == false)
-            .accessibilityLabel(hx(vm.isStreaming ? "chat.action.stop" : "chat.action.send"))
+
+            if !vm.images.isEmpty {
+                ChatImageStrip(images: vm.images) { vm.removeImage(at: $0) }
+            }
+
+            HStack(alignment: .bottom, spacing: 10) {
+                TextField(
+                    hx(vm.isStreaming ? "chat.input.busy" : "chat.input.placeholder"),
+                    text: $vm.draft,
+                    axis: .vertical
+                )
+                .font(.body)
+                .foregroundStyle(Color.hx(.textPrimary))
+                .tint(Color.hx(.brand))
+                .lineLimit(2...6)
+                .submitLabel(.send)
+                .onSubmit { vm.send() }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color.hx(.surfaceAlt), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .strokeBorder(Color.hx(.separator), lineWidth: 1)
+                )
+
+                Button {
+                    if vm.isStreaming {
+                        vm.stop()
+                    } else {
+                        vm.send()
+                    }
+                } label: {
+                    Image(systemName: vm.isStreaming ? "stop.circle.fill" : "arrow.up.circle.fill")
+                        .font(.system(size: 30))
+                        .foregroundStyle(Color.hx(vm.isStreaming ? .danger : .brand))
+                }
+                .buttonStyle(.plain)
+                .disabled(vm.isStreaming == false && vm.canSend == false)
+                .accessibilityLabel(hx(vm.isStreaming ? "chat.action.stop" : "chat.action.send"))
+            }
+
+            ChatComposerToolbar(vm: vm, showsPhotoPicker: $showsPhotoPicker)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(Color.hx(.surface))
+        .confirmationDialog(
+            Text(verbatim: hx(vm.pendingCommand?.kind == .stopSandbox
+                ? "chat.sandbox.stop.title"
+                : "chat.clear.title")),
+            isPresented: Binding(
+                get: { vm.pendingCommand != nil },
+                set: { if !$0 { vm.cancelPendingCommand() } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(role: .destructive) {
+                vm.confirmPendingCommand()
+            } label: {
+                HXText(vm.pendingCommand?.kind == .stopSandbox ? "chat.sandbox.stop.action" : "chat.clear.action")
+            }
+            Button(role: .cancel) {
+                vm.cancelPendingCommand()
+            } label: {
+                HXText("common.cancel")
+            }
+        } message: {
+            Text(verbatim: hx(vm.pendingCommand?.kind == .stopSandbox
+                ? "chat.sandbox.stop.note"
+                : "chat.clear.note"))
+        }
+    }
+
+    private static func icon(for tone: ChatComposerNotice.Tone) -> String {
+        switch tone {
+        case .info: return "info.circle"
+        case .warning: return "exclamationmark.triangle"
+        case .error: return "exclamationmark.triangle"
+        }
+    }
+
+    private static func slot(for tone: ChatComposerNotice.Tone) -> PaletteSlot {
+        switch tone {
+        case .info: return .brand
+        case .warning: return .warning
+        case .error: return .danger
+        }
+    }
+}
+
+/// The pictures waiting for the send, each with its own way of being taken back out
+/// (`ChatWindow.tsx:3463-3477`).
+private struct ChatImageStrip: View {
+    let images: [String]
+    let onRemove: (Int) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(Array(images.enumerated()), id: \.offset) { index, dataURL in
+                    ZStack(alignment: .topTrailing) {
+                        ChatImageThumb(dataURL: dataURL)
+                        Button {
+                            onRemove(index)
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 17))
+                                .foregroundStyle(Color.hx(.surface), Color.hx(.textSecondary))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(3)
+                        .accessibilityLabel(hx("chat.image.remove"))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The chip row. Every one of them stays tappable even when the model forbids it — the console's gating is a
+/// muted style plus a warning, not a dead control, because a dead control has nothing to say
+/// (spec's matrix, `ChatWindow.tsx:3493-3600`).
+private struct ChatComposerToolbar: View {
+    @ObservedObject var vm: ChatViewModel
+    @Binding private var showsPhotoPicker: Bool
+
+    init(vm: ChatViewModel, showsPhotoPicker: Binding<Bool>) {
+        self.vm = vm
+        _showsPhotoPicker = showsPhotoPicker
+    }
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 7) {
+                imageChip
+                ChatComposerChip(
+                    titleKey: "chat.composer.think",
+                    systemImage: "lightbulb",
+                    isOn: vm.composer.enableThink,
+                    isMuted: !vm.composer.modelSupportReasoning
+                ) {
+                    vm.toggleThink()
+                }
+                ChatComposerChip(
+                    titleKey: "chat.composer.search",
+                    systemImage: "globe",
+                    isOn: vm.composer.enableSearch,
+                    isMuted: !vm.composer.canToggleSearch
+                ) {
+                    vm.toggleSearch()
+                }
+                ChatComposerChip(
+                    titleKey: "chat.composer.plan",
+                    systemImage: "list.bullet",
+                    isOn: vm.composer.enablePlan
+                ) {
+                    vm.togglePlan()
+                }
+                permissionChip
+                ChatComposerChip(titleKey: "chat.composer.stopSandbox", systemImage: "stop") {
+                    vm.requestStopSandbox()
+                }
+                ChatComposerChip(titleKey: "chat.composer.clear", systemImage: "trash") {
+                    vm.requestClear()
+                }
+            }
+        }
+        .chatPhotoPicker(isPresented: $showsPhotoPicker) { urls in
+            vm.addImages(urls)
+        }
+    }
+
+    /// The picture button. A model with no vision cannot pick, but a picture already in the strip still goes
+    /// out — the console blocks the picker, never the state (`ChatWindow.tsx:3493-3505`). The chip stays
+    /// tappable so the refusal has somewhere to be said; on the test host the sheet is simply absent.
+    private var imageChip: some View {
+        ChatComposerChip(
+            titleKey: "chat.composer.image",
+            systemImage: "photo",
+            isOn: !vm.images.isEmpty,
+            isMuted: !vm.canPickImages
+        ) {
+            if vm.requestImages() { showsPhotoPicker = true }
+        }
+    }
+
+    @ViewBuilder
+    private var permissionChip: some View {
+        let mode = vm.composer.permissionMode
+        if vm.canPickPermission {
+            Menu {
+                // `allCases` order, which is the dropdown's order (`ChatWindow.tsx:3601-3638`).
+                ForEach(vm.permissionOptions, id: \.self) { option in
+                    Button {
+                        vm.selectPermission(option)
+                    } label: {
+                        HStack(spacing: 6) {
+                            HXText(option.titleKey)
+                            if option == mode {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                ChatComposerLabel(
+                    titleKey: mode.titleKey,
+                    systemImage: "bolt",
+                    // Anything but the runtime's own default is worth looking at (`:3633`).
+                    isOn: mode != .defaultMode
+                )
+            }
+            .menuStyle(.borderlessButton)
+        } else {
+            // A `task-` conversation: the mode it runs on is shown, and no change is offered. Tapping says so.
+            ChatComposerChip(
+                titleKey: mode.titleKey,
+                systemImage: "lock",
+                isMuted: true
+            ) {
+                vm.selectPermission(mode)
+            }
+        }
+    }
+}
+
+/// One chip's contents, shared by the plain buttons and the permission menu's label.
+private struct ChatComposerLabel: View {
+    let titleKey: String
+    let systemImage: String
+    var isOn = false
+    var isMuted = false
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12))
+            HXText(titleKey)
+                .font(.caption)
+                .lineLimit(1)
+        }
+        .foregroundStyle(Color.hx(isOn ? .onBrand : .textSecondary))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color.hx(isOn ? .brand : .surfaceAlt), in: Capsule())
+        .overlay(Capsule().strokeBorder(Color.hx(.separator), lineWidth: isOn ? 0 : 1))
+        .opacity(isMuted ? 0.45 : 1)
+    }
+}
+
+private struct ChatComposerChip: View {
+    let titleKey: String
+    let systemImage: String
+    var isOn = false
+    var isMuted = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            ChatComposerLabel(titleKey: titleKey, systemImage: systemImage, isOn: isOn, isMuted: isMuted)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(hx(titleKey))
     }
 }

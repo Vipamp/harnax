@@ -104,6 +104,13 @@ public struct ChatTurn: Identifiable, Equatable {
     public let id: String
     public let role: Role
     public var segments: [ChatSegment]
+    /// The pictures this bubble was sent with, as `data:image/…;base64,…` strings.
+    ///
+    /// Memory only. The stored user row has no field for them — `UserMessageLog` is `message`, `timestamp` and
+    /// `source` (`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/chat/MessageLog.kt:34-40`) —
+    /// so a conversation reopened later comes back without its pictures, and nothing here tries to
+    /// reconstruct them from the transcript.
+    public var images: [String]
     public var outcome: ChatOutcome
     public let timestamp: Date
 
@@ -111,19 +118,21 @@ public struct ChatTurn: Identifiable, Equatable {
         id: String,
         role: Role,
         segments: [ChatSegment] = [],
+        images: [String] = [],
         outcome: ChatOutcome,
         timestamp: Date
     ) {
         self.id = id
         self.role = role
         self.segments = segments
+        self.images = images
         self.outcome = outcome
         self.timestamp = timestamp
     }
 
     /// Nothing reached the screen for this turn — the difference between "connection lost" and "stopped
     /// with a half answer still on screen" (`ChatWindow.tsx:2361`).
-    public var hasContent: Bool { !segments.isEmpty }
+    public var hasContent: Bool { !segments.isEmpty || !images.isEmpty }
 }
 
 /// The folding rules for a streamed answer, kept apart from the screen that draws them so every rule can
@@ -301,16 +310,47 @@ public struct ChatTranscript: Equatable {
 
     /// The user's message and the answer it opens. A turn still folding gets closed first: two answers
     /// cannot be open at once, and the frames of the abandoned one would land in the new bubble.
-    public mutating func send(_ message: String, at date: Date = Date()) {
+    public mutating func send(_ message: String, images: [String] = [], at date: Date = Date()) {
         terminate(as: .interrupted)
+        appendUserTurn(message: message, images: images, opensAnswer: true, at: date)
+    }
+
+    /// A user bubble that opens no answer: the raw text of a slash command
+    /// (`ChatWindow.tsx:992-998` pushes exactly one text segment and then goes off to `/command`).
+    public mutating func appendUserMessage(_ message: String, at date: Date = Date()) {
+        terminate(as: .interrupted)
+        appendUserTurn(message: message, images: [], opensAnswer: false, at: date)
+    }
+
+    /// The reply to a command — one finished bubble of its own, never a stream
+    /// (`ChatWindow.tsx:1012-1017`, where the sentence goes in as a single text segment).
+    ///
+    /// It opens nothing, so `isTerminated` stays true and a late frame from an earlier read still cannot
+    /// write into it.
+    public mutating func appendCommandReply(_ message: String, at date: Date = Date()) {
         turns.append(ChatTurn(
-            id: "user-\(nextTurn())",
-            role: .user,
+            id: "answer-\(nextTurn())",
+            role: .assistant,
             segments: [nextSegment(.text(message))],
             outcome: .ended,
             timestamp: date
         ))
-        openAnswerTurn(at: date)
+    }
+
+    private mutating func appendUserTurn(message: String, images: [String], opensAnswer: Bool, at date: Date) {
+        // A picture with no caption is still a message; an empty text block under it would draw an empty
+        // bubble the user cannot read.
+        var segments: [ChatSegment] = []
+        if !message.isEmpty { segments.append(nextSegment(.text(message))) }
+        turns.append(ChatTurn(
+            id: "user-\(nextTurn())",
+            role: .user,
+            segments: segments,
+            images: images,
+            outcome: .ended,
+            timestamp: date
+        ))
+        if opensAnswer { openAnswerTurn(at: date) }
     }
 
     /// One frame of the stream. A terminal frame closes the answer, and anything after it is dropped: the

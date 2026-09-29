@@ -16,7 +16,12 @@ public struct ChatTabView: View {
     }
 
     public var body: some View {
-        SessionListView(sessions: dependencies.sessions, creating: dependencies.sessionCreate) { conversation in
+        SessionListView(
+            sessions: dependencies.sessions,
+            creating: dependencies.sessionCreate,
+            workspace: dependencies.workspace,
+            teamArtifacts: dependencies.teamArtifacts
+        ) { conversation in
             open = conversation
         }
         .navigationDestination(item: $open) { conversation in
@@ -24,6 +29,9 @@ public struct ChatTabView: View {
                 streaming: dependencies.streaming,
                 commands: dependencies.commands,
                 history: dependencies.chatHistory,
+                config: dependencies.sessionConfig,
+                workspace: dependencies.workspace,
+                plan: dependencies.plan,
                 conversation: conversation
             )
         }

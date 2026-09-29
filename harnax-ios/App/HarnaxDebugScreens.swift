@@ -393,6 +393,9 @@ struct HarnaxDebugView: View {
                     streaming: model.dependencies.streaming,
                     commands: model.dependencies.commands,
                     history: model.dependencies.chatHistory,
+                    config: model.dependencies.sessionConfig,
+                    workspace: model.dependencies.workspace,
+                    plan: model.dependencies.plan,
                     conversation: ChatConversation(id: sessionId, title: session.displayName ?? "")
                 )
             }
