@@ -607,6 +607,15 @@
 "chat.rename.required" = "Enter a title.";
 "chat.rename.long" = "Title cannot exceed 100 characters.";
 "chat.rename.saving" = "Saving…";
+"chat.permission.default" = "Default (ask for risky tools)";
+"chat.permission.bypass" = "Auto Execute (no confirmation)";
+"chat.permission.acceptEdits" = "Accept Edits (auto-approve file edits)";
+"chat.permission.explore" = "Explore (read-only mode)";
+"chat.permission.dontAsk" = "Don't Ask (auto-deny risky tools)";
+"chat.plan.todo" = "To Do";
+"chat.plan.inProgress" = "In Progress";
+"chat.plan.done" = "Done";
+"chat.plan.abandoned" = "Abandoned";
 "system.channel.subtitle" = "Bots and callbacks that reach IM";
 "channel.title" = "Channels";
 "channel.search" = "Search channels";

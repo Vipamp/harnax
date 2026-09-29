@@ -49,4 +49,30 @@ enum SessionEndpoint {
     static func delete(id: Int64) -> Endpoint {
         Endpoint(.delete, path: "\(base)/\(id)")
     }
+
+    /// `GET /check-title?title=`. A duplicate-name lookup is a **query** on the same path the create `POST`
+    /// answers (`SessionController.kt:68-89`), so the two differ by method and query only.
+    static func checkTitle(title: String) -> Endpoint {
+        Endpoint(.get, path: "\(base)/check-title", query: [URLQueryItem(name: "title", value: title)])
+    }
+
+    /// `POST /api/admin/sessions` — the base path with no extra segment (`SessionController.kt:80-82`).
+    static func create(_ draft: SessionCreateDraft) throws -> Endpoint {
+        Endpoint(.post, path: base, body: try APIClient.encodeBody(draft))
+    }
+
+    /// The two config routes take the **string** business key, where the rename, the toggle and the delete
+    /// above take the numeric id (`SessionController.kt:111-141`). A `web-…` id cannot break a path segment,
+    /// but the key is caller-supplied on the detail screen, so it goes through `Endpoint.segment` anyway.
+    static func config(sessionId: String) -> Endpoint {
+        Endpoint(.get, path: "\(base)/\(Endpoint.segment(sessionId))/config")
+    }
+
+    static func updateConfig(sessionId: String, _ change: SessionChatChange) throws -> Endpoint {
+        Endpoint(
+            .put,
+            path: "\(base)/\(Endpoint.segment(sessionId))/config",
+            body: try APIClient.encodeBody(change)
+        )
+    }
 }

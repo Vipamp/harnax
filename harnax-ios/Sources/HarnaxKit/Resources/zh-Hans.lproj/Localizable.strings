@@ -608,6 +608,15 @@
 "chat.rename.required" = "请填写标题。";
 "chat.rename.long" = "标题不能超过 100 个字符。";
 "chat.rename.saving" = "保存中…";
+"chat.permission.default" = "默认（危险工具需确认）";
+"chat.permission.bypass" = "自动执行（无需确认）";
+"chat.permission.acceptEdits" = "接受编辑（自动批准文件操作）";
+"chat.permission.explore" = "探索模式（只读）";
+"chat.permission.dontAsk" = "禁止执行（自动拒绝危险工具）";
+"chat.plan.todo" = "待处理";
+"chat.plan.inProgress" = "进行中";
+"chat.plan.done" = "已完成";
+"chat.plan.abandoned" = "已放弃";
 "system.channel.subtitle" = "接进 IM 的机器人与回调";
 "channel.title" = "渠道";
 "channel.search" = "搜索渠道";

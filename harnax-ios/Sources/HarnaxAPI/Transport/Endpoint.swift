@@ -25,6 +25,12 @@ public struct Endpoint: Sendable {
     public let contentType: String?
     /// Login and refresh are the two endpoints that must be sent without a bearer token.
     public let authenticated: Bool
+    /// `false` for the one route the console sends on the bearer token alone: the team artifact download reads
+    /// the tenant off the session row rather than off a header
+    /// (`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/TeamArtifactController.kt:108-127`),
+    /// and `harnax-webui/src/services/ant-design-pro/team.ts:91-113` sends no `X-Tenant-ID` with it. Everything
+    /// else in the app is tenant-scoped by that header, so the flag is on unless a route says otherwise.
+    public let sendsTenantHeader: Bool
 
     public init(
         _ method: HTTPMethod,
@@ -33,7 +39,8 @@ public struct Endpoint: Sendable {
         body: Data? = nil,
         base: APIBase = .admin,
         contentType: String? = nil,
-        authenticated: Bool = true
+        authenticated: Bool = true,
+        sendsTenantHeader: Bool = true
     ) {
         self.method = method
         self.path = path
@@ -42,6 +49,7 @@ public struct Endpoint: Sendable {
         self.base = base
         self.contentType = contentType
         self.authenticated = authenticated
+        self.sendsTenantHeader = sendsTenantHeader
     }
 
     public func url(baseURL: String) -> URL? {
