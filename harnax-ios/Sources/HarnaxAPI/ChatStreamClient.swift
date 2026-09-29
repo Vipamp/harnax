@@ -127,6 +127,12 @@ public struct ChatStreamClient: AgentStreaming {
     }
 }
 
+/// The same client answers a confirmation, because the answer is the other half of the one stream contract:
+/// `POST /api/router/agent/confirm` replies with SSE and carries the resumed run on it. `AgentStreaming`
+/// already requires `confirm`, so this adds no code — it names the narrower capability the chat screen is
+/// given as an optional dependency, so a host can leave the answer path unwired.
+extension ChatStreamClient: ToolConfirming {}
+
 /// Server-Sent Events framing, matching the browser reader `webui` uses (`ChatWindow.tsx:1380-1394`): a
 /// payload line is `data:` plus JSON, and everything else — `event:`, `id:`, a `:` comment, the blank
 /// separator between frames — is skipped.

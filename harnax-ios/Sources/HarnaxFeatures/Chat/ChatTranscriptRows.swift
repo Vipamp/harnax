@@ -10,6 +10,9 @@ struct ChatTurnRow: View {
     let turn: ChatTurn
     /// This bubble is the one the stream is still writing into.
     let isReading: Bool
+    /// The screen's state, so a confirmation row can offer its answer. Rows draw nothing of their own
+    /// decision: the fold says what is waiting and the view model says what may be sent back.
+    @ObservedObject var vm: ChatViewModel
 
     var body: some View {
         switch turn.role {
@@ -53,7 +56,7 @@ struct ChatTurnRow: View {
     private var answer: some View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(turn.segments) { segment in
-                ChatSegmentRow(segment: segment)
+                ChatSegmentRow(segment: segment, vm: vm)
             }
             if turn.hasContent {
                 meta
@@ -81,6 +84,7 @@ struct ChatTurnRow: View {
 
 struct ChatSegmentRow: View {
     let segment: ChatSegment
+    @ObservedObject var vm: ChatViewModel
 
     var body: some View {
         switch segment.kind {
@@ -97,7 +101,11 @@ struct ChatSegmentRow: View {
         case let .tool(run):
             ChatToolCard(run: run)
         case let .confirmation(tools):
-            ChatConfirmationBlock(tools: tools)
+            ChatConfirmationBlock(
+                tools: tools,
+                isWaiting: vm.isWaitingConfirmation(segment.id),
+                vm: vm
+            )
         case let .file(attachment):
             ChatFileRow(attachment: attachment)
         }
@@ -214,20 +222,27 @@ struct ChatToolCard: View {
         }
     }
 
-    /// The console's six-state ladder, in its short-circuit order (`ChatWindow.tsx:319-324`). iOS keeps four
-    /// of the names: an approved and a rejected confirmation both end as a result card, because this build
-    /// does not answer the request.
+    /// The console's six-state ladder, in its short-circuit order (`ChatWindow.tsx:319-324`): the ask still
+    /// waiting outranks everything, then the refusal the user gave it, then an approval whose result has not
+    /// come back, then a turn that closed before the result arrived. A refusal keeps its own name even once
+    /// the server's refusal result lands, because the two say different things.
     private var status: (titleKey: String, tone: PaletteSlot, symbol: String) {
         if run.awaitingConfirmation {
             return ("chat.tool.pending", .warning, "questionmark.circle")
+        }
+        if run.confirmAnswer == .denied {
+            return ("chat.tool.denied", .danger, "hand.raised")
+        }
+        if run.confirmAnswer != nil, run.result == nil {
+            return ("chat.tool.confirmed", .success, "checkmark.seal")
+        }
+        if run.interrupted, run.result == nil {
+            return ("chat.tool.interrupted", .warning, "exclamationmark.circle")
         }
         if let result = run.result {
             return result.succeeded
                 ? ("chat.tool.completed", .success, "checkmark.circle")
                 : ("chat.tool.rejected", .danger, "xmark.circle")
-        }
-        if run.interrupted {
-            return ("chat.tool.interrupted", .warning, "exclamationmark.circle")
         }
         return ("chat.tool.running", .brand, "clock.arrow.circlepath")
     }
@@ -257,32 +272,35 @@ struct ChatCodeBlock: View {
 
 // MARK: - confirmation
 
-/// What a `ToolConfirmEvent` is waiting on, shown and not answered.
+/// What a `ToolConfirmEvent` is waiting on, and the way to answer it.
 ///
-/// The answer path is the console's blocking modal on `POST /api/router/agent/confirm`
-/// (`ChatWindow.tsx:1657-1738`), and that flow is not part of this build, so these rows carry no buttons —
-/// the fold still marks the matching cards as waiting so the transcript reads the same way it does there.
+/// The answer goes to `POST /api/router/agent/confirm`, which replies with the stream that resumes the run
+/// (`SessionRouterService.kt:221`), so the panel settles as soon as it is submitted and a nested ask draws
+/// its own panel underneath it rather than editing this one (`ChatWindow.tsx:2036-2130`).
+///
+/// Two shapes of the same card, decided by one flag pair: with an answer channel and a live block, the rows
+/// carry a choice each and the block ends in a single 确定; without one, the block keeps the wait state this
+/// build shipped with and offers no control that could only fail (`ChatWindow.tsx:451-460`).
 struct ChatConfirmationBlock: View {
     let tools: [ChatPendingTool]
+    /// The newest ask, so the record of an answered one does not offer to answer it again.
+    let isWaiting: Bool
+    @ObservedObject var vm: ChatViewModel
+
+    /// The rows carry an answer, settled or not — a block with none is the one still waiting.
+    private var isSettled: Bool { tools.allSatisfy { $0.answer != nil } }
+    private var canAnswer: Bool { isWaiting && vm.canAnswerConfirmation && !isSettled }
+    /// A member run is answered whole-round, so per-row choices would be a promise the wire cannot keep
+    /// (`DefaultAgentRunner.kt:427`).
+    private var isMemberRun: Bool { tools.lazy.compactMap(\.childRunId).first != nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: "lock.shield")
-                    .font(.caption)
-                    .foregroundStyle(Color.hx(.warning))
-                HXText("chat.confirm.title")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Color.hx(.warning))
-                Spacer(minLength: 0)
-            }
+            header
             ForEach(Array(tools.enumerated()), id: \.offset) { _, tool in
                 row(tool)
             }
-            HXText("chat.confirm.note")
-                .font(.caption)
-                .foregroundStyle(Color.hx(.textTertiary))
-                .fixedSize(horizontal: false, vertical: true)
+            footer
         }
         .padding(11)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -291,6 +309,55 @@ struct ChatConfirmationBlock: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(Color.hx(.warning).opacity(0.45), lineWidth: 1)
         )
+    }
+
+    /// The batch answers hang off the header the card already has, instead of adding a second row of buttons
+    /// under the rows (`FEATURES.md` §3: 全部拒绝 / 总是允许 alongside the per-tool 单个批准).
+    private var header: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "lock.shield")
+                .font(.caption)
+                .foregroundStyle(Color.hx(.warning))
+            HXText("chat.confirm.title")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Color.hx(.warning))
+            Spacer(minLength: 0)
+            if canAnswer, !isMemberRun {
+                batchMenu
+            }
+        }
+    }
+
+    private var footer: some View {
+        Group {
+            if canAnswer {
+                VStack(alignment: .leading, spacing: 6) {
+                    HXText("chat.confirm.prompt")
+                        .font(.caption)
+                        .foregroundStyle(Color.hx(.textSecondary))
+                        .fixedSize(horizontal: false, vertical: true)
+                    if isMemberRun {
+                        HXText("chat.confirm.member")
+                            .font(.caption)
+                            .foregroundStyle(Color.hx(.textTertiary))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    // One final control for the whole panel, whatever the number of rows above it.
+                    Button {
+                        vm.submitConfirmation()
+                    } label: {
+                        HXText("chat.confirm.submit")
+                    }
+                    .buttonStyle(.hxPrimary)
+                }
+            } else if !isSettled {
+                HXText("chat.confirm.note")
+                    .font(.caption)
+                    .foregroundStyle(Color.hx(.textTertiary))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func row(_ tool: ChatPendingTool) -> some View {
@@ -302,6 +369,11 @@ struct ChatConfirmationBlock: View {
                     tone: tool.isDangerous ? .danger : .success
                 )
                 Spacer(minLength: 0)
+                if canAnswer {
+                    choiceMenu(tool)
+                } else if let answer = tool.answer {
+                    HXBadge(answer.settledTitleKey, tone: settledTone(answer))
+                }
             }
             let arguments = chatArgumentsText(tool.arguments)
             if !arguments.isEmpty {
@@ -313,6 +385,70 @@ struct ChatConfirmationBlock: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The row's own answer, which is what 「单个批准」 needs and what a mixed panel sends per tool.
+    private func choiceMenu(_ tool: ChatPendingTool) -> some View {
+        let chosen = vm.confirmationChoice(for: tool.toolId)
+        return Menu {
+            ForEach(ToolConfirmAnswer.allCases, id: \.self) { option in
+                Button {
+                    vm.setConfirmationChoice(option, for: tool.toolId)
+                } label: {
+                    HStack(spacing: 6) {
+                        HXText(option.titleKey)
+                        if option == chosen {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            menuLabel(chosen.titleKey, slot: chosen == .denied ? .danger : .success)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    /// The header's batch choices. An answer here writes every row and goes straight off — the console's
+    /// modal does the same with its two buttons (`ChatWindow.tsx:1712-1728`).
+    private var batchMenu: some View {
+        Menu {
+            Button {
+                vm.answerAllConfirmation(.allowed)
+            } label: {
+                HXText("chat.confirm.all")
+            }
+            Button {
+                vm.answerAllConfirmation(.alwaysAllowed)
+            } label: {
+                HXText("chat.confirm.alwaysAll")
+            }
+            Button(role: .destructive) {
+                vm.answerAllConfirmation(.denied)
+            } label: {
+                HXText("chat.confirm.denyAll")
+            }
+        } label: {
+            menuLabel("chat.confirm.batch", slot: .textSecondary)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    private func menuLabel(_ titleKey: String, slot: PaletteSlot) -> some View {
+        HStack(spacing: 4) {
+            HXText(titleKey)
+            Image(systemName: "chevron.down")
+                .font(.caption2)
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(Color.hx(slot))
+    }
+
+    /// A settled row is not colour-only: the badge carries the word as well (`DESIGN.md` line 231).
+    private func settledTone(_ answer: ToolConfirmAnswer) -> PaletteSlot {
+        answer.isConfirmed ? .success : .danger
     }
 }
 

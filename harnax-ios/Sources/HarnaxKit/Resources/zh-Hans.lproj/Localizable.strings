@@ -959,3 +959,22 @@
 "login.biometric.usePassword" = "改用密码登录";
 "me.security.guard" = "启动时解锁";
 "me.security.guard.hint" = "下次启动 app 时，先要求生物识别或设备密码，才打开已保存的登录。";
+
+/* ---- 工具确认 ---- */
+"chat.confirm.allow" = "允许执行";
+"chat.confirm.always" = "总是允许";
+"chat.confirm.deny" = "拒绝";
+"chat.confirm.all" = "全部批准";
+"chat.confirm.alwaysAll" = "全部总是允许";
+"chat.confirm.denyAll" = "全部拒绝";
+"chat.confirm.batch" = "批量作答";
+"chat.confirm.submit" = "确定";
+"chat.confirm.prompt" = "这一轮已暂停，等你决定这些工具能不能执行。";
+"chat.confirm.member" = "成员运行按整轮批准或拒绝，不按单个工具。";
+"chat.confirm.submitFailed" = "确认提交失败：%@";
+"chat.confirm.answer.allowed" = "已批准";
+"chat.confirm.answer.alwaysAllowed" = "已设为总是允许";
+"chat.confirm.answer.denied" = "已拒绝";
+"chat.tool.confirmed" = "已确认";
+"chat.tool.denied" = "已拒绝";
+

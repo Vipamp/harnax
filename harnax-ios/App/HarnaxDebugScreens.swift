@@ -398,6 +398,7 @@ struct HarnaxDebugView: View {
                     history: model.dependencies.chatHistory,
                     config: model.dependencies.sessionConfig,
                     workspace: model.dependencies.workspace,
+                    confirming: model.dependencies.toolConfirm,
                     plan: model.dependencies.plan,
                     conversation: ChatConversation(id: sessionId, title: session.displayName ?? "")
                 )

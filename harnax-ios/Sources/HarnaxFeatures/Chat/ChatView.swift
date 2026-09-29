@@ -32,11 +32,13 @@ public struct ChatView: View {
         history: (any ChatHistoryReading)? = nil,
         config: (any SessionConfiguring)? = nil,
         workspace: (any SessionWorkspaceReading)? = nil,
+        confirming: (any ToolConfirming)? = nil,
         plan: (any PlanReading)? = nil,
         conversation: ChatConversation
     ) {
         _vm = StateObject(wrappedValue: ChatViewModel(
             streaming: streaming,
+            confirming: confirming,
             commands: commands,
             history: history,
             config: config,
@@ -145,7 +147,11 @@ public struct ChatView: View {
         } else {
             LazyVStack(alignment: .leading, spacing: 12) {
                 ForEach(vm.transcript.turns) { turn in
-                    ChatTurnRow(turn: turn, isReading: vm.isStreaming && turn.outcome == .streaming)
+                    ChatTurnRow(
+                        turn: turn,
+                        isReading: vm.isStreaming && turn.outcome == .streaming,
+                        vm: vm
+                    )
                 }
                 if vm.isStreaming {
                     ChatReadingRow()
@@ -397,10 +403,21 @@ private struct ChatComposerToolbar: View {
                     vm.togglePlan()
                 }
                 permissionChip
-                ChatComposerChip(titleKey: "chat.composer.stopSandbox", systemImage: "stop") {
+                // Both go dead for the length of a run, the way the send button turns into a stop button:
+                // a command on a busy session gets refused server-side, so the chips have to say they are
+                // not available rather than look tappable (`ChatWindow.tsx:3679-3686`).
+                ChatComposerChip(
+                    titleKey: "chat.composer.stopSandbox",
+                    systemImage: "stop",
+                    isMuted: vm.isStreaming
+                ) {
                     vm.requestStopSandbox()
                 }
-                ChatComposerChip(titleKey: "chat.composer.clear", systemImage: "trash") {
+                ChatComposerChip(
+                    titleKey: "chat.composer.clear",
+                    systemImage: "trash",
+                    isMuted: vm.isStreaming
+                ) {
                     vm.requestClear()
                 }
             }

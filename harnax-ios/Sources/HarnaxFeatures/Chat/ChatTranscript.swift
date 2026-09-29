@@ -55,6 +55,9 @@ public struct ChatToolRun: Equatable {
     public var result: Result?
     /// Named by a `ToolConfirmEvent` nobody has answered yet.
     public var awaitingConfirmation: Bool
+    /// The answer that went out for this call, once it has. `nil` while the run never asked, or while an ask
+    /// is still waiting.
+    public var confirmAnswer: ToolConfirmAnswer?
     /// The turn closed while this call was still waiting for a result, so it never will get one
     /// (`markOpenToolCards`, `ChatWindow.tsx:1148-1153`).
     public var interrupted: Bool
@@ -65,6 +68,7 @@ public struct ChatToolRun: Equatable {
         arguments: [String: JSONValue] = [:],
         result: Result? = nil,
         awaitingConfirmation: Bool = false,
+        confirmAnswer: ToolConfirmAnswer? = nil,
         interrupted: Bool = false
     ) {
         self.toolId = toolId
@@ -72,11 +76,17 @@ public struct ChatToolRun: Equatable {
         self.arguments = arguments
         self.result = result
         self.awaitingConfirmation = awaitingConfirmation
+        self.confirmAnswer = confirmAnswer
         self.interrupted = interrupted
     }
 
-    /// Still waiting for the tool to come back — the one state that opens its own card.
-    public var isRunning: Bool { result == nil && !awaitingConfirmation && !interrupted }
+    /// Refused outright: the tool will not run, so no result is on its way.
+    public var isRefused: Bool { confirmAnswer == .denied }
+
+    /// Still waiting for the tool to come back — the one state that opens its own card. A call the user
+    /// refused is finished business even before the server's refusal result lands
+    /// (`ChatWindow.tsx:319-324` ranks `rejected` above a result).
+    public var isRunning: Bool { result == nil && !awaitingConfirmation && !interrupted && !isRefused }
 }
 
 /// One tool a confirmation frame is asking about.
@@ -85,12 +95,59 @@ public struct ChatPendingTool: Equatable {
     public let toolName: String
     public let arguments: [String: JSONValue]
     public let isDangerous: Bool
+    /// Set when the ask came from a team member's run: the answer has to go back to that parked run, and
+    /// only that id says which one (`DESIGN.md` line 15).
+    public let childRunId: String?
+    /// The answer the user gave, `nil` while the block is still waiting.
+    public let answer: ToolConfirmAnswer?
 
-    public init(toolId: String, toolName: String, arguments: [String: JSONValue], isDangerous: Bool) {
+    public init(
+        toolId: String,
+        toolName: String,
+        arguments: [String: JSONValue],
+        isDangerous: Bool,
+        childRunId: String? = nil,
+        answer: ToolConfirmAnswer? = nil
+    ) {
         self.toolId = toolId
         self.toolName = toolName
         self.arguments = arguments
         self.isDangerous = isDangerous
+        self.childRunId = childRunId
+        self.answer = answer
+    }
+
+    /// The same row with an answer written into it.
+    func resolved(_ answer: ToolConfirmAnswer?) -> ChatPendingTool {
+        ChatPendingTool(
+            toolId: toolId,
+            toolName: toolName,
+            arguments: arguments,
+            isDangerous: isDangerous,
+            childRunId: childRunId,
+            answer: answer
+        )
+    }
+}
+
+/// The confirmation block the screen is waiting on an answer for.
+///
+/// One at a time, and the newest one: an answered block stays on screen as a record of what was decided, so
+/// "what may the user answer right now" is a question about the transcript, not about the last frame
+/// (`ChatWindow.tsx:1720-1725` rewrites every pending segment rather than the newest one, which is the same
+/// rule read from the other side).
+public struct ChatPendingConfirmation: Equatable {
+    /// The block this is, so a card can tell "you are the question" from "you have been answered".
+    public let segmentID: Int
+    /// Non-nil when the ask belongs to a team member's run rather than this session's own agent.
+    public let childRunId: String?
+    /// The tools, in the order the frame listed them. The wire body follows this order.
+    public let tools: [ChatPendingTool]
+
+    public init(segmentID: Int, childRunId: String?, tools: [ChatPendingTool]) {
+        self.segmentID = segmentID
+        self.childRunId = childRunId
+        self.tools = tools
     }
 }
 
@@ -401,6 +458,95 @@ public struct ChatTranscript: Equatable {
         turns[index] = turn
     }
 
+    // MARK: - answering a confirmation
+
+    /// The block the user may answer now: the newest one with a row nobody has decided.
+    ///
+    /// Read off the last turn only — a parked ask from an earlier turn is history by then, and answering it
+    /// would resume a run the conversation has left behind.
+    public var pendingConfirmation: ChatPendingConfirmation? {
+        guard let turn = turns.last, let index = unansweredConfirmation(turn) else { return nil }
+        let rows = turn.segments[index].rows
+        return ChatPendingConfirmation(
+            segmentID: turn.segments[index].id,
+            childRunId: rows.lazy.compactMap(\.childRunId).first,
+            tools: rows
+        )
+    }
+
+    /// Write the decisions into the block and into the cards it names, then open the bubble again.
+    ///
+    /// The reopening is the point: the answer is not a receipt, it is the request that resumes the run, and
+    /// the frames that come back are this same turn's continuation. Without it the fold's
+    /// "no bubble to write into" guard would drop every word the resumed run says
+    /// (`ChatWindow.tsx:1720-1725` likewise rewrites the pending segments before it posts).
+    ///
+    /// A row the caller left out is treated as approved — the panel's rows default to 「允许执行」, so an
+    /// absent decision is the one the user saw, not a refusal smuggled in by a missing key.
+    public mutating func resolveConfirmation(_ decisions: [String: ToolConfirmAnswer]) {
+        settleConfirmation(given: decisions, answered: true)
+    }
+
+    /// Hand the newest answered block back, as if the answer had never left.
+    ///
+    /// The one use is a confirm request that reached nobody: leaving a settled card on screen would tell the
+    /// user a decision had been made that the run never saw.
+    public mutating func reopenConfirmation() {
+        settleConfirmation(given: [:], answered: false)
+    }
+
+    private mutating func settleConfirmation(given decisions: [String: ToolConfirmAnswer], answered: Bool) {
+        guard let index = turns.indices.last else { return }
+        var turn = turns[index]
+        let rows: [ChatPendingTool]
+        if answered {
+            guard let at = unansweredConfirmation(turn) else { return }
+            rows = turn.segments[at].rows.map { $0.resolved(decisions[$0.toolId] ?? .allowed) }
+            turn.segments[at].kind = .confirmation(rows)
+        } else {
+            guard let at = settledConfirmation(turn) else { return }
+            rows = turn.segments[at].rows.map { $0.resolved(nil) }
+            turn.segments[at].kind = .confirmation(rows)
+        }
+        var settled: Set<Int> = []
+        for row in rows { writeAnswer(row, answered: answered, into: &turn, claimed: &settled) }
+        turns[index] = turn
+        guard answered else { return }
+        // The bubble this ask parked is the one the resumed run writes into.
+        turns[index].outcome = .streaming
+        textSealed = false
+        thinkingSealed = false
+    }
+
+    /// Move one card between "waiting" and "answered". The match is the one that settles a card in the state
+    /// the transition expects — waiting, or already answered — so a row whose card was found by name rather
+    /// than by id still gets the answer the user gave it, and a card that has nothing to do with this block
+    /// is left alone. A card one row has settled is not offered to the next row of the same block.
+    private func writeAnswer(
+        _ row: ChatPendingTool,
+        answered: Bool,
+        into turn: inout ChatTurn,
+        claimed: inout Set<Int>
+    ) {
+        func match(id: String, name: String) -> Int? {
+            turn.segments.firstIndex(where: { segment in
+                guard let run = segment.tool, !claimed.contains(segment.id) else { return false }
+                guard (!id.isEmpty && run.toolId == id) || (!name.isEmpty && run.toolName == name) else {
+                    return false
+                }
+                return answered ? run.awaitingConfirmation : run.confirmAnswer != nil
+            })
+        }
+        guard let at = match(id: row.toolId, name: "") ?? match(id: "", name: row.toolName),
+              var run = turn.segments[at].tool else { return }
+        claimed.insert(turn.segments[at].id)
+        run.awaitingConfirmation = !answered
+        run.confirmAnswer = answered ? row.answer : nil
+        // An answer that never left makes the card wait again, interrupted or not.
+        run.interrupted = answered ? run.interrupted : false
+        turn.segments[at].kind = .tool(run)
+    }
+
     // MARK: - frames
 
     private mutating func foldCall(_ turn: inout ChatTurn, _ call: ChatEvent.ToolCall) {
@@ -417,7 +563,8 @@ public struct ChatTranscript: Equatable {
                 toolName: name,
                 arguments: call.arguments,
                 result: existing.result,
-                awaitingConfirmation: existing.awaitingConfirmation
+                awaitingConfirmation: existing.awaitingConfirmation,
+                confirmAnswer: existing.confirmAnswer
             ))
         } else {
             turn.segments.append(nextSegment(.tool(ChatToolRun(
@@ -439,40 +586,54 @@ public struct ChatTranscript: Equatable {
     }
 
     private mutating func foldConfirm(_ turn: inout ChatTurn, _ confirm: ChatEvent.ToolConfirm) {
+        let childRunId = confirm.source?.childRunId
+        // The loose "any open card" step is only sound while the frame is about one tool; two rows in one
+        // frame are two calls and each needs its own card, or the second answer would overwrite the first.
+        let loose = confirm.pendingCallTools.count == 1
+        var claimed: Set<Int> = []
         var rows: [ChatPendingTool] = []
         for pending in confirm.pendingCallTools {
             guard let name = hxPresented(pending.toolName) else { continue }
             guard !Self.planTools.contains(name) else { continue }
-            if let index = findTool(turn, id: pending.toolId, name: name, broad: true),
+            if let index = claimedCard(turn, id: pending.toolId, name: name, claimed: claimed, loose: loose),
                var run = turn.segments[index].tool {
                 // The card is reused and only its status changes (`ChatWindow.tsx:1683-1691`); its
                 // arguments come from this frame, which is the shape the user is being asked to approve.
                 run.toolName = name
                 run.arguments = pending.arguments
                 run.awaitingConfirmation = true
+                run.interrupted = false
                 turn.segments[index].kind = .tool(run)
+                claimed.insert(turn.segments[index].id)
             } else {
                 // A confirmation can be the first frame that names the tool. Dropping it would hide the
                 // very call the user is being asked about (`ChatWindow.tsx:1692-1703` opens a card).
-                turn.segments.append(nextSegment(.tool(ChatToolRun(
+                let segment = nextSegment(.tool(ChatToolRun(
                     toolId: pending.toolId,
                     toolName: name,
                     arguments: pending.arguments,
                     awaitingConfirmation: true
-                ))))
+                )))
+                claimed.insert(segment.id)
+                turn.segments.append(segment)
             }
             rows.append(ChatPendingTool(
                 toolId: pending.toolId,
                 toolName: name,
                 arguments: pending.arguments,
-                isDangerous: pending.isDangerous
+                isDangerous: pending.isDangerous,
+                childRunId: hxPresented(childRunId)
             ))
         }
         guard !rows.isEmpty else { return }
-        if let index = lastConfirmation(turn) {
-            // The same run can be asked about twice; one block, updated rather than stacked.
+        if let index = unansweredConfirmation(turn) {
+            // The same run can be asked about twice before an answer goes out; one block, updated rather
+            // than stacked.
             turn.segments[index].kind = .confirmation(merge(turn.segments[index].rows, rows))
         } else {
+            // Either no block yet, or the last one has been answered: a fresh ask after an answer is a new
+            // question and gets its own panel (`ChatWindow.tsx:2036-2130`), because the settled block is the
+            // record of what the user decided.
             turn.segments.append(nextSegment(.confirmation(rows)))
         }
     }
@@ -535,6 +696,30 @@ public struct ChatTranscript: Equatable {
         turn.segments.lastIndex { $0.tool?.toolId == id }
     }
 
+    /// The card a confirmation row is about: its id, then a card of the same tool that is still open, then
+    /// — only for a frame naming one tool — the newest card still without a result. A card another row of
+    /// this same frame already took is not up for grabs again.
+    private func claimedCard(
+        _ turn: ChatTurn,
+        id: String,
+        name: String,
+        claimed: Set<Int>,
+        loose: Bool
+    ) -> Int? {
+        if !id.isEmpty, let hit = indexOfTool(turn, id: id), !claimed.contains(turn.segments[hit].id) {
+            return hit
+        }
+        if let hit = turn.segments.lastIndex(where: { segment in
+            guard let run = segment.tool, run.result == nil, run.toolName == name else { return false }
+            return !claimed.contains(segment.id)
+        }) { return hit }
+        guard loose else { return nil }
+        return turn.segments.lastIndex(where: { segment in
+            guard let run = segment.tool, run.result == nil else { return false }
+            return !claimed.contains(segment.id)
+        })
+    }
+
     private func lastOpenTool(_ turn: ChatTurn, where predicate: (ChatToolRun) -> Bool) -> Int? {
         turn.segments.lastIndex {
             guard let run = $0.tool, run.result == nil else { return false }
@@ -542,10 +727,19 @@ public struct ChatTranscript: Equatable {
         }
     }
 
-    private func lastConfirmation(_ turn: ChatTurn) -> Int? {
+    /// The newest block still waiting on an answer, which is the one a repeat of the same ask updates.
+    private func unansweredConfirmation(_ turn: ChatTurn) -> Int? {
         turn.segments.lastIndex {
-            if case .confirmation = $0.kind { return true }
-            return false
+            guard case .confirmation = $0.kind else { return false }
+            return $0.rows.contains { $0.answer == nil }
+        }
+    }
+
+    /// The newest block whose rows have all been answered — the one a failed delivery hands back.
+    private func settledConfirmation(_ turn: ChatTurn) -> Int? {
+        turn.segments.lastIndex {
+            guard case .confirmation = $0.kind else { return false }
+            return !$0.rows.isEmpty && $0.rows.allSatisfy { $0.answer != nil }
         }
     }
 

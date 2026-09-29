@@ -902,7 +902,7 @@
 "task.log.response" = "Agent response";
 "task.log.error" = "Failure reason";
 
-/* ---- 对话 tab：工作区 / 团队产物 / 输入区能力开关 ---- */
+/* ---- chat tab: workspace / team artifacts / composer switches ---- */
 "common.refresh" = "Refresh";
 "chat.workspace.title" = "Workspace";
 "chat.workspace.root" = "Workspace";
@@ -958,3 +958,22 @@
 "login.biometric.usePassword" = "Sign in with a password instead";
 "me.security.guard" = "Unlock at launch";
 "me.security.guard.hint" = "Asks for biometrics or the device passcode before a stored sign-in opens. Takes effect the next time the app starts.";
+
+/* ---- tool confirmation ---- */
+"chat.confirm.allow" = "Allow execution";
+"chat.confirm.always" = "Always allow";
+"chat.confirm.deny" = "Deny";
+"chat.confirm.all" = "Approve all";
+"chat.confirm.alwaysAll" = "Always allow all";
+"chat.confirm.denyAll" = "Deny all";
+"chat.confirm.batch" = "Answer every row";
+"chat.confirm.submit" = "Confirm";
+"chat.confirm.prompt" = "The run is parked until you decide what these tools may do.";
+"chat.confirm.member" = "A member run is answered for the whole round, not tool by tool.";
+"chat.confirm.submitFailed" = "The answer did not reach the run: %@";
+"chat.confirm.answer.allowed" = "Approved";
+"chat.confirm.answer.alwaysAllowed" = "Always allowed";
+"chat.confirm.answer.denied" = "Denied";
+"chat.tool.confirmed" = "Confirmed";
+"chat.tool.denied" = "Denied";
+

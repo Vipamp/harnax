@@ -334,6 +334,27 @@ final class ChatViewModelTests: XCTestCase {
         XCTAssertFalse(vm.transcript.isTerminated)
     }
 
+    /// A toolbar chip is not a second send button. The console leaves both disabled for the length of a run
+    /// because the backend refuses a second command on a busy session (`ChatWindow.tsx:3679-3686`); here a
+    /// chip that got through would have replaced the read's task and orphaned the socket behind it.
+    func testAChipCannotTakeOverALiveRead() async throws {
+        let commands = ScriptedAgentCommands()
+        let (vm, stream) = makeModel(commands: commands)
+        await send("先翻译", on: vm, stream)
+
+        vm.requestClear()
+        vm.requestStopSandbox()
+        vm.confirmPendingCommand()
+
+        XCTAssertEqual(stream.ports.count, 1, "a chip must not open a second read")
+        XCTAssertTrue(commands.requests.isEmpty, "…or fire a command at a busy session")
+        XCTAssertTrue(vm.isStreaming)
+
+        try stream.latest.feed(ChatFrames.text("还在跑"))
+        await waitUntil("the frame behind the chips") { vm.transcript.segments.count == 1 }
+        XCTAssertEqual(vm.transcript.segments.map(\.text), ["还在跑"])
+    }
+
     // MARK: - scroll
 
     func testTheThresholdIsTheDistanceThatStillCountsAsFollowing() {

@@ -33,6 +33,10 @@ public struct HarnaxDependencies: Sendable {
     /// The one dependency that is not on the admin surface: a streamed answer cannot go through the
     /// transport every other client shares, which waits for a whole body.
     public let streaming: any AgentStreaming
+    /// Separate from `streaming` on purpose: a host that can start a turn is not automatically a host that
+    /// can answer one, and the chat screen has to be able to show a parked run without offering a control
+    /// that can only fail.
+    public let toolConfirm: (any ToolConfirming)?
 
     public init(
         auth: any AuthFlowing,
@@ -59,7 +63,8 @@ public struct HarnaxDependencies: Sendable {
         chatHistory: any ChatHistoryReading,
         plan: any PlanReading,
         commands: any AgentCommanding,
-        streaming: any AgentStreaming
+        streaming: any AgentStreaming,
+        toolConfirm: (any ToolConfirming)? = nil
     ) {
         self.auth = auth
         self.agents = agents
@@ -86,6 +91,7 @@ public struct HarnaxDependencies: Sendable {
         self.plan = plan
         self.commands = commands
         self.streaming = streaming
+        self.toolConfirm = toolConfirm
     }
 
     public static func live() -> HarnaxDependencies {
@@ -107,6 +113,12 @@ public struct HarnaxDependencies: Sendable {
         // client, so the agent and team reads, their two save surfaces, the task, refresh, five context
         // domains, four system reads and the eight session reads and writes share its header injection.
         let admin = AdminClient(client: client)
+        // One client for both legs: an answer to a parked run comes back as a stream of its own.
+        let stream = ChatStreamClient(
+            configs: configs,
+            session: session,
+            language: { AcceptLanguage.current() }
+        )
         return HarnaxDependencies(
             auth: AuthFlow(client: client, session: session, configs: configs),
             agents: admin,
@@ -132,11 +144,8 @@ public struct HarnaxDependencies: Sendable {
             chatHistory: admin,
             plan: admin,
             commands: admin,
-            streaming: ChatStreamClient(
-                configs: configs,
-                session: session,
-                language: { AcceptLanguage.current() }
-            )
+            streaming: stream,
+            toolConfirm: stream
         )
     }
 }
