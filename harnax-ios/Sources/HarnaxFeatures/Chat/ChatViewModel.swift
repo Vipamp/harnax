@@ -85,6 +85,8 @@ public final class ChatViewModel: ObservableObject {
     /// Absent means 「允许执行」, which is what an untouched row shows, and what a rollback therefore has to
     /// leave alone: the user's own taps survive an answer that never reached the run.
     @Published public private(set) var confirmationChoices: [String: ToolConfirmAnswer] = [:]
+    /// Artifact ids whose bytes are in flight — the file row's own spinner, and the gate a second tap hits.
+    @Published public private(set) var pendingDownloads: Set<String> = []
 
     private let streaming: any AgentStreaming
     private let commands: (any AgentCommanding)?
@@ -95,6 +97,9 @@ public final class ChatViewModel: ObservableObject {
     /// and offers nothing, because a control that can only fail is worse than no control
     /// (`ChatWindow.tsx:451-460` gates its buttons on the same kind of `onAnswer` being present).
     private let confirming: (any ToolConfirming)?
+    /// The one door a run's artifact bytes leave through, injected for the same reason the two drawers inject
+    /// it: the macOS test host has no share sheet, and the question a test asks is which bytes under which name.
+    private let share: @Sendable (HXSharedFile) -> Void
     private var streamTask: Task<Void, Never>?
     /// The stored rows are already on screen for this conversation. A reload is a re-entry, not a refresh.
     private var loadedConversationID: String?
@@ -145,6 +150,9 @@ public final class ChatViewModel: ObservableObject {
     ///
     /// `confirming` answers a tool confirmation and hands back the stream that resumes the run
     /// (`SessionRouterService.kt:221`). Left unwired, a parked run stays parked.
+    ///
+    /// `share` is where a downloaded run artifact goes. Both drawers take the same closure for the same
+    /// reason (`WorkspaceViewModel.swift:103-108`), and there is no way to test an artifact row without it.
     public init(
         streaming: any AgentStreaming,
         confirming: (any ToolConfirming)? = nil,
@@ -152,7 +160,8 @@ public final class ChatViewModel: ObservableObject {
         history: (any ChatHistoryReading)? = nil,
         config: (any SessionConfiguring)? = nil,
         workspace: (any SessionWorkspaceReading)? = nil,
-        conversation: ChatConversation
+        conversation: ChatConversation,
+        share: @escaping @Sendable (HXSharedFile) -> Void = HXFileShare.share
     ) {
         self.streaming = streaming
         self.confirming = confirming
@@ -161,6 +170,7 @@ public final class ChatViewModel: ObservableObject {
         self.configReader = config
         self.workspace = workspace
         self.conversation = conversation
+        self.share = share
     }
 
     /// Nothing to send, or a turn already reading — the input bar's send button becomes a stop button while
@@ -310,6 +320,9 @@ public final class ChatViewModel: ObservableObject {
         // A parked ask belongs to the conversation that parked it: the panel goes with it, and so do the
         // half-made choices. `abort()` has already let go of a confirm read that was in flight.
         confirmationChoices = [:]
+        // The same for a byte still on its way: the row it belongs to went with the transcript, and a spinner
+        // keyed to an id nobody can reach again would never come back down.
+        pendingDownloads = []
         isAnchoredToBottom = true
         scrollToBottomID += 1
     }
@@ -964,6 +977,50 @@ public final class ChatViewModel: ObservableObject {
         switch result {
         case .failure: return false
         case let .success(reply): return reply.success != false
+        }
+    }
+
+    // MARK: - run artifacts
+
+    /// Whether a file row may offer its bytes at all.
+    ///
+    /// The artifact store is off unless the deployment turns it on (`OutputFileController.kt:38` registers the
+    /// whole controller behind `minio.enabled=true`), and the read is optional here for the same reason: a row
+    /// that could only ever answer 404 shows its size and nothing else.
+    public var canTakeArtifacts: Bool { workspace != nil }
+
+    public func isDownloading(_ attachment: ChatFileAttachment) -> Bool {
+        pendingDownloads.contains(attachment.fileId)
+    }
+
+    /// One file row's bytes, to the share sheet — the same door the two drawers use, for the same reason:
+    /// nothing is written to the app's own storage.
+    ///
+    /// The gate is the first line rather than a `.disabled()` on the row, because the second tap arrives before
+    /// the first has had a render to turn itself off.
+    public func download(_ attachment: ChatFileAttachment) async {
+        guard !isDownloading(attachment) else { return }
+        guard let workspace else {
+            composerNotice = .error(hx("chat.command.unwired"))
+            return
+        }
+        let sessionID = conversation.id
+        pendingDownloads.insert(attachment.fileId)
+        defer { pendingDownloads.remove(attachment.fileId) }
+        switch await workspace.downloadAttachment(attachment, sessionId: sessionID) {
+        case let .success(payload):
+            // The read is still the right conversation's — it was given that id — but a sheet thrown over a
+            // conversation the user has since opened, and a banner about a file they are no longer looking at,
+            // are both news they did not ask for. `bind` has already dropped the row.
+            guard conversation.id == sessionID else { return }
+            let name = WorkspacePath.safeFileName(payload.name)
+            share(HXSharedFile(name: name, data: payload.data, mimeType: payload.mimeType))
+            composerNotice = .info(hx("chat.workspace.download.done", name))
+        case let .failure(error):
+            // 404 is both "no such artifact" and "the store is off" (`:38`, `:66`), and the banner says what
+            // the transport said. A conversation switch does not hide it: the file they tapped is still the
+            // one that failed.
+            composerNotice = .error(ErrorMessage.text(for: error))
         }
     }
 

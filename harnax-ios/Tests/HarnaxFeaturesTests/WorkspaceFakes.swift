@@ -68,13 +68,33 @@ final class FakeWorkspaceSandbox: SessionWorkspaceReading, @unchecked Sendable {
         return downloadReplies.isEmpty ? .failure(.decoding) : downloadReplies.removeFirst()
     }
 
-    /// Not a drawer's route — `ChatViewModel`'s — so an unqueued call is a test bug in the loudest shape
-    /// the protocol allows.
+    /// `ChatViewModel`'s route rather than a drawer's, gated the way `FakeTeamArtifactStore` gates its own — so
+    /// a row tapped twice while its bytes are in flight can be shown to have sent one request. The recorded
+    /// session id is the point of the whole call: the frame carries no conversation of its own.
+    private(set) var attachmentRequests: [(fileId: String, sessionId: String)] = []
+    var attachmentReplies: [Result<WorkspaceDownload, APIError>] = []
+    var gateAttachments = false
+    private var parkedAttachments: [() -> Void] = []
+
     func downloadAttachment(
         _ attachment: ChatFileAttachment,
         sessionId: String
     ) async -> Result<WorkspaceDownload, APIError> {
-        .failure(.decoding)
+        attachmentRequests.append((fileId: attachment.fileId, sessionId: sessionId))
+        guard gateAttachments else { return nextAttachment() }
+        return await withCheckedContinuation { continuation in
+            parkedAttachments.append { continuation.resume(returning: self.nextAttachment()) }
+        }
+    }
+
+    func releaseAttachments() {
+        let waiting = parkedAttachments
+        parkedAttachments = []
+        for resume in waiting { resume() }
+    }
+
+    private func nextAttachment() -> Result<WorkspaceDownload, APIError> {
+        attachmentReplies.isEmpty ? .failure(.decoding) : attachmentReplies.removeFirst()
     }
 }
 

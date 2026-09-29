@@ -107,7 +107,7 @@ struct ChatSegmentRow: View {
                 vm: vm
             )
         case let .file(attachment):
-            ChatFileRow(attachment: attachment)
+            ChatFileRow(attachment: attachment, vm: vm)
         }
     }
 }
@@ -458,6 +458,7 @@ struct ChatConfirmationBlock: View {
 /// draws them nowhere (`specs/02-session-chat.md` “未确认” 1), so this is the row that gives them a place.
 struct ChatFileRow: View {
     let attachment: ChatFileAttachment
+    @ObservedObject var vm: ChatViewModel
 
     var body: some View {
         HStack(spacing: 7) {
@@ -472,11 +473,31 @@ struct ChatFileRow: View {
             Text(verbatim: ByteCountFormatter.string(fromByteCount: attachment.fileSize, countStyle: .file))
                 .font(.caption)
                 .foregroundStyle(Color.hx(.textTertiary))
+            if vm.canTakeArtifacts {
+                action
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.hx(.surfaceAlt), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    /// The same trailing control the artifact drawer uses, so a byte the run left behind is taken the same way
+    /// as one the run published. While the bytes are coming the icon becomes the spinner the drawer's row shows.
+    @ViewBuilder
+    private var action: some View {
+        if vm.isDownloading(attachment) {
+            ProgressView().tint(Color.hx(.brand))
+        } else {
+            Button {
+                Task { await vm.download(attachment) }
+            } label: {
+                Image(systemName: "arrow.down.circle")
+            }
+            .buttonStyle(.hxInline)
+            .accessibilityLabel(Text(verbatim: hx("chat.artifacts.download")))
+        }
     }
 }
 
