@@ -92,7 +92,7 @@ public final class SkillTableViewModel: ObservableObject {
         ) {
         case let .success(page):
             pages.replace(with: page)
-            statusOverrides = [:]
+            statusOverrides = statusOverrides.filter { pendingIDs.contains($0.key) }
             apply()
         case let .failure(error):
             let text = ErrorMessage.text(for: error)

@@ -69,7 +69,7 @@ public final class ApiKeyListViewModel: ObservableObject {
         switch await catalog.apiKeyPage(keyword: keyword, enabled: filter.queryValue, num: 1, size: pages.pageSize) {
         case let .success(page):
             pages.replace(with: page)
-            statusOverrides = [:]
+            statusOverrides = statusOverrides.filter { pendingIDs.contains($0.key) }
             apply()
         case let .failure(error):
             let text = ErrorMessage.text(for: error)

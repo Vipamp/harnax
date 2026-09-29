@@ -88,7 +88,7 @@ public final class ChannelListViewModel: ObservableObject {
         ) {
         case let .success(page):
             pages.replace(with: page)
-            statusOverrides = [:]
+            statusOverrides = statusOverrides.filter { pendingIDs.contains($0.key) }
             apply()
             await loadSandboxStatuses()
         case let .failure(error):

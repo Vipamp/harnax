@@ -101,7 +101,7 @@ public final class ModelProviderListViewModel: ObservableObject {
         ) {
         case let .success(page):
             pages.replace(with: page)
-            statusOverrides = [:]
+            statusOverrides = statusOverrides.filter { pendingIDs.contains($0.key) }
             stats = [:]
             tests = [:]
             apply()

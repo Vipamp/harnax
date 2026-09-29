@@ -260,6 +260,27 @@ final class ChannelListViewModelTests: XCTestCase {
         XCTAssertTrue(vm.status(of: row))
     }
 
+    /// A page that arrives before the switch it describes is a page of the state as it was a second ago.
+    /// Dropping every override here is what left the row showing the opposite of what the server ended up
+    /// storing: the write had not answered yet, and nothing puts an override back once it has.
+    func testAPageThatLandsMidWriteKeepsTheSwitchTheUserJustThrew() async throws {
+        let (vm, catalog) = try await fresh()
+        let row = try XCTUnwrap(vm.items.first)
+        catalog.gateWrites = true
+        let write = Task { await vm.setStatus(false, for: row) }
+        try await waitUntil { catalog.statusRequests.count == 1 }
+
+        catalog.replies = [.success(try seeded(2))]
+        await vm.refresh()
+        XCTAssertFalse(vm.status(of: row), "the row still reads as the user left it while the write is out")
+
+        catalog.releaseWrites()
+        await write.value
+        catalog.replies = [.success(try seeded(2))]
+        await vm.refresh()
+        XCTAssertTrue(vm.status(of: row), "and once the write has answered, the page owns the value again")
+    }
+
     func testARowTheStackNeverGaveAnIdToTakesNoWriteAtAll() async throws {
         let catalog = FakeChannels()
         catalog.replies = [.success(try PageStub.page(ChannelSummary.self, [row("无名", id: nil)]))]

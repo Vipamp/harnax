@@ -105,8 +105,8 @@ public final class SessionListViewModel: ObservableObject {
         ) {
         case let .success(page):
             pages.replace(with: page)
-            statusOverrides = [:]
-            titleOverrides = [:]
+            statusOverrides = statusOverrides.filter { pendingIDs.contains($0.key) }
+            titleOverrides = titleOverrides.filter { pendingIDs.contains($0.key) }
             apply()
         case let .failure(error):
             let text = ErrorMessage.text(for: error)

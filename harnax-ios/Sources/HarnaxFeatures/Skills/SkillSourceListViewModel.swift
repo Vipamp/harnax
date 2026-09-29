@@ -41,6 +41,14 @@ public final class SkillSourceListViewModel: ObservableObject {
     /// picked so the right-hand table always has a subject. An explicit tap wins over it, and a selection
     /// that has paged or been deleted out of the list falls back to the new head.
     @Published public var selection: Int64?
+    /// The source whose table the operator just asked for, and the only thing that pushes one.
+    ///
+    /// `selection` cannot carry this: `apply()` picks the head row on its own after every load, so a screen
+    /// that pushed on that change opened a table the moment the tab appeared. There the automatic selection
+    /// only decides which source the right-hand panel shows on the same screen
+    /// (`harnax-webui/src/pages/skill/index.tsx:58-62`); here that panel is a pushed screen, so it follows the
+    /// tap alone.
+    @Published public private(set) var pendingOpen: SkillSourceSummary?
     @Published public var keyword = "" {
         didSet { if keyword != oldValue { scheduleSearch() } }
     }
@@ -66,6 +74,18 @@ public final class SkillSourceListViewModel: ObservableObject {
         return items.first { $0.id == selection }
     }
 
+    /// The row's gesture. It highlights as it goes, so the card that was pressed reads as the one whose table
+    /// is on screen.
+    public func open(_ source: SkillSourceSummary) {
+        selection = source.id
+        pendingOpen = source
+    }
+
+    /// The screen calls this once it has pushed, so a second press of the same row is a change again.
+    public func didOpen() {
+        pendingOpen = nil
+    }
+
     public func status(of source: SkillSourceSummary) -> Bool {
         statusOverrides[source.id] ?? source.isEnabled
     }
@@ -86,7 +106,7 @@ public final class SkillSourceListViewModel: ObservableObject {
         ) {
         case let .success(page):
             pages.replace(with: page)
-            statusOverrides = [:]
+            statusOverrides = statusOverrides.filter { pendingIDs.contains($0.key) }
             apply()
         case let .failure(error):
             let text = ErrorMessage.text(for: error)
@@ -130,9 +150,11 @@ public final class SkillSourceListViewModel: ObservableObject {
 
     /// Reinstall without a picker: `names` stays off the request, which is the backend's "the whole source"
     /// (`SkillSourceInstallRequest.kt:13-15`). The report still has to be read, because a `200` here can
-    /// carry per-skill failures.
+    /// carry per-skill failures — and the previous run's report goes first, since the sheet opens on a
+    /// *change* of it and two identical answers would otherwise be one published value.
     public func installAll(_ source: SkillSourceSummary) async {
         inlineError = nil
+        lastReport = nil
         pendingIDs.insert(source.id)
         defer { pendingIDs.remove(source.id) }
         switch await skills.install(sourceID: source.id, names: nil) {
@@ -178,10 +200,13 @@ public final class SkillSourceListViewModel: ObservableObject {
     /// Upload is create-and-install in one call, so the report is read off the answer rather than assumed
     /// (`SkillSourceInstallResponse.kt:12-17`).
     public func finishUpload() async {
+        lastReport = nil
         lastReport = await upload.submit()
         if upload.succeeded { await refresh() }
     }
 
+    /// The sheet calls this as it closes. A report nobody has read left published would make "nothing yet" and
+    /// "already dismissed" the same value to the list.
     public func dismissReport() {
         lastReport = nil
     }
