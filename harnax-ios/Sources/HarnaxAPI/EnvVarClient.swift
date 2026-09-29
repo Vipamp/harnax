@@ -9,6 +9,11 @@ extension AdminClient: EnvVarCataloging {
         )
     }
 
+    /// Unpaged, and the `data` is a bare array rather than a `Page`, so it decodes as `[EnvVarCandidate]`.
+    public func envVarCandidates() async -> Result<[EnvVarCandidate], APIError> {
+        await client.send([EnvVarCandidate].self, EnvVarEndpoint.list)
+    }
+
     public func createEnvVar(_ draft: EnvVarDraft) async -> Result<EmptyResponse, APIError> {
         guard let endpoint = try? EnvVarEndpoint.create(draft) else { return .failure(.decoding) }
         return await client.send(EmptyResponse.self, endpoint)

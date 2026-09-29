@@ -536,6 +536,17 @@
 "env.var.note.long" = "Description cannot exceed 500 characters.";
 "env.var.sensitive.hint" = "Sensitive values stay server-side; the list shows a mask.";
 
+/* ---- env binding editor (agent / team wizard) ---- */
+"env.binding.reference" = "Reference";
+"env.binding.custom" = "Custom";
+"env.binding.choose" = "Choose a variable";
+"env.binding.clear" = "Clear";
+"env.binding.default" = "Package default: %@";
+"env.binding.unresolved" = "This variable's value is not shown";
+"env.picker.title" = "Environment variables";
+"env.picker.search" = "Search variables";
+"env.picker.empty" = "No variable left to choose";
+
 /* ---- API keys: list ---- */
 "apikey.title" = "API Keys";
 "apikey.search" = "Search by name";

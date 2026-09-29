@@ -67,6 +67,8 @@ struct UnwiredCatalogs: ModelCataloging, ToolCataloging, SkillCataloging, McpCat
 
     func setModelStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> { .failure(unwired()) }
 
+    func modelChoices(num: Int, size: Int) async -> Result<Page<ModelSummary>, APIError> { .failure(unwired()) }
+
     func deleteModel(id: Int64) async -> Result<EmptyResponse, APIError> { .failure(unwired()) }
 
     func saveModel(
@@ -84,6 +86,8 @@ struct UnwiredCatalogs: ModelCataloging, ToolCataloging, SkillCataloging, McpCat
     ) async -> Result<Page<ToolSummary>, APIError> { .failure(unwired()) }
 
     func toolDetail(id: Int64) async -> Result<ToolSummary, APIError> { .failure(unwired()) }
+
+    func availableTools() async -> Result<[ToolSummary], APIError> { .failure(unwired()) }
 
     // MARK: - skills
 
@@ -346,6 +350,8 @@ struct UnwiredSystem: EnvVarCataloging, ApiKeyCataloging, ChannelCataloging, Tok
     func envVarPage(keyword: String?, num: Int, size: Int) async -> Result<Page<EnvVarSummary>, APIError> {
         .failure(unwired())
     }
+
+    func envVarCandidates() async -> Result<[EnvVarCandidate], APIError> { .failure(unwired()) }
 
     func createEnvVar(_ draft: EnvVarDraft) async -> Result<EmptyResponse, APIError> { .failure(unwired()) }
 

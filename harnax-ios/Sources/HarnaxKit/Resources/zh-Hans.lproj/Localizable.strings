@@ -537,6 +537,17 @@
 "env.var.note.long" = "描述不能超过 500 个字符。";
 "env.var.sensitive.hint" = "敏感值只在服务端保存明文，列表里显示脱敏文本。";
 
+/* ---- 环境变量绑定（智能体 / 团队向导）---- */
+"env.binding.reference" = "引用变量";
+"env.binding.custom" = "自定义";
+"env.binding.choose" = "选择一个变量";
+"env.binding.clear" = "清除";
+"env.binding.default" = "包内默认值：%@";
+"env.binding.unresolved" = "不显示该变量的值";
+"env.picker.title" = "环境变量";
+"env.picker.search" = "搜索变量";
+"env.picker.empty" = "没有可选择的变量";
+
 /* ---- API Key：列表 ---- */
 "apikey.title" = "API Key 管理";
 "apikey.search" = "搜索名称";

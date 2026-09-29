@@ -22,4 +22,11 @@ extension AdminClient: ToolCataloging {
     public func toolDetail(id: Int64) async -> Result<ToolSummary, APIError> {
         await client.send(ToolSummary.self, ToolEndpoint.detail(id: id))
     }
+
+    /// `/available` answers `List<AgentToolResponse>` — the same DTO as the page route, so the same row
+    /// type decodes it, `envParams` and all (`AgentToolController.kt:59-61`). It is unpaged, so there is
+    /// no `Page` wrapper to unwrap and no total to reconcile.
+    public func availableTools() async -> Result<[ToolSummary], APIError> {
+        await client.send([ToolSummary].self, ToolEndpoint.available)
+    }
 }

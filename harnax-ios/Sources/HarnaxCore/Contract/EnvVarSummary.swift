@@ -37,6 +37,40 @@ public struct EnvVarSummary: Decodable, Identifiable, Equatable, Sendable {
     public var title: String? { key }
 }
 
+/// The dropdown projection the *agent* binding form consumes: `GET /api/admin/env-variables/list`, whose
+/// `data` is a bare array of four-key maps (`EnvVariableController.kt:39-46`, built by
+/// `EnvVariableServiceImpl.listForAgentConfig()` at `:245-271`).
+///
+/// Three differences from `EnvVarSummary` on the same table, all of them server behaviour:
+///
+/// * `sensitive` is a real JSON boolean here, because the builder puts a Kotlin `Boolean` in the map
+///   (`:269`) where the response DTO declares `Int`. It is the one row shape in this stack that is.
+/// * There is no `description`/`enabled`/`creator` — the projection answers exactly four keys, so a
+///   candidate cannot be managed from this read; the management screen uses `EnvVarSummary`.
+/// * `displayValue` is the **masked** text for a sensitive row (`maskValue`, `:274-278`: `******` for
+///   four characters or fewer, else `1st****last` or `take(3)****takeLast(2)`) and the plaintext for any
+///   other. Either way it is a label.
+///
+/// Decodable only, and with no public initializer: an agent binding submits the variable's **id**
+/// (`AgentEnvBindingDraft.referenced`), never what was shown next to it, so a value that could only be
+/// read from the server can never be echoed back into a request.
+public struct EnvVarCandidate: Decodable, Identifiable, Equatable, Sendable {
+    public let id: Int64?
+    public let envKey: String?
+    /// For display only — see the type doc. Never part of a request body.
+    public let displayValue: String?
+    public let sensitive: Bool?
+
+    /// The key as the console prints it; `nil` when the row carries none, which the wire allows.
+    public var key: String? { hxPresented(envKey) }
+    public var isSensitive: Bool { sensitive ?? false }
+    public var title: String? { key }
+
+    /// Whether the row can bind at all: the map may omit the key, and a row without one is not selectable
+    /// whatever the server did with the id.
+    public var isBindable: Bool { id != nil && key != nil }
+}
+
 /// The create body (`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/EnvVariableCreateRequest.kt:9-30`).
 ///
 /// `envKey` and `envValue` are the two `@NotBlank` fields, so they always go out; the rest are left off

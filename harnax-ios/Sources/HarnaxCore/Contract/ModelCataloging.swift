@@ -55,6 +55,22 @@ public protocol ModelCataloging: Sendable {
         size: Int
     ) async -> Result<Page<ModelSummary>, APIError>
 
+    /// The same page route without a provider, for the two wizards' model dropdown: the agent and team
+    /// forms pick a model across every provider, and `providerId` is `required = false` on the wire
+    /// (`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/ModelController.kt:36`). The
+    /// second-level list above always scopes to one provider, so it cannot answer this question.
+    ///
+    /// Deliberately unfiltered, as the console is: the web form takes this page raw and drops non-enabled
+    /// and non-`chat` rows itself (`harnax-webui/src/pages/agent/components/CreateForm.tsx:101`-`:107`,
+    /// against `harnax-admin/.../ModelController.kt:37`'s optional `modelType`). Keeping the filter at the
+    /// call site is what lets the wizard still show the row an agent already points at when that row has
+    /// since been disabled — a server-side `status=1` would silently drop the current choice instead.
+    ///
+    /// `size` truncates: the web asks for one page of 100 and never walks further
+    /// (`harnax-webui/src/services/ant-design-pro/agent.ts:145`-`:161`), so a tenant with more models than
+    /// that sees the same cap here. `Page.total` says whether it bit.
+    func modelChoices(num: Int, size: Int) async -> Result<Page<ModelSummary>, APIError>
+
     /// Enabling a model is refused while its provider is stopped
     /// (`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ModelServiceImpl.kt:186-198`).
     func setModelStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError>

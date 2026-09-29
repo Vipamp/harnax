@@ -16,6 +16,11 @@ final class FakeToolCatalog: ToolCataloging, @unchecked Sendable {
     private(set) var detailRequests: [Int64] = []
     var detailReplies: [Result<ToolSummary, APIError>] = []
 
+    /// `/available` takes no parameter at all, so the only thing to record is that it was asked — a wizard
+    /// that polled it twice would otherwise look identical to one that polled it once.
+    private(set) var availableCalls = 0
+    var availableReplies: [Result<[ToolSummary], APIError>] = []
+
     func toolPage(
         keyword: String?,
         status: Int?,
@@ -30,6 +35,11 @@ final class FakeToolCatalog: ToolCataloging, @unchecked Sendable {
     func toolDetail(id: Int64) async -> Result<ToolSummary, APIError> {
         detailRequests.append(id)
         return detailReplies.isEmpty ? .failure(.decoding) : detailReplies.removeFirst()
+    }
+
+    func availableTools() async -> Result<[ToolSummary], APIError> {
+        availableCalls += 1
+        return availableReplies.isEmpty ? .failure(.decoding) : availableReplies.removeFirst()
     }
 }
 

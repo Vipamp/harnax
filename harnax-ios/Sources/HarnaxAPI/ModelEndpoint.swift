@@ -67,6 +67,17 @@ enum ModelEndpoint {
         return Endpoint(.get, path: "\(modelPath)/page", query: query)
     }
 
+    /// The same route with nothing but the page coordinates — `providerId` is an optional request parameter
+    /// (`ModelController.kt:36`), so leaving it off asks for every provider's models at once. This is what
+    /// the wizards' model dropdown reads; the scoped call above cannot serve it.
+    static func modelChoices(num: Int, size: Int) -> Endpoint {
+        Endpoint(
+            .get,
+            path: "\(modelPath)/page",
+            query: Endpoint.pageItems(num: num, size: size, name: nil, status: nil)
+        )
+    }
+
     static func modelToggle(id: Int64, status: Int) -> Endpoint {
         Endpoint(
             .put,

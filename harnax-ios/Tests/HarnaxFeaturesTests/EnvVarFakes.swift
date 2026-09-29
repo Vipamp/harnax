@@ -29,6 +29,11 @@ final class FakeEnvVars: EnvVarCataloging, @unchecked Sendable {
     private(set) var deleteRequests: [Int64] = []
     var deleteReplies: [Result<EmptyResponse, APIError>] = []
 
+    /// The `/list` projection takes no parameter, so only the count is loggable; a form that re-read it on
+    /// every keystroke would otherwise pass a test that only checked the candidates it got.
+    private(set) var candidateCalls = 0
+    var candidateReplies: [Result<[EnvVarCandidate], APIError>] = []
+
     var gateWrites = false
 
     private var parked: [() -> Void] = []
@@ -36,6 +41,11 @@ final class FakeEnvVars: EnvVarCataloging, @unchecked Sendable {
     func envVarPage(keyword: String?, num: Int, size: Int) async -> Result<Page<EnvVarSummary>, APIError> {
         requests.append((keyword: keyword, num: num, size: size))
         return replies.isEmpty ? .failure(.decoding) : replies.removeFirst()
+    }
+
+    func envVarCandidates() async -> Result<[EnvVarCandidate], APIError> {
+        candidateCalls += 1
+        return candidateReplies.isEmpty ? .failure(.decoding) : candidateReplies.removeFirst()
     }
 
     func createEnvVar(_ draft: EnvVarDraft) async -> Result<EmptyResponse, APIError> {
@@ -80,5 +90,14 @@ final class FakeEnvVars: EnvVarCataloging, @unchecked Sendable {
         from queue: ReferenceWritableKeyPath<FakeEnvVars, [Result<EmptyResponse, APIError>]>
     ) -> Result<EmptyResponse, APIError> {
         self[keyPath: queue].isEmpty ? .failure(.decoding) : self[keyPath: queue].removeFirst()
+    }
+}
+
+extension EnvVarCandidate {
+    /// The projection type has no initialiser on purpose — a mask must not be constructible in Swift any
+    /// more than it is submittable — so a fixture is built by decoding the four-key map the server answers.
+    static func stub(_ fields: [String: Any]) throws -> EnvVarCandidate {
+        let data = try JSONSerialization.data(withJSONObject: fields)
+        return try JSONDecoder().decode(EnvVarCandidate.self, from: data)
     }
 }

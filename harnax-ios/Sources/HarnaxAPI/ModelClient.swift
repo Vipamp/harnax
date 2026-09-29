@@ -70,6 +70,11 @@ extension AdminClient: ModelCataloging {
         )
     }
 
+    /// Unscoped, so the wizards get one page across every provider — the rows are the same DTO either way.
+    public func modelChoices(num: Int, size: Int) async -> Result<Page<ModelSummary>, APIError> {
+        await client.send(Page<ModelSummary>.self, ModelEndpoint.modelChoices(num: num, size: size))
+    }
+
     public func setModelStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> {
         await client.send(EmptyResponse.self, ModelEndpoint.modelToggle(id: id, status: enabled.hxInt))
     }

@@ -23,6 +23,13 @@ enum EnvVarEndpoint {
         return Endpoint(.get, path: "\(root)/page", query: items)
     }
 
+    /// `EnvVariableController.kt:39-46`, the binding wizard's dropdown. Takes no parameter at all — the
+    /// server narrows it to this creator's enabled rows (`EnvVariableServiceImpl.kt:245-252`), so there is
+    /// nothing for the client to add and no page to walk.
+    static var list: Endpoint {
+        Endpoint(.get, path: "\(root)/list")
+    }
+
     /// Answers `ResultVo<Void>`, so the caller re-reads the list instead of taking a row from here.
     static func create(_ draft: EnvVarDraft) throws -> Endpoint {
         Endpoint(.post, path: root, body: try APIClient.encodeBody(draft))

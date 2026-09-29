@@ -37,6 +37,11 @@ final class FakeModelCatalog: ModelCataloging, @unchecked Sendable {
     private(set) var modelSaveCalls: [(id: Int64?, body: ModelSaveRequest)] = []
     var modelSaveReplies: [Result<EmptyResponse, APIError>] = []
 
+    /// Its own queue, not `modelReplies`: the wizards' unscoped read and the provider-scoped list read are
+    /// different questions, and a form that asked twice must not eat the reply a list test queued.
+    private(set) var choiceRequests: [(num: Int, size: Int)] = []
+    var choiceReplies: [Result<Page<ModelSummary>, APIError>] = []
+
     /// Both saves are parkable. A form has to be able to say what a second tap does while the first answer
     /// is still out, and that window is otherwise far too short to look at (`FakeEnvVars` does the same for
     /// its create and update).
@@ -107,6 +112,11 @@ final class FakeModelCatalog: ModelCataloging, @unchecked Sendable {
         modelRequests.append((providerID: providerID, num: num, size: size))
         modelFilters.append((name: name, status: status, tags: tags))
         return modelReplies.isEmpty ? .failure(.decoding) : modelReplies.removeFirst()
+    }
+
+    func modelChoices(num: Int, size: Int) async -> Result<Page<ModelSummary>, APIError> {
+        choiceRequests.append((num: num, size: size))
+        return choiceReplies.isEmpty ? .failure(.decoding) : choiceReplies.removeFirst()
     }
 
     func setModelStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> {
