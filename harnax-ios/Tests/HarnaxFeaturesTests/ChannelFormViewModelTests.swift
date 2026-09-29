@@ -353,6 +353,18 @@ final class ChannelFormViewModelTests: XCTestCase {
         XCTAssertEqual(vm.errorText, "该模型必须开启思考模式")
     }
 
+    /// The update route is "omitted means keep what is stored" (`ChannelServiceImpl.kt:130`) and the service
+    /// clears the column with the empty string. So a remark the operator deleted has to go out as `""`: sent
+    /// as `nil` the key drops out of the body and the deleted text is back on the next read.
+    func testAClearedRemarkIsSentAsAnEmptyStringNotAsAnOmittedKey() async throws {
+        let vm = makeForm(row: try editedRow())
+        XCTAssertEqual(vm.description, "备注")
+        vm.description = ""
+        await vm.save()
+        let change = try XCTUnwrap(catalog.updateRequests.last?.change)
+        XCTAssertEqual(change.description, "", "a field the operator erased is a write, not one they never touched")
+    }
+
     func testSavingRefusesASecondTapWhileTheFirstIsOut() async throws {
         let vm = makeForm()
         fill(vm)

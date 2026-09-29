@@ -52,7 +52,9 @@ public struct AgentHomeView: View {
             .padding(.top, 10)
             .padding(.bottom, 4)
 
-            // Each column keeps its own view state, so switching away and back does not lose a search term.
+            // One column on screen at a time: leaving a segment discards its view model, so a search term
+            // does not survive the round trip. The console keeps these three as separate routes, which
+            // lose the same state on a menu click, so this is the behaviour rather than a difference.
             Group {
                 switch section {
                 case .agents:

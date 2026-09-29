@@ -199,7 +199,10 @@ public final class ChannelFormViewModel: ObservableObject {
                 enableThink: thinkingChoice.queryValue,
                 enableSearch: searchEnabled.hxInt,
                 enablePlan: planEnabled.hxInt,
-                description: hxPresented(description)
+                // The raw text, not `hxPresented`: an erased remark has to go out as `""`, because the
+                // service keeps what is stored when the key is absent (`ChannelServiceImpl.kt:130`) and the
+                // deleted text would come back on the next read. `EnvVarFormViewModel` clears the same way.
+                description: description
             )
             result = await catalog.updateChannel(id: id, change)
         } else if row != nil {

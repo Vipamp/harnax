@@ -338,15 +338,18 @@ public final class McpFormViewModel: ObservableObject {
         guard let original else { return patch }
         let newName = hxPresented(name) ?? ""
         if newName != (hxPresented(original.name) ?? "") { patch.name = newName }
+        // An erased field goes out as the empty string the service clears the column with
+        // (`McpServerServiceImpl.kt:187,200,205,212,216`); `nil` here would drop the key, and an absent key
+        // is that route's "keep what is stored" — the deleted text would be back on the next read.
         let newDetail = hxPresented(detail)
-        if newDetail != hxPresented(original.description) { patch.description = newDetail }
+        if newDetail != hxPresented(original.description) { patch.description = newDetail ?? "" }
         if transport != original.transport { patch.type = transport.wireValue }
         if transport.usesCommand {
             let newCommand = hxPresented(command)
-            if newCommand != hxPresented(original.command) { patch.command = newCommand }
+            if newCommand != hxPresented(original.command) { patch.command = newCommand ?? "" }
         } else {
             let newURL = hxPresented(endpointURL)
-            if newURL != hxPresented(original.url) { patch.url = newURL }
+            if newURL != hxPresented(original.url) { patch.url = newURL ?? "" }
         }
         if auth != original.auth { patch.authType = auth.wireValue }
         if showsOAuthFields, oauthConfigBlock != (original.oauthConfig ?? .defaults) {
