@@ -12,6 +12,7 @@ import SwiftUI
 /// `xcrun simctl launch <device> com.agnetix.harnax.ios -FIXTURE agents`.
 enum HarnaxDebugScreen: String {
     case login
+    case loginGate
     case server
     case serverSheet
     case agents
@@ -178,7 +179,7 @@ struct HarnaxDebugView: View {
             plan: HarnaxDebugSessionExtras(),
             commands: HarnaxDebugCommands(),
             streaming: HarnaxDebugStreaming()
-        ))
+        ), biometrics: HarnaxDebugBiometrics(screen: screen), gateEnabled: screen == .loginGate)
         model.tab = screen.tab
         _model = StateObject(wrappedValue: model)
     }
@@ -405,6 +406,17 @@ struct HarnaxDebugView: View {
             EmptyView()
         }
     }
+}
+
+/// The guard's seam in the walkthrough. Availability is on only for the two fixtures that carry a control for
+/// it, so every other capture keeps the shape it had before; `unlock` never runs, since a capture has no
+/// finger to answer the prompt with.
+struct HarnaxDebugBiometrics: BiometricUnlocking {
+    let screen: HarnaxDebugScreen
+
+    var isAvailable: Bool { screen == .loginGate || screen == .me }
+
+    func unlock(reason: String) async -> Result<Void, BiometricUnlockFailure> { .success(()) }
 }
 
 struct HarnaxDebugAuth: AuthFlowing {

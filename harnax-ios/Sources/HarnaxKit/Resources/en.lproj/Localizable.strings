@@ -955,5 +955,6 @@
 "login.biometric.hint" = "The sign-in saved on this device is untouched — unlock it to continue.";
 "login.biometric.failed" = "Unlock failed. Sign in with your password instead.";
 "login.biometric.unavailable" = "Biometrics are no longer available on this device. Sign in with your password.";
+"login.biometric.usePassword" = "Sign in with a password instead";
 "me.security.guard" = "Unlock at launch";
 "me.security.guard.hint" = "Asks for biometrics or the device passcode before a stored sign-in opens. Takes effect the next time the app starts.";

@@ -7,6 +7,9 @@ public struct LoginView: View {
     @ObservedObject private var model: AppModel
     @StateObject private var vm: LoginViewModel
     @State private var showsServerSheet = false
+    /// The guard covers the credential form until the owner either unlocks or asks for the form; two
+    /// full-width primary actions on one screen is a choice the screen should not be making for them.
+    @State private var showsCredentialForm = false
 
     public init(model: AppModel) {
         self.model = model
@@ -17,12 +20,16 @@ public struct LoginView: View {
         ScrollView {
             VStack(spacing: 18) {
                 header
-                if model.isAwaitingBiometric { gate }
-                fields
-                if let error = vm.errorText {
-                    HXBanner("state.error.title", message: error, systemImage: "exclamationmark.triangle", tone: .danger)
+                if model.isAwaitingBiometric {
+                    gate
                 }
-                submitButton
+                if showsCredentialForm || !model.isAwaitingBiometric {
+                    fields
+                    if let error = vm.errorText {
+                        HXBanner("state.error.title", message: error, systemImage: "exclamationmark.triangle", tone: .danger)
+                    }
+                    submitButton
+                }
                 serverRow
             }
             .padding(.horizontal, 20)
@@ -57,9 +64,9 @@ public struct LoginView: View {
         .padding(.bottom, 6)
     }
 
-    /// The guard from R4: a stored session, and one prompt between the device and it. The fields below are
-    /// not disabled — a password is always a valid answer, which is what keeps this a guard rather than a
-    /// lock the user can lose the key to.
+    /// The guard from R4: a stored session, and one prompt between the device and it. It covers the
+    /// credential form rather than stacking on top of it, and the link below is what keeps this a guard
+    /// instead of a lock — a password is always a valid answer.
     private var gate: some View {
         VStack(spacing: 10) {
             Button {
@@ -80,6 +87,12 @@ public struct LoginView: View {
                     tone: .danger
                 )
             }
+            Button {
+                showsCredentialForm = true
+            } label: {
+                HXText("login.biometric.usePassword")
+            }
+            .buttonStyle(.hxInline)
         }
     }
 
