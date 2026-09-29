@@ -41,6 +41,60 @@ final class LocalizationKeyTests: XCTestCase {
         }
     }
 
+    /// `%@` in one language and `%d` in the other is not a translation slip but a different string at
+    /// runtime, and a placeholder that only one side has leaves one language rendering a bare `%@` on
+    /// screen (`HarnaxCatalog.render` hands the template to `String(format:)` unchanged when the call site
+    /// passed nothing).
+    func testPlaceholdersAgreeAcrossLanguages() throws {
+        let en = Dictionary(uniqueKeysWithValues: try keys(in: Self.enPath).map { ($0.key, $0.value) })
+        let zh = Dictionary(uniqueKeysWithValues: try keys(in: Self.zhPath).map { ($0.key, $0.value) })
+        var drifted: [String] = []
+        for key in en.keys where zh[key] != nil {
+            let left = Self.placeholders(in: en[key]!)
+            let right = Self.placeholders(in: zh[key]!)
+            if left != right { drifted.append("\(key): en=\(left) zh=\(right)") }
+        }
+        let templated = en.keys.filter { !Self.placeholders(in: en[$0]!).isEmpty }
+        XCTAssertFalse(
+            templated.isEmpty,
+            "not one templated string parsed — the placeholder reader is not matching anything"
+        )
+        XCTAssertTrue(drifted.isEmpty, "placeholder drift between catalogs:\n  " + drifted.joined(separator: "\n  "))
+    }
+
+    /// A counted key is handed its number by `hxCount`, and a `hx("k")` of a templated string prints the
+    /// placeholder instead of the sentence. Either way the caller owes an argument.
+    func testTemplatedCopyIsAlwaysCalledWithItsArguments() throws {
+        let en = Dictionary(uniqueKeysWithValues: try keys(in: Self.enPath).map { ($0.key, $0.value) })
+        let zh = Dictionary(uniqueKeysWithValues: try keys(in: Self.zhPath).map { ($0.key, $0.value) })
+        var bare: [String] = []
+        for url in TestSources.swiftFiles() {
+            let source = Self.strippingComments(try TestSources.contents(of: url))
+            for key in Self.bareCallSites(in: source) where !Self.placeholders(in: en[key] ?? "").isEmpty
+                || !Self.placeholders(in: zh[key] ?? "").isEmpty {
+                bare.append("\(TestSources.relative(url)) -> \(key)")
+            }
+        }
+        XCTAssertTrue(bare.isEmpty, "templated copy rendered without arguments:\n  " + bare.joined(separator: "\n  "))
+    }
+
+    /// The two gates above only mean something if their readers read. A gate that parses nothing is green
+    /// forever, so the machinery gets its own case.
+    func testThePlaceholderAndArityReadersRead() {
+        XCTAssertEqual(Self.placeholders(in: "已同步 %d 项"), ["d"])
+        XCTAssertEqual(Self.placeholders(in: "Synced %d items"), ["d"])
+        XCTAssertEqual(Self.placeholders(in: "%@ 与 %@"), ["@", "@"])
+        XCTAssertEqual(Self.placeholders(in: "100%% 确定"), [], "an escaped percent asks for nothing")
+        XCTAssertEqual(Self.placeholders(in: "没有占位符"), [])
+        XCTAssertEqual(
+            Self.bareCallSites(
+                in: #"hx("common.retry") and HXText("common.refresh") and hx("state.empty.title", 1)"#
+            ),
+            ["common.retry", "common.refresh"],
+            "only the calls that pass nothing are bare"
+        )
+    }
+
     func testEveryKeyUsedInSourceExistsInBothCatalogs() throws {
         let en = Set(try keys(in: Self.enPath).map(\.key))
         let zh = Set(try keys(in: Self.zhPath).map(\.key))
@@ -83,6 +137,31 @@ final class LocalizationKeyTests: XCTestCase {
     }
 
     // MARK: - parsing
+
+    /// The conversion characters a `String(format:)` template consumes, in sorted order so only the multiset
+    /// matters. `%%` is an escaped percent and asks for nothing.
+    private static func placeholders(in template: String) -> [Character] {
+        let span = NSRange(template.startIndex..., in: template)
+        let expression = try! NSRegularExpression(
+            pattern: #"%[-+ #0]*[0-9]*(?:\.[0-9]+)?([@dDuUxXoOfeEgGcCsSpF%])"#
+        )
+        return expression.matches(in: template, range: span).compactMap { match in
+            guard let range = Range(match.range(at: 1), in: template) else { return nil }
+            let conversion = template[range].first!
+            return conversion == "%" ? nil : conversion
+        }.sorted()
+    }
+
+    /// Keys reached with no argument at all: `hx("a.b")` and `HXText("a.b")`, where the closing paren comes
+    /// straight after the string.
+    private static func bareCallSites(in source: String) -> Set<String> {
+        let span = NSRange(source.startIndex..., in: source)
+        let expression = try! NSRegularExpression(pattern: #"\b(?:hx|HXText)\(\s*"([^"]+)"\s*\)"#)
+        return Set(expression.matches(in: source, range: span).compactMap { match in
+            guard let range = Range(match.range(at: 1), in: source) else { return nil }
+            return String(source[range])
+        })
+    }
 
     private struct Entry {
         let key: String
