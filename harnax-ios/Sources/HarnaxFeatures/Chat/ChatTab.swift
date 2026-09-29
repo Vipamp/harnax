@@ -16,7 +16,7 @@ public struct ChatTabView: View {
     }
 
     public var body: some View {
-        SessionListView(sessions: dependencies.sessions) { conversation in
+        SessionListView(sessions: dependencies.sessions, creating: dependencies.sessionCreate) { conversation in
             open = conversation
         }
         .navigationDestination(item: $open) { conversation in

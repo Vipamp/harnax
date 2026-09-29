@@ -17,14 +17,25 @@ import HarnaxKit
 /// carries a rename that was saved but not yet re-read.
 public struct SessionListView: View {
     @StateObject private var vm: SessionListViewModel
+    private let creating: (any SessionCreating)?
     private let onOpen: ((ChatConversation) -> Void)?
 
     @State private var renameTarget: SessionSummary?
+    @State private var detailTarget: SessionSummary?
+    @State private var isCreating = false
     @State private var pendingClear: SessionSummary?
     @State private var pendingDelete: SessionSummary?
 
-    public init(sessions: any SessionCataloging, onOpen: ((ChatConversation) -> Void)? = nil) {
+    /// `creating` is the new-conversation route. A host that has not wired it gets no create button rather
+    /// than a sheet that cannot submit — the same optional-dependency shape the chat window uses for its
+    /// command and history legs.
+    public init(
+        sessions: any SessionCataloging,
+        creating: (any SessionCreating)? = nil,
+        onOpen: ((ChatConversation) -> Void)? = nil
+    ) {
         _vm = StateObject(wrappedValue: SessionListViewModel(sessions: sessions))
+        self.creating = creating
         self.onOpen = onOpen
     }
 
@@ -33,7 +44,10 @@ public struct SessionListView: View {
             .harnaxScreen()
             .searchable(text: $vm.keyword, prompt: Text(verbatim: hx("chat.search")))
             .toolbar {
-                ToolbarItem(placement: .primaryAction) { filterMenu }
+                ToolbarItem(placement: .navigation) { filterMenu }
+                if creating != nil {
+                    ToolbarItem(placement: .primaryAction) { addButton }
+                }
             }
             .task {
                 if vm.phase == .loading { await vm.refresh() }
@@ -41,6 +55,16 @@ public struct SessionListView: View {
             .refreshable { await vm.refresh() }
             .sheet(item: $renameTarget) { session in
                 SessionRenameSheet(vm: vm, session: session)
+            }
+            .sheet(item: $detailTarget) { session in
+                SessionDetailSheet(session: session)
+            }
+            .sheet(isPresented: $isCreating) {
+                if let creating {
+                    SessionCreateSheet(creating: creating) {
+                        Task { await vm.refresh() }
+                    }
+                }
             }
             .confirmationDialog(
                 Text(verbatim: hx("chat.clear.title")),
@@ -78,6 +102,15 @@ public struct SessionListView: View {
             } message: { _ in
                 Text(verbatim: hx("chat.delete.note"))
             }
+    }
+
+    private var addButton: some View {
+        Button {
+            isCreating = true
+        } label: {
+            Image(systemName: "plus")
+        }
+        .accessibilityLabel(hx("session.create.sheet.title"))
     }
 
     private var filterMenu: some View {
@@ -152,6 +185,7 @@ public struct SessionListView: View {
             isBusy: session.id.flatMap(vm.pendingIDs.contains) ?? false,
             canWrite: vm.canWrite(session),
             onOpen: chatAction(for: session),
+            onDetail: { detailTarget = session },
             onRename: { renameTarget = session },
             onToggle: { value in Task { await vm.setStatus(value, for: session) } },
             onClear: { pendingClear = session },
@@ -174,6 +208,7 @@ struct SessionRecordCard: View {
     let isBusy: Bool
     let canWrite: Bool
     let onOpen: ((SessionSummary) -> Void)?
+    let onDetail: () -> Void
     let onRename: () -> Void
     let onToggle: (Bool) -> Void
     let onClear: () -> Void
@@ -285,6 +320,8 @@ struct SessionRecordCard: View {
 
     private var menu: some View {
         Menu {
+            Button(action: onDetail) { HXText("chat.detail.title") }
+
             Button(action: onRename) { HXText("chat.action.rename") }
                 .disabled(!canWrite)
 
