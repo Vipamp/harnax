@@ -85,7 +85,15 @@ public struct ChatStreamClient: AgentStreaming {
         for try await line in bytes.lines {
             try Task.checkCancellation()
             guard let payload = SSE.payload(from: line) else { continue }
-            continuation.yield(try ChatEvent.decode(payload))
+            // One frame the client cannot read does not end the turn. The console catches around every
+            // `JSON.parse` in its line loop and goes on with the next line (`ChatWindow.tsx:1389-1394`,
+            // `:2349-2351`), and that is the right call for two different reasons at once: a frame the
+            // server wrote across a buffer boundary, and an event type older clients have never seen, are
+            // both news about one frame — not news about a run that is still going. The socket's own
+            // errors keep propagating from the `for try await` above, and a stream that ends without an
+            // end frame is still reported by the reader's owner.
+            guard let event = try? ChatEvent.decode(payload) else { continue }
+            continuation.yield(event)
         }
     }
 

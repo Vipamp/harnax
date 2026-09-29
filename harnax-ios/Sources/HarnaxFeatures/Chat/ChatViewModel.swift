@@ -101,6 +101,20 @@ public final class ChatViewModel: ObservableObject {
     /// The confirm stream being read right now, and whether anything has come back over it yet. An answer
     /// whose stream yields no frame at all never reached the run, and the panel has to go back on screen.
     private var confirmRead: ConfirmRead?
+    /// What the composer box held when the turn now reading took it out.
+    private var consumedByOpenTurn: ConsumedComposer?
+
+    /// The text and pictures one send consumed from the composer.
+    ///
+    /// `send()` empties the box before the request goes out, which is right for a turn that lands and wrong
+    /// for one that dies in transmission: the words the user typed and the pictures they picked are gone
+    /// with nothing left to retry. This is the copy a read that never got a frame puts back. It is dropped
+    /// the moment any frame arrives — from then on the router has the message, and refilling the box would
+    /// only invite a second run of the same turn.
+    private struct ConsumedComposer {
+        let text: String
+        let images: [String]
+    }
 
     /// One read in flight, and the frame count that says whether the answer landed.
     private struct ConfirmRead {
@@ -206,10 +220,16 @@ public final class ChatViewModel: ObservableObject {
     ///
     /// A slash line takes the text and nothing else: the console's command leg never reads `imageUrls`, so a
     /// picture picked before typing `/clear` is still in the strip afterwards (`ChatWindow.tsx:986-1032`).
+    ///
+    /// The box empties as the send goes out, and what it held is handed to the turn so a read that dies
+    /// before its first frame can put it back (`restoreComposer`).
     public func send() {
         let text = draft
         let isCommand = ChatSlashCommand.parse(text.trimmingCharacters(in: .whitespacesAndNewlines)) != nil
-        guard send(text) else { return }
+        // Only a message is recoverable: a command line has already reached the other channel by the time
+        // this returns, and the console clears the box for it without a second thought.
+        let consumed = isCommand ? nil : ConsumedComposer(text: text, images: images)
+        guard send(text, consumed: consumed) else { return }
         draft = ""
         if !isCommand { images = [] }
     }
@@ -222,6 +242,13 @@ public final class ChatViewModel: ObservableObject {
     /// `/hello there` is a greeting, which is the console's fall-through at `:980-982`.
     @discardableResult
     public func send(_ message: String) -> Bool {
+        send(message, consumed: nil)
+    }
+
+    /// `consumed` is what the composer box held when the tap came from the box itself; a send that named its
+    /// message directly was never in the box, so a failed turn of that shape restores nothing.
+    @discardableResult
+    private func send(_ message: String, consumed: ConsumedComposer?) -> Bool {
         guard !isStreaming else { return false }
         let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
         if let command = ChatSlashCommand.parse(text) {
@@ -235,6 +262,7 @@ public final class ChatViewModel: ObservableObject {
         confirmationChoices = [:]
         isAnchoredToBottom = true
         let pictures = images
+        consumedByOpenTurn = consumed
         transcript.send(text, images: pictures)
         startStream(text, images: pictures)
         return true
@@ -287,6 +315,9 @@ public final class ChatViewModel: ObservableObject {
         // A stop or a conversation switch is the user letting the turn go, not an answer that failed to
         // land: the settled panel stays settled rather than being handed back for another try.
         confirmRead = nil
+        // And the same for the composer: the request was accepted, so refilling the box would only set up
+        // a duplicate run of a turn the router is already working on.
+        consumedByOpenTurn = nil
         transcript.terminate(as: .interrupted)
     }
 
@@ -341,8 +372,11 @@ public final class ChatViewModel: ObservableObject {
     /// waiting for the socket to close.
     private func receive(_ event: ChatEvent) {
         // Any frame at all is proof the answer reached the run: the server only writes on a stream it has
-        // accepted (`DefaultAgentRunner.kt:342-442`).
+        // accepted (`DefaultAgentRunner.kt:342-442`). That is also the moment the composer stops being
+        // recoverable — and, since a parked ask implies frames already landed, the moment a later
+        // confirmation read inherits no composer text of its own.
         confirmRead?.sawFrame = true
+        consumedByOpenTurn = nil
         transcript.fold(event)
         switch event {
         case let .failure(failure):
@@ -363,6 +397,9 @@ public final class ChatViewModel: ObservableObject {
     private func readerClosed() {
         streamTask = nil
         isStreaming = false
+        // The socket opened, so the request left: a stream that goes quiet is the console's disconnect
+        // (`ChatWindow.tsx:2361-2366`), not a send that failed to go out, and the box stays empty.
+        consumedByOpenTurn = nil
         let sawContent = transcript.turns.last?.hasContent ?? false
         guard !transcript.isTerminated else {
             settleAnswerDelivery(reason: nil)
@@ -385,7 +422,23 @@ public final class ChatViewModel: ObservableObject {
         transcript.terminate(as: .interrupted)
         let detail = transportSentence(error)
         if settleAnswerDelivery(reason: detail) { return }
+        restoreComposer()
         stopNotice = .failed(text: detail)
+    }
+
+    /// Put back what the dead turn took out of the composer.
+    ///
+    /// Only a read that threw before its first frame gets here: `readerClosed` is a stream the server
+    /// accepted, `abort` is the user letting a live turn go, and `receive` has already cleared this for any
+    /// turn that said something. The bubble stays where it is — this screen does not take words back out of
+    /// a transcript, and the row is the record that the turn was attempted.
+    private func restoreComposer() {
+        guard let consumed = consumedByOpenTurn else { return }
+        consumedByOpenTurn = nil
+        // Whatever the user put in the box in the meantime wins: a recovery that poured the dead turn's
+        // text on top of it would lose newer input to an older one.
+        if draft.isEmpty { draft = consumed.text }
+        if images.isEmpty { images = consumed.images }
     }
 
     /// Close out a confirm read.

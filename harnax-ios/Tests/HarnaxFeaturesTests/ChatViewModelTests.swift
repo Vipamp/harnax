@@ -293,6 +293,121 @@ final class ChatViewModelTests: XCTestCase {
         vm.detach()
     }
 
+    // MARK: - a turn that never landed gives the composer back
+
+    /// The send took the words out of the box before the request went out, so a read that died without a
+    /// single frame leaves the user with nothing to retry. The failed turn and its notice stay exactly as
+    /// they are — the bubble is the record that this was attempted.
+    func testATurnThatNeverLandedPutsTheWordsBackInTheBox() async {
+        let stream = ScriptedChatStream()
+        stream.errorToThrow = APIError.timeout
+        let vm = ChatViewModel(streaming: stream, conversation: conversation)
+        vm.draft = "把这段翻成英文"
+
+        vm.send()
+        await waitUntil("the failure") { vm.stopNotice != nil }
+
+        XCTAssertEqual(vm.draft, "把这段翻成英文", "the box gets back what the dead turn consumed")
+        XCTAssertEqual(vm.stopNotice, .failed(text: hx("error.timeout")))
+        XCTAssertEqual(vm.transcript.turns.map(\.role), [.user, .assistant], "the attempt stays on screen")
+        XCTAssertTrue(vm.canSend, "so the retry is one tap away")
+        vm.detach()
+    }
+
+    /// Pictures are the same loss as the text: base64 the user re-picks from the library costs them a sheet.
+    func testATurnThatNeverLandedBringsThePickedPicturesBackToo() async {
+        let stream = ScriptedChatStream()
+        stream.errorToThrow = APIError.offline
+        let vm = ChatViewModel(streaming: stream, conversation: conversation)
+        vm.draft = "看这张图"
+        vm.addImages([picture(), picture(0xFF)])
+
+        vm.send()
+        await waitUntil("the failure") { vm.stopNotice != nil }
+
+        XCTAssertFalse(vm.images.isEmpty, "the strip comes back with the turn that died")
+        XCTAssertEqual(vm.images.count, 2)
+        XCTAssertEqual(vm.draft, "看这张图")
+        vm.detach()
+    }
+
+    /// Once a frame has arrived the router definitely has the message, so putting it back in the box would
+    /// invite a second run of the same turn.
+    func testAnAnswerThatAlreadyGotAFrameKeepsTheBoxEmpty() async throws {
+        let (vm, stream) = makeModel()
+        vm.draft = "说一句"
+        vm.send()
+        await waitUntil("the stream") { !stream.ports.isEmpty }
+        try stream.latest.feed(ChatFrames.text("半句"))
+        await waitUntil("the frame") { vm.transcript.segments.count == 1 }
+
+        stream.latest.fail(APIError.timeout)
+        await waitUntil("the notice") { vm.stopNotice != nil }
+
+        XCTAssertEqual(vm.draft, "", "the message reached the run, so it stays out of the box")
+        XCTAssertEqual(vm.transcript.segments.map(\.text), ["半句"])
+    }
+
+    /// A stream the server accepted and then closed without a frame is the disconnect case, not a request
+    /// that failed to go out: the turn is already on the router's side.
+    func testAStreamThatClosedWithoutAFrameKeepsTheBoxEmpty() async {
+        let (vm, stream) = makeModel()
+        vm.draft = "没人回答的那句"
+        vm.send()
+        await waitUntil("the stream") { !stream.ports.isEmpty }
+
+        stream.latest.close()
+        await waitUntil("the notice") { vm.stopNotice != nil }
+
+        XCTAssertEqual(vm.stopNotice, .disconnected)
+        XCTAssertEqual(vm.draft, "", "the request landed, so a refill would only cause a duplicate run")
+    }
+
+    /// Stopping is the user letting the turn go after the server took it; nothing comes back.
+    func testAStoppedTurnDoesNotHandTheMessageBack() async {
+        let (vm, stream) = makeModel()
+        vm.draft = "长回答的一条"
+        vm.send()
+        await waitUntil("the stream") { !stream.ports.isEmpty }
+
+        vm.stop()
+        await waitUntil("the read to let go") { !vm.isStreaming }
+
+        XCTAssertEqual(vm.draft, "")
+        XCTAssertTrue(vm.images.isEmpty)
+    }
+
+    /// The failure may arrive while the user is already typing the next thing; their new words win, and the
+    /// dead turn's text is not poured on top of them.
+    func testABoxTheUserAlreadyRefilledKeepsTheirNewWords() async {
+        let (vm, stream) = makeModel()
+        vm.draft = "第一条"
+        vm.send()
+        await waitUntil("the stream") { !stream.ports.isEmpty }
+
+        stream.latest.fail(APIError.offline)
+        vm.draft = "第二条已经在打"
+        await waitUntil("the notice") { vm.stopNotice != nil }
+
+        XCTAssertEqual(vm.draft, "第二条已经在打", "a recovery never overwrites what the user typed since")
+    }
+
+    /// A command is the other channel, and the recovery belongs to the stream leg only: the line reaches the
+    /// server even when the answer comes back as a failure, and the console clears the box on the send
+    /// (`ChatWindow.tsx:986-1032`).
+    func testACommandTheServerNeverAnsweredDoesNotRefillTheBox() async {
+        let commands = ScriptedAgentCommands()
+        commands.reply = .failure(.offline)
+        let (vm, stream) = makeModel(commands: commands)
+        vm.draft = "/compact"
+
+        vm.send()
+        await waitUntil("the reply") { vm.transcript.turns.count == 2 }
+
+        XCTAssertEqual(vm.draft, "")
+        XCTAssertTrue(stream.chatRequests.isEmpty, "a command never opened a stream to recover from")
+    }
+
     func testACloseWithNothingOnScreenSaysConnectionLost() async {
         let (vm, stream) = makeModel()
         await send("没人回答", on: vm, stream)

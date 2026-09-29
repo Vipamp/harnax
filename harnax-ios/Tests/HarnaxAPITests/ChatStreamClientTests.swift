@@ -54,6 +54,30 @@ final class ChatStreamClientTests: XCTestCase {
         XCTAssertEqual(headerValue(request, "X-Tenant-ID"), "1")
     }
 
+    /// The streaming leg reads its credential every time it builds a request, which is the only moment one
+    /// exists: an SSE call authenticates when the router accepts it and is never re-sent, so a token rotated
+    /// between two turns has to be the one the next turn carries. Nothing here is cached across requests.
+    func testARotatedTokenGoesOutOnTheNextStreamRequest() async throws {
+        let harness = APIHarness()
+        try await harness.session.signIn(
+            JSONDecoder().decode(Envelope<LoginResponse>.self, from: Data(Wire.login(routerKey: nil).utf8)).data!
+        )
+        try await harness.configs.update(ServerConfig(adminBaseURL: "https://a.example.com", routerBaseURL: "https://r.example.com"))
+        let client = ChatStreamClient(configs: harness.configs, session: harness.session)
+
+        let before = try await client.buildRequest(path: ChatStreamClient.chatPath, body: Data("{}".utf8))
+        XCTAssertEqual(headerValue(before, "Authorization"), "Bearer tok-1")
+
+        try await harness.session.adopt(
+            JSONDecoder().decode(
+                RefreshedToken.self,
+                from: Data(#"{"accessToken":"tok-2","tenantId":1,"expiresIn":3600}"#.utf8)
+            )
+        )
+        let after = try await client.buildRequest(path: ChatStreamClient.chatPath, body: Data("{}".utf8))
+        XCTAssertEqual(headerValue(after, "Authorization"), "Bearer tok-2", "the stream asks the session, not a snapshot")
+    }
+
     // MARK: a turn that never started
 
     func testEnvelopeUnderANonStreamContentTypeBecomesTheServersError() {
@@ -114,18 +138,64 @@ final class ChatStreamClientTests: XCTestCase {
         XCTAssertEqual(delta.message, "两半")
     }
 
-    /// The server cut the corner mid-frame: the reader reports it rather than hanging or inventing an end.
-    func testATrunchedStreamSurfacesADecodeFailure() async throws {
+    /// One frame the client cannot read is not a dead turn. The console's reader wraps every single
+    /// `JSON.parse` in its own `try/catch` and moves on with the next line (`ChatWindow.tsx:1389-1394`,
+    /// with the same catch again at `:2349-2351`), so a torn or unparseable frame cannot end a run that
+    /// is still answering — it only loses that one frame.
+    func testABadFrameIsSkippedAndTheFramesAfterItStillLand() async throws {
+        let server = SSELoopback(writes: [
+            "data: {\"eventType\":\"TextEvent\",\"message\":\"好的一半\",\"isLast\":false,\"source\":null}\n\n",
+            // Terminated by a real newline, but the JSON stops mid-object.
+            "data: {\"eventType\":\"TextEvent\",\"message\":\"截\",\"isLast\":true"
+                + "\n\n",
+            "data: {\"eventType\":\"TextEvent\",\"message\":\"还在说\",\"isLast\":false,\"source\":null}\n\n",
+            "data: {\"eventType\":\"EndEvent\",\"attachments\":[],\"source\":null}\n\n",
+        ])
+        let port = try server.start()
+        defer { server.stop() }
+
+        let events = try await collect(await client(on: port))
+
+        XCTAssertEqual(events.count, 3, "the unreadable frame is dropped, the readable lines are not")
+        guard case let .text(first) = events.first else { return XCTFail("expected a text frame") }
+        XCTAssertEqual(first.message, "好的一半")
+        guard case let .text(second) = events[1] else {
+            return XCTFail("expected the text frame that came after the bad one")
+        }
+        XCTAssertEqual(second.message, "还在说")
+        guard case .end = events[2] else { return XCTFail("expected the end frame") }
+    }
+
+    /// A newer server adds a ninth event type; a reader that has never heard of it has to stay quiet about
+    /// it rather than stop the answer the user is watching.
+    func testAnEventThisClientDoesNotKnowIsSkipped() async throws {
+        let server = SSELoopback(writes: [
+            "data: {\"eventType\":\"TextEvent\",\"message\":\"前\",\"isLast\":false,\"source\":null}\n\n",
+            "data: {\"eventType\":\"BudgetEvent\",\"amount\":3,\"source\":null}\n\n",
+            "data: {\"eventType\":\"EndEvent\",\"attachments\":[],\"source\":null}\n\n",
+        ])
+        let port = try server.start()
+        defer { server.stop() }
+
+        let events = try await collect(await client(on: port))
+
+        XCTAssertEqual(events.count, 2, "the frame nobody recognises is skipped")
+        guard case .end = events.last else { return XCTFail("expected the end frame after the unknown one") }
+    }
+
+    /// The server cut the corner mid-frame. The console keeps the bytes still in its buffer when the reader
+    /// reports `done` and never parses them (`ChatWindow.tsx:1385-1386`), and the socket dying is still the
+    /// turn's own news — the screen calls it a disconnect
+    /// (`ChatViewModelTests.testACloseWithNothingOnScreenSaysConnectionLost`), a truer sentence than a
+    /// JSON error the user cannot act on.
+    func testATrunchedTailIsDroppedAndTheStreamCloses() async throws {
         let server = SSELoopback(writes: ["data: {\"eventType\":\"TextEvent\",\"message\":\"a\""])
         let port = try server.start()
         defer { server.stop() }
 
-        do {
-            _ = try await collect(await client(on: port))
-            XCTFail("expected the half-written frame to fail")
-        } catch {
-            XCTAssertTrue(error is DecodingError, "got \(error)")
-        }
+        let events = try await collect(await client(on: port))
+
+        XCTAssertTrue(events.isEmpty, "nothing whole arrived, so nothing renders as an answer")
     }
 
     private func client(on port: UInt16) async -> ChatStreamClient {
