@@ -27,27 +27,27 @@
 | 能力 | Web 出处 | iOS | 依赖接口 | 复杂度 |
 |---|---|---|---|---|
 | 智能体列表（卡片 + 搜索 + 状态筛选） | `/agent/manager` | v1 | `GET /api/admin/agents/page` | M |
-| 新建 / 编辑：5 步向导（基本信息 → 工具 → MCP → 技能 → CLI） | 同上 | v1 | `POST/PUT /api/admin/agents` | XL |
+| 新建 / 编辑：5 步向导（基本信息 → 工具 → MCP → 技能 → CLI） | 同上 | v1 | `POST /api/admin/agents`、`PUT /api/admin/agents/update/{id}` | XL |
 | 四类关联项的选择器与顺序编排 | 向导各步 | v1 | 候选来自 `tools` / `mcp` / `skills` / `clis` | L |
 | 环境参数绑定表（工具 / MCP / CLI 三类） | 向导各步 | v1 | 随智能体保存提交 | L |
-| 启用 / 停用 | 同上 | v1 | `PUT /api/admin/agents/{id}/toggle` | S |
+| 启用 / 停用 | 同上 | v1 | `PUT /api/admin/agents/toggle/{id}`（`status` 走查询串，无请求体） | S |
 | 删除（无前置查询，后端拒绝时原样展示引用清单：所属团队、会话、渠道） | 同上 | v1 | `DELETE /api/admin/agents/{id}` | S |
 | 保存后「刷新受影响会话」多选流程 | 同上 | v1 | `GET /agents/{id}/related-sessions`、`POST /agents/refresh-sessions` | L |
 | 团队列表 | `/agent/team` | v1 | `GET /api/admin/teams/page` | M |
-| 新建 / 编辑团队：主管 + 成员编排与排序 | 同上 | v1 | `POST/PUT /api/admin/teams` | L |
-| 团队启停 | 同上 | v1 | `PUT /api/admin/teams/{id}/toggle` | S |
+| 新建 / 编辑团队：主管 + 成员编排与排序 | 同上 | v1 | `POST /api/admin/teams`、`PUT /api/admin/teams/update/{id}` | L |
+| 团队启停 | 同上 | v1 | `PUT /api/admin/teams/toggle/{id}` | S |
 | 团队删除（先读关联会话定文案，真拦截在后端 message） | 同上 | v1 | `GET /api/admin/teams/{id}/related-sessions` + `DELETE /api/admin/teams/{id}` | M |
 
 ## 3. 会话与对话
 
 | 能力 | Web 出处 | iOS | 依赖接口 | 复杂度 |
 |---|---|---|---|---|
-| 会话列表（左列表 / 分组 / 搜索） | `/agent/session` | v1 | `GET /api/admin/sessions/page` | M |
-| 新建会话（选智能体或团队、名称查重、是否公开） | 同上 | v1 | `check-title`、`POST /sessions` | M |
-| 会话详情弹窗（配置查看与修改） | 同上 | v1 | `GET/PUT /sessions/{id}/config` | M |
+| 会话列表（左列表，翻页追加；无搜索／分组／排序控件，Web 侧亦无） | `/agent/session` | v1 | `GET /api/admin/sessions/page` | M |
+| 新建会话（选智能体或团队、名称查重；三个字段是 `SessionCreateRequest` 的全部，Web 那张 `isPublic` 开关不进 `createData` 也不在 DTO 上，故不搬） | 同上 | v1 | `check-title`、`POST /sessions` | M |
+| 会话详情弹窗（七个只读面板 + 配置查看与修改；工具 / CLI / 团队成员只能由执行者自己的行填，故打开时按 `agentId` 或 `teamId` 读单行） | 同上 | v1 | `GET/PUT /sessions/{id}/config`、`GET /api/admin/agents/{id}`、`GET /api/admin/teams/{id}` | M |
 | 删除会话（含沙箱释放失败的阻断语义） | 同上 | v1 | `DELETE /sessions/{id}` | M |
 | Workspace 抽屉（文件列表 / 上传 / 下载） | 同上 | v1 | router `workspace/*` | L |
-| 团队产物抽屉与下载 | 同上 | v1 | `GET /api/admin/team-artifacts` | M |
+| 团队产物抽屉与下载（`TeamArtifactController` 整控制器同样受 `minio.enabled=true` 开关控制，裸配置默认关、标准部署 compose 显式开启，与附件下载一路的 O8 门槛同族） | 同上 | v1 | `GET /api/admin/team-artifacts` | M |
 | 历史消息回放（含分段重建） | 同上 | v1 | `GET /api/router/agent/chat/history/{id}` | L |
 | 发消息与流式接收 | `ChatWindow` | v1 | `POST /api/router/agent/chat/stream` | XL |
 | 五类可见分段渲染（文本 / 思考 / 工具调用合并卡 / 确认卡 / 计划卡；`tool_result` 段在 Web 恒不渲染） | 同上 | v1 | 同一事件流 | XL |
@@ -84,7 +84,7 @@
 |---|---|---|---|---|
 | 供应商卡片列表（增改、启停、删除） | `/context/model` | v1 | `GET/POST/PUT /api/admin/model-providers` | L |
 | 供应商连通性测试 | 同上 | v1 | `POST /model-providers/{id}/test` | M |
-| 该供应商下的模型表（增改、启停、删除） | 同上 | v1 | `models/*` | L |
+| 该供应商下的模型表（增改、启停、删除；搜索 + 状态 + 模型类型 + 能力标签 + 价格区间五个筛选） | 同上 | v1 | `models/*` | L |
 | 思考模式取值（关闭 / 自动 / 强制） | 同上 | v1 | 模型字段 | S |
 | 模型用量统计入口 | 同上 | v1 | `GET /model-providers/{id}/stats` | S |
 
@@ -108,7 +108,7 @@
 | 删除前关联智能体检查与阻断 | 同上 | v1 | `related-agents` | M |
 | 详情页：基本信息 + 工具列表（参数可展开） | `/context/mcp/detail/:id` | v1 | `mcp/{id}`、`list_tools` | L |
 | OAuth：发现、客户端注册、发起授权 | 详情 OAuth 面板 | v1 | `oauth/discover`、`oauth/client`、`authorize-url` | L |
-| OAuth 授权回跳 | `/mcp/oauth/callback`（Web 页面） | v1（改为 URL scheme + 系统浏览器会话） | `oauth/exchange`、`oauth/status`、`oauth/revoke` | L |
+| OAuth 授权回跳 | `/mcp/oauth/callback`（Web 页面） | v1（应用内 `WKWebView` 把每次导航逐段比对注册表里那条 http(s) `redirect_uri`，命中即取消导航并由本端发 `oauth/exchange`，徽标最终以 `oauth/status` 为准；另留 Safari 交接加轮询一条并列入口。回跳本身不能是本机自定义 scheme，后端存不住那样的注册） | `oauth/exchange`、`oauth/status`、`oauth/revoke` | L |
 
 ## 8. 上下文：技能
 
@@ -138,8 +138,8 @@
 |---|---|---|---|---|
 | 渠道列表（类型、接入模式、状态、启停、删除） | `/system/channel` | v1 | `channels/*` | L |
 | 新建 / 编辑：按渠道类型与接入模式切换条件字段（`http` 类型运行时无适配器，灰显不可提交，O7） | 同上 | v1 | 随保存提交 | XL |
-| 渠道级思考 / 联网 / 计划三开关 | 无（Web 表单从未暴露） | v1 | `channels/create`、`channels/update` 需后端补三列（O6 已定案，v1 唯一后端改动） | M |
-| 回调地址与回调凭据展示 | 同上 | v1 | 同一响应 | M |
+| 渠道级思考 / 联网 / 计划三开关 | 无（Web 表单从未暴露） | v1 | `POST /api/admin/channels`、`PUT /api/admin/channels/update/{id}` 需后端补三列（O6 已定案，v1 唯一后端改动） | M |
+| 回调地址展示（`callbackKey` 后端从不进响应，只有派生的 `callbackUrl`；Web 侧同样只展示地址） | 同上 | v1 | 同一响应 | M |
 | 沙箱状态展示 | 同上 | v1 | 同一响应 | S |
 | 微信扫码绑定（二维码 + 状态轮询 + 取消） | 扫码弹窗 | v1 | `wechat/login`、`wechat/status`、`wechat/cancel` | L |
 

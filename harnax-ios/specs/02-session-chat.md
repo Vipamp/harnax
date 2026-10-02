@@ -93,7 +93,13 @@
 - 面包屑 + 上一级导航：锚点 `harnax-webui/src/pages/session/components/WorkspaceDrawer.tsx:118-133`、`:203-219`。
 - 上传：`uploadWorkspaceFile(sessionId, file, currentPath)`，FormData 字段名 `file` 与 `path`；`beforeUpload` 返回 `false` 由前端自行发起（**不依赖 antd 的自动上传**）。锚点 `harnax-webui/src/pages/session/components/WorkspaceDrawer.tsx:153-174`；service `harnax-webui/src/services/ant-design-pro/workspace.ts:115-138`；后端 `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:248-260`（`@RequestParam path` + `file`）。
 - 下载：行内下载按钮 → `downloadWorkspaceFile(sessionId, filePath)` → 生成 blob → `<a download>` 触发。锚点 `harnax-webui/src/pages/session/components/WorkspaceDrawer.tsx:279-304`；service `harnax-webui/src/services/ant-design-pro/workspace.ts:143-165`（**裸 fetch，只带 `X-Api-Key`，不带 Bearer/Tenant**）；后端 `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:278-302`（`safeFileName` 过滤控制字符/引号/目录部分并截断 128 字符 `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:268-273`；超 50MB（`harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:41` `MAX_DOWNLOAD_SIZE`）返回 413；不存在 404；正常时带 `Content-Disposition`）。
-- iOS：抽屉 → `sheet`/`inspector`；下载改为 `URLSession` 拿 `Data` + `ShareLink`/临时文件写入沙盒后用系统分享。
+- iOS 已落地的形状（`Sources/HarnaxFeatures/Chat/WorkspaceSheet.swift`、`WorkspaceViewModel.swift`）：
+  - 抽屉 → `sheet`；下载 → `URLSession` 取 `Data` 后交系统分享面板（`HXFileShare`），不落 `<a download>`。
+  - 上传 → `.fileImporter` 选一个文档，落到**屏上当前那一层目录**（`WorkspaceSheet.swift:53-59`、`:285-302`）；上传中禁用按钮，失败在行上方一条红 banner 说原因，列表不动。
+  - 入口在会话页右上角，**只有状态读回答 running 才画**（`ChatView.swift:81-89`）。这是有意分叉：webui 的按钮常显、点下去才查，未运行弹 warning、查失败弹 error（`harnax-webui/src/pages/session/index.tsx:280-292`），而沙箱管理器没起时这五条路由全是 404（`harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/controller/SandboxWorkspaceController.kt:398-416`），一个只会失败的入口会被当成坏按钮。iOS 侧读失败同样按未运行处理，且不吭声。
+  - 状态读三个时机：进屏/换会话（`ChatView.swift` 的 `.task(id: conversation)`）、一轮的最后一句之后（`ChatViewModel.swift` 的 `readerClosed` / `readerFailed`，容器是被运行里的第一次工具调用建出来的，只在进屏读一次的话入口永远出不来）、切走会话时归零。答案按会话 id 判身份，迟到的旧会话答案不许点亮这一屏（`ChatViewModel.refreshSandboxStatus`）。
+  - 面板与开着的抽屉都随会话换：`bind` 撤面板、收抽屉、按新 id 重建（`ChatViewModel.retireWorkspacePanel`）。
+  - 单测：`Tests/HarnaxFeaturesTests/ChatViewModelTests.swift` 的「the sandbox workspace entry」5 条 + `WorkspaceViewModelTests.swift`。
 
 ### 团队产物抽屉（TeamArtifactsDrawer）
 
@@ -142,7 +148,12 @@
 
 - `ReactMarkdown` + `remarkGfm`，即 **GFM 表格/删除线/任务列表支持必须实现**；`code` 渲染交由自定义 `CodeBlock`。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:2746-2858`（`renderSegment` 的 default 分支走 ReactMarkdown）。
 - `CodeBlock`：用 `/language-(\w+)/` 从 className 取语言；**无语言匹配时渲染纯 `<code>`，不高亮、不显示复制按钮**。有语言时 `Prism.highlight(code, Prism.languages[lang] ?? plaintext, lang)`，主题 oneLight，字号 13。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:167-208`（语言解析 `:198-205` 主题与字号）。
-- 复制按钮：`navigator.clipboard.writeText(code)`，成功后图标变化 1800ms 回退。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:180-184`。iOS 用 `UIPasteboard.general.string` + 同样 1.8s 的瞬时状态。
+- 复制按钮：`navigator.clipboard.writeText(code)`，成功后图标变化 1800ms 回退。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:180-184`。iOS 的代码块不摆图标：长按呼出「复制」菜单（`Sources/HarnaxFeatures/Chat/ChatTranscriptRows.swift:430`，菜单本体 `:704` 的 `HXCopyMenu`），菜单与 `textSelection` 的自由取词并存。
+- iOS 落点：主管气泡与成员气泡的 text 段交给 `HXMarkdownText`（`Sources/HarnaxFeatures/Chat/ChatTranscriptRows.swift:261-267`），两者共用 `ChatSegmentRow` 所以一处接线两处生效。渲染器本体 `Sources/HarnaxKit/Components/HXMarkdownText.swift`，块结构 `Sources/HarnaxKit/Components/HXMarkdownParser.swift`（iOS 17 的 `AttributedString(markdown:)` 只吃行内语法，把技能正文交给它，表格/围栏/列表会塌成一行平文）。覆盖：标题 1–6、有序/无序/GFM 任务列表、```` ``` ````与 `~~~` 两种围栏、表格（含列对齐）、引用、分割线、行内粗体/斜体/删除线/行内 code、`[文案](地址)` 链接（只放行 `http`/`https`/`mailto`，`HXMarkdownText.swift` 的 `openableSchemes`）。
+- 用户气泡与 thinking 保持纯文本：webui 的 user 分支就是 `<span>{msg.segments[0]?.content}</span>`（`harnax-webui/src/pages/session/components/ChatWindow.tsx:3420`），只有 assistant 与成员分支走 `renderSegment`（`:3426`）。iOS 同形（`Sources/HarnaxFeatures/Chat/ChatTranscriptRows.swift:43`）。
+- 围栏底色跟宿主走：落在页面底上的文档（技能正文）围栏取 `surface`，落在 `surface` 气泡里的围栏取 `surfaceAlt`，判据是纯函数 `HXMarkdownRender.codeBackground(on:)`（`Sources/HarnaxKit/Components/HXMarkdownText.swift:32-40`），由 `HXMarkdownText(_:on:)`（`:204`）传给渲染树，列表项与引用里的围栏继承同一档（用例 `Tests/HarnaxKitTests/HXMarkdownRenderTests.swift:128-144`）。两档底上的 `textPrimary` 都在对比度表里（`Sources/HarnaxKit/Theme/Palette.swift:77-78`）。
+- 流式半篇不裂：未闭合围栏延续到文末，代码仍是代码（`Sources/HarnaxKit/Components/HXMarkdownParser.swift:270-271`；用例 `Tests/HarnaxKitTests/HXMarkdownParserTests.swift:161`）。视图每帧重建时重解析整篇，次数上限是流合并的帧窗（一帧一次）。
+- 与 webui 有意不同的两条：①正文不可选中——渲染器自身的规则是「开了 `textSelection` 的 `Text` 不保证把链接那一行的点击交回去，而点不开的链接是更坏的那一半」（`Sources/HarnaxKit/Components/HXMarkdownText.swift:193-195`），所以气泡里链接优先，围栏仍可选，整条原文由长按复制菜单取走，且复制的是 Markdown 源码（见「iOS 实施要点」第 11 条）；②不做语法高亮，围栏是等宽原色加语言 chip（webui 用 Prism oneLight 字号 13，`harnax-webui/src/pages/session/components/ChatWindow.tsx:167-208`）。
 
 ### thinking 渲染
 
@@ -171,7 +182,15 @@
 
 ### 用户消息与图片
 
-- 用户气泡渲染 text 段（同样走 Markdown），并在气泡上方展示 `imageUrls` 缩略图。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:75-89`（`imageUrls` 字段）、图片渲染位于消息渲染区（`:3463-3477` 为输入区预览条，消息内图片渲染在同文件的 user 分支）。
+- 用户气泡的 text 段是**纯文本**（webui 直接 `<span>{msg.segments[0]?.content}</span>`，不做 Markdown；`harnax-webui/src/pages/session/components/ChatWindow.tsx:3420`），气泡上方展示 `imageUrls` 缩略图。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:75-89`（`imageUrls` 字段）、`:3413-3419`（消息内图片渲染）、iOS `Sources/HarnaxFeatures/Chat/ChatTranscriptRows.swift:30-55`（`userBubble`）。
+
+### 气泡容器
+
+- 用户气泡：品牌底，尖角留在右下。锚点 `harnax-webui/src/pages/session/components/ChatWindow.less:257-264`；iOS `Sources/HarnaxFeatures/Chat/ChatTranscriptRows.swift:92`（`userCard`）。
+- 主管回答：`surface` 底 + `separator` 发丝描边，尖角留在左下，与用户气泡成镜像。锚点 `harnax-webui/src/pages/session/components/ChatWindow.less:266-275`；iOS `:87`（`answerCard`）+ `:70-82`（`leadAnswer`）。
+- 成员运行：与主管同底同形，尖角收在左上与左下，靠左 3pt 色带和状态色描边标明这是被委派的一轮。锚点 `harnax-webui/src/pages/session/components/ChatWindow.less:277-281`；iOS `:135`（`memberCard`）。
+- 空轮次不画任何容器：一轮在首帧之前不成立，「正在读」由 `ChatReadingRow` 说。gate 在 `answer`（`Sources/HarnaxFeatures/Chat/ChatTranscriptRows.swift:58-68`），判据是 `turn.hasContent`。
+- 卡内块各留一档底：代码块、文件行是 `surfaceAlt`，工具卡沿用 `surface` 底加状态色发丝边，靠描边与所属气泡分开。`surface` 与 `surfaceAlt` 上的文字组合都在对比度表里（`Sources/HarnaxKit/Theme/Palette.swift:75-95`）。
 
 ---
 
@@ -242,6 +261,7 @@
 ### 计划面板（右侧滑出）
 
 - 打开入口两条：①输入区工具条的「启用计划」Switch（`enablePlan` 开关，无模型门控）；②右边缘的折叠/展开按钮（**仅 `enablePlan` 为真时存在**）。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:3590-3600`（Switch）、`:3298-3305`（右边缘按钮）、`handleTogglePlanPanel` `:2651-2669`。
+- iOS 的口径：会话页右上角**没有**手动开计划抽屉的按钮（那个角落给了沙箱工作区，见「Workspace 抽屉」），`ChatViewModel.openPlanPanel` 随之删除。抽屉仍由计划调用自己打开（`ChatWindow.tsx:1501` 的对应实现 `ChatViewModel.reactToPlanFrame`，`isPlanPanelPresented` 只剩这一路写），输入区的「启用计划」开关与转录里的计划块都不动。
 - 面板打开时 `loadPlans(false)` 全量拉取并 `loadCurrentPlan()`；关闭时清定时器。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:2651-2669`。
 - 当前计划接口：`GET /api/router/agent/session/{sessionId}/current-plan`（`X-Api-Key`）。锚点 `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:170-178`；前端调用 `harnax-webui/src/pages/session/components/ChatWindow.tsx:2479-2600`（fetch 于 `:2485` 附近）。
 - 历史计划接口：`GET /api/router/agent/session/{sessionId}/plans`。锚点 `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:157-165`；前端 `loadPlans` `harnax-webui/src/pages/session/components/ChatWindow.tsx:2603-2648`。
@@ -461,6 +481,7 @@
 | TextArea | — | `autoSize {minRows:2, maxRows:6}`；loading 时 placeholder 切换 | `harnax-webui/src/pages/session/components/ChatWindow.tsx:3480-3489` |
 | Enter 键 | `loading` | Enter 发送 / Shift+Enter 换行；loading 时禁止 | `harnax-webui/src/pages/session/components/ChatWindow.tsx:2432-2439` |
 
+- 输入框长文本：webui 是 `autoSize` 固定 6 行，iOS 改为**半屏封顶、超出内部滚动**。可容纳行数由测量高度推：`行数 = (屏高 × 0.5 − 20) / 正文行高`，下限 2 行；测不到屏高（尚未布局）时退回 6 行。阈值与公式在纯函数 `Sources/HarnaxFeatures/Chat/ChatComposerGrowth.swift`，单测 `Tests/HarnaxFeaturesTests/ChatComposerGrowthTests.swift`。屏高取本视图自身 bounds（`Sources/HarnaxFeatures/Chat/ChatView.swift:72-78` 的 `GeometryReader`），并只接受历史最大值——键盘把帧压缩时上限不跟着抖（`:18-31`），算出的行数交给 `ChatInputBar`（`:70`）落成 `.lineLimit(2 ... lineCap)`（`:287`）。
 - 空状态快捷建议 4 条，仅在无消息时显示，点击直接 `doSend`（**不填输入框**）。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:566-571`（文案）、`:3327-3333`（渲染条件）。
 - 主管气泡标签：团队会话用 `leadLabel = config.name`。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:720-738`、`:610`。
 
@@ -548,8 +569,8 @@
 8. **自动滚动**：复刻 120px「接近底部」阈值与浮钮；`ScrollView` 上用内容高度差判断，不要用 `withAnimation` 打断用户手势。
 9. **图片输入**：`PhotosPicker` → 读取为 JPEG/PNG Data → 拼 `data:image/<mime>;base64,<b64>`（与 `FileReader.readAsDataURL` 输出等价，`harnax-webui/src/pages/session/components/ChatWindow.tsx:2442-2468`）。**绝不可传 http URL**（后端会把非 `data:image` 串当本地路径并硬编码 image/png，`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentWrapper.kt:814-829`）。同时注意 base64 体积直接进 body，应限制单图尺寸。
 10. **下载**：两处裸 fetch（workspace download 只 `X-Api-Key`；team-artifact download 只 `Bearer`）在 iOS 各自构造 `URLRequest` 并只加对应一个头，别统一加全家桶（尤其别给 router download 加 Bearer 之外的 Tenant 头，行为未定义）。
-11. **复制**：`UIPasteboard`，代码块复制后 1.8s 图标回退（`harnax-webui/src/pages/session/components/ChatWindow.tsx:180-184`）。
-12. **Markdown**：需 GFM 表格支持；SwiftUI 原生 `AttributedString(markdown:)` 不够（无表格、无代码块语言/复制），建议引入 `swift-markdown-ui` 并自定义 code block 渲染 + 语法高亮（webui 用 Prism oneLight，字号 13）。
+11. **复制**：整条气泡与代码块都由长按菜单交给 `HXPasteboard.copy`（`Sources/HarnaxFeatures/Chat/ChatTranscriptRows.swift:704`）。气泡文案由 `ChatTurn.copyableText` 组装（`Sources/HarnaxFeatures/Chat/ChatTranscript.swift:229`）：按流式顺序取 text 段、以 `\n` 相连，thinking、工具卡、附件、计划块一律不进剪贴板；组装结果为空就不弹菜单。webui 只有代码块一个复制入口（`harnax-webui/src/pages/session/components/ChatWindow.tsx:180-184`）。
+12. **Markdown**：气泡正文由本仓的渲染器画——块结构 `Sources/HarnaxKit/Components/HXMarkdownParser.swift`，绘制 `Sources/HarnaxKit/Components/HXMarkdownText.swift`；GFM 表格、任务列表、两种围栏、引用、标题、行内样式与链接都在覆盖内。iOS 17 的 `AttributedString(markdown:)` 只吃行内语法，单独用它会把表格和围栏塌成一行平文，所以解析层不可省。会话侧的接线、围栏底色档与「正文不可选中 / 不做语法高亮」两条取舍见「分段渲染规格 · text 渲染（Markdown）」。
 13. **状态默认值一致性清单**：thinking 默认展开（`harnax-webui/src/pages/session/components/ChatWindow.tsx:211-228`）、工具卡默认折叠但 busy 自动展开（`:305-307`）、主管确认默认展开参数表（`:538-548`）、成员内联确认默认展开（`:422`）、历史计划 Collapse 只展开最新一条（`:3041-3290`）。iOS 逐个对齐。
 14. **列表一次 100 条**：iOS 首版同样一次拉 100 且不实现搜索/排序/分组，避免与后端能力错配。锚点 `harnax-webui/src/pages/team/index.tsx:39`。
 15. **创建后无法拿到新会话 id**：必须重拉列表（`harnax-webui/src/pages/session/components/SettingsModal.tsx:107` + `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/SessionController.kt:80-89`）。
@@ -565,7 +586,7 @@
 
 1. **已核实**：`EndEvent.attachments: List<FileAttachment>`（`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/ChatEvent.kt:145-151`）在 webui 完全未渲染。类型定义在 `harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/FileAttachment.kt:14-22`，七个字段：`fileId`（下载 URL 的路径段）、`fileName`、`filePath`（沙箱内路径）、`fileSize`（字节）、`mimeType`、`url`（WebUI 用的稳定下载地址）、`objectKey`（MinIO 对象键，缺省空串）。下载走 `GET /api/output-files/{sessionType}/{sessionId}/{fileId}?name=`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/OutputFileController.kt:66-73`），但整控制器带 `@ConditionalOnProperty(prefix = "minio", name = ["enabled"], havingValue = "true")`（`:38`）——MinIO 未开启时该路由不存在，iOS 的附件收取要先按 404 处理。`sessionType` 只接受 `web`/`task`/`channel`，`fileId` 必须是 UUID，`channel` 类型要求渠道归属当前用户（`:51-64`）。
 2. **已核实**：`MessageSegment.type === 'tool_result'`（`harnax-webui/src/pages/session/components/ChatWindow.tsx:62`）与 `toolResultExpanded`（`:72`）都是遗留。全仓仅 `harnax-webui/src/pages/session/components/ChatWindow.tsx` 引用这两个名字，共四处：类型联合 `:62`、历史映射注释 `:926`、渲染分支 `:2771`-`:2773`（该分支 `return null`）；`toolResultExpanded` 声明后无任何读写点。iOS 建模可以省略这两个字段。
-3. `harnax-webui/src/pages/session/components/teamRun.test.ts`（约 2795B）与 `ChatWindow.less`（约 45089B）未读，因此纯样式细节（颜色变量 `--vip-*`、间距、卡片边框、消息气泡最大宽度等）与 `teamRun` 纯函数的边界用例未纳入规格。
+3. `harnax-webui/src/pages/session/components/teamRun.test.ts`（约 2795B）未读，`teamRun` 纯函数的边界用例未纳入规格。`ChatWindow.less` 的气泡段已逐行读入 §气泡容器（`:245-284`：宽上限 78%、用户/主管/成员三套圆角与内边距、成员左侧 3px 色带），该文件其余部分（颜色变量 `--vip-*` 的取值、间距标度、非气泡卡片的边框）仍未纳入规格。
 4. **已核实**：`GET /api/admin/sessions/{sessionId}/config` 返回 `ResultVo<SessionResponse>`，读不到会话时是 `code = 404` 而不是异常（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/SessionController.kt:111`-`:126`）；`PUT` 同路径返回 `ResultVo<Void>`，成功只有信封没有体（`:128`-`:141`）。因此 iOS 改完配置后必须重读一次才能拿到新值，不能从 PUT 响应里取。
 5. `/api/router/agent/session/{sessionId}/plans` 与 `/current-plan` 返回体的 JSON 具体键名（`planId` 是否在响应顶层、`subtasks` 是否可能为 null）只由前端 TS 类型（`harnax-webui/src/pages/session/components/ChatWindow.tsx:110-132`）与前端消费代码推断，未核对后端 PlanNote DTO 的 Jackson 序列化配置（如字段名策略）。
 6. `listWorkspaceFiles` 对 `type === 'symlink' | 'unknown'` 的图标/交互在 `harnax-webui/src/pages/session/components/WorkspaceDrawer.tsx` 中的具体分支未逐行引用（只确认排序与目录优先）。

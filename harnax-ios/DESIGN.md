@@ -54,7 +54,7 @@ Web 侧路由定义见 `harnax-webui/config/routes.ts`，iOS 与之一一对应�
 | 登录态 | `/login` | 登录页 + 服务器地址设置 | 见 §5 |
 | 兜底 | — | 我的（登录态、租户切换、主题、语言、退出） | 不含资料编辑与改密 |
 
-Web 侧 `/context/mcp/detail/:id` 与 `/context/skill/detail/:id` 是 `hideInMenu` 的子路由，iOS 用 push 导航承载；`/mcp/oauth/callback` 是无布局的回跳页，iOS 上改造成 URL scheme 回调（见第 13 章 MCP 节）。`/welcome` 是数据全硬编码的演示页，`/context/channel` 是保活重定向，两者都不进 iOS。
+Web 侧 `/context/mcp/detail/:id` 与 `/context/skill/detail/:id` 是 `hideInMenu` 的子路由，iOS 用 push 导航承载；`/mcp/oauth/callback` 是无布局的回跳页，iOS 上由应用内 `WKWebView` 承接这条回跳——那行注册只存得住 http(s) 的 `redirect_uri`，所以拿它逐段比对每一次导航，命中即取消加载并由本端发 `exchange`，徽标最后仍以 `status` 那次读为准（见第 13 章 13.4 的六步状态机）。`/welcome` 是数据全硬编码的演示页，`/context/channel` 是保活重定向，两者都不进 iOS。
 
 ### 3.2 明确不进 v1（记账项）
 
@@ -180,7 +180,7 @@ iOS 应该是第一个真正调用它的客户端，理由是自洽性：换令�
 - 用 `URLSession` + `bytes` 异步序列自读行缓冲，自己按空行分帧；必须处理粘包与半包，以及单帧内多行 `data:`。
 - 每个待发请求关联一个可取消任务；「停止」除了本地取消，还要按 §13 会话章的命令映射发对应的服务端命令。
 - 断线不做自动重连（重放语义未定义），但必须把界面从「流式中」状态释放出来，并允许用户重新发消息。
-- 后台保持：确认等待可能长达分钟级，需要 `beginBackgroundTask` 兜住，否则切后台即断。
+- 后台保持：确认等待可能长达分钟级，套接字一开就取 `beginBackgroundTask`，读数按哪条路径结束都在结束时归还（`Sources/HarnaxFeatures/Chat/ChatViewModel.swift:424-427`）。系统收回宽限期时先撤销 assertion 再逐个通知持有者（`Sources/HarnaxFeatures/Chat/ChatBackgroundAssertion.swift:117-123`），该轮按停止处理并给出横幅提示，不留「流式中」的悬挂状态。宽限期多久由系统决定，客户端没有提高上限的调用，因此这一条只保证在系统允许的窗口内不断，不保证任意长度的等待。
 
 ## 7. iOS 端架构
 
@@ -188,10 +188,9 @@ Swift Package Manager 本地多包，App target 只做装配。分层依据是�
 
 ```
 HarnaxApp                App target：场景、导航、依赖装配
-  └─ HarnaxFeatures      各页面 Feature（每个域一个子目录，仅 UI + ViewModel）
-       └─ HarnaxChat     对话领域：事件 reducer、分段模型、确认状态机
+  └─ HarnaxFeatures      各页面 Feature（每个域一个子目录，仅 UI + ViewModel）；对话域即其中的 Chat 子目录——事件 reducer、分段模型、确认状态机
        └─ HarnaxKit      共享 UI 组件、设计令牌、i18n、格式化
-       └─ HarnaxAPI      AdminClient / RouterClient / SSEParser / 请求头注入 / 错误映射
+       └─ HarnaxAPI      APIClient / ChatStreamClient / SSE 分帧 / 请求头注入 / 错误映射
             └─ HarnaxCore 契约模型（Codable）、枚举、分页、ResultVo、租户、凭据存取协议
 ```
 
@@ -199,9 +198,10 @@ HarnaxApp                App target：场景、导航、依赖装配
 
 关键约定：
 
-- **状态**用 `@Observable`，一页一个 ViewModel；不引入第三方状态库。ViewModel 只依赖协议（`AdminClienting`、`RouterClienting`、`TokenStoring`），便于用假实现单测。
+- **状态**用 `ObservableObject` + `@Published`，一页一个 ViewModel；不引入第三方状态库。ViewModel 只依赖按域拆开的读写协议（`AgentCataloging` 与 `AgentWriting`、`SkillCataloging`、`SecretStoring` 这类），便于用假实现单测。
 - **契约模型手写 Codable**，字段名与后端 DTO 逐字对齐（后端别名即契约的地方尤其注意），每个模型配 JSON fixture 测试。不用代码生成器，避免生成物与后端漂移时无人负责。
 - **列表统一用游标式加载封装**（内部仍是 `pageNum`/`pageSize`），分页、下拉刷新、错误重试一处实现，13 个列表页共用。
+- **列表页的工具栏是 HarnaxKit 的一对组件**：`HXPlusButton` 与 `HXFilterMenu` 各只在这一个文件里画图标，都排在导航栏尾部（加号左、漏斗右），因为前导角落属于返回按钮。除名称搜索外的条件全进漏斗，漏斗用实心表示有条件生效；菜单内容留在调用点（状态清单是打勾行，状态加类型是两枚选择器）。行内不放状态分段条，筛到零条时它会跟着行一起消失。
 - **表单**用一组可组合的行控件（文本 / 数字 / 开关 / 单选 / 多选 / 键值表 / JSON 编辑器 / 文件），条件字段矩阵由一个声明式描述驱动，Channel 那种 5×4 组合靠新增描述而不是新代码解决。
 - **能力门控**：对话输入区的开关由后端返回的模型能力字段驱动（推理支持、思考模式取值、联网、视觉），客户端不得自行假设某模型可思考。
 
@@ -248,7 +248,7 @@ HarnaxApp                App target：场景、导航、依赖装配
 
 | 阶段 | 交付 | 出口判据 |
 |---|---|---|
-| M0 骨架 | 五个包、双基址配置、`cli-login`、Keychain、`auth/me` 恢复、请求头注入、`ResultVo` 与分页封装、**`HarnaxKit` 语义令牌双档（浅／深）与主题切换开关** | 真机能登录、能拉到当前用户与租户、能列出智能体；同屏在系统浅深两档下无一处硬编码色导致的反色错误 |
+| M0 骨架 | 四个包、双基址配置、`cli-login`、Keychain、`auth/me` 恢复、请求头注入、`ResultVo` 与分页封装、**`HarnaxKit` 语义令牌双档（浅／深）与主题切换开关** | 真机能登录、能拉到当前用户与租户、能列出智能体；同屏在系统浅深两档下无一处硬编码色导致的反色错误 |
 | M1 上下文域 | 模型、工具、MCP（含 OAuth 回跳改造）、技能（含上传与详情文件树）、CLI | 五个域可增改查，连通性测试与关联拦截可用 |
 | M2 智能体域（配置） | 智能体 5 步向导、团队、四类绑定与环境参数、刷新受影响会话 | 能建出一个带工具与技能的智能体并在 Web 侧看到同一份配置 |
 | M3 对话全量 | 会话列表、分段渲染、工具确认、计划面板、slash 命令、权限模式、图片、workspace、团队多路合并 | 第 11 章第 5 条端到端链路通过；与 Web 同一会话逐段对照渲染结果一致 |

@@ -20,6 +20,36 @@
 - `.navigationBarTitleDisplayMode(.inline)` → 包进 `#if canImport(UIKit) … #endif`。
 - `.confirmationAction` 是可用的，不用包。
 
+## 走查桩：`App/HarnaxDebugScreens.swift`
+
+整文件包在 `#if DEBUG` 里，只被 `Harnax.xcodeproj` 编译，`swift test` 看不见它。它存在的理由只有一条：模拟器
+不接收任何合成输入，所以一屏只要不能由启动参数命名，就永远不会被看见——它能编译、有单测，但从不进截图。
+
+- 启动参数四个：`-FIXTURE <screen>`、`-THEME <system|light|dark>`、`-LANG <system|en|zh-Hans>`、
+  `-SCROLL <points>`。`<screen>` 就是 `HarnaxDebugScreen` 的 case 名（65 个），一个 case 一个表面：tab、
+  三种列表态、被 push 的详情页、以及所有由列表 present 出来的表单与 sheet。`-SCROLL` 是长表单折到折叠线以下
+  的唯一办法。
+- 一条命令一张图：`xcrun simctl launch <udid> com.agnetix.harnax.ios -FIXTURE mcpForm -THEME dark`，随后
+  `xcrun simctl io <udid> screenshot /tmp/walk-mcpForm-dark.png`。换 fixture 前必须先 `simctl terminate`——
+  对已经在前台的实例，launch 只会把它调起来，新参数不生效。截图还要求 Simulator 处于前台（`open -a Simulator`）。
+- 挂载只有三种形状，加 case 时照抄，不要发明第四种：被 push 的页
+  `NavigationStack { pushed }.harnaxThemed()`；自带栈的向导 `pushed.harnaxThemed()`（不能再套一层栈）；
+  present 出来的面 `Color.hx(.background).ignoresSafeArea().sheet(isPresented: .constant(true)) { presented }
+  .harnaxThemed()`，由第二个 `@ViewBuilder` 再 switch 一次 `screen`。`@ViewBuilder` 的 switch 嵌套会撞
+  `_ConditionalContent` 深度，所以第三类的分支拆成了三个子 builder。
+- 替身策略：每个 double 只回答「它自己那几张截图会读到的」那几次读，写操作一律 `.failure(.offline)`。这样
+  某次捕获万一跑到控件上，画面上是一条失败横幅，而不是一次看着成功的假写入。挂新屏时如果发现读被拒，要补的是
+  那个 double 的读，不是改视图让它好挂。
+- 单行数据走 `HarnaxDebugRecord`：它把同一个页 fixture 的第一行解出来给下钻屏用，所以截图里不会出现列表本身
+  永远给不出的行。fixture 里确实没有对应数据时（一次性密钥、安装报告、微信二维码）才由它自己补，而且必须补成
+  DTO 的真实形状——能用 public init 就用 init，成员 init 是 internal 的就走一小段 JSON 夹具解码。
+- `HarnaxDebugScreen.tab` 要跟着挂载走：把 context 域的表单挂在 agents 袋上，一旦它落回 root view，读起来就是
+  agents 的 bug。
+- 那种「接收一个 view model」的 sheet（`McpOAuthClientSheet(vm:)`、`McpAuthorizationWebSheet(vm:)`、
+  `SkillUploadSheet(vm:)`、`SkillRepositoryFormSheet(form:)`）必须由 `HarnaxDebugView` 用 `@StateObject` 托管，
+  并在 init 里直接喂 `HarnaxDebugAuth.account`：这类 model 只建一次，而那一刻 `model.account` 还是 `nil`，
+  喂晚了整屏的 owner-only 控件都会读成只读。
+
 ## 闸门（Tests/ 里有四条，全部是源码级判据）
 
 - `Tests/HarnaxKitTests/ThemeGateTests.swift`：颜色只能从 `HarnaxKit` 语义令牌取——`Theme/` 之外不写字面色值、
