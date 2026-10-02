@@ -212,6 +212,25 @@ public struct TokenKpiCard: Identifiable, Equatable, Sendable {
     }
 }
 
+/// A row's own four figures, in the same texts the seven cards use.
+///
+/// The ring draws one column at a time, so these are what a tap on a wedge has to add: the split behind the
+/// angle under the finger. Measure-independent by design — the fee column reads `¥x.xx` and the three token
+/// columns read K/M whether or not the fee measure is currently plotted.
+public struct TokenRowBreakdown: Equatable, Sendable {
+    public let input: String
+    public let output: String
+    public let total: String
+    public let fee: String
+
+    public init(row: any TokenMetricsReport) {
+        input = TokenFigures.token(row.totalInputToken)
+        output = TokenFigures.token(row.totalOutputToken)
+        total = TokenFigures.token(row.grandTotalToken)
+        fee = TokenFigures.fee(row.totalFee)
+    }
+}
+
 /// One pie slice, plus the legend line the console prints next to it.
 public struct TokenShareSlice: Identifiable, Equatable, Sendable {
     /// Position in the reply — the server orders by `grandTotalToken DESC`, so this is the rank the legend and
@@ -229,6 +248,7 @@ public struct TokenShareSlice: Identifiable, Equatable, Sendable {
     public let plot: Double
     public let share: String
     public let slot: PaletteSlot
+    public let breakdown: TokenRowBreakdown
 
     public init(
         index: Int,
@@ -238,7 +258,8 @@ public struct TokenShareSlice: Identifiable, Equatable, Sendable {
         value: String,
         plot: Double,
         share: String,
-        slot: PaletteSlot
+        slot: PaletteSlot,
+        breakdown: TokenRowBreakdown
     ) {
         self.index = index
         id = "\(index)-\(key)"
@@ -248,6 +269,7 @@ public struct TokenShareSlice: Identifiable, Equatable, Sendable {
         self.plot = plot
         self.share = share
         self.slot = slot
+        self.breakdown = breakdown
     }
 }
 
@@ -288,6 +310,52 @@ public struct TokenTrendSeries: Identifiable, Equatable, Sendable {
         self.nameKey = nameKey
         self.slot = slot
         self.points = points
+    }
+}
+
+/// One line's number at one bucket.
+///
+/// Two readers of it: the panel a tap opens under a line chart, and the numeric list a block switches to in
+/// place of the chart. The console gets the first from a hover tooltip
+/// (`harnax-webui/src/pages/token-monitor/index.tsx:642-650`); a finger has no hover, so the readout is a row
+/// per line under the chart instead.
+public struct TokenBucketReading: Identifiable, Equatable, Sendable {
+    public let id: String
+    public let slot: PaletteSlot
+    /// Already resolved, so the row reads the same as the chip that names the line.
+    public let name: String
+    public let value: String
+
+    public init(id: String, slot: PaletteSlot, name: String, value: String) {
+        self.id = id
+        self.slot = slot
+        self.name = name
+        self.value = value
+    }
+}
+
+/// One bucket of a trend block read as numbers instead of as a line: the axis text the chart shows for that
+/// bucket, and one cell per series the chart currently draws.
+///
+/// This is the numeric alternative the accessibility rule asks for (`DESIGN.md` §10) — a reader who cannot
+/// see the line still gets every number it was drawn from, in the chart's own bucket order. Built by
+/// `TokenMonitorViewModel.trendListRows(in:)`, which is why the cells are already-resolved strings rather than
+/// raw values a view would have to format twice over.
+public struct TokenTrendListRow: Identifiable, Equatable, Sendable {
+    /// The raw server bucket text: unique among a block's rows, and the reason the rows sort the way the axis
+    /// does.
+    public let id: String
+    /// The point's own `label`, sliced by granularity where the server text was first read. Never recomputed
+    /// from a device date.
+    public let label: String
+    /// The visible series' numbers, in the order the legend and the hues run. A series with no point in this
+    /// bucket is absent from it exactly as it is absent from the line.
+    public let values: [TokenBucketReading]
+
+    public init(id: String, label: String, values: [TokenBucketReading]) {
+        self.id = id
+        self.label = label
+        self.values = values
     }
 }
 

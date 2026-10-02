@@ -24,6 +24,22 @@ public struct McpDetailView: View {
             }
             .onDisappear(perform: vm.stopAwaitingAuthorization)
             .refreshable { await vm.load() }
+            .sheet(
+                isPresented: Binding(
+                    get: { vm.showsClientEditor },
+                    set: { if !$0 { vm.closeClientEditor() } }
+                )
+            ) {
+                McpOAuthClientSheet(vm: vm)
+            }
+            .sheet(
+                isPresented: Binding(
+                    get: { vm.inAppTarget != nil },
+                    set: { if !$0 { vm.cancelInAppAuthorization() } }
+                )
+            ) {
+                McpAuthorizationWebSheet(vm: vm)
+            }
     }
 
     @ViewBuilder
@@ -53,6 +69,7 @@ public struct McpDetailView: View {
                     toolsSection
                     if vm.showsOAuth {
                         oauthSection
+                        McpOAuthSetupSection(vm: vm)
                     }
                 }
             }
@@ -217,6 +234,11 @@ public struct McpDetailView: View {
                         ProgressView().tint(Color.hx(.brand))
                     }
                 }
+                if vm.isExchanging {
+                    HXRow(text: hx("mcp.oauth.exchanging")) {
+                        ProgressView().tint(Color.hx(.brand))
+                    }
+                }
                 if let notice = vm.oauthNotice {
                     HXRow(text: notice, divider: false) { EmptyView() }
                 }
@@ -255,7 +277,7 @@ public struct McpDetailView: View {
 
     @ViewBuilder
     private var actions: some View {
-        HStack(spacing: 10) {
+        HXFlow(spacing: 8) {
             if case .failed(let message) = vm.oauthPhase {
                 Text(verbatim: message)
                     .font(.footnote)
@@ -270,6 +292,15 @@ public struct McpDetailView: View {
                 }
                 .buttonStyle(.hxSecondary)
                 .disabled(vm.isRequestingAuthorization || vm.isAwaitingAuthorization)
+                // The other half of the same six-step machine: this device runs the session and spends the
+                // code itself, instead of relying on a browser that is signed in to the console.
+                Button {
+                    Task { await vm.startInAppAuthorization() }
+                } label: {
+                    HXText("mcp.oauth.action.authorizeInApp")
+                }
+                .buttonStyle(.hxSecondary)
+                .disabled(vm.isRequestingAuthorization || vm.isAwaitingAuthorization || vm.isExchanging)
             }
             if vm.canConfirmAuthorization {
                 Button {
@@ -316,8 +347,8 @@ public struct McpDetailView: View {
 /// One tool: its name, what it takes, and the parameter names the runtime will be called with.
 ///
 /// `list_tools` flattens `inputSchema.properties` to `{name, type, description}` and drops `required` and
-/// the enums (`McpServerController.kt:154-171`), so this row is a chip cloud rather than an expandable
-/// table — the interface has nothing left to expand.
+/// the enums (`McpServerController.kt:154-171`), so this card lists three facts per parameter and nothing
+/// else — the interface has nothing left to expand, and a 「必填」 mark would be an invention.
 struct McpToolCard: View {
     let tool: McpToolRow
 
@@ -332,13 +363,44 @@ struct McpToolCard: View {
                     HXChip(hx("mcp.tool.noParams"))
                 } else {
                     HXChip(hxCount("mcp.tool.params", tool.parameters.count), tone: .purple)
-                    HXFlow(spacing: 6) {
+                    VStack(alignment: .leading, spacing: 8) {
                         ForEach(Array(tool.parameters.enumerated()), id: \.offset) { _, parameter in
-                            HXChip(parameter.label, tone: .teal)
+                            McpToolParameterRow(parameter: parameter)
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+/// One parameter, in the three parts the server actually kept
+/// (`harnax-webui/src/pages/mcp/detail.tsx:175-193`: a code-style name, a cyan type tag, the description as
+/// secondary text — and 「暂无描述」 when there is none).
+///
+/// The name and the type cannot share a capsule at phone width, so the flexible one is the name:
+/// `HXValueText` truncates in the middle rather than disappearing, and its long-press copy hands back the
+/// whole identifier. The type chip keeps its own width, which is what makes it the element that used to be
+/// missing.
+private struct McpToolParameterRow: View {
+    let parameter: McpToolParameter
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                HXValueText(parameter.name)
+                if let type = parameter.declaredType {
+                    HXChip(type, tone: .teal)
+                }
+            }
+            Text(verbatim: parameter.documentation ?? hx("mcp.tool.noDescription"))
+                .font(.caption)
+                .foregroundStyle(
+                    parameter.documentation == nil
+                        ? Color.hx(.textTertiary)
+                        : Color.hx(.textSecondary)
+                )
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

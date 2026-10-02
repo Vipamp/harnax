@@ -13,13 +13,16 @@
 "state.error.hint" = "请检查网络后重试。";
 "state.filter.all" = "全部";
 "state.filter.status" = "状态筛选";
+"state.filter" = "筛选";
 "state.badge.enabled" = "启用";
 "state.badge.disabled" = "停用";
 "state.badge.shared" = "公开";
 "state.action.enable" = "启用";
 "state.action.disable" = "停用";
 "state.action.delete" = "删除";
+"state.action.edit" = "编辑";
 "state.action.refresh" = "刷新关联会话";
+"state.action.more" = "更多操作";
 "state.delete.checking" = "校验中…";
 "state.delete.confirm" = "删除 %@";
 
@@ -28,6 +31,7 @@
 "error.timeout" = "请求超时，请稍后重试。";
 "error.unauthorized" = "登录已过期，请重新登录。";
 "error.business" = "服务器拒绝了本次请求。";
+"error.objectStoreDisabled" = "服务器未开启对象存储，产物无法下载。";
 "error.unpackable" = "服务器未返回数据。";
 "error.decoding" = "无法解析服务器返回内容。";
 "error.serverConfig" = "服务器地址格式不正确。";
@@ -38,7 +42,6 @@
 "tab.chat" = "对话";
 "tab.agents" = "智能体";
 "tab.context" = "上下文";
-"tab.system" = "系统";
 "tab.me" = "我的";
 
 /* ---- 登录 ---- */
@@ -86,6 +89,93 @@
 "agent.binding.unnamed" = "未命名";
 "agent.binding.confirm" = "需确认";
 
+/* ---- 智能体向导 ---- */
+"agent.wizard.title.create" = "创建智能体";
+"agent.wizard.title.edit" = "编辑智能体";
+"agent.wizard.step.basic" = "基本信息";
+"agent.wizard.step.tool" = "工具配置";
+"agent.wizard.step.mcp" = "MCP 配置";
+"agent.wizard.step.skill" = "技能配置";
+"agent.wizard.step.cli" = "CLI 配置";
+"agent.wizard.model.unnamed" = "未命名模型";
+"agent.wizard.model.unknownProvider" = "未知服务商";
+"agent.wizard.cli.unnamed" = "CLI 包 #%d";
+"agent.wizard.error.name" = "请输入智能体名称";
+"agent.wizard.error.name.long" = "智能体名称不能超过 100 个字符";
+"agent.wizard.error.detail" = "请输入描述";
+"agent.wizard.error.prompt" = "请输入系统提示词";
+"agent.wizard.error.model" = "请选择模型";
+"agent.wizard.error.tool" = "请选择工具，或删除这一空行";
+"agent.wizard.error.tool.duplicate" = "同一工具不能重复添加";
+"agent.wizard.error.mcp" = "请选择 MCP 服务，或删除这一空行";
+"agent.wizard.error.mcp.duplicate" = "同一 MCP 服务不能重复添加";
+"agent.wizard.error.skill" = "请选择技能，或删除这一空行";
+"agent.wizard.error.skill.duplicate" = "同一技能不能重复添加";
+"agent.wizard.error.skill.nameTaken" = "技能 %@ 已经添加过了";
+"agent.wizard.error.env.missing" = "%@ 缺少必填环境参数 %@";
+
+/* ---- agent wizard, step 1 ---- */
+"agent.wizard.name.placeholder" = "请输入智能体名称";
+"agent.wizard.description.placeholder" = "请输入描述";
+"agent.wizard.prompt.placeholder" = "请输入系统提示词，支持 Markdown 语法";
+"agent.wizard.model" = "模型";
+"agent.wizard.model.placeholder" = "请选择模型";
+"agent.wizard.model.search" = "搜索模型";
+"agent.wizard.model.none" = "暂无模型";
+"agent.wizard.owner" = "所有者";
+"agent.wizard.owner.auto" = "自动填充为当前用户";
+"agent.wizard.isPublic" = "是否公开";
+"agent.wizard.public.hint" = "公开后其他用户也可以查看此智能体";
+"agent.wizard.noPermission" = "您没有权限修改此设置";
+
+/* ---- agent wizard, step 2: tools ---- */
+"agent.wizard.tool.hint" = "配置工具（可选，可跳过）";
+"agent.wizard.tool.add" = "添加工具";
+"agent.wizard.tool.select" = "选择工具";
+"agent.wizard.tool.search" = "搜索工具名称或描述";
+"agent.wizard.tool.none" = "暂无可选工具";
+"agent.wizard.tool.empty" = "暂无工具配置";
+"agent.wizard.tool.needConfirm" = "需要确认";
+"agent.wizard.tool.unsupported" = "当前模型不支持工具调用，可切换支持的模型或直接跳过此步骤";
+
+/* ---- agent wizard, step 3: MCP ---- */
+"agent.wizard.mcp.hint" = "配置 MCP 服务（可选，可跳过）";
+"agent.wizard.mcp.add" = "添加 MCP";
+"agent.wizard.mcp.select" = "选择 MCP 服务";
+"agent.wizard.mcp.search" = "搜索 MCP 服务";
+"agent.wizard.mcp.none" = "暂无可选 MCP 服务";
+"agent.wizard.mcp.empty" = "暂无 MCP 配置";
+"agent.wizard.mcp.unsupported" = "当前模型不支持 MCP 服务，可切换支持的模型或直接跳过此步骤";
+
+/* ---- agent wizard, step 4: skills ---- */
+"agent.wizard.skill.hint" = "配置技能（可选，可跳过）";
+"agent.wizard.skill.add" = "添加技能";
+"agent.wizard.skill.select" = "选择技能";
+"agent.wizard.skill.search" = "搜索技能名称";
+"agent.wizard.skill.none" = "暂无可选技能";
+"agent.wizard.skill.empty" = "暂无技能配置";
+"agent.wizard.skill.repository" = "来自仓库：%@";
+"agent.wizard.repository.select" = "选择技能仓库";
+"agent.wizard.repository.search" = "搜索技能仓库";
+"agent.wizard.repository.empty" = "暂无技能仓库";
+
+/* ---- agent wizard, step 5: CLI ---- */
+"agent.wizard.cli.hint" = "选择 CLI 工具（可选）。它们会随会话自动装进沙箱，包内自带的技能也在运行时加载。";
+"agent.wizard.cli.add" = "添加 CLI";
+"agent.wizard.cli.select" = "选择 CLI 工具";
+"agent.wizard.cli.search" = "搜索 CLI 名称";
+"agent.wizard.cli.none" = "暂无可选 CLI 包";
+"agent.wizard.cli.empty" = "暂无 CLI 配置";
+"agent.wizard.cli.skills" = "关联技能";
+"agent.wizard.cli.noEnvParams" = "该 CLI 不需要环境变量参数";
+
+/* ---- agent wizard, footer ---- */
+"agent.wizard.previous" = "上一步";
+"agent.wizard.next" = "下一步";
+"agent.wizard.skip" = "跳过";
+"agent.wizard.finish" = "完成";
+"agent.wizard.saving" = "保存中…";
+
 /* ---- 团队 ---- */
 "team.search" = "搜索团队";
 "team.empty" = "暂无团队";
@@ -103,6 +193,7 @@
 "team.delete.clear" = "当前没有会话绑定该团队，删除可以正常执行。";
 "team.delete.blocked" = "仍有 %d 个会话绑定该团队，删除会被拒绝；请先删除这些会话。";
 "team.delete.loadFailed" = "关联会话列表加载失败，请重试";
+"team.create" = "新建团队";
 
 /* ---- 关联会话刷新 ---- */
 "session.title" = "刷新关联会话";
@@ -166,6 +257,7 @@
 "me.theme.dark" = "深色";
 "me.language" = "语言";
 "me.language.followSystem" = "跟随系统语言";
+"me.language.current" = "当前";
 "me.server.address" = "服务器地址";
 "me.logout" = "退出登录";
 "me.logout.confirm" = "退出当前设备的登录状态？";
@@ -295,6 +387,52 @@
 "mcp.oauth.hint" = "这份授权只属于你当前的账号，其他用户要各自完成授权。";
 "mcp.oauth.badUrl" = "服务端没有返回授权地址，请稍后重试。";
 "mcp.oauth.cancelled" = "已取消授权。";
+"mcp.oauth.noRedirect" = "这次授权请求没有带回跳地址，本应用无从等待。请改用浏览器完成授权。";
+"mcp.oauth.inAppTitle" = "授权";
+"mcp.oauth.exchanging" = "正在完成授权…";
+"mcp.oauth.action.authorizeInApp" = "在本应用授权";
+
+/* ---- MCP：OAuth 服务端配置 ---- */
+"mcp.oauth.setup.section" = "授权服务器";
+"mcp.oauth.setup.discover" = "发现授权服务器";
+"mcp.oauth.setup.discovering" = "发现中…";
+"mcp.oauth.setup.running" = "正在访问授权服务器…";
+"mcp.oauth.setup.notDiscovered" = "端点与客户端状态在首次发现后显示；发现会向授权服务器发起出站请求。";
+"mcp.oauth.setup.unknownScopes" = "授权服务器未声明这些作用域：";
+"mcp.oauth.setup.callbackStale" = "本次构建会把浏览器送回下面这个地址。授权服务器按字符比对 redirect_uri，请把客户端重新保存为该值。";
+"mcp.oauth.setup.issuer" = "授权服务器";
+"mcp.oauth.setup.none" = "无";
+"mcp.oauth.setup.authorizationEndpoint" = "授权端点";
+"mcp.oauth.setup.tokenEndpoint" = "令牌端点";
+"mcp.oauth.setup.registrationEndpoint" = "动态注册端点";
+"mcp.oauth.setup.registrationNone" = "无：客户端需预先登记";
+"mcp.oauth.setup.revocationEndpoint" = "撤销端点";
+"mcp.oauth.setup.revocationNone" = "无：撤销只在本侧生效";
+"mcp.oauth.setup.scopesSupported" = "可授予作用域";
+"mcp.oauth.setup.clientId" = "client_id";
+"mcp.oauth.setup.clientNone" = "尚未登记客户端";
+"mcp.oauth.setup.clientSecret" = "client_secret";
+"mcp.oauth.setup.secretStored" = "已保存（加密）";
+"mcp.oauth.setup.secretAbsent" = "未保存：公共客户端，仅依赖 PKCE";
+"mcp.oauth.setup.callbackUrl" = "回跳地址";
+"mcp.oauth.setup.register" = "登记客户端";
+"mcp.oauth.setup.registerDisabled" = "请先执行发现：客户端要登记到具体的 issuer 上。";
+"mcp.oauth.setup.issuerSource.config" = "手工填写";
+"mcp.oauth.setup.issuerSource.protectedResource" = "RFC 9728 资源元数据";
+"mcp.oauth.setup.issuerSource.resourceMetadata" = "401 挑战中的 resource_metadata";
+"mcp.oauth.client.title" = "登记 OAuth 客户端";
+"mcp.oauth.client.hint" = "凭据保存到 issuer %@。动态注册（DCR）尚未实现，请粘贴授权服务器已经签发过的凭据。";
+"mcp.oauth.client.id" = "授权服务器签发的 client_id";
+"mcp.oauth.client.secretPlaceholder" = "留空表示保留已保存的密钥，填写新值则替换";
+"mcp.oauth.client.callbackPlaceholder" = "在授权服务器登记的 redirect_uri，留空保留已保存的值";
+"mcp.oauth.client.clearSecret" = "删除已保存的密钥";
+"mcp.oauth.client.clearSecretNote" = "该客户端改为公共客户端，仅依赖 PKCE。";
+"mcp.oauth.client.saving" = "保存中…";
+"mcp.oauth.client.idRequired" = "client_id 必填";
+"mcp.oauth.client.idTooLong" = "client_id 长度不能超过 %d 个字符";
+"mcp.oauth.client.callbackTooLong" = "回跳地址长度不能超过 %d 个字符";
+"mcp.oauth.client.callbackNotHttp" = "回跳地址必须是带域名的 http(s) 地址";
+"mcp.oauth.client.secretBlank" = "空格不是密钥——留空表示保留已保存的值";
 
 /* ---- MCP：创建与编辑 ---- */
 "mcp.form.section.identity" = "基本信息";
@@ -386,6 +524,8 @@
 "model.noDescription" = "暂无描述";
 "model.unnamed" = "未命名模型";
 "model.chip.price" = "¥%@ / 百万 token";
+"model.filter.minPrice" = "最低价格";
+"model.filter.maxPrice" = "最高价格";
 "model.thinkingMode" = "思考模式";
 "model.thinking.off" = "不支持思考";
 "model.thinking.optional" = "可选思考";
@@ -632,6 +772,7 @@
 "chat.row.executor" = "执行者：%@";
 "chat.action.rename" = "重命名";
 "chat.action.clear" = "清空消息";
+"chat.action.jumpToBottom" = "回到底部";
 "chat.delete.title" = "删除这个会话？";
 "chat.delete.note" = "它的消息和团队产物会一并删除，而且无法恢复。";
 "chat.clear.title" = "清空这个会话的历史消息？";
@@ -658,6 +799,9 @@
 "chat.detail.section.teamLead" = "团队主管";
 "chat.detail.section.skills" = "技能";
 "chat.detail.section.mcp" = "外部服务";
+"chat.detail.section.tools" = "工具";
+"chat.detail.section.cli" = "CLI 包";
+"chat.detail.section.members" = "团队成员";
 "chat.detail.field.sessionId" = "会话 ID";
 "chat.detail.field.title" = "标题";
 "chat.detail.field.sessionDescription" = "会话说明";
@@ -676,6 +820,15 @@
 "chat.detail.prompt.collapse" = "收起";
 "chat.detail.updated" = "更新时间：%@";
 "chat.detail.badge.unavailable" = "失效";
+"chat.detail.executors.loading" = "正在读取执行者的工具与成员…";
+"chat.detail.section.config" = "对话配置";
+"chat.detail.field.permissionMode" = "权限模式";
+"chat.detail.config.think.unsupported" = "该模型不支持深度思考。";
+"chat.detail.config.think.required" = "该模型要求深度思考，无法关闭。";
+"chat.detail.config.search.unsupported" = "该模型不支持联网搜索。";
+"chat.detail.config.nothing" = "没有需要保存的修改。";
+"chat.detail.config.saved" = "配置已保存。";
+"chat.detail.config.readBackFailed" = "配置已保存，但未能读回最新值。";
 "chat.plan.title" = "执行计划";
 "chat.plan.current" = "当前计划";
 "chat.plan.history" = "历史计划";
@@ -806,6 +959,12 @@
 "monitor.trend.agent" = "按智能体趋势";
 "monitor.trend.session" = "按会话趋势";
 "monitor.trend.empty" = "没有可画的数据点";
+"monitor.trend.form.chart" = "图表";
+"monitor.trend.form.list" = "数值列表";
+"monitor.legend.allHidden" = "这张图的图例已全部隐藏";
+"monitor.legend.shown" = "已显示";
+"monitor.legend.hidden" = "已隐藏";
+"monitor.legend.detail" = "查看明细";
 "monitor.series.input" = "输入 Token";
 "monitor.series.output" = "输出 Token";
 "monitor.series.total" = "总消耗";
@@ -949,8 +1108,12 @@
 "chat.command.done" = "已完成";
 "chat.command.failed" = "命令未执行";
 "chat.command.unwired" = "命令通道尚未接入，无法执行";
+"chat.image.album" = "相册";
+"chat.image.camera" = "拍照";
+"chat.image.noCamera" = "这台设备没有相机，请改从相册选择";
 "chat.image.remove" = "移除图片";
 "chat.image.rejected" = "只能附加图片，其余内容已忽略";
+"chat.image.source" = "图片从哪里来？";
 "chat.model.noVision" = "当前模型不支持图片输入";
 "chat.model.noReasoning" = "当前模型不支持深度思考";
 "chat.model.noInternet" = "当前模型不支持联网搜索";
@@ -989,4 +1152,146 @@
 "chat.confirm.answer.denied" = "已拒绝";
 "chat.tool.confirmed" = "已确认";
 "chat.tool.denied" = "已拒绝";
+
+/* ---- 团队向导 ---- */
+"team.wizard.title.create" = "新建团队";
+"team.wizard.title.edit" = "编辑团队";
+"team.wizard.subtitle.create" = "共三步：基本信息、主管技能、成员智能体；只有基本信息必填。";
+"team.wizard.subtitle.edit" = "已在运行的团队会话仍沿用旧配置，直到你主动刷新它们。";
+"team.wizard.step.basic" = "基本信息";
+"team.wizard.step.skill" = "主管技能";
+"team.wizard.step.member" = "成员智能体";
+"team.wizard.name" = "团队名称";
+"team.wizard.name.placeholder" = "请输入团队名称";
+"team.wizard.description" = "团队描述";
+"team.wizard.description.placeholder" = "请输入团队描述";
+"team.wizard.prompt" = "系统提示词";
+"team.wizard.prompt.placeholder" = "请输入主管系统提示词，支持 Markdown 语法";
+"team.wizard.model" = "主管模型";
+"team.wizard.model.placeholder" = "请选择主管模型";
+"team.wizard.model.none" = "未选择模型";
+"team.wizard.model.unavailable" = "该模型已停用、已删除或不再是对话模型";
+"team.wizard.model.unknownProvider" = "未知供应商";
+"team.wizard.model.search" = "搜索模型";
+"team.wizard.model.empty" = "暂无可选对话模型";
+"team.wizard.isPublic" = "是否公开";
+"team.wizard.public.hint" = "设为公开后，其他用户可查看该团队";
+"team.wizard.skill.hint" = "主管自行加载的技能（可选，可跳过）";
+"team.wizard.skill.add" = "添加技能";
+"team.wizard.skill.select" = "请选择技能";
+"team.wizard.skill.search" = "搜索技能名称";
+"team.wizard.skill.none" = "暂无可选技能";
+"team.wizard.skill.empty" = "暂无主管技能";
+"team.wizard.skill.repository" = "来自仓库 %@";
+"team.wizard.repository.select" = "请选择技能仓库";
+"team.wizard.repository.search" = "搜索技能仓库";
+"team.wizard.repository.empty" = "暂无技能仓库";
+"team.wizard.member.hint" = "该主管可以委派的智能体，至少需要一个，顺序会保留。";
+"team.wizard.member.add" = "添加成员";
+"team.wizard.member.select" = "请选择成员智能体";
+"team.wizard.member.row" = "成员 #%d";
+"team.wizard.member.none" = "暂无可选智能体";
+"team.wizard.member.search" = "搜索智能体名称";
+"team.wizard.member.delegation" = "委派说明";
+"team.wizard.member.delegation.placeholder" = "选填；留空则沿用该智能体自身的描述";
+"team.wizard.previous" = "上一步";
+"team.wizard.next" = "下一步";
+"team.wizard.skip" = "跳过";
+"team.wizard.finish" = "完成";
+"team.wizard.saving" = "保存中…";
+"team.wizard.save.inFlight" = "已有保存在进行";
+"team.wizard.created" = "团队已创建";
+"team.wizard.updated" = "团队已更新";
+"team.wizard.error.name" = "请输入团队名称";
+"team.wizard.error.name.long" = "团队名称长度不能超过 100 个字符";
+"team.wizard.error.detail" = "请输入团队描述";
+"team.wizard.error.prompt" = "请输入主管系统提示词";
+"team.wizard.error.model" = "请选择主管模型";
+"team.wizard.error.skill" = "请选择技能或删除空行";
+"team.wizard.error.skill.duplicate" = "同一技能不能重复添加";
+"team.wizard.error.skill.nameTaken" = "技能 %@ 已添加";
+"team.wizard.error.member" = "请选择成员智能体";
+"team.wizard.error.members.empty" = "至少需要一个成员智能体";
+"team.wizard.error.member.duplicate" = "同一智能体不能重复添加";
+"team.wizard.error.delegation.long" = "委派说明长度不能超过 500 个字符";
+
+/* ---- agent wizard review ---- */
+"agent.wizard.name" = "智能体名称";
+"agent.wizard.description" = "描述";
+"agent.wizard.prompt" = "系统提示词";
+"agent.wizard.model.unavailable" = "该模型已停用、已删除或不再是对话模型";
+"agent.wizard.mcp.row" = "MCP #%d";
+"agent.wizard.save.inFlight" = "已有保存在进行中";
+"chat.image.overLimit" = "图片太大，一条消息放不下，未附上。";
+
+/* ---- O7: the channel type the runtime has no adaptor for ---- */
+"channel.type.unsupported" = "暂未支持";
+"channel.type.unsupported.note" = "该类型还没有注册服务端适配器，起这样的渠道只会在运行时报「no adaptor registered」，因此这一行只能查看，不能保存。";
+
+/* ---- KEY-1: my own permanent API key on the account screen ---- */
+"me.section.key" = "永久 Key";
+"me.key.title" = "我的永久 API Key";
+"me.key.none" = "当前账号还没有永久 Key，重新登录时会自动创建一把。";
+"me.key.readFailed" = "永久 Key 读取失败";
+"me.key.regenerate.title" = "确认重新生成永久 Key？";
+"me.key.regenerate.note" = "新的完整 Key 只显示一次，所有仍在使用旧 Key 的连接都会立即失效——包括这台设备上已保存的那一份，重新登录之前对话会一直失败。";
+
+/* ---- SKILL-1 / SKILL-2: the skill repository form ---- */
+"skill.repository.create" = "新建技能仓库";
+"skill.repository.edit" = "编辑技能仓库";
+"skill.repository.subtitle.create" = "配置技能仓库连接和参数";
+"skill.repository.subtitle.edit" = "修改仓库配置；地址、分支或包名变更后需重新安装才会刷新技能";
+"skill.repository.name" = "仓库名称";
+"skill.repository.name.placeholder" = "请输入仓库名称";
+"skill.repository.type" = "源类型";
+"skill.repository.url" = "仓库地址";
+"skill.repository.url.placeholder" = "https://github.com/example/skills";
+"skill.repository.branch" = "分支名称";
+"skill.repository.branch.placeholder" = "main";
+"skill.repository.package" = "包名";
+"skill.repository.package.placeholder" = "@harnax/skill-pack";
+"skill.repository.registry" = "Registry 地址";
+"skill.repository.registry.placeholder" = "https://registry.npmmirror.com";
+"skill.repository.version" = "版本";
+"skill.repository.version.placeholder" = "1.0.0";
+"skill.repository.description" = "描述";
+"skill.repository.description.placeholder" = "请输入仓库描述";
+"skill.repository.status" = "状态";
+"skill.repository.status.hint" = "停用后该仓库不在启用列表中，它下面的技能不再被读取。";
+"skill.repository.public" = "是否公开";
+"skill.repository.publicHint" = "公开后其他用户也可以查看此仓库";
+"skill.repository.noPermission" = "您没有权限修改此设置";
+"skill.repository.updatedTitle" = "配置已保存";
+"skill.repository.updateHint" = "修改地址、分支或包名不会自动重新拉取，请在列表中点击「重新安装」刷新已保存的技能。";
+"skill.repository.zip.file" = "ZIP 文件";
+"skill.repository.zip.note" = "这里不能替换已保存的压缩包；要刷新 ZIP 仓库的内容，请重新上传一个 ZIP。";
+"skill.repository.needName" = "请输入仓库名称";
+"skill.repository.needUrl" = "请输入 Git 仓库地址";
+"skill.repository.needPackage" = "请输入 npm 包名";
+"skill.repository.nameTooLong" = "仓库名称长度需在 1-100 之间";
+"skill.repository.versionTooLong" = "版本号长度不能超过 100";
+
+/* ---- BG-1：一轮运行占着的后台时间 ---- */
+"chat.background.expired" = "系统收回了后台时间，回答还没有到达，这一轮已中断，请重新发送。";
+
+/* ---- MCP 删除：绑定中的智能体要点名，不能只给数量 ---- */
+"mcp.delete.boundNamed" = "%d 个智能体绑定了该服务（%@），删除会一并移除这些绑定。";
+"mcp.delete.nameSeparator" = "、";
+"mcp.delete.names.more" = "……";
+
+/* ---- 成员气泡：这是谁的一轮，跑到哪了 ---- */
+"chat.team.run.running" = "正在执行";
+"chat.team.run.awaiting" = "等待确认";
+"chat.team.run.done" = "已完成";
+"chat.team.run.failed" = "已失败";
+"chat.team.task" = "任务：%@";
+"chat.team.tools.one" = "%d 个工具";
+"chat.team.tools.other" = "%d 个工具";
+
+/* ---- 顺序编排：一行在它列表里的位置 ---- */
+"common.order.up" = "上移";
+"common.order.down" = "下移";
+
+/* ---- MCP 工具入参：描述可以为空，而空本身是一句话 ---- */
+"mcp.tool.noDescription" = "暂无描述";
 

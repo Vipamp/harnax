@@ -44,12 +44,20 @@ public final class TaskLogListViewModel: ObservableObject {
     /// Typed keywords are debounced, as on the task list: one request per keystroke would be a queue of
     /// superseded answers, and this route's `keyword` LIKE-scans three columns (`AgentTaskLogMapper.xml:157-161`).
     @Published public var keyword = "" {
-        didSet { if keyword != oldValue { scheduleSearch() } }
+        didSet {
+            guard keyword != oldValue else { return }
+            refreshGeneration += 1
+            scheduleSearch()
+        }
     }
 
     /// Status and the time window are chosen, not typed, so they take effect on the spot.
     @Published public var filter: AgentTaskLogFilter = AgentTaskLogFilter() {
-        didSet { if !filter.isSearchEquivalent(to: oldValue) { Task { await refresh() } } }
+        didSet {
+            guard !filter.isSearchEquivalent(to: oldValue) else { return }
+            refreshGeneration += 1
+            Task { await refresh() }
+        }
     }
 
     @Published public var isWindowEditorShown = false
@@ -60,6 +68,18 @@ public final class TaskLogListViewModel: ObservableObject {
     private var pages: PagedState<AgentTaskLog>
     private var searchTask: Task<Void, Never>?
     private var afterStopTask: Task<Void, Never>?
+    /// The identity of the query on screen, and the guard every page is answered under — the same rule
+    /// `AgentListViewModel` documents, with one difference that comes from this screen's own readers: the tick
+    /// and the re-read after a stop ask for the page that is already settled, so the two query setters advance
+    /// it rather than every call of `refresh()`. A duplicate re-read is not a new query, and retiring the
+    /// answer it wants would leave the newest read to a page nobody queued.
+    private var refreshGeneration = 0
+    /// Whether a first page is on the wire. An append in that window is for a list that is about to be
+    /// replaced, so it waits and is re-issued when the page lands.
+    private var isRefreshing = false
+    /// An append asked for while a refresh is on the wire is remembered, not dropped — see
+    /// `AgentListViewModel`.
+    private var appendRequested = false
     /// The in-flight cadence (`TaskLogModal.tsx:85-86`) and the idle one. Unlike the task list, this page keeps a
     /// timer alive whatever the rows say — an open log modal is a screen somebody is watching.
     private let activeInterval: Duration
@@ -117,7 +137,16 @@ public final class TaskLogListViewModel: ObservableObject {
         await reload(reporting: false)
     }
 
-    private func reload(reporting: Bool) async {
+    /// The first page, whether a reader or the timer asked for it, answered under the identity of the query that
+    /// was on screen when it went out.
+    ///
+    /// Returns whether the page landed: a queued append is only owed a re-issue once the screen really has a
+    /// first page to append to.
+    @discardableResult
+    private func reload(reporting: Bool) async -> Bool {
+        let generation = refreshGeneration
+        isRefreshing = true
+        defer { isRefreshing = false }
         switch await catalog.agentTaskLogs(
             taskID: taskID,
             filter: readFilter,
@@ -125,20 +154,34 @@ public final class TaskLogListViewModel: ObservableObject {
             size: pages.pageSize
         ) {
         case let .success(page):
-            absorb(page)
+            guard absorb(page, generation: generation) else { return false }
+            await reissueAppend()
+            return true
         case let .failure(error):
-            guard reporting else { return }
+            guard reporting, generation == refreshGeneration else { return false }
             let text = ErrorMessage.text(for: error)
             if items.isEmpty {
                 phase = .failed(text)
             } else {
                 inlineError = text
             }
+            return false
         }
     }
 
     public func loadMore() async {
         guard canLoadMore, !isAppending else { return }
+        guard !isRefreshing else {
+            appendRequested = true
+            return
+        }
+        await runAppend()
+    }
+
+    /// The tail read, under the identity of the query that was on screen when the scroll happened. See
+    /// `AgentListViewModel`.
+    private func runAppend() async {
+        let generation = refreshGeneration
         isAppending = true
         defer { isAppending = false }
         switch await catalog.agentTaskLogs(
@@ -148,12 +191,20 @@ public final class TaskLogListViewModel: ObservableObject {
             size: pages.pageSize
         ) {
         case let .success(page):
+            guard generation == refreshGeneration else { return }
             inlineError = nil
             pages.append(with: page)
             apply()
         case let .failure(error):
+            guard generation == refreshGeneration else { return }
             inlineError = ErrorMessage.text(for: error)
         }
+    }
+
+    private func reissueAppend() async {
+        guard appendRequested, canLoadMore, !isAppending else { return }
+        appendRequested = false
+        await runAppend()
     }
 
     /// Asks first, as the console does: the route really does interrupt the agent's in-flight execution
@@ -180,6 +231,8 @@ public final class TaskLogListViewModel: ObservableObject {
     /// waits a second before asking again (`TaskLogModal.tsx:159-161`) and this screen keeps that delay.
     public func stop(_ row: AgentTaskLog) async {
         guard stoppable(row) else { return }
+        // A second interrupt command for a run that is already going down is not a second stop.
+        guard !stoppingIDs.contains(row.id) else { return }
         stoppingIDs.insert(row.id)
         defer { stoppingIDs.remove(row.id) }
         if case let .failure(error) = await catalog.stopAgentTaskLog(id: row.id) {
@@ -243,9 +296,12 @@ public final class TaskLogListViewModel: ObservableObject {
         return copy
     }
 
-    private func absorb(_ page: Page<AgentTaskLog>) {
+    @discardableResult
+    private func absorb(_ page: Page<AgentTaskLog>, generation: Int) -> Bool {
+        guard generation == refreshGeneration else { return false }
         pages.replace(with: page)
         apply()
+        return true
     }
 
     private func apply() {

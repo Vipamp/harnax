@@ -12,7 +12,8 @@ import HarnaxCore
 ///
 /// Like the command route this is plain JSON, so it rides the shared client and its header injection rather
 /// than the streaming one. The router takes either the account's permanent key or the bearer token
-/// (`harnax-session-router/README.md:187`), and `APIClient` injects the bearer for every base.
+/// (`harnax-session-router/README.md:187`), and on this base `APIClient` sends the key it holds
+/// (`Sources/HarnaxAPI/APIClient.swift:159-169`).
 extension AdminClient: ChatHistoryReading {
     public func history(sessionId: String) async -> Result<[ChatHistoryLog], APIError> {
         // The id goes in the path, so it is encoded first: a session key with a slash in it would otherwise

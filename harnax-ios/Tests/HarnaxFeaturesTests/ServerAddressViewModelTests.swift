@@ -71,4 +71,46 @@ final class ServerAddressViewModelTests: XCTestCase {
         await vm.save()
         XCTAssertEqual(vm.adminAddress, "http://192.168.1.20:28080", "the fields keep the text that failed")
     }
+
+    /// The sheet is pushed from `Me`, and a session that ends anywhere — a 401 on another screen, an address
+    /// change that drops the old host's bearer — makes the root re-read while the operator is mid-word here.
+    /// The pair that answers afterwards belongs to the stack they are leaving, so the emptiness seen on entry
+    /// is no longer an answer: what was typed stays in the field, byte for byte.
+    func testAPairThatAnswersLateDoesNotOverwriteTheAddressBeingTyped() async throws {
+        let auth = FakeAuth()
+        let vm = ServerAddressViewModel(auth: auth)
+        auth.serverConfigGate.arm()
+        let loading = Task { await vm.load() }
+        try await waitUntil { auth.serverConfigurationCalls == 1 }
+        vm.adminAddress = "https://harnax.internal:28443"
+        vm.routerAddress = "https://harnax.internal:28444"
+        auth.serverConfigGate.release()
+        await loading.value
+
+        XCTAssertEqual(vm.adminAddress, "https://harnax.internal:28443", "the stored pair does not land on the text")
+        XCTAssertEqual(vm.routerAddress, "https://harnax.internal:28444")
+    }
+
+    /// Same parking, the other direction: a load nobody has typed over yet still fills both fields, so the
+    /// guard above cannot simply become "never write after a suspension".
+    func testAPairThatAnswersLateStillFillsFieldsNobodyHasTouched() async throws {
+        let auth = FakeAuth()
+        let vm = ServerAddressViewModel(auth: auth)
+        auth.serverConfigGate.arm()
+        let loading = Task { await vm.load() }
+        try await waitUntil { auth.serverConfigurationCalls == 1 }
+        auth.serverConfigGate.release()
+        await loading.value
+
+        XCTAssertEqual(vm.adminAddress, "http://127.0.0.1:28080")
+        XCTAssertEqual(vm.routerAddress, "http://127.0.0.1:28081")
+    }
+
+    private func waitUntil(_ condition: @escaping @MainActor () -> Bool) async throws {
+        for _ in 0..<400 {
+            if condition() { return }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTFail("condition never became true")
+    }
 }

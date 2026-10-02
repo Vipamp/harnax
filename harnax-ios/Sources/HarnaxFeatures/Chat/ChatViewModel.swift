@@ -45,7 +45,17 @@ public final class ChatViewModel: ObservableObject {
     public static let nearBottomThreshold: CGFloat = 120
 
     @Published public var draft = ""
-    @Published public private(set) var transcript = ChatTranscript()
+    /// The rows and the tail intent that rides with them, as one published value.
+    ///
+    /// They change together on every streaming update — a delta grows a row *and* pulls the view down to it —
+    /// and `@Published` sends one `objectWillChange` per property write, not per render. Kept apart, one token
+    /// would invalidate the transcript twice; kept together, a frame window is one update
+    /// (`ChatStreamCoalescer`, `DESIGN.md` §10 性能). Written only through `commit(_:)` and `settled(_:)`.
+    @Published private var surface = TranscriptSurface()
+    /// The conversation as the screen draws it. Reads are exactly what they were when this was a `@Published`
+    /// property; it is get-only from outside the view model, which is also what makes an update that skipped
+    /// the frame window a compile error rather than a silent one.
+    public var transcript: ChatTranscript { surface.transcript }
     @Published public private(set) var conversation: ChatConversation
     @Published public private(set) var isStreaming = false
     @Published public private(set) var stopNotice: StopNotice?
@@ -60,8 +70,9 @@ public final class ChatViewModel: ObservableObject {
     @Published public private(set) var isAnchoredToBottom = true
     /// Bumped when the list should be at the newest row. The view watches this instead of scrolling on
     /// every published change, which is what `scrollToBottom(force:)`'s `isNearBottomRef` test decides
-    /// (`ChatWindow.tsx:614-617`).
-    @Published public private(set) var scrollToBottomID = 0
+    /// (`ChatWindow.tsx:614-617`). It lives in `surface` beside the rows it follows, so a stream that grows
+    /// the transcript and pulls the view along is one update and not two.
+    public var scrollToBottomID: Int { surface.scrollToBottomID }
 
     // MARK: - composer
 
@@ -88,6 +99,38 @@ public final class ChatViewModel: ObservableObject {
     /// Artifact ids whose bytes are in flight — the file row's own spinner, and the gate a second tap hits.
     @Published public private(set) var pendingDownloads: Set<String> = []
 
+    // MARK: - plan
+
+    /// The plan panel, owned here rather than by the drawer.
+    ///
+    /// The card in the message stream and the card in the drawer are the same plan, read by the same loop
+    /// (`ChatWindow.tsx:2479-2585` feeds both from one `currentPlan`), and that reading has to outlive the sheet:
+    /// a panel built by the drawer stops when the drawer closes, which would leave the stream's card frozen the
+    /// moment the user looked at it. `nil` is a host that wired no `PlanReading`, and it takes the toolbar entry
+    /// with it.
+    @Published public private(set) var planPanel: PlanPanelViewModel?
+    /// Whether the drawer is showing. The composer's chip writes the plan *switch*; nothing writes this one by
+    /// hand any more, because a plan call opens the drawer on its own (`ChatWindow.tsx:1501`).
+    @Published public var isPlanPanelPresented = false
+
+    // MARK: - sandbox workspace
+
+    /// The workspace drawer's panel, owned here for the same reason the plan panel is: it is addressed by session
+    /// id, so it has to be rebuilt when the conversation moves rather than outliving the move inside the sheet.
+    /// `nil` is a host that wired no `SessionWorkspaceReading`.
+    @Published public private(set) var workspacePanel: WorkspaceViewModel?
+    @Published public var isWorkspacePresented = false
+    /// Whether this conversation has a sandbox up right now — the only thing that puts the workspace entry in
+    /// this screen's top-right corner.
+    ///
+    /// The console keeps its button on screen and reads the status when it is tapped, warning when the answer is
+    /// no (`harnax-webui/src/pages/session/index.tsx:280-292`). iOS hides the entry instead, because with no
+    /// sandbox manager running all five workspace routes are 404s (`SandboxWorkspaceController.kt:398-416`) and
+    /// a corner entry that can only fail reads as a broken button. A read that *failed* counts as not running
+    /// here and says nothing: the entry going away is a state, while `checkSandbox` has a refused command to
+    /// explain.
+    @Published public private(set) var sandboxIsRunning = false
+
     private let streaming: any AgentStreaming
     private let commands: (any AgentCommanding)?
     private let history: (any ChatHistoryReading)?
@@ -97,9 +140,22 @@ public final class ChatViewModel: ObservableObject {
     /// and offers nothing, because a control that can only fail is worse than no control
     /// (`ChatWindow.tsx:451-460` gates its buttons on the same kind of `onAnswer` being present).
     private let confirming: (any ToolConfirming)?
+    /// The plan's two reads, optional for the same reason as the five above: a host that wired none has no drawer
+    /// to open, and its stream draws no plan card either.
+    private let planReading: (any PlanReading)?
     /// The one door a run's artifact bytes leave through, injected for the same reason the two drawers inject
     /// it: the macOS test host has no share sheet, and the question a test asks is which bytes under which name.
     private let share: @Sendable (HXSharedFile) -> Void
+    /// The system's background allowance for the read in flight: taken when a stream opens and given back when
+    /// it ends. That is the whole of what `DESIGN.md:183` asks for, and it is less than the line reads as —
+    /// see `ChatBackgroundAssertion` for the ceiling.
+    private let background: ChatBackgroundAssertion
+    /// The clock the frame window runs on. Production ticks at display rate; a test hands itself every tick,
+    /// which is why none of them waits on a wall clock to find out what a window does
+    /// (`ChatStreamCoalescer`).
+    private let frameClock: any ChatFrameClock
+    /// The current frame window: what is held back from the screen, and whether a tick is owed for it.
+    private var coalescer = ChatStreamCoalescer()
     private var streamTask: Task<Void, Never>?
     /// The stored rows are already on screen for this conversation. A reload is a re-entry, not a refresh.
     private var loadedConversationID: String?
@@ -112,6 +168,25 @@ public final class ChatViewModel: ObservableObject {
     private var memberAnswerTask: Task<Void, Never>?
     /// What the composer box held when the turn now reading took it out.
     private var consumedByOpenTurn: ConsumedComposer?
+    /// The panel is a nested observable object, and the card in the stream reads through this one
+    /// (`isPlanExpanded`, `isPlanLive`), so its changes are forwarded here or the card would show a stale
+    /// chevron and a spinner that never stops.
+    private var planObserver: AnyCancellable?
+    /// The plan read a frame or a switch change asked for. Internal for the same reason the held frames are:
+    /// 「a plan call started the load」 is only assertable by something that can wait for that leg
+    /// (`ChatStreamPublishingTests`).
+    private(set) var planFollowTask: Task<Void, Never>?
+
+    /// The two halves of the conversation area that change together: the rows on screen, and whether the view
+    /// should be pulled to the end of them.
+    ///
+    /// One value rather than two published properties, because `@Published` publishes per write and a streamed
+    /// token writes both: kept apart, the requirement's 「每 token 触发全列表刷新」 would still be true with
+    /// twice the updates (`DESIGN.md` §10 性能).
+    private struct TranscriptSurface {
+        var transcript = ChatTranscript()
+        var scrollToBottomID = 0
+    }
 
     /// The text and pictures one send consumed from the composer.
     ///
@@ -153,13 +228,55 @@ public final class ChatViewModel: ObservableObject {
     ///
     /// `share` is where a downloaded run artifact goes. Both drawers take the same closure for the same
     /// reason (`WorkspaceViewModel.swift:103-108`), and there is no way to test an artifact row without it.
-    public init(
+    ///
+    /// Every screen a handset builds takes the platform's own background allowance; the initializer below is
+    /// the one that takes it as an argument.
+    public convenience init(
         streaming: any AgentStreaming,
         confirming: (any ToolConfirming)? = nil,
         commands: (any AgentCommanding)? = nil,
         history: (any ChatHistoryReading)? = nil,
         config: (any SessionConfiguring)? = nil,
         workspace: (any SessionWorkspaceReading)? = nil,
+        plan: (any PlanReading)? = nil,
+        conversation: ChatConversation,
+        share: @escaping @Sendable (HXSharedFile) -> Void = HXFileShare.share
+    ) {
+        self.init(
+            streaming: streaming,
+            confirming: confirming,
+            commands: commands,
+            history: history,
+            config: config,
+            workspace: workspace,
+            plan: plan,
+            background: ChatBackgroundAssertion(),
+            conversation: conversation,
+            share: share
+        )
+    }
+
+    /// `background` is the system's allowance for the read in flight (`DESIGN.md:183`). It is an argument
+    /// rather than something the screen reaches for itself because the two things worth asserting about it —
+    /// that a run holds exactly one and gives it back once, and what the screen does when iOS takes it back —
+    /// are only observable from outside, and no host on this planet can wait for the real grace period in a
+    /// test.
+    ///
+    /// `frameClock` is the same argument for the same reason: whether a token reached the screen because a run
+    /// ended or because a frame window closed (`ChatStreamCoalescer`) is only decidable when the test is the
+    /// one holding the ticks. A test installs a clock it drives itself and therefore never sleeps; `nil` — the
+    /// only default the language allows on an argument whose value is main-actor-isolated — is the ticker that
+    /// runs at display rate.
+    init(
+        streaming: any AgentStreaming,
+        confirming: (any ToolConfirming)? = nil,
+        commands: (any AgentCommanding)? = nil,
+        history: (any ChatHistoryReading)? = nil,
+        config: (any SessionConfiguring)? = nil,
+        workspace: (any SessionWorkspaceReading)? = nil,
+        plan: (any PlanReading)? = nil,
+        background: ChatBackgroundAssertion,
+        frameClock: (any ChatFrameClock)? = nil,
         conversation: ChatConversation,
         share: @escaping @Sendable (HXSharedFile) -> Void = HXFileShare.share
     ) {
@@ -169,8 +286,19 @@ public final class ChatViewModel: ObservableObject {
         self.history = history
         self.configReader = config
         self.workspace = workspace
+        self.planReading = plan
+        self.background = background
+        // The nil default is Swift's, not this type's preference: a default argument is evaluated outside the
+        // actor, and the ticker is `@MainActor`. Inside this body the isolation is the class's, so the
+        // production clock is built here and every caller that says nothing still gets a display-rate tick.
+        self.frameClock = frameClock ?? ChatFrameTicker()
         self.conversation = conversation
         self.share = share
+        // The console reads the current plan on mount, with the switch as its only guard (`:642-646`) — not when
+        // the drawer opens, which is the difference between a panel the screen owns and one the drawer owns.
+        adoptPlanPanel()
+        // Building the workspace panel asks nothing of the network; the drawer's own `.task` is what reads.
+        adoptWorkspacePanel()
     }
 
     /// Nothing to send, or a turn already reading — the input bar's send button becomes a stop button while
@@ -200,6 +328,87 @@ public final class ChatViewModel: ObservableObject {
     /// The answer currently on screen, open or closed.
     public var answer: ChatTurn? { transcript.turns.last }
 
+    // MARK: - screen updates
+
+    /// The frames the open frame window is holding back from the screen, oldest first.
+    ///
+    /// Internal rather than public, and it exists because 「at most one update per frame」 is only assertable
+    /// by something that can say "these deltas have all arrived and none has been published yet"
+    /// (`Tests/HarnaxFeaturesTests/ChatStreamPublishingTests.swift`).
+    var heldStreamFrames: [ChatEvent] { coalescer.held }
+
+    /// Whether a frame window is standing, i.e. whether the next delta will be held rather than shown.
+    var isOpenFrameWindow: Bool { coalescer.isWindowOpen }
+
+    /// One change to the conversation area that adds no rows of its own, told to the view immediately.
+    ///
+    /// The scroll bump is all that is left here. Anything that writes rows goes through `settled(_:)` instead:
+    /// a frame window may be standing at any moment of a run, and a write that skipped the batch it holds would
+    /// land the answer under the message that came after it. `transcript` and `scrollToBottomID` are get-only
+    /// out here, so a write that tried to skip both doors would not compile.
+    private func commit(_ change: (inout TranscriptSurface) -> Void) {
+        var next = surface
+        change(&next)
+        surface = next
+    }
+
+    /// Take everything the frame window is holding, fold it, and let `change` land behind it — in one update,
+    /// at once, and in that order.
+    ///
+    /// The order is the point. A held delta arrived before whatever `change` does, so it has to reach the
+    /// screen first: half an answer appearing *under* the message the user sent while it waited would read as
+    /// that message's reply. This is the door for every path that touches the transcript for a reason of its
+    /// own — a send, a stop, a confirmation settling or being handed back, a command's reply. A path that only
+    /// needs the window emptied uses `settleWindow()`.
+    private func settled(_ change: (inout TranscriptSurface) -> Void) {
+        var next = surface
+        for frame in coalescer.settle() { next.transcript.fold(frame) }
+        change(&next)
+        surface = next
+        syncFrameClock()
+    }
+
+    /// Empty a standing frame window, with no change of the caller's own.
+    ///
+    /// The paths that only need the held frames on screen — a read that ended, a fresh read opening over a
+    /// leg that already settled. Nothing is published when no window is standing, so a run that ended on its
+    /// own end frame does not cost the view a second update for the tidying.
+    private func settleWindow() {
+        guard coalescer.isWindowOpen else { return }
+        settled { _ in }
+    }
+
+    /// Do what the frame window decided about one arriving frame, or about one tick.
+    ///
+    /// The held frames and the frame that ended the window land together, and the tail follows the rows in the
+    /// same write — one update per frame window is what `DESIGN.md` §10 性能 asks for, and the per-token
+    /// scroll bump was the second invalidation the requirement was about.
+    private func apply(_ outcome: ChatStreamCoalescer.Outcome) {
+        if case let .publish(frames) = outcome {
+            var next = surface
+            for frame in frames { next.transcript.fold(frame) }
+            if isAnchoredToBottom { next.scrollToBottomID += 1 }
+            surface = next
+        }
+        syncFrameClock()
+    }
+
+    /// The clock runs for exactly as long as a window is open. A run parked on a confirmation for three minutes
+    /// ticks nobody, and a run that has stopped talking stops costing frames between its words.
+    private func syncFrameClock() {
+        guard coalescer.isWindowOpen else {
+            frameClock.stop()
+            return
+        }
+        frameClock.start { [weak self] in self?.frameWindowClosed() }
+    }
+
+    /// One frame window ended: what it held reaches the screen as the single update it was promised, and the
+    /// window re-arms for the frames still to come.
+    private func frameWindowClosed() {
+        apply(coalescer.tick())
+    }
+
     // MARK: - history
 
     /// The conversation's stored rows, replayed into the transcript. The console does the same on open
@@ -223,8 +432,13 @@ public final class ChatViewModel: ObservableObject {
             // by its own history for the rest of the visit with nothing left to re-read.
             guard transcript.turns.isEmpty else { return }
             loadedConversationID = sessionID
-            transcript = ChatTranscript(replaying: logs)
-            scrollToBottomID += 1
+            // One update for the rows and the tail. `settled` rather than `commit` because this replaces the
+            // transcript whole and a held delta must never be dropped by that swap — the guard above means
+            // there is no read in flight to hold one, so the batch this takes is empty.
+            settled { screen in
+                screen.transcript = ChatTranscript(replaying: logs)
+                screen.scrollToBottomID += 1
+            }
         case let .failure(error):
             historyFailure = ErrorMessage.text(for: error)
         }
@@ -279,7 +493,9 @@ public final class ChatViewModel: ObservableObject {
         isAnchoredToBottom = true
         let pictures = images
         consumedByOpenTurn = consumed
-        transcript.send(text, images: pictures)
+        // Settled first: a delta still waiting for its tick belongs to the answer before this message, and
+        // must not be folded into the bubble the user has just opened.
+        settled { $0.transcript.send(text, images: pictures) }
         startStream(text, images: pictures)
         return true
     }
@@ -294,9 +510,26 @@ public final class ChatViewModel: ObservableObject {
         Task { _ = await commands.command(CommandAgentRequest(sessionId: sessionID, command: .interrupt)) }
     }
 
-    /// The screen is going away. The answer stays as it is, with its open cards closed.
+    /// The system took the background allowance back before the answer came in (`DESIGN.md:183`).
+    ///
+    /// This read is what dies next: iOS suspends the process as soon as the grace period ends, and a stream
+    /// left open behind that is the state this feature exists to prevent — `isStreaming` still true, the send
+    /// button still a stop button, an answer that will never arrive. So the run goes the way a stopped run
+    /// goes, `stop()` and the `INTERRUPT` that stops the server billing it, and the banner says what happened
+    /// rather than blaming the network.
+    private func backgroundAllowanceExpired() {
+        guard isStreaming else { return }
+        stop()
+        composerNotice = .warning(hx("chat.background.expired"))
+    }
+
+    /// The screen is going away. The answer stays as it is, with its open cards closed, and the plan stops being
+    /// followed — nobody is left to read the card. The panel itself stays, because this same screen can come back
+    /// to this same conversation (`bind` returns early on an unchanged conversation, so it would not rebuild one).
     public func detach() {
         abort()
+        planPanel?.stopFollowing()
+        planPanel?.close()
     }
 
     /// Move to another conversation. The old read is aborted before the new conversation is adopted, so its
@@ -305,7 +538,9 @@ public final class ChatViewModel: ObservableObject {
         guard conversation != self.conversation else { return }
         abort()
         self.conversation = conversation
-        transcript = ChatTranscript()
+        // `settled` rather than `commit`: the swap drains whatever the old conversation's stream still had
+        // held, so no frame of it can survive into the new conversation's empty transcript.
+        settled { $0.transcript = ChatTranscript() }
         stopNotice = nil
         historyFailure = nil
         loadedConversationID = nil
@@ -314,6 +549,17 @@ public final class ChatViewModel: ObservableObject {
         // them on the session change rather than letting the previous one's values sit under a new title
         // (`ChatWindow.tsx:683-705`). Same for the pictures: a half-picked send belongs to one conversation.
         composer = SessionChatConfig()
+        // A plan belongs to the conversation that wrote it, and its panel is addressed by session id: the old
+        // follow, its loop and its drawer go here, and the new conversation gets a panel of its own. After the
+        // composer reset above, so the new panel starts from this conversation's own defaults rather than from
+        // the one just left.
+        retirePlanPanel()
+        // The drawer's panel goes the same way — it lists one conversation's sandbox — and an open drawer is
+        // put away rather than left showing the session the user just left. Its status answer belongs to that
+        // conversation too, and the new one is answered by its own read (`ChatView`'s `.task(id:)`).
+        retireWorkspacePanel()
+        adoptWorkspacePanel()
+        sandboxIsRunning = false
         images = []
         composerNotice = nil
         pendingCommand = nil
@@ -324,13 +570,16 @@ public final class ChatViewModel: ObservableObject {
         // keyed to an id nobody can reach again would never come back down.
         pendingDownloads = []
         isAnchoredToBottom = true
-        scrollToBottomID += 1
+        commit { $0.scrollToBottomID += 1 }
     }
 
     private func abort() {
         streamTask?.cancel()
         streamTask = nil
         isStreaming = false
+        // Nothing here is waiting on any socket any more — including a read the confirm leg replaced without
+        // closing — so the allowance is given back in one go rather than as each socket notices.
+        background.releaseAll()
         // A stop or a conversation switch is the user letting the turn go, not an answer that failed to
         // land: the settled panel stays settled rather than being handed back for another try.
         confirmRead = nil
@@ -340,7 +589,10 @@ public final class ChatViewModel: ObservableObject {
         // And the same for the composer: the request was accepted, so refilling the box would only set up
         // a duplicate run of a turn the router is already working on.
         consumedByOpenTurn = nil
-        transcript.terminate(as: .interrupted)
+        // Settled, not just terminated: the last words before a stop are exactly the ones a window may be
+        // holding, and 「a stop keeps what was already on screen」 includes what had arrived but not yet been
+        // shown. They fold first, then the interruption closes over them, in one update.
+        settled { $0.transcript.terminate(as: .interrupted) }
     }
 
     private func startStream(_ message: String, images: [String] = []) {
@@ -359,11 +611,22 @@ public final class ChatViewModel: ObservableObject {
     private func start(with target: ReadTarget) {
         isStreaming = true
         stopNotice = nil
-        scrollToBottomID += 1
+        commit { $0.scrollToBottomID += 1 }
+        // A new read starts with no window standing. Both doors into here (`send`, `sendAnswer`) settle for the
+        // same reason, so this is the belt on the braces: a delta held over from the previous socket would
+        // land inside the wrong answer. Guarded so a clean read start costs the view nothing.
+        settleWindow()
         let reader = streaming
         let confirmer = confirming
         let sessionID = conversation.id
+        // The socket is open from here, so the allowance is taken from here, and the read gives it back on
+        // whichever path it ends on: the end frame, a socket that closed, a throw, or the cancellation `abort`
+        // asked for. Expiry is the one thing here the read cannot see coming, and it is said to
+        // `backgroundAllowanceExpired` rather than left to hang the screen on (`DESIGN.md:183`).
+        let background = self.background
+        let held = background.take(onExpire: { [weak self] in self?.backgroundAllowanceExpired() })
         streamTask = Task { [weak self] in
+            defer { background.release(held) }
             let stream: AsyncThrowingStream<ChatEvent, any Error>
             switch target {
             case let .chat(request):
@@ -392,6 +655,14 @@ public final class ChatViewModel: ObservableObject {
 
     /// One frame folded in, and the terminal frames settle the screen's state as they arrive rather than
     /// waiting for the socket to close.
+    ///
+    /// What arrives at the screen is the same fold in the same order as before coalescing; what is now
+    /// different is how often it is handed over. A growing delta waits for the frame window
+    /// (`ChatStreamCoalescer`), and a frame that changes the screen's state — an end, a failure, a tool call,
+    /// a result, a confirmation, a keep-alive — goes through at once with everything that was waiting in
+    /// front of it. The two matter together here: the loop below reads `transcript.isTerminated` to decide
+    /// whether to let go of the socket, and nothing that could terminate the turn is ever held back, so that
+    /// test still sees the truth on the frame that carries it (`DESIGN.md` §10 性能).
     private func receive(_ event: ChatEvent) {
         // Any frame at all is proof the answer reached the run: the server only writes on a stream it has
         // accepted (`DefaultAgentRunner.kt:342-442`). That is also the moment the composer stops being
@@ -399,19 +670,27 @@ public final class ChatViewModel: ObservableObject {
         // confirmation read inherits no composer text of its own.
         confirmRead?.sawFrame = true
         consumedByOpenTurn = nil
-        transcript.fold(event)
+        apply(coalescer.accept(event))
+        // The plan's two frames are the ones the fold throws away, so whatever they cause has to be read off the
+        // raw event here — after `apply`, so the words already in the window are on screen first.
+        reactToPlanFrame(event)
+        // A member's terminal frame is not the stream's last word. It arrives on the lead's channel and closes
+        // only the member's own bubble (`handleMemberEvent`, `ChatWindow.tsx:1278-1290`), while the lead's turn
+        // is still open waiting for the delegation to come back — so it settles nothing here.
+        let isMemberFrame = event.memberRunID != nil
         switch event {
         case let .failure(failure):
+            guard !isMemberFrame else { break }
             isStreaming = false
             stopNotice = .failed(text: hx("chat.error.occurred", errorSentence(failure)))
         case .end:
+            guard !isMemberFrame else { break }
             isStreaming = false
         case .keepAlive:
             break
         default:
             break
         }
-        followTail()
     }
 
     /// The read ended on its own. A stream that never saw an end frame was cut, which is the console's
@@ -419,15 +698,21 @@ public final class ChatViewModel: ObservableObject {
     private func readerClosed() {
         streamTask = nil
         isStreaming = false
+        followUpSandboxStatus()
         // The socket opened, so the request left: a stream that goes quiet is the console's disconnect
         // (`ChatWindow.tsx:2361-2366`), not a send that failed to go out, and the box stays empty.
         consumedByOpenTurn = nil
+        // The window first, before anything below reads the transcript. A stream that closed just after its
+        // last word — with that word still waiting for a tick — would otherwise be read as an answer that
+        // carried nothing, and `isTerminated` would be answered for a transcript that is not the one the user
+        // is owed.
+        settleWindow()
         let sawContent = transcript.turns.last?.hasContent ?? false
         guard !transcript.isTerminated else {
             settleAnswerDelivery(reason: nil)
             return
         }
-        transcript.terminate(as: .interrupted)
+        settled { $0.transcript.terminate(as: .interrupted) }
         // A rolled-back answer has already said why in its own words; a stream that carried nothing at all
         // is the disconnect the console names.
         if settleAnswerDelivery(reason: nil) == false, !sawContent {
@@ -441,7 +726,9 @@ public final class ChatViewModel: ObservableObject {
         streamTask = nil
         isStreaming = false
         guard !Task.isCancelled, !(error is CancellationError) else { return }
-        transcript.terminate(as: .interrupted)
+        // A run that threw can still have created the container before it failed, so the entry is asked again.
+        followUpSandboxStatus()
+        settled { $0.transcript.terminate(as: .interrupted) }
         let detail = transportSentence(error)
         if settleAnswerDelivery(reason: detail) { return }
         restoreComposer()
@@ -490,7 +777,7 @@ public final class ChatViewModel: ObservableObject {
             for tool in attempt.tools { confirmationChoices[tool.toolId] = nil }
             return false
         }
-        transcript.reopenConfirmation()
+        settled { $0.transcript.reopenConfirmation() }
         stopNotice = .failed(text: hx("chat.confirm.submitFailed", reason ?? hx("chat.error.disconnected")))
         followTail()
         return true
@@ -498,7 +785,7 @@ public final class ChatViewModel: ObservableObject {
 
     private func followTail() {
         guard isAnchoredToBottom else { return }
-        scrollToBottomID += 1
+        commit { $0.scrollToBottomID += 1 }
     }
 
     // MARK: - tool confirmation
@@ -559,7 +846,7 @@ public final class ChatViewModel: ObservableObject {
         let request = Self.confirmRequest(sessionID: conversation.id, pending: pending, answers: answers)
         var decisions: [String: ToolConfirmAnswer] = [:]
         for (tool, answer) in zip(tools, answers) { decisions[tool.toolId] = answer }
-        transcript.resolveConfirmation(decisions)
+        settled { $0.transcript.resolveConfirmation(decisions) }
         if pending.childRunId != nil {
             postMemberAnswer(request, tools: tools)
             return
@@ -668,6 +955,9 @@ public final class ChatViewModel: ObservableObject {
         switch result {
         case let .success(row):
             composer = SessionChatConfig(from: row)
+            // The stored `enablePlan` is what the console's two plan effects read
+            // (`ChatWindow.tsx:642-646`, `:649-669`), so this is where the follow starts on a real conversation.
+            syncPlanPanel()
         case let .failure(error):
             // The switches keep the DTO's own defaults, which is why the reason they may be wrong has to be
             // said out loud rather than swallowed.
@@ -675,7 +965,157 @@ public final class ChatViewModel: ObservableObject {
         }
     }
 
+    // MARK: - plan
+
+    /// The calls that open the drawer by themselves (`ChatWindow.tsx:1500`). `plan_exit` is deliberately absent:
+    /// its result closes the plan rather than showing it, and it is not gated on the switch the way these two are.
+    static let planOpeningTools: Set<String> = ["plan_write", "plan_enter"]
+    /// The one tool whose result breaks the answer bubble (`:1566-1591`).
+    static let planExitTool = "plan_exit"
+
+    /// This conversation's panel, and the only reader of its plan.
+    ///
+    /// One per conversation: `bind` retires the old one before the new session id goes in, so a 2 s loop can
+    /// never answer for a plan the user has already left — the same reason the stream is aborted there.
+    private func adoptPlanPanel() {
+        guard let planReading else { return }
+        let panel = PlanPanelViewModel(
+            sessionId: conversation.id,
+            reading: planReading,
+            isEnabled: composer.enablePlan
+        )
+        panel.onCurrentPlanRead = { [weak self] note in self?.currentPlanRead(note) }
+        // The card in the stream is a row of this object's transcript, and it reads the panel's expansion and
+        // its spinner through the two bridges below — so the panel's changes have to count as changes here, or a
+        // tap on the card would move nothing.
+        planObserver = panel.objectWillChange.sink { [weak self] in
+            MainActor.assumeIsolated { self?.objectWillChange.send() }
+        }
+        planPanel = panel
+        syncPlanPanel()
+    }
+
+    /// Let go of the panel this conversation was following and take one for the conversation now on screen.
+    ///
+    /// The follow task is cancelled because its reply would arrive addressed to the session just left, and the
+    /// callback goes with the panel: `currentPlanRead` writes into *this* transcript, and a late reading of the
+    /// old plan has no business landing in the new conversation's answer.
+    private func retirePlanPanel() {
+        planFollowTask?.cancel()
+        planFollowTask = nil
+        planObserver = nil
+        planPanel?.stopFollowing()
+        planPanel = nil
+        isPlanPanelPresented = false
+        adoptPlanPanel()
+    }
+
+    /// The drawer's panel, for the conversation now on screen. Building it reads nothing: the drawer's own
+    /// `.task` is what asks for the status and the listing, so a panel sitting here unopened has cost nothing.
+    private func adoptWorkspacePanel() {
+        guard let workspace else { return }
+        workspacePanel = WorkspaceViewModel(
+            workspace: workspace,
+            sessionId: conversation.id,
+            share: share
+        )
+    }
+
+    /// Take a panel for the conversation now on screen, and put away a drawer that is showing the one just left.
+    private func retireWorkspacePanel() {
+        workspacePanel = nil
+        isWorkspacePresented = false
+        adoptWorkspacePanel()
+    }
+
+    /// Keep the panel in step with the conversation's plan switch: the flag that both starts the reading and
+    /// arms the loop, and the flag that stops both (`:642-646` against `:649-669`).
+    private func syncPlanPanel() {
+        guard let planPanel else { return }
+        planPanel.isEnabled = composer.enablePlan
+        if composer.enablePlan {
+            planFollowTask = Task { await planPanel.startFollowing() }
+        } else {
+            planPanel.stopFollowing()
+        }
+    }
+
+    /// The plan's two frames, answered where the fold cannot see them.
+    ///
+    /// `ChatTranscript` drops every plan frame — no card, no break in the sentence — so the raw event is the only
+    /// place that still knows which tool was called, and this is the only place the two side effects
+    /// (`ChatWindow.tsx:1499-1504`, `:1566-1591`) can live. A member's plan frame belongs to that member's run,
+    /// and neither of the console's guards reaches it.
+    private func reactToPlanFrame(_ event: ChatEvent) {
+        guard event.memberRunID == nil else { return }
+        switch event {
+        case let .toolCall(call) where Self.planOpeningTools.contains(call.toolName):
+            // `&& enablePlan` is the console's own guard at `:1500`. A screen with no panel wired has no card to
+            // draw either, and its toolbar entry is already off.
+            guard composer.enablePlan, let planPanel else { return }
+            isPlanPanelPresented = true
+            // The load starts on the call, not on the drawer's appearance: the reading is what puts the card in
+            // the stream (`:1503`).
+            planFollowTask = Task { await planPanel.startFollowing() }
+        case let .toolResult(result) where result.toolName == Self.planExitTool:
+            // The plan phase is over: the reading stops, and the execution phase says its next sentence in a
+            // bubble of its own. `settled` is what `flushUI()` is — the words still in the frame window belong
+            // to the plan phase and have to land above the break, not under it.
+            planPanel?.exitCurrentPlan()
+            settled { $0.transcript.endAnswerForPlanExit() }
+        default:
+            break
+        }
+    }
+
+    /// The one place a plan reading reaches the transcript, and the one place the reducer's card is written.
+    ///
+    /// A gone plan (`nil`) writes nothing, which is the whole of the console's freeze: the card keeps the last
+    /// reading it was given and stops being followed (`:2576-2584`). A repeat of the same plan writes nothing
+    /// either, which is what keeps a 2 s poll from rewriting the stream twice a second.
+    private func currentPlanRead(_ note: PlanNote?) {
+        guard let note, planPanel?.isFollowing == true, transcript.planCard != note else { return }
+        settled { screen in
+            screen.transcript.showPlan(note)
+            if isAnchoredToBottom { screen.scrollToBottomID += 1 }
+        }
+    }
+
+    /// The card and the drawer are one plan with one expansion (`ChatWindow.tsx:593`, whose
+    /// `currentPlanExpanded` both renderings read), so the stream's card reports the panel's state rather than
+    /// keeping a fold-out of its own.
+    public var isPlanExpanded: Bool { planPanel?.isCurrentPlanExpanded ?? true }
+    /// Whether the loop behind both cards is actually running — the console's `Live` line, off once `plan_exit`
+    /// let the plan go.
+    public var isPlanLive: Bool { planPanel?.isLive ?? false }
+    public func togglePlanExpansion() { planPanel?.toggleCurrentPlan() }
+
     // MARK: - pictures
+
+    /// How much of one request body the router's edge will take: 1 MB.
+    ///
+    /// The console puts no number on its own strip — its picker appends every file it is handed
+    /// (`ChatWindow.tsx:2442-2468`) off a bare `multiple` input (`:3692-3699`) — so the only limit that is
+    /// really there is the server's, and the smaller byte answers for it. The router would take 16 MB
+    /// (`harnax-session-router/src/main/resources/application.yml:31`, its WebClient at `:104`), but the
+    /// public entry this console is deployed behind sets no `client_max_body_size` on the streaming
+    /// `location` (`harnax-deploy/nginx.conf:72-101`), which leaves nginx's own 1 MB default and a bare 413
+    /// page (`:196-197`). A turn bigger than that dies before the model sees it.
+    public static let streamBodyBudget = 1_048_576
+
+    /// The part of that body the attachments may have.
+    ///
+    /// The remainder has to hold the prompt, the session's identity and the envelope, none of which is
+    /// bounded here — so this margin is ours rather than the server's: the number above is the anchor, this
+    /// one is how much of it we are willing to hand to pictures.
+    public static let imagePayloadBudget = streamBodyBudget - 65_536
+
+    /// The attachment leg's size, counted the way the edge counts it: bytes on the wire.
+    ///
+    /// A data URL goes into the JSON body whole, so its utf-8 length is what the body pays for it.
+    private static func bodyBytes(of pictures: [String]) -> Int {
+        pictures.reduce(0) { $0 + $1.utf8.count }
+    }
 
     /// The picture button's tap: may the sheet open?
     ///
@@ -689,19 +1129,63 @@ public final class ChatViewModel: ObservableObject {
         return true
     }
 
+    /// The camera row's tap: may the camera be opened here?
+    ///
+    /// Two gates, in this order. Vision comes first, exactly as in ``requestImages()``, so a model that could
+    /// not read the shot never sees either sheet. Then the device: a camera is not on the Simulator and not on
+    /// every handset, and the answer to that has to be a sentence rather than a sheet that opens only to fail —
+    /// the same rule that keeps every chip in the row tappable, a muted style plus a warning instead of a dead
+    /// control (`Sources/HarnaxFeatures/Chat/ChatView.swift:366-368`).
+    ///
+    /// - Parameter hasCamera: what this host's probe says, `ChatCameraDevice.isAvailable`
+    ///   (`Sources/HarnaxFeatures/Chat/ChatCameraPicker.swift:89-104`). It is an argument rather than a read
+    ///   because `UIImagePickerController` does not exist on the macOS test host (`Package.swift:7`), and the
+    ///   refusal is the part worth being able to assert — the same split `ChatImagePicker.swift:63-70`
+    ///   documents for the photo library.
+    public func requestCamera(hasCamera: Bool) -> Bool {
+        guard canPickImages else {
+            composerNotice = .warning(hx("chat.model.noVision"))
+            return false
+        }
+        guard hasCamera else {
+            composerNotice = .warning(hx("chat.image.noCamera"))
+            return false
+        }
+        return true
+    }
+
     /// What the picker produced.
     ///
     /// Only `data:image…` strings are kept: the runtime reads any other string as a path inside the sandbox
     /// and fails (`HarnessAgentWrapper.kt:814-829`), so a URL that looked like a picture would only ever
     /// become an error bubble later. `ChatImageData` builds the strings; nothing here asks the network.
+    ///
+    /// Nothing says how *many* may be attached, because the ceiling is bytes and not a count: each one that
+    /// still fits joins the strip, and only the ones that would push the body past
+    /// ``imagePayloadBudget`` are refused — the whole batch is not lost with them. Refusing them here is the
+    /// point, since the alternative is the unreadable 413 the edge answers with after the send.
     public func addImages(_ dataURLs: [String]) {
         guard canPickImages else {
             composerNotice = .warning(hx("chat.model.noVision"))
             return
         }
-        let accepted = dataURLs.filter { ChatImageData.isDataURL($0) }
-        if accepted.count != dataURLs.count {
+        var filled = Self.bodyBytes(of: images)
+        var overLimit = 0
+        var accepted: [String] = []
+        for dataURL in dataURLs where ChatImageData.isDataURL(dataURL) {
+            let cost = dataURL.utf8.count
+            guard filled + cost <= Self.imagePayloadBudget else {
+                overLimit += 1
+                continue
+            }
+            filled += cost
+            accepted.append(dataURL)
+        }
+        if accepted.count + overLimit != dataURLs.count {
             composerNotice = .warning(hx("chat.image.rejected"))
+        }
+        if overLimit > 0 {
+            composerNotice = .warning(hx("chat.image.overLimit"))
         }
         images.append(contentsOf: accepted)
     }
@@ -786,7 +1270,12 @@ public final class ChatViewModel: ObservableObject {
         switch flag {
         case .think: composer.enableThink = value
         case .search: composer.enableSearch = value
-        case .plan: composer.enablePlan = value
+        case .plan:
+            composer.enablePlan = value
+            // The panel reads the same flag the console's two plan effects read, on the optimistic write and on
+            // the rollback alike (`ChatWindow.tsx:642-646`), so a switch the server refused stops the follow it
+            // never got.
+            syncPlanPanel()
         }
     }
 
@@ -901,6 +1390,33 @@ public final class ChatViewModel: ObservableObject {
         }
     }
 
+    /// Ask once whether this conversation has a sandbox, and let the toolbar's drawer entry follow the answer.
+    ///
+    /// Nothing is said when the read fails: an entry that is not there is a quiet state, and the user has not
+    /// asked for anything yet — unlike `/stop-sandbox`, where a refused command has to explain itself.
+    public func refreshSandboxStatus() async {
+        guard let workspace else { return }
+        let sessionID = conversation.id
+        var running = false
+        if case let .success(status) = await workspace.sandboxStatus(sessionId: sessionID) {
+            running = status == .running
+        }
+        // The id is the identity of the answer: a reply for the conversation the user has already moved on from
+        // must not light this one's entry.
+        guard conversation.id == sessionID else { return }
+        sandboxIsRunning = running
+    }
+
+    /// Re-ask at a turn's last word.
+    ///
+    /// A sandbox is not there when the send goes out — the run's first tool call is what creates the container —
+    /// so a screen that only read the status on open would never show the entry, and the user would have to
+    /// leave and come back to reach the files the turn just wrote.
+    private func followUpSandboxStatus() {
+        guard workspace != nil else { return }
+        Task { [weak self] in await self?.refreshSandboxStatus() }
+    }
+
     /// The confirmation's confirm button.
     public func confirmPendingCommand() {
         guard let pending = pendingCommand else { return }
@@ -927,14 +1443,14 @@ public final class ChatViewModel: ObservableObject {
         }
         stopNotice = nil
         isAnchoredToBottom = true
-        if !rawText.isEmpty { transcript.appendUserMessage(rawText) }
+        if !rawText.isEmpty { settled { $0.transcript.appendUserMessage(rawText) } }
         let request = CommandAgentRequest(
             sessionId: conversation.id,
             command: command.command,
             args: command.args
         )
         isStreaming = true
-        scrollToBottomID += 1
+        commit { $0.scrollToBottomID += 1 }
         streamTask = Task { [weak self] in
             let result = await client.command(request)
             guard let self, !Task.isCancelled else { return }
@@ -947,12 +1463,12 @@ public final class ChatViewModel: ObservableObject {
                 // (`DefaultAgentRunner.kt:241-244`), so the bubbles on screen go with it
                 // (`ChatWindow.tsx:2681`).
                 if Self.commandSucceeded(result), command.command == .clear {
-                    self.transcript = ChatTranscript()
+                    self.settled { $0.transcript = ChatTranscript() }
                 }
             } else {
-                self.transcript.appendCommandReply(sentence)
+                self.settled { $0.transcript.appendCommandReply(sentence) }
             }
-            self.scrollToBottomID += 1
+            self.commit { $0.scrollToBottomID += 1 }
         }
     }
 
@@ -1038,7 +1554,7 @@ public final class ChatViewModel: ObservableObject {
     /// again (`ChatWindow.tsx:635-639`).
     public func jumpToBottom() {
         isAnchoredToBottom = true
-        scrollToBottomID += 1
+        commit { $0.scrollToBottomID += 1 }
     }
 
     // MARK: - copy

@@ -1,6 +1,9 @@
 import SwiftUI
 import HarnaxCore
 import HarnaxKit
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// D2 — the transcript of one conversation, the stream that fills it, and the input that starts the next
 /// turn.
@@ -10,16 +13,28 @@ import HarnaxKit
 /// following the tail is a scroll decision, not a segment decision.
 public struct ChatView: View {
     @StateObject private var vm: ChatViewModel
+    /// The height the composer is capped against. Only ever the largest measured value: the keyboard takes
+    /// this layer down when it comes up, and 「half the screen」 means the screen.
+    @State private var screenHeight: CGFloat = 0
     /// The conversation the host asked for, kept beside the view model so a parameter change can be noticed
     /// and handed to `bind`. `@StateObject` keeps the first value it was given, which is exactly why the
     /// switch has to be observed rather than rebuilt.
     private let conversation: ChatConversation
-    /// The read behind the plan drawer. `nil` leaves the entry off the navigation bar, because a drawer that
-    /// can only ever fail is worse than no drawer at all.
-    private let plan: (any PlanReading)?
-    /// Whether the plan drawer is open. The composer's chip writes the session's plan *switch*; this is the
-    /// separate action of reading back the plan itself.
-    @State private var planOpen = false
+
+    /// The lines the text field may take before it scrolls instead of growing.
+    private var composerLineCap: Int {
+        ChatComposerGrowth.lineCap(screenHeight: screenHeight, lineHeight: Self.bodyLineHeight)
+    }
+
+    /// The line height `Font.body` actually paints at the user's text size, so a Dynamic Type reader gets
+    /// fewer lines rather than a field that overflows its half.
+    private static var bodyLineHeight: CGFloat {
+        #if canImport(UIKit) && os(iOS)
+        return UIFont.preferredFont(forTextStyle: .body).lineHeight
+        #else
+        return 22
+        #endif
+    }
 
     /// The named space the tail is measured in: the scroll view's own bounds, so a `maxY` reads as a
     /// distance from the bottom of what the user can see.
@@ -43,32 +58,48 @@ public struct ChatView: View {
             history: history,
             config: config,
             workspace: workspace,
+            plan: plan,
             conversation: conversation
         ))
         self.conversation = conversation
-        self.plan = plan
     }
 
     public var body: some View {
         VStack(spacing: 0) {
             transcript
-            ChatInputBar(vm: vm)
+            ChatInputBar(vm: vm, lineCap: composerLineCap)
         }
+        .background(GeometryReader { proxy in
+            Color.clear
+                .onAppear { screenHeight = max(screenHeight, proxy.size.height) }
+                .onChange(of: proxy.size.height) { _, height in
+                    screenHeight = max(screenHeight, height)
+                }
+        })
         .harnaxScreen()
         .navigationTitle(vm.conversation.title)
         .toolbar {
-            if plan != nil {
-                ToolbarItem(placement: .primaryAction) { planButton }
+            // A deliberate fork from the console, which draws its Workspace button always and checks the status
+            // when it is tapped (`harnax-webui/src/pages/session/index.tsx:280-292`): with no sandbox manager
+            // running every workspace route is a 404 (`SandboxWorkspaceController.kt:398-416`), so this corner
+            // only offers the drawer once a status read said the sandbox is up. The plan's drawer lost the corner
+            // — a plan tool call opens it by itself (`ChatWindow.tsx:1501`).
+            if vm.workspacePanel != nil, vm.sandboxIsRunning {
+                ToolbarItem(placement: .primaryAction) { workspaceButton }
             }
         }
-        .sheet(isPresented: $planOpen) {
-            if let plan {
-                PlanPanelView(
-                    sessionId: conversation.id,
-                    reading: plan,
-                    isEnabled: vm.composer.enablePlan,
-                    onClose: { planOpen = false }
-                )
+        .sheet(isPresented: $vm.isWorkspacePresented) {
+            // The panel the conversation owns, so a switch while the drawer is up cannot leave it listing the
+            // session the user just left (`bind` retires it).
+            if let panel = vm.workspacePanel {
+                WorkspaceSheet(vm: panel)
+            }
+        }
+        .sheet(isPresented: $vm.isPlanPanelPresented) {
+            // The panel the conversation already reads its card off, rather than one the sheet builds and
+            // unbuilds: closing the drawer must not stop the plan the stream is still showing.
+            if let panel = vm.planPanel {
+                PlanPanelView(vm: panel, onClose: { vm.isPlanPanelPresented = false })
             }
         }
         .task(id: conversation) {
@@ -78,17 +109,19 @@ public struct ChatView: View {
             // (`ChatWindow.tsx:718-737`), so it has to be re-taken for every conversation.
             await vm.load()
             await vm.loadComposerConfig()
+            // And the one read that decides whether the workspace entry exists at all.
+            await vm.refreshSandboxStatus()
         }
         .onDisappear { vm.detach() }
     }
 
-    // MARK: - plan drawer
+    // MARK: - sandbox workspace
 
-    private var planButton: some View {
-        Button { planOpen = true } label: {
-            Image(systemName: "list.bullet.clipboard")
+    private var workspaceButton: some View {
+        Button { vm.isWorkspacePresented = true } label: {
+            Image(systemName: "folder")
         }
-        .accessibilityLabel(hx("chat.plan.title"))
+        .accessibilityLabel(hx("chat.workspace.title"))
     }
 
     // MARK: - transcript
@@ -191,6 +224,7 @@ public struct ChatView: View {
                     .overlay(Circle().strokeBorder(Color.hx(.separator), lineWidth: 1))
                     .shadow(color: Color.hx(.separator).opacity(0.5), radius: 6, y: 2)
             }
+            .accessibilityLabel(hx("chat.action.jumpToBottom"))
             .padding(.trailing, 16)
             .padding(.bottom, 12)
         }
@@ -229,6 +263,8 @@ private extension View {
 /// and the row of chips under it that writes the conversation's four settings.
 private struct ChatInputBar: View {
     @ObservedObject var vm: ChatViewModel
+    /// The ceiling the field grows to. Past it the field scrolls rather than eating the transcript.
+    let lineCap: Int
     @State private var showsPhotoPicker = false
 
     var body: some View {
@@ -258,7 +294,9 @@ private struct ChatInputBar: View {
                 .font(.body)
                 .foregroundStyle(Color.hx(.textPrimary))
                 .tint(Color.hx(.brand))
-                .lineLimit(2...6)
+                // Half the screen for a long draft, then the field's own scroll: a pasted answer stays
+                // readable without the transcript above it being pushed off screen.
+                .lineLimit(2 ... lineCap)
                 .submitLabel(.send)
                 .onSubmit { vm.send() }
                 .padding(.horizontal, 12)
@@ -369,6 +407,13 @@ private struct ChatImageStrip: View {
 private struct ChatComposerToolbar: View {
     @ObservedObject var vm: ChatViewModel
     @Binding private var showsPhotoPicker: Bool
+    /// Whether the chip is asking which source the picture comes from. The console asks no question because its
+    /// one picture control clicks a file input and lets the operating system decide
+    /// (`ChatWindow.tsx:3500`); `PhotosPicker` has no camera route at all, so this side asks the question in
+    /// words and hands the shot to UIKit.
+    @State private var showsSourceSheet = false
+    /// Whether the camera is open. Its own flag, because it is its own sheet.
+    @State private var showsCamera = false
 
     init(vm: ChatViewModel, showsPhotoPicker: Binding<Bool>) {
         self.vm = vm
@@ -425,6 +470,33 @@ private struct ChatComposerToolbar: View {
         .chatPhotoPicker(isPresented: $showsPhotoPicker) { urls in
             vm.addImages(urls)
         }
+        .chatCameraPicker(isPresented: $showsCamera) { urls in
+            vm.addImages(urls)
+        }
+        // The two sources, asked in the one place the console lets the operating system answer it. A row that
+        // this device cannot honour is still on screen and still answers with a sentence, because a control
+        // with nothing to say is the thing this row is built to avoid.
+        .confirmationDialog(
+            Text(verbatim: hx("chat.image.source")),
+            isPresented: $showsSourceSheet,
+            titleVisibility: .visible
+        ) {
+            Button {
+                showsPhotoPicker = true
+            } label: {
+                HXText("chat.image.album")
+            }
+            Button {
+                if vm.requestCamera(hasCamera: ChatCameraDevice.isAvailable) { showsCamera = true }
+            } label: {
+                HXText("chat.image.camera")
+            }
+            Button(role: .cancel) {
+                showsSourceSheet = false
+            } label: {
+                HXText("common.cancel")
+            }
+        }
     }
 
     /// The picture button. A model with no vision cannot pick, but a picture already in the strip still goes
@@ -437,7 +509,7 @@ private struct ChatComposerToolbar: View {
             isOn: !vm.images.isEmpty,
             isMuted: !vm.canPickImages
         ) {
-            if vm.requestImages() { showsPhotoPicker = true }
+            if vm.requestImages() { showsSourceSheet = true }
         }
     }
 

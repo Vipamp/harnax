@@ -55,16 +55,19 @@ final class ScriptedAgentCommands: AgentCommanding, @unchecked Sendable {
     }
 }
 
-/// The composer's config read: one row, or one failure.
+/// The admin config leg: one row, or one failure.
 ///
 /// The chat screen reads the conversation's model flags once on entry and then drives every switch from the
-/// command channel, so this fake records the admin write instead of performing it: a test asserts `writes`
-/// stays empty (`ChatWindow.tsx:2408-2430`).
+/// command channel, so this fake records the write instead of performing it and its `writes` stays empty there
+/// (`ChatWindow.tsx:2408-2430`). The detail sheet is the caller that does write: it turns `writeResult` into a
+/// landing answer and asserts the body the panel sent.
 final class ScriptedSessionConfig: SessionConfiguring, @unchecked Sendable {
     private(set) var requested: [String] = []
     private(set) var writes: [String] = []
+    private(set) var changes: [SessionChatChange] = []
     var row = SessionSummary()
     var error: APIError?
+    var writeResult: Result<EmptyResponse, APIError> = .failure(.offline)
 
     func sessionConfig(sessionId: String) async -> Result<SessionSummary, APIError> {
         requested.append(sessionId)
@@ -77,7 +80,8 @@ final class ScriptedSessionConfig: SessionConfiguring, @unchecked Sendable {
         _ change: SessionChatChange
     ) async -> Result<EmptyResponse, APIError> {
         writes.append(sessionId)
-        return .failure(.offline)
+        changes.append(change)
+        return writeResult
     }
 }
 
@@ -86,9 +90,31 @@ final class ScriptedSandbox: SessionWorkspaceReading, @unchecked Sendable {
     private(set) var statusRequested: [String] = []
     var status: SandboxStatus = .unknown
     var statusFails = false
+    /// Parking the status leg is the only way to ask what an answer that arrives after the user moved on does:
+    /// the gate holds the reply until the test says so, in the shape `FakeWorkspaceSandbox` uses for its own
+    /// downloads.
+    var gateStatus = false
+    private var parkedStatus: [() -> Void] = []
+    /// The leg's *answer*, not its request: a parked reply that was released and one that never left are only
+    /// tellable apart from here, which is what makes the dropped-late-answer test a race rather than a wait.
+    private(set) var statusAnswered: [String] = []
 
     func sandboxStatus(sessionId: String) async -> Result<SandboxStatus, APIError> {
         statusRequested.append(sessionId)
+        guard gateStatus else { return nextStatus(sessionId) }
+        return await withCheckedContinuation { continuation in
+            parkedStatus.append { continuation.resume(returning: self.nextStatus(sessionId)) }
+        }
+    }
+
+    func releaseStatuses() {
+        let waiting = parkedStatus
+        parkedStatus = []
+        for resume in waiting { resume() }
+    }
+
+    private func nextStatus(_ sessionId: String) -> Result<SandboxStatus, APIError> {
+        statusAnswered.append(sessionId)
         return statusFails ? .failure(.offline) : .success(status)
     }
 

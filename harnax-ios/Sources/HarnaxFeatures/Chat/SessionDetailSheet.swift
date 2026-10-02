@@ -2,27 +2,56 @@ import SwiftUI
 import HarnaxCore
 import HarnaxKit
 
-/// The conversation's read-only detail sheet — this app's equivalent of the console's `DetailModal`.
+/// The conversation's detail sheet — this app's equivalent of the console's `DetailModal`, plus the editor the
+/// console has no screen for.
 ///
-/// Four panels, in the console's order, and only the ones with data: 基本信息, 执行者 (or 团队主管 for a team
-/// conversation), 技能, 外部服务.
+/// Seven read-only panels, in the console's order, and only the ones with data: 基本信息, 执行者 (or 团队主管 for
+/// a team conversation), 工具, 外部服务, 技能, CLI, 团队成员. Then an eighth of this app's own, 对话配置, which is
+/// the only one whose rows are controls: it is `GET`/`PUT /api/admin/sessions/{sessionId}/config`, the admin
+/// route the console never calls because it drives the same four columns through the runtime's command channel
+/// instead (`SessionConfiguring.swift:184-189`).
 ///
-/// The console shows seven. Its tools, cli and members panels are filled from a second by-id request
-/// (`getAgentById` / `getTeamById`, `harnax-webui/src/pages/session/components/DetailModal.tsx:114-144`), and
-/// this app makes no by-id agent or team read at all — the page row already carries what it carries
-/// (`Sources/HarnaxCore/Contract/Facades.swift:148-151`). Those three panels are therefore absent here rather
-/// than present and empty, which is the honest reading of a row that has no such list.
+/// The seven come from two reads, the same two the console splits them across
+/// (`harnax-webui/src/pages/session/components/DetailModal.tsx:112-148`). The conversation's own row, handed
+/// over by the list, fills 基本信息 and 执行者 and the two lists it denormalises. 工具, CLI and 团队成员 exist
+/// nowhere but the executor's row, and a team's row is the only place that says whether a lead skill or a
+/// member is still there — so this sheet reads `GET /api/admin/agents/{id}` or `GET /api/admin/teams/{id}`
+/// when it opens, whichever the row names (`ExecutorReading.swift`). Those three panels are absent until it
+/// answers, and a refusal leaves them absent with a line saying which of the two it is rather than a panel
+/// claiming the conversation binds nothing.
+///
+/// No leg means no read and no line: a host that only lists conversations gets the snapshot panels, which are
+/// the ones it can answer for.
+///
+/// The catalogue is observed because the tool panel picks its name column per language, the way the agent
+/// card's drill-down does — a language switched inside the app has to re-resolve the rows already on screen.
 public struct SessionDetailSheet: View {
     @StateObject private var vm: SessionDetailViewModel
+    @ObservedObject private var catalog = HarnaxCatalog.shared
 
-    public init(session: SessionSummary) {
-        _vm = StateObject(wrappedValue: SessionDetailViewModel(session: session))
+    public init(
+        session: SessionSummary,
+        config: (any SessionConfiguring)? = nil,
+        executor: (any ExecutorReading)? = nil,
+        onWritten: (() -> Void)? = nil
+    ) {
+        _vm = StateObject(
+            wrappedValue: SessionDetailViewModel(
+                session: session,
+                config: config,
+                executor: executor,
+                onWritten: onWritten
+            )
+        )
     }
 
     public var body: some View {
         HXBindingSheet(title: hx("chat.detail.title")) {
             content
         }
+        // Sliding the sheet away mid-write would lose a request the server has already taken.
+        .interactiveDismissDisabled(vm.isSavingConfig)
+        .task { await vm.loadExecutor() }
     }
 
     @ViewBuilder
@@ -44,6 +73,8 @@ public struct SessionDetailSheet: View {
                             }
                         }
                     }
+                    executorStatus
+                    configCard
                     if let updated = vm.updatedLine {
                         Text(verbatim: updated)
                             .font(.caption)
@@ -55,6 +86,167 @@ public struct SessionDetailSheet: View {
                 .padding(.top, 8)
                 .padding(.bottom, 20)
             }
+        }
+    }
+
+    // MARK: - the executor read
+
+    /// The one line this sheet can say about a read it is still waiting on, or one the server refused.
+    ///
+    /// It sits under the panels rather than inside each of them: the snapshot half of the sheet is already
+    /// answered, and a spinner in three empty groups would read as three separate failures where the console,
+    /// which has no snapshot panels to keep drawing over, can afford one per group
+    /// (`DetailModal.tsx:295-296`, `:518-519`). A refusal keeps its own retry control because the answer is
+    /// one tap away and the panels that depend on it are otherwise simply missing.
+    @ViewBuilder
+    private var executorStatus: some View {
+        if vm.isLoadingExecutor {
+            HStack(spacing: 8) {
+                ProgressView()
+                Text(verbatim: hx("chat.detail.executors.loading"))
+                    .font(.footnote)
+                    .foregroundStyle(Color.hx(.textTertiary))
+            }
+        } else if let notice = vm.executorNotice {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(verbatim: notice)
+                    .font(.footnote)
+                    .foregroundStyle(Color.hx(.textSecondary))
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    Task { await vm.retryExecutorLoad() }
+                } label: {
+                    HXText("common.retry")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Color.hx(.brand))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    // MARK: - chat configuration
+
+    /// The four fields the conversation owns, and the only write this screen can make.
+    ///
+    /// The card is last, after the panels that describe who runs the conversation: it is the one block whose
+    /// rows are controls, and putting it among the reading would make a form out of a drill-down.
+    ///
+    /// Its values come off the row the list already handed over, which is the same reading the chat tab makes
+    /// of the DTO (`SessionChatConfig.init(from:)`), so an absent flag shows as off rather than as unknown. The
+    /// `编辑` control, and with it the whole editing state, only appears when the host wired the admin config
+    /// leg, the row carries the string key that route addresses, and the conversation is switched on — the
+    /// server refuses a disabled one with its own `403` before either read or write gets anywhere.
+    private var configCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HXSectionHeader("chat.detail.section.config")
+            HXGroupCard {
+                HXRow(text: hx("chat.composer.think"), subtitle: vm.configThinkHint) {
+                    configSwitch(
+                        "chat.composer.think",
+                        isOn: Binding(get: { vm.displayedConfig.enableThink }, set: { vm.setConfigThink($0) }),
+                        live: vm.canToggleConfigThink
+                    )
+                }
+                HXRow(text: hx("chat.composer.search"), subtitle: vm.configSearchHint) {
+                    configSwitch(
+                        "chat.composer.search",
+                        isOn: Binding(get: { vm.displayedConfig.enableSearch }, set: { vm.setConfigSearch($0) }),
+                        live: vm.canToggleConfigSearch
+                    )
+                }
+                HXRow(text: hx("chat.composer.plan")) {
+                    configSwitch(
+                        "chat.composer.plan",
+                        isOn: Binding(get: { vm.displayedConfig.enablePlan }, set: { vm.setConfigPlan($0) }),
+                        live: vm.canToggleConfigPlan
+                    )
+                }
+                permissionRow
+            }
+            configControls
+            if let notice = vm.configNotice {
+                Text(verbatim: notice)
+                    .font(.footnote)
+                    .foregroundStyle(Color.hx(.textSecondary))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// One switch for both states of the panel: the position is the value whether or not the draft is open, so
+    /// the reading state shows the same control greyed out rather than a second copy of the sentence.
+    private func configSwitch(_ labelKey: String, isOn: Binding<Bool>, live: Bool) -> some View {
+        Toggle(hx(labelKey), isOn: isOn)
+            .labelsHidden()
+            .tint(Color.hx(.brand))
+            .disabled(!live)
+    }
+
+    /// The mode reads as one of five sentences in both states — the menu while the draft is open, the chosen
+    /// sentence on its own otherwise. The five labels are the runtime's own vocabulary
+    /// (`ChatPermissionMode`), shared with the chat tab's permission chip.
+    private var permissionRow: some View {
+        HXRow("chat.detail.field.permissionMode", divider: false) {
+            if vm.canChooseConfigPermissionMode {
+                Picker(selection: Binding(
+                    get: { vm.displayedConfig.permissionMode },
+                    set: { vm.setConfigPermissionMode($0) }
+                )) {
+                    ForEach(ChatPermissionMode.allCases, id: \.rawValue) { mode in
+                        Text(verbatim: hx(mode.titleKey)).tag(mode)
+                    }
+                } label: {
+                    HXText("chat.detail.field.permissionMode")
+                }
+                .pickerStyle(.menu)
+                .tint(Color.hx(.brand))
+            } else {
+                Text(verbatim: hx(vm.displayedConfig.permissionMode.titleKey))
+                    .font(.footnote)
+                    .foregroundStyle(Color.hx(.textPrimary))
+                    .multilineTextAlignment(.trailing)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var configControls: some View {
+        if vm.isEditingConfig {
+            HStack(spacing: 10) {
+                Button {
+                    vm.cancelConfigEdit()
+                } label: {
+                    HXText("common.cancel")
+                }
+                .buttonStyle(HXSecondaryButtonStyle())
+                .disabled(vm.isSavingConfig)
+
+                Button {
+                    Task { await vm.saveConfig() }
+                } label: {
+                    if vm.isSavingConfig {
+                        ProgressView()
+                    } else {
+                        HXText("common.save")
+                    }
+                }
+                .buttonStyle(HXPrimaryButtonStyle())
+                .disabled(!vm.canSaveConfig)
+
+                Spacer(minLength: 0)
+            }
+        } else if vm.canEditConfig {
+            Button {
+                vm.beginConfigEdit()
+            } label: {
+                HXText("state.action.edit")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Color.hx(.brand))
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
 

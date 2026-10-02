@@ -78,6 +78,112 @@ final class ChatStreamClientTests: XCTestCase {
         XCTAssertEqual(headerValue(after, "Authorization"), "Bearer tok-2", "the stream asks the session, not a snapshot")
     }
 
+    // MARK: - a bearer that went stale while the screen was shut
+
+    /// A session idle past its token's life cannot start a turn with the bearer it still holds, and every
+    /// other call in the app knows that: `APIClient` renews a token inside the window before it sends
+    /// (`Sources/HarnaxAPI/APIClient.swift:160-166`) and replays once on a 401 (`:29-37`). The stream reads
+    /// the same keychain, so it has to do the same — and this test drives it through no injected seam at all,
+    /// which is the shape `HarnaxDependencies.live()` builds.
+    func testAStreamOnASessionIdlePastItsTokenRenewsBeforeItGoesOut() async throws {
+        let server = SSELoopback(answers: [
+            .refreshed(token: "tok-2"),
+            .stream([SSEAnswer.endFrame]),
+        ])
+        let port = try server.start()
+        defer { server.stop() }
+        // 29 seconds left of a 90-second life is below the one-third threshold, so the client's own copy of the
+        // deadline is what says "renew first" — the router never gets the chance to reject the turn.
+        let harness = try await keylessHarness(port: port, expiresIn: 90)
+        harness.clock.advance(61)
+
+        let events = try await collect(ChatStreamClient(configs: harness.configs, session: harness.session))
+
+        XCTAssertEqual(events.count, 1, "the answer starts on the renewed credential")
+        XCTAssertEqual(server.recorded.count, 2, "the renewal goes up front, so nothing has to be rejected first")
+        XCTAssertTrue(
+            server.recorded[0].hasPrefix("POST \(TokenRefresher.path)"),
+            "the first request out was the renewal, not the turn: \(server.recorded[0])"
+        )
+        XCTAssertTrue(server.recorded[1].hasPrefix("POST \(ChatStreamClient.chatPath)"))
+        XCTAssertTrue(server.recorded[1].contains("Authorization: Bearer tok-2"), server.recorded[1])
+    }
+
+    /// The window is the client's guess; the server's word is a 401. A turn that never started — the router
+    /// answers an envelope before it writes a stream — is safe to send again, and the user's expectation is
+    /// that the answer arrives rather than that the screen explains their token expired.
+    func testAStreamTheRouterRejectsAsUnauthorizedStartsAfterOneRenewal() async throws {
+        let server = SSELoopback(answers: [
+            .envelope(status: 401, body: Wire.unauthorized),
+            .refreshed(token: "tok-2"),
+            .stream([SSEAnswer.endFrame]),
+        ])
+        let port = try server.start()
+        defer { server.stop() }
+        let harness = try await keylessHarness(port: port, expiresIn: 3600)
+
+        let events = try await collect(ChatStreamClient(configs: harness.configs, session: harness.session))
+
+        XCTAssertEqual(events.count, 1, "a rejected credential is renewed, not reported")
+        XCTAssertEqual(server.recorded.count, 3, "the rejected turn, the renewal, the turn again")
+        XCTAssertTrue(server.recorded[1].hasPrefix("POST \(TokenRefresher.path)"), server.recorded[1])
+        XCTAssertTrue(server.recorded[2].hasPrefix("POST \(ChatStreamClient.chatPath)"), server.recorded[2])
+        XCTAssertTrue(server.recorded[2].contains("Authorization: Bearer tok-2"), server.recorded[2])
+    }
+
+    /// The other credential does not expire. A permanent key is what the router prefers
+    /// (`ChatWindow.tsx:153-164`), so paying for a refresh round trip before a turn that carries it would
+    /// only make the first answer slower.
+    func testAStreamOnAPermanentKeyRenewsNothing() async throws {
+        let server = SSELoopback(answers: [.stream([SSEAnswer.endFrame])])
+        let port = try server.start()
+        defer { server.stop() }
+        let harness = APIHarness()
+        try await harness.signIn(expiresIn: 30)
+        try await harness.configs.update(
+            ServerConfig(adminBaseURL: "http://127.0.0.1:\(port)", routerBaseURL: "http://127.0.0.1:\(port)")
+        )
+
+        let events = try await collect(ChatStreamClient(configs: harness.configs, session: harness.session))
+
+        XCTAssertEqual(events.count, 1)
+        XCTAssertEqual(server.recorded.count, 1, "a key that cannot expire needs no renewal")
+        XCTAssertTrue(server.recorded[0].contains("X-Api-Key: rk-1"), server.recorded[0])
+    }
+
+    /// One renewal, one retry, and no more: a refresh the server also rejected says the session is dead, and
+    /// sending the turn a third time would only say it a third way.
+    func testAStreamWhoseRenewalWasRefusedIsNotSentAgain() async throws {
+        let server = SSELoopback(answers: [
+            .envelope(status: 401, body: Wire.unauthorized),
+            .envelope(status: 401, body: Wire.unauthorized),
+            .stream([SSEAnswer.endFrame]),
+        ])
+        let port = try server.start()
+        defer { server.stop() }
+        let harness = try await keylessHarness(port: port, expiresIn: 3600)
+
+        do {
+            _ = try await collect(ChatStreamClient(configs: harness.configs, session: harness.session))
+            XCTFail("a session the refresh route also rejects is not a stream")
+        } catch let error as APIError {
+            XCTAssertEqual(error, .unauthorized)
+        }
+        XCTAssertEqual(server.recorded.count, 2, "the turn, the renewal, and it stops there")
+    }
+
+    /// A session whose only credential is the bearer — the leg that can go stale. Both bases point at the
+    /// same loopback, so the renewal and the turn arrive at one fixture in the order they were sent.
+    private func keylessHarness(port: UInt16, expiresIn: Int64) async throws -> APIHarness {
+        let harness = APIHarness()
+        try await harness.session.signIn(
+            harness.decode(Wire.login(token: "tok-1", expiresIn: expiresIn, routerKey: nil))
+        )
+        let base = "http://127.0.0.1:\(port)"
+        try await harness.configs.update(ServerConfig(adminBaseURL: base, routerBaseURL: base))
+        return harness
+    }
+
     // MARK: a turn that never started
 
     func testEnvelopeUnderANonStreamContentTypeBecomesTheServersError() {
@@ -216,18 +322,62 @@ final class ChatStreamClientTests: XCTestCase {
     }
 }
 
-/// A one-shot loopback responder, one string per socket write. It closes once the bytes are acknowledged, so
-/// the client sees a normal end of stream.
+/// A canned answer: the status line and headers, then the body in the pieces the socket takes them.
+private struct SSEAnswer {
+    let head: String
+    let writes: [String]
+
+    /// An event stream that opens as soon as the request has landed.
+    static func stream(_ writes: [String]) -> SSEAnswer {
+        SSEAnswer(
+            head: "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n",
+            writes: writes
+        )
+    }
+
+    static let endFrame = "data: {\"eventType\":\"EndEvent\",\"attachments\":[],\"source\":null}\n\n"
+
+    /// A rejected call: an envelope under a JSON content type, which is what the client reads instead of a
+    /// stream (`Self.envelopeError`).
+    static func envelope(status: Int, body: String) -> SSEAnswer {
+        let reason = status == 401 ? "Unauthorized" : status == 200 ? "OK" : "Bad Request"
+        let head = "HTTP/1.1 \(status) \(reason)\r\nContent-Type: application/json\r\n"
+            + "Content-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n"
+        return SSEAnswer(head: head, writes: [body])
+    }
+
+    /// `POST /api/admin/auth/refresh-token` handing back a new bearer, over the same loopback host.
+    static func refreshed(token: String) -> SSEAnswer {
+        envelope(status: 200, body: Wire.refreshed(token: token, expiresIn: 3600))
+    }
+}
+
+/// A loopback responder that answers each connection it accepts from a list, in order, repeating the last
+/// answer once the list runs out. It closes once the bytes are acknowledged, so the client sees a normal end
+/// of stream. Because every answer goes to the next connection, one fixture can play a whole conversation:
+/// a rejection, the renewal it asks for, and the stream that follows.
 private final class SSELoopback: @unchecked Sendable {
-    private let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n"
-    private let writes: [String]
+    private let answers: [SSEAnswer]
     private let listener: NWListener
     private let ready = DispatchSemaphore(value: 0)
     private let queue = DispatchQueue(label: "harnax.sse.loopback")
+    private var next = 0
+    private var received: [String] = []
 
     init(writes: [String]) {
-        self.writes = writes
-        self.listener = try! NWListener(using: .tcp)
+        answers = [.stream(writes)]
+        listener = try! NWListener(using: .tcp)
+    }
+
+    init(answers: [SSEAnswer]) {
+        self.answers = answers
+        listener = try! NWListener(using: .tcp)
+    }
+
+    /// The header block of every request that reached this fixture, in arrival order — the only way to see
+    /// which credential the client put on which attempt.
+    var recorded: [String] {
+        queue.sync { received }
     }
 
     /// Blocks until the port is bound, then hands it back.
@@ -247,20 +397,22 @@ private final class SSELoopback: @unchecked Sendable {
 
     private func accept(_ connection: NWConnection) {
         connection.start(queue: queue)
-        readRequest(connection, buffer: Data())
+        let answer = answers[min(next, answers.count - 1)]
+        next += 1
+        readRequest(connection, buffer: Data(), answering: answer)
     }
 
     /// Answers only once the whole request has landed. A server that never reads it leaves the client's
     /// upload unacknowledged, and the closing reset then reaches the reader as a -1005 instead of a framing
     /// outcome — which is what this fixture used to make flaky.
-    private func readRequest(_ connection: NWConnection, buffer: Data) {
+    private func readRequest(_ connection: NWConnection, buffer: Data, answering answer: SSEAnswer) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 8192) { [weak self] data, _, isComplete, error in
             guard let self, error == nil else { return }
             var received = buffer
             received.append(data ?? Data())
             guard let separator = received.range(of: Data("\r\n\r\n".utf8)) else {
-                if isComplete { self.send([self.head] + self.writes, to: connection) } else {
-                    self.readRequest(connection, buffer: received)
+                if isComplete { self.send(answer, to: connection) } else {
+                    self.readRequest(connection, buffer: received, answering: answer)
                 }
                 return
             }
@@ -269,10 +421,15 @@ private final class SSELoopback: @unchecked Sendable {
                 .map { headers[$0.upperBound...] } ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
             guard received.count - separator.upperBound >= declared else {
-                return self.readRequest(connection, buffer: received)
+                return self.readRequest(connection, buffer: received, answering: answer)
             }
-            self.send([self.head] + self.writes, to: connection)
+            self.received.append(headers)
+            self.send(answer, to: connection)
         }
+    }
+
+    private func send(_ answer: SSEAnswer, to connection: NWConnection) {
+        send([answer.head] + answer.writes, to: connection)
     }
 
     /// One write at a time: the next goes out only after the socket took the previous, which is what lets a

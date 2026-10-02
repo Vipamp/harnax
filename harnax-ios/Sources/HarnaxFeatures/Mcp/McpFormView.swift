@@ -9,7 +9,10 @@ import HarnaxKit
 /// while `harnax.mcp.stdio-enabled` is off (`McpStdioPolicy.kt:20-31`) — and the sheet says why rather than
 /// hiding the option silently. And an edit sends only the fields the operator touched, because the update
 /// body reads an absent key as "keep the column" (`McpServerServiceImpl.kt:174-252`).
-struct McpFormView: View {
+///
+/// Public so the DEBUG walkthrough can frame the sheet from a launch argument — the simulator takes no input,
+/// so a sheet the harness cannot name is a sheet nobody can review (`App/HarnaxDebugScreens.swift`).
+public struct McpFormView: View {
     @StateObject private var vm: McpFormViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var issues: [McpFormIssue] = []
@@ -17,7 +20,7 @@ struct McpFormView: View {
     @State private var showsURLConfirmation = false
     private let onSaved: () async -> Void
 
-    init(
+    public init(
         mcp: any McpCataloging,
         mode: McpFormViewModel.Mode,
         account: AccountSnapshot? = nil,
@@ -29,7 +32,7 @@ struct McpFormView: View {
 
     private var isCreate: Bool { vm.mode == .create }
 
-    var body: some View {
+    public var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {

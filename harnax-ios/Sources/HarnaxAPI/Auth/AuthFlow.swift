@@ -8,6 +8,12 @@ public actor AuthFlow: AuthFlowing {
     private let session: AuthSession
     private let configs: ServerConfigStore
     private var backoff = LoginBackoff()
+    /// Bumped by every local sign-out. This actor re-enters itself at each of its own `await` points, so
+    /// `logout()` runs in the middle of a `profile()` or `switchTenant(to:)` that is parked on its request —
+    /// and a reply that lands after the session ended must not hand the keychain back a bearer or an identity
+    /// card the user just threw away. Reads take this number before they go out and drop their write when it
+    /// has moved on.
+    private var sessionGeneration = 0
     private let now: @Sendable () -> Date
 
     public init(
@@ -22,8 +28,9 @@ public actor AuthFlow: AuthFlowing {
         self.now = now
     }
 
-    /// Reads the keychain only, so launch never waits on the network. The identity card refreshes itself
-    /// through `profile()` once it is on screen.
+    /// Reads the keychain only, so launch never waits on the network. The root then reconciles what it read
+    /// through `profile()` (`AppModel.restore()` and `AppModel.answerGate()`), which is where `DESIGN.md:125`
+    /// puts the identity verdict.
     ///
     /// An empty keychain and a keychain that refused to be read are different answers, and only the first is
     /// a verdict: `KeychainStore` hands back `nil` for `errSecItemNotFound` and throws for every other
@@ -74,21 +81,36 @@ public actor AuthFlow: AuthFlowing {
         return AccountSnapshot.live(from: response)
     }
 
+    /// Ends the session on both sides.
+    ///
+    /// Order is the whole method: the revoke has to go out while the bearer is still in the keychain, because
+    /// that header is the only thing the server reads (`AuthServiceImpl.kt:264-277`). What it answers changes
+    /// nothing locally — a 401 says the token was already dead, an offline says the network is — so the local
+    /// half is cleared whatever happens to the request. Asking twice is free: the second call finds no bearer
+    /// and sends nothing, which is what keeps the 401 handlers below from turning one sign-out into a chain.
     public func logout() async {
+        sessionGeneration += 1
+        if (try? await session.isSignedIn()) ?? false {
+            _ = await client.send(EmptyResponse.self, AdminEndpoint.logout)
+        }
         try? await session.signOut()
     }
 
-    /// A dead session is settled here rather than left to the screen: once the backend says 401 for a
-    /// profile read, the credentials have no future.
+    /// A dead session is settled here rather than left to the screen: once the backend says 401 for a profile
+    /// read, the credentials have no future. The mirror rule is that a reply which lands after the session has
+    /// already been ended — by this handler, by the sign-out button, by a moved server address — writes nothing
+    /// back and does not sign out a second time.
     public func profile() async -> Result<MeInfo, APIError> {
+        let generation = sessionGeneration
         let response = await client.send(MeInfo.self, AdminEndpoint.profile)
         switch response {
         case let .success(me):
+            guard generation == sessionGeneration else { return .success(me) }
             let cached = (try? await session.cachedAccount()) ?? nil
             try? await session.cache(account: AccountSnapshot.live(from: me).mergingWith(cached))
             return .success(me)
         case let .failure(error):
-            if case .unauthorized = error { await logout() }
+            if case .unauthorized = error, generation == sessionGeneration { await logout() }
             return .failure(error)
         }
     }
@@ -112,9 +134,13 @@ public actor AuthFlow: AuthFlowing {
         guard let endpoint = try? AdminEndpoint.switchTenant(SwitchTenantRequest(tenantId: id)) else {
             return .failure(.decoding)
         }
+        let generation = sessionGeneration
         let response = await client.send(RefreshedToken.self, endpoint)
         switch response {
         case let .success(token):
+            // A token for a session the user ended while this was in flight has nobody to hand it to, and
+            // storing it would put that session back.
+            guard generation == sessionGeneration else { return .failure(.unauthorized) }
             let previous: AccountSnapshot?
             do {
                 previous = try await session.cachedAccount()
@@ -139,7 +165,7 @@ public actor AuthFlow: AuthFlowing {
             }
             return .success(())
         case let .failure(error):
-            if case .unauthorized = error { await logout() }
+            if case .unauthorized = error, generation == sessionGeneration { await logout() }
             return .failure(error)
         }
     }
@@ -185,6 +211,9 @@ public actor AuthFlow: AuthFlowing {
         backoff = LoginBackoff()
         guard stored != serverConfiguration else { return .success(()) }
         guard (try? await session.isSignedIn()) ?? false else { return .success(()) }
+        // Marked before the clear, because the clear itself suspends: a profile read still parked on the old
+        // stack would otherwise land in that gap and cache an identity card for a session that is going away.
+        sessionGeneration += 1
         do {
             try await session.signOut()
         } catch {
@@ -192,17 +221,18 @@ public actor AuthFlow: AuthFlowing {
             // stack the app has moved to must not be left reachable with the old host's bearer.
             return .failure(.invalidServerConfig(String(describing: error)))
         }
-        NotificationCenter.default.post(name: .harnaxCredentialsDropped, object: nil)
         return .success(())
     }
 }
 
 extension Notification.Name {
-    /// The credentials left the keychain while a screen was still showing them, posted by the one call that
-    /// ends a session on the user's behalf rather than on the server's word: moving the server address.
+    /// The credentials left the keychain while a screen was still showing them.
     ///
-    /// The root owns the only copy of the truth the tab bar renders, and it reads that copy on demand, so a
-    /// session dropped from a pushed sheet has to announce itself or the shell keeps greeting an account that
-    /// is gone. `AuthFlow.save(serverConfiguration:)` is the producer and `AppModel` the subscriber.
+    /// `AuthSession.signOut()` is the only place that removes them and the only producer of this signal, which
+    /// is why the four callers that end a session — the sign-out button, a moved server address, and the two
+    /// 401 settles in `APIClient` — all reach the root the same way. The root owns the only copy of the truth
+    /// the tab bar renders, and it reads that copy on demand, so a session ended from a pushed sheet or from a
+    /// transport reply has to announce itself or the shell keeps greeting an account that is gone.
+    /// `AppModel` is the subscriber.
     public static let harnaxCredentialsDropped = Notification.Name("com.agnetix.harnax.ios.credentials-dropped")
 }

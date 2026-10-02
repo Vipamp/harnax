@@ -93,4 +93,28 @@ final class AuthPayloadTests: XCTestCase {
         XCTAssertEqual(moved.email, account.email)
         XCTAssertEqual(moved.isAdministrator, account.isAdministrator)
     }
+
+    /// The reconcile's tenant rule, and the case the stale comments in `Facades.swift` denied: `me` answers no
+    /// tenant *name* but does answer a tenant id (`AuthController.kt:121` —
+    /// `TenantContext.getTenantId() ?: currentUser.tenantId`). So a card that carried the old name over would
+    /// label the new tenant with the workspace the session has left — a name and an id that disagree, with the
+    /// id the one every later `X-Tenant-ID` is read from.
+    func testAReconciledCardDropsANameItDidNotReadForTheTenantItTook() {
+        let cached = AccountSnapshot(username: "admin", tenantID: 1, tenantName: "Default")
+        let moved = AccountSnapshot(username: "admin", tenantID: 2).mergingWith(cached)
+
+        XCTAssertEqual(moved.tenantID, 2, "the server's tenant wins")
+        XCTAssertNil(moved.tenantName, "and the old workspace's label goes with the old workspace")
+    }
+
+    /// The ordinary launch, where `me` either repeats the current tenant or omits the key entirely
+    /// (`testMeInfoToleratesAbsentTenantIdKey`): nothing moved, so the label the login response filled in is
+    /// still true and has to survive — an empty name here is an identity card that lost its tenant line.
+    func testAReconciledCardKeepsTheTenantNameWhenTheTenantDidNotMove() {
+        let cached = AccountSnapshot(username: "admin", tenantID: 1, tenantName: "Default")
+
+        XCTAssertEqual(AccountSnapshot(username: "admin", tenantID: 1).mergingWith(cached).tenantName, "Default")
+        XCTAssertEqual(AccountSnapshot(username: "admin", tenantID: nil).mergingWith(cached).tenantName, "Default")
+        XCTAssertEqual(AccountSnapshot(username: "admin", tenantID: nil).mergingWith(cached).tenantID, 1)
+    }
 }

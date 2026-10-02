@@ -40,11 +40,18 @@ public struct HXEnvParamsChip: View {
 
 /// Every declared parameter of one owner: name, purpose, the two flags, and the default when there is one.
 /// Sensitive values never reach this sheet in clear — the backend masks them.
-struct HXEnvParamsSheet: View {
+///
+/// Public so the DEBUG walkthrough can frame the sheet from a launch argument — the simulator takes no input,
+/// so a sheet the harness cannot name is a sheet nobody can review (`App/HarnaxDebugScreens.swift`).
+public struct HXEnvParamsSheet: View {
     let entries: [EnvParamEntry]
     @Environment(\.dismiss) private var dismiss
 
-    var body: some View {
+    public init(entries: [EnvParamEntry]) {
+        self.entries = entries
+    }
+
+    public var body: some View {
         NavigationStack {
             List {
                 ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in

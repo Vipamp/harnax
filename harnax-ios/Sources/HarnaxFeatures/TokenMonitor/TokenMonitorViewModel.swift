@@ -53,6 +53,59 @@ public final class TokenMonitorViewModel: ObservableObject {
         case failed(String)
     }
 
+    /// A chart with a legend the reader can switch entries off — the console's legend click, which ECharts
+    /// gives every chart on the page for free (`harnax-webui/src/pages/token-monitor/index.tsx:243-256`,
+    /// `:601-611`).
+    ///
+    /// One case per chart rather than one per `Block`, because the three donuts share the aggregation read: an
+    /// id keyed by position can name the first model and the first session alike, and muting the pie you are
+    /// reading must never mute the pie you are not.
+    public enum LegendChart: String, CaseIterable, Identifiable, Sendable {
+        case modelPie, agentPie, sessionPie
+        case overallTrend, modelTrend, agentTrend, sessionTrend
+
+        public var id: String { rawValue }
+
+        /// The read whose reply feeds this chart. Reloading it retires the entries switched off, which is the
+        /// honest outcome: an id carries the row's position in the previous reply, and after a new window the row
+        /// at that position is a different entity.
+        var block: Block {
+            switch self {
+            case .modelPie, .agentPie, .sessionPie: return .aggregate
+            case .overallTrend: return .trend
+            case .modelTrend: return .modelTrend
+            case .agentTrend: return .agentTrend
+            case .sessionTrend: return .sessionTrend
+            }
+        }
+    }
+
+    /// How one trend block is read: the line, or the numbers the line is drawn from.
+    ///
+    /// A choice per block rather than one for the page, because the four blocks answer four different questions
+    /// and the reader who wants the overall trend as numbers may still want the per-model split as a shape. The
+    /// default is the chart: the accessibility rule (`DESIGN.md` §10) asks that the numeric reading exist, not
+    /// that it replace what a sighted reader already reads.
+    public enum TrendForm: String, CaseIterable, Identifiable, Equatable, Sendable {
+        case chart
+        case list
+
+        public var id: String { rawValue }
+
+        public var titleKey: String {
+            switch self {
+            case .chart: return "monitor.trend.form.chart"
+            case .list: return "monitor.trend.form.list"
+            }
+        }
+
+        /// Segment index = the case's place in `allCases`, clamped. `HXSegmented` speaks in integer ids, and an
+        /// out-of-range one is a control that promised a form the enum does not have.
+        public static func at(_ index: Int) -> TrendForm {
+            allCases[min(max(index, 0), allCases.count - 1)]
+        }
+    }
+
     @Published public private(set) var phase: Phase = .loading
     @Published public private(set) var states: [Block: BlockState] = [:]
 
@@ -65,6 +118,13 @@ public final class TokenMonitorViewModel: ObservableObject {
     @Published public private(set) var modelSeries: [TokenTrendSeries] = []
     @Published public private(set) var agentSeries: [TokenTrendSeries] = []
     @Published public private(set) var sessionSeries: [TokenTrendSeries] = []
+
+    /// The entries the reader has switched off, one set per chart.
+    ///
+    /// Local and never sent: the console's legend selection is component state too, and none of the five routes
+    /// takes a parameter that could say "every model except this one". A hidden row is still a row the server
+    /// counted, which is why the shares of the rows that stay on screen keep their denominator.
+    @Published public private(set) var hiddenIDs: [LegendChart: Set<String>] = [:]
 
     @Published public var range: TokenWindowPreset = .default {
         // Both ends of the window move, so all five reads are stale — the console reloads all five for a new
@@ -121,6 +181,182 @@ public final class TokenMonitorViewModel: ObservableObject {
         states[block] ?? .loading
     }
 
+    // MARK: - interactive legend
+
+    public func isHidden(_ id: String, in chart: LegendChart) -> Bool {
+        hiddenIDs[chart]?.contains(id) ?? false
+    }
+
+    /// Switches one legend entry on or off. The id is the row's own identity in the reply it came from — a
+    /// slice's is index-qualified so two rows with no name stay two entries, a series' is the dimension key.
+    public func toggleLegend(_ id: String, in chart: LegendChart) {
+        if hiddenIDs[chart]?.contains(id) == true {
+            hiddenIDs[chart]?.remove(id)
+        } else {
+            hiddenIDs[chart, default: []].insert(id)
+            if drilledIDs[chart] == id { drilledIDs[chart] = nil }
+        }
+    }
+
+    /// What the donut draws. The legend list still carries every row, hidden ones included, so an entry can
+    /// always be switched back on — and a hidden slice takes its share of the ring with it while the percentage
+    /// the legend prints next to the others keeps the window as its denominator, because those numbers come from
+    /// `overall` and not from the rows on screen (`TokenMeasure.share(of:against:)`).
+    public func visibleSlices(_ slices: [TokenShareSlice], in chart: LegendChart) -> [TokenShareSlice] {
+        guard let hidden = hiddenIDs[chart], !hidden.isEmpty else { return slices }
+        return slices.filter { !hidden.contains($0.id) }
+    }
+
+    /// What a line chart draws. Dropping a series also drops it from the y-axis domain, which is the point of
+    /// switching one off: the console's chart rescales the same way.
+    public func visibleSeries(_ series: [TokenTrendSeries], in chart: LegendChart) -> [TokenTrendSeries] {
+        guard let hidden = hiddenIDs[chart], !hidden.isEmpty else { return series }
+        return series.filter { !hidden.contains($0.id) }
+    }
+
+    // MARK: - drill-down
+
+    /// The one ring row a tap opened, per chart.
+    @Published public private(set) var drilledIDs: [LegendChart: String] = [:]
+
+    /// The one bucket a line chart is reading out, per chart.
+    @Published public private(set) var selectedBuckets: [LegendChart: String] = [:]
+
+    /// Which row a tap on the ring landed on.
+    ///
+    /// `chartAngleSelection` hands back the touched position as a running total of the sector values, so the row
+    /// is the one whose span on the ring holds it. Only the rows the ring draws are walked, and a row with
+    /// nothing to plot takes no angle a finger could hit.
+    public func slice(atAngle angle: Double, in chart: LegendChart) -> TokenShareSlice? {
+        guard angle >= 0 else { return nil }
+        var running = 0.0
+        for slice in visibleSlices(slices(for: chart), in: chart) {
+            // Each wedge's span, closed at both ends the way the framework reads its own selection value: the
+            // number is a distance round the ring, and a touch on a wedge's edge — including the last wedge's
+            // far edge, which is the full total — is that wedge. A row with nothing to plot spans no distance,
+            // so the angle it would have occupied belongs to the next one drawn.
+            if slice.plot > 0, (running...running + slice.plot).contains(angle) { return slice }
+            running += slice.plot
+        }
+        return nil
+    }
+
+    /// Opens a row's own figures, or closes it again when the same wedge is tapped twice.
+    public func drill(_ slice: TokenShareSlice, in chart: LegendChart) {
+        drilledIDs[chart] = drilledIDs[chart] == slice.id ? nil : slice.id
+    }
+
+    public func drilledSlice(in chart: LegendChart) -> TokenShareSlice? {
+        guard let id = drilledIDs[chart] else { return nil }
+        return slices(for: chart).first { $0.id == id }
+    }
+
+    /// Moves the readout to a bucket, or removes it when the tap lands where it already sits.
+    public func pickBucket(_ timePoint: String, in chart: LegendChart) {
+        selectedBuckets[chart] = selectedBuckets[chart] == timePoint ? nil : timePoint
+    }
+
+    /// The lines' numbers at the bucket being read out — the handset's version of the console's hover tooltip
+    /// (`harnax-webui/src/pages/token-monitor/index.tsx:642-650`), which has no finger equivalent on a phone.
+    public func readings(in chart: LegendChart) -> [TokenBucketReading] {
+        guard let bucket = selectedBuckets[chart] else { return [] }
+        return visibleSeries(series(for: chart), in: chart).compactMap { item in
+            guard let point = item.points.first(where: { $0.timePoint == bucket }) else { return nil }
+            return TokenBucketReading(
+                id: item.id, slot: item.slot, name: item.legendText, value: point.formatted
+            )
+        }
+    }
+
+    /// The bucket being read out on this chart, in the axis text the screen already shows for it.
+    public func readoutBucket(in chart: LegendChart) -> String? {
+        guard let bucket = selectedBuckets[chart] else { return nil }
+        for item in series(for: chart) {
+            if let point = item.points.first(where: { $0.timePoint == bucket }) { return point.label }
+        }
+        return bucket
+    }
+
+    // MARK: - the line, or the numbers behind it
+
+    /// The reading form of every trend block the reader has moved off the default, one entry per chart.
+    ///
+    /// Keyed by `LegendChart` exactly like `hiddenIDs` and `selectedBuckets` — the four trend cases of that enum
+    /// are the four blocks that draw a line, one each — and held here rather than as `@State` on the card,
+    /// because the card is rebuilt from the block's state on every reply and because the choice has to be
+    /// assertable without SwiftUI. Nothing about a form names a row of a reply, so unlike the toggles above it
+    /// survives a reload (see `load(blocks:)`).
+    @Published public private(set) var trendForms: [LegendChart: TrendForm] = [:]
+
+    /// What this block draws. An absent entry is the chart, which is why the map stays sparse instead of being
+    /// seeded with four cases at init.
+    public func form(for chart: LegendChart) -> TrendForm {
+        trendForms[chart] ?? .chart
+    }
+
+    /// Choosing a form costs no request: both readings come out of the rows already in hand, the same as the
+    /// legend toggles and the measure filter.
+    public func setForm(_ form: TrendForm, for chart: LegendChart) {
+        trendForms[chart] = form
+    }
+
+    /// Every bucket of a trend block as a row of numbers — the reading that does not need the line to be seen
+    /// (`DESIGN.md` §10).
+    ///
+    /// It says what the chart draws and nothing else: only the series the legend leaves visible contribute, a
+    /// number is the plotted `point.value` through `TokenMeasure.formatted(value:)` (the same call the chart's
+    /// own y-axis labels make, so a list value and the height it came from cannot disagree), a bucket label is
+    /// the point's own `label` rather than a date this side re-reads, and the rows run in bucket order because
+    /// the server's `yyyy-MM-dd HH:mm:ss` text orders itself as text. A bucket one line has no point in — a
+    /// dimension that was quiet that day — carries no cell for that line, just as the line skips that point.
+    public func trendListRows(in chart: LegendChart) -> [TokenTrendListRow] {
+        struct Held {
+            let label: String
+            var readings: [TokenBucketReading]
+        }
+        var buckets: [String: Held] = [:]
+        for item in visibleSeries(series(for: chart), in: chart) {
+            for point in item.points {
+                // The point's own id rather than the series': one bucket row holds several cells, and two cells
+                // that shared an id would be a list SwiftUI cannot key.
+                let reading = TokenBucketReading(
+                    id: point.id,
+                    slot: item.slot,
+                    name: item.legendText,
+                    value: measure.formatted(value: point.value)
+                )
+                if let held = buckets[point.timePoint] {
+                    buckets[point.timePoint] = Held(label: held.label, readings: held.readings + [reading])
+                } else {
+                    buckets[point.timePoint] = Held(label: point.label, readings: [reading])
+                }
+            }
+        }
+        return buckets.keys.sorted().compactMap { timePoint in
+            guard let held = buckets[timePoint] else { return nil }
+            return TokenTrendListRow(id: timePoint, label: held.label, values: held.readings)
+        }
+    }
+
+    private func slices(for chart: LegendChart) -> [TokenShareSlice] {
+        switch chart {
+        case .modelPie: return modelSlices
+        case .agentPie: return agentSlices
+        case .sessionPie: return sessionSlices
+        case .overallTrend, .modelTrend, .agentTrend, .sessionTrend: return []
+        }
+    }
+
+    private func series(for chart: LegendChart) -> [TokenTrendSeries] {
+        switch chart {
+        case .modelPie, .agentPie, .sessionPie: return []
+        case .overallTrend: return overallSeries
+        case .modelTrend: return modelSeries
+        case .agentTrend: return agentSeries
+        case .sessionTrend: return sessionSeries
+        }
+    }
+
     /// The window the next five requests will name, in the text the routes parse.
     public var window: (start: String, end: String) {
         let end = now()
@@ -154,6 +390,14 @@ public final class TokenMonitorViewModel: ObservableObject {
         // seven numbers would then describe a window no chart matches.
         let window = self.window
         for block in blocks { states[block] = .loading }
+        // A switched-off id names a row's position in the reply that is about to be replaced, so the next reply's
+        // row at that position could be a different entity; the toggle goes with the data it was read from.
+        // The reading form is not: it names no row, only how the block is drawn, so a re-asked window keeps it.
+        for chart in LegendChart.allCases where blocks.contains(chart.block) {
+            hiddenIDs[chart] = []
+            drilledIDs[chart] = nil
+            selectedBuckets[chart] = nil
+        }
         if blocks.contains(.aggregate) {
             cards = []
             modelSlices = []
@@ -364,7 +608,8 @@ public final class TokenMonitorViewModel: ObservableObject {
                 value: measure.formatted(of: item.row),
                 plot: measure.value(of: item.row),
                 share: measure.share(of: item.row, against: overall),
-                slot: TokenChartPalette.slot(forIndex: offset)
+                slot: TokenChartPalette.slot(forIndex: offset),
+                breakdown: TokenRowBreakdown(row: item.row)
             )
         }
     }

@@ -33,7 +33,7 @@ public struct McpListView: View {
             .searchable(text: $vm.keyword, prompt: Text(verbatim: hx("mcp.search")))
             .toolbar {
                 ToolbarItem(placement: .primaryAction) { createButton }
-                ToolbarItem(placement: .navigation) { filterMenu }
+                ToolbarItem(placement: .primaryAction) { filterMenu }
             }
             .task {
                 if vm.phase == .loading { await vm.refresh() }
@@ -51,17 +51,16 @@ public struct McpListView: View {
     }
 
     private var createButton: some View {
-        Button {
-            editor = McpFormTarget(mode: .create)
-        } label: {
-            HXText("mcp.create")
-        }
+        HXPlusButton(titleKey: "mcp.create") { editor = McpFormTarget(mode: .create) }
     }
 
     /// Status and transport are two menus in one because they narrow different columns, and a single menu
     /// of six entries would not show which of the two is set.
     private var filterMenu: some View {
-        Menu {
+        HXFilterMenu(
+            isFiltering: isFiltering,
+            accessibilityLabel: hx("state.filter.status") + ", " + hx("mcp.type.filter")
+        ) {
             Picker(selection: $vm.filter) {
                 ForEach(StatusFilter.allCases) { option in
                     HXText(option.titleKey).tag(option)
@@ -76,10 +75,6 @@ public struct McpListView: View {
             } label: {
                 HXText("mcp.type.filter")
             }
-        } label: {
-            Image(systemName: isFiltering
-                ? "line.3.horizontal.decrease.circle.fill"
-                : "line.3.horizontal.decrease.circle")
         }
     }
 
@@ -293,6 +288,7 @@ struct McpRecordCard: View {
                 .frame(width: 30, height: 30)
                 .background(Color.hx(.surfaceAlt), in: Circle())
         }
+        .accessibilityLabel(hx("state.action.more"))
     }
 }
 
@@ -300,7 +296,8 @@ struct McpRecordCard: View {
 ///
 /// The count changes the sentence and not the outcome: the backend cascades the bindings away
 /// (`McpServerServiceImpl.kt:320-337`), so the words here name what is about to be unbound rather than
-/// promising a refusal.
+/// promising a refusal — and they name it, in the sense of listing the dependents by name, which is what
+/// `McpDeleteCopy` is for.
 extension View {
     fileprivate func deleteConfirmation(vm: McpListViewModel) -> some View {
         confirmationDialog(
@@ -319,9 +316,7 @@ extension View {
             }
             Button(role: .cancel) {} label: { HXText("common.cancel") }
         } message: { target in
-            Text(verbatim: target.boundAgents.isEmpty
-                ? hx("mcp.delete.clear")
-                : hx("mcp.delete.bound", target.boundAgents.count))
+            Text(verbatim: McpDeleteCopy.message(for: target.boundAgents))
         }
     }
 }

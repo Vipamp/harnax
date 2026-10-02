@@ -13,13 +13,16 @@
 "state.error.hint" = "Check your connection, then try again.";
 "state.filter.all" = "All";
 "state.filter.status" = "Status filter";
+"state.filter" = "Filter";
 "state.badge.enabled" = "Enabled";
 "state.badge.disabled" = "Stopped";
 "state.badge.shared" = "Public";
 "state.action.enable" = "Enable";
 "state.action.disable" = "Disable";
 "state.action.delete" = "Delete";
+"state.action.edit" = "Edit";
 "state.action.refresh" = "Refresh sessions";
+"state.action.more" = "More actions";
 "state.delete.checking" = "Checking…";
 "state.delete.confirm" = "Delete %@";
 
@@ -28,6 +31,7 @@
 "error.timeout" = "The request timed out.";
 "error.unauthorized" = "Your session has expired. Please sign in again.";
 "error.business" = "The server rejected this request.";
+"error.objectStoreDisabled" = "This server has no object storage enabled, so its artifacts cannot be downloaded.";
 "error.unpackable" = "The server returned an empty response.";
 "error.decoding" = "The server reply could not be read.";
 "error.serverConfig" = "That server address is not valid.";
@@ -38,7 +42,6 @@
 "tab.chat" = "Chats";
 "tab.agents" = "Agents";
 "tab.context" = "Context";
-"tab.system" = "System";
 "tab.me" = "Me";
 
 /* ---- login ---- */
@@ -85,6 +88,93 @@
 "agent.binding.unnamed" = "Unnamed";
 "agent.binding.confirm" = "Needs confirmation";
 
+/* ---- agent wizard ---- */
+"agent.wizard.title.create" = "Create Agent";
+"agent.wizard.title.edit" = "Edit Agent";
+"agent.wizard.step.basic" = "Basic Info";
+"agent.wizard.step.tool" = "Tool Config";
+"agent.wizard.step.mcp" = "MCP Config";
+"agent.wizard.step.skill" = "Skill Config";
+"agent.wizard.step.cli" = "CLI Config";
+"agent.wizard.model.unnamed" = "Unnamed model";
+"agent.wizard.model.unknownProvider" = "Unknown provider";
+"agent.wizard.cli.unnamed" = "CLI #%d";
+"agent.wizard.error.name" = "Please enter agent name";
+"agent.wizard.error.name.long" = "The agent name cannot exceed 100 characters";
+"agent.wizard.error.detail" = "Please enter description";
+"agent.wizard.error.prompt" = "Please enter system prompt";
+"agent.wizard.error.model" = "Please select a model";
+"agent.wizard.error.tool" = "Please select a tool or remove the empty row";
+"agent.wizard.error.tool.duplicate" = "The same tool cannot be added twice";
+"agent.wizard.error.mcp" = "Please select an MCP service or remove the empty row";
+"agent.wizard.error.mcp.duplicate" = "The same MCP service cannot be added twice";
+"agent.wizard.error.skill" = "Please select a skill or remove the empty row";
+"agent.wizard.error.skill.duplicate" = "The same skill cannot be added twice";
+"agent.wizard.error.skill.nameTaken" = "Skill %@ is already added";
+"agent.wizard.error.env.missing" = "%@ requires the env param %@";
+
+/* ---- agent wizard, step 1 ---- */
+"agent.wizard.name.placeholder" = "Please enter agent name";
+"agent.wizard.description.placeholder" = "Please enter description";
+"agent.wizard.prompt.placeholder" = "Please enter system prompt, supports Markdown syntax";
+"agent.wizard.model" = "Model";
+"agent.wizard.model.placeholder" = "Please select model";
+"agent.wizard.model.search" = "Search models";
+"agent.wizard.model.none" = "No models";
+"agent.wizard.owner" = "Owner";
+"agent.wizard.owner.auto" = "Auto-filled with current user";
+"agent.wizard.isPublic" = "Is Public";
+"agent.wizard.public.hint" = "Other users can view this agent after making it public";
+"agent.wizard.noPermission" = "You do not have permission to modify this setting";
+
+/* ---- agent wizard, step 2: tools ---- */
+"agent.wizard.tool.hint" = "Configure tools (optional, can be skipped)";
+"agent.wizard.tool.add" = "Add Tool";
+"agent.wizard.tool.select" = "Select Tool";
+"agent.wizard.tool.search" = "Search tool name or description";
+"agent.wizard.tool.none" = "No tool to choose";
+"agent.wizard.tool.empty" = "No tool configuration";
+"agent.wizard.tool.needConfirm" = "Need confirm";
+"agent.wizard.tool.unsupported" = "Current model does not support tool calling. Switch to a supported model or skip this step";
+
+/* ---- agent wizard, step 3: MCP ---- */
+"agent.wizard.mcp.hint" = "Configure MCP services (optional, can be skipped)";
+"agent.wizard.mcp.add" = "Add MCP";
+"agent.wizard.mcp.select" = "Select MCP service";
+"agent.wizard.mcp.search" = "Search MCP services";
+"agent.wizard.mcp.none" = "No MCP service to choose";
+"agent.wizard.mcp.empty" = "No MCP configuration";
+"agent.wizard.mcp.unsupported" = "Current model does not support MCP services. Switch to a supported model or skip this step";
+
+/* ---- agent wizard, step 4: skills ---- */
+"agent.wizard.skill.hint" = "Configure skills (optional, can be skipped)";
+"agent.wizard.skill.add" = "Add Skill";
+"agent.wizard.skill.select" = "Select skill";
+"agent.wizard.skill.search" = "Search skill name";
+"agent.wizard.skill.none" = "No skill to choose";
+"agent.wizard.skill.empty" = "No skill configuration";
+"agent.wizard.skill.repository" = "From repository %@";
+"agent.wizard.repository.select" = "Select skill repository";
+"agent.wizard.repository.search" = "Search skill repositories";
+"agent.wizard.repository.empty" = "No skill repository yet";
+
+/* ---- agent wizard, step 5: CLI ---- */
+"agent.wizard.cli.hint" = "Select CLI tools (optional). They are installed into the sandbox for the session, and the skill each package ships loads at runtime.";
+"agent.wizard.cli.add" = "Add CLI";
+"agent.wizard.cli.select" = "Select CLI tools";
+"agent.wizard.cli.search" = "Search CLI name";
+"agent.wizard.cli.none" = "No CLI package to choose";
+"agent.wizard.cli.empty" = "No CLI configuration";
+"agent.wizard.cli.skills" = "Skills";
+"agent.wizard.cli.noEnvParams" = "This CLI needs no environment variables";
+
+/* ---- agent wizard, footer ---- */
+"agent.wizard.previous" = "Previous";
+"agent.wizard.next" = "Next";
+"agent.wizard.skip" = "Skip";
+"agent.wizard.finish" = "Finish";
+"agent.wizard.saving" = "Saving…";
+
 /* ---- teams ---- */
 "team.search" = "Search teams";
 "team.empty" = "No teams yet";
@@ -102,6 +192,7 @@
 "team.delete.clear" = "Nothing binds this team, so the delete will go through.";
 "team.delete.blocked" = "%d session(s) still bind this team, so deleting it will be refused. Delete those sessions first.";
 "team.delete.loadFailed" = "Failed to load the related list, please retry";
+"team.create" = "New team";
 
 /* ---- related-session refresh ---- */
 "session.title" = "Refresh related sessions";
@@ -165,6 +256,7 @@
 "me.theme.dark" = "Dark";
 "me.language" = "Language";
 "me.language.followSystem" = "Follow Device Language";
+"me.language.current" = "Current";
 "me.server.address" = "Server address";
 "me.logout" = "Sign out";
 "me.logout.confirm" = "Sign out on this device?";
@@ -294,6 +386,52 @@
 "mcp.oauth.hint" = "This grant belongs to your account only; every other user authorizes for themselves.";
 "mcp.oauth.badUrl" = "The server returned no authorization URL. Try again.";
 "mcp.oauth.cancelled" = "Authorization cancelled.";
+"mcp.oauth.noRedirect" = "This authorization request carries no redirect address, so there is nothing for this app to wait for. Authorize in the browser instead.";
+"mcp.oauth.inAppTitle" = "Authorization";
+"mcp.oauth.exchanging" = "Finishing the authorization…";
+"mcp.oauth.action.authorizeInApp" = "Authorize here";
+
+/* ---- MCP: OAuth setup ---- */
+"mcp.oauth.setup.section" = "Authorization server";
+"mcp.oauth.setup.discover" = "Run discovery";
+"mcp.oauth.setup.discovering" = "Discovering…";
+"mcp.oauth.setup.running" = "Reaching the authorization server…";
+"mcp.oauth.setup.notDiscovered" = "Endpoints and client status show up after the first discovery run, which reaches out to the authorization server.";
+"mcp.oauth.setup.unknownScopes" = "The authorization server did not advertise:";
+"mcp.oauth.setup.callbackStale" = "This build sends the browser to the address below. The authorization server compares it character by character, so re-save the client with it.";
+"mcp.oauth.setup.issuer" = "Authorization server";
+"mcp.oauth.setup.none" = "None";
+"mcp.oauth.setup.authorizationEndpoint" = "Authorization endpoint";
+"mcp.oauth.setup.tokenEndpoint" = "Token endpoint";
+"mcp.oauth.setup.registrationEndpoint" = "Registration endpoint";
+"mcp.oauth.setup.registrationNone" = "None: clients are pre-registered";
+"mcp.oauth.setup.revocationEndpoint" = "Revocation endpoint";
+"mcp.oauth.setup.revocationNone" = "None: revocation stays local";
+"mcp.oauth.setup.scopesSupported" = "Scopes offered";
+"mcp.oauth.setup.clientId" = "client_id";
+"mcp.oauth.setup.clientNone" = "No client registered yet";
+"mcp.oauth.setup.clientSecret" = "client_secret";
+"mcp.oauth.setup.secretStored" = "Stored";
+"mcp.oauth.setup.secretAbsent" = "Not stored";
+"mcp.oauth.setup.callbackUrl" = "Callback URL";
+"mcp.oauth.setup.register" = "Register client";
+"mcp.oauth.setup.registerDisabled" = "Discovery has to find the authorization server first, or it has to be named on the row.";
+"mcp.oauth.setup.issuerSource.config" = "Filled in by hand";
+"mcp.oauth.setup.issuerSource.protectedResource" = "Protected-resource metadata";
+"mcp.oauth.setup.issuerSource.resourceMetadata" = "401 challenge metadata";
+"mcp.oauth.client.title" = "Register OAuth client";
+"mcp.oauth.client.hint" = "Stored for issuer %@. Dynamic registration is not implemented, so paste the credentials your authorization server already issued.";
+"mcp.oauth.client.id" = "client_id issued at the authorization server";
+"mcp.oauth.client.secretPlaceholder" = "Leave empty to keep the stored secret";
+"mcp.oauth.client.callbackPlaceholder" = "redirect_uri registered at the server — empty keeps the current one";
+"mcp.oauth.client.clearSecret" = "Delete the stored secret";
+"mcp.oauth.client.clearSecretNote" = "The client becomes a public one that relies on PKCE alone.";
+"mcp.oauth.client.saving" = "Saving…";
+"mcp.oauth.client.idRequired" = "client_id is required";
+"mcp.oauth.client.idTooLong" = "client_id cannot exceed %d characters";
+"mcp.oauth.client.callbackTooLong" = "Callback URL cannot exceed %d characters";
+"mcp.oauth.client.callbackNotHttp" = "The callback URL has to be an http(s) address with a host.";
+"mcp.oauth.client.secretBlank" = "Spaces are not a secret — leave this empty to keep what is stored.";
 
 /* ---- MCP: create and edit ---- */
 "mcp.form.section.identity" = "Basic info";
@@ -385,6 +523,8 @@
 "model.noDescription" = "No description";
 "model.unnamed" = "Unnamed model";
 "model.chip.price" = "¥%@ per million tokens";
+"model.filter.minPrice" = "Min price";
+"model.filter.maxPrice" = "Max price";
 "model.thinkingMode" = "Thinking";
 "model.thinking.off" = "No thinking";
 "model.thinking.optional" = "Optional thinking";
@@ -631,6 +771,7 @@
 "chat.row.executor" = "Runs on %@";
 "chat.action.rename" = "Rename";
 "chat.action.clear" = "Clear messages";
+"chat.action.jumpToBottom" = "Back to bottom";
 "chat.delete.title" = "Delete this conversation?";
 "chat.delete.note" = "Its messages and team artifacts go with it, and this cannot be undone.";
 "chat.clear.title" = "Clear this conversation's messages?";
@@ -657,6 +798,9 @@
 "chat.detail.section.teamLead" = "Team Lead";
 "chat.detail.section.skills" = "Skills";
 "chat.detail.section.mcp" = "External Services";
+"chat.detail.section.tools" = "Tools";
+"chat.detail.section.cli" = "CLI packages";
+"chat.detail.section.members" = "Team Members";
 "chat.detail.field.sessionId" = "Session ID";
 "chat.detail.field.title" = "Title";
 "chat.detail.field.sessionDescription" = "Session Description";
@@ -675,6 +819,15 @@
 "chat.detail.prompt.collapse" = "Collapse";
 "chat.detail.updated" = "Updated: %@";
 "chat.detail.badge.unavailable" = "Unavailable";
+"chat.detail.executors.loading" = "Loading the executor's tools and members…";
+"chat.detail.section.config" = "Chat Configuration";
+"chat.detail.field.permissionMode" = "Permission Mode";
+"chat.detail.config.think.unsupported" = "This model does not support deep thinking.";
+"chat.detail.config.think.required" = "This model requires deep thinking, so it cannot be turned off.";
+"chat.detail.config.search.unsupported" = "This model does not support web search.";
+"chat.detail.config.nothing" = "There is nothing to save.";
+"chat.detail.config.saved" = "Configuration saved.";
+"chat.detail.config.readBackFailed" = "The configuration was saved, but the new values could not be read back.";
 "chat.plan.title" = "Execution Plan";
 "chat.plan.current" = "Current Plan";
 "chat.plan.history" = "History Plans";
@@ -805,6 +958,12 @@
 "monitor.trend.agent" = "Trend by agent";
 "monitor.trend.session" = "Trend by session";
 "monitor.trend.empty" = "No data points to plot";
+"monitor.trend.form.chart" = "Chart";
+"monitor.trend.form.list" = "Numbers";
+"monitor.legend.allHidden" = "Every entry on this chart is hidden";
+"monitor.legend.shown" = "Shown";
+"monitor.legend.hidden" = "Hidden";
+"monitor.legend.detail" = "Show details";
 "monitor.series.input" = "Input";
 "monitor.series.output" = "Output";
 "monitor.series.total" = "Total";
@@ -948,8 +1107,12 @@
 "chat.command.done" = "Done";
 "chat.command.failed" = "Command failed";
 "chat.command.unwired" = "The command channel is not wired yet";
+"chat.image.album" = "Photo Library";
+"chat.image.camera" = "Take Photo";
+"chat.image.noCamera" = "This device has no camera; pick from the photo library instead";
 "chat.image.remove" = "Remove image";
 "chat.image.rejected" = "Only pictures can be attached; the rest was ignored";
+"chat.image.source" = "Where does the picture come from?";
 "chat.model.noVision" = "Current model does not support image input";
 "chat.model.noReasoning" = "Current model does not support Deep Thinking";
 "chat.model.noInternet" = "Current model does not support Internet Search";
@@ -988,4 +1151,146 @@
 "chat.confirm.answer.denied" = "Denied";
 "chat.tool.confirmed" = "Confirmed";
 "chat.tool.denied" = "Denied";
+
+/* ---- team wizard ---- */
+"team.wizard.title.create" = "Create Team";
+"team.wizard.title.edit" = "Edit Team";
+"team.wizard.subtitle.create" = "Three steps: the basics, the lead's skills and the member agents. Only the basics are required.";
+"team.wizard.subtitle.edit" = "Team sessions that are already running keep their previous configuration until you refresh them.";
+"team.wizard.step.basic" = "Basic Info";
+"team.wizard.step.skill" = "Lead Skills";
+"team.wizard.step.member" = "Member Agents";
+"team.wizard.name" = "Team Name";
+"team.wizard.name.placeholder" = "Please enter team name";
+"team.wizard.description" = "Description";
+"team.wizard.description.placeholder" = "Please enter description";
+"team.wizard.prompt" = "System Prompt";
+"team.wizard.prompt.placeholder" = "Please enter the lead's system prompt, supports Markdown syntax";
+"team.wizard.model" = "Lead Model";
+"team.wizard.model.placeholder" = "Please select model";
+"team.wizard.model.none" = "No model selected";
+"team.wizard.model.unavailable" = "This model is disabled, deleted or no longer a chat model";
+"team.wizard.model.unknownProvider" = "Unknown provider";
+"team.wizard.model.search" = "Search models";
+"team.wizard.model.empty" = "No chat model to choose";
+"team.wizard.isPublic" = "Is Public";
+"team.wizard.public.hint" = "Other users can view this team after making it public";
+"team.wizard.skill.hint" = "Skills the lead loads itself (optional, can be skipped)";
+"team.wizard.skill.add" = "Add Skill";
+"team.wizard.skill.select" = "Select skill";
+"team.wizard.skill.search" = "Search skill name";
+"team.wizard.skill.none" = "No skill to choose";
+"team.wizard.skill.empty" = "No lead skill yet";
+"team.wizard.skill.repository" = "From repository %@";
+"team.wizard.repository.select" = "Select skill repository";
+"team.wizard.repository.search" = "Search skill repositories";
+"team.wizard.repository.empty" = "No skill repository yet";
+"team.wizard.member.hint" = "The agents this lead can delegate to. At least one is required, and order is kept.";
+"team.wizard.member.add" = "Add Member";
+"team.wizard.member.select" = "Select member agent";
+"team.wizard.member.row" = "Member #%d";
+"team.wizard.member.none" = "No agent to choose";
+"team.wizard.member.search" = "Search agent name";
+"team.wizard.member.delegation" = "Delegation description";
+"team.wizard.member.delegation.placeholder" = "Optional; empty falls back to the agent's own description";
+"team.wizard.previous" = "Previous";
+"team.wizard.next" = "Next";
+"team.wizard.skip" = "Skip";
+"team.wizard.finish" = "Finish";
+"team.wizard.saving" = "Saving…";
+"team.wizard.save.inFlight" = "A save is already running";
+"team.wizard.created" = "Team created";
+"team.wizard.updated" = "Team updated";
+"team.wizard.error.name" = "Please enter team name";
+"team.wizard.error.name.long" = "The team name cannot exceed 100 characters";
+"team.wizard.error.detail" = "Please enter description";
+"team.wizard.error.prompt" = "Please enter the lead's system prompt";
+"team.wizard.error.model" = "Please select a lead model";
+"team.wizard.error.skill" = "Please select a skill or remove the empty row";
+"team.wizard.error.skill.duplicate" = "The same skill cannot be added twice";
+"team.wizard.error.skill.nameTaken" = "Skill %@ is already added";
+"team.wizard.error.member" = "Please select a member agent";
+"team.wizard.error.members.empty" = "At least one member agent is required";
+"team.wizard.error.member.duplicate" = "The same agent cannot be added twice";
+"team.wizard.error.delegation.long" = "The delegation description cannot exceed 500 characters";
+
+/* ---- agent wizard review ---- */
+"agent.wizard.name" = "Agent Name";
+"agent.wizard.description" = "Description";
+"agent.wizard.prompt" = "System Prompt";
+"agent.wizard.model.unavailable" = "model is disabled, deleted or no longer a chat model";
+"agent.wizard.mcp.row" = "MCP #%d";
+"agent.wizard.save.inFlight" = "A save is already running";
+"chat.image.overLimit" = "Pictures too large for one message were not attached.";
+
+/* ---- O7: the channel type the runtime has no adaptor for ---- */
+"channel.type.unsupported" = "Not supported yet";
+"channel.type.unsupported.note" = "No server-side adaptor is registered for this type yet, so a channel started from it only fails at runtime with 'no adaptor registered'. The row can be read but not saved.";
+
+/* ---- KEY-1: my own permanent API key on the account screen ---- */
+"me.section.key" = "Permanent key";
+"me.key.title" = "My permanent API key";
+"me.key.none" = "This account has no permanent key yet. Signing in again creates one.";
+"me.key.readFailed" = "Failed to read your permanent key";
+"me.key.regenerate.title" = "Regenerate your permanent key?";
+"me.key.regenerate.note" = "The new full key is shown once, and every connection still using the old one stops working at once - this app's own copy included, so conversations fail until you sign in again.";
+
+/* ---- SKILL-1 / SKILL-2: the skill repository form ---- */
+"skill.repository.create" = "Create Repository";
+"skill.repository.edit" = "Edit Repository";
+"skill.repository.subtitle.create" = "Configure skill repository connection and parameters";
+"skill.repository.subtitle.edit" = "Modify the source configuration. Reinstall after changing the URL, branch or package name to refresh the skills";
+"skill.repository.name" = "Repository Name";
+"skill.repository.name.placeholder" = "Please enter repository name";
+"skill.repository.type" = "Source Type";
+"skill.repository.url" = "Repository URL";
+"skill.repository.url.placeholder" = "https://github.com/example/skills";
+"skill.repository.branch" = "Branch Name";
+"skill.repository.branch.placeholder" = "main";
+"skill.repository.package" = "Package Name";
+"skill.repository.package.placeholder" = "@harnax/skill-pack";
+"skill.repository.registry" = "Registry";
+"skill.repository.registry.placeholder" = "https://registry.npmmirror.com";
+"skill.repository.version" = "Version";
+"skill.repository.version.placeholder" = "1.0.0";
+"skill.repository.description" = "Description";
+"skill.repository.description.placeholder" = "Please enter repository description";
+"skill.repository.status" = "Status";
+"skill.repository.status.hint" = "A disabled source drops out of the active list, so the skills under it stop being read.";
+"skill.repository.public" = "Public";
+"skill.repository.publicHint" = "Other users can view this repository after making it public";
+"skill.repository.noPermission" = "You do not have permission to modify this setting";
+"skill.repository.updatedTitle" = "Configuration saved";
+"skill.repository.updateHint" = "Changing the URL, branch or package name does not re-fetch anything, click \"Reinstall\" in the list to refresh the persisted skills.";
+"skill.repository.zip.file" = "ZIP File";
+"skill.repository.zip.note" = "The stored archive cannot be replaced from this form; uploading a new ZIP is what refreshes a ZIP source.";
+"skill.repository.needName" = "Please enter repository name";
+"skill.repository.needUrl" = "Please enter Git URL";
+"skill.repository.needPackage" = "Please enter npm package name";
+"skill.repository.nameTooLong" = "Source name length must be between 1-100";
+"skill.repository.versionTooLong" = "Version length cannot exceed 100";
+
+/* ---- BG-1: the background allowance a run holds ---- */
+"chat.background.expired" = "Background time ran out before the answer arrived, so this turn was interrupted. Send it again.";
+
+/* ---- MCP delete: the bound agents get named, not just counted ---- */
+"mcp.delete.boundNamed" = "%d agent(s) bind this server (%@). Deleting it removes those bindings as well.";
+"mcp.delete.nameSeparator" = ", ";
+"mcp.delete.names.more" = ", …";
+
+/* ---- Team member bubble: whose turn this is, and how far it got ---- */
+"chat.team.run.running" = "Working";
+"chat.team.run.awaiting" = "Waiting for confirmation";
+"chat.team.run.done" = "Done";
+"chat.team.run.failed" = "Failed";
+"chat.team.task" = "Task: %@";
+"chat.team.tools.one" = "%d tool";
+"chat.team.tools.other" = "%d tools";
+
+/* ---- ORDER-1: arranging a binding row's place in its list ---- */
+"common.order.up" = "Move up";
+"common.order.down" = "Move down";
+
+/* ---- MCP tool parameter: the description column can be empty, and empty is a statement ---- */
+"mcp.tool.noDescription" = "No description";
 

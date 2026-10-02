@@ -276,6 +276,21 @@ private actor OAuthCatalog: McpCataloging {
     func testMcpConnectivity(id: Int64) async -> Result<Bool, APIError> { .failure(notThisTest()) }
 
     func mcpTools(id: Int64) async -> Result<[McpToolRow], APIError> { .failure(notThisTest()) }
+
+    func discoverMcpOAuth(id: Int64) async -> Result<McpOAuthDiscovery, APIError> {
+        .failure(notThisTest())
+    }
+
+    func saveOAuthClient(
+        id: Int64,
+        _ draft: McpOAuthClientDraft
+    ) async -> Result<McpOAuthDiscovery, APIError> {
+        .failure(notThisTest())
+    }
+
+    func exchangeOAuthCode(_ draft: McpOAuthExchangeDraft) async -> Result<McpOAuthExchangeOutcome, APIError> {
+        .failure(notThisTest())
+    }
 }
 
 private struct FakeAuthorizer: McpAuthorizing {

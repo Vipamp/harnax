@@ -75,6 +75,7 @@ public struct Palette: Sendable {
     public static let contrastRequirements: [ContrastPair] = [
         ContrastPair(.textPrimary, on: .background),
         ContrastPair(.textPrimary, on: .surface),
+        ContrastPair(.textPrimary, on: .surfaceAlt),
         ContrastPair(.textSecondary, on: .background),
         ContrastPair(.textSecondary, on: .surface),
         ContrastPair(.textTertiary, on: .surface),

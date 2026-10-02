@@ -48,11 +48,15 @@ final class FakeChannels: ChannelCataloging, @unchecked Sendable {
 
     private var parked: [() -> Void] = []
 
+    /// The page read is parkable: an append has to be able to stay in flight while the reader changes the
+    /// query (`ListAppendIdentityTests`).
+    let pageGate = PageReadGate<Result<Page<ChannelSummary>, APIError>>()
+
     func channelPage(
         keyword: String?, type: String?, status: Int?, num: Int, size: Int
     ) async -> Result<Page<ChannelSummary>, APIError> {
         requests.append((keyword: keyword, type: type, status: status, num: num, size: size))
-        return replies.isEmpty ? .failure(.decoding) : replies.removeFirst()
+        return await pageGate.absorb(replies.isEmpty ? .failure(.decoding) : replies.removeFirst())
     }
 
     func createChannel(_ draft: ChannelDraft) async -> Result<EmptyResponse, APIError> {

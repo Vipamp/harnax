@@ -82,15 +82,16 @@ extension AdminClient: SessionWorkspaceReading {
     }
 
     /// The artifact store is optional in the deployment: `OutputFileController.kt:38` only registers the class
-    /// with `minio.enabled=true`, so with it off this answers 404. That is a missing file here rather than a
-    /// network fault, and the caller says so from the status the transport already carries.
+    /// with `minio.enabled=true`, so with it off this route answers as an unknown path. `DESIGN.md` O8 asks for a
+    /// named degradation there rather than a page error, and the route-missing sentence is what separates that
+    /// from a 404 about the file itself (`:95`, `:105`), which stays shown as it arrived.
     public func downloadAttachment(
         _ attachment: ChatFileAttachment,
         sessionId: String
     ) async -> Result<WorkspaceDownload, APIError> {
         let result = await client.sendRaw(
             SessionWorkspaceEndpoint.attachment(attachment, sessionId: sessionId)
-        )
+        ).mapError { $0.isUnregisteredRoute ? .objectStoreDisabled : $0 }
         return result.map {
             WorkspaceDownload(
                 name: $0.suggestedFilename ?? hxPresented(attachment.fileName)

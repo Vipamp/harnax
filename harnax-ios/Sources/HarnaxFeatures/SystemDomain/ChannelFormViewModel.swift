@@ -108,6 +108,14 @@ public final class ChannelFormViewModel: ObservableObject {
     /// (`CreateForm.tsx:127-138`).
     public var showsScanHint: Bool { typeChoice?.showsScanHint ?? false }
 
+    /// O7 — whether the type in the form is one the runtime has no adaptor for.
+    ///
+    /// The sheet says this out loud rather than only disabling the button, because a stored `http` row opens
+    /// with every field already filled and the operator has no other way to find out why Save stays dead. The
+    /// web console lists the same type as a plain option (`harnax-webui/src/pages/channel/index.tsx:44-50`);
+    /// the grey-out is a deliberate iOS divergence (`harnax-ios/DESIGN.md` §15 O7).
+    public var showsUnsupportedNotice: Bool { typeChoice.map { !$0.hasRuntimeAdaptor } ?? false }
+
     public var agentTitle: String? {
         guard let agentId else { return nil }
         return agents.first(where: { $0.id == agentId })?.name
@@ -121,6 +129,8 @@ public final class ChannelFormViewModel: ObservableObject {
     public var canSubmit: Bool {
         guard !isSaving else { return false }
         guard let typeChoice else { return false }
+        // O7: the type the runtime cannot serve is not a channel this form may write.
+        guard typeChoice.hasRuntimeAdaptor else { return false }
         guard hxPresented(name) != nil else { return false }
         guard name.trimmingCharacters(in: .whitespacesAndNewlines).count <= 100 else { return false }
         guard agentId != nil else { return false }
@@ -182,6 +192,15 @@ public final class ChannelFormViewModel: ObservableObject {
     }
 
     public func save() async {
+        // O7, and deliberately not only in the view: the disabled Save button is the surface of the rule, the
+        // guard is the rule. A stored `http` row reaches this method through its own sheet (the row has to stay
+        // readable), so the type alone decides whether anything may go out — no draft is encoded, no route is
+        // asked, and the operator gets the same sentence the banner above the fields shows.
+        if showsUnsupportedNotice {
+            saved = false
+            errorText = hx("channel.type.unsupported.note")
+            return
+        }
         isSaving = true
         errorText = nil
         defer { isSaving = false }

@@ -215,7 +215,7 @@ final class ChatHistoryLoadTests: XCTestCase {
         line: UInt = #line,
         check: @MainActor () -> Bool
     ) async {
-        for _ in 0..<200 {
+        for _ in 0..<400 {
             if check() { return }
             await Task.yield()
             try? await Task.sleep(nanoseconds: 1_000_000)

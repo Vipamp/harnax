@@ -16,6 +16,21 @@ final class ChatHistoryReplayTests: XCTestCase {
         childSessionId: "team-9-m11"
     )
 
+    /// A second member of the same team, so alternating rows can be shown to be two runs and not one.
+    private let reviewer = ChatEventSource(
+        teamId: 3,
+        teamName: "翻译组",
+        memberAgentId: 12,
+        memberAgentName: "检索",
+        childRunId: "team-9-m12",
+        childSessionId: "team-9-m12"
+    )
+
+    /// The arguments of the lead's `team_delegate` call: who was asked, and to do what.
+    private var delegatedTask: [String: JSONValue] {
+        ["member_agent_id": .number(11), "task": .string("把这段日志翻成中文")]
+    }
+
     private func user(_ message: String, stamp: Int64 = 1000) -> ChatHistoryLog {
         .user(message: message, timestamp: stamp, source: nil)
     }
@@ -51,6 +66,7 @@ final class ChatHistoryReplayTests: XCTestCase {
             case .tool: return "tool"
             case .confirmation: return "confirmation"
             case .file: return "file"
+            case .plan: return "plan"
             }
         }
     }
@@ -208,24 +224,96 @@ final class ChatHistoryReplayTests: XCTestCase {
         XCTAssertEqual(runs.map { $0.result?.message }, ["one", "two"])
     }
 
-    // MARK: - what replay leaves out
+    // MARK: - member bubbles
 
-    /// A member row is the server's merged output and its bubble needs the console's run grouping and
-    /// delegate-card claim. This build shows a member's work as the text inside the lead's own card instead.
-    func testMemberRowsAreLeftOutOfTheReplay() throws {
+    /// The server merges a member's rows into the lead's list stamped with the run they came from
+    /// (`TeamHistoryReplay.kt:81-82`), so they have to come back as a bubble of their own, placed above the
+    /// lead's because the lead's turn is the last word of the round (`ChatWindow.tsx:795-823`).
+    func testAMemberRowOpensABubbleAboveTheLead() throws {
         let transcript = replay([
-            user("第一条"),
-            assistant(calls: [call("team_delegate")]),
-            tool("team_delegate", "成员结论"),
-            assistant(thinking: "成员思考", text: "成员结论", source: member),
+            user("第一条", stamp: 1000),
+            assistant(calls: [call("team_delegate", delegatedTask)], stamp: 2000),
+            tool("team_delegate", "成员的结论"),
+            assistant(
+                thinking: "成员思考",
+                text: "成员答案",
+                calls: [call("shell", ["command": .string("ls")])],
+                stamp: 3000,
+                source: member
+            ),
             tool("shell", "成员结果", source: member),
         ])
 
-        XCTAssertEqual(transcript.turns.count, 2, "the member's rows open no bubble of their own")
-        let runs = try XCTUnwrap(transcript.turns.last?.segments.compactMap(\.tool))
-        XCTAssertEqual(runs.count, 1)
-        XCTAssertEqual(runs.first?.result?.message, "成员结论")
+        XCTAssertEqual(transcript.turns.count, 3)
+        XCTAssertEqual(transcript.turns.map(\.isMemberBubble), [false, true, false], "above the lead's")
+        let bubble = transcript.turns[1]
+        XCTAssertEqual(bubble.member?.source, member)
+        XCTAssertEqual(kinds(bubble), ["thinking", "tool", "text"], "thinking, then calls, then the text")
+        XCTAssertEqual(kinds(transcript.turns[2]), ["tool"], "the member's words never reach the lead's")
+
+        let run = try XCTUnwrap(bubble.segments.compactMap(\.tool).first)
+        XCTAssertEqual(run.result?.message, "成员结果", "its own tool row, absorbed across the same run")
+        XCTAssertFalse(run.isRunning)
+
+        let team = try XCTUnwrap(bubble.member)
+        XCTAssertEqual(team.task, "把这段日志翻成中文", "the task lives in the lead's call arguments")
+        XCTAssertEqual(team.toolCount, 1, "counted off its own blocks (`:905-908`)")
+        XCTAssertEqual(team.status, .done, "a replay has no lifecycle frames left to read (`:805-811`)")
+        XCTAssertFalse(team.isOpen)
+        XCTAssertEqual(team.startedAt, Date(timeIntervalSince1970: 3))
+        XCTAssertEqual(team.endedAt, Date(timeIntervalSince1970: 3))
+        XCTAssertEqual(team.parentToolId, transcript.turns[2].segments.first?.tool?.toolId)
+        XCTAssertEqual(transcript.turns[2].segments.first?.tool?.result?.message, "成员的结论")
     }
+
+    /// One member's id covers every delegation to it — the id is its child session — so the split can only be
+    /// made on 「the previous row carries the same id」 (`specs/02-session-chat.md` line 394).
+    func testTwoDelegationsToTheSameMemberStayTwoBubbles() throws {
+        let transcript = replay([
+            user("第一条"),
+            assistant(calls: [call("team_delegate", delegatedTask)]),
+            assistant(text: "第一次输出", stamp: 3000, source: member),
+            assistant(text: "主管插一句", stamp: 4000),
+            assistant(text: "第二次输出", stamp: 5000, source: member),
+        ])
+
+        XCTAssertEqual(transcript.turns.count, 4)
+        XCTAssertEqual(transcript.turns.map(\.isMemberBubble), [false, true, true, false])
+        let bubbles = transcript.turns.filter(\.isMemberBubble)
+        XCTAssertEqual(bubbles.compactMap { $0.segments.first?.text }, ["第一次输出", "第二次输出"])
+        XCTAssertEqual(Set(bubbles.compactMap { $0.member?.source.childRunId }).count, 1)
+        XCTAssertEqual(Set(bubbles.map(\.id)).count, 2, "one run id, two bubbles")
+        XCTAssertEqual(transcript.turns.last?.segments.compactMap(\.text), ["主管插一句"])
+    }
+
+    /// Two members speak on one channel, so their rows alternate and each turn of one run is its own bubble.
+    func testTwoMembersSpeakingAlternatelyEachGetTheirOwnBubble() throws {
+        let transcript = replay([
+            user("第一条"),
+            assistant(text: "我先说一句"),
+            assistant(text: "甲的话", source: member),
+            assistant(text: "乙的话", source: reviewer),
+            assistant(text: "甲又说", source: member),
+        ])
+
+        let bubbles = transcript.turns.filter(\.isMemberBubble)
+        XCTAssertEqual(bubbles.count, 3)
+        XCTAssertEqual(bubbles.compactMap { $0.member?.memberAgentId }, [11, 12, 11])
+        XCTAssertEqual(bubbles.compactMap { $0.segments.first?.text }, ["甲的话", "乙的话", "甲又说"])
+        XCTAssertEqual(bubbles.compactMap { $0.member?.source.memberAgentName }, ["日志专家", "检索", "日志专家"])
+        XCTAssertEqual(transcript.turns.last?.segments.compactMap(\.text), ["我先说一句"], "the lead keeps the tail")
+    }
+
+    /// A tool row on its own draws nothing, member-sourced or not: a result only reaches the screen through
+    /// the call it belongs to (`ChatWindow.tsx:911-929`).
+    func testAMemberToolRowWithNoMemberRowOpensNothing() throws {
+        let transcript = replay([user("第一条"), tool("shell", "无主的执行结果", source: member)])
+
+        XCTAssertEqual(transcript.turns.count, 1)
+        XCTAssertFalse(transcript.turns.contains(where: \.isMemberBubble))
+    }
+
+    // MARK: - what replay leaves out
 
     /// A member's result answers a member's call, so it must not be claimed by the lead's card — the scan
     /// stops at the source boundary the same way the console's does (`ChatWindow.tsx:859`).

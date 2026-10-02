@@ -61,7 +61,7 @@ final class ChatViewModelTests: XCTestCase {
         line: UInt = #line,
         check: @MainActor () -> Bool
     ) async {
-        for _ in 0..<200 {
+        for _ in 0..<400 {
             if check() { return }
             await Task.yield()
             try? await Task.sleep(nanoseconds: 1_000_000)
@@ -136,7 +136,7 @@ final class ChatViewModelTests: XCTestCase {
         )
         await waitUntil("the tool card") { vm.transcript.segments.count == 2 }
         XCTAssertEqual(vm.transcript.segments.first?.text, "你好，世界")
-        XCTAssertNil(vm.transcript.segments[1].tool?.result)
+        XCTAssertNil(vm.transcript.segments.dropFirst().first?.tool?.result)
         XCTAssertTrue(vm.isStreaming)
     }
 
@@ -165,7 +165,7 @@ final class ChatViewModelTests: XCTestCase {
         XCTAssertFalse(vm.isStreaming)
         XCTAssertEqual(vm.transcript.turns.last?.outcome, .interrupted)
         XCTAssertEqual(vm.transcript.segments.compactMap(\.text), ["半句"], "a stop keeps what was already on screen")
-        XCTAssertEqual(vm.transcript.segments[1].tool?.interrupted, true)
+        XCTAssertEqual(vm.transcript.segments.dropFirst().first?.tool?.interrupted, true)
         XCTAssertNil(vm.stopNotice, "stopping on purpose is not a failure")
     }
 
@@ -743,6 +743,89 @@ final class ChatViewModelTests: XCTestCase {
         XCTAssertTrue(commands.requests.isEmpty)
     }
 
+    // MARK: - the sandbox workspace entry
+
+    func testTheWorkspaceEntryFollowsTheStatusAnswer() async {
+        let sandbox = ScriptedSandbox()
+        let (vm, _) = makeModel(workspace: sandbox)
+        XCTAssertFalse(vm.sandboxIsRunning, "nothing has been asked yet")
+
+        sandbox.status = .running
+        await vm.refreshSandboxStatus()
+        XCTAssertTrue(vm.sandboxIsRunning)
+
+        sandbox.status = .idle
+        await vm.refreshSandboxStatus()
+        XCTAssertFalse(vm.sandboxIsRunning)
+
+        // A read that failed is not news that a sandbox is up, and it is not allowed to say anything either:
+        // the entry going quiet is a state, not a refusal the user has to be told about.
+        sandbox.status = .running
+        sandbox.statusFails = true
+        await vm.refreshSandboxStatus()
+        XCTAssertFalse(vm.sandboxIsRunning)
+        XCTAssertNil(vm.composerNotice)
+        XCTAssertEqual(sandbox.statusRequested, ["s-1", "s-1", "s-1"])
+    }
+
+    /// The answer is addressed to a session, and the entry belongs to the conversation on screen: only the id
+    /// tells the two apart (`ChatTranscript`'s folding gets the same treatment on a switch).
+    func testAnAnswerForTheConversationJustLeftDoesNotLightThisOnesEntry() async {
+        let sandbox = ScriptedSandbox()
+        sandbox.gateStatus = true
+        sandbox.status = .running
+        let (vm, _) = makeModel(workspace: sandbox)
+
+        let read = Task { await vm.refreshSandboxStatus() }
+        await waitUntil("the parked status read") { sandbox.statusRequested == ["s-1"] }
+
+        vm.bind(ChatConversation(id: "s-2", title: "另一组"))
+        sandbox.releaseStatuses()
+        // Waiting the task out is what makes this a race the guard has to win rather than a leg that never
+        // landed: `running` is on its way back for the conversation that was just left.
+        await read.value
+
+        XCTAssertFalse(vm.sandboxIsRunning, "the sandbox belongs to the conversation that was left")
+        XCTAssertEqual(sandbox.statusRequested, ["s-1"], "a switch is not itself a read")
+    }
+
+    func testTheDrawerPanelAndAnOpenDrawerFollowTheConversation() {
+        let sandbox = ScriptedSandbox()
+        let (vm, _) = makeModel(workspace: sandbox)
+        let first = vm.workspacePanel
+        XCTAssertNotNil(first, "a host that wired the workspace read gets a panel")
+
+        vm.isWorkspacePresented = true
+        vm.bind(ChatConversation(id: "s-2", title: "另一组"))
+
+        XCTAssertNotNil(vm.workspacePanel)
+        XCTAssertFalse(vm.workspacePanel === first, "the drawer lists the conversation now on screen")
+        XCTAssertFalse(vm.isWorkspacePresented, "an open drawer goes with the conversation it was opened for")
+    }
+
+    func testAHostWithoutTheWorkspaceReadHasNoPanelAndAsksNothing() async {
+        let (vm, _) = makeModel()
+        XCTAssertNil(vm.workspacePanel)
+        await vm.refreshSandboxStatus()
+        XCTAssertFalse(vm.sandboxIsRunning)
+    }
+
+    /// The container is not there when the send goes out — the run's first tool call makes it — so a turn's last
+    /// word has to ask again or the entry never appears without leaving the screen and coming back.
+    func testTheTurnsLastWordAsksForTheSandboxAgain() async throws {
+        let sandbox = ScriptedSandbox()
+        sandbox.status = .running
+        let (vm, stream) = makeModel(workspace: sandbox)
+
+        await send("跑一下", on: vm, stream)
+        XCTAssertTrue(sandbox.statusRequested.isEmpty, "a send asks nothing of its own")
+
+        try stream.latest.feed(ChatFrames.text("好了"), ChatFrames.end())
+        await waitUntil("the entry to light after the turn") { vm.sandboxIsRunning }
+
+        XCTAssertEqual(sandbox.statusRequested, ["s-1"])
+    }
+
     // MARK: - the capability switches
 
     /// A composer whose gates come from one row, read the way the screen reads it on entry.
@@ -996,6 +1079,82 @@ final class ChatViewModelTests: XCTestCase {
 
         XCTAssertEqual(vm.images.count, 1, "the runtime would open that as a sandbox path")
         XCTAssertEqual(vm.composerNotice?.tone, .warning)
+    }
+
+    /// The console puts no number on the strip — its picker appends every file it is handed
+    /// (`ChatWindow.tsx:2442-2468`, the append itself at `:2458`) off a bare `multiple` input (`:3692-3699`) —
+    /// so the limit is the server's. The edge that answers for that console takes a request body of 1 MB and
+    /// no more: the streaming `location` sets no `client_max_body_size`
+    /// (`harnax-deploy/nginx.conf:72-101`), and the same file spells out what that default means
+    /// (`:196-197`: "nginx defaults to 1 MB and answers with a bare 413 page"). Base64 pictures go into that
+    /// body whole, so a picture over the ceiling has to be refused here rather than die as an unreadable 413
+    /// two seconds later.
+    func testAPictureTooBigForTheStreamingRouteNeverEntersTheStrip() {
+        let (vm, _) = makeModel()
+        let oversized = ChatImageData.dataURL(mime: "image/png", payload: Data(count: 2_000_000))
+
+        vm.addImages([oversized])
+
+        XCTAssertTrue(vm.images.isEmpty, "the turn would be rejected before the router ever saw it")
+        XCTAssertEqual(vm.composerNotice?.tone, .warning)
+        XCTAssertEqual(vm.composerNotice?.text, hx("chat.image.overLimit"))
+        XCTAssertFalse(vm.canSend, "and with nothing attached there is nothing to send")
+    }
+
+    /// How many pictures there are is not the constraint, and no count cap has anything behind it: eight small
+    /// ones ride out together, exactly as the console's `multiple` input lets eight be picked.
+    func testNoMatterHowManyTheStripHoldsSmallPicturesAreAllAccepted() {
+        let (vm, _) = makeModel()
+
+        vm.addImages((0..<8).map { picture(UInt8($0)) })
+
+        XCTAssertEqual(vm.images.count, 8, "the limit is bytes, not a number this side invented")
+        XCTAssertNil(vm.composerNotice)
+    }
+
+    /// The ceiling sits on the attachment leg as a whole, so it is the picture that tips it over which gets
+    /// refused: two 400 KB originals base64 to just past 1 MB together.
+    func testThePictureThatTipsTheBodyOverItsCeilingIsTheOneRefused() {
+        let (vm, _) = makeModel()
+        let chunk = ChatImageData.dataURL(mime: "image/png", payload: Data(count: 400_000))
+        vm.addImages([chunk])
+        XCTAssertEqual(vm.images.count, 1, "one of them fits on its own")
+
+        vm.addImages([chunk])
+
+        XCTAssertEqual(vm.images.count, 1, "the second would take the body past the edge")
+        XCTAssertEqual(vm.composerNotice?.text, hx("chat.image.overLimit"))
+    }
+
+    /// Removing a picture gives its room back, which is the only remedy the notice can point a user at.
+    func testRemovingAPictureGivesItsRoomBackToTheStrip() {
+        let (vm, _) = makeModel()
+        let chunk = ChatImageData.dataURL(mime: "image/png", payload: Data(count: 400_000))
+        vm.addImages([chunk, chunk])
+        XCTAssertEqual(vm.images.count, 1, "the batch's second picture had no room left")
+
+        vm.removeImage(at: 0)
+        vm.addImages([chunk])
+        XCTAssertEqual(vm.images.count, 1, "the room it held is what the new one went into")
+
+        vm.addImages([chunk])
+        XCTAssertEqual(vm.images.count, 1, "and with two in there again the edge is reached once more")
+    }
+
+    /// A batch that only partly overshoots keeps what fits: one picture the camera shot too large does not
+    /// take the rest of the roll away with it, and the turn carries exactly the strip that survived.
+    func testAnOversizedPictureInABatchDoesNotTakeTheOnesThatFitAway() async {
+        let (vm, stream) = makeModel()
+        let oversized = ChatImageData.dataURL(mime: "image/png", payload: Data(count: 2_000_000))
+
+        vm.addImages([oversized, picture(), picture(0xFF)])
+
+        XCTAssertEqual(vm.images.count, 2, "the two that fit stay")
+        XCTAssertEqual(vm.composerNotice?.text, hx("chat.image.overLimit"))
+
+        vm.send()
+        await waitUntil("the request") { !stream.chatRequests.isEmpty }
+        XCTAssertEqual(stream.chatRequests.first?.imageUrls.count, 2, "and they are what the turn carries")
     }
 
     func testAModelWithoutVisionCannotPickButTheChipStillAnswers() async {

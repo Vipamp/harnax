@@ -48,7 +48,10 @@ public struct PlanPanelView: View {
         }
         .harnaxScreen()
         .task { await vm.open() }
-        .onDisappear { vm.stopPolling() }
+        // Not `stopPolling()`: a shared panel outlives its drawer, and the conversation that handed it over is
+        // still reading the plan for the card in its own stream (`vm.close()` only retires the loop once nothing
+        // follows it).
+        .onDisappear { vm.close() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 vm.resumePolling()

@@ -55,8 +55,10 @@ public struct ApiKeySummary: Decodable, Identifiable, Equatable, Sendable {
     }
 
     /// “Never expires” is the column being absent or blank (`expiresAt = null`,
-    /// `harnax-webui/src/pages/api-key/index.tsx:181-308`); a stamp this side cannot read is a separate
-    /// case and is shown as the raw text rather than as a decision.
+    /// `harnax-webui/src/pages/api-key/index.tsx:181-308`). A stamp this side cannot read is a separate
+    /// case, and `false` here is what keeps the row from claiming a verdict it never made: the list asks
+    /// `isExpired()` and then `hxMonthDay(expiresAt)` (`ApiKeyListView.swift:240-244`), so an unreadable
+    /// stamp draws no chip at all.
     public var hasNoExpiry: Bool { hxPresented(expiresAt) == nil }
 
     /// The row's own scopes, split into the pair the form offers and whatever else the string holds.
@@ -205,11 +207,11 @@ public struct ApiKeyChange: Encodable, Equatable, Sendable {
 }
 
 /// Reads a server timestamp in either serialisation the stack answers with —
-/// `2026-09-12 10:20:30` or the ISO `T` form (`harnax-ios/HARNESS-NOTES.md:54`).
+/// `2026-09-12 10:20:30` or the ISO `T` form (`harnax-ios/HARNESS-NOTES.md:84`).
 ///
 /// Deliberately no time zone: these columns are a server's wall clock, and the alternative — assuming UTC
 /// — would shift every expiry on the screen by the device's offset. An unreadable stamp is `nil`, which
-/// the rows render as “no expiry” rather than as a guess.
+/// leaves the row without an expiry marker rather than guessing one in.
 func hxServerDateTime(_ raw: String?) -> Date? {
     guard let raw = hxPresented(raw) else { return nil }
     let formatter = DateFormatter()

@@ -1,11 +1,11 @@
 import Foundation
 import HarnaxCore
 
-/// The API Key routes the list and the two forms touch (`ApiKeyController.kt:23`, prefix
-/// `/api/admin/api-keys`).
+/// The API Key routes: the list and the two forms, plus the account screen's two per-user reads and writes
+/// (`ApiKeyController.kt:23`, one prefix `/api/admin/api-keys` for both shapes).
 ///
 /// Where this domain differs from the agent and team sets: the update route answers `ResultVo<Void>`, so
-/// a saved row is re-read; `enabled` rides the toggle's query string, as elsewhere; and the two routes
+/// a saved row is re-read; `enabled` rides the toggle's query string, as elsewhere; and the three routes
 /// that hand out a raw key are POSTs with no body of their own beyond the create draft.
 enum ApiKeyEndpoint {
     static let root = "/api/admin/api-keys"
@@ -49,5 +49,17 @@ enum ApiKeyEndpoint {
     /// No body, and the answer is the one and only copy of the new raw key (`:112-122`).
     static func regenerate(id: Int64) -> Endpoint {
         Endpoint(.post, path: "\(root)/\(id)/regenerate")
+    }
+
+    /// The caller's own permanent row, on the same prefix but resolved from the session's user id
+    /// (`ApiKeyController.kt:126-136`). No query, no body: which key this is cannot be asked for.
+    static func myPermanentKey() -> Endpoint {
+        Endpoint(.get, path: "\(root)/my-permanent-key")
+    }
+
+    /// The rotate of that same row (`ApiKeyController.kt:138-148`). Also bodyless, and the answer is the new
+    /// raw key's only copy.
+    static func regeneratePermanent() -> Endpoint {
+        Endpoint(.post, path: "\(root)/regenerate-permanent")
     }
 }

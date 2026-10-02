@@ -71,6 +71,15 @@ public struct ApiKeyRawKeySheet: View {
                 }
             }
         }
+        // The value here exists nowhere else: the create and regenerate routes answer with the raw key and the
+        // database keeps only its SHA-256 digest (`ApiKeyServiceImpl.kt:80-82`), so a closed surface has
+        // destroyed the only copy this device ever saw — which is exactly what the console's warning says
+        // (`api-key/components/RawKeyModal.tsx:52-55`) before it empties the state on close
+        // (`api-key/index.tsx:431-433`). The console therefore refuses a dismissal the operator did not mean
+        // (`maskClosable={false}`, `RawKeyModal.tsx:28`) and keeps the X an explicit act (`:27`); on a sheet the
+        // un-meant dismissal is the drag down, so the surface refuses that gesture itself and the only exits
+        // stay the confirm items the call sites wired (`specs/03-system-domain.md` iOS note 4).
+        .interactiveDismissDisabled(true)
     }
 
     /// Copy is the point of this screen — nobody retypes a 44-character secret into a config file.

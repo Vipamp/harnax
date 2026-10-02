@@ -37,6 +37,21 @@ public final class ModelListViewModel: ObservableObject {
     @Published public var filter: StatusFilter = .all {
         didSet { if filter != oldValue { Task { await refresh() } } }
     }
+    /// The model type, as the console's filter bar offers it
+    /// (`harnax-webui/src/pages/model/index.tsx:525-535`). A choice rather than typing, so it takes effect on
+    /// the spot the way the status picker does.
+    @Published public var typeFilter: ModelType? = nil {
+        didSet { if typeFilter != oldValue { Task { await refresh() } } }
+    }
+    /// The two price bounds, kept as text because a box holding a word or a stopped exponent is not a number
+    /// and is not worth complaining about on every keystroke — the form's own price field does the same
+    /// (`ModelForm.swift:26-28`). Typed, so they ride the keyword's debounce.
+    @Published public var minPriceText = "" {
+        didSet { if minPriceText != oldValue { scheduleSearch() } }
+    }
+    @Published public var maxPriceText = "" {
+        didSet { if maxPriceText != oldValue { scheduleSearch() } }
+    }
 
     @Published private(set) var statusOverrides: [Int64: Bool] = [:]
 
@@ -49,6 +64,9 @@ public final class ModelListViewModel: ObservableObject {
     private var refreshGeneration = 0
     private var isRefreshing = false
     private var rerunRequested = false
+    /// An append asked for while a refresh is on the wire is remembered, not dropped — see
+    /// `AgentListViewModel`.
+    private var appendRequested = false
 
     public init(providerID: Int64, catalog: any ModelCataloging, pageSize: Int = 20) {
         self.providerID = providerID
@@ -61,11 +79,33 @@ public final class ModelListViewModel: ObservableObject {
         return statusOverrides[id] ?? model.isEnabled
     }
 
-    /// An empty result under a filter is not the same news as a provider with nothing under it.
+    /// The lower bound as the server would take it, or `nil` for "not a number yet". Text that parses to
+    /// `nan` or `inf` is no bound either — `Double("nan")` does parse, and it would filter the list to
+    /// nothing while the box still showed a word.
+    public var minPrice: Double? { Self.bound(minPriceText) }
+    public var maxPrice: Double? { Self.bound(maxPriceText) }
+
+    /// The same two tolerances the model form's price field has: a comma for the decimal separator, and a
+    /// blank rather than a half-number read as no value (`ModelForm.swift:97-102`).
+    static func bound(_ text: String) -> Double? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard let value = Double(trimmed) ?? Double(trimmed.replacingOccurrences(of: ",", with: ".")),
+              value.isFinite
+        else { return nil }
+        return value
+    }
+
+    /// An empty result under a filter is not the same news as a provider with nothing under it. Every filter
+    /// this screen owns counts here, and only as it actually goes on the wire: a box holding text that is not
+    /// a number sent no bound, so the list is not filtered.
     public var isFiltered: Bool {
         !keyword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || filter != .all
+            || typeFilter != nil
             || !selectedTags.isEmpty
+            || minPrice != nil
+            || maxPrice != nil
     }
 
     public func toggle(_ tag: ModelCapability) async {
@@ -99,8 +139,11 @@ public final class ModelListViewModel: ObservableObject {
         switch await catalog.modelPage(
             providerID: providerID,
             name: keyword,
+            modelType: typeFilter?.rawValue,
             status: filter.queryValue,
             tags: selectedTags.map(\.rawValue),
+            minPrice: minPrice,
+            maxPrice: maxPrice,
             num: 1,
             size: pages.pageSize
         ) {
@@ -109,6 +152,7 @@ public final class ModelListViewModel: ObservableObject {
             pages.replace(with: page)
             statusOverrides = statusOverrides.filter { pendingIDs.contains($0.key) }
             apply()
+            await reissueAppend()
         case let .failure(error):
             guard generation == refreshGeneration else { return }
             let text = ErrorMessage.text(for: error)
@@ -122,30 +166,54 @@ public final class ModelListViewModel: ObservableObject {
 
     public func loadMore() async {
         guard canLoadMore, !isAppending else { return }
+        guard !isRefreshing else {
+            appendRequested = true
+            return
+        }
+        await runAppend()
+    }
+
+    /// The tail read, under the identity of the query that was on screen when the scroll happened, as
+    /// `AgentListViewModel` documents it: a retired answer may take none of the rows, the total or the page
+    /// counter with it.
+    private func runAppend() async {
+        let generation = refreshGeneration
         isAppending = true
         defer { isAppending = false }
         switch await catalog.modelPage(
             providerID: providerID,
             name: keyword,
+            modelType: typeFilter?.rawValue,
             status: filter.queryValue,
             tags: selectedTags.map(\.rawValue),
+            minPrice: minPrice,
+            maxPrice: maxPrice,
             num: pages.pageNum + 1,
             size: pages.pageSize
         ) {
         case let .success(page):
+            guard generation == refreshGeneration else { return }
             inlineError = nil
             pages.append(with: page)
             apply()
         case let .failure(error):
+            guard generation == refreshGeneration else { return }
             // The rows on screen stay, the page counter does not move, and the next scroll retries it.
             inlineError = ErrorMessage.text(for: error)
         }
+    }
+
+    private func reissueAppend() async {
+        guard appendRequested, canLoadMore, !isAppending else { return }
+        appendRequested = false
+        await runAppend()
     }
 
     /// Enabling a model is refused while its own provider is stopped
     /// (`ModelServiceImpl.kt:186-198`), so the switch has to be able to snap back.
     public func setStatus(_ enabled: Bool, for model: ModelSummary) async {
         guard let id = model.id else { return }
+        guard !pendingIDs.contains(id) else { return }
         statusOverrides[id] = enabled
         pendingIDs.insert(id)
         defer { pendingIDs.remove(id) }

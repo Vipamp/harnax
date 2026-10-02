@@ -189,6 +189,135 @@ final class AuthFlowTests: XCTestCase {
         XCTAssertEqual(stored, config)
     }
 
+    // MARK: - the sign-out reaches the backend
+
+    /// `POST /api/admin/auth/logout` blacklists the bearer it reads off the header
+    /// (`AuthController.kt:54-58`, `AuthServiceImpl.kt:264-277`), so the token has to still be attached when
+    /// the revoke goes out — and it takes no body.
+    func testLogoutRevokesTheBearerItIsAboutToForget() async throws {
+        let harness = APIHarness()
+        try await harness.signIn()
+        harness.transport.enqueue(200, Wire.success())
+
+        await harness.auth.logout()
+
+        let request = try XCTUnwrap(harness.transport.requests.first { $0.url?.path == AdminEndpoint.logoutPath })
+        let token = try await harness.session.accessToken()
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(headerValue(request, "Authorization"), "Bearer tok-1")
+        XCTAssertNil(request.httpBody, "the route reads the header and nothing else")
+        XCTAssertNil(token)
+    }
+
+    /// A revoke the network never delivered still ends the session locally: leaving a bearer behind because
+    /// the server could not be reached would keep every screen talking to a session the user closed.
+    func testLogoutClearsTheSessionWhenTheRevokeNeverLands() async throws {
+        let harness = APIHarness()
+        try await harness.signIn()
+        harness.transport.enqueueFailure(URLError(.cannotConnectToHost))
+
+        await harness.auth.logout()
+
+        let token = try await harness.session.accessToken()
+        let state = await harness.auth.state()
+        XCTAssertNil(token)
+        XCTAssertEqual(state, .signedOut)
+    }
+
+    /// A 401 off the revoke route says the token was already worthless. It is not a reason to refresh it, to
+    /// replay the revoke, or to log out again — and the local half still has to go.
+    func testARevokeRefusedWithA401IsNotReplayedOrRepeated() async throws {
+        let harness = APIHarness()
+        try await harness.signIn()
+        harness.transport.enqueue(401, Wire.unauthorized)
+
+        await harness.auth.logout()
+
+        XCTAssertEqual(harness.transport.callCount, 1, "one revoke, no refresh round trip, no replay")
+        XCTAssertEqual(
+            harness.transport.requests.filter { $0.url?.path == AdminEndpoint.logoutPath }.count,
+            1,
+            "the refusal must not recurse into another logout"
+        )
+        let token = try await harness.session.accessToken()
+        XCTAssertNil(token)
+    }
+
+    /// The 401 handlers in `profile()` and `switchTenant(to:)` are a second way into `logout()`, and the client
+    /// that refused the refresh has already dropped the bearer (`APIClient.settleRefresh`). A refusal is
+    /// therefore never a reason to revoke: the token it names was rejected by the very route that reads it, so
+    /// a sign-out that follows an ended session sends nothing at all.
+    func testASecondLogoutWithNoBearerLeftSendsNoSecondRevoke() async throws {
+        let harness = APIHarness()
+        try await harness.signIn()
+        harness.transport.enqueue(401, Wire.unauthorized)
+        harness.transport.enqueue(401, Wire.unauthorized)
+
+        let profile = await harness.auth.profile()
+        let callsAfterTheRefusal = harness.transport.callCount
+        let state = await harness.auth.state()
+        await harness.auth.logout()
+
+        XCTAssertEqual(profile.failure, APIError.unauthorized)
+        XCTAssertEqual(state, .signedOut)
+        XCTAssertEqual(harness.transport.callCount, callsAfterTheRefusal, "a session that is over makes no call")
+        XCTAssertTrue(
+            harness.transport.requests.filter { $0.url?.path == AdminEndpoint.logoutPath }.isEmpty,
+            "nothing left to revoke"
+        )
+    }
+
+    // MARK: - a reply that lands after the session ended
+
+    /// `AuthFlow` is one actor and it re-enters at its own awaits, so a `logout()` really does run in the
+    /// middle of a parked `profile()` read. The reply that arrives afterwards belongs to a session the keychain
+    /// has forgotten, and caching its identity card would hand the sign-in screen a card for nobody.
+    func testAProfileReplyThatLandsAfterASignOutWritesNothingBack() async throws {
+        let harness = APIHarness()
+        try await harness.signIn()
+        harness.transport.enqueue(200, Wire.success(Wire.me))
+        harness.transport.replyGate.arm()
+
+        let reading = Task { await harness.auth.profile() }
+        try await waitUntil { harness.transport.requests.contains { $0.url?.path == AdminEndpoint.profilePath } }
+        await harness.auth.logout()
+        harness.transport.replyGate.release()
+        let reply = await reading.value
+
+        let token = try await harness.session.accessToken()
+        let card = try await harness.session.cachedAccount()
+        let state = await harness.auth.state()
+        XCTAssertNotNil(reply.value, "the read answered fine; only its write-back is refused")
+        XCTAssertNil(token)
+        XCTAssertNil(card, "the card a late profile reply would have re-written stays gone")
+        XCTAssertEqual(state, .signedOut)
+    }
+
+    /// Same race on the other credential write: a tenant switch that answers after the session ended must not
+    /// adopt the token it was handed, or the bearer the user threw away comes back.
+    func testASwitchReplyThatLandsAfterASignOutAdoptsNothing() async throws {
+        let harness = APIHarness()
+        try await harness.signIn()
+        harness.transport.enqueue(200, Wire.refreshed(token: "tok-2", expiresIn: nil, tenantID: 2))
+        harness.transport.enqueue(200, Wire.success())
+        harness.transport.replyGate.arm()
+
+        let switching = Task {
+            await harness.auth.switchTenant(to: TenantSummary(id: 2, name: "Acme Workspace", status: 1))
+        }
+        try await waitUntil {
+            harness.transport.requests.contains { $0.url?.path == AdminEndpoint.switchTenantPath }
+        }
+        await harness.auth.logout()
+        harness.transport.replyGate.release()
+        let result = await switching.value
+
+        let token = try await harness.session.accessToken()
+        XCTAssertEqual(harness.transport.callCount, 2, "the switch went out and the sign-out revoked it")
+        XCTAssertEqual(result.failure, APIError.unauthorized)
+        XCTAssertNil(token, "a token for a session that is over is not a session")
+    }
+
     /// A different stack deserves a clean slate: the earlier guesses were aimed at another server.
     func testSavingServerConfigurationClearsTheStreak() async throws {
         let harness = APIHarness()
@@ -376,6 +505,16 @@ final class AuthFlowTests: XCTestCase {
         _ = await harness.auth.save(serverConfiguration: current)
         NotificationCenter.default.removeObserver(observer)
         XCTAssertEqual(announcements, 0)
+    }
+
+    /// Polls until the request has really reached the wire, so the reply the armed gate is holding is
+    /// outstanding at the moment the test ends the session underneath it.
+    private func waitUntil(_ condition: @escaping @Sendable () -> Bool) async throws {
+        for _ in 0..<400 {
+            if condition() { return }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTFail("the request never reached the wire")
     }
 }
 

@@ -9,6 +9,7 @@ import HarnaxKit
 /// is no detail endpoint in this screen's path.
 public struct AgentListView: View {
     @StateObject private var vm: AgentListViewModel
+    private let dependencies: HarnaxDependencies
     private let agents: any AgentCataloging
     private let refresher: any SessionRefreshing
     private let account: AccountSnapshot?
@@ -18,12 +19,21 @@ public struct AgentListView: View {
     @State private var drillDown: AgentSummary?
     @State private var refreshTarget: SessionRefreshTarget?
     @State private var pendingDelete: AgentSummary?
+    /// The wizard, in whichever mode opened it. A struct rather than the mode itself because `.edit` carries
+    /// no identity a `@State` flag could key on.
+    @State private var editor: Editor?
 
-    public init(agents: any AgentCataloging, sessionRefresher: any SessionRefreshing, account: AccountSnapshot?) {
-        _vm = StateObject(wrappedValue: AgentListViewModel(agents: agents))
-        self.agents = agents
-        self.refresher = sessionRefresher
+    public init(dependencies: HarnaxDependencies, account: AccountSnapshot?) {
+        _vm = StateObject(wrappedValue: AgentListViewModel(agents: dependencies.agents))
+        self.dependencies = dependencies
+        self.agents = dependencies.agents
+        self.refresher = dependencies.sessionRefresher
         self.account = account
+    }
+
+    struct Editor: Identifiable {
+        let id = UUID()
+        let mode: AgentFormViewModel.Mode
     }
 
     public var body: some View {
@@ -31,6 +41,7 @@ public struct AgentListView: View {
             .harnaxScreen()
             .searchable(text: $vm.keyword, prompt: Text(verbatim: hx("agent.search")))
             .toolbar {
+                ToolbarItem(placement: .primaryAction) { createButton }
                 ToolbarItem(placement: .primaryAction) { filterMenu }
             }
             .task {
@@ -38,6 +49,11 @@ public struct AgentListView: View {
             }
             .refreshable { await vm.refresh() }
             .sheet(item: $drillDown) { AgentBindingsSheet(agent: $0) }
+            .sheet(item: $editor) { editor in
+                AgentFormView(dependencies: dependencies, mode: editor.mode, account: account) {
+                    Task { await vm.refresh() }
+                }
+            }
             .sheet(item: $refreshTarget) { target in
                 HXSessionRefreshSheet(target: target, refresher: refresher)
             }
@@ -61,21 +77,16 @@ public struct AgentListView: View {
             }
     }
 
+    private var createButton: some View {
+        HXPlusButton(titleKey: "agent.create") { editor = Editor(mode: .create) }
+    }
+
     private var filterMenu: some View {
-        Menu {
-            ForEach(StatusFilter.allCases) { option in
-                Button {
-                    vm.filter = option
-                } label: {
-                    HStack {
-                        HXText(option.titleKey)
-                        if vm.filter == option { Image(systemName: "checkmark") }
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: vm.filter == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-        }
+        HXFilterMenu(
+            isFiltering: vm.filter != .all,
+            accessibilityLabel: hx("state.filter.status"),
+            choices: statusFilterChoices(vm.filter) { vm.filter = $0 }
+        )
     }
 
     @ViewBuilder
@@ -112,6 +123,7 @@ public struct AgentListView: View {
                         isPending: agent.id.flatMap(vm.pendingIDs.contains) ?? false,
                         canManage: (account?.canManage(creator: agent.creator)) ?? false,
                         onToggle: { value in Task { await vm.setStatus(value, for: agent) } },
+                        onEdit: { editor = Editor(mode: .edit(agent)) },
                         onDrillDown: { drillDown = agent },
                         onRefresh: { refreshTarget = refreshTarget(for: agent) },
                         onDelete: { pendingDelete = agent }
@@ -150,6 +162,7 @@ struct AgentRecordCard: View {
     let isPending: Bool
     let canManage: Bool
     let onToggle: (Bool) -> Void
+    let onEdit: () -> Void
     let onDrillDown: () -> Void
     let onRefresh: () -> Void
     let onDelete: () -> Void
@@ -234,7 +247,12 @@ struct AgentRecordCard: View {
             Button { onToggle(!enabled) } label: {
                 HXText(enabled ? "state.action.disable" : "state.action.enable")
             }
-            .disabled(!canManage || isPending)
+            // The console's card switch carries no permission check, so neither does this one.
+            .disabled(isPending)
+
+            if canManage {
+                Button(action: onEdit) { HXText("state.action.edit") }
+            }
 
             Button(action: onRefresh) { HXText("state.action.refresh") }
 
@@ -247,5 +265,6 @@ struct AgentRecordCard: View {
                 .frame(width: 30, height: 30)
                 .background(Color.hx(.surfaceAlt), in: Circle())
         }
+        .accessibilityLabel(hx("state.action.more"))
     }
 }

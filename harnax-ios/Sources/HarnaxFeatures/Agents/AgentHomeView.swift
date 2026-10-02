@@ -22,23 +22,11 @@ public struct AgentHomeView: View {
     }
 
     @State private var section: Section = .agents
-    private let agents: any AgentCataloging
-    private let teams: any TeamCataloging
-    private let tasks: any AgentTaskCataloging
-    private let refresher: any SessionRefreshing
+    private let dependencies: HarnaxDependencies
     private let account: AccountSnapshot?
 
-    public init(
-        agents: any AgentCataloging,
-        teams: any TeamCataloging,
-        tasks: any AgentTaskCataloging,
-        sessionRefresher: any SessionRefreshing,
-        account: AccountSnapshot?
-    ) {
-        self.agents = agents
-        self.teams = teams
-        self.tasks = tasks
-        self.refresher = sessionRefresher
+    public init(dependencies: HarnaxDependencies, account: AccountSnapshot?) {
+        self.dependencies = dependencies
         self.account = account
     }
 
@@ -58,11 +46,11 @@ public struct AgentHomeView: View {
             Group {
                 switch section {
                 case .agents:
-                    AgentListView(agents: agents, sessionRefresher: refresher, account: account)
+                    AgentListView(dependencies: dependencies, account: account)
                 case .teams:
-                    TeamListView(teams: teams, sessionRefresher: refresher, account: account)
+                    TeamListView(dependencies: dependencies, account: account)
                 case .tasks:
-                    TaskListView(catalog: tasks, account: account)
+                    TaskListView(catalog: dependencies.tasks, account: account)
                 }
             }
         }

@@ -12,15 +12,18 @@ import HarnaxKit
 /// and hand one row's bytes to the share sheet.
 ///
 /// Backend: `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/TeamArtifactController.kt:59-100`.
-/// Both routes live behind `@ConditionalOnProperty(minio = enabled)` (`:42`), which is why a refusal is an
-/// ordinary failure here rather than a state this type tries to name: a deployment without object storage
-/// answers the list as an unknown route, and the drawer says so in the banner.
+/// Both routes live behind `@ConditionalOnProperty(minio = enabled)` (`:42`), and a deployment that leaves the
+/// switch off answers the list as an unknown route. `DESIGN.md` O8 gives that its own phase rather than an error:
+/// the remedy is a server setting, and neither a red banner nor "no member has published anything" says so.
 @MainActor
 public final class TeamArtifactsViewModel: ObservableObject {
     public enum Phase: Equatable {
         case loading
         /// No member has published anything yet — the console's own `Empty` (`:143-147`), not a failure.
         case empty
+        /// `minio.enabled=false` leaves the whole controller unregistered (`:42`), so the list is not a refusal
+        /// but a route that does not exist. A named state, per `DESIGN.md` O8: neither an error nor an empty list.
+        case objectStoreDisabled
         case content
         case failed(String)
     }
@@ -59,6 +62,10 @@ public final class TeamArtifactsViewModel: ObservableObject {
             artifacts = rows
             phase = rows.isEmpty ? .empty : .content
         case let .failure(error):
+            if artifacts.isEmpty, error == .objectStoreDisabled {
+                phase = .objectStoreDisabled
+                return
+            }
             let text = ErrorMessage.text(for: error)
             if artifacts.isEmpty {
                 phase = .failed(text)

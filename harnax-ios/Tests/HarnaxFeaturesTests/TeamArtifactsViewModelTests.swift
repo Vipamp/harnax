@@ -96,6 +96,20 @@ final class TeamArtifactsViewModelTests: XCTestCase {
         XCTAssertNil(vm.inlineError, "there are no rows for a banner to sit above")
     }
 
+    /// DESIGN §15 O8: an unregistered store is a state the drawer names, not a failure it reports. Neither the
+    /// error glyph nor "no member has published anything" describes a deployment without MinIO, and the two are
+    /// different remedies for the person reading the screen.
+    func testAStoreThatIsNotRegisteredBecomesTheDisabledState() async {
+        let store = FakeTeamArtifactStore()
+        store.listReplies = [.failure(.objectStoreDisabled)]
+        let (vm, _) = makeVM(store)
+        await vm.load()
+
+        XCTAssertEqual(vm.phase, .objectStoreDisabled)
+        XCTAssertTrue(vm.artifacts.isEmpty)
+        XCTAssertNil(vm.inlineError)
+    }
+
     func testARefreshThatFailedKeepsTheRowsAndRaisesABanner() async {
         let (vm, store, _) = await loaded([artifact("f-id-1", name: "摘要.md")])
         store.listReplies = [.failure(.timeout)]

@@ -72,7 +72,9 @@ final class APIClientTests: XCTestCase {
 
     func testTokenInsideTheRefreshWindowIsRenewedBeforeTheCall() async throws {
         let harness = APIHarness()
-        try await harness.signIn(token: "tok-1", expiresIn: 30)
+        try await harness.signIn(token: "tok-1", expiresIn: 90)
+        // 29 seconds left of a 90-second life is below one third, the threshold DESIGN §5.3 sets.
+        harness.clock.advance(61)
         harness.transport.enqueue(200, Wire.refreshed(token: "tok-2", expiresIn: 3600))
         harness.transport.enqueue(200, Wire.agents(total: 0, ids: []))
 
@@ -111,6 +113,53 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(headerValue(requests[2], "Authorization"), "Bearer tok-2")
     }
 
+    /// The replay is the same call, not a call of the same shape. The body the server refused under the old
+    /// bearer has to reach it byte for byte under the new one — a replay that re-encoded it, dropped it or
+    /// moved it to a stream would post something other than what the user asked for.
+    func testTheReplaySendsTheOriginalBodyByteForByte() async throws {
+        let harness = APIHarness()
+        try await harness.signInWithExpiry(farFuture)
+        let endpoint = try AdminEndpoint.switchTenant(SwitchTenantRequest(tenantId: 2))
+        let original = try XCTUnwrap(endpoint.body)
+        harness.transport.enqueue(401, Wire.unauthorized)
+        harness.transport.enqueue(200, Wire.refreshed(token: "tok-2", expiresIn: 3600, tenantID: 2))
+        harness.transport.enqueue(200, Wire.refreshed(token: "tok-2", expiresIn: 3600, tenantID: 2))
+
+        let result = await harness.client.send(RefreshedToken.self, endpoint)
+        XCTAssertNotNil(result.value)
+
+        let requests = harness.transport.requests
+        XCTAssertEqual(requests.count, 3)
+        let replayed = try XCTUnwrap(requests.last)
+        XCTAssertEqual(replayed.httpBody, original, "what went out the second time is what went out first")
+        XCTAssertEqual(replayed.httpBody, requests[0].httpBody)
+        XCTAssertNil(replayed.httpBodyStream, "a body carried as a stream is not the body that was sent")
+        XCTAssertEqual(replayed.httpMethod, "POST")
+        XCTAssertEqual(replayed.url?.path, AdminEndpoint.switchTenantPath)
+        XCTAssertEqual(headerValue(replayed, "Content-Type"), "application/json")
+        XCTAssertEqual(headerValue(replayed, "Authorization"), "Bearer tok-2", "only the bearer changed")
+    }
+
+    /// A token inside the refresh window is normally renewed before the call goes out. For the one call that
+    /// ends the session that is exactly wrong: the server would be left holding the bearer the user is
+    /// throwing away while the fresh one, which nothing ever revokes, becomes the live credential.
+    func testASessionEndingCallDoesNotRenewTheTokenItIsDiscarding() async throws {
+        let harness = APIHarness()
+        try await harness.signIn(token: "tok-1", expiresIn: 90)
+        // Inside the renewal threshold, so this test really is about the call that opts out of it.
+        harness.clock.advance(61)
+        harness.transport.enqueue(200, Wire.success())
+
+        _ = await harness.client.send(EmptyResponse.self, AdminEndpoint.logout)
+
+        XCTAssertEqual(harness.transport.callCount, 1, "no refresh round trip in front of the revoke")
+        let request = try XCTUnwrap(harness.transport.requests.first)
+        XCTAssertEqual(request.url?.path, AdminEndpoint.logoutPath)
+        XCTAssertEqual(headerValue(request, "Authorization"), "Bearer tok-1")
+        let token = try await harness.session.accessToken()
+        XCTAssertEqual(token, "tok-1", "the sign-out in progress mints nothing")
+    }
+
     /// The second 401 is the ceiling: one refresh, one replay, then the answer stands.
     func testReplayIsNotRetriedOnSecondUnauthorized() async throws {
         let harness = APIHarness()
@@ -146,6 +195,36 @@ final class APIClientTests: XCTestCase {
         XCTAssertNil(token)
         XCTAssertNil(tenant)
         XCTAssertEqual(stored, config)
+    }
+
+    /// A list read that ends the session is not the sign-out button, so nothing above the transport knows the
+    /// account is gone: without the announcement the tab bar keeps greeting a dead bearer. This is the refused
+    /// refresh (`APIClient.settleRefresh`), and exactly one signal per ended session.
+    func testARefusedRefreshAnnouncesThatTheCredentialsAreGone() async throws {
+        let harness = APIHarness()
+        try await harness.signInWithExpiry(farFuture)
+        let announcements = try await Self.countDrops {
+            harness.transport.enqueue(401, Wire.unauthorized)
+            harness.transport.enqueue(401, Wire.unauthorized)
+            _ = await harness.agents.page(name: nil, status: nil, num: 1, size: 20)
+        }
+        XCTAssertEqual(announcements, 1)
+    }
+
+    /// The second 401 is the other place a session is known dead (`APIClient.settleReplay`): the refresh minted
+    /// a token and the server still refused it. Same requirement, and the keychain really did go with it.
+    func testAReplayThatIsStillRefusedAnnouncesTheDroppedCredentials() async throws {
+        let harness = APIHarness()
+        try await harness.signInWithExpiry(farFuture)
+        let announcements = try await Self.countDrops {
+            harness.transport.enqueue(401, Wire.unauthorized)
+            harness.transport.enqueue(200, Wire.refreshed(token: "tok-2", expiresIn: 3600))
+            harness.transport.enqueue(401, Wire.unauthorized)
+            _ = await harness.agents.page(name: nil, status: nil, num: 1, size: 20)
+        }
+        XCTAssertEqual(announcements, 1, "a session ended from a pushed screen has to announce itself")
+        let token = try await harness.session.accessToken()
+        XCTAssertNil(token, "and the fresh bearer that was refused went with it")
     }
 
     /// A hop that never answered is not the server refusing the credential. The web console keeps the same
@@ -223,6 +302,78 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(token, "tok-1")
     }
 
+    /// DESIGN §15 O8: with `minio.enabled=false` the whole `OutputFileController` is unregistered (`:38`) and a
+    /// bare deployment leaves the switch off (`application.yml:96`), so admin answers the path as unknown —
+    /// `GlobalExceptionHandler.kt:101-105` writes its own 404 envelope for it. That is one fact about the server
+    /// rather than a mystery about the file the user tapped.
+    func testAnUnregisteredArtifactStoreRouteNamesTheStoreDisabled() async throws {
+        let harness = APIHarness()
+        try await harness.signIn()
+        harness.transport.enqueue(
+            404,
+            Wire.envelope(code: 404, message: "Requested resource not found", data: nil)
+        )
+
+        let result = await harness.agents.downloadAttachment(
+            Self.attachment(), sessionId: "s-1"
+        )
+
+        XCTAssertEqual(result.failure, APIError.objectStoreDisabled)
+    }
+
+    /// Same rule on the list leg, and it is provable there rather than merely ruled: `listArtifacts` answers an
+    /// envelope even when it refuses (`TeamArtifactController.kt:64`) and never a 404, so admin's own
+    /// route-missing sentence can only be the controller being unregistered.
+    func testAnUnregisteredTeamArtifactListNamesTheStoreDisabled() async throws {
+        let harness = APIHarness()
+        try await harness.signIn()
+        harness.transport.enqueue(
+            404,
+            Wire.envelope(code: 404, message: "Requested resource not found", data: nil)
+        )
+
+        let result = await harness.agents.teamArtifacts(sessionId: "sess-team-1")
+
+        XCTAssertEqual(result.failure, APIError.objectStoreDisabled)
+    }
+
+    /// The bytes leg keeps the plain answer. By the time a row is tappable the list has already come back, so the
+    /// controller is registered and its 404 is `ResponseEntity.notFound().build()` — a reference that is gone or
+    /// somebody else's (`:80-86`) — which must not be dressed up as a deployment switch.
+    func testATeamArtifactThatIsSimplyGoneIsNotReportedAsTheStoreDisabled() async throws {
+        let harness = APIHarness()
+        try await harness.signInWithExpiry(farFuture)
+        harness.transport.enqueue(404, "")
+
+        let result = await harness.client.sendRaw(TeamArtifactEndpoint.download(fileId: "f-1", sessionId: "s-1"))
+
+        XCTAssertEqual(result.failure, APIError.business(code: 404, message: ""))
+    }
+
+    /// And the same on the attachment leg: the controller's own miss has no body, so the file the user tapped is
+    /// reported as missing rather than the store as disabled.
+    func testAnAttachmentThatIsSimplyGoneIsNotReportedAsTheStoreDisabled() async throws {
+        let harness = APIHarness()
+        try await harness.signIn()
+        harness.transport.enqueue(404, "")
+
+        let result = await harness.agents.downloadAttachment(
+            Self.attachment(), sessionId: "s-1"
+        )
+
+        XCTAssertEqual(result.failure, APIError.business(code: 404, message: ""))
+    }
+
+    /// `ChatFileAttachment` keeps an internal memberwise init, so JSON is the only door into it from here.
+    private static func attachment() -> ChatFileAttachment {
+        let body = """
+        {"fileId":"3f1a2b3c-0000-0000-0000-0000000000aa","fileName":"report.md",\
+        "filePath":"web/s-1/report.md","fileSize":12,"mimeType":"text/markdown","url":"",\
+        "objectKey":"web/s-1/3f1a2b3c-0000-0000-0000-0000000000aa"}
+        """
+        return try! JSONDecoder().decode(ChatFileAttachment.self, from: Data(body.utf8))
+    }
+
     /// Refused twice — with the old token and with the one the server just minted — is the clearest possible
     /// answer about the credential, so the session ends instead of burning a refresh round trip on every
     /// later call.
@@ -267,6 +418,93 @@ final class APIClientTests: XCTestCase {
         _ = await harness.agents.page(name: nil, status: nil, num: 1, size: 20)
         let url = try XCTUnwrap(harness.transport.requests.first?.url)
         XCTAssertEqual(url.absoluteString, "https://harnax.example.com/api/admin/agents/page?pageNum=1&pageSize=20")
+    }
+
+    // MARK: - which credential the router takes
+
+    /// The router's filter reads `Authorization` before it ever looks at `X-Api-Key`, and a bearer whose
+    /// signature it cannot verify ends the request right there
+    /// (`harnax-auth/src/main/kotlin/com/agnetix/harnax/auth/UnifiedAuthFilter.kt:47-93`). Admin signs a user
+    /// JWT with `JWT_SECRET` (`harnax-admin/src/main/resources/application.yml:80-81`) while the router
+    /// verifies with `HARNAX_AUTH_SECRET`
+    /// (`harnax-session-router/src/main/resources/application.yml:141`) — two different secrets by design
+    /// (`harnax-auth/src/main/kotlin/com/agnetix/harnax/auth/InternalTokenProvider.kt:59-67`). Measured on the
+    /// live stack 2026-09-30: the key alone 200, the bearer alone 401, both together 401. So the key has to go
+    /// alone, which is the shape the console sends (`ChatWindow.tsx:153-164`).
+    func testARouterCallCarriesThePermanentKeyAndNothingThatCouldPreemptIt() async throws {
+        let harness = await signedInHarness()
+        harness.transport.enqueue(200, Wire.success("[]"))
+        _ = await harness.agents.history(sessionId: "s-1")
+
+        let request = try XCTUnwrap(harness.transport.requests.first)
+        XCTAssertEqual(headerValue(request, "X-Api-Key"), "rk-1")
+        XCTAssertNil(headerValue(request, "Authorization"), "the filter 401s on the bearer before it reads the key")
+        XCTAssertNil(headerValue(request, "X-Tenant-ID"), "the key already names the tenant it validates to")
+    }
+
+    /// A keyless account is the pre-permanent-key shape, and the bearer is the only credential it owns.
+    func testAKeylessAccountGoesToTheRouterOnTheBearerAlone() async throws {
+        let harness = APIHarness()
+        try await harness.session.signIn(harness.decode(Wire.login(routerKey: nil)))
+        harness.transport.enqueue(200, Wire.success("[]"))
+        _ = await harness.agents.history(sessionId: "s-1")
+
+        let request = try XCTUnwrap(harness.transport.requests.first)
+        XCTAssertEqual(headerValue(request, "Authorization"), "Bearer tok-1")
+        XCTAssertNil(headerValue(request, "X-Api-Key"))
+    }
+
+    /// The key is the router's credential and no one else's: admin reads the bearer, and its internal filter
+    /// would read an `X-Api-Key` as an external caller instead.
+    func testAnAdminCallCarriesNoPermanentKey() async throws {
+        let harness = await signedInHarness()
+        harness.transport.enqueue(200, Wire.agents(total: 0, ids: []))
+        _ = await harness.agents.page(name: nil, status: nil, num: 1, size: 20)
+
+        let request = try XCTUnwrap(harness.transport.requests.first)
+        XCTAssertEqual(headerValue(request, "Authorization"), "Bearer tok-1")
+        XCTAssertNil(headerValue(request, "X-Api-Key"))
+    }
+
+    /// The bounce these rules exist to stop. A router route that went out on the bearer alone came back 401,
+    /// the client renewed the bearer (admin accepts it, so the renewal succeeds), replayed, was refused again,
+    /// and the second 401 emptied the keychain — which is the one door to the login screen
+    /// (`AuthSession.signOut()` posts what `AppModel` listens for).
+    func testARejectedPermanentKeyDoesNotEndTheAdminSession() async throws {
+        let harness = await signedInHarness()
+        harness.transport.enqueue(401, Wire.unauthorized)
+        // A second refusal, for whatever the replay asks with: without it the stub runs dry and the old
+        // behaviour would look like it had kept the session for a reason it never had.
+        harness.transport.enqueue(401, Wire.unauthorized)
+        var refusal: APIError?
+        let drops = try await Self.countDrops {
+            refusal = await harness.agents.history(sessionId: "s-1").failure
+        }
+
+        XCTAssertEqual(refusal, APIError.unauthorized)
+        XCTAssertEqual(drops, 0, "a dead router key is not a dead admin session")
+        XCTAssertEqual(harness.transport.callCount, 1, "a bearer renewal cannot fix a rejected key")
+        let stillSignedIn = try await harness.session.isSignedIn()
+        XCTAssertTrue(stillSignedIn)
+    }
+
+    /// How many times the credentials were announced gone while `body` ran. The post is synchronous and lands
+    /// inside the call that clears the keychain, so the count is final the moment that call returns.
+    private static func countDrops(_ body: () async throws -> Void) async throws -> Int {
+        let lock = NSLock()
+        var announcements = 0
+        let observer = NotificationCenter.default.addObserver(
+            forName: .harnaxCredentialsDropped,
+            object: nil,
+            queue: nil
+        ) { _ in
+            lock.lock()
+            announcements += 1
+            lock.unlock()
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        try await body()
+        return announcements
     }
 }
 

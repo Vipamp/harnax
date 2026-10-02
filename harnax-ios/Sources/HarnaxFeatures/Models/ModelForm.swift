@@ -56,7 +56,10 @@ public final class ModelFormModel: ObservableObject {
         supportsTool = editing?.supportsTool ?? false
         supportsMcp = editing?.supportsMcp ?? false
         supportsVision = editing?.supportsVision ?? false
-        isPublic = editing?.isShared ?? true
+        // A create is private to its creator, as the console's model form does (`ModelForm.tsx:60`); the
+        // provider form defaults to shared with the rest of the tenant instead, and that asymmetry is the
+        // console's, not a slip. Either way the tenant itself is the outer wall.
+        isPublic = editing?.isShared ?? false
         canChangeVisibility = account?.canChangeVisibility(
             creator: editing?.creator,
             currentlyPublic: editing?.isShared ?? false,
@@ -157,12 +160,15 @@ public final class ModelFormModel: ObservableObject {
 }
 
 /// The model form sheet, presented from the second level.
-struct ModelFormSheet: View {
+///
+/// Public so the DEBUG walkthrough can frame the sheet from a launch argument — the simulator takes no input,
+/// so a sheet the harness cannot name is a sheet nobody can review (`App/HarnaxDebugScreens.swift`).
+public struct ModelFormSheet: View {
     @StateObject private var vm: ModelFormModel
     @Environment(\.dismiss) private var dismiss
     private let onSaved: () -> Void
 
-    init(
+    public init(
         catalog: any ModelCataloging,
         providerID: Int64,
         editing: ModelSummary?,
@@ -178,7 +184,7 @@ struct ModelFormSheet: View {
         self.onSaved = onSaved
     }
 
-    var body: some View {
+    public var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {

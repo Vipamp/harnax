@@ -1,7 +1,8 @@
 import Foundation
 import HarnaxCore
 
-/// The team routes the list screen and the team form touch: the agent set mirrored onto `/api/admin/teams/**`.
+/// The team routes the list screen, the team form and a conversation's detail sheet touch: the agent set
+/// mirrored onto `/api/admin/teams/**`.
 enum TeamEndpoint {
     static let root = "/api/admin/teams"
 
@@ -11,6 +12,14 @@ enum TeamEndpoint {
             path: root + "/page",
             query: Endpoint.pageItems(num: num, size: size, name: name, status: status)
         )
+    }
+
+    /// `GET /api/admin/teams/{id}` (`TeamController.kt:54-65`): the same `TeamResponse` a page row is
+    /// serialised from. This is the only read that names a team conversation's members, and the only one that
+    /// says whether a lead skill or a member is still there — both lists keep a broken reference and flag it
+    /// (`TeamServiceImpl.kt:181-203`).
+    static func by(id: Int64) -> Endpoint {
+        Endpoint(.get, path: "\(root)/\(id)")
     }
 
     static func toggle(id: Int64, status: Int) -> Endpoint {

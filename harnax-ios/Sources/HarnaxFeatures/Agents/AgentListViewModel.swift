@@ -50,6 +50,9 @@ public final class AgentListViewModel: ObservableObject {
     /// goes out again for the newer query before it returns.
     private var isRefreshing = false
     private var rerunRequested = false
+    /// An append asked for while a refresh is on the wire is remembered rather than dropped: the reader is
+    /// still waiting for page 2, so the refresh runs it for its own query once that page has landed.
+    private var appendRequested = false
 
     public init(agents: any AgentCataloging, pageSize: Int = 20) {
         self.agents = agents
@@ -90,6 +93,7 @@ public final class AgentListViewModel: ObservableObject {
             pages.replace(with: page)
             statusOverrides = statusOverrides.filter { pendingIDs.contains($0.key) }
             apply()
+            await reissueAppend()
         case let .failure(error):
             guard generation == refreshGeneration else { return }
             let text = ErrorMessage.text(for: error)
@@ -103,6 +107,20 @@ public final class AgentListViewModel: ObservableObject {
 
     public func loadMore() async {
         guard canLoadMore, !isAppending else { return }
+        guard !isRefreshing else {
+            appendRequested = true
+            return
+        }
+        await runAppend()
+    }
+
+    /// The tail read, under the identity of the query that was on screen when the scroll happened.
+    ///
+    /// Without it the answer lands whatever query it was asked for: `PagedState.append` takes the rows, the
+    /// total and the page counter off the reply, so a reader who changed the filter mid-flight gets the retired
+    /// query's rows spliced in and then asks for one of its page numbers.
+    private func runAppend() async {
+        let generation = refreshGeneration
         isAppending = true
         defer { isAppending = false }
         switch await agents.page(
@@ -112,18 +130,29 @@ public final class AgentListViewModel: ObservableObject {
             size: pages.pageSize
         ) {
         case let .success(page):
+            guard generation == refreshGeneration else { return }
             inlineError = nil
             pages.append(with: page)
             apply()
         case let .failure(error):
+            guard generation == refreshGeneration else { return }
             // The list is still usable, so the page counter is left alone and the next scroll retries
             // the same page number.
             inlineError = ErrorMessage.text(for: error)
         }
     }
 
+    private func reissueAppend() async {
+        guard appendRequested, canLoadMore, !isAppending else { return }
+        appendRequested = false
+        await runAppend()
+    }
+
     public func setStatus(_ enabled: Bool, for agent: AgentSummary) async {
         guard let id = agent.id else { return }
+        // The view's disable lands a render pass late, so a fast double tap reaches here twice; the row's own
+        // pending flag is the only place both taps pass through.
+        guard !pendingIDs.contains(id) else { return }
         statusOverrides[id] = enabled
         pendingIDs.insert(id)
         defer { pendingIDs.remove(id) }

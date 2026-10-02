@@ -3,50 +3,85 @@ import HarnaxCore
 import HarnaxKit
 @testable import HarnaxFeatures
 
-/// The read-only tool list's behaviour: what the first answer becomes on screen, how the two filters reach
-/// the stack, what paging does to the row set, and what a failure may not take away.
+/// The read-only tool list's behaviour: one unpaged read of the builtin table, a search and a status filter
+/// applied to the rows already on screen, and what a failure may not take away.
+///
+/// The data source is `GET /api/admin/tools/builtin`, the console's own route
+/// (`harnax-webui/src/services/ant-design-pro/tool.ts:13-16`), which is why nothing here asserts on a
+/// keyword or a status going out on the wire: the search is local, and only a refresh costs a request.
 ///
 /// There is no write coverage here on purpose — the domain has no writes
 /// (`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/AgentToolController.kt:13-15`).
 @MainActor
 final class ToolListViewModelTests: XCTestCase {
-    private func page(_ records: [[String: Any]], total: Int? = nil, pageNum: Int = 1) throws -> Page<ToolSummary> {
-        try PageStub.page(ToolSummary.self, records, pageNum: pageNum, total: total)
+    // MARK: - fixtures
+
+    /// The columns the console's own filter reads, spelled out per case so a test says what it matches on.
+    private func row(
+        id: Int = 1,
+        name: String? = nil,
+        display: String? = nil,
+        displayZh: String? = nil,
+        description: String? = nil,
+        status: Int? = 1
+    ) throws -> ToolSummary {
+        var fields: [String: Any] = ["id": id]
+        if let name { fields["name"] = name }
+        if let display { fields["displayName"] = display }
+        if let displayZh { fields["displayNameZh"] = displayZh }
+        if let description { fields["description"] = description }
+        if let status { fields["status"] = status }
+        return try ToolSummary.stub(fields)
     }
 
-    /// `displayName`/`displayNameZh` are present so the title rule has something to prefer; the 0/1 columns
-    /// are spelled as integers, because that is what the backend sends.
-    private func tool(_ id: Int?, _ display: String) -> [String: Any] {
-        var row: [String: Any] = ["displayName": display, "name": "tool_\(display)", "status": 1]
-        if let id { row["id"] = id }
-        return row
+    private func seededTools(_ rows: [[String: Any]]) throws -> [ToolSummary] {
+        try rows.map { try ToolSummary.stub($0) }
     }
 
-    private func seededTools(_ count: Int, total: Int? = nil, pageNum: Int = 1) throws -> Page<ToolSummary> {
-        try page((1...count).map { tool($0, "工具 \($0)") }, total: total, pageNum: pageNum)
+    /// Two ordinary rows, enough to prove that a filter narrowed the set rather than emptied it.
+    private var sampleRows: [[String: Any]] {
+        [
+            ["id": 1, "name": "send_email", "displayName": "Send Email", "displayNameZh": "发送邮件",
+             "description": "Sends a mail through the configured server", "status": 1],
+            ["id": 2, "name": "read_file", "displayName": "Read File", "displayNameZh": "读取文件",
+             "description": "Reads a file inside the sandbox root", "status": 1],
+        ]
     }
 
-    private func fresh(_ tools: FakeToolCatalog = FakeToolCatalog()) async throws -> (ToolListViewModel, FakeToolCatalog) {
-        tools.replies = [.success(try seededTools(2, total: 2))]
+    private func fresh() async throws -> (ToolListViewModel, FakeToolCatalog) {
+        let tools = FakeToolCatalog()
+        tools.builtinReplies = [.success(try seededTools(sampleRows))]
         let vm = ToolListViewModel(tools: tools)
         await vm.refresh()
         return (vm, tools)
     }
 
-    // MARK: - first screen
+    // MARK: - the read
 
-    func testTheFirstPageBecomesRowsNotASpinner() async throws {
+    func testTheBuiltinTableIsTheOneReadTheScreenMakes() async throws {
         let (vm, tools) = try await fresh()
         XCTAssertEqual(vm.phase, .content)
         XCTAssertEqual(vm.items.count, 2)
-        XCTAssertEqual(vm.total, 2)
-        XCTAssertEqual(tools.requests.map(\.num), [1])
-        XCTAssertFalse(vm.canLoadMore, "two rows out of two leaves nothing to fetch")
+        XCTAssertEqual(vm.total, 2, "the table's own size is the total, because nothing is left to fetch")
+        XCTAssertEqual(tools.builtinCalls, 1)
+        XCTAssertTrue(tools.detailRequests.isEmpty)
+    }
+
+    /// `/builtin` answers every code-registered row at once (`AgentToolMapper.xml:64-67`), so the whole
+    /// table is on screen after one read — the console's table is not paginated either
+    /// (`harnax-webui/src/pages/tool/index.tsx:170`).
+    func testTheWholeTableLandsFromOneReadWithNoTailToFetch() async throws {
+        let tools = FakeToolCatalog()
+        tools.builtinReplies = [.success(try seededTools((1...40).map { ["id": $0, "name": "tool_\($0)"] }))]
+        let vm = ToolListViewModel(tools: tools)
+        await vm.refresh()
+        XCTAssertEqual(vm.items.count, 40)
+        XCTAssertEqual(tools.builtinCalls, 1, "a second read would mean the screen still thinks it is paging")
     }
 
     func testAnInstallationWithNoToolsIsNotASpinningWheel() async throws {
         let tools = FakeToolCatalog()
-        tools.replies = [.success(try page([], total: 0))]
+        tools.builtinReplies = [.success([])]
         let vm = ToolListViewModel(tools: tools)
         await vm.refresh()
         XCTAssertEqual(vm.phase, .empty)
@@ -55,123 +90,187 @@ final class ToolListViewModelTests: XCTestCase {
 
     func testAFailedFirstReadOwnsTheScreen() async throws {
         let tools = FakeToolCatalog()
-        tools.replies = [.failure(.offline)]
+        tools.builtinReplies = [.failure(.offline)]
         let vm = ToolListViewModel(tools: tools)
         await vm.refresh()
         XCTAssertEqual(vm.phase, .failed(ErrorMessage.text(for: .offline)))
         XCTAssertNil(vm.inlineError, "there is no list behind a banner to keep")
     }
 
-    // MARK: - filters on the wire
-
-    /// The tool page route names its filter `keyword`, where the agent and team routes name theirs `name`.
-    func testTheSearchWordGoesOutAsTheKeywordFilter() async throws {
+    func testAFailedRefreshLeavesTheListUpAndClearsOnceItWorks() async throws {
         let (vm, tools) = try await fresh()
-        vm.keyword = "邮件"
-        tools.replies = [.success(try seededTools(1, total: 1))]
-        try await waitUntil { tools.filters.count == 2 }
-        XCTAssertEqual(tools.filters.last?.keyword, "邮件")
+        tools.builtinReplies = [.failure(.timeout)]
+        await vm.refresh()
+        XCTAssertEqual(vm.items.count, 2)
+        XCTAssertEqual(vm.phase, .content)
+        XCTAssertEqual(vm.inlineError, ErrorMessage.text(for: .timeout))
+
+        tools.builtinReplies = [.success(try seededTools([["id": 9, "name": "only"]]))]
+        await vm.refresh()
+        XCTAssertNil(vm.inlineError)
+        XCTAssertEqual(vm.items.count, 1)
     }
 
-    /// The status filter is the raw 0/1 column, and `all` leaves it off rather than sending a sentinel.
-    func testTheStatusFilterIsSentAsTheZeroOneColumn() async throws {
+    /// Two refreshes can be on the wire at once — a pull while a filter's read has not landed. The older
+    /// answer must not win the rows, which is the same identity rule the paged screens keep.
+    func testASlowAnswerDoesNotOverwriteANewerOne() async throws {
+        let tools = FakeToolCatalog()
+        tools.builtinReplies = [.success(try seededTools([["id": 1, "name": "stale"]]))]
+        tools.readGate.arm()
+        let vm = ToolListViewModel(tools: tools)
+        let slow = Task { await vm.refresh() }
+        try await waitUntil { tools.builtinCalls == 1 }
+
+        tools.builtinReplies = [.success(try seededTools([["id": 2, "name": "fresh"], ["id": 3, "name": "later"]]))]
+        await vm.refresh()
+        XCTAssertEqual(vm.items.map(\.id), [2, 3])
+
+        tools.readGate.release()
+        await slow.value
+        XCTAssertEqual(vm.items.map(\.id), [2, 3], "the stale answer arrived last and lost")
+        XCTAssertEqual(vm.total, 2)
+    }
+
+    /// A refresh replaces the row set rather than adding to it: the builtin table is re-read whole, so rows
+    /// a boot removed must disappear.
+    func testASecondRefreshReplacesRatherThanAppends() async throws {
         let (vm, tools) = try await fresh()
-        tools.replies = [.success(try seededTools(1, total: 1))]
-        vm.filter = .disabled
-        try await waitUntil { tools.filters.count == 2 }
-        XCTAssertEqual(tools.filters.last?.status, 0)
+        tools.builtinReplies = [.success(try seededTools([["id": 1, "name": "send_email"]]))]
+        await vm.refresh()
+        XCTAssertEqual(vm.items.map(\.id), [1])
+    }
+
+    // MARK: - the search, which never costs a request
+
+    /// The headline gap this screen existed to close: the paged route's `keyword` is matched by MySQL
+    /// against `name`/`display_name`/`description` only (`AgentToolMapper.xml:45-57`), so the Chinese
+    /// column was unreachable. The console filters in memory over four columns
+    /// (`harnax-webui/src/pages/tool/index.tsx:57-68`), and 读取文件 is the word a Chinese operator types.
+    func testAChineseDisplayNameMatchesWhereTheServerWouldNotHaveFoundIt() async throws {
+        let (vm, tools) = try await fresh()
+        vm.keyword = "读取"
+        XCTAssertEqual(vm.items.map(\.id), [2])
+        XCTAssertEqual(vm.total, 2, "the table is still two rows wide; only the view narrowed")
+        XCTAssertEqual(tools.builtinCalls, 1, "a local search costs no read")
+    }
+
+    /// The four columns, one needle each: a row matched by nothing else still matches on its description.
+    func testTheSearchCoversTheSameFourColumnsTheConsoleDoes() async throws {
+        let rows = try seededTools([
+            ["id": 1, "name": "alpha_tool", "displayName": "Beta", "displayNameZh": "伽马", "description": "Gamma work"],
+        ])
+        let tools = FakeToolCatalog()
+        tools.builtinReplies = [.success(rows)]
+        let vm = ToolListViewModel(tools: tools)
+        await vm.refresh()
+        for needle in ["alpha", "Beta", "伽马", "gamma wo"] {
+            vm.keyword = needle
+            XCTAssertEqual(vm.items.map(\.id), [1], "\(needle) should match")
+        }
+        vm.keyword = "delta"
+        XCTAssertTrue(vm.items.isEmpty, "a word in none of the four columns matches nothing")
+    }
+
+    /// `toLowerCase()` on both sides is the console's case rule, and Swift's `lowercased()` is
+    /// locale-independent in the same way.
+    func testTheSearchIgnoresCaseOnBothSides() async throws {
+        let (vm, _) = try await fresh()
+        vm.keyword = "READ_FILE"
+        XCTAssertEqual(vm.items.map(\.id), [2])
+        vm.keyword = "读取文件"
+        XCTAssertEqual(vm.items.map(\.id), [2])
+    }
+
+    /// The console tests the trimmed keyword for emptiness but lowercases the *typed* string
+    /// (`tool/index.tsx:59-60`), so padding stays in the needle and a padded search legitimately misses.
+    /// Copied rather than improved: two screens, one rule about what a search word is.
+    func testAPaddedSearchWordIsNotTrimmedForMatching() async throws {
+        let (vm, _) = try await fresh()
+        vm.keyword = " 读取 "
+        XCTAssertTrue(vm.items.isEmpty)
+        XCTAssertTrue(vm.isFiltered, "it is still a search the user meant to filter by")
+        vm.keyword = "读取"
+        XCTAssertEqual(vm.items.map(\.id), [2])
+    }
+
+    /// `item.name &&` in the console means an absent or empty column cannot match — an empty needle is the
+    /// only thing that does, and that case is the unfiltered table.
+    func testAColumnThatIsNotThereCannotMatch() async throws {
+        let tools = FakeToolCatalog()
+        tools.builtinReplies = [.success(try seededTools([
+            ["id": 1, "name": "", "displayName": "", "displayNameZh": "", "description": ""],
+            ["id": 2, "name": "email_relay"],
+        ]))]
+        let vm = ToolListViewModel(tools: tools)
+        await vm.refresh()
+        vm.keyword = "@"
+        XCTAssertTrue(vm.items.isEmpty)
+        vm.keyword = "relay"
+        XCTAssertEqual(vm.items.map(\.id), [2])
+    }
+
+    // MARK: - the filters, which are local too
+
+    /// `status` is the raw 0/1 column; the SQL the paged route ran compared it for equality, and doing it
+    /// locally keeps the same answer — including a row whose column the backend left out.
+    func testTheStatusFilterSelectsTheZeroOneColumnLocally() async throws {
+        let tools = FakeToolCatalog()
+        tools.builtinReplies = [.success(try seededTools([
+            ["id": 1, "name": "on", "status": 1],
+            ["id": 2, "name": "off", "status": 0],
+            ["id": 3, "name": "unset"],
+        ]))]
+        let vm = ToolListViewModel(tools: tools)
+        await vm.refresh()
+        XCTAssertEqual(vm.items.map(\.id), [1, 2, 3], "all sends no judgement at all")
         vm.filter = .enabled
-        try await waitUntil { tools.filters.count == 3 }
-        XCTAssertEqual(tools.filters.last?.status, 1)
-        vm.filter = .all
-        try await waitUntil { tools.filters.count == 4 }
-        XCTAssertNil(tools.filters.last?.status)
+        XCTAssertEqual(vm.items.map(\.id), [1], "a row with no status column is not an enabled one either")
+        vm.filter = .disabled
+        XCTAssertEqual(vm.items.map(\.id), [2])
+        XCTAssertEqual(tools.builtinCalls, 1, "changing a filter on an already-loaded table costs no read")
+    }
+
+    func testTheSearchAndTheStatusFilterNarrowTogether() async throws {
+        let (vm, _) = try await fresh()
+        vm.keyword = "邮件"
+        vm.filter = .disabled
+        XCTAssertTrue(vm.items.isEmpty, "the only 邮件 row is enabled")
+        vm.filter = .enabled
+        XCTAssertEqual(vm.items.map(\.id), [1])
     }
 
     func testWhitespaceOnlySearchIsNotAFilter() async throws {
         let (vm, _) = try await fresh()
         vm.keyword = "   "
         XCTAssertFalse(vm.isFiltered, "spaces are not a search the user meant")
+        XCTAssertEqual(vm.items.count, 2)
         vm.filter = .enabled
         XCTAssertTrue(vm.isFiltered)
     }
 
-    // MARK: - paging
-
-    func testTheNextPageAppendsRatherThanReplacing() async throws {
-        let tools = FakeToolCatalog()
-        tools.replies = [
-            .success(try page([tool(1, "甲"), tool(2, "乙")], total: 5)),
-            .success(try page([tool(3, "丙"), tool(4, "丁")], total: 5, pageNum: 2)),
-        ]
-        let vm = ToolListViewModel(tools: tools)
-        await vm.refresh()
-        XCTAssertTrue(vm.canLoadMore)
-        await vm.loadMore()
-        XCTAssertEqual(tools.requests.map(\.num), [1, 2])
-        XCTAssertEqual(vm.items.count, 4)
-        XCTAssertEqual(vm.total, 5)
-        XCTAssertTrue(vm.canLoadMore)
+    /// An empty table under a filter and an installation that registers nothing are different news, and the
+    /// screen picks its sentence from `isFiltered`, so the phase has to stay `.empty` for both.
+    func testAFilterThatMatchesNothingLeavesAnEmptyPhaseAndSaysSo() async throws {
+        let (vm, _) = try await fresh()
+        vm.keyword = "nothing matches this"
+        XCTAssertEqual(vm.phase, .empty)
+        XCTAssertTrue(vm.isFiltered)
     }
 
-    /// A shifted page can repeat a row the screen already shows; `List` keys on the row, so a duplicate
-    /// would render twice under one identity.
-    func testARowAlreadyOnScreenIsNotAppendedTwice() async throws {
-        let tools = FakeToolCatalog()
-        tools.replies = [
-            .success(try page([tool(1, "甲"), tool(2, "乙")], total: 3)),
-            .success(try page([tool(2, "乙"), tool(3, "丙")], total: 3, pageNum: 2)),
-        ]
-        let vm = ToolListViewModel(tools: tools)
-        await vm.refresh()
-        await vm.loadMore()
-        XCTAssertEqual(vm.items.compactMap(\.id), [1, 2, 3])
-        XCTAssertFalse(vm.canLoadMore)
-    }
-
-    func testScrollingPastTheLastPageAsksNothing() async throws {
+    func testClearingTheSearchBringsTheWholeTableBack() async throws {
         let (vm, tools) = try await fresh()
-        await vm.loadMore()
-        XCTAssertEqual(tools.requests.count, 1, "canLoadMore is the only gate the scroll needs")
-    }
-
-    func testAFailedPageKeepsItsRowsAndAsksTheSameNumberAgain() async throws {
-        let tools = FakeToolCatalog()
-        tools.replies = [.success(try page([tool(1, "甲")], total: 3))]
-        let vm = ToolListViewModel(tools: tools)
-        await vm.refresh()
-        XCTAssertTrue(vm.canLoadMore)
-
-        tools.replies = [.failure(.offline), .success(try page([tool(2, "乙")], total: 3, pageNum: 2))]
-        await vm.loadMore()
-        XCTAssertEqual(vm.items.count, 1, "the rows the operator is reading stay")
-        XCTAssertEqual(vm.inlineError, ErrorMessage.text(for: .offline))
-        XCTAssertEqual(vm.phase, .content)
-        await vm.loadMore()
-        XCTAssertEqual(tools.requests.map(\.num), [1, 2, 2], "a failed page is retried, not skipped")
-        XCTAssertEqual(vm.items.count, 2)
-    }
-
-    /// A refresh failure on a populated list is a banner, not a replacement screen — and the next successful
-    /// refresh clears it.
-    func testAFailedRefreshLeavesTheListUpAndClearsOnceItWorks() async throws {
-        let (vm, tools) = try await fresh()
-        tools.replies = [.failure(.timeout)]
-        await vm.refresh()
-        XCTAssertEqual(vm.items.count, 2)
-        XCTAssertEqual(vm.phase, .content)
-        XCTAssertEqual(vm.inlineError, ErrorMessage.text(for: .timeout))
-
-        tools.replies = [.success(try seededTools(1, total: 1))]
-        await vm.refresh()
-        XCTAssertNil(vm.inlineError)
+        vm.keyword = "读取"
         XCTAssertEqual(vm.items.count, 1)
+        vm.keyword = ""
+        XCTAssertEqual(vm.items.count, 2)
+        XCTAssertFalse(vm.isFiltered)
+        XCTAssertEqual(tools.builtinCalls, 1)
     }
 
     // MARK: - the drill-down
 
-    /// The row the sheet opened with is the row it shows: `/page` already carries the parameter table, so
-    /// opening a sheet is not a request.
+    /// The row the sheet opened with is the row it shows: `/builtin` carries the parameter table, so opening
+    /// a sheet is not a request.
     func testOpeningADetailCostsNoRequest() async throws {
         let (vm, tools) = try await fresh()
         let model = ToolDetailModel(tools: tools, tool: vm.items[0])
@@ -181,7 +280,7 @@ final class ToolListViewModelTests: XCTestCase {
 
     func testTheReReadRowReplacesWhatIsOnScreen() async throws {
         let (vm, tools) = try await fresh()
-        tools.detailReplies = [.success(try ToolSummary.stub(tool(1, "改名后的工具")))]
+        tools.detailReplies = [.success(try row(id: 1, display: "改名后的工具"))]
         let model = ToolDetailModel(tools: tools, tool: vm.items[0])
         await model.reload()
         XCTAssertEqual(tools.detailRequests, [1])
@@ -204,7 +303,7 @@ final class ToolListViewModelTests: XCTestCase {
 
     func testARowWithNoIdCannotBeReRead() async throws {
         let tools = FakeToolCatalog()
-        tools.replies = [.success(try page([tool(nil, "无名")], total: 1))]
+        tools.builtinReplies = [.success(try seededTools([["name": "无名", "displayName": "无名"]]))]
         let vm = ToolListViewModel(tools: tools)
         await vm.refresh()
         let model = ToolDetailModel(tools: tools, tool: vm.items[0])

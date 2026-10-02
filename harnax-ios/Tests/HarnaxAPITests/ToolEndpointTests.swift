@@ -2,27 +2,20 @@ import XCTest
 import HarnaxCore
 @testable import HarnaxAPI
 
-/// The tool routes as they actually go out. Its own file because the one thing worth pinning here is the
-/// filter's *name* — the page route calls it `keyword`, while the agent and team routes call theirs `name`,
-/// and a copied query builder would still have returned 200 with every row attached.
+/// The tool routes as they actually go out. Its own file because the one thing worth pinning here is that the
+/// table's route carries *nothing*: `/builtin` takes no keyword, no status and no page counter
+/// (`AgentToolController.kt:67-78`), which is what makes the search a local one — a route that silently grew
+/// a `keyword` again would send the Chinese display column straight back out of reach.
 final class ToolEndpointTests: XCTestCase {
     private let admin = "https://harnax.example.com"
 
-    func testThePageRouteCarriesItsCounterAndNoFilters() {
-        let url = ToolEndpoint.page(keyword: nil, status: nil, num: 1, size: 50).url(baseURL: admin)
-        XCTAssertEqual(url?.absoluteString, "\(admin)/api/admin/tools/page?pageNum=1&pageSize=50")
-    }
-
-    func testBothFiltersRideTheQueryUnderTheirOwnNames() {
-        let url = ToolEndpoint.page(keyword: "email", status: 0, num: 2, size: 50).url(baseURL: admin)
-        XCTAssertEqual(url?.query, "pageNum=2&pageSize=50&keyword=email&status=0")
-    }
-
-    /// `status=0` is a real filter — a stopped row is a row the user asked to see. A blank keyword is not a
-    /// pattern worth sending.
-    func testAZeroStatusIsSentWhileABlankKeywordIsNot() {
-        let url = ToolEndpoint.page(keyword: "", status: 0, num: 1, size: 10).url(baseURL: admin)
-        XCTAssertEqual(url?.query, "pageNum=1&pageSize=10&status=0")
+    func testTheBuiltinRouteIsAPathWithNoQueryAtAll() {
+        let endpoint = ToolEndpoint.builtin
+        XCTAssertEqual(endpoint.method, .get)
+        XCTAssertEqual(endpoint.path, "/api/admin/tools/builtin")
+        XCTAssertTrue(endpoint.query.isEmpty, "a filter on this route would mean a server-side search")
+        XCTAssertNil(endpoint.body)
+        XCTAssertEqual(endpoint.url(baseURL: admin)?.absoluteString, "\(admin)/api/admin/tools/builtin")
     }
 
     func testTheDetailRouteIsTheIdInThePath() {
@@ -31,5 +24,10 @@ final class ToolEndpointTests: XCTestCase {
         XCTAssertEqual(endpoint.path, "/api/admin/tools/7")
         XCTAssertTrue(endpoint.query.isEmpty)
         XCTAssertNil(endpoint.body)
+    }
+
+    func testTheWizardCandidatesTakeNoParameterEither() {
+        let endpoint = ToolEndpoint.available
+        XCTAssertEqual(endpoint.url(baseURL: admin)?.absoluteString, "\(admin)/api/admin/tools/available")
     }
 }

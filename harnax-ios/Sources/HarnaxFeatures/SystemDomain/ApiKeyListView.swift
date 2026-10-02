@@ -49,6 +49,7 @@ public struct ApiKeyListView: View {
             .searchable(text: $vm.keyword, prompt: Text(verbatim: hx("apikey.search")))
             .toolbar {
                 ToolbarItem(placement: .primaryAction) { addButton }
+                ToolbarItem(placement: .primaryAction) { filterMenu }
             }
             .task {
                 if vm.phase == .loading { await vm.refresh() }
@@ -110,12 +111,17 @@ public struct ApiKeyListView: View {
     }
 
     private var addButton: some View {
-        Button {
-            target = .create
-        } label: {
-            Image(systemName: "plus")
-        }
-        .accessibilityLabel(hx("apikey.create"))
+        HXPlusButton(titleKey: "apikey.create") { target = .create }
+    }
+
+    /// The status filter used to be a segment row at the head of the list, which only exists while the list has
+    /// rows: filter down to nothing and the one control that could undo it was gone with them.
+    private var filterMenu: some View {
+        HXFilterMenu(
+            isFiltering: vm.filter != .all,
+            accessibilityLabel: hx("state.filter.status"),
+            choices: statusFilterChoices(vm.filter) { vm.filter = $0 }
+        )
     }
 
     @ViewBuilder
@@ -142,13 +148,6 @@ public struct ApiKeyListView: View {
                 if let inline = vm.inlineError {
                     HXBanner("state.error.title", message: inline, systemImage: "exclamationmark.triangle", tone: .danger)
                 }
-                HXSegmented(
-                    StatusFilter.allCases.map { HXSegmentOption(id: $0.rawValue, $0.titleKey) },
-                    selection: Binding(
-                        get: { vm.filter.rawValue },
-                        set: { vm.filter = StatusFilter(rawValue: $0) ?? .all }
-                    )
-                )
                 // Row identity is the array index: a page may carry rows whose `id` the backend left null.
                 ForEach(Array(vm.items.enumerated()), id: \.offset) { index, row in
                     ApiKeyRecordCard(
@@ -284,6 +283,7 @@ public struct ApiKeyRecordCard: View {
                 .frame(width: 30, height: 30)
                 .background(Color.hx(.surfaceAlt), in: Circle())
         }
+        .accessibilityLabel(hx("state.action.more"))
     }
 }
 

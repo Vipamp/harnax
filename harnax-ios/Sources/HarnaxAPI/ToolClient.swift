@@ -7,16 +7,11 @@ import HarnaxCore
 ///
 /// The method names carry the domain because one type conforms to every cataloging protocol at once.
 extension AdminClient: ToolCataloging {
-    public func toolPage(
-        keyword: String?,
-        status: Int?,
-        num: Int,
-        size: Int
-    ) async -> Result<Page<ToolSummary>, APIError> {
-        await client.send(
-            Page<ToolSummary>.self,
-            ToolEndpoint.page(keyword: keyword, status: status, num: num, size: size)
-        )
+    /// `/builtin` answers `List<AgentToolResponse>` — the same DTO as every other tool route, so the same
+    /// row type decodes it, `envParams` and all (`AgentToolController.kt:72-74`). It is unpaged, so there is
+    /// no `Page` wrapper to unwrap and no total to reconcile: the array's own count is the table's size.
+    public func builtinTools() async -> Result<[ToolSummary], APIError> {
+        await client.send([ToolSummary].self, ToolEndpoint.builtin)
     }
 
     public func toolDetail(id: Int64) async -> Result<ToolSummary, APIError> {

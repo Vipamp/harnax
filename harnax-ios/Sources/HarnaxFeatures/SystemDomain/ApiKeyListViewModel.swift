@@ -53,6 +53,9 @@ public final class ApiKeyListViewModel: ObservableObject {
     private var refreshGeneration = 0
     private var isRefreshing = false
     private var rerunRequested = false
+    /// An append asked for while a refresh is on the wire is remembered, not dropped — see
+    /// `AgentListViewModel`.
+    private var appendRequested = false
 
     public init(catalog: any ApiKeyCataloging, pageSize: Int = 20) {
         self.catalog = catalog
@@ -92,6 +95,7 @@ public final class ApiKeyListViewModel: ObservableObject {
             pages.replace(with: page)
             statusOverrides = statusOverrides.filter { pendingIDs.contains($0.key) }
             apply()
+            await reissueAppend()
         case let .failure(error):
             guard generation == refreshGeneration else { return }
             let text = ErrorMessage.text(for: error)
@@ -105,6 +109,18 @@ public final class ApiKeyListViewModel: ObservableObject {
 
     public func loadMore() async {
         guard canLoadMore, !isAppending else { return }
+        guard !isRefreshing else {
+            appendRequested = true
+            return
+        }
+        await runAppend()
+    }
+
+    /// The tail read, under the identity of the query that was on screen when the scroll happened, as
+    /// `AgentListViewModel` documents it: a retired answer may take none of the rows, the total or the page
+    /// counter with it.
+    private func runAppend() async {
+        let generation = refreshGeneration
         isAppending = true
         defer { isAppending = false }
         switch await catalog.apiKeyPage(
@@ -114,12 +130,20 @@ public final class ApiKeyListViewModel: ObservableObject {
             size: pages.pageSize
         ) {
         case let .success(page):
+            guard generation == refreshGeneration else { return }
             inlineError = nil
             pages.append(with: page)
             apply()
         case let .failure(error):
+            guard generation == refreshGeneration else { return }
             inlineError = ErrorMessage.text(for: error)
         }
+    }
+
+    private func reissueAppend() async {
+        guard appendRequested, canLoadMore, !isAppending else { return }
+        appendRequested = false
+        await runAppend()
     }
 
     /// A protected row is refused here with the server's own “PERMANENT API Key cannot be disabled”
@@ -127,6 +151,7 @@ public final class ApiKeyListViewModel: ObservableObject {
     /// to predict that, because the list carries no `keyType` to predict from.
     public func setStatus(_ enabled: Bool, for row: ApiKeySummary) async {
         guard let id = row.id else { return }
+        guard !pendingIDs.contains(id) else { return }
         statusOverrides[id] = enabled
         pendingIDs.insert(id)
         defer { pendingIDs.remove(id) }
@@ -167,6 +192,9 @@ public final class ApiKeyListViewModel: ObservableObject {
     /// (`harnax-ios/specs/03-system-domain.md:351`).
     public func regenerate(_ row: ApiKeySummary) async {
         guard let id = row.id else { return }
+        // A second rotation while the first is on the wire would publish two new secrets for one row and the
+        // one-time screen only ever shows the last.
+        guard !pendingIDs.contains(id) else { return }
         pendingIDs.insert(id)
         defer { pendingIDs.remove(id) }
         switch await catalog.regenerateApiKey(id: id) {

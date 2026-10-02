@@ -47,6 +47,9 @@ public final class EnvVarListViewModel: ObservableObject {
     private var refreshGeneration = 0
     private var isRefreshing = false
     private var rerunRequested = false
+    /// An append asked for while a refresh is on the wire is remembered, not dropped — see
+    /// `AgentListViewModel`.
+    private var appendRequested = false
 
     public init(catalog: any EnvVarCataloging, pageSize: Int = 20) {
         self.catalog = catalog
@@ -87,6 +90,7 @@ public final class EnvVarListViewModel: ObservableObject {
             pages.replace(with: page)
             statusOverrides = statusOverrides.filter { pendingIDs.contains($0.key) }
             apply()
+            await reissueAppend()
         case let .failure(error):
             guard generation == refreshGeneration else { return }
             let text = ErrorMessage.text(for: error)
@@ -100,6 +104,18 @@ public final class EnvVarListViewModel: ObservableObject {
 
     public func loadMore() async {
         guard canLoadMore, !isAppending else { return }
+        guard !isRefreshing else {
+            appendRequested = true
+            return
+        }
+        await runAppend()
+    }
+
+    /// The tail read, under the identity of the query that was on screen when the scroll happened, as
+    /// `AgentListViewModel` documents it: a retired answer may take none of the rows, the total or the page
+    /// counter with it.
+    private func runAppend() async {
+        let generation = refreshGeneration
         isAppending = true
         defer { isAppending = false }
         switch await catalog.envVarPage(
@@ -108,14 +124,22 @@ public final class EnvVarListViewModel: ObservableObject {
             size: pages.pageSize
         ) {
         case let .success(page):
+            guard generation == refreshGeneration else { return }
             inlineError = nil
             pages.append(with: page)
             apply()
         case let .failure(error):
+            guard generation == refreshGeneration else { return }
             // The list is still usable, so the page counter is left alone and the next scroll retries the
             // same page number.
             inlineError = ErrorMessage.text(for: error)
         }
+    }
+
+    private func reissueAppend() async {
+        guard appendRequested, canLoadMore, !isAppending else { return }
+        appendRequested = false
+        await runAppend()
     }
 
     /// Optimistic, because the switch is the row's own state and the answer is a bare `ResultVo<Void>`:
@@ -126,6 +150,7 @@ public final class EnvVarListViewModel: ObservableObject {
     /// and its sentence is shown as it arrived.
     public func setStatus(_ enabled: Bool, for row: EnvVarSummary) async {
         guard let id = row.id else { return }
+        guard !pendingIDs.contains(id) else { return }
         statusOverrides[id] = enabled
         pendingIDs.insert(id)
         defer { pendingIDs.remove(id) }

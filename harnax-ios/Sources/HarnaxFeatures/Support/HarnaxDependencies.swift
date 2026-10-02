@@ -9,6 +9,10 @@ public struct HarnaxDependencies: Sendable {
     public let auth: any AuthFlowing
     public let agents: any AgentCataloging
     public let teams: any TeamCataloging
+    /// The two by-id reads a conversation's detail sheet needs for its tools, CLI and member panels — the same
+    /// routes the console fires when that modal opens. No other screen in the app asks for them, because no
+    /// other screen shows an executor's bindings without its own list row.
+    public let executor: any ExecutorReading
     public let agentWrite: any AgentWriting
     public let teamWrite: any TeamWriting
     public let tasks: any AgentTaskCataloging
@@ -42,6 +46,7 @@ public struct HarnaxDependencies: Sendable {
         auth: any AuthFlowing,
         agents: any AgentCataloging,
         teams: any TeamCataloging,
+        executor: any ExecutorReading,
         agentWrite: any AgentWriting,
         teamWrite: any TeamWriting,
         tasks: any AgentTaskCataloging,
@@ -69,6 +74,7 @@ public struct HarnaxDependencies: Sendable {
         self.auth = auth
         self.agents = agents
         self.teams = teams
+        self.executor = executor
         self.agentWrite = agentWrite
         self.teamWrite = teamWrite
         self.tasks = tasks
@@ -109,9 +115,10 @@ public struct HarnaxDependencies: Sendable {
             // next launch.
             language: { AcceptLanguage.current() }
         )
-        // One admin surface, twenty-three protocols: every `/api/admin/**` route family hangs off the same
-        // client, so the agent and team reads, their two save surfaces, the task, refresh, five context
-        // domains, four system reads and the eight session reads and writes share its header injection.
+        // One admin surface, twenty-five protocols: every `/api/admin/**` route family hangs off the same
+        // client, so the agent and team reads, their two detail reads, their two save surfaces, the task,
+        // refresh, five context domains, four system reads and the eight session reads and writes share its
+        // header injection.
         let admin = AdminClient(client: client)
         // One client for both legs: an answer to a parked run comes back as a stream of its own.
         let stream = ChatStreamClient(
@@ -123,6 +130,7 @@ public struct HarnaxDependencies: Sendable {
             auth: AuthFlow(client: client, session: session, configs: configs),
             agents: admin,
             teams: admin,
+            executor: admin,
             agentWrite: admin,
             teamWrite: admin,
             tasks: admin,

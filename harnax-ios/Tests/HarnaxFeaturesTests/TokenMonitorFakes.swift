@@ -182,10 +182,12 @@ enum TokenStub {
     }
 
     static func model(
-        _ name: String?, id: Int64? = nil, provider: String? = nil, total: Int64 = 0, fee: Decimal = 0
+        _ name: String?, id: Int64? = nil, provider: String? = nil,
+        input: Int64 = 0, output: Int64 = 0, total: Int64 = 0, fee: Decimal = 0
     ) -> TokenModelStat {
         TokenModelStat(
             modelId: id, modelName: name, providerName: provider,
+            totalInputToken: input, totalOutputToken: output,
             grandTotalToken: total, totalFee: fee
         )
     }

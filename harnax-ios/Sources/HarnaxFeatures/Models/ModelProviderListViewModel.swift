@@ -74,6 +74,9 @@ public final class ModelProviderListViewModel: ObservableObject {
     /// goes out again for the newer query before it returns.
     private var isRefreshing = false
     private var rerunRequested = false
+    /// An append asked for while a refresh is on the wire is remembered, not dropped — see
+    /// `AgentListViewModel`.
+    private var appendRequested = false
 
     /// The console's provider page is fixed at eight cards (`harnax-webui/src/pages/model/index.tsx:52`),
     /// which is also what a two-column grid fills on one screen.
@@ -132,6 +135,7 @@ public final class ModelProviderListViewModel: ObservableObject {
             tests = [:]
             apply()
             await readStats()
+            await reissueAppend()
         case let .failure(error):
             guard generation == refreshGeneration else { return }
             let text = ErrorMessage.text(for: error)
@@ -145,6 +149,17 @@ public final class ModelProviderListViewModel: ObservableObject {
 
     public func loadMore() async {
         guard canLoadMore, !isAppending else { return }
+        guard !isRefreshing else {
+            appendRequested = true
+            return
+        }
+        await runAppend()
+    }
+
+    /// The tail read, under the identity of the query that was on screen when the scroll happened. See
+    /// `AgentListViewModel`.
+    private func runAppend() async {
+        let generation = refreshGeneration
         isAppending = true
         defer { isAppending = false }
         switch await catalog.providerPage(
@@ -155,13 +170,21 @@ public final class ModelProviderListViewModel: ObservableObject {
             size: pages.pageSize
         ) {
         case let .success(page):
+            guard generation == refreshGeneration else { return }
             inlineError = nil
             pages.append(with: page)
             apply()
             await readStats()
         case let .failure(error):
+            guard generation == refreshGeneration else { return }
             inlineError = ErrorMessage.text(for: error)
         }
+    }
+
+    private func reissueAppend() async {
+        guard appendRequested, canLoadMore, !isAppending else { return }
+        appendRequested = false
+        await runAppend()
     }
 
     /// The card asks for its counts once it is on screen, not as part of the page: the page endpoint does
@@ -195,6 +218,7 @@ public final class ModelProviderListViewModel: ObservableObject {
     /// (`ModelProviderServiceImpl.kt:126-133`).
     public func setStatus(_ enabled: Bool, for provider: ModelProviderSummary) async {
         let id = provider.providerID
+        guard !pendingIDs.contains(id) else { return }
         statusOverrides[id] = enabled
         pendingIDs.insert(id)
         defer { pendingIDs.remove(id) }

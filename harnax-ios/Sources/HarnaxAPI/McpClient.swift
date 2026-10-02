@@ -47,6 +47,23 @@ extension AdminClient: McpCataloging {
         await client.send([McpToolRow].self, McpEndpoint.tools(id: id))
     }
 
+    public func discoverMcpOAuth(id: Int64) async -> Result<McpOAuthDiscovery, APIError> {
+        await client.send(McpOAuthDiscovery.self, McpEndpoint.oauthDiscover(id: id))
+    }
+
+    public func saveOAuthClient(
+        id: Int64,
+        _ draft: McpOAuthClientDraft
+    ) async -> Result<McpOAuthDiscovery, APIError> {
+        await send(McpOAuthDiscovery.self) { try McpEndpoint.oauthClient(id: id, draft) }
+    }
+
+    public func exchangeOAuthCode(
+        _ draft: McpOAuthExchangeDraft
+    ) async -> Result<McpOAuthExchangeOutcome, APIError> {
+        await send(McpOAuthExchangeOutcome.self) { try McpEndpoint.oauthExchange(draft) }
+    }
+
     public func mcpOAuthStatus(id: Int64) async -> Result<McpOAuthStatus, APIError> {
         await client.send(McpOAuthStatus.self, McpEndpoint.oauthStatus(id: id))
     }

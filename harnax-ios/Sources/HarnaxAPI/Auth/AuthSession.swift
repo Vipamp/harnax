@@ -10,6 +10,7 @@ public protocol TokenRefreshing: Sendable {
 /// Keychain-facing session state. The cached snapshot only exists so a cold restore can render the
 /// identity card immediately; `GET /api/admin/auth/me` stays the canonical copy the screen refreshes.
 public actor AuthSession {
+    /// The lead used when no lifetime is on record (see `needsRefresh()`).
     public static let refreshWindow: TimeInterval = 60
 
     private let store: SecretStoring
@@ -93,12 +94,27 @@ public actor AuthSession {
         !(try accessToken() ?? "").isEmpty
     }
 
-    /// True when the token is missing an expiry or is within the window, i.e. worth refreshing up front
-    /// rather than waiting for a 401 round trip.
+    /// True when the token is missing an expiry or has run into its renewal threshold, i.e. worth refreshing
+    /// up front rather than waiting for a 401 round trip.
+    ///
+    /// The threshold is one third of the lifetime (`DESIGN.md` §5.3), not a fixed lead: the swap only works
+    /// while the old token still verifies (`TokenController.kt:35` reads the caller off the security context),
+    /// so the margin has to be several round trips wide. A production JWT lives 7 200 s (`JWT_EXPIRATION`),
+    /// which under a 60-second lead left 119 of its 120 minutes unprotected.
     public func needsRefresh() throws -> Bool {
         guard try isSignedIn() else { return false }
         guard let raw = try store.value(for: .tokenExpiresAtMillis), let deadline = Int64(raw) else { return true }
-        return deadline - now().milliseconds <= Int64(Self.refreshWindow * 1000)
+        let threshold = try refreshThresholdMillis()
+        return deadline - now().milliseconds <= threshold
+    }
+
+    /// One third of the lifetime the login or refresh response named, falling back to the flat window when it
+    /// named only an absolute deadline and there is nothing to divide.
+    private func refreshThresholdMillis() throws -> Int64 {
+        guard let stored = try store.value(for: .tokenLifetimeMillis), let lifetime = Int64(stored) else {
+            return Int64(Self.refreshWindow * 1000)
+        }
+        return lifetime / 3 * 1000
     }
 
     public func secondsUntilExpiry() throws -> Int? {
@@ -108,6 +124,11 @@ public actor AuthSession {
 
     /// Clears credentials and leaves the two server addresses alone — signing out must not send the user
     /// back to re-entering an endpoint they already configured.
+    ///
+    /// This is the one place credentials leave the keychain, so it is the one place that says so: the root
+    /// holds the only copy of the truth the tab bar renders and reads it on demand, and three of this
+    /// method's four callers (`AuthFlow.logout`, `AuthFlow.save(serverConfiguration:)`, and the two 401
+    /// settles in `APIClient`) sit in layers that have no way back into it.
     public func signOut() throws {
         for key in [
             SecretKey.accessToken, .routerApiKey, .tenantId,
@@ -115,6 +136,7 @@ public actor AuthSession {
         ] {
             try store.setValue(nil, for: key)
         }
+        NotificationCenter.default.post(name: .harnaxCredentialsDropped, object: nil)
     }
 }
 

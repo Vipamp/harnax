@@ -11,7 +11,8 @@ import HarnaxCore
 /// lands, and a save has to hold the sheet busy while the server thinks — all of which is a mid-flight
 /// window, not a settled state. `releaseWrites()` replays them in order.
 ///
-/// The page read is never gated: a read that hangs proves nothing about the screen.
+/// The page read has its own park (`pageGate`), which is what lets an append sit on the wire while the reader
+/// changes the query (`ListAppendIdentityTests`).
 final class FakeApiKeys: ApiKeyCataloging, @unchecked Sendable {
     private(set) var requests: [(keyword: String?, enabled: Int?, num: Int, size: Int)] = []
     var replies: [Result<Page<ApiKeySummary>, APIError>] = []
@@ -35,6 +36,10 @@ final class FakeApiKeys: ApiKeyCataloging, @unchecked Sendable {
 
     private var parked: [() -> Void] = []
 
+    /// The page read is parkable: an append has to be able to stay in flight while the reader changes the
+    /// query (`ListAppendIdentityTests`).
+    let pageGate = PageReadGate<Result<Page<ApiKeySummary>, APIError>>()
+
     /// The status column goes out as the raw 0/1 it is on the wire, and `all` leaves it off entirely
     /// (`ApiKeyController.kt:36-39`), so the log keeps `Int?` rather than a prettier `Bool`.
     func apiKeyPage(
@@ -44,7 +49,7 @@ final class FakeApiKeys: ApiKeyCataloging, @unchecked Sendable {
         size: Int
     ) async -> Result<Page<ApiKeySummary>, APIError> {
         requests.append((keyword: keyword, enabled: enabled, num: num, size: size))
-        return next(from: \.replies)
+        return await pageGate.absorb(next(from: \.replies))
     }
 
     func createApiKey(_ draft: ApiKeyDraft) async -> Result<ApiKeyCreatedSummary, APIError> {

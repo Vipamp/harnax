@@ -7,9 +7,10 @@ import HarnaxKit
 /// The whole screen is a read: no switch, no delete, no create button, because the stack registers tools
 /// from annotations in the running code and exposes no write route at all
 /// (`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/AgentToolController.kt:13-15`). The
-/// web console reads the same rows from the unpaged `/builtin` route and filters the keyword in memory
-/// (`harnax-webui/src/pages/tool/index.tsx:39-68`); iOS reads `/page` instead, which is the only tool route
-/// that carries a page counter, and hands `keyword` and `status` to the server.
+/// web console reads the rows from the unpaged `/builtin` route and filters its loaded array in memory
+/// (`harnax-webui/src/pages/tool/index.tsx:39-68`), and iOS now does the same: one read of that route, then
+/// the search box and the status menu narrow what is already held — which is what makes a Chinese display
+/// name findable at all. Nothing here paginates, because the answer is a whole table.
 public struct ToolListView: View {
     @StateObject private var vm: ToolListViewModel
     private let tools: any ToolCataloging
@@ -41,20 +42,11 @@ public struct ToolListView: View {
     }
 
     private var filterMenu: some View {
-        Menu {
-            ForEach(StatusFilter.allCases) { option in
-                Button {
-                    vm.filter = option
-                } label: {
-                    HStack {
-                        HXText(option.titleKey)
-                        if vm.filter == option { Image(systemName: "checkmark") }
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: vm.filter == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-        }
+        HXFilterMenu(
+            isFiltering: vm.filter != .all,
+            accessibilityLabel: hx("state.filter.status"),
+            choices: statusFilterChoices(vm.filter) { vm.filter = $0 }
+        )
     }
 
     @ViewBuilder
@@ -89,16 +81,10 @@ public struct ToolListView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 // Row identity is the array index: a page may carry rows whose `id` the backend left null,
                 // and two nil ids under one `ForEach` identity would drop a card.
-                ForEach(Array(vm.items.enumerated()), id: \.offset) { index, tool in
+                ForEach(Array(vm.items.enumerated()), id: \.offset) { _, tool in
                     ToolRecordCard(tool: tool, chinese: catalog.language.prefersChinese) {
                         drillDown = tool
                     }
-                    .onAppear {
-                        if index == vm.items.count - 1 { Task { await vm.loadMore() } }
-                    }
-                }
-                if vm.isAppending {
-                    HXStateView(.loading)
                 }
             }
             .padding(.horizontal, 16)

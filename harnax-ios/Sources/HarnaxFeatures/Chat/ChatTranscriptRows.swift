@@ -38,7 +38,7 @@ struct ChatTurnRow: View {
                         }
                     }
                 }
-                let words = turn.segments.compactMap(\.text).joined(separator: "\n")
+                let words = turn.copyableText
                 if !words.isEmpty {
                     Text(verbatim: words)
                         .font(.body)
@@ -47,26 +47,54 @@ struct ChatTurnRow: View {
                         .textSelection(.enabled)
                         .padding(.horizontal, 13)
                         .padding(.vertical, 10)
-                        .background(Color.hx(.brand), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .background(Color.hx(.brand), in: Self.userCard)
+                        .hxCopyMenu(words)
                 }
             }
         }
     }
 
+    @ViewBuilder
     private var answer: some View {
+        // A turn with nothing in it yet draws no row at all: the reading row already says 「正在读」, and an
+        // empty container would read as a message that failed to arrive.
+        if turn.hasContent {
+            if let member = turn.member {
+                ChatMemberBubble(turn: turn, member: member, vm: vm)
+            } else {
+                leadAnswer
+            }
+        }
+    }
+
+    private var leadAnswer: some View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(turn.segments) { segment in
                 ChatSegmentRow(segment: segment, vm: vm)
             }
-            if turn.hasContent {
-                meta
-            }
+            meta
         }
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.hx(.surface), in: Self.answerCard)
+        .overlay(Self.answerCard.strokeBorder(Color.hx(.separator), lineWidth: 1))
+        .hxCopyMenu(turn.copyableText)
     }
 
-    /// The console stamps the bubble with the turn's time; an answer with nothing in it has nothing to
-    /// stamp, and an empty row would read as a message that failed to draw.
+    /// The console's assistant bubble (`ChatWindow.less:266-275`): one tier above the screen, which is what
+    /// keeps the `surfaceAlt` blocks inside it — code, tool cards — readable, and tailed on the leading
+    /// bottom corner where the user's is tailed on the trailing one.
+    private static let answerCard = UnevenRoundedRectangle(topLeadingRadius: 16, bottomLeadingRadius: 4,
+                                                           bottomTrailingRadius: 16, topTrailingRadius: 16,
+                                                           style: .continuous)
+
+    /// The user's side of the pair, tailed on the trailing bottom corner (`ChatWindow.less:257-264`).
+    private static let userCard = UnevenRoundedRectangle(topLeadingRadius: 16, bottomLeadingRadius: 16,
+                                                         bottomTrailingRadius: 4, topTrailingRadius: 16,
+                                                         style: .continuous)
+
+    /// The console stamps the bubble with the turn's time. `answer` draws nothing for a turn that has no
+    /// content yet, so the stamp here always has a bubble to sit on.
     private var meta: some View {
         HStack(spacing: 6) {
             Text(verbatim: turn.timestamp.formatted(date: .omitted, time: .shortened))
@@ -82,6 +110,148 @@ struct ChatTurnRow: View {
     }
 }
 
+/// One team member's run, drawn as a bubble of its own.
+///
+/// The attribution is the point: a member speaks on the lead's channel, and without a name on the bubble its
+/// words are indistinguishable from the answer the user asked for (`ChatWindow.tsx:2904-2940`). The fold
+/// already routed the frames here (`TeamRunMerge`); this is the same fact drawn.
+///
+/// Everything inside is drawn by the lead's own row views — a member's tool cards and its inline confirmation
+/// are the same blocks — so the two appearances differ by the container and the header line, not by the
+/// content's rendering.
+struct ChatMemberBubble: View {
+    let turn: ChatTurn
+    let member: TeamMemberRun
+    @ObservedObject var vm: ChatViewModel
+
+    /// The console's rule: expanded while the run works, collapsed when it is over, and once the user has
+    /// tapped, their choice holds (`isRunExpanded`, `ChatWindow.tsx:2863-2868`).
+    @State private var manual: Bool?
+    @State private var taskExpanded = false
+
+    private var expanded: Bool { manual ?? member.isOpen }
+
+    /// The lead's card with both leading corners pulled in, which is where the rule band sits.
+    private static let memberCard = UnevenRoundedRectangle(topLeadingRadius: 4, bottomLeadingRadius: 4,
+                                                           bottomTrailingRadius: 16, topTrailingRadius: 16,
+                                                           style: .continuous)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            header
+            if expanded {
+                taskLine
+                ForEach(turn.segments) { segment in
+                    ChatSegmentRow(segment: segment, vm: vm)
+                }
+                if case let .failed(_, message) = turn.outcome, !message.isEmpty {
+                    HXBanner("chat.error.title", message: message, systemImage: "exclamationmark.triangle", tone: .danger)
+                }
+            }
+        }
+        .padding(11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // 「与主管同形，用左侧色带标明这是被委派的运行」（`ChatWindow.less:277-281`）: the same tier and the
+        // same 16pt card, tailed on the leading corners rather than on one.
+        .background(Color.hx(.surface), in: Self.memberCard)
+        .overlay(
+            Self.memberCard.strokeBorder(Color.hx(tone).opacity(0.45), lineWidth: 1)
+        )
+        // The rule down the inside edge is what says 「this is someone else's turn」 before any word is read.
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 1)
+                .fill(Color.hx(.brand))
+                .frame(width: 3)
+        }
+        .hxCopyMenu(turn.copyableText)
+    }
+
+    private var header: some View {
+        Button {
+            manual = expanded ? false : true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "person.2")
+                    .font(.caption)
+                    .foregroundStyle(Color.hx(tone))
+                HXChip(member.source.memberAgentName)
+                HXChip(member.source.teamName, tone: .teal)
+                HXBadge(member.statusTitleKey, tone: tone)
+                Spacer(minLength: 4)
+                summary
+                Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                    .font(.caption2)
+                    .foregroundStyle(Color.hx(.textTertiary))
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Tools it called and how long it took — the two facts that tell a finished run from one still going
+    /// (`ChatWindow.tsx:2918-2935`).
+    @ViewBuilder
+    private var summary: some View {
+        HStack(spacing: 6) {
+            if member.toolCount > 0 {
+                Text(verbatim: hxCount("chat.team.tools", member.toolCount))
+                    .font(.caption2)
+                    .foregroundStyle(Color.hx(.textTertiary))
+            }
+            if let duration = member.durationText {
+                HStack(spacing: 3) {
+                    Image(systemName: "clock")
+                        .font(.caption2)
+                    Text(verbatim: duration)
+                }
+                .font(.caption2)
+                .foregroundStyle(Color.hx(.textTertiary))
+            }
+        }
+    }
+
+    /// The task the lead delegated, cut for one line and openable for the rest.
+    ///
+    /// The whole text is already on screen once — in the lead's own `team_delegate` card — so the cut here is
+    /// a summary by design, not a truncation the user has no way past (`firstTaskLine`, `teamRun.ts:54-62`).
+    @ViewBuilder
+    private var taskLine: some View {
+        if let task = member.task, !member.headline.isEmpty {
+            let isCut = task != member.headline
+            Group {
+                if isCut {
+                    Button {
+                        taskExpanded.toggle()
+                    } label: {
+                        taskText(taskExpanded ? task : member.headline)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    taskText(task)
+                }
+            }
+        }
+    }
+
+    private func taskText(_ text: String) -> some View {
+        HXText("chat.team.task", text)
+            .font(.caption)
+            .foregroundStyle(Color.hx(.textSecondary))
+            .fixedSize(horizontal: false, vertical: true)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The state's colour, in the four tones the transcript already uses for those four states.
+    private var tone: PaletteSlot {
+        switch member.status {
+        case .running: return .brand
+        case .awaitingConfirm: return .warning
+        case .done: return .success
+        case .failed: return .danger
+        }
+    }
+}
+
 struct ChatSegmentRow: View {
     let segment: ChatSegment
     @ObservedObject var vm: ChatViewModel
@@ -89,13 +259,12 @@ struct ChatSegmentRow: View {
     var body: some View {
         switch segment.kind {
         case let .text(message):
-            // Plain text. `Package.swift` carries no markdown renderer and none is pulled in for this, so
-            // the answer shows as the source it arrives in rather than as formatted prose.
-            Text(verbatim: message)
-                .font(.body)
-                .foregroundStyle(Color.hx(.textPrimary))
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
+            // The answer is Markdown and the kit draws it: headings, lists, fences, tables, quotes and tappable
+            // links, with an unclosed fence running to the end of the document so a half-written answer during
+            // a stream shows no stray backticks. Prose here is not selectable — that is the renderer's own rule,
+            // because a `Text` with selection on is not reliable about handing a link run its tap — while every
+            // fence is, and the turn's raw source stays one long press away (`hxCopyMenu`).
+            HXMarkdownText(message, on: .surface)
         case let .thinking(message):
             ChatThinkingBlock(message: message)
         case let .tool(run):
@@ -108,6 +277,19 @@ struct ChatSegmentRow: View {
             )
         case let .file(attachment):
             ChatFileRow(attachment: attachment, vm: vm)
+        case let .plan(note):
+            // The drawer's own card, not a second drawing of a plan: the console renders its inline
+            // `plan_card` from the same component as the panel's current plan
+            // (`ChatWindow.tsx:2784-2848` against `:2973-3038`) and both read the one
+            // `currentPlanExpanded`, so closing the card in the stream closes it in the drawer too.
+            // `live` is the one poll behind both, which is also what stops the stream's card from
+            // claiming to update after `plan_exit` let the plan go.
+            CurrentPlanCard(
+                plan: note,
+                expanded: vm.isPlanExpanded,
+                live: vm.isPlanLive,
+                onToggle: { vm.togglePlanExpansion() }
+            )
         }
     }
 }
@@ -267,6 +449,7 @@ struct ChatCodeBlock: View {
                 .padding(8)
                 .background(Color.hx(.surfaceAlt), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
+        .hxCopyMenu(text)
     }
 }
 
@@ -529,5 +712,37 @@ struct ChatNoticeRow: View {
         case let .failed(text):
             HXBanner("chat.error.title", message: text, systemImage: "exclamationmark.triangle", tone: .danger)
         }
+    }
+}
+
+// MARK: - copying a whole bubble
+
+/// The long-press entry that puts a whole block on the pasteboard, sitting next to the free text selection
+/// every one of these rows already carries. `HXValueText` set this shape for identifiers
+/// (`HXValue.swift:26-32`), and one gesture for one action is why the code blocks use it too rather than the
+/// console's own copy icon.
+///
+/// An empty block gets no menu at all: a popup offering to copy nothing reads as a broken control.
+private struct HXCopyMenu: ViewModifier {
+    let text: String
+
+    func body(content: Content) -> some View {
+        if text.isEmpty {
+            content
+        } else {
+            content.contextMenu {
+                Button {
+                    HXPasteboard.copy(text)
+                } label: {
+                    HXText("common.copy")
+                }
+            }
+        }
+    }
+}
+
+private extension View {
+    func hxCopyMenu(_ text: String) -> some View {
+        modifier(HXCopyMenu(text: text))
     }
 }

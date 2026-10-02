@@ -26,7 +26,9 @@ public actor APIClient {
 
     public func send<T: Decodable>(_ type: T.Type, _ endpoint: Endpoint) async -> Result<T, APIError> {
         let first = await perform(type, endpoint)
-        guard endpoint.authenticated, case .failure(.unauthorized) = first else { return first }
+        guard endpoint.authenticated, endpoint.mayRefresh, case .failure(.unauthorized) = first,
+              await isBearerLeg(endpoint)
+        else { return first }
         do {
             try await refreshNow()
         } catch {
@@ -48,7 +50,9 @@ public actor APIClient {
     /// they go back as the business error the status names.
     public func sendRaw(_ endpoint: Endpoint) async -> Result<RawResponse, APIError> {
         let first = await performRaw(endpoint)
-        guard endpoint.authenticated, case .failure(.unauthorized) = first else { return first }
+        guard endpoint.authenticated, endpoint.mayRefresh, case .failure(.unauthorized) = first,
+              await isBearerLeg(endpoint)
+        else { return first }
         do {
             try await refreshNow()
         } catch {
@@ -57,6 +61,15 @@ public actor APIClient {
         let replay = await performRaw(endpoint)
         await settleReplay(replay)
         return replay
+    }
+
+    /// Whether the credential this call went out on is one a renewal can replace. The permanent key does not
+    /// expire, so a 401 carrying it says the *key* was rejected, and a fresher bearer would change nothing —
+    /// except the session this side would clear for it. Same test the stream makes
+    /// (`Sources/HarnaxAPI/ChatStreamClient.swift:115-119`).
+    private func isBearerLeg(_ endpoint: Endpoint) async -> Bool {
+        if endpoint.base != .router { return true }
+        return ((try? await session.routerAPIKey()) ?? "").isEmpty
     }
 
     /// What a failed refresh means: only the server saying "this credential is dead" ends the session.
@@ -131,7 +144,9 @@ public actor APIClient {
         }
         if response.statusCode == 401 { return .failure(.unauthorized) }
         guard (200..<300).contains(response.statusCode) else {
-            return .failure(.business(code: response.statusCode, message: ""))
+            // The body is the file when the call succeeded, but a failure carries admin's own `ResultVo`, and
+            // which sentence it is decides whether the 404 is about the deployment or about the file.
+            return .failure(.business(code: response.statusCode, message: ResponseMapper.serverMessage(in: data) ?? ""))
         }
         return .success(RawResponse(
             data: data,
@@ -157,10 +172,22 @@ public actor APIClient {
             request.httpBody = body
         }
         guard endpoint.authenticated else { return request }
+        if endpoint.base == .router, let key = try await session.routerAPIKey(), !key.isEmpty {
+            // The key goes out alone, because the router's filter reads `Authorization` first and answers 401
+            // on a bearer it cannot verify before it ever reaches `X-Api-Key`
+            // (`harnax-auth/src/main/kotlin/com/agnetix/harnax/auth/UnifiedAuthFilter.kt:47-93`) — and admin's
+            // user JWT is signed with a different secret than the one the router verifies with, so it never
+            // verifies there. The console sends the same shape (`ChatWindow.tsx:153-164`), and with no tenant
+            // header: the router derives the tenant off the credential itself
+            // (`harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/RouterMonitorController.kt:108`).
+            request.setValue(key, forHTTPHeaderField: "X-Api-Key")
+            return request
+        }
         // Refreshing a soon-to-expire token up front avoids a 401 round trip on the first call after the
         // app has been backgrounded. Concurrent calls may each refresh; the backend tokens are stateless
-        // and both stay valid, so no single-flight lock is needed yet.
-        if (try? await session.needsRefresh()) ?? false {
+        // and both stay valid, so no single-flight lock is needed yet. A call that ends the session opts out:
+        // revoking a freshly minted token while the one being discarded stays live would leak the session.
+        if endpoint.mayRefresh, (try? await session.needsRefresh()) ?? false {
             try? await refreshNow()
         }
         if let token = try await session.accessToken(), !token.isEmpty {

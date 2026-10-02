@@ -31,7 +31,10 @@ public enum ResponseMapper {
     }
 
     /// A container-level error page has no envelope, but its `message` is still the most useful text.
-    private static func serverMessage(in data: Data) -> String? {
+    ///
+    /// Internal rather than private because the byte routes need it too: `performRaw` has no envelope to decode,
+    /// and admin's answer for an unmapped path is a `ResultVo` all the same (`GlobalExceptionHandler.kt:101-106`).
+    static func serverMessage(in data: Data) -> String? {
         struct Bare: Decodable { let message: String? }
         return (try? JSONDecoder().decode(Bare.self, from: data))?.message
     }

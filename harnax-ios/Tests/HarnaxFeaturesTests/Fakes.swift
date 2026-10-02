@@ -12,6 +12,19 @@ final class FakeAuth: AuthFlowing, @unchecked Sendable {
     private(set) var serverConfigurationCalls = 0
     private(set) var tenantOptionCalls = 0
     private(set) var switchCalls: [TenantSummary] = []
+    /// How many session reads have reached the fake. Paired with `stateGate` by the tests that need a read
+    /// still outstanding when the session ends underneath it.
+    private(set) var stateCalls = 0
+    /// Every answer a read handed back, in order: a test that expects one to be dropped first shows it was
+    /// really decided.
+    private(set) var stateAnswers: [AuthState] = []
+    /// Same shape as `PageReadGate` (`ListAppendIdentityTests.swift:845`): `arm()` holds the *next* answer
+    /// open until `release()`, and a gate nobody armed answers exactly as before.
+    let stateGate = PageReadGate<AuthState>()
+    let serverConfigGate = PageReadGate<Result<ServerConfig, APIError>>()
+    /// Same triad as `stateGate`, for the tests that need a profile read still outstanding when the session
+    /// ends underneath it.
+    let profileGate = PageReadGate<Result<MeInfo, APIError>>()
 
     var authState: AuthState = .signedOut
     var loginResult: Result<AccountSnapshot, APIError> = .success(AccountSnapshot(username: "admin", tenantID: 1))
@@ -34,7 +47,14 @@ final class FakeAuth: AuthFlowing, @unchecked Sendable {
         profileResult = .success(try JSONDecoder().decode(MeInfo.self, from: data))
     }
 
-    func state() async -> AuthState { authState }
+    /// The answer is taken before the gate, the way a transport takes its reply off the wire: what a parked
+    /// read hands back is what the keychain said while it was still in flight, not whatever is true now.
+    func state() async -> AuthState {
+        stateCalls += 1
+        let reply = authState
+        stateAnswers.append(reply)
+        return await stateGate.absorb(reply)
+    }
 
     func login(username: String, password: String) async -> Result<AccountSnapshot, APIError> {
         loginCalls.append((username, password))
@@ -47,14 +67,27 @@ final class FakeAuth: AuthFlowing, @unchecked Sendable {
         authState = .signedOut
     }
 
+    /// The two write-backs `AuthFlow.profile()` performs (`AuthFlow.swift:106-113`): a success rewrites the
+    /// cached card by merging the server answer over the one held, a 401 ends the session. Without them a test
+    /// could not tell a reconcile that landed from one that was thrown away.
     func profile() async -> Result<MeInfo, APIError> {
         profileCalls += 1
-        return profileResult ?? .failure(.unpackable)
+        let reply = profileResult ?? .failure(.unpackable)
+        switch reply {
+        case let .success(me):
+            if case let .signedIn(cached) = authState {
+                authState = .signedIn(AccountSnapshot.live(from: me).mergingWith(cached))
+            }
+        case let .failure(error):
+            if case .unauthorized = error { authState = .signedOut }
+        }
+        return await profileGate.absorb(reply)
     }
 
     func serverConfiguration() async -> Result<ServerConfig, APIError> {
         serverConfigurationCalls += 1
-        return serverConfigurationResult
+        let reply = serverConfigurationResult
+        return await serverConfigGate.absorb(reply)
     }
 
     func tenantOptions() async -> Result<[TenantSummary], APIError> {

@@ -292,6 +292,8 @@ final class ParkedPageTasks: AgentTaskCataloging, @unchecked Sendable {
 /// for the other domains.
 final class ParkedPageAgents: AgentCataloging, @unchecked Sendable {
     private(set) var pageCalls = 0
+    /// The page numbers the reads asked for, in the order they went out.
+    private(set) var requestedNums: [Int] = []
     /// High-water mark of the reads in flight at once: an overlapping refresh would push it to two.
     private(set) var peakConcurrentReads = 0
     var replies: [Result<Page<AgentSummary>, APIError>] = []
@@ -299,19 +301,30 @@ final class ParkedPageAgents: AgentCataloging, @unchecked Sendable {
     /// Park *every* read until it is released, so the window between one answer landing and the next being
     /// asked for can be looked at directly instead of inferred from the state at the end.
     var gateEveryRead = false
+    /// Park the next read, whichever position it holds: an append is asked for after the first page has landed.
+    var gateNextRead = false
+    /// The switch is parkable on its own dial, so a second tap can be thrown while the first answer is out
+    /// (`RowWriteReentryTests`).
+    var gateWrites = false
+
+    private(set) var statusCalls: [(id: Int64, enabled: Bool)] = []
 
     private var inFlight = 0
+    private var parkedWrites: [() -> Void] = []
     private var parked: [(
         reply: Result<Page<AgentSummary>, APIError>, cont: CheckedContinuation<Result<Page<AgentSummary>, APIError>, Never>
     )] = []
 
     func page(name: String?, status: Int?, num: Int, size: Int) async -> Result<Page<AgentSummary>, APIError> {
         pageCalls += 1
+        requestedNums.append(num)
         inFlight += 1
         peakConcurrentReads = max(peakConcurrentReads, inFlight)
         let reply = replies.isEmpty ? .failure(.decoding) : replies.removeFirst()
         defer { inFlight -= 1 }
-        guard (pageCalls == 1 && gateFirstRead) || gateEveryRead else { return reply }
+        let park = (pageCalls == 1 && gateFirstRead) || gateEveryRead || gateNextRead
+        gateNextRead = false
+        guard park else { return reply }
         return await withCheckedContinuation { parked.append((reply, $0)) }
     }
 
@@ -323,7 +336,18 @@ final class ParkedPageAgents: AgentCataloging, @unchecked Sendable {
     }
 
     func setStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> {
-        .success(EmptyResponse())
+        statusCalls.append((id: id, enabled: enabled))
+        guard gateWrites else { return .success(EmptyResponse()) }
+        return await withCheckedContinuation { continuation in
+            parkedWrites.append { continuation.resume(returning: .success(EmptyResponse())) }
+        }
+    }
+
+    /// Runs every parked switch in the order it went out.
+    func releaseWrites() {
+        let waiting = parkedWrites
+        parkedWrites = []
+        for resume in waiting { resume() }
     }
 
     func delete(id: Int64) async -> Result<EmptyResponse, APIError> {

@@ -161,6 +161,67 @@ final class ChannelFormViewModelTests: XCTestCase {
         XCTAssertTrue(vm.canSubmit)
     }
 
+    // MARK: - O7, the type with no adaptor
+
+    /// O7 (`harnax-ios/DESIGN.md` §15): `http` stays visible and stays unsubmittable. The matrix around it is
+    /// complete — it has its one runnable mode and its optional credential — so the only thing that can stop a
+    /// fully filled form is the adaptor rule itself, and that guard sits here rather than only on the chip.
+    func testAnHttpSelectionStopsTheFormAndNeverReachesTheWire() async {
+        let vm = makeForm()
+        fill(vm, type: .http)
+        XCTAssertEqual(vm.modeChoice, .webhook, "the matrix is honest about http")
+        XCTAssertEqual(vm.visibleFields.map(\.key), [.webhookUrl])
+        XCTAssertTrue(vm.showsUnsupportedNotice)
+        XCTAssertFalse(vm.canSubmit, "a complete form is still not a submittable one")
+
+        catalog.createReplies = [.success(EmptyResponse())]
+        await vm.save()
+        XCTAssertTrue(catalog.createRequests.isEmpty, "no POST for a channel the runtime cannot serve")
+        XCTAssertFalse(vm.saved)
+        XCTAssertFalse(vm.isSaving)
+        XCTAssertEqual(vm.errorText, hx("channel.type.unsupported.note"))
+    }
+
+    /// A row the server already holds as `http` has to open: the list can contain one, and its session id and
+    /// callback URL are only readable here. Reading stays allowed while both write routes are refused, so an
+    /// edit cannot turn into a create either.
+    func testAStoredHttpRowOpensForReadingAndRefusesBothWriteRoutes() async throws {
+        let blob = try JSONSerialization.data(withJSONObject: ["webhookUrl": "https://example.com/hook"])
+        let row = try summary([
+            "id": 21, "name": "回调渠道", "type": "http", "communicationMode": "webhook",
+            "agentId": 3, "agentName": "翻译", "enabled": 1, "status": 1,
+            "sessionId": "chn-http", "callbackUrl": "https://example.com/callback",
+            "configJson": String(decoding: blob, as: UTF8.self),
+        ])
+        let vm = makeForm(row: row)
+        XCTAssertEqual(vm.typeChoice, .http)
+        XCTAssertEqual(vm.name, "回调渠道")
+        XCTAssertEqual(vm.modeChoice, .webhook)
+        XCTAssertEqual(vm.agentId, 3)
+        XCTAssertEqual(vm.fieldValue(for: vm.visibleFields[0]), "https://example.com/hook")
+        XCTAssertEqual(vm.immutableSessionId, "chn-http")
+        XCTAssertEqual(vm.callbackUrl, "https://example.com/callback")
+        XCTAssertTrue(vm.showsUnsupportedNotice)
+        XCTAssertFalse(vm.canSubmit)
+
+        catalog.updateReplies = [.success(EmptyResponse())]
+        await vm.save()
+        XCTAssertTrue(catalog.updateRequests.isEmpty, "and no PUT either")
+        XCTAssertTrue(catalog.createRequests.isEmpty, "…nor a POST of the type the runtime cannot serve")
+        XCTAssertFalse(vm.saved)
+        XCTAssertEqual(vm.errorText, hx("channel.type.unsupported.note"))
+    }
+
+    /// The rule names one type, not the form: the four the runtime does serve keep their submit.
+    func testTheOtherFourTypesKeepTheirSubmit() {
+        XCTAssertEqual(ChannelType.allCases.filter { !$0.hasRuntimeAdaptor }, [.http])
+        for type in ChannelType.allCases where type.hasRuntimeAdaptor {
+            let vm = makeForm()
+            fill(vm, type: type)
+            XCTAssertTrue(vm.canSubmit, "\(type.rawValue) is not the type O7 is about")
+        }
+    }
+
     // MARK: - the create body
 
     func testACreateWithNoCredentialsLeavesConfigJsonOffTheBody() async throws {
@@ -431,6 +492,23 @@ final class ChannelFormViewModelTests: XCTestCase {
         XCTAssertEqual(vm.agentErrorText, hx("error.offline"))
         XCTAssertNil(vm.errorText)
         XCTAssertTrue(vm.agents.isEmpty)
+    }
+
+    /// The retry the field shows has to be worth pressing: a failed read leaves the list empty, which is the
+    /// one state `loadAgents()` does not guard away, so the second call goes back to the wire, clears the
+    /// field's caption and fills the picker (`ChannelFormView.swift`'s retry button is what calls it).
+    func testARetryAfterAFailedPickerGoesBackToTheWire() async throws {
+        let vm = makeForm()
+        agents.replies = [.failure(.offline)]
+        await vm.loadAgents()
+        XCTAssertEqual(agents.requests.count, 1)
+        XCTAssertNotNil(vm.agentErrorText)
+
+        agents.replies = [.success(try PageStub.page([["id": 4, "name": "翻译"]]))]
+        await vm.loadAgents()
+        XCTAssertEqual(agents.requests.count, 2, "the retry is a second read, not a no-op")
+        XCTAssertNil(vm.agentErrorText, "…and a field that answered stops reporting the failure")
+        XCTAssertEqual(vm.agents, [ChannelFormViewModel.AgentOption(id: 4, name: "翻译")])
     }
 
     private func waitUntil(_ condition: @escaping @MainActor () -> Bool) async throws {

@@ -51,18 +51,35 @@ enum ModelEndpoint {
         Endpoint(.post, path: "\(providerPath)/\(id)/test")
     }
 
+    /// The models under one provider. `modelType` and the two price bounds are the console's own filter bar
+    /// (`harnax-webui/src/pages/model/index.tsx:525-576`), and all three are server-side predicates rather than
+    /// local ones: `model_type = #{modelType}` and `price >= #{minPrice} AND price <= #{maxPrice}` sit in the
+    /// page query itself (`harnax-entity/src/main/resources/mapper/ModelMapper.xml:131-133`, `:150-155`), so a
+    /// list that filtered the rows it had already fetched would be wrong for every page it had not.
     static func modelPage(
         providerID: Int64,
         name: String?,
+        modelType: String?,
         status: Int?,
         tags: [String],
+        minPrice: Double?,
+        maxPrice: Double?,
         num: Int,
         size: Int
     ) -> Endpoint {
         var query = Endpoint.pageItems(num: num, size: size, name: name, status: status)
         query.append(URLQueryItem(name: "providerId", value: String(providerID)))
+        if let modelType = hxPresented(modelType) {
+            query.append(URLQueryItem(name: "modelType", value: modelType))
+        }
         if !tags.isEmpty {
             query.append(URLQueryItem(name: "tags", value: tags.joined(separator: ",")))
+        }
+        if let minPrice {
+            query.append(URLQueryItem(name: "minPrice", value: Endpoint.number(minPrice)))
+        }
+        if let maxPrice {
+            query.append(URLQueryItem(name: "maxPrice", value: Endpoint.number(maxPrice)))
         }
         return Endpoint(.get, path: "\(modelPath)/page", query: query)
     }

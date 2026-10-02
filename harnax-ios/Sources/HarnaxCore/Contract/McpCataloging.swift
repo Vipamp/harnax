@@ -32,11 +32,24 @@ public protocol McpCataloging: Sendable {
     func testMcpConnectivity(id: Int64) async -> Result<Bool, APIError>
     func mcpTools(id: Int64) async -> Result<[McpToolRow], APIError>
 
-    // MARK: - Per-user OAuth (status read, revoke, and the hand-off that starts authorization)
+    // MARK: - OAuth setup (discovery and the client registration)
     //
-    // Discovery, client registration and the code exchange are deliberately absent: the first two are
-    // administrator setup the console gates behind a role, and the exchange needs the browser return leg,
-    // which lands in its own milestone.
+    // Neither is gated on a role, here or in the console: single-row access goes through
+    // `getVisibleMcpServer`, which checks tenant and visibility and not ownership
+    // (`McpOAuthServiceImpl.kt:141-155`). Both do reach out to the network and write, though — discovery
+    // stores metadata and an issuer back onto the row — so they are operator-triggered actions and never run
+    // on load, which is the one rule the panel's shape has to keep.
+
+    /// `POST /{id}/oauth/discover` (`McpOAuthController.kt:45`). The answer is also the read-back of whatever
+    /// the run wrote, so a client that was already on file comes back in the same response. Refused for a row
+    /// that is not OAUTH2 and for one with no url (`McpOAuthServiceImpl.kt:146-154`).
+    func discoverMcpOAuth(id: Int64) async -> Result<McpOAuthDiscovery, APIError>
+    /// `POST /{id}/oauth/client` (`:59`). Answers the same discovery shape, with the secret reduced to
+    /// `clientSecretPresent`. Refused before anything is written when the issuer is still unknown
+    /// (`McpOAuthServiceImpl.kt:82-88`) — which is why the panel disables it until a discovery run names one.
+    func saveOAuthClient(id: Int64, _ draft: McpOAuthClientDraft) async -> Result<McpOAuthDiscovery, APIError>
+
+    // MARK: - Per-user OAuth (status read, revoke, the hand-off that starts authorization, the return leg)
 
     /// This user's own grant. A user who never authorized reads `authorized = false` with no `status`
     /// (`McpOAuthUserServiceImpl.kt:228-232`).
@@ -45,12 +58,24 @@ public protocol McpCataloging: Sendable {
     /// Builds the authorization request server-side (PKCE + state) and returns the URL. The state is only
     /// inside that URL and is spent by the exchange, so nothing here may cache or replay it.
     func mcpAuthorizeURL(id: Int64, scope: String?) async -> Result<McpOAuthAuthorization, APIError>
+    /// `POST /oauth/exchange` (`:90`), the leg that stores the grant.
+    ///
+    /// Two facts a caller has to respect. It carries no MCP id — the pending request the state names decides
+    /// which server this consent was for (`McpOAuthController.kt:96-100`) — and a refusal (unknown state,
+    /// another session's state, the AS said no) arrives as a *successful* answer with `authorized = false`
+    /// (`:101-102`), so the outcome is read from that field and never from the transport status.
+    func exchangeOAuthCode(_ draft: McpOAuthExchangeDraft) async -> Result<McpOAuthExchangeOutcome, APIError>
 }
 
 /// What came of handing an authorize URL to whoever can run a browser session.
 public enum McpAuthorizationHandoff: Equatable, Sendable {
-    /// The URL reached a browser session. No grant is implied: the return leg is what stores one, and that
-    /// is the `ASWebAuthenticationSession` milestone's job.
+    /// The URL reached a browser session. No grant is implied.
+    ///
+    /// There are two live return legs and this is the observed one: the console's own callback page receives
+    /// the code and admin stores the grant, so nothing here can see it happen and the caller re-reads the
+    /// status instead (`McpBrowserAuthorizer.swift:10-13`, `McpDetailViewModel.swift:265-267`). The other is
+    /// the in-app `WKWebView`, which takes the code out of the navigation before that page loads and spends
+    /// it from this device (`McpDetailViewModel.swift:491-499`).
     case openedInBrowser(url: URL)
     /// The operator closed the session before it finished. Not a network failure, so nothing retries — the
     /// state is spent either way (`McpOAuthUserServiceImpl.kt:170-174`).

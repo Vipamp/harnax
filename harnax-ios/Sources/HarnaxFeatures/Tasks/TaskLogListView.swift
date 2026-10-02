@@ -52,7 +52,7 @@ public struct TaskLogSheet: View {
 #endif
             .searchable(text: $vm.keyword, prompt: Text(verbatim: hx("task.log.search")))
             .toolbar {
-                ToolbarItem(placement: .navigation) { statusFilterMenu }
+                ToolbarItem(placement: .primaryAction) { statusFilterMenu }
                 ToolbarItem(placement: .confirmationAction) { closeButton }
             }
             .task {
@@ -110,7 +110,10 @@ public struct TaskLogSheet: View {
     /// The six statuses the console lists, in its own order of precedence
     /// (`TaskLogModal.tsx:283-289`), plus the choice that leaves `status` off the query entirely.
     private var statusFilterMenu: some View {
-        Menu {
+        HXFilterMenu(
+            isFiltering: vm.isFiltered,
+            accessibilityLabel: hx("state.filter.status")
+        ) {
             Picker(selection: statusBinding) {
                 Text(verbatim: hx("state.filter.all")).tag(AgentTaskLastRun?.none as AgentTaskLastRun?)
                 ForEach(AgentTaskLastRun.allCases, id: \.rawValue) { state in
@@ -132,10 +135,6 @@ public struct TaskLogSheet: View {
                     HXText("task.log.window.clear")
                 }
             }
-        } label: {
-            Image(systemName: vm.isFiltered
-                ? "line.3.horizontal.decrease.circle.fill"
-                : "line.3.horizontal.decrease.circle")
         }
     }
 
@@ -205,8 +204,11 @@ public struct TaskLogSheet: View {
 
     private func windowRow(titleKey: String, included: Binding<Bool>, date: Binding<Date>) -> some View {
         HStack(spacing: 8) {
+            // The switch's visible title lives in the sibling `HXText`, which SwiftUI does not
+            // associate with it, so the label is spelled out for VoiceOver from the same key.
             Toggle(isOn: included) {}
                 .labelsHidden()
+                .accessibilityLabel(Text(verbatim: hx(titleKey)))
                 .tint(Color.hx(.brand))
                 .frame(width: 36)
             HXText(titleKey)
@@ -222,6 +224,9 @@ public struct TaskLogSheet: View {
             }
             .datePickerStyle(.compact)
             .labelsHidden()
+            // Same reason the switch above spells its title out: `labelsHidden` takes the visible label off
+            // this field too, and the sibling `HXText` is not associated with it.
+            .accessibilityLabel(Text(verbatim: hx(titleKey)))
             .disabled(!included.wrappedValue)
         }
     }

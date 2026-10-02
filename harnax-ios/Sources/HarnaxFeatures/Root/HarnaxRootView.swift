@@ -2,7 +2,7 @@ import SwiftUI
 import HarnaxCore
 import HarnaxKit
 
-/// The app's only root: restore, then either the login screen or the five-tab bar.
+/// The app's only root: restore, then either the login screen or the four-tab bar.
 public struct HarnaxRootView: View {
     @StateObject private var model: AppModel
 
@@ -43,6 +43,10 @@ struct HarnaxTabView: View {
     @ObservedObject private var catalog = HarnaxCatalog.shared
 
     var body: some View {
+        // The selection comes from the model and not from `@State` here because this whole view is the half
+        // of the tree a 401 throws away: `authState` goes back to `LoginView`, the tab bar is deallocated, and
+        // signing in again builds a fresh one. A local selection would then come back at `.agents`, and the
+        // 「保留当前页面路径以便登录后回跳」 of `DESIGN.md:221` would be lost one layer up from where it is held.
         TabView(selection: $model.tab) {
             ForEach(HarnaxTab.allCases) { tab in
                 NavigationStack {
@@ -63,10 +67,7 @@ struct HarnaxTabView: View {
         switch tab {
         case .agents:
             AgentHomeView(
-                agents: model.dependencies.agents,
-                teams: model.dependencies.teams,
-                tasks: model.dependencies.tasks,
-                sessionRefresher: model.dependencies.sessionRefresher,
+                dependencies: model.dependencies,
                 account: model.account
             )
         case .me: MeView(model: model)
@@ -76,11 +77,6 @@ struct HarnaxTabView: View {
                 account: model.account
             )
         case .chat: ChatTabView(dependencies: model.dependencies)
-        case .system:
-            SystemHomeView(
-                dependencies: model.dependencies,
-                account: model.account
-            )
         }
     }
 }

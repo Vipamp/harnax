@@ -30,6 +30,10 @@ final class FakeSessions: SessionCataloging, @unchecked Sendable {
 
     private var parked: [() -> Void] = []
 
+    /// The page read is parkable: an append has to be able to stay in flight while the reader changes the
+    /// query (`ListAppendIdentityTests`).
+    let pageGate = PageReadGate<Result<Page<SessionSummary>, APIError>>()
+
     func sessionPage(
         keyword: String?,
         status: Int?,
@@ -37,7 +41,7 @@ final class FakeSessions: SessionCataloging, @unchecked Sendable {
         size: Int
     ) async -> Result<Page<SessionSummary>, APIError> {
         requests.append((keyword: keyword, status: status, num: num, size: size))
-        return replies.isEmpty ? .failure(.decoding) : replies.removeFirst()
+        return await pageGate.absorb(replies.isEmpty ? .failure(.decoding) : replies.removeFirst())
     }
 
     func renameSession(_ session: SessionSummary, to title: String) async -> Result<EmptyResponse, APIError> {
@@ -58,7 +62,15 @@ final class FakeSessions: SessionCataloging, @unchecked Sendable {
 
     func clearMessages(sessionId: String) async -> Result<AgentCommandReply, APIError> {
         clearRequests.append(sessionId)
-        return clearReplies.isEmpty ? .failure(.decoding) : clearReplies.removeFirst()
+        guard gateWrites else { return nextClear() }
+        return await withCheckedContinuation { continuation in
+            parked.append { continuation.resume(returning: self.nextClear()) }
+        }
+    }
+
+    /// The clear queue's next reply, unqueued meaning the envelope could not be read.
+    private func nextClear() -> Result<AgentCommandReply, APIError> {
+        clearReplies.isEmpty ? .failure(.decoding) : clearReplies.removeFirst()
     }
 
     /// Runs every parked write in the order it went out, each pulling its own next reply.

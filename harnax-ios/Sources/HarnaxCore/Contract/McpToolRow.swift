@@ -32,8 +32,17 @@ public struct McpToolParameter: Decodable, Equatable, Sendable {
         self.description = description
     }
 
-    public var label: String {
-        guard let description = hxPresented(description) else { return name }
-        return "\(name) — \(description)"
-    }
+    /// The declared type, which is what `list_tools` kept of the schema besides the name
+    /// (`McpServerController.kt:157-168`) and what the console shows as its own cyan tag
+    /// (`harnax-webui/src/pages/mcp/detail.tsx:176-189`).
+    ///
+    /// `nil` means the column arrived blank, and nothing invents a type for it: the controller's own
+    /// `"string"` default is applied upstream, so a blank here is a payload that did not go through that
+    /// flattening, and calling it `string` would be a claim nobody made.
+    public var declaredType: String? { hxPresented(type) }
+
+    /// What the parameter says about itself, or `nil` when it says nothing. The screen then shows the
+    /// catalog's own 「暂无描述」 — the console's fallback (`harnax-webui/src/pages/mcp/detail.tsx:192`) — so
+    /// the absence is a stated fact rather than a blank line.
+    public var documentation: String? { hxPresented(description) }
 }

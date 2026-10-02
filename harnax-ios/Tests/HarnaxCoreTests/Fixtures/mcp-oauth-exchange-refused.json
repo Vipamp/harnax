@@ -1,0 +1,11 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "authorized": false,
+    "message": "The authorization server refused: access_denied - please start the authorization again",
+    "scopes": []
+  },
+  "timestamp": 1759026030000,
+  "isSuccess": true
+}

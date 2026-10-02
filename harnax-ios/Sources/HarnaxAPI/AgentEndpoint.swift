@@ -1,8 +1,9 @@
 import Foundation
 import HarnaxCore
 
-/// The agent routes the card screen and the edit form touch — the same ones the web console calls. The one
-/// shape that is easy to guess wrong: `toggle` carries `status` in the query string and sends no body.
+/// The agent routes the card screen, the edit form and a conversation's detail sheet touch — the same ones
+/// the web console calls. The one shape that is easy to guess wrong: `toggle` carries `status` in the query
+/// string and sends no body.
 enum AgentEndpoint {
     static let root = "/api/admin/agents"
     static let pagePath = root + "/page"
@@ -13,6 +14,14 @@ enum AgentEndpoint {
             path: pagePath,
             query: Endpoint.pageItems(num: num, size: size, name: name, status: status)
         )
+    }
+
+    /// `GET /api/admin/agents/{id}` (`AgentController.kt:57-69`): the same `AgentResponse` a page row is
+    /// serialised from, so `AgentSummary` decodes both. This is the only read that names a conversation's
+    /// tools and CLI packages. A row of another tenant answers `404` like a missing one
+    /// (`AgentController.kt:59-62`).
+    static func by(id: Int64) -> Endpoint {
+        Endpoint(.get, path: "\(root)/\(id)")
     }
 
     /// `status` is a query parameter, not a body (`AgentController.kt:120-130`).

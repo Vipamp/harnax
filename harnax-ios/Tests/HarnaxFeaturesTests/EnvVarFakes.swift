@@ -38,9 +38,13 @@ final class FakeEnvVars: EnvVarCataloging, @unchecked Sendable {
 
     private var parked: [() -> Void] = []
 
+    /// The page read is parkable: an append has to be able to stay in flight while the reader changes the
+    /// query (`ListAppendIdentityTests`).
+    let pageGate = PageReadGate<Result<Page<EnvVarSummary>, APIError>>()
+
     func envVarPage(keyword: String?, num: Int, size: Int) async -> Result<Page<EnvVarSummary>, APIError> {
         requests.append((keyword: keyword, num: num, size: size))
-        return replies.isEmpty ? .failure(.decoding) : replies.removeFirst()
+        return await pageGate.absorb(replies.isEmpty ? .failure(.decoding) : replies.removeFirst())
     }
 
     func envVarCandidates() async -> Result<[EnvVarCandidate], APIError> {

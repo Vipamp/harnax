@@ -46,6 +46,11 @@ final class FakeAgentTasks: AgentTaskCataloging, @unchecked Sendable {
 
     private var parked: [() -> Void] = []
 
+    /// Both page reads are parkable: an append has to be able to stay in flight while the reader changes the
+    /// query (`ListAppendIdentityTests`).
+    let pageGate = PageReadGate<Result<Page<AgentTaskSummary>, APIError>>()
+    let logGate = PageReadGate<Result<Page<AgentTaskLog>, APIError>>()
+
     func agentTaskPage(
         name: String?,
         taskStatus: Int?,
@@ -53,7 +58,7 @@ final class FakeAgentTasks: AgentTaskCataloging, @unchecked Sendable {
         size: Int
     ) async -> Result<Page<AgentTaskSummary>, APIError> {
         pageRequests.append((name: name, taskStatus: taskStatus, num: num, size: size))
-        return pageReplies.isEmpty ? .failure(.decoding) : pageReplies.removeFirst()
+        return await pageGate.absorb(pageReplies.isEmpty ? .failure(.decoding) : pageReplies.removeFirst())
     }
 
     func agentTaskLogs(
@@ -63,7 +68,7 @@ final class FakeAgentTasks: AgentTaskCataloging, @unchecked Sendable {
         size: Int
     ) async -> Result<Page<AgentTaskLog>, APIError> {
         logRequests.append((taskID: taskID, filter: filter, num: num, size: size))
-        return logReplies.isEmpty ? .failure(.decoding) : logReplies.removeFirst()
+        return await logGate.absorb(logReplies.isEmpty ? .failure(.decoding) : logReplies.removeFirst())
     }
 
     func agentTaskAgents() async -> Result<[AgentTaskAgentOption], APIError> {

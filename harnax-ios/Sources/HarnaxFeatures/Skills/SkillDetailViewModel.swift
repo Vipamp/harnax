@@ -52,9 +52,9 @@ public final class SkillDetailViewModel: ObservableObject {
     public var hasFiles: Bool { !tree.isEmpty }
     public var fileCount: Int { files.count }
 
-    /// The body text. Rendered as monospaced plain text this round: `AttributedString(markdown:)` only
-    /// covers inline syntax, so tables, code blocks and lists come out wrong, and a renderer of our own is a
-    /// separate enhancement (`specs/04-context-domains.md` "iOS 适配注意点 2").
+    /// The body as the server wrote it. The screen hands it to `HXMarkdownText`, which reads the blocks with
+    /// `HXMarkdownParser` — iOS 17's `AttributedString(markdown:)` covers inline syntax only, so tables,
+    /// fences and lists come out of it flat (`specs/04-context-domains.md` iOS 适配注意点 2).
     public var body: String? {
         guard let raw = hxPresented(skill?.skillmd) else { return nil }
         return raw

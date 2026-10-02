@@ -112,12 +112,15 @@ public final class ModelProviderFormModel: ObservableObject {
 }
 
 /// The provider form sheet, presented over either level of the screen.
-struct ModelProviderFormSheet: View {
+///
+/// Public so the DEBUG walkthrough can frame the sheet from a launch argument — the simulator takes no input,
+/// so a sheet the harness cannot name is a sheet nobody can review (`App/HarnaxDebugScreens.swift`).
+public struct ModelProviderFormSheet: View {
     @StateObject private var vm: ModelProviderFormModel
     @Environment(\.dismiss) private var dismiss
     private let onSaved: () -> Void
 
-    init(
+    public init(
         catalog: any ModelCataloging,
         editing: ModelProviderSummary?,
         account: AccountSnapshot?,
@@ -131,7 +134,7 @@ struct ModelProviderFormSheet: View {
         self.onSaved = onSaved
     }
 
-    var body: some View {
+    public var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {

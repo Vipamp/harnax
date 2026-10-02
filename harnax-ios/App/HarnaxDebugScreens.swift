@@ -1,15 +1,17 @@
 #if DEBUG
+import CoreGraphics
 import Foundation
 import HarnaxCore
 import HarnaxFeatures
 import HarnaxKit
+import ImageIO
 import SwiftUI
 
 /// Screens the appearance walkthrough can reach without a finger.
 ///
-/// The simulator accepts no synthetic input, so the tab bar, the two pushed rows and the list's three
-/// states are picked at launch:
-/// `xcrun simctl launch <device> com.agnetix.harnax.ios -FIXTURE agents`.
+/// The simulator accepts no synthetic input, so everything a capture has to show is picked at launch: the tab,
+/// the three list states, the pushed rows and every sheet or form a list presents. One `case` per surface, and
+/// `xcrun simctl launch <device> com.agnetix.harnax.ios -FIXTURE agents` names which one to mount.
 enum HarnaxDebugScreen: String {
     case login
     case loginGate
@@ -19,6 +21,12 @@ enum HarnaxDebugScreen: String {
     case agentsEmpty
     case agentsFailed
     case agentBindings
+    case agentFormCreate
+    case agentFormEdit
+    case teamFormCreate
+    case teamFormEdit
+    case agentFormOrder
+    case teamFormOrder
     case teams
     case teamBindings
     case tasks
@@ -38,6 +46,7 @@ enum HarnaxDebugScreen: String {
     case contextSkill
     case contextSkillTable
     case contextSkillDetail
+    case modelTable
     case contextCli
     case contextCliDetail
     case sessions
@@ -49,20 +58,59 @@ enum HarnaxDebugScreen: String {
     case apiKeys
     case channels
     case tokenMonitor
+    case tokenMonitorNumbers
     case me
     case appearance
+
+    /// The sheets and forms a list screen presents. Each gets its own name for the same reason the tabs do:
+    /// the simulator takes no input, so a presented surface this enum cannot name is a surface nobody can
+    /// review — it compiles, it is unit-tested, and it never appears on a screenshot.
+    case apiKeyForm
+    case apiKeyRawKey
+    case channelForm
+    case wechatScan
+    case envVarForm
+    case entityPicker
+    case envParams
+    case planPanel
+    case sessionDetail
+    case sessionDetailTeam
+    case sessionCreate
+    case workspace
+    case artifacts
+    case mcpForm
+    case mcpClient
+    case mcpWebAuth
+    case modelProviderForm
+    case modelForm
+    case skillSync
+    case skillUpload
+    case skillRepoForm
+    case skillReport
 
     static var current: HarnaxDebugScreen? {
         HarnaxDebugLaunch.value(for: "FIXTURE").flatMap(HarnaxDebugScreen.init(rawValue:))
     }
 
+    /// Which tab's slice of the dependency bag the mounted surface reads.
+    ///
+    /// Every capture gets the whole bag, so this is not what makes a form work — it is what makes a fixture's
+    /// name agree with the screen it belongs to, which matters the moment a mounted surface falls through to
+    /// the root view (a `-FIXTURE mcpForm` that landed on the agents tab would then read as an agents bug).
     fileprivate var tab: HarnaxTab {
         if rawValue.hasPrefix("context") { return .context }
         if rawValue.hasPrefix("session") { return .chat }
         switch self {
         case .me: return .me
         case .chat: return .chat
-        case .system, .envVars, .apiKeys, .channels, .tokenMonitor: return .system
+        case .system, .envVars, .apiKeys, .channels, .tokenMonitor, .tokenMonitorNumbers: return .me
+        case .apiKeyForm, .apiKeyRawKey, .channelForm, .wechatScan, .envVarForm: return .me
+        case .mcpForm, .mcpClient, .mcpWebAuth, .skillSync, .skillUpload, .skillRepoForm, .skillReport,
+             .modelProviderForm, .modelForm, .envParams: return .context
+        case .planPanel, .workspace, .artifacts: return .chat
+        // The single-select picker belongs to the wizard that opens it, and its candidates are the system
+        // tab's variables: it mounts from the agents bag because that is the screen that presents it.
+        case .entityPicker: return .agents
         default: return .agents
         }
     }
@@ -71,8 +119,9 @@ enum HarnaxDebugScreen: String {
 }
 
 /// Launch arguments the walkthrough varies per screenshot: `-FIXTURE <screen> -THEME <system|light|dark>
-/// -LANG <system|en|zh-Hans>`. The two preferences are written exactly as the Settings screen writes them,
-/// so a capture exercises the real theme and catalogue paths.
+/// -LANG <system|en|zh-Hans> -SCROLL <points>`. `<screen>` is any case of `HarnaxDebugScreen` above, and
+/// `-SCROLL` is documented on `HarnaxDebugScroll`. The two preferences are written exactly as the Settings
+/// screen writes them, so a capture exercises the real theme and catalogue paths.
 enum HarnaxDebugLaunch {
     static func value(for flag: String) -> String? {
         let arguments = ProcessInfo.processInfo.arguments
@@ -87,6 +136,96 @@ enum HarnaxDebugLaunch {
         if let raw = value(for: "LANG"), let language = HarnaxLanguage(rawValue: raw) {
             HarnaxCatalog.shared.language = language
         }
+    }
+}
+
+/// The scan sheet's QR, drawn here rather than carried into the fixture as a base64 blob.
+///
+/// The symbol is a fixed module grid, not an encoder's output: no screenshot gets scanned by a phone, and what
+/// the capture has to show is the sheet's own rendering — `WechatLoginSheet` draws the PNG at 220 pt with
+/// `.interpolation(.none)`, so one pixel per module is the difference between a code and a blur. The bytes still
+/// travel through `WechatQrCode`, which is the DTO the route answers into, so the sheet cannot be framed by a
+/// shape the server would never send.
+enum HarnaxDebugQR {
+    /// 25 modules a side — version 2's grid — at 8 px each.
+    private static let modules = 25
+    private static let scale = 8
+
+    /// The whole `<img src>` value the route hands back, or nothing if the bitmap could not be written. An empty
+    /// answer makes the fixture undecodable, which the sheet reports as its own failed read.
+    static func dataURL() -> String? {
+        guard let png = png() else { return nil }
+        let body = png.base64EncodedString()
+        guard !body.isEmpty else { return nil }
+        return "data:image/png;base64,\(body)"
+    }
+
+    private static func png() -> Data? {
+        let side = modules * scale
+        guard let canvas = CGContext(
+            data: nil,
+            width: side,
+            height: side,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceGray(),
+            bitmapInfo: CGImageAlphaInfo.none.rawValue
+        ) else { return nil }
+        canvas.setFillColor(CGColor(gray: 1, alpha: 1))
+        canvas.fill(CGRect(x: 0, y: 0, width: side, height: side))
+        canvas.setFillColor(CGColor(gray: 0, alpha: 1))
+        for row in 0..<modules {
+            for column in 0..<modules where isDark(column: column, row: row) {
+                canvas.fill(
+                    CGRect(
+                        x: column * scale,
+                        y: row * scale,
+                        width: scale,
+                        height: scale
+                    )
+                )
+            }
+        }
+        guard let image = canvas.makeImage() else { return nil }
+        let output = NSMutableData()
+        guard let sink = CGImageDestinationCreateWithData(output, "public.png" as CFString, 1, nil) else {
+            return nil
+        }
+        CGImageDestinationAddImage(sink, image, nil)
+        guard CGImageDestinationFinalize(sink) else { return nil }
+        return output as Data
+    }
+
+    /// The three finders, both timing lines, the version-2 alignment block and a fixed scatter for the data
+    /// area — the shapes a QR is recognised by, in the order the symbol lays them out.
+    private static func isDark(column: Int, row: Int) -> Bool {
+        if let local = cornerLocal(column: column, row: row) {
+            if local.x == 7 || local.y == 7 { return false }
+            let ring = max(abs(local.x - 3), abs(local.y - 3))
+            return ring == 3 || ring <= 1
+        }
+        if row == 6 || column == 6 { return (row + column) % 2 == 0 }
+        if column >= 16 && column <= 20 && row >= 16 && row <= 20 {
+            return max(abs(column - 18), abs(row - 18)) != 1
+        }
+        var hash = column &* 0x9E37 &+ row &* 0x85EB &+ (column &* row)
+        hash ^= hash >> 5
+        return hash % 7 < 3
+    }
+
+    /// The module's place inside the 8×8 corner block that owns it — the 7×7 finder plus the one white band that
+    /// keeps it from reading as data — or nil when the module sits outside all three corners.
+    private static func cornerLocal(column: Int, row: Int) -> (x: Int, y: Int)? {
+        let last = modules - 1
+        for anchor in [(0, 0), (last - 7, 0), (0, last - 7)] {
+            let x = column - anchor.0
+            let y = row - anchor.1
+            guard x >= 0, x < 8, y >= 0, y < 8 else { continue }
+            // Mirrored on the far anchors, so the finder always sits against the symbol's outer edge and the
+            // quiet band always falls inside it.
+            return (anchor.0 == 0 ? x : 7 - x, anchor.1 == 0 ? y : 7 - y)
+        }
+        return nil
     }
 }
 
@@ -150,6 +289,13 @@ struct HarnaxDebugView: View {
     /// The rename sheet submits through the list's own model, so the capture hosts one. It reads nothing
     /// until a screen asks it to, so carrying it on the other captures costs no call.
     @StateObject private var sessionsVM = SessionListViewModel(sessions: HarnaxDebugSessions(screen: .sessions))
+    /// The MCP detail model, hosted for the two OAuth surfaces that take one rather than build one: the client
+    /// registration sheet and the in-app authorization session. It reads nothing until a screen asks it to.
+    @StateObject private var mcpDetailVM: McpDetailViewModel
+    /// The repository list model, hosted because the upload sheet takes one instead of building one.
+    @StateObject private var skillSourcesVM: SkillSourceListViewModel
+    /// The repository form, hosted because the form sheet observes one instead of owning one.
+    @StateObject private var skillForm: SkillRepositoryFormModel
 
     init(screen: HarnaxDebugScreen) {
         self.screen = screen
@@ -157,6 +303,7 @@ struct HarnaxDebugView: View {
             auth: HarnaxDebugAuth(screen: screen),
             agents: HarnaxDebugAgents(screen: screen),
             teams: HarnaxDebugTeams(),
+            executor: HarnaxDebugSessionExtras(screen: screen),
             agentWrite: HarnaxDebugSaving(),
             teamWrite: HarnaxDebugSaving(),
             tasks: HarnaxDebugTasks(screen: screen),
@@ -172,7 +319,7 @@ struct HarnaxDebugView: View {
             tokenStats: HarnaxDebugTokenStats(),
             sessions: HarnaxDebugSessions(screen: screen),
             sessionCreate: HarnaxDebugSessionExtras(),
-            sessionConfig: HarnaxDebugSessionExtras(),
+            sessionConfig: HarnaxDebugSessionExtras(screen: screen),
             workspace: HarnaxDebugSessionExtras(),
             teamArtifacts: HarnaxDebugSessionExtras(),
             chatHistory: HarnaxDebugHistory(),
@@ -182,6 +329,23 @@ struct HarnaxDebugView: View {
         ), biometrics: HarnaxDebugBiometrics(screen: screen), gateEnabled: screen == .loginGate)
         model.tab = screen.tab
         _model = StateObject(wrappedValue: model)
+        // The three hosted models are built here, so they are handed the launch account directly: a sheet
+        // that observes a model builds it once, and `model.account` is still `nil` at this moment.
+        let account = HarnaxDebugAuth.account
+        _mcpDetailVM = StateObject(wrappedValue: McpDetailViewModel(
+            mcp: model.dependencies.mcp,
+            authorizer: SystemBrowserAuthorizer(),
+            id: HarnaxDebugRecord.mcpServer?.id ?? 8
+        ))
+        _skillSourcesVM = StateObject(wrappedValue: SkillSourceListViewModel(
+            skills: model.dependencies.skills,
+            account: account
+        ))
+        _skillForm = StateObject(wrappedValue: SkillRepositoryFormModel(
+            mode: HarnaxDebugRecord.skillSource.map(SkillRepositoryFormModel.Mode.edit) ?? .create,
+            catalog: model.dependencies.skills,
+            account: account
+        ))
     }
 
     var body: some View {
@@ -213,13 +377,10 @@ struct HarnaxDebugView: View {
             .harnaxThemed()
         case .teams:
             // The team column sits behind a segment on the real tab; framed on its own it captures without
-            // a finger to switch segments.
+            // a finger to switch segments. The bag rather than the team slice, so the capture also shows the
+            // wizard's two entry points.
             NavigationStack {
-                TeamListView(
-                    teams: model.dependencies.teams,
-                    sessionRefresher: model.dependencies.sessionRefresher,
-                    account: model.account
-                )
+                TeamListView(dependencies: model.dependencies, account: model.account)
             }
             .harnaxThemed()
         case .envVars, .apiKeys, .channels:
@@ -245,6 +406,15 @@ struct HarnaxDebugView: View {
             // landed, which is the only way to see the donuts and the four lines at once.
             NavigationStack {
                 TokenMonitorView(catalog: model.dependencies.tokenStats)
+                    .background(HarnaxDebugScroll())
+            }
+            .harnaxThemed()
+        case .tokenMonitorNumbers:
+            // Every trend block in its 数值列表 form. The switch under a block's title is a tap, and the
+            // simulator takes none, so the model is built here with the four lines already reading as numbers —
+            // the accessibility alternative DESIGN.md §11.5 asks to see photographed in both tiers.
+            NavigationStack {
+                TokenMonitorView(vm: numbersModel(from: model.dependencies.tokenStats))
                     .background(HarnaxDebugScroll())
             }
             .harnaxThemed()
@@ -283,13 +453,29 @@ struct HarnaxDebugView: View {
                 }
             }
             .harnaxThemed()
-        case .contextMcpDetail, .contextSkillTable, .contextSkillDetail, .chat, .taskLogDetail, .taskLogRunning:
+        case .agentFormCreate, .agentFormEdit, .teamFormCreate, .teamFormEdit, .agentFormOrder, .teamFormOrder:
+            // The wizard brings its own stack: in the app it is pushed from the agent list, so framing it here
+            // means rendering it bare, not nesting a second stack around it.
+            pushed
+                .harnaxThemed()
+        case .contextMcpDetail, .contextSkillTable, .contextSkillDetail, .modelTable, .chat, .taskLogDetail, .taskLogRunning:
             NavigationStack { pushed }
                 .harnaxThemed()
         case .agentBindings, .teamBindings, .refreshSheet, .contextToolDetail, .contextCliDetail, .sessionRename,
              .taskForm, .taskLogs, .tenantSheet:
             // Presented surfaces get their own hosting, so this is the capture that can show whether the
             // app-level theme reaches them.
+            Color.hx(.background)
+                .ignoresSafeArea()
+                .sheet(isPresented: .constant(true)) { presented }
+                .harnaxThemed()
+        case .apiKeyForm, .apiKeyRawKey, .channelForm, .wechatScan, .envVarForm, .entityPicker, .envParams,
+             .planPanel, .sessionDetail, .sessionDetailTeam, .sessionCreate, .workspace, .artifacts, .mcpForm,
+             .mcpClient,
+             .mcpWebAuth, .modelProviderForm, .modelForm, .skillSync, .skillUpload, .skillRepoForm, .skillReport:
+            // The 22 surfaces a list presents and a finger can no longer reach. Hosted exactly like the sheets
+            // above: every one of them brings its own stack or its own drawer chrome, so the capture frames the
+            // surface bare over a sheet that is pinned open.
             Color.hx(.background)
                 .ignoresSafeArea()
                 .sheet(isPresented: .constant(true)) { presented }
@@ -302,8 +488,29 @@ struct HarnaxDebugView: View {
                 }
                 .harnaxThemed()
         default:
+            // Root pages are taller than the handset too — 「我的」 carries four groups now — so the scroll
+            // probe belongs here as much as on a framed screen.
             HarnaxRootView(model: model)
+                .background(HarnaxDebugScroll())
         }
+    }
+
+    /// The monitor with its four trend blocks already reading as numbers.
+    ///
+    /// `TrendForm` is chosen by the segment under a block's title, and `simctl` injects no tap, so the decision
+    /// is made on the model before the screen mounts. The three donuts are not named: only the line blocks have
+    /// a numeric reading to switch to.
+    private func numbersModel(from catalog: any TokenStatsCataloging) -> TokenMonitorViewModel {
+        let vm = TokenMonitorViewModel(catalog: catalog)
+        for chart in [
+            TokenMonitorViewModel.LegendChart.overallTrend,
+            .modelTrend,
+            .agentTrend,
+            .sessionTrend
+        ] {
+            vm.setForm(.list, for: chart)
+        }
+        return vm
     }
 
     @ViewBuilder
@@ -356,6 +563,193 @@ struct HarnaxDebugView: View {
                 )
                 .background(HarnaxDebugScroll())
             }
+        case .apiKeyForm, .apiKeyRawKey, .channelForm, .wechatScan, .envVarForm, .entityPicker, .envParams:
+            presentedSystem
+        case .mcpForm, .mcpClient, .mcpWebAuth, .modelProviderForm, .modelForm, .skillSync, .skillUpload,
+             .skillRepoForm, .skillReport:
+            presentedContext
+        case .planPanel, .sessionDetail, .sessionDetailTeam, .sessionCreate, .workspace, .artifacts:
+            presentedChat
+        default:
+            EmptyView()
+        }
+    }
+
+    /// The system tab's four write surfaces, and the two shared controls the wizard borrows.
+    @ViewBuilder
+    private var presentedSystem: some View {
+        switch screen {
+        case .apiKeyForm:
+            // The edit of the first row the list serves. `enabled` exists only on the update body, so an edit is
+            // the only capture that shows the switch, and the stored name arrives as a fact rather than a field.
+            ApiKeyFormView(
+                row: HarnaxDebugRecord.apiKey,
+                account: model.account,
+                catalog: model.dependencies.apiKeys
+            ) {}
+        case .apiKeyRawKey:
+            // The one-time secret, framed off the summary the create route answers with. The write stays
+            // refused, so this direct mount is the only way the surface can ever be reviewed.
+            ApiKeyRawKeySheet(created: HarnaxDebugRecord.publishedKey, onClose: {})
+        case .channelForm:
+            // The feishu websocket row: the credential pair its type and mode open, the auto-start switch and the
+            // three capability switches, all seeded from the row the list served.
+            ChannelFormView(
+                row: HarnaxDebugRecord.channel,
+                catalog: model.dependencies.channels,
+                agents: model.dependencies.agents
+            ) {}
+                .background(HarnaxDebugScroll())
+        case .wechatScan:
+            // The personal-WeChat row — the only type whose form carries no credential field at all, because the
+            // scan writes the token server-side. Its fixture answers the QR read with `HarnaxDebugQR`.
+            if let channel = HarnaxDebugRecord.wechatChannel, let id = channel.id {
+                WechatLoginSheet(catalog: model.dependencies.channels, channelID: id, onDone: {})
+            }
+        case .envVarForm:
+            // The sensitive row rather than the plain one: its stored value never reaches this device, so the
+            // field starts empty with the mask printed as the hint, which is the rule a capture has to show.
+            EnvVarFormView(row: HarnaxDebugRecord.envVarMasked, catalog: model.dependencies.envVars) {}
+        case .entityPicker:
+            // The wizard's single-select picker, with the binding editor's own three keys and the candidate read's
+            // three variables: one holds the selection, one is offered, and the one another row already took is
+            // missing rather than dimmed.
+            HXEntityPicker(
+                titleKey: "env.picker.title",
+                searchKey: "env.picker.search",
+                emptyKey: "env.picker.empty",
+                options: HarnaxDebugRecord.envCandidateOptions,
+                selectedID: HarnaxDebugRecord.envCandidates.first { $0.isSensitive }?.id,
+                excludedIDs: HarnaxDebugRecord.envCandidates.last?.id.map { [$0] } ?? []
+            ) { _ in }
+        case .envParams:
+            // The chip's sheet over the tool row's two declared parameters — one required and secret, one
+            // optional with a default — which is the pair the sheet exists to separate.
+            HXEnvParamsSheet(entries: HarnaxDebugRecord.tool?.envParams ?? [])
+        default:
+            EmptyView()
+        }
+    }
+
+    /// The context tab's two model forms, MCP form and its two OAuth surfaces, and the skill domain's three.
+    @ViewBuilder
+    private var presentedContext: some View {
+        switch screen {
+        case .mcpForm:
+            // The OAuth sse row, which puts the transport chips, the auth selector, the header table and the
+            // server's own parameters on one screen. An edit rather than a create because the create cannot
+            // reach the stdio transport, and a blank form shows a field set no capture has to review.
+            if let server = HarnaxDebugRecord.mcpServer {
+                McpFormView(mcp: model.dependencies.mcp, mode: .edit(server), account: model.account) {}
+                    .background(HarnaxDebugScroll())
+            }
+        case .mcpClient:
+            // The client registration sheet, over the detail model this capture hosts. The three fields start
+            // empty by design — a blank half says "keep what is stored" — so the capture shows the editor's own
+            // validation lines rather than values the wire never carried.
+            McpOAuthClientSheet(vm: mcpDetailVM)
+        case .mcpWebAuth:
+            // The sheet only exists while the model holds a target, so this opens it with the same call the
+            // detail screen's button makes, against the fixture's own authorize URL.
+            McpAuthorizationWebSheet(vm: mcpDetailVM)
+                .task { await mcpDetailVM.startInAppAuthorization() }
+        case .modelProviderForm:
+            // Editing the shared dashscope row as the staff account: the row belongs to another creator, so this
+            // is the one capture where the visibility switch reads as disabled rather than merely off.
+            ModelProviderFormSheet(
+                catalog: model.dependencies.models,
+                editing: HarnaxDebugRecord.provider,
+                account: HarnaxDebugAuth.staff
+            ) {}
+                .background(HarnaxDebugScroll())
+        case .modelForm:
+            // The same rule on the second level: the chat row the choice list serves was created by another
+            // account, so its sharing switch is locked here too.
+            ModelFormSheet(
+                catalog: model.dependencies.models,
+                providerID: HarnaxDebugRecord.model?.providerId ?? 3,
+                editing: HarnaxDebugRecord.model,
+                account: HarnaxDebugAuth.staff
+            ) {}
+                .background(HarnaxDebugScroll())
+        case .skillSync:
+            if let source = HarnaxDebugRecord.skillSource {
+                // Step one of the two-step sync: what the repository holds, read before anything is written. The
+                // preview read now answers, because the list of names is the whole reason the sheet is open.
+                SkillSyncSheet(source: source, skills: model.dependencies.skills, onChanged: {})
+                    .background(HarnaxDebugScroll())
+            }
+        case .skillUpload:
+            // The ZIP path, which is create-and-install in one call and therefore carries the name field the
+            // repository form does not.
+            SkillUploadSheet(vm: skillSourcesVM)
+        case .skillRepoForm:
+            // The edit of the GIT source, so the two fields that type owns — url and branch — carry the stored
+            // text instead of a placeholder, and the version and the two switches read as the row left them.
+            SkillRepositoryFormSheet(form: skillForm) {}
+                .background(HarnaxDebugScroll())
+        case .skillReport:
+            // The graded reading of a run that answered `200` while three skills did not land: a `200` there is
+            // not a clean install, and the five buckets are what says so.
+            SkillReportSheet(report: SkillInstallReport.describe(HarnaxDebugRecord.skillInstall))
+        default:
+            EmptyView()
+        }
+    }
+
+    /// The chat tab's four drawers and the plan panel.
+    @ViewBuilder
+    private var presentedChat: some View {
+        switch screen {
+        case .planPanel:
+            if let session = HarnaxDebugRecord.session, let sessionId = hxPresented(session.sessionId) {
+                // The panel brings no stack of its own — the chat screen slides it out of a drawer — so the
+                // capture frames it the same way and hands it a close, which only the hosted panel has.
+                PlanPanelView(sessionId: sessionId, reading: model.dependencies.plan, onClose: {})
+                    .background(HarnaxDebugScroll())
+            }
+        case .sessionDetail:
+            if let session = HarnaxDebugRecord.session {
+                // The first row is the agent conversation, so the snapshot alone draws 基本信息, 执行者,
+                // 外部服务 and 技能. The executor leg goes with it because 工具 and CLI live only on the agent's
+                // own row, and the sheet reads it by id the moment it opens. The
+                // config leg is the sheet's one writable panel — it reads only to confirm a write, which this
+                // double refuses like every other write, so a capture shows the editor and not a second read
+                // nobody asked for.
+                SessionDetailSheet(
+                    session: session,
+                    config: model.dependencies.sessionConfig,
+                    executor: model.dependencies.executor
+                )
+                    .background(HarnaxDebugScroll())
+            }
+        case .sessionDetailTeam:
+            if let session = HarnaxDebugRecord.teamSession {
+                // A team conversation is the only row whose 团队成员 panel exists, and the only one whose two
+                // 失效 badges have a column behind them (`TeamResponse.kt:62`, `:83`), so this capture is what
+                // shows a deleted member and a deleted lead skill still named on the sheet.
+                SessionDetailSheet(
+                    session: session,
+                    config: model.dependencies.sessionConfig,
+                    executor: model.dependencies.executor
+                )
+                    .background(HarnaxDebugScroll())
+            }
+        case .sessionCreate:
+            // The two executor groups come from the same fixtures the agent and team lists serve, which is the
+            // only way to show a picker whose halves the route answered separately.
+            SessionCreateSheet(creating: model.dependencies.sessionCreate)
+                .background(HarnaxDebugScroll())
+        case .workspace:
+            if let session = HarnaxDebugRecord.session, let sessionId = hxPresented(session.sessionId) {
+                WorkspaceSheet(workspace: model.dependencies.workspace, sessionId: sessionId)
+                    .background(HarnaxDebugScroll())
+            }
+        case .artifacts:
+            if let session = HarnaxDebugRecord.session, let sessionId = hxPresented(session.sessionId) {
+                TeamArtifactsSheet(reading: model.dependencies.teamArtifacts, sessionId: sessionId)
+                    .background(HarnaxDebugScroll())
+            }
         default:
             EmptyView()
         }
@@ -364,6 +758,56 @@ struct HarnaxDebugView: View {
     @ViewBuilder
     private var pushed: some View {
         switch screen {
+        case .agentFormCreate:
+            // A create starts with no row on any of the four dimensions, which is exactly what the list's own
+            // ＋ opens; every candidate then comes from the fixture reads.
+            AgentFormView(dependencies: model.dependencies, mode: .create, account: model.account)
+                .background(HarnaxDebugScroll())
+        case .agentFormEdit:
+            // The edit on the first card the list serves, so the five steps show real seeded rows — including
+            // the tool whose confirmation its declaration locks and the second CLI, whose name only the
+            // candidate read can supply.
+            if let agent = HarnaxDebugRecord.agent {
+                AgentFormView(dependencies: model.dependencies, mode: .edit(agent), account: model.account)
+                    .background(HarnaxDebugScroll())
+            }
+        case .teamFormCreate:
+            // A create opens on step 1 with nothing seeded; the member seed page and the two skill lists are
+            // still read, so step 2 and step 3 have fixture rows to pick from.
+            TeamFormView(dependencies: model.dependencies, mode: .create, account: model.account)
+                .background(HarnaxDebugScroll())
+        case .teamFormEdit:
+            // The edit on the first team the list serves, so all three steps show the seeded lead model, the two
+            // lead skills and the members — including the skill whose row names no repository and the member the
+            // fixture has switched off, both of which have to stay on screen and labelled.
+            if let team = HarnaxDebugRecord.team {
+                TeamFormView(dependencies: model.dependencies, mode: .edit(team), account: model.account)
+                    .background(HarnaxDebugScroll())
+            }
+        case .agentFormOrder:
+            // The same edit, opened on step 2. Order handles only draw once a list holds more than one row, and
+            // step 1 — where a wizard always starts — holds none of the four arranged lists, so a capture left
+            // there would review nothing: the pair of chevrons, the disabled ends and the row's own parameter
+            // table all live on steps 2 to 5. The fixture's first agent has three tools, which shows the middle
+            // card with both arrows live and the outer two with one greyed.
+            if let agent = HarnaxDebugRecord.agent {
+                let vm = AgentFormViewModel(dependencies: model.dependencies, mode: .edit(agent), account: model.account)
+                AgentFormView(vm: vm, sessionRefresher: model.dependencies.sessionRefresher)
+                    // The step lands in a `.task` because a ViewBuilder takes only views: a bare
+                    // `vm.step = .tool` here is a `()` and the compiler calls it a non-View.
+                    .task { vm.step = .tool }
+                    .background(HarnaxDebugScroll())
+            }
+        case .teamFormOrder:
+            // The team's last step, where the member list is: the order is what the lead reads its delegates in,
+            // so this is the capture that shows the handles beside the delete and the two members in the order
+            // the fixture seeded them.
+            if let team = HarnaxDebugRecord.team {
+                let vm = TeamFormViewModel(dependencies: model.dependencies, mode: .edit(team), account: model.account)
+                TeamFormView(vm: vm, sessionRefresher: model.dependencies.sessionRefresher)
+                    .task { vm.step = .member }
+                    .background(HarnaxDebugScroll())
+            }
         case .contextMcpDetail:
             if let id = HarnaxDebugRecord.mcpServer?.id {
                 McpDetailView(mcp: model.dependencies.mcp, authorizer: SystemBrowserAuthorizer(), id: id)
@@ -372,9 +816,18 @@ struct HarnaxDebugView: View {
             if let source = HarnaxDebugRecord.skillSource {
                 SkillTableView(sourceID: source.id, sourceName: hxPresented(source.title), skills: model.dependencies.skills)
             }
+        case .modelTable:
+            // The second level of the model tab: the chips and the two price boxes over the rows are what this
+            // capture is for, and the rows are the four fixture models under the first provider.
+            if let provider = HarnaxDebugRecord.provider {
+                ModelListView(provider: provider, catalog: model.dependencies.models, account: model.account)
+            }
         case .contextSkillDetail:
             if let id = HarnaxDebugRecord.skill?.id {
+                // The body is a whole `SKILL.md` now, so the page runs past the fold and needs the same probe
+                // the token monitor uses for `-SCROLL`.
                 SkillDetailView(id: id, skills: model.dependencies.skills)
+                    .background(HarnaxDebugScroll())
             }
         case .taskLogDetail, .taskLogRunning:
             // The pane has no endpoint of its own — it renders the row the sheet already holds. The two
@@ -402,6 +855,7 @@ struct HarnaxDebugView: View {
                     plan: model.dependencies.plan,
                     conversation: ChatConversation(id: sessionId, title: session.displayName ?? "")
                 )
+                .background(HarnaxDebugScroll())
             }
         default:
             EmptyView()
@@ -423,13 +877,29 @@ struct HarnaxDebugBiometrics: BiometricUnlocking {
 struct HarnaxDebugAuth: AuthFlowing {
     let screen: HarnaxDebugScreen
 
-    private static let account = AccountSnapshot(
+    /// The account every capture signs in as. Reachable from outside the double because a hosted sheet model is
+    /// built before `restore()` publishes one, and it has to be built with this exact snapshot.
+    static let account = AccountSnapshot(
         username: "admin",
         nickname: "Admin Console",
         email: "admin@agnetix.dev",
         tenantID: 1,
         tenantName: "Primary Tenant",
         isAdministrator: true
+    )
+
+    /// A staff account, for the two model forms' sharing switch. `canChangeVisibility` lets an administrator
+    /// and a create always through, and anyone else only pull their *own* private row out to public
+    /// (`Sources/HarnaxCore/Contract/Facades.swift:122-125`), so on the admin account the switch is never
+    /// locked and a capture could not tell a disabled control from an enabled one. Editing a row another
+    /// account created, as this one, is the only way to show it disabled rather than merely off.
+    static let staff = AccountSnapshot(
+        username: "liwei",
+        nickname: "Li Wei",
+        email: "liwei@agnetix.dev",
+        tenantID: 1,
+        tenantName: "Primary Tenant",
+        isAdministrator: false
     )
 
     func state() async -> AuthState {
@@ -612,14 +1082,21 @@ struct HarnaxDebugModels: ModelCataloging {
 
     func testProvider(id: Int64) async -> Result<Bool, APIError> { .failure(.offline) }
 
+    /// The whole fixture page, unscoped, like the other second-level lists: the capture is of the resting list
+    /// with its filter band, not of the four predicates the endpoint also accepts.
     func modelPage(
         providerID: Int64,
         name: String?,
+        modelType: String?,
         status: Int?,
         tags: [String],
+        minPrice: Double?,
+        maxPrice: Double?,
         num: Int,
         size: Int
-    ) async -> Result<Page<ModelSummary>, APIError> { .failure(.offline) }
+    ) async -> Result<Page<ModelSummary>, APIError> {
+        HarnaxDebugPages.decode(HarnaxDebugPages.modelsJSON, Page<ModelSummary>.self)
+    }
 
     func setModelStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
 
@@ -629,21 +1106,32 @@ struct HarnaxDebugModels: ModelCataloging {
         id: Int64?,
         request: ModelSaveRequest
     ) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
+
+    /// The unpaged choice list the agent wizard reads on step 1. Its own fixture, so the wizard can be switched
+    /// to the one chat row that carries neither tool nor MCP support and show both capability steps dimmed.
+    func modelChoices(num: Int, size: Int) async -> Result<Page<ModelSummary>, APIError> {
+        HarnaxDebugPages.decode(HarnaxDebugPages.modelsJSON, Page<ModelSummary>.self)
+    }
 }
 
 struct HarnaxDebugTools: ToolCataloging {
-    func toolPage(
-        keyword: String?,
-        status: Int?,
-        num: Int,
-        size: Int
-    ) async -> Result<Page<ToolSummary>, APIError> {
-        HarnaxDebugPages.decode(HarnaxDebugPages.toolsJSON, Page<ToolSummary>.self)
+    /// `/builtin` answers a bare array, and the fixture is written as a page envelope, so the rows come out
+    /// of the wrapper here rather than by duplicating the JSON.
+    private var fixtureRows: Result<[ToolSummary], APIError> {
+        switch HarnaxDebugPages.decode(HarnaxDebugPages.toolsJSON, Page<ToolSummary>.self) {
+        case let .success(page): .success(page.records)
+        case let .failure(error): .failure(error)
+        }
     }
+
+    func builtinTools() async -> Result<[ToolSummary], APIError> { fixtureRows }
 
     func toolDetail(id: Int64) async -> Result<ToolSummary, APIError> {
         HarnaxDebugPages.decode(HarnaxDebugPages.toolDetailJSON, ToolSummary.self)
     }
+
+    /// The unpaged list the wizard picks from, out of the same fixture as the builtin table.
+    func availableTools() async -> Result<[ToolSummary], APIError> { fixtureRows }
 }
 
 struct HarnaxDebugMcp: McpCataloging {
@@ -686,10 +1174,27 @@ struct HarnaxDebugMcp: McpCataloging {
 
     func revokeMcpOAuth(id: Int64) async -> Result<McpOAuthRevokeResult, APIError> { .failure(.offline) }
 
+    /// The request the in-app authorization session loads. The capture that names `mcpWebAuth` opens the sheet
+    /// through the same call its button makes, and the sheet only exists while that call has given back both
+    /// halves — no other read of the OAuth machine runs at a capture's rest, so the detail screen's own capture
+    /// stays as it was.
     func mcpAuthorizeURL(
         id: Int64,
         scope: String?
-    ) async -> Result<McpOAuthAuthorization, APIError> { .failure(.offline) }
+    ) async -> Result<McpOAuthAuthorization, APIError> {
+        HarnaxDebugPages.decode(HarnaxDebugPages.mcpAuthorizeJSON, McpOAuthAuthorization.self)
+    }
+
+    func discoverMcpOAuth(id: Int64) async -> Result<McpOAuthDiscovery, APIError> { .failure(.offline) }
+
+    func saveOAuthClient(
+        id: Int64,
+        _ draft: McpOAuthClientDraft
+    ) async -> Result<McpOAuthDiscovery, APIError> { .failure(.offline) }
+
+    func exchangeOAuthCode(
+        _ draft: McpOAuthExchangeDraft
+    ) async -> Result<McpOAuthExchangeOutcome, APIError> { .failure(.offline) }
 }
 
 struct HarnaxDebugSkills: SkillCataloging {
@@ -719,7 +1224,11 @@ struct HarnaxDebugSkills: SkillCataloging {
 
     func source(id: Int64) async -> Result<SkillSourceSummary, APIError> { .failure(.offline) }
 
-    func preview(sourceID: Int64) async -> Result<[SkillPreviewItem], APIError> { .failure(.offline) }
+    /// What the repository holds, which is the whole of the sync sheet's first step: the capture names a source
+    /// to sync, so this read has to answer or the sheet has nothing left to show.
+    func preview(sourceID: Int64) async -> Result<[SkillPreviewItem], APIError> {
+        HarnaxDebugPages.decode(HarnaxDebugPages.skillPreviewJSON, [SkillPreviewItem].self)
+    }
 
     func install(
         sourceID: Int64,
@@ -785,10 +1294,20 @@ struct HarnaxDebugEnvVars: EnvVarCataloging {
     func setEnvVarStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
 
     func deleteEnvVar(id: Int64) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
+
+    /// The four-key projection the wizard's parameter rows bind against, in the same three keys the page
+    /// fixture holds — and here `sensitive` is a JSON boolean, which is what only this read does.
+    func envVarCandidates() async -> Result<[EnvVarCandidate], APIError> {
+        HarnaxDebugPages.decode(HarnaxDebugPages.envCandidatesJSON, [EnvVarCandidate].self)
+    }
 }
 
-/// The API Key list. The two reads that would hand back a raw key are the ones a screenshot cannot press,
-/// so they fail with everything else and the one-time sheet stays unreachable.
+/// The API Key list.
+///
+/// The two reads that would hand back a raw key are writes here, and a screenshot cannot press either: they keep
+/// the general refusal, so a capture that ever reached one shows a banner instead of a key that appears to have
+/// been minted. The one-time sheet is still captured — `HarnaxDebugRecord.publishedKey` is what the `-FIXTURE
+/// apiKeyRawKey` mount hands it, because that payload is the create route's answer and no route can be called.
 struct HarnaxDebugApiKeys: ApiKeyCataloging {
     func apiKeyPage(
         keyword: String?,
@@ -814,10 +1333,12 @@ struct HarnaxDebugApiKeys: ApiKeyCataloging {
 
 /// The channel list.
 ///
-/// The page read and the sandbox lookup both answer, because the row's running badge, its type/mode chips and
-/// its sandbox chip are all on screen in one capture. Every write and the whole scan path fail: a screenshot
-/// cannot open a form or hold a phone over a QR, and the point of the failing doubles is that a capture which
-/// ever reached one shows a banner instead of an action that appears to have worked.
+/// The page read, the sandbox lookup and the two reads the scan sheet makes all answer: the row's running badge,
+/// its type/mode chips and its sandbox chip are on screen in one capture, and the QR sheet is now its own
+/// capture — a surface the harness can name but cannot feed would only ever photograph its own failure. Every
+/// write still fails, along with the scan's cancel: a screenshot cannot open a form or hold a phone over a code,
+/// and the point of the failing doubles is that a capture which ever reached one shows a banner instead of an
+/// action that appears to have worked.
 struct HarnaxDebugChannels: ChannelCataloging {
     func channelPage(
         keyword: String?,
@@ -843,9 +1364,19 @@ struct HarnaxDebugChannels: ChannelCataloging {
         HarnaxDebugPages.decode(HarnaxDebugPages.sandboxJSON, SandboxStatusMap.self)
     }
 
-    func startWechatLogin(id: Int64) async -> Result<WechatQrCode, APIError> { .failure(.offline) }
+    /// The code the sheet paints, drawn by `HarnaxDebugQR` rather than fetched. No route can hand a screenshot a
+    /// PNG, and a sheet without a code is a spinner: the one state of this surface the harness is able to show.
+    /// A bitmap this device cannot write stays a refusal, which the sheet reports as its own failed read.
+    func startWechatLogin(id: Int64) async -> Result<WechatQrCode, APIError> {
+        guard let dataUrl = HarnaxDebugQR.dataURL() else { return .failure(.offline) }
+        return .success(WechatQrCode(dataUrl: dataUrl))
+    }
 
-    func wechatLoginStatus(id: Int64) async -> Result<WechatLoginUpdate, APIError> { .failure(.offline) }
+    /// `WAITING` and nothing else: it is the one phase that keeps both the code and the poll on screen, while a
+    /// `LOGGED_IN` answer closes the sheet 800 ms into the capture and an `EXPIRED` one freezes it.
+    func wechatLoginStatus(id: Int64) async -> Result<WechatLoginUpdate, APIError> {
+        HarnaxDebugPages.decode(HarnaxDebugPages.wechatStatusJSON, WechatLoginUpdate.self)
+    }
 
     func cancelWechatLogin(id: Int64) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
 }
@@ -964,27 +1495,95 @@ struct HarnaxDebugSaving: AgentWriting, TeamWriting {
     }
 }
 
-/// The five session reads and writes a capture cannot drive: no screenshot presses send, uploads a file, or
-/// picks an executor, so each answers the same refusal every other unfaked write does.
+/// The session's four drawer reads and the detail sheet's executor read, and everything a capture cannot drive.
+///
+/// Split by what a screenshot is now able to name: the create form's executor groups, the workspace's status gate
+/// and root listing, the artifact list, the plan panel's two reads and the detail sheet's by-id agent and team
+/// reads all answer, because each has become a fixture of its own (`-FIXTURE sessionCreate`, `workspace`,
+/// `artifacts`, `planPanel`, `sessionDetail` / `sessionDetailTeam`) and a mounted surface
+/// whose own read refuses photographs the refusal rather than the surface. Every write stays refused, along with
+/// the two reads that would need real bytes (a file's body, an artifact's download); `sessionConfig` answers on
+/// the chat fixture, because that screen's composer and its plan loop both read it and a refusal there is a
+/// banner the conversation never shows.
 struct HarnaxDebugSessionExtras: SessionCreating, SessionConfiguring, SessionWorkspaceReading,
-    TeamArtifactReading, PlanReading {
+    TeamArtifactReading, PlanReading, ExecutorReading {
+    /// The fixture being captured, where the capture needs a read to answer rather than to refuse.
+    var screen: HarnaxDebugScreen?
+
     func sessionTitleTaken(_ title: String) async -> Result<Bool, APIError> { .failure(.offline) }
 
-    func executorChoices() async -> Result<SessionExecutorChoices, APIError> { .failure(.offline) }
+    /// The two groups the console opens its create modal with, from the same two page fixtures the agents and
+    /// team tabs list. Rows with no name or no id drop out because an unnamed option cannot be picked; nothing
+    /// lands in `unavailableKinds`, since both halves answer and the form's notice exists to say when one does
+    /// not.
+    func executorChoices() async -> Result<SessionExecutorChoices, APIError> {
+        guard let agents = Self.pageRows(HarnaxDebugPages.agentsJSON, AgentSummary.self),
+              let teams = Self.pageRows(HarnaxDebugPages.teamsJSON, TeamSummary.self)
+        else { return .failure(.decoding) }
+        return .success(SessionExecutorChoices(
+            agents: agents.compactMap { Self.option(kind: .agent, id: $0.id, name: $0.name, detail: $0.description) },
+            teams: teams.compactMap { Self.option(kind: .team, id: $0.id, name: $0.name, detail: $0.description) }
+        ))
+    }
 
     func createSession(_ draft: SessionCreateDraft) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
 
-    func sessionConfig(sessionId: String) async -> Result<SessionSummary, APIError> { .failure(.offline) }
+    /// The agent's own row behind the detail sheet's 工具 and CLI panels, taken from the same page fixture the
+    /// agent tab lists and matched on the id the conversation names. A row the fixture does not carry is refused
+    /// rather than answered with somebody else's bindings, which is the one thing a capture must not show.
+    func agent(id: Int64) async -> Result<AgentSummary, APIError> {
+        guard let row = Self.pageRows(HarnaxDebugPages.agentsJSON, AgentSummary.self)?
+            .first(where: { $0.id == id })
+        else { return .failure(.offline) }
+        return .success(row)
+    }
+
+    /// The team's own row behind 团队成员 and the two 失效 badges — the only route that answers either flag
+    /// (`TeamResponse.kt:62`, `:83`), and the same id rule as the agent read.
+    func team(id: Int64) async -> Result<TeamSummary, APIError> {
+        guard let row = Self.pageRows(HarnaxDebugPages.teamsJSON, TeamSummary.self)?
+            .first(where: { $0.id == id })
+        else { return .failure(.offline) }
+        return .success(row)
+    }
+
+    func sessionConfig(sessionId: String) async -> Result<SessionSummary, APIError> {
+        // The chat capture is the exception: this read is what fills its composer, so refusing it painted a
+        // `网络不可用` banner no real device would show — and left `enablePlan` off, which is the flag that arms
+        // the reading the inline plan card is drawn from.
+        if screen == .chat, let row = Self.pageRows(HarnaxDebugPages.sessionsJSON, SessionSummary.self)?.first {
+            return .success(row)
+        }
+        return .failure(.offline)
+    }
 
     func updateSessionConfig(
         sessionId: String,
         _ change: SessionChatChange
     ) async -> Result<EmptyResponse, APIError> { .failure(.offline) }
 
-    func sandboxStatus(sessionId: String) async -> Result<SandboxStatus, APIError> { .failure(.offline) }
+    /// The gate in front of the listing: only `.running` lets the drawer list at all
+    /// (`WorkspaceViewModel.load()`), so a refusal here would make `-FIXTURE workspace` a picture of the
+    /// stopped-sandbox state instead of a picture of the drawer.
+    func sandboxStatus(sessionId: String) async -> Result<SandboxStatus, APIError> { .success(.running) }
 
+    /// `find -maxdepth 1` on the drawer's root, in the order a shell answers it rather than the order the rows
+    /// are shown in: a file ahead of a directory, a lowercase directory after an uppercase name, no size on
+    /// either directory, one symlink, and one entry whose type word this build has never seen. That is the input
+    /// the DTO's own sorter is supposed to visibly straighten out.
+    ///
+    /// Only the root answers. A deeper path means somebody tapped a directory, which no screenshot can do, and
+    /// inventing the contents of a listing this harness has never been shown would be making the fixture up.
     func workspaceFiles(sessionId: String, path: String) async -> Result<[WorkspaceFile], APIError> {
-        .failure(.offline)
+        guard path == WorkspacePath.root else { return .failure(.offline) }
+        return .success([
+            WorkspaceFile(type: .file, name: "README.md", size: 4_210, modified: "2026-09-27T09:12:04+08:00"),
+            WorkspaceFile(type: .directory, name: "reports"),
+            WorkspaceFile(type: .file, name: "weekly-report.xlsx", size: 1_300_448, modified: "2026-09-26T22:05:00+08:00"),
+            WorkspaceFile(type: .symlink, name: "latest-report", modified: "2026-09-26T22:05:00+08:00"),
+            WorkspaceFile(type: .directory, name: "assets", modified: "2026-09-20T21:40:00+08:00"),
+            WorkspaceFile(type: .unknown, name: "worker.sock")
+        ])
     }
 
     func readWorkspaceFile(sessionId: String, path: String) async -> Result<WorkspaceFileContent, APIError> {
@@ -1008,16 +1607,183 @@ struct HarnaxDebugSessionExtras: SessionCreating, SessionConfiguring, SessionWor
         sessionId: String
     ) async -> Result<WorkspaceDownload, APIError> { .failure(.offline) }
 
-    func teamArtifacts(sessionId: String) async -> Result<[TeamArtifact], APIError> { .failure(.offline) }
+    /// The whole list, newest first: the route has no page envelope and the drawer has no search, sort or
+    /// pagination. Every `fileId` is a full UUID — all the server ever hands out — because the row's own
+    /// `shortFileId` is what cuts it to eight characters plus an ellipsis, and a pre-truncated seed would
+    /// photograph a list that proves nothing about that rule. The last row's `createTime` is blank, the case
+    /// that drops the publication line rather than printing an empty one.
+    func teamArtifacts(sessionId: String) async -> Result<[TeamArtifact], APIError> {
+        .success([
+            TeamArtifact(
+                fileId: "3f2a9c41-8b0d-4e6a-9c11-7d5c1b0a4e21",
+                fileName: "weekly-report.pdf",
+                mimeType: "application/pdf",
+                sizeBytes: 1_284_503,
+                memberAgentId: 11,
+                createTime: "2026-09-27 09:12:04"
+            ),
+            TeamArtifact(
+                fileId: "77c04e18-6c25-4f18-a3e0-2e94c17fa553",
+                fileName: "valuation.json",
+                mimeType: "application/json",
+                sizeBytes: 18_432,
+                memberAgentId: 12,
+                createTime: "2026-09-27 08:41:30"
+            ),
+            TeamArtifact(
+                fileId: "1a5d80f3-9f4a-4b7e-82f0-0a2d5e7f9b44",
+                fileName: "chart.png",
+                mimeType: "image/png",
+                sizeBytes: 512_000,
+                createTime: "2026-09-26 22:05:00"
+            ),
+            TeamArtifact(
+                fileId: "c07b52d8-2b4d-4c11-9a3e-39bb15d74e06",
+                fileName: "bundle.tar.gz",
+                mimeType: "application/gzip",
+                sizeBytes: 15_800_000,
+                memberAgentId: 11,
+                createTime: ""
+            )
+        ])
+    }
 
     func downloadTeamArtifact(
         fileId: String,
         sessionId: String
     ) async -> Result<TeamArtifactFile, APIError> { .failure(.offline) }
 
-    func planNotes(sessionId: String) async -> Result<[PlanNote], APIError> { .failure(.offline) }
+    /// The accordion's finished plans. The head row is the one the panel opens expanded (`notes.first?.id`), so
+    /// it is the row with subtasks; the second has no `planId` at all, which is the case that has to fall back to
+    /// the creation stamp for an identity; the third has neither a description nor a status; the fourth keeps its
+    /// subtask list empty — the plan the `3/5` badge has to skip.
+    func planNotes(sessionId: String) async -> Result<[PlanNote], APIError> {
+        .success([
+            PlanNote(
+                planId: "plan-9c11",
+                sessionId: sessionId,
+                name: "Weekly digest",
+                description: "Collect the closed runs, group them by owner, keep the two slips at the top.",
+                expectedOutcome: "A message the channel can paste without editing.",
+                subtasks: [
+                    PlanSubTask(
+                        name: "Collect the runs",
+                        outcome: "Nine closed, two still open.",
+                        state: .done,
+                        createdAt: "2026-09-26T09:00:02+08:00",
+                        finishedAt: "2026-09-26T09:01:34+08:00",
+                        costTimeSeconds: 92
+                    ),
+                    PlanSubTask(
+                        name: "Group them by owner",
+                        state: .done,
+                        createdAt: "2026-09-26T09:01:34+08:00",
+                        finishedAt: "2026-09-26T09:04:20+08:00",
+                        costTimeSeconds: 166
+                    )
+                ],
+                createdAt: "2026-09-26T09:00:00+08:00",
+                finishedAt: "2026-09-26T09:04:20+08:00",
+                costTimeSeconds: 260,
+                status: .done
+            ),
+            PlanNote(
+                sessionId: sessionId,
+                name: "Reconcile the FAQ",
+                description: "Term table against the glossary skill.",
+                subtasks: [
+                    PlanSubTask(
+                        name: "Read the term table",
+                        outcome: "Abandoned: the sheet moved and the link no longer resolves.",
+                        state: .abandoned,
+                        createdAt: "2026-09-21T15:02:10+08:00",
+                        finishedAt: "2026-09-21T15:06:41+08:00",
+                        costTimeSeconds: 271
+                    )
+                ],
+                createdAt: "2026-09-21T15:02:10+08:00",
+                status: .abandoned
+            ),
+            PlanNote(
+                planId: "plan-4e06",
+                sessionId: sessionId,
+                name: "Reformat the changelog",
+                createdAt: "2026-09-18T21:40:11+08:00",
+                finishedAt: "2026-09-18T21:41:02+08:00",
+                costTimeSeconds: 51
+            ),
+            PlanNote(
+                planId: "plan-b7d2",
+                sessionId: sessionId,
+                name: "Empty plan",
+                description: "The runtime stamped a plan and never wrote a subtask into it.",
+                createdAt: "2026-09-15T11:20:00+08:00",
+                status: .todo
+            )
+        ])
+    }
 
-    func currentPlan(sessionId: String) async -> Result<CurrentPlan, APIError> { .failure(.offline) }
+    /// The card at the panel's head: a plan mid-run whose four subtasks cover all four `PlanState`s, so the
+    /// progress line, the in-progress row and the abandoned row are on one screen. The name is the validity flag,
+    /// so an unnamed seed would read as "no plan" instead of as a card with nothing in it.
+    func currentPlan(sessionId: String) async -> Result<CurrentPlan, APIError> {
+        .success(CurrentPlan(note: PlanNote(
+            planId: "plan-2b4d",
+            sessionId: sessionId,
+            name: "Translate the weekly batch",
+            description: "Three customer replies into English, then one internal version with the figures kept.",
+            expectedOutcome: "Two documents, the external one free of internal ticket numbers.",
+            subtasks: [
+                PlanSubTask(
+                    name: "Collect the replies",
+                    outcome: "Three, all from the help channel.",
+                    state: .done,
+                    createdAt: "2026-09-26T10:24:31+08:00",
+                    finishedAt: "2026-09-26T10:26:03+08:00",
+                    costTimeSeconds: 92
+                ),
+                PlanSubTask(
+                    name: "Translate the three replies",
+                    expectedOutcome: "One paragraph per reply, the figures untouched.",
+                    state: .inProgress,
+                    createdAt: "2026-09-26T10:26:03+08:00",
+                    costTimeSeconds: 41
+                ),
+                PlanSubTask(
+                    name: "Draft the internal version",
+                    description: "Keeps the ticket numbers the external version drops.",
+                    state: .todo
+                ),
+                PlanSubTask(
+                    name: "Mail the summary",
+                    description: "Dropped: this group has no mail relay configured.",
+                    state: .abandoned
+                )
+            ],
+            createdAt: "2026-09-26T10:24:31+08:00",
+            costTimeSeconds: 133
+        )))
+    }
+
+    /// One pickable executor row. A row the fixture left unnamed or unnumbered has nothing to pick, which is the
+    /// same thing the console's own mapping does when the entity has gone.
+    private static func option(
+        kind: SessionExecutorKind,
+        id: Int64?,
+        name: String?,
+        detail: String?
+    ) -> SessionExecutorOption? {
+        guard let id, let name = hxPresented(name) else { return nil }
+        return SessionExecutorOption(kind: kind, id: id, name: name, detail: hxPresented(detail))
+    }
+
+    /// The page fixtures, read on whatever actor the double is called from. `HarnaxDebugRecord` is `@MainActor`
+    /// because a screen reads it inside `body`, and an answer produced by a route cannot hop there; the rows are
+    /// the same JSON the list itself serves, so the picker still cannot name an agent the list would not show.
+    private static func pageRows<T: Decodable>(_ json: String, _ type: T.Type) -> [T]? {
+        guard case let .success(page) = HarnaxDebugPages.decode(json, Page<T>.self) else { return nil }
+        return page.records
+    }
 }
 
 /// The single row the drill-down captures open on. Decoded once from the same fixture the list serves, so
@@ -1028,6 +1794,12 @@ enum HarnaxDebugRecord {
 
     static var agent: AgentSummary? { rows(AgentSummary.self, HarnaxDebugPages.agentsJSON).first }
     static var session: SessionSummary? { rows(SessionSummary.self, HarnaxDebugPages.sessionsJSON).first }
+    /// The team conversation, for the one detail sheet whose panels the agent fixture cannot fill: 团队成员 and
+    /// the two 失效 badges both come off a team row. `first(where:)` rather than a hard-coded index, because the
+    /// list fixture grows.
+    static var teamSession: SessionSummary? {
+        rows(SessionSummary.self, HarnaxDebugPages.sessionsJSON).first { $0.teamId != nil }
+    }
     static var team: TeamSummary? { rows(TeamSummary.self, HarnaxDebugPages.teamsJSON).first }
     static var tool: ToolSummary? { rows(ToolSummary.self, HarnaxDebugPages.toolsJSON).first }
     static var cli: CliSummary? { rows(CliSummary.self, HarnaxDebugPages.cliJSON).first }
@@ -1035,6 +1807,61 @@ enum HarnaxDebugRecord {
     static var skillSource: SkillSourceSummary? { rows(SkillSourceSummary.self, HarnaxDebugPages.skillSourcesJSON).first }
     static var skill: SkillItem? { rows(SkillItem.self, HarnaxDebugPages.skillsJSON).first }
     static var task: AgentTaskSummary? { rows(AgentTaskSummary.self, HarnaxDebugPages.tasksJSON).first }
+    /// The row the API Key form edits, and the key the one-time sheet prints.
+    static var apiKey: ApiKeySummary? { rows(ApiKeySummary.self, HarnaxDebugPages.apiKeysJSON).first }
+    /// The sensitive variable, which is the only row that puts the mask-as-hint rule on screen: its stored value
+    /// never reaches this device, so the form's field starts empty.
+    static var envVarMasked: EnvVarSummary? {
+        rows(EnvVarSummary.self, HarnaxDebugPages.envVarsJSON).first { $0.isSensitive }
+    }
+    /// The row the channel form edits — the feishu websocket, whose type and mode together open two credential
+    /// fields and no more.
+    static var channel: ChannelSummary? { rows(ChannelSummary.self, HarnaxDebugPages.channelsJSON).first }
+    /// The one channel whose credential is a scan rather than a field.
+    static var wechatChannel: ChannelSummary? {
+        rows(ChannelSummary.self, HarnaxDebugPages.channelsJSON).first { $0.type == "wechat" }
+    }
+    static var provider: ModelProviderSummary? {
+        rows(ModelProviderSummary.self, HarnaxDebugPages.providersJSON).first
+    }
+    /// The first row of the model choice page, which is the same DTO the second level lists.
+    static var model: ModelSummary? { rows(ModelSummary.self, HarnaxDebugPages.modelsJSON).first }
+
+    /// The three keys `GET /env-variables/list` answers the wizard's parameter rows with.
+    static var envCandidates: [EnvVarCandidate] { list(EnvVarCandidate.self, HarnaxDebugPages.envCandidatesJSON) }
+
+    /// The same three, mapped the way the binding editor maps them: the key as the title, the display value — a
+    /// mask when the row is sensitive — as the subtitle, and `isSecret` so the lock shows.
+    static var envCandidateOptions: [HXEntityPickerOption] {
+        envCandidates.compactMap { candidate in
+            guard let key = candidate.key, let id = candidate.id else { return nil }
+            return HXEntityPickerOption(
+                id: id,
+                title: key,
+                subtitle: candidate.displayValue,
+                isSecret: candidate.isSensitive
+            )
+        }
+    }
+
+    /// What the create route answers and the one-time sheet prints. Built off the first row so the name and the
+    /// prefix are the ones the list already shows; the raw key is the only half a list row never carries, so
+    /// this is the half the fixture supplies. It is not a credential — no route this app knows ever printed it.
+    static var publishedKey: ApiKeyCreatedSummary {
+        ApiKeyCreatedSummary(
+            id: apiKey?.id ?? 7,
+            name: hxPresented(apiKey?.name) ?? "CI pipeline",
+            rawKey: "hnx_a1b2c3d4e5f678901234567890c1d2e3f4a5b6c7d8e9f0",
+            keyPrefix: hxPresented(apiKey?.keyPrefix) ?? "hnx_a1b2c3d4e5f6...9d2c"
+        )
+    }
+
+    /// The install half of the sync that left the first repository `PARTIAL`, as the shape `install` answers:
+    /// the same six buckets the source row's `lastSyncDetail` holds.
+    static var skillInstall: SkillInstallOutcome? {
+        try? HarnaxDebugPages.decode(HarnaxDebugPages.skillInstallJSON, SkillInstallOutcome.self).get()
+    }
+
     /// The detail pane has no endpoint of its own, so the capture takes the newest run that has *closed*: the
     /// first row is the one still going, and on it every block the pane exists to show reads empty.
     static var taskLog: AgentTaskLog? { rows(AgentTaskLog.self, HarnaxDebugPages.taskLogsJSON).first { $0.endTime != nil } }
@@ -1058,6 +1885,14 @@ enum HarnaxDebugRecord {
               let page = try? JSONDecoder().decode(Page<T>.self, from: data)
         else { return [] }
         return page.records
+    }
+
+    /// The same for a route that answers a bare array — the candidate reads, which have no page envelope.
+    private static func list<T: Decodable>(_ type: T.Type, _ json: String) -> [T] {
+        guard let data = json.data(using: .utf8),
+              let values = try? JSONDecoder().decode([T].self, from: data)
+        else { return [] }
+        return values
     }
 }
 
@@ -1159,6 +1994,20 @@ private enum HarnaxDebugPages {
     ]}
     """
 
+    /// The agent wizard's choice list. Only two of the four rows survive the wizard's own
+    /// `status === 1 && modelType === 'chat'` filter (`CreateForm.tsx:101`-`:107`): the embedding row and the
+    /// stopped one are the shapes that filter drops, the pair that stays offers one model with both
+    /// capabilities and one with neither, and the second of those has no `providerName` at all, so its line
+    /// reads on the unknown-provider fallback.
+    static let modelsJSON = """
+    {"pageNum":1,"pageSize":100,"total":4,"records":[
+      {"id":3,"name":"通义千问 Max","modelName":"qwen3.7-max","providerId":3,"providerName":"阿里云百炼","modelType":"chat","description":"主力对话模型","supportReasoning":1,"thinkingMode":1,"supportTool":1,"supportMcp":1,"supportVision":1,"price":12,"status":1,"isPublic":1,"creator":"heqingsong","createTime":"2026-09-12 10:20:30","updateTime":"2026-09-27 21:14:03"},
+      {"id":8,"name":"DeepSeek V4","modelName":"deepseek-v4","modelType":"chat","supportReasoning":1,"supportTool":0,"supportMcp":0,"price":2.5,"status":1,"isPublic":0,"creator":"liwei","createTime":"2026-09-04 08:20:00"},
+      {"id":9,"name":"向量模型","modelName":"text-embedding-v3","providerId":3,"providerName":"阿里云百炼","modelType":"embedding","supportTool":0,"supportMcp":0,"price":0.5,"status":1,"isPublic":1,"creator":"heqingsong","createTime":"2026-08-21 09:00:00"},
+      {"id":10,"name":"通义千问 Lite","modelName":"qwen-lite","providerId":4,"providerName":"   ","modelType":"chat","supportTool":1,"supportMcp":1,"price":1,"status":0,"isPublic":0,"creator":"luwen","createTime":"2026-09-19 15:44:02"}
+    ]}
+    """
+
     /// One tool with a masked secret parameter and a Chinese display name, one that only carries its key
     /// names and no `envParams` block at all.
     static let toolsJSON = """
@@ -1224,7 +2073,7 @@ private enum HarnaxDebugPages {
     /// The detail read adds the two columns the page never selects: the `SKILL.md` body and the resource
     /// map, which is stored as a JSON *string* rather than as an object.
     static let skillDetailJSON = """
-    {"id":5,"name":"Glossary","repositoryId":2,"repositoryName":"qoder-skills","repositoryUrl":"https://github.com/qoder/skills.git","repositoryBranch":"main","description":"领域术语表，回答前先对齐口径","skillmd":"# Glossary\\n\\n回答前先确认术语口径：\\n\\n1. 会话：一次渠道到智能体的连续对话\\n2. 委派：主管把子任务交给成员\\n","resources":"{\\"SKILL.md\\":\\"按口径解释术语\\",\\"terms.json\\":\\"{}\\"}","status":1,"boundAgentCount":2,"boundTeamCount":0,"isPublic":1,"creator":"heqingsong","createTime":"2026-08-21 09:07:11","updateTime":"2026-09-27 21:14:03"}
+    {"id":5,"name":"Glossary","repositoryId":2,"repositoryName":"qoder-skills","repositoryUrl":"https://github.com/qoder/skills.git","repositoryBranch":"main","description":"领域术语表，回答前先对齐口径","skillmd":"# Glossary\\n\\n回答前先确认术语口径：**委派**、*会话* 与 `sessionKey` 三者不可混用。\\n\\n## 三类对象\\n\\n1. 会话：一次渠道到智能体的连续对话\\n2. 委派：主管把子任务交给成员\\n   - 同步委派等回答\\n   - 异步委派立刻返回\\n3. 产物：智能体写出的文件\\n\\n## 待办\\n\\n- [x] 读路由配置\\n- [ ] 灰度切换\\n\\n> 口径来自仓库与运行期下发，两处冲突以运行期为准。\\n\\n| 术语 | 归属 | 可写 |\\n| --- | --- | :-: |\\n| 会话 | session 表 | 是 |\\n| 渠道 | chn- 前缀 | 否 |\\n\\n```bash\\nharnax skill sync --source qoder-skills\\n```\\n\\n参考 [技能装载说明](https://github.com/qoder/skills)。\\n\\n---\\n","resources":"{\\"SKILL.md\\":\\"按口径解释术语\\",\\"terms.json\\":\\"{}\\"}","status":1,"boundAgentCount":2,"boundTeamCount":0,"isPublic":1,"creator":"heqingsong","createTime":"2026-08-21 09:07:11","updateTime":"2026-09-27 21:14:03"}
     """
 
     /// A registered package with a secret parameter and a bound skill, and one whose optional columns the
@@ -1248,7 +2097,7 @@ private enum HarnaxDebugPages {
     /// non-optional, which is what the server's own default makes them.
     static let sessionsJSON = """
     {"pageNum":1,"pageSize":20,"total":4,"records":[
-      {"id":21,"title":"翻译一组周报","sessionDescription":"把上周的三条客户反馈翻成英文，并给出对内版本","sessionId":"web-3f2a9c41","agentId":11,"name":"Support Desk","description":"Answers product questions in the help channel","modelId":3,"modelName":"qwen3.7-max","enableThink":1,"enableSearch":0,"permissionMode":"DEFAULT","mcpList":[{"mcpId":4,"mcpName":"amap-maps","mcpDescription":"Maps and routing"}],"skillList":[{"repositoryId":2,"repositoryName":"qoder-skills","skillId":5,"skillName":"Glossary"},{"skillId":7,"skillName":"Polish"}],"status":1,"isPublic":0,"creator":"admin","createTime":"2026-09-26 10:24:31","updateTime":"2026-09-27 08:02:11"},
+      {"id":21,"title":"翻译一组周报","sessionDescription":"把上周的三条客户反馈翻成英文，并给出对内版本","sessionId":"web-3f2a9c41","agentId":11,"name":"Support Desk","description":"Answers product questions in the help channel","modelId":3,"modelName":"qwen3.7-max","enableThink":1,"enableSearch":0,"enablePlan":1,"permissionMode":"DEFAULT","mcpList":[{"mcpId":4,"mcpName":"amap-maps","mcpDescription":"Maps and routing"}],"skillList":[{"repositoryId":2,"repositoryName":"qoder-skills","skillId":5,"skillName":"Glossary"},{"skillId":7,"skillName":"Polish"}],"status":1,"isPublic":0,"creator":"admin","createTime":"2026-09-26 10:24:31","updateTime":"2026-09-27 08:02:11"},
       {"id":22,"title":"Research Desk · 交易所公告","sessionDescription":"从公告到估值表的整条链路，这一条要跑三个成员，所以这行说明会很长，用来检查它换行的时候会不会把上面那排徽章挤走。","sessionId":"web-77c04e18","teamId":5,"name":"Research Desk","modelId":7,"modelName":"qwen3.7-max","permissionMode":"ACCEPT_EDITS","mcpList":[],"skillList":[{"skillId":12,"skillName":"Notice parser"}],"status":1,"isPublic":1,"creator":"liwei","createTime":"2026-09-25 18:02:09"},
       {"id":23,"title":"合同条款复核","sessionId":"web-1a5d80f3","agentId":13,"name":"Contract Review","modelName":"deepseek-v4","mcpList":[],"skillList":[],"status":0,"isPublic":0,"creator":"zhaomin","createTime":"2026-08-19 14:47:55"},
       {"title":"","mcpList":[],"skillList":[],"createTime":"not-a-date"}
@@ -1276,6 +2125,51 @@ private enum HarnaxDebugPages {
       {"id":33,"envKey":"SEARCH_QUOTA","envValue":"50","description":"   ","sensitive":0,"enabled":0,"creator":"admin","createTime":"2026-09-11 19:05:00"},
       {"envKey":"   ","envValue":null,"sensitive":null,"enabled":null,"creator":null,"createTime":"not-a-date"}
     ]}
+    """
+
+    /// The same three keys, as the bare array `GET /env-variables/list` answers the wizard's parameter rows:
+    /// four keys only, `sensitive` as a real boolean, and the sensitive row's `displayValue` already masked by
+    /// the server (`EnvVariableServiceImpl.kt:274-278`), because a binding submits the id and never this text.
+    static let envCandidatesJSON = """
+    [{"id":31,"envKey":"AMAP_KEY","displayValue":"9f2c****4d5a","sensitive":false},
+     {"id":32,"envKey":"SMTP_PASSWORD","displayValue":"1st****xyz","sensitive":true},
+     {"id":33,"envKey":"SEARCH_QUOTA","displayValue":"50","sensitive":false}]
+    """
+
+    /// What the GIT repository holds, as `preview` answers it before anything is written: three names the run
+    /// would install or update, one row the source no longer keeps (`exists: false`), and one whose description
+    /// the `SKILL.md` frontmatter left out, which is the case the line still has to render.
+    static let skillPreviewJSON = """
+    [{"name":"Glossary","description":"领域术语表，回答前先对齐口径","skillmd":"# Glossary","resources":{"SKILL.md":"","terms.json":"{}"},"exists":true},
+     {"name":"Polish","description":"按品牌口径重写草稿","skillmd":"","resources":{},"exists":true},
+     {"name":"Secrets","description":"","skillmd":"# Secrets","resources":{"SKILL.md":""},"exists":true},
+     {"name":"Legacy","description":"上一版遗留","skillmd":"","resources":{},"exists":false}]
+    """
+
+    /// The install half of the run that left the first source `PARTIAL` — the same five buckets its
+    /// `lastSyncDetail` carries, in the shape `POST /skill-sources/{id}/install` answers them. This is the
+    /// answer that arrives as a `200` while three skills did not land, which is what the report sheet exists to
+    /// refuse to read as green.
+    static let skillInstallJSON = """
+    {"installed":["Glossary"],"updated":["Polish"],
+     "failed":[{"name":"Broken","reason":"SKILL.md 缺少 frontmatter"},{"name":"Registry","reason":"git ls-remote 超时"}],
+     "flagged":[{"name":"Secrets","reasons":["hardcoded-token","secret-in-fixture"]}],
+     "stale":["Legacy"]}
+    """
+
+    /// The scan's first poll. `WAITING` is the phase that keeps the code on screen and the loop running, which
+    /// is the only state a capture can hold it in: a `LOGGED_IN` answer would close the sheet while the
+    /// screenshot is being taken, and an `EXPIRED` one would stop the loop on a code nobody could refresh.
+    static let wechatStatusJSON = """
+    {"status":"WAITING","message":""}
+    """
+
+    /// `McpOAuthAuthorizeResponse`. The `redirect_uri` is not decoration: `startInAppAuthorization` refuses to
+    /// open a session it cannot match a return leg against, and the authorization server's own consent page is
+    /// what the in-app session loads.
+    static let mcpAuthorizeJSON = """
+    {"authorizeUrl":"https://github.example.com/login/oauth/authorize?client_id=harnax-console&redirect_uri=https%3A%2F%2Fconsole.agnetix.dev%2Fmcp%2Foauth%2Fcallback&scope=repo%20read%3Auser&state=7c1f9a2e&response_type=code",
+     "issuer":"https://github.example.com","scopes":["repo","read:user"],"expiresIn":600}
     """
 
     /// One key with a single scope and an expiry, one with both scopes and no rate limit, one already

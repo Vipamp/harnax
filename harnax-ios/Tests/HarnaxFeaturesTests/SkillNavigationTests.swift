@@ -108,4 +108,18 @@ final class SkillNavigationTests: XCTestCase {
             "and the row's gesture has to be the thing that records it"
         )
     }
+
+    /// `SkillSyncModel` reports a finished install through `onChanged` (`SkillSyncSheet.swift:53-57`), and a
+    /// sync writes both the source's skill rows and its last-sync column — the two things the source row
+    /// shows. Left at the initializer's no-op default, the list keeps the pre-sync numbers on screen until the
+    /// operator pulls to refresh, which reads as the sync having changed nothing.
+    func testTheSourceListReloadsAfterItsSyncSheetWrites() throws {
+        let text = try FeatureSources.contents(of: sourceFile)
+        let calls = try FeatureSources.captures(#"SkillSyncSheet\(([^)]*)\)"#, in: text)
+        XCTAssertEqual(calls.count, 1, "the sync sheet has exactly one entry, from the source row")
+        XCTAssertTrue(
+            calls[0].contains("onChanged:"),
+            "the sheet's change report has to reach the list: \(calls[0])"
+        )
+    }
 }

@@ -92,6 +92,37 @@ final class TestClock: @unchecked Sendable {
     }
 }
 
+/// One reply that can be held open, so a request is genuinely on the wire while the test does something else
+/// with the session. Same triad as the feature suite's `PageReadGate`
+/// (`Tests/HarnaxFeaturesTests/ListAppendIdentityTests.swift:845`): `arm()` parks the *next* reply until
+/// `release()`, and a transport nobody armed answers exactly as before.
+final class ReplyGate<Reply>: @unchecked Sendable {
+    private var armed = false
+    private var waiting: CheckedContinuation<Reply, Never>?
+    private var parkedReply: Reply?
+
+    /// Holds the next reply open.
+    func arm() {
+        armed = true
+    }
+
+    /// Parks the reply when armed, hands it back immediately otherwise.
+    func absorb(_ reply: Reply) async -> Reply {
+        guard armed else { return reply }
+        armed = false
+        parkedReply = reply
+        return await withCheckedContinuation { waiting = $0 }
+    }
+
+    /// Lets the parked reply answer, as a server that was simply slow.
+    func release() {
+        guard let continuation = waiting, let reply = parkedReply else { return }
+        waiting = nil
+        parkedReply = nil
+        continuation.resume(returning: reply)
+    }
+}
+
 /// One reply per call, taken in order. Tests read the recorded requests to see what actually went out.
 final class StubTransport: HTTPRequesting, @unchecked Sendable {
     private struct Reply {
@@ -99,6 +130,9 @@ final class StubTransport: HTTPRequesting, @unchecked Sendable {
         let body: String
         let error: Error?
     }
+
+    /// Armed by the one test that needs a reply still outstanding when it ends the session.
+    let replyGate = ReplyGate<Void>()
 
     private var replies: [Reply] = []
     private var recorded: [URLRequest] = []
@@ -120,11 +154,13 @@ final class StubTransport: HTTPRequesting, @unchecked Sendable {
         recorded.removeAll()
     }
 
-    /// No lock: `perform` never suspends between recording the request and taking its reply, and the tests
-    /// drive one call at a time. An exhausted queue answers 599 so a missing expectation fails loudly.
+    /// No lock: `perform` takes its reply before anything it can suspend on, and the tests drive one call at a
+    /// time — the parked reply of an armed gate is the single exception, and it happens after the reply is
+    /// already taken. An exhausted queue answers 599 so a missing expectation fails loudly.
     func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         recorded.append(request)
         let reply = replies.isEmpty ? Reply(status: 599, body: "{}", error: nil) : replies.removeFirst()
+        await replyGate.absorb(())
         if let error = reply.error { throw error }
         guard let url = request.url,
               let http = HTTPURLResponse(url: url, statusCode: reply.status, httpVersion: nil, headerFields: nil)

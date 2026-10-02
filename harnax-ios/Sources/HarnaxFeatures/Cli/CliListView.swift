@@ -71,20 +71,11 @@ public struct CliListView: View {
     }
 
     private var filterMenu: some View {
-        Menu {
-            ForEach(StatusFilter.allCases) { option in
-                Button {
-                    vm.filter = option
-                } label: {
-                    HStack {
-                        HXText(option.titleKey)
-                        if vm.filter == option { Image(systemName: "checkmark") }
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: vm.filter == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-        }
+        HXFilterMenu(
+            isFiltering: vm.filter != .all,
+            accessibilityLabel: hx("state.filter.status"),
+            choices: statusFilterChoices(vm.filter) { vm.filter = $0 }
+        )
     }
 
     @ViewBuilder
@@ -232,5 +223,6 @@ struct CliRecordCard: View {
                 .frame(width: 30, height: 30)
                 .background(Color.hx(.surfaceAlt), in: Circle())
         }
+        .accessibilityLabel(hx("state.action.more"))
     }
 }

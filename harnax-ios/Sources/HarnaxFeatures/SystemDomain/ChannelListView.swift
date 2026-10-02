@@ -48,14 +48,9 @@ public struct ChannelListView: View {
             .searchable(text: $vm.keyword, prompt: Text(verbatim: hx("channel.search")))
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        target = .create
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .accessibilityLabel(hx("channel.create"))
+                    HXPlusButton(titleKey: "channel.create") { target = .create }
                 }
-                ToolbarItem(placement: .navigation) { filterMenu }
+                ToolbarItem(placement: .primaryAction) { filterMenu }
             }
             .task {
                 if vm.phase == .loading { await vm.refresh() }
@@ -98,7 +93,10 @@ public struct ChannelListView: View {
     }
 
     private var filterMenu: some View {
-        Menu {
+        HXFilterMenu(
+            isFiltering: isFiltering,
+            accessibilityLabel: hx("state.filter.status") + ", " + hx("channel.type.filter")
+        ) {
             Picker(selection: $vm.filter) {
                 ForEach(StatusFilter.allCases) { option in
                     HXText(option.titleKey).tag(option)
@@ -113,10 +111,6 @@ public struct ChannelListView: View {
             } label: {
                 HXText("channel.type.filter")
             }
-        } label: {
-            Image(systemName: isFiltering
-                ? "line.3.horizontal.decrease.circle.fill"
-                : "line.3.horizontal.decrease.circle")
         }
     }
 
@@ -150,7 +144,7 @@ public struct ChannelListView: View {
                     ChannelRecordCard(
                         row: row,
                         running: vm.status(of: row),
-                        sandbox: vm.sandboxStatus(of: row),
+                        sandbox: vm.sandboxLight(of: row),
                         isPending: row.id.flatMap(vm.pendingIDs.contains) ?? false,
                         canManage: row.manageable(by: account),
                         onToggle: { value in Task { await vm.setStatus(value, for: row) } },
@@ -178,7 +172,7 @@ public struct ChannelListView: View {
 public struct ChannelRecordCard: View {
     private let row: ChannelSummary
     private let running: Bool
-    private let sandbox: SandboxStatus
+    private let sandbox: ChannelSandboxLight
     private let isPending: Bool
     private let canManage: Bool
     private let onToggle: (Bool) -> Void
@@ -189,7 +183,7 @@ public struct ChannelRecordCard: View {
     public init(
         row: ChannelSummary,
         running: Bool,
-        sandbox: SandboxStatus,
+        sandbox: ChannelSandboxLight,
         isPending: Bool,
         canManage: Bool,
         onToggle: @escaping (Bool) -> Void,
@@ -244,10 +238,11 @@ public struct ChannelRecordCard: View {
     private var chips: some View {
         HXFlow(spacing: 6) {
             // A row with neither a known type nor a code to fall back to gets no pill: an empty capsule
-            // reads as a rendering bug rather than as "this column is blank".
+            // reads as a rendering bug rather than as "this column is blank". The sandbox column obeys the
+            // same rule for the same reason — a channel with no session has no status to wear.
             if let typeLabel { HXChip(typeLabel) }
             if let mode = row.mode { HXChip(hx(mode.titleKey)) }
-            HXChip(sandboxLabel, tone: sandboxTone)
+            if let key = sandbox.labelKey { HXChip(hx(key), tone: sandbox.tone) }
             // Only a WeChat row can be unbound, and the difference is worth a word: the channel exists but
             // has no credentials until somebody scans it (`WechatLoginService.kt:162-186`).
             if row.channelType == .wechat {
@@ -264,22 +259,6 @@ public struct ChannelRecordCard: View {
     private var typeLabel: String? {
         if let type = row.channelType { return hx(type.titleKey) }
         return row.rawTypeCode
-    }
-
-    private var sandboxLabel: String {
-        switch sandbox {
-        case .running: return hx("channel.sandbox.running")
-        case .idle: return hx("channel.sandbox.idle")
-        case .unknown: return hx("channel.sandbox.unknown")
-        }
-    }
-
-    private var sandboxTone: PaletteSlot {
-        switch sandbox {
-        case .running: .success
-        case .idle: .textTertiary
-        case .unknown: .warning
-        }
     }
 
     private var menu: some View {
@@ -304,5 +283,6 @@ public struct ChannelRecordCard: View {
                 .frame(width: 30, height: 30)
                 .background(Color.hx(.surfaceAlt), in: Circle())
         }
+        .accessibilityLabel(hx("state.action.more"))
     }
 }

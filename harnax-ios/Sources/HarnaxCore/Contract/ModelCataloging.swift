@@ -46,11 +46,20 @@ public protocol ModelCataloging: Sendable {
 
     /// The second level, always scoped to one provider. `tags` is the capability multi-select, joined with
     /// commas for the wire (`ModelServiceImpl.kt:47-52` splits them again).
+    ///
+    /// `modelType` and the two price bounds are the rest of the console's filter bar
+    /// (`harnax-webui/src/pages/model/index.tsx:525-576`), and all three are the server's own predicates
+    /// (`harnax-entity/src/main/resources/mapper/ModelMapper.xml:131-133`, `:150-155`) — a page is already
+    /// narrowed before it reaches the screen, so filtering rows locally would drop the pages not yet fetched.
+    /// The bounds are inclusive on both sides, and a nil leaves its parameter off the URL entirely.
     func modelPage(
         providerID: Int64,
         name: String?,
+        modelType: String?,
         status: Int?,
         tags: [String],
+        minPrice: Double?,
+        maxPrice: Double?,
         num: Int,
         size: Int
     ) async -> Result<Page<ModelSummary>, APIError>

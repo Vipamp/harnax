@@ -1,6 +1,7 @@
 import Foundation
 
-/// One row of `GET /api/admin/tools/page`, and the same shape `GET /api/admin/tools/{id}` answers.
+/// One row of `GET /api/admin/tools/builtin`. Every other tool route — `/{id}`, `/available` — answers this
+/// same DTO, so one type decodes all three (`AgentToolController.kt:45,61,74`).
 ///
 /// Backend: `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/AgentToolResponse.kt:7-55` declares
 /// every field `val x: T? = null`, and the service copies the entity straight across

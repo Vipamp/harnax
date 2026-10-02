@@ -54,8 +54,9 @@ final class MeViewModelTests: XCTestCase {
         XCTAssertTrue(vm.serverLine.isEmpty)
     }
 
-    /// A picker over one row is a step to nowhere, so the entry itself is what the count decides.
-    func testTheSwitchEntryAppearsOnlyWithASecondTenant() async throws {
+    /// The row itself is permanent now, so the count only decides whether the menu can change anything: with
+    /// one tenant the control reads back that tenant and refuses to open.
+    func testTheSwitchMenuOpensOnlyWhenThereIsASecondTenantToSwitchTo() async throws {
         let auth = FakeAuth()
         auth.tenantOptionsResult = .success([TenantSummary(id: 1, name: "Default", status: 1)])
         let vm = MeViewModel(auth: auth)
@@ -68,6 +69,21 @@ final class MeViewModelTests: XCTestCase {
         ])
         await vm.reload()
         XCTAssertTrue(vm.canSwitchTenant)
+    }
+
+    /// `tenantId` is the only thing the switch route takes, so a row without one is a menu entry that looks
+    /// tappable and does nothing. The sheet used to filter these in its own body; a dropdown has no body to
+    /// filter in, so the view model answers the option list.
+    func testTheSwitchMenuOffersOnlyRowsTheRouteCanAddress() async throws {
+        let auth = FakeAuth()
+        auth.tenantOptionsResult = .success([
+            TenantSummary(id: nil, name: "Ghost", status: 1),
+            TenantSummary(id: 2, name: "Acme Workspace", status: 1),
+            TenantSummary(id: 1, name: "Default", status: 0),
+        ])
+        let vm = MeViewModel(auth: auth)
+        await vm.reload()
+        XCTAssertEqual(vm.tenantChoices.compactMap(\.id), [2, 1])
     }
 
     /// A failed read is not the same fact as "this account has one tenant", and the second would hide the

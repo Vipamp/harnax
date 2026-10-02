@@ -6,9 +6,10 @@ import HarnaxKit
 ///
 /// Both routes this drawer reads live behind one deployment switch: `TeamArtifactController` is registered
 /// only when the server runs with `minio.enabled=true` (`TeamArtifactController.kt:42`), and the artifact
-/// bytes come out of that bucket (`:87`, `:147-157`). A deployment without object storage therefore answers
-/// the list and the download as unknown routes, and the drawer reports that as an ordinary failure with the
-/// server's own sentence — it is not a state this type invents a name for, and it is not an empty list.
+/// bytes come out of that bucket (`:87`, `:147-157`). A deployment without object storage therefore answers the
+/// list as an unknown route, and `DESIGN.md` O8 gives that its own state here — neither the error glyph nor
+/// "no member has published anything" describes a switched-off store, and the two have different remedies.
+/// A refused *download* stays the plain status it arrived with, because by then the controller is registered.
 ///
 /// The row shows what the console's four columns show (`TeamArtifactsDrawer.tsx:68-122`): the name, the
 /// `mimeType · size` subtitle the DTO already renders, a copyable short reference, and the publication time.
@@ -71,6 +72,8 @@ public struct TeamArtifactsSheet: View {
             HXStateView(.loading)
         case .empty:
             HXStateView(.empty, message: hx("chat.artifacts.empty"), retry: { Task { await vm.load() } })
+        case .objectStoreDisabled:
+            HXStateView(.empty, message: hx("error.objectStoreDisabled"), retry: { Task { await vm.load() } })
         case let .failed(message):
             HXStateView(.error, message: message, retry: { Task { await vm.load() } })
         case .content:

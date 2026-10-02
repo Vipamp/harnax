@@ -81,12 +81,7 @@ public struct EnvVarListView: View {
     }
 
     private var addButton: some View {
-        Button {
-            target = .create
-        } label: {
-            Image(systemName: "plus")
-        }
-        .accessibilityLabel(hx("env.var.create"))
+        HXPlusButton(titleKey: "env.var.create") { target = .create }
     }
 
     @ViewBuilder
@@ -247,5 +242,6 @@ public struct EnvVarRecordCard: View {
                 .frame(width: 30, height: 30)
                 .background(Color.hx(.surfaceAlt), in: Circle())
         }
+        .accessibilityLabel(hx("state.action.more"))
     }
 }

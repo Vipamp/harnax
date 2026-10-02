@@ -1,0 +1,17 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "issuer": "https://auth.example.com/realms/harnax",
+    "issuerSource": "CONFIG",
+    "authorizationEndpoint": "https://auth.example.com/realms/harnax/protocol/oauth/authorize",
+    "tokenEndpoint": "https://auth.example.com/realms/harnax/protocol/oauth/token",
+    "scopesSupported": [],
+    "unknownScopes": [],
+    "clientSecretPresent": false,
+    "callbackUrl": "http://127.0.0.1:28081/mcp/oauth/callback",
+    "defaultCallbackUrl": "http://127.0.0.1:28081/mcp/oauth/callback"
+  },
+  "timestamp": 1759026030000,
+  "isSuccess": true
+}

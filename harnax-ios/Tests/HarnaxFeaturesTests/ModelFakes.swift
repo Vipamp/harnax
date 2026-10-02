@@ -28,7 +28,10 @@ final class FakeModelCatalog: ModelCataloging, @unchecked Sendable {
 
     // level two
     private(set) var modelRequests: [(providerID: Int64, num: Int, size: Int)] = []
-    private(set) var modelFilters: [(name: String?, status: Int?, tags: [String])] = []
+    private(set) var modelFilters: [(
+        name: String?, modelType: String?, status: Int?, tags: [String],
+        minPrice: Double?, maxPrice: Double?
+    )] = []
     var modelReplies: [Result<Page<ModelSummary>, APIError>] = []
     private(set) var modelStatusCalls: [(id: Int64, enabled: Bool)] = []
     var modelStatusReplies: [Result<EmptyResponse, APIError>] = []
@@ -47,7 +50,16 @@ final class FakeModelCatalog: ModelCataloging, @unchecked Sendable {
     /// its create and update).
     var gateWrites = false
 
+    /// The two switches park on their own dial: `gateWrites` belongs to the forms' saves, and the re-entry
+    /// tests need the switch's own window (`RowWriteReentryTests`).
+    var gateStatusWrites = false
+
     private var parked: [() -> Void] = []
+
+    /// Both page reads are parkable: an append has to be able to stay in flight while the reader changes the
+    /// query (`ListAppendIdentityTests`).
+    let providerGate = PageReadGate<Result<Page<ModelProviderSummary>, APIError>>()
+    let modelGate = PageReadGate<Result<Page<ModelSummary>, APIError>>()
 
     /// Not decoration, and the only log here that needs one: `providerStats` is the single member this
     /// screen asks *concurrently*, because `ModelProviderListViewModel.readStats` fans the rows a page
@@ -72,7 +84,7 @@ final class FakeModelCatalog: ModelCataloging, @unchecked Sendable {
     ) async -> Result<Page<ModelProviderSummary>, APIError> {
         providerRequests.append((num: num, size: size))
         providerFilters.append((name: name, type: type, status: status))
-        return providerReplies.isEmpty ? .failure(.decoding) : providerReplies.removeFirst()
+        return await providerGate.absorb(providerReplies.isEmpty ? .failure(.decoding) : providerReplies.removeFirst())
     }
 
     func providerStats(id: Int64) async -> Result<ModelProviderStats, APIError> {
@@ -83,7 +95,7 @@ final class FakeModelCatalog: ModelCataloging, @unchecked Sendable {
 
     func setProviderStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> {
         providerStatusCalls.append((id: id, enabled: enabled))
-        return providerStatusReplies.isEmpty ? .success(EmptyResponse()) : providerStatusReplies.removeFirst()
+        return await statusWrite(\.providerStatusReplies)
     }
 
     func deleteProvider(id: Int64) async -> Result<EmptyResponse, APIError> {
@@ -104,14 +116,20 @@ final class FakeModelCatalog: ModelCataloging, @unchecked Sendable {
     func modelPage(
         providerID: Int64,
         name: String?,
+        modelType: String?,
         status: Int?,
         tags: [String],
+        minPrice: Double?,
+        maxPrice: Double?,
         num: Int,
         size: Int
     ) async -> Result<Page<ModelSummary>, APIError> {
         modelRequests.append((providerID: providerID, num: num, size: size))
-        modelFilters.append((name: name, status: status, tags: tags))
-        return modelReplies.isEmpty ? .failure(.decoding) : modelReplies.removeFirst()
+        modelFilters.append((
+            name: name, modelType: modelType, status: status, tags: tags,
+            minPrice: minPrice, maxPrice: maxPrice
+        ))
+        return await modelGate.absorb(modelReplies.isEmpty ? .failure(.decoding) : modelReplies.removeFirst())
     }
 
     func modelChoices(num: Int, size: Int) async -> Result<Page<ModelSummary>, APIError> {
@@ -121,7 +139,7 @@ final class FakeModelCatalog: ModelCataloging, @unchecked Sendable {
 
     func setModelStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> {
         modelStatusCalls.append((id: id, enabled: enabled))
-        return modelStatusReplies.isEmpty ? .success(EmptyResponse()) : modelStatusReplies.removeFirst()
+        return await statusWrite(\.modelStatusReplies)
     }
 
     func deleteModel(id: Int64) async -> Result<EmptyResponse, APIError> {
@@ -145,6 +163,17 @@ final class FakeModelCatalog: ModelCataloging, @unchecked Sendable {
         _ queue: ReferenceWritableKeyPath<FakeModelCatalog, [Result<EmptyResponse, APIError>]>
     ) async -> Result<EmptyResponse, APIError> {
         guard gateWrites else { return next(from: queue) }
+        return await withCheckedContinuation { continuation in
+            parked.append { continuation.resume(returning: self.next(from: queue)) }
+        }
+    }
+
+    /// A switch parked on `gateStatusWrites` waits in the same slot as a save, so one `releaseWrites()` hands
+    /// back whatever the test armed.
+    private func statusWrite(
+        _ queue: ReferenceWritableKeyPath<FakeModelCatalog, [Result<EmptyResponse, APIError>]>
+    ) async -> Result<EmptyResponse, APIError> {
+        guard gateStatusWrites else { return next(from: queue) }
         return await withCheckedContinuation { continuation in
             parked.append { continuation.resume(returning: self.next(from: queue)) }
         }

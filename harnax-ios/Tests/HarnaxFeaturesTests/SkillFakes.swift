@@ -8,6 +8,8 @@ import HarnaxCore
 ///
 /// `gateWrites` parks the install, which is the only window the two install behaviours live in: the report
 /// a source row publishes, and the second tap that must not post the same install twice.
+/// `gateRepositoryWrites` is the same window for the repository form's two writes
+/// (`createSource` / `updateSource`), and both park in the one slot `releaseWrites()` drains.
 final class FakeSkills: SkillCataloging, @unchecked Sendable {
     private(set) var sourceRequests: [(name: String?, status: Int?, num: Int, size: Int)] = []
     var sourceReplies: [Result<Page<SkillSourceSummary>, APIError>] = []
@@ -47,6 +49,18 @@ final class FakeSkills: SkillCataloging, @unchecked Sendable {
 
     var gateWrites = false
 
+    /// The two switches park on their own dial: `gateWrites` belongs to the install, and the re-entry tests
+    /// need the switch's own window (`RowWriteReentryTests`).
+    var gateStatusWrites = false
+
+    /// Same window again for the repository form's create and update (`SkillRepositoryFormTests`).
+    var gateRepositoryWrites = false
+
+    /// Both paged routes are parkable: an append has to be able to sit on the wire while the reader changes
+    /// the query (`ListAppendIdentityTests`).
+    let sourceGate = PageReadGate<Result<Page<SkillSourceSummary>, APIError>>()
+    let skillGate = PageReadGate<Result<Page<SkillItem>, APIError>>()
+
     private var parked: [() -> Void] = []
 
     /// Queues the one page answer the tests that only need sources on screen ask for.
@@ -62,7 +76,7 @@ final class FakeSkills: SkillCataloging, @unchecked Sendable {
         size: Int
     ) async -> Result<Page<SkillSourceSummary>, APIError> {
         sourceRequests.append((name: name, status: status, num: num, size: size))
-        return sourceReplies.isEmpty ? .failure(.decoding) : sourceReplies.removeFirst()
+        return await sourceGate.absorb(sourceReplies.isEmpty ? .failure(.decoding) : sourceReplies.removeFirst())
     }
 
     func source(id: Int64) async -> Result<SkillSourceSummary, APIError> {
@@ -84,14 +98,22 @@ final class FakeSkills: SkillCataloging, @unchecked Sendable {
         }
     }
 
+    /// Both repository writes park on `gateRepositoryWrites`, so a re-entry test can hold one on the wire and
+    /// tap the sheet again.
     func createSource(_ payload: SkillSourceCreatePayload) async -> Result<SkillSourceInstallResult, APIError> {
         createRequests.append(payload)
-        return createReplies.isEmpty ? .failure(.decoding) : createReplies.removeFirst()
+        guard gateRepositoryWrites else { return createNext() }
+        return await withCheckedContinuation { continuation in
+            parked.append { continuation.resume(returning: self.createNext()) }
+        }
     }
 
     func updateSource(id: Int64, _ payload: SkillSourceUpdatePayload) async -> Result<EmptyResponse, APIError> {
         updateRequests.append((id: id, patch: payload))
-        return updateReplies.isEmpty ? .failure(.decoding) : updateReplies.removeFirst()
+        guard gateRepositoryWrites else { return emptyNext(from: \.updateReplies) }
+        return await withCheckedContinuation { continuation in
+            parked.append { continuation.resume(returning: self.emptyNext(from: \.updateReplies)) }
+        }
     }
 
     func deleteSource(id: Int64) async -> Result<EmptyResponse, APIError> {
@@ -101,7 +123,7 @@ final class FakeSkills: SkillCataloging, @unchecked Sendable {
 
     func setSourceStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> {
         statusCalls.append((id: id, enabled: enabled))
-        return statusReplies.isEmpty ? .failure(.decoding) : statusReplies.removeFirst()
+        return await statusWrite(\.statusReplies)
     }
 
     func uploadSource(
@@ -121,7 +143,7 @@ final class FakeSkills: SkillCataloging, @unchecked Sendable {
         size: Int
     ) async -> Result<Page<SkillItem>, APIError> {
         skillRequests.append((name: name, repositoryID: repositoryID, status: status, num: num, size: size))
-        return skillPageReplies.isEmpty ? .failure(.decoding) : skillPageReplies.removeFirst()
+        return await skillGate.absorb(skillPageReplies.isEmpty ? .failure(.decoding) : skillPageReplies.removeFirst())
     }
 
     func skill(id: Int64) async -> Result<SkillItem, APIError> {
@@ -131,7 +153,7 @@ final class FakeSkills: SkillCataloging, @unchecked Sendable {
 
     func setSkillStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> {
         skillStatusCalls.append((id: id, enabled: enabled))
-        return skillStatusReplies.isEmpty ? .failure(.decoding) : skillStatusReplies.removeFirst()
+        return await statusWrite(\.skillStatusReplies)
     }
 
     /// Runs every parked write in the order it went out, each pulling its own next reply.
@@ -143,6 +165,29 @@ final class FakeSkills: SkillCataloging, @unchecked Sendable {
 
     private func next(from queue: ReferenceWritableKeyPath<FakeSkills, [Result<SkillInstallOutcome, APIError>]>)
         -> Result<SkillInstallOutcome, APIError> {
+        self[keyPath: queue].isEmpty ? .failure(.decoding) : self[keyPath: queue].removeFirst()
+    }
+
+    /// The create queue shares its answer type with the upload queue but not its replies: an upload test that
+    /// queued nothing must not answer a create.
+    private func createNext() -> Result<SkillSourceInstallResult, APIError> {
+        createReplies.isEmpty ? .failure(.decoding) : createReplies.removeFirst()
+    }
+
+    /// A switch parked on `gateStatusWrites` waits in the same slot as the install, so one `releaseWrites()`
+    /// hands back whatever the test armed.
+    private func statusWrite(
+        _ queue: ReferenceWritableKeyPath<FakeSkills, [Result<EmptyResponse, APIError>]>
+    ) async -> Result<EmptyResponse, APIError> {
+        guard gateStatusWrites else { return emptyNext(from: queue) }
+        return await withCheckedContinuation { continuation in
+            parked.append { continuation.resume(returning: self.emptyNext(from: queue)) }
+        }
+    }
+
+    private func emptyNext(
+        from queue: ReferenceWritableKeyPath<FakeSkills, [Result<EmptyResponse, APIError>]>
+    ) -> Result<EmptyResponse, APIError> {
         self[keyPath: queue].isEmpty ? .failure(.decoding) : self[keyPath: queue].removeFirst()
     }
 }
@@ -178,6 +223,50 @@ extension SkillSourceSummary {
         ]
         if let enabledSkills { row["enabledSkillCount"] = enabledSkills }
         return try stub(row)
+    }
+}
+
+extension SkillSourceInstallResult {
+    /// The create and upload answer (`SkillSourceInstallResponse.kt:12-17`): the row as the server stored it,
+    /// plus what the install that ran alongside it did. Decoded rather than constructed because the struct's
+    /// synthesised memberwise init is internal, and this is exactly the shape the wire carries. The legacy
+    /// `url` / `branch` columns mirror the config the way the service mirrors them
+    /// (`SkillSourceServiceImpl.kt:144-148`).
+    static func stub(
+        name: String,
+        type: String = "GIT",
+        installed: [String] = [],
+        sourceConfig: [String: String]? = nil
+    ) throws -> SkillSourceInstallResult {
+        var source: [String: Any] = [
+            "id": 1,
+            "name": name,
+            "sourceType": type,
+            "version": "",
+            "url": sourceConfig?["url"] ?? "",
+            "branch": sourceConfig?["branch"] ?? "",
+            "description": "",
+            "status": 1,
+            "isPublic": 0,
+            "creator": "heqingsong",
+            "createTime": "2026-09-01 10:00:00",
+            "updateTime": "2026-09-01 10:00:00",
+        ]
+        if let sourceConfig { source["sourceConfig"] = sourceConfig }
+        let payload: [String: Any] = [
+            "source": source,
+            "install": [
+                "installed": installed,
+                "updated": [],
+                "failed": [],
+                "flagged": [],
+                "stale": [],
+            ],
+        ]
+        return try JSONDecoder().decode(
+            SkillSourceInstallResult.self,
+            from: JSONSerialization.data(withJSONObject: payload)
+        )
     }
 }
 

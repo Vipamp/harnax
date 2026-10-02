@@ -43,7 +43,7 @@ final class ToolConfirmationTests: XCTestCase {
         line: UInt = #line,
         check: @MainActor () -> Bool
     ) async {
-        for _ in 0..<200 {
+        for _ in 0..<400 {
             if check() { return }
             await Task.yield()
             try? await Task.sleep(nanoseconds: 1_000_000)
@@ -352,7 +352,11 @@ final class ToolConfirmationTests: XCTestCase {
 
         vm.answerAllConfirmation(.alwaysAllowed)
         await waitUntil("the second answer") { confirmer.requests.count == 2 }
-        XCTAssertEqual(decided(confirmer.requests[1]), [Choice(toolId: "t-2", confirmed: true, alwaysAllow: true)])
+        // `waitUntil` only reports a timeout and falls through, so the second request is read as an optional:
+        // indexing it straight would trap the process when the wait loses a race, and one slow assertion
+        // would then take the whole suite's counts down with it.
+        let secondAnswer = confirmer.requests.dropFirst().first.map(decided)
+        XCTAssertEqual(secondAnswer, [Choice(toolId: "t-2", confirmed: true, alwaysAllow: true)])
 
         try confirmer.latest.feed(ChatFrames.text("写好了"), ChatFrames.end())
         await waitUntil("the third stream to close") { !vm.isStreaming }

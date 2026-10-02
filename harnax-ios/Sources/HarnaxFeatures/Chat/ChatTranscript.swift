@@ -39,6 +39,11 @@ public struct ChatSegment: Identifiable, Equatable {
         case confirmation([ChatPendingTool])
         /// A file the run produced in the sandbox, reported by the end frame.
         case file(ChatFileAttachment)
+        /// The plan the session is on, read off `current-plan` while this answer was running
+        /// (`plan_card`, `ChatWindow.tsx:2545-2555`). One block per plan phase: every later reading rewrites the
+        /// block that is already there (`:2558-2572`), and the plan going away leaves it on screen
+        /// (`:2576-2584`). Nothing in the fold adds or removes one — the plan read does, through `showPlan`.
+        case plan(PlanNote)
     }
 
     public let id: Int
@@ -184,6 +189,11 @@ public struct ChatTurn: Identifiable, Equatable {
     public var images: [String]
     public var outcome: ChatOutcome
     public let timestamp: Date
+    /// Set when this bubble is one team member's run rather than the answer the user is talking to.
+    ///
+    /// `role` stays `.assistant` either way: a member's rows are assistant rows with a source on them
+    /// (`TeamHistoryReplay.kt:65-89`), and what separates the two bubbles is this field.
+    public var member: TeamMemberRun?
 
     public init(
         id: String,
@@ -191,7 +201,8 @@ public struct ChatTurn: Identifiable, Equatable {
         segments: [ChatSegment] = [],
         images: [String] = [],
         outcome: ChatOutcome,
-        timestamp: Date
+        timestamp: Date,
+        member: TeamMemberRun? = nil
     ) {
         self.id = id
         self.role = role
@@ -199,11 +210,23 @@ public struct ChatTurn: Identifiable, Equatable {
         self.images = images
         self.outcome = outcome
         self.timestamp = timestamp
+        self.member = member
     }
+
+    /// Whether this bubble belongs to a team member rather than to the session's own agent.
+    public var isMemberBubble: Bool { member != nil }
 
     /// Nothing reached the screen for this turn — the difference between "connection lost" and "stopped
     /// with a half answer still on screen" (`ChatWindow.tsx:2361`).
     public var hasContent: Bool { !segments.isEmpty || !images.isEmpty }
+
+    /// The words one bubble is worth handing to the pasteboard: the text runs in the order they were streamed,
+    /// joined by a newline. Thinking, tool cards, files and the plan block stay out — copying an answer should
+    /// not drag its reasoning trace along.
+    ///
+    /// The one place this is assembled. `ChatWindow.tsx` has no whole-message copy at all (its only clipboard
+    /// call is the code block's, `:181`), so this is the app's own rule rather than a mirrored one.
+    public var copyableText: String { segments.compactMap(\.text).joined(separator: "\n") }
 }
 
 /// The folding rules for a streamed answer, kept apart from the screen that draws them so every rule can
@@ -215,10 +238,16 @@ public struct ChatTurn: Identifiable, Equatable {
 public struct ChatTranscript: Equatable {
     /// The plan tools are driven by the plan interface rather than by the transcript: their call and
     /// confirm frames create no card and break no text run (`isPlanRelatedTool`,
-    /// `ChatWindow.tsx:2943-2962`, skipped at `:1507` and `:1676`). The panel that reads them is not in
-    /// this build, so their frames stay dropped here; when it lands, the frames it needs are the ones this
-    /// fold deliberately ignores.
+    /// `ChatWindow.tsx:2943-2962`, skipped at `:1507` and `:1676`). What the panel does with those frames is
+    /// the view model's business — it sees the raw event and reacts to it (`ChatWindow.tsx:1499-1504`,
+    /// `:1566-1591`), and the card itself comes from the plan read, never from the frame
+    /// (`showPlan`, which is the only way one gets here).
     private static let planTools: Set<String> = ["plan_enter", "plan_write", "plan_exit"]
+
+    /// Whether a tool name belongs to the plan interface, and so to `planTools`' drop-everything rule.
+    public static func isPlanTool(_ toolName: String) -> Bool {
+        planTools.contains(toolName)
+    }
 
     public private(set) var turns: [ChatTurn] = []
 
@@ -232,6 +261,14 @@ public struct ChatTranscript: Equatable {
     /// accumulator resets amount to (`ChatWindow.tsx:1422-1428`, `:1444-1485`).
     private var textSealed = false
     private var thinkingSealed = false
+    /// The team half of the merge, shared by the replay and the live fold on purpose: a member's rows and a
+    /// member's frames have to agree on what one bubble is (`teamRun.ts`'s reason for existing).
+    private var team = TeamRunMerge()
+    /// The inline plan block this transcript is following, by segment id — the console's
+    /// `currentPlanMessageIdRef` (`ChatWindow.tsx:592-595`). One card per plan phase: a reading that finds it
+    /// rewrites that block, and `endAnswerForPlanExit` clearing it is what lets a later plan open its own card
+    /// while the finished one stays on screen (`:1588`).
+    private var planCardID: Int?
 
     public init() {}
 
@@ -248,15 +285,16 @@ public struct ChatTranscript: Equatable {
         /// The assistant bubble later rows still land in, as an index into `turns`.
         var answer: Int?
         for (index, log) in logs.enumerated() {
-            // A member row is the server's merged output (`TeamHistoryReplay.kt:36-56`) and its bubble needs
-            // the console's run grouping and delegate-card claim. Not this build: what the user sees of a
-            // member's work is the text inside the lead's own `team_delegate` card.
-            guard !log.isMemberOutput else { continue }
             let stamp = Self.millis(log.timestamp, now: now)
             let rowID = Self.rowID(role: log.roleKey ?? "row", stamp: stamp, index: index)
+            let runID = hxPresented(log.source?.childRunId)
+            // Every row routes, tool results included: a member's ASSISTANT row and the TOOL rows that answer
+            // it are one run, and the id has to survive the gap between them (`:766-772`).
+            let bubble = team.route(runID: runID)
             switch log {
             case let .user(message, _, _):
-                // A user row ends the answer it prompted (`ChatWindow.tsx:775-776`).
+                // A user row ends the answer it prompted, and with it the member bubbles of that round
+                // (`ChatWindow.tsx:775-778`).
                 answer = nil
                 let segment = nextSegment(.text(message))
                 turns.append(ChatTurn(
@@ -266,22 +304,43 @@ public struct ChatTranscript: Equatable {
                     outcome: .ended,
                     timestamp: Self.date(stamp)
                 ))
-            case let .assistant(thinking, text, calls, _, _):
-                let at: Int
-                if let open = answer {
-                    at = open
+            case let .assistant(thinking, text, calls, _, source):
+                if let bubble, let memberSource = source, runID != nil {
+                    let opened = openMemberBubble(
+                        key: bubble, source: memberSource, stamp: stamp, isReplay: true
+                    )
+                    // The new bubble went in above the lead's, so the lead moved down with it.
+                    if opened.inserted, let lead = answer, opened.index <= lead { answer = lead + 1 }
+                    replayAssistant(
+                        thinking: thinking, text: text, calls: calls, rowID: rowID,
+                        following: logs, after: index, into: opened.index, runID: runID
+                    )
+                    // A replay has no lifecycle events, so the bubble's tool count and end time are read off
+                    // its own rows (`:905-908`).
+                    refreshMemberRun(at: opened.index, endedAt: Self.date(stamp))
                 } else {
-                    turns.append(ChatTurn(id: rowID, role: .assistant, outcome: .ended, timestamp: Self.date(stamp)))
-                    at = turns.count - 1
-                    answer = at
+                    // What this turn delegated has to be recorded before the member's rows are reached: the
+                    // lead's row is stored first and the member's come after it (`:787-792`).
+                    if runID == nil { team.noteDelegatedTasks(teamDelegatedTasks(of: calls)) }
+                    let at: Int
+                    if let open = answer {
+                        at = open
+                    } else {
+                        turns.append(ChatTurn(
+                            id: rowID, role: .assistant, outcome: .ended, timestamp: Self.date(stamp)
+                        ))
+                        at = turns.count - 1
+                        answer = at
+                    }
+                    replayAssistant(
+                        thinking: thinking, text: text, calls: calls, rowID: rowID,
+                        following: logs, after: index, into: at, runID: runID
+                    )
                 }
-                replayAssistant(
-                    thinking: thinking, text: text, calls: calls, rowID: rowID,
-                    following: logs, after: index, into: at
-                )
             case .system, .tool, .unknown:
                 // The console draws neither a system row nor a bare tool result: a result only ever reaches
-                // the screen through the call it belongs to (`ChatWindow.tsx:911-929`).
+                // the screen through the call it belongs to (`ChatWindow.tsx:911-929`). A member's result row
+                // with no member row before it opens nothing either — it only routes (`:766-772`).
                 break
             }
         }
@@ -292,8 +351,10 @@ public struct ChatTranscript: Equatable {
     ///
     /// A call's result is looked for among the TOOL rows that follow *this* row in an unbroken run, because a
     /// row can name several calls and their results come back one after another
-    /// (`ChatWindow.tsx:855-861`). One that finds no result closes as interrupted: that turn was cut, and a
-    /// replayed card must not sit there claiming to still be working (`:890-893`).
+    /// (`ChatWindow.tsx:855-861`). The run stops at a row from another source: a member's result answers a
+    /// member's call, and pairing it with the lead's would hand a member's output to the wrong card
+    /// (`:859`). One that finds no result closes as interrupted: that turn was cut, and a replayed card must
+    /// not sit there claiming to still be working (`:890-893`).
     private mutating func replayAssistant(
         thinking: String,
         text: String,
@@ -301,7 +362,8 @@ public struct ChatTranscript: Equatable {
         rowID: String,
         following logs: [ChatHistoryLog],
         after row: Int,
-        into target: Int
+        into target: Int,
+        runID: String?
     ) {
         if !thinking.isEmpty {
             if turns[target].segments.last?.thinking != nil {
@@ -316,8 +378,7 @@ public struct ChatTranscript: Equatable {
         var results: [ResultRow] = []
         for follow in logs.dropFirst(row + 1) {
             guard case let .tool(name, result, _, _) = follow else { break }
-            // A member's result answers a member's call, and those rows belong to another bubble.
-            if follow.isMemberOutput { break }
+            guard hxPresented(follow.source?.childRunId) == runID else { break }
             results.append(ResultRow(name: name, message: result))
         }
         for call in calls {
@@ -341,6 +402,11 @@ public struct ChatTranscript: Equatable {
             }
             let segment = nextSegment(.tool(run))
             turns[target].segments.append(segment)
+            if name == teamDelegateToolName {
+                // Registered under the id just synthesized, because a member's row can only reach a card by
+                // that id and history names none (`ChatWindow.tsx:881`).
+                team.noteDelegateCall(toolID: run.toolId, arguments: call.input)
+            }
         }
         if !text.isEmpty {
             let segment = nextSegment(.text(text))
@@ -426,19 +492,35 @@ public struct ChatTranscript: Equatable {
 
     /// One frame of the stream. A terminal frame closes the answer, and anything after it is dropped: the
     /// end frame is the contract's last word, and the server closes the socket behind it.
+    ///
+    /// A frame that names a member run skips all of that: it belongs to that member's bubble, which the lead's
+    /// fold never sees (`ChatWindow.tsx:1399-1403`).
     public mutating func fold(_ event: ChatEvent) {
         // A parked run says nothing. Rendering the ping would open an empty bubble, and ending on it would
-        // stop the turn the ping exists to keep alive (ChatEvent.swift:80-82).
+        // stop the turn the ping exists to keep alive (ChatEvent.swift:80-82). A member's ping is the sharper
+        // risk: `TeamOrchestrator.kt:427` stamps it with a source, so a ping routed before it was dropped
+        // would paint an empty member bubble out of thin air (`specs/02-session-chat.md` line 421).
         if case .keepAlive = event { return }
+        if let key = team.route(runID: event.memberRunID), let source = event.teamSource {
+            foldMember(event, key: key, source: source)
+            return
+        }
         if openAnswer == nil {
             // No bubble to write into. A frame that follows the bubble's own terminal frame is dropped
             // rather than opened afresh: the server closes the socket behind that frame, so a late
-            // arrival belongs to the answer that just ended, not to a new one.
-            guard turns.last?.role != .assistant else { return }
+            // arrival belongs to the answer that just ended, not to a new one. A member's bubble at the
+            // tail is no such answer — with no lead turn in the round yet, this frame opens it.
+            guard currentLeadIndex() == nil else { return }
             openAnswerTurn()
         }
         guard let index = openAnswer else { return }
         var turn = turns[index]
+        // The lead's own terminal frames close the members of this round with it: delegation blocks the lead,
+        // so a lead turn that is over cannot have left a member running (`closeAllMemberRuns`, `:1193-1197`).
+        var leadClosed: (outcome: ChatOutcome, succeeded: Bool)?
+        // A `team_delegate` card that came back: the member's only offline signal on the live stream, since
+        // the server filters the member's own end frame (`completeDelegateResult`, `:1179-1190`).
+        var returnedCard: (member: Int64, succeeded: Bool)?
         switch event {
         case let .text(delta):
             // `isLast` closes the channel and its payload is discarded, never treated as the last batch of
@@ -447,29 +529,278 @@ public struct ChatTranscript: Equatable {
         case let .thinking(delta):
             if delta.isLast { thinkingSealed = true } else { grow(&turn, delta.message, thinking: true) }
         case let .toolCall(call):
-            foldCall(&turn, call)
+            let cardID = foldCall(&turn, call)
+            if call.toolName == teamDelegateToolName, let cardID {
+                // The member id lives on this card and nowhere else on the member's own frames — neither the
+                // task (`noteDelegateCall`, `:1168-1176`) nor the run's offline signal
+                // (`completeDelegateResult`, `:1179-1190`) can be read back later without it.
+                team.noteDelegateCall(toolID: cardID, arguments: call.arguments)
+                team.noteDelegatedTasks(teamDelegatedTasks(of: [
+                    ChatHistoryLog.Call(name: call.toolName, input: call.arguments),
+                ]))
+            }
         case let .toolResult(result):
-            foldResult(&turn, result)
+            if let cardID = foldResult(&turn, result), let member = team.takeDelegateCard(toolID: cardID) {
+                returnedCard = (member, result.success)
+            }
         case let .toolConfirm(confirm):
             foldConfirm(&turn, confirm)
         case let .end(end):
             for file in end.attachments { turn.segments.append(nextSegment(.file(file))) }
             close(&turn, as: .ended)
+            leadClosed = (.ended, true)
         case let .failure(failure):
             close(&turn, as: .failed(code: failure.code, message: failure.message))
+            leadClosed = (.failed(code: failure.code, message: failure.message), false)
         case .keepAlive:
             break
         }
         turns[index] = turn
+        if let card = returnedCard { closeMemberRuns(ofMember: card.member, succeeded: card.succeeded) }
+        if let closed = leadClosed { closeAllMemberRuns(as: closed.outcome, succeeded: closed.succeeded) }
+    }
+
+    // MARK: - a member's frames
+
+    /// One frame of a member's run, into that member's own bubble (`handleMemberEvent`, `:1221-1292`).
+    ///
+    /// The lead's bubble is not touched by any of it — not by the deltas, not by the member's own terminal
+    /// frame — because the lead's turn is still open waiting for this member to come back.
+    private mutating func foldMember(_ event: ChatEvent, key: String, source: ChatEventSource) {
+        let stamp = Int64(Date().timeIntervalSince1970 * 1000)
+        let opened = openMemberBubble(key: key, source: source, stamp: stamp, isReplay: false)
+        var turn = turns[opened.index]
+        switch event {
+        case let .text(delta):
+            if !delta.isLast { growMember(&turn, delta.message, thinking: false) }
+        case let .thinking(delta):
+            if !delta.isLast { growMember(&turn, delta.message, thinking: true) }
+        case let .toolCall(call):
+            // A member's own cards never claim a delegation, so its id is not needed here.
+            _ = foldCall(&turn, call)
+        case let .toolResult(result):
+            _ = foldResult(&turn, result)
+        case let .toolConfirm(confirm):
+            // The ask goes inside the member's bubble as an inline card: a member's confirmation cannot take
+            // the lead's modal, which would hold the whole team behind it (`:1258-1277`).
+            foldConfirm(&turn, confirm)
+            if var member = turn.member {
+                member.status = .awaitingConfirm
+                turn.member = member
+            }
+        case .end:
+            // The server filters a member's end frame today, so this is the defensive shape: it closes *this*
+            // bubble and leaves the lead's open (`collectTurn`, `TeamOrchestrator.kt:352-356`).
+            closeMember(&turn, as: .ended, succeeded: true)
+        case let .failure(failure):
+            closeMember(&turn, as: .failed(code: failure.code, message: failure.message), succeeded: false)
+        case .keepAlive:
+            break
+        }
+        if var member = turn.member {
+            member.recountTools(from: turn.segments)
+            turn.member = member
+        }
+        turns[opened.index] = turn
+    }
+
+    /// The bubble this member run writes into, opened when the run has no bubble yet.
+    ///
+    /// Both doors agree on where a new bubble goes: above the lead's, because the lead's turn does not close
+    /// until its members have run, so on the timeline the lead's words come last (`paintMemberRun` `:1139-1142`,
+    /// replay `:820-823`). With no lead bubble in the round to sit above, the bubble goes at the tail.
+    ///
+    /// - Parameter isReplay: a replayed bubble has no lifecycle events left to read, so it opens already
+    ///   closed (`:805-811`); a live one opens working.
+    private mutating func openMemberBubble(
+        key: String,
+        source: ChatEventSource,
+        stamp: Int64,
+        isReplay: Bool
+    ) -> (index: Int, inserted: Bool) {
+        if let hit = turns.firstIndex(where: { $0.id == key }) { return (hit, false) }
+        let opened = Self.date(stamp)
+        var member = TeamMemberRun(
+            source: source,
+            status: isReplay ? .done : .running,
+            startedAt: opened,
+            endedAt: isReplay ? opened : nil,
+            task: team.task(forMember: source.memberAgentId)
+        )
+        let lead = currentLeadIndex()
+        if let lead {
+            member.parentToolId = team.claimDelegate(
+                in: turns[lead].segments, forMember: source.memberAgentId
+            )
+        }
+        let turn = ChatTurn(
+            id: key,
+            role: .assistant,
+            outcome: isReplay ? .ended : .streaming,
+            timestamp: opened,
+            member: member
+        )
+        guard let lead else {
+            turns.append(turn)
+            return (turns.count - 1, true)
+        }
+        turns.insert(turn, at: lead)
+        return (lead, true)
+    }
+
+    /// A member's deltas join the block they grew, if that block is still the newest one
+    /// (`appendMemberDelta`, `:1199-1206`).
+    ///
+    /// No seal applies: a member's `isLast` frame carries no content worth keeping, and the lead's seal flags
+    /// are the lead's accumulator — reading them here would cut a member's sentence because the lead happened
+    /// to sign one off.
+    private mutating func growMember(_ turn: inout ChatTurn, _ message: String, thinking: Bool) {
+        guard !message.isEmpty else { return }
+        switch turn.segments.last?.kind {
+        case let .text(existing) where !thinking:
+            rewriteLast(&turn, .text(existing + message))
+        case let .thinking(existing) where thinking:
+            rewriteLast(&turn, .thinking(existing + message))
+        default:
+            turn.segments.append(nextSegment(thinking ? .thinking(message) : .text(message)))
+        }
+    }
+
+    /// A member run that is over: its own bubble closes, the lead's stays open
+    /// (`closeMemberRun`, `:1156-1165`).
+    ///
+    /// A run parked on an ask nobody answered closes too. That is the console's rule, not an oversight: the
+    /// frames that retire a run arrive when the round is being given up on — a stop, or the lead's own end
+    /// frame — and `finally` nulls the member answer handler at exactly that point, so the card loses its
+    /// controls rather than staying live on a run the transcript has called dead
+    /// (`ChatWindow.tsx:2375-2395`).
+    private mutating func closeMember(_ turn: inout ChatTurn, as outcome: ChatOutcome, succeeded: Bool) {
+        close(&turn, as: outcome)
+        guard var member = turn.member else { return }
+        member.status = succeeded ? .done : .failed
+        member.endedAt = Date()
+        turn.member = member
+    }
+
+    /// Every open run of one member, closed by the lead's delegate card coming back
+    /// (`closeMemberRun`, `:1156-1165`).
+    private mutating func closeMemberRuns(ofMember id: Int64, succeeded: Bool) {
+        for index in turns.indices {
+            guard turns[index].member?.memberAgentId == id, turns[index].member?.isOpen == true else { continue }
+            var turn = turns[index]
+            closeMember(&turn, as: succeeded ? .ended : .interrupted, succeeded: succeeded)
+            turns[index] = turn
+        }
+    }
+
+    /// The whole round is over, so no member is still working (`:1193-1197`).
+    private mutating func closeAllMemberRuns(as outcome: ChatOutcome, succeeded: Bool) {
+        for index in turns.indices {
+            guard turns[index].member?.isOpen == true else { continue }
+            var turn = turns[index]
+            closeMember(&turn, as: outcome, succeeded: succeeded)
+            turns[index] = turn
+        }
+    }
+
+    /// The bubble summary a replay has to build for itself: tool count off its own blocks, end time the
+    /// newest stamp it has seen (`:905-908`).
+    private mutating func refreshMemberRun(at index: Int, endedAt: Date) {
+        guard var turn = turns.indices.contains(index) ? turns[index] : nil, var member = turn.member else { return }
+        member.recountTools(from: turn.segments)
+        // A replay has no lifecycle frames, so the newest stamp on the run's own rows is its end time.
+        if member.endedAt == nil || endedAt > member.endedAt! { member.endedAt = endedAt }
+        turn.member = member
+        turns[index] = turn
+    }
+
+    /// The lead's bubble of the round in progress, open or closed: the newest non-member assistant turn after
+    /// the user's last message. Its `team_delegate` cards are what a member bubble claims.
+    private func currentLeadIndex() -> Int? {
+        currentRound().reversed().first { turns[$0].role == .assistant && !turns[$0].isMemberBubble }
+    }
+
+    /// The bubbles of the round in progress: everything after the user's last message. A member's ask from an
+    /// earlier round is history by now, and so is the card it belongs to.
+    private func currentRound() -> [Int] {
+        let start = (turns.lastIndex { $0.role == .user }).map { $0 + 1 } ?? 0
+        return start < turns.count ? Array(start..<turns.count) : []
     }
 
     /// The turn's last word from the reader's side: the stream ended or threw, or a stop or a conversation
-    /// switch aborted it. An already terminated answer keeps the outcome it was given.
+    /// switch aborted it. An already terminated answer keeps the outcome it was given, and so does a member
+    /// whose run was already closed.
+    ///
+    /// Every open member bubble goes with it: a stop is the user letting the round go, and a round that was
+    /// let go cannot still have a member working inside it (`closeAllMemberRuns`, `ChatWindow.tsx:2375-2395`).
     public mutating func terminate(as outcome: ChatOutcome) {
+        // First the members, whatever became of the lead: a stop that arrives after the lead's own end frame
+        // still has to retire a run parked inside it.
+        closeAllMemberRuns(as: outcome, succeeded: false)
         guard let index = openAnswer else { return }
         var turn = turns[index]
         close(&turn, as: outcome)
         turns[index] = turn
+    }
+
+    // MARK: - the plan card
+
+    /// The plan on screen, written by the plan read rather than by any frame.
+    ///
+    /// Attach or update, and idempotent in the way `:2558-2572` is: a second reading of a plan that has moved on
+    /// rewrites the block that is already there instead of stacking a second card under it. The block belongs to
+    /// the round's lead answer, which is the bubble the screen reads (`segments`) and the bubble the next frame
+    /// writes into (`openAnswer`) — a card of its own turn would win both searches and the lead's next word
+    /// would be dropped with nowhere to go.
+    ///
+    /// Returns whether the reading reached the screen. A plan with no name is no plan (`PlanNote.isValid`, and
+    /// `hasValidCurrentPlan` at `:2965-2970`), and with no answer to hang it on the reading is dropped rather
+    /// than drawn: inventing the bubble here is what this design rejects.
+    @discardableResult
+    public mutating func showPlan(_ plan: PlanNote) -> Bool {
+        guard plan.isValid else { return false }
+        if let id = planCardID,
+           let turn = turns.firstIndex(where: { head in head.segments.contains { $0.id == id } }),
+           let segment = turns[turn].segments.firstIndex(where: { $0.id == id }) {
+            turns[turn].segments[segment].kind = .plan(plan)
+            return true
+        }
+        guard let index = currentLeadIndex() else { return false }
+        let block = nextSegment(.plan(plan))
+        planCardID = block.id
+        turns[index].segments.append(block)
+        return true
+    }
+
+    /// The plan the transcript is still following: the one `showPlan` updates, and `nil` from
+    /// `endAnswerForPlanExit` onward. A card that has been left behind is not this — it stays on screen with the
+    /// last reading it was given (`:2576-2584`) and answers to nothing.
+    public var planCard: PlanNote? {
+        guard let id = planCardID else { return nil }
+        for turn in turns.reversed() {
+            if let block = turn.segments.first(where: { $0.id == id }) { return block.plan }
+        }
+        return nil
+    }
+
+    /// `plan_exit` came back: the plan phase is over and the execution phase starts a bubble of its own
+    /// (`ChatWindow.tsx:1566-1591`).
+    ///
+    /// The answer closes, an empty one opens behind it, and the followed card is forgotten so a later plan gets
+    /// its own block while this one stays where it landed. `.ended` is the console's own ending here — the run is
+    /// not abandoned, it has moved on to the half of the turn that does the work — and the fold's sealing flags
+    /// reset with the new bubble exactly as `accText` does there.
+    ///
+    /// With no assistant answer in this round there is nothing to break, so nothing happens.
+    public mutating func endAnswerForPlanExit(at date: Date = Date()) {
+        planCardID = nil
+        guard currentLeadIndex() != nil else { return }
+        if let index = openAnswer {
+            var turn = turns[index]
+            close(&turn, as: .ended)
+            turns[index] = turn
+        }
+        openAnswerTurn(at: date)
     }
 
     // MARK: - answering a confirmation
@@ -483,15 +814,41 @@ public struct ChatTranscript: Equatable {
     /// not disqualify it — the run parks and the harness closes the stream around the wait
     /// (`HarnessAgentWrapper.kt:763-798`), and the answer is what opens a new one.
     public var pendingConfirmation: ChatPendingConfirmation? {
-        guard let turn = turns.last, !turn.outcome.isAbandoned,
-            let index = unansweredConfirmation(turn)
-        else { return nil }
-        let rows = turn.segments[index].rows
+        guard let turn = confirmationTurn(.unanswered) else { return nil }
+        let index = unansweredConfirmation(turns[turn])!
+        let rows = turns[turn].segments[index].rows
         return ChatPendingConfirmation(
-            segmentID: turn.segments[index].id,
+            segmentID: turns[turn].segments[index].id,
             childRunId: rows.lazy.compactMap(\.childRunId).first,
             tools: rows
         )
+    }
+
+    /// Which block of the round in progress the user is being asked about: the newest one still waiting on an
+    /// answer, or — when a delivered answer has to go back — the newest one already settled.
+    ///
+    /// The search walks the round backwards rather than reading the last bubble, because a member's inline ask
+    /// sits in the member's own bubble, which is *above* the lead's (`openMemberBubble`). Turns the run gave
+    /// up on are out of the *unanswered* search, exactly as the last-bubble test had them out.
+    private func confirmationTurn(_ search: ConfirmationSearch) -> Int? {
+        for index in currentRound().reversed() {
+            let turn = turns[index]
+            let hasBlock = switch search {
+            // The abandoned test belongs to this search only: `pendingConfirmation` is asking what the user
+            // may answer *now*, and a run the read gave up on has no answer to take.
+            case .unanswered: !turn.outcome.isAbandoned && unansweredConfirmation(turn) != nil
+            // The other search is a rollback, and the read that failed has by then closed its own turn as
+            // interrupted — filtering abandoned turns here would exclude exactly the block being handed back.
+            case .settled: settledConfirmation(turn) != nil
+            }
+            if hasBlock { return index }
+        }
+        return nil
+    }
+
+    private enum ConfirmationSearch {
+        case unanswered
+        case settled
     }
 
     /// Write the decisions into the block and into the cards it names, then open the bubble again.
@@ -516,7 +873,7 @@ public struct ChatTranscript: Equatable {
     }
 
     private mutating func settleConfirmation(given decisions: [String: ToolConfirmAnswer], answered: Bool) {
-        guard let index = turns.indices.last else { return }
+        guard let index = confirmationTurn(answered ? .unanswered : .settled) else { return }
         var turn = turns[index]
         let rows: [ChatPendingTool]
         if answered {
@@ -530,11 +887,17 @@ public struct ChatTranscript: Equatable {
         }
         var settled: Set<Int> = []
         for row in rows { writeAnswer(row, answered: answered, into: &turn, claimed: &settled) }
-        turns[index] = turn
-        // The bubble this ask parked is the one the resumed run writes into. An ask handed back is waiting
+        // The run this ask parked is the one the resumed stream writes into. An ask handed back is waiting
         // again for the same reason: the answer reached nobody, so the run is still parked even though the
         // read that failed to carry it closed the turn as interrupted.
-        turns[index].outcome = .streaming
+        turn.outcome = .streaming
+        if var member = turn.member {
+            // 「run.status = 'running'」 after the answer goes out (`answerMemberConfirm`, `:1310`): the
+            // continuation comes back on this member's channel, so its header reads working again.
+            member.status = answered ? .running : .awaitingConfirm
+            turn.member = member
+        }
+        turns[index] = turn
         textSealed = false
         thinkingSealed = false
     }
@@ -570,9 +933,12 @@ public struct ChatTranscript: Equatable {
 
     // MARK: - frames
 
-    private mutating func foldCall(_ turn: inout ChatTurn, _ call: ChatEvent.ToolCall) {
-        guard let name = hxPresented(call.toolName) else { return }
-        guard !Self.planTools.contains(name) else { return }
+    /// One call into the turn's cards. Returns the id the card carries, nil when the frame drew nothing — the
+    /// lead's fold needs the id to register a delegation with, and it is not always the frame's own
+    /// (`synthesizeToolID`).
+    private mutating func foldCall(_ turn: inout ChatTurn, _ call: ChatEvent.ToolCall) -> String? {
+        guard let name = hxPresented(call.toolName) else { return nil }
+        guard !Self.planTools.contains(name) else { return nil }
         let id = hxPresented(call.toolId) ?? synthesizeToolID()
         // A repeated call for the same id rewrites its card (`ChatWindow.tsx:1523-1530`); two calls with
         // different ids are two cards even when the tool is the same one. The console's name fallback
@@ -594,16 +960,21 @@ public struct ChatTranscript: Equatable {
                 arguments: call.arguments
             ))))
         }
+        return id
     }
 
-    private mutating func foldResult(_ turn: inout ChatTurn, _ result: ChatEvent.ToolResult) {
-        guard !Self.planTools.contains(result.toolName) else { return }
+    /// One result into the card it answers. Returns the id of the card it wrote, which is how the lead's
+    /// fold notices that a returned `team_delegate` card — the lead's own signal that a member is done — has
+    /// come back. Nil for a result that paired with nothing.
+    private mutating func foldResult(_ turn: inout ChatTurn, _ result: ChatEvent.ToolResult) -> String? {
+        guard !Self.planTools.contains(result.toolName) else { return nil }
         // An unpaired result is dropped rather than drawn on its own (`ChatWindow.tsx:1614-1616`).
         guard let index = findTool(turn, id: result.toolId, name: result.toolName, broad: true),
               var run = turn.segments[index].tool
-        else { return }
+        else { return nil }
         run.result = ChatToolRun.Result(message: result.message, succeeded: result.success)
         turn.segments[index].kind = .tool(run)
+        return run.toolId
     }
 
     private mutating func foldConfirm(_ turn: inout ChatTurn, _ confirm: ChatEvent.ToolConfirm) {
@@ -787,14 +1158,13 @@ public struct ChatTranscript: Equatable {
         ))
     }
 
-    /// The trailing answer still taking frames. Frames always write into the last bubble, which is what
-    /// makes a team member run separate work rather than a continuation of this one — routing those
-    /// frames is the multi-run merge, not part of this fold.
+    /// The lead's answer that is still taking frames.
+    ///
+    /// A member's bubble is an assistant turn with the same outcome as this one, and it can end up the last
+    /// turn in the transcript — so the search goes to the round's lead turn by name rather than to the tail
+    /// by position, or the lead's next frame would be written into a member's answer.
     private var openAnswer: Int? {
-        guard let index = turns.indices.last,
-              turns[index].role == .assistant,
-              turns[index].outcome == .streaming
-        else { return nil }
+        guard let index = currentLeadIndex(), turns[index].outcome == .streaming else { return nil }
         return index
     }
 
@@ -842,6 +1212,12 @@ public extension ChatSegment {
 
     var file: ChatFileAttachment? {
         if case .file(let attachment) = kind { return attachment }
+        return nil
+    }
+
+    /// The plan an inline plan block carries, `nil` for every other kind.
+    var plan: PlanNote? {
+        if case .plan(let note) = kind { return note }
         return nil
     }
 }

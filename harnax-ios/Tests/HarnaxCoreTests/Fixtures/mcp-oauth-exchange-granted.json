@@ -1,0 +1,15 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "authorized": true,
+    "message": "This MCP server is authorized for your account",
+    "scopes": [
+      "mcp:tools",
+      "offline_access"
+    ],
+    "accessExpiresAt": "2026-09-28 10:12:00"
+  },
+  "timestamp": 1759026030000,
+  "isSuccess": true
+}

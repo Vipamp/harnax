@@ -22,7 +22,6 @@ public struct SkillTableView: View {
 
     public var body: some View {
         List {
-            header
             if let error = vm.inlineError {
                 HXBanner("state.error.title", message: error, systemImage: "exclamationmark.triangle", tone: .danger)
                     .listRowBackground(Color.hx(.surface))
@@ -60,6 +59,9 @@ public struct SkillTableView: View {
         // "Skills" title, and a stacked pair with one title cannot be told apart.
         .navigationTitle(Text(verbatim: sourceName ?? hx("skill.table.title")))
         .searchable(text: $vm.keyword, prompt: Text(verbatim: hx("skill.table.search")))
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) { filterMenu }
+        }
         .refreshable { await vm.refresh() }
         .task { await vm.show(id: sourceID) }
         .onChange(of: sourceID) { next in
@@ -83,24 +85,15 @@ public struct SkillTableView: View {
         skill.id.map { SkillDetailRoute(id: $0) }
     }
 
-    /// The status filter. The source this table belongs to is named by the navigation title instead: a
-    /// header row scrolls away, and the pushed skill detail below has to agree with it about whose skills
-    /// are on screen.
-    @ViewBuilder
-    private var header: some View {
-        HXSegmented(
-            [
-                HXSegmentOption(id: StatusFilter.all.rawValue, "state.filter.all"),
-                HXSegmentOption(id: StatusFilter.enabled.rawValue, "state.badge.enabled"),
-                HXSegmentOption(id: StatusFilter.disabled.rawValue, "state.badge.disabled"),
-            ],
-            selection: Binding(
-                get: { vm.filter.rawValue },
-                set: { vm.filter = StatusFilter(rawValue: $0) ?? .all }
-            )
+    /// The status filter. It used to be a header row, and a header row scrolls away; the source this table
+    /// belongs to is named by the navigation title instead, because the pushed skill detail below has to agree
+    /// with it about whose skills are on screen.
+    private var filterMenu: some View {
+        HXFilterMenu(
+            isFiltering: vm.filter != .all,
+            accessibilityLabel: hx("state.filter.status"),
+            choices: statusFilterChoices(vm.filter) { vm.filter = $0 }
         )
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
     }
 
     private func row(_ skill: SkillItem) -> some View {
@@ -169,12 +162,16 @@ public struct SkillTableView: View {
             .disabled(on && skill.isBound)
         } label: {
             HStack(spacing: 4) {
-                HXStatusDot(tone: on ? .success : .textTertiary)
+                HXStatusDot(
+                    tone: on ? .success : .textTertiary,
+                    label: hx(on ? "state.badge.enabled" : "state.badge.disabled")
+                )
                 Image(systemName: pending ? "hourglass" : "ellipsis")
                     .foregroundStyle(Color.hx(.textSecondary))
                     .frame(width: 22, height: 22)
             }
         }
+        .accessibilityLabel(hx(on ? "state.action.disable" : "state.action.enable"))
         .disabled(pending || skill.id == nil)
     }
 

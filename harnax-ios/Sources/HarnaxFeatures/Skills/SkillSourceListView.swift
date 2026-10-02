@@ -28,7 +28,7 @@ public struct SkillSourceListView: View {
         account: AccountSnapshot? = nil,
         onSelect: @escaping (Int64?, String?) -> Void = { _, _ in }
     ) {
-        _vm = StateObject(wrappedValue: SkillSourceListViewModel(skills: skills))
+        _vm = StateObject(wrappedValue: SkillSourceListViewModel(skills: skills, account: account))
         self.skills = skills
         self.account = account
         self.onSelect = onSelect
@@ -43,6 +43,24 @@ public struct SkillSourceListView: View {
             if let blocked = vm.blockedMessage {
                 HXBanner("skill.source.delete.blockedTitle", message: blocked, systemImage: "lock", tone: .warning)
                     .listRowBackground(Color.hx(.surface))
+            }
+            if let hint = vm.configurationHint {
+                HStack(alignment: .top, spacing: 8) {
+                    HXBanner(
+                        "skill.repository.updatedTitle",
+                        message: hint,
+                        systemImage: "arrow.triangle.2.circlepath",
+                        tone: .warning
+                    )
+                    Button { vm.dismissConfigurationHint() } label: {
+                        Image(systemName: "xmark")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Color.hx(.textTertiary))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(hx("common.close"))
+                }
+                .listRowBackground(Color.hx(.surface))
             }
             switch vm.phase {
             case .loading, .failed:
@@ -67,10 +85,18 @@ public struct SkillSourceListView: View {
         .navigationTitle(Text(verbatim: hx("context.domain.skill")))
         .searchable(text: $vm.keyword, prompt: Text(verbatim: hx("skill.source.search")))
         .toolbar {
+            // Two entries, as the console has two writes on this card: one Create button
+            // (`index.tsx:191-195`) and the ZIP half, which lives behind its own endpoint
+            // (`SkillSourceServiceImpl.kt:119-123`). Both are glyphs so the pair reads the way every other
+            // entity list's trailing pair does; a worded button beside the `+` would be the one odd shape here.
+            ToolbarItem(placement: .primaryAction) {
+                HXPlusButton(titleKey: "skill.repository.create") { vm.beginRepositoryCreate() }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button { uploading = true } label: {
-                    HXText("skill.source.upload")
+                    Image(systemName: "arrow.up.doc")
                 }
+                .accessibilityLabel(hx("skill.source.upload"))
             }
         }
         .task { await vm.refresh() }
@@ -81,10 +107,17 @@ public struct SkillSourceListView: View {
         }
         .refreshable { await vm.refresh() }
         .sheet(item: $syncing) { source in
-            SkillSyncSheet(source: source, skills: skills)
+            // A sync rewrites the rows this list shows — the skill count and the last-sync column both come
+            // off the source, so the report has to reload them rather than leave the old numbers on screen.
+            SkillSyncSheet(source: source, skills: skills, onChanged: { Task { await vm.refresh() } })
         }
         .sheet(isPresented: $uploading) {
             SkillUploadSheet(vm: vm)
+        }
+        .sheet(item: $vm.repositoryForm) { form in
+            SkillRepositoryFormSheet(form: form) {
+                await vm.submitRepositoryForm()
+            }
         }
         .sheet(isPresented: $showReport, onDismiss: { vm.dismissReport() }) {
             if let report = reportToShow {
@@ -152,7 +185,10 @@ public struct SkillSourceListView: View {
                     }
                 }
                 Spacer(minLength: 0)
-                HXStatusDot(tone: source.isEnabled ? .success : .textTertiary)
+                HXStatusDot(
+                    tone: source.isEnabled ? .success : .textTertiary,
+                    label: hx(source.isEnabled ? "state.badge.enabled" : "state.badge.disabled")
+                )
             }
             if mayWrite(source) {
                 menu(source)
@@ -215,6 +251,14 @@ public struct SkillSourceListView: View {
             } label: {
                 HXText(vm.status(of: source) ? "state.action.disable" : "state.action.enable")
             }
+            // Not gated on `isRefreshable` the way sync and install are: an edit writes configuration, and a
+            // ZIP row still has a name, version, description and two switches worth changing
+            // (`RepositoryList.tsx:459-464` — the `EditButton` is unconditional, unlike its two neighbours).
+            Button {
+                vm.beginRepositoryEdit(source)
+            } label: {
+                HXText("state.action.edit")
+            }
             Button(role: .destructive) {
                 vm.requestDelete(source)
             } label: {
@@ -224,13 +268,17 @@ public struct SkillSourceListView: View {
             Image(systemName: "ellipsis")
                 .foregroundStyle(Color.hx(.textSecondary))
         }
+        .accessibilityLabel(hx("state.action.more"))
         .disabled(vm.pendingIDs.contains(source.id))
     }
 }
 
 /// The ZIP sheet. Selecting an archive never uploads it — the operator names the source and presses the
 /// button, exactly as the console's `beforeUpload: false` does (`RepositoryForm.tsx:258-277`).
-struct SkillUploadSheet: View {
+///
+/// Public so the DEBUG walkthrough can frame the sheet from a launch argument — the simulator takes no input,
+/// so a sheet the harness cannot name is a sheet nobody can review (`App/HarnaxDebugScreens.swift`).
+public struct SkillUploadSheet: View {
     @ObservedObject var vm: SkillSourceListViewModel
     /// Bound directly: it is an observable object in its own right, and `$vm.upload.name` would need a
     /// setter the view model deliberately does not expose.
@@ -239,12 +287,12 @@ struct SkillUploadSheet: View {
     @State private var picking = false
     @State private var pickError: String?
 
-    init(vm: SkillSourceListViewModel) {
+    public init(vm: SkillSourceListViewModel) {
         self.vm = vm
         upload = vm.upload
     }
 
-    var body: some View {
+    public var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 14) {
                 HXField("skill.source.upload.name", text: $upload.name, systemImage: "textformat")
@@ -380,11 +428,18 @@ struct SkillInstallReportCard: View {
 
 /// The upload/create answer as its own sheet: it carries the whole point of the response, so it cannot be a
 /// toast the operator misses.
-struct SkillReportSheet: View {
+///
+/// Public so the DEBUG walkthrough can frame the sheet from a launch argument — the simulator takes no input,
+/// so a sheet the harness cannot name is a sheet nobody can review (`App/HarnaxDebugScreens.swift`).
+public struct SkillReportSheet: View {
     let report: SkillInstallReport
     @Environment(\.dismiss) private var dismiss
 
-    var body: some View {
+    public init(report: SkillInstallReport) {
+        self.report = report
+    }
+
+    public var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {

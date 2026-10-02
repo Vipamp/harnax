@@ -7,9 +7,10 @@ import HarnaxKit
 ///
 /// Two reads, and each has its own cadence — that asymmetry is the shape of this class:
 ///
-/// - `current-plan` re-reads every 2 s, and *only* while the panel is open, the current plan is expanded and a
-///   current plan exists (`ChatWindow.tsx:649-669`, armed on `enablePlan && currentPlanExpanded && currentPlan`).
-///   Any one of the three drops out and the loop retires itself;
+/// - `current-plan` re-reads every 2 s, and *only* while a plan is open, expanded, the switch is on, and either
+///   the drawer is out or a conversation is following it (`ChatWindow.tsx:649-669`, armed on `enablePlan &&
+///   currentPlanExpanded && currentPlan` — never on `showPlanPanel`, because the reading feeds the card in the
+///   message stream as much as the drawer). Any one of those drops out and the loop retires itself;
 /// - the history never re-reads on a timer. Its 5 s `plansListTimerRef` is declared and never started
 ///   (`ChatWindow.tsx:603`, `:2651-2669`), so this class only reads it on open and on an explicit manual refresh.
 ///   The console's own dead timer is reproduced rather than "improved".
@@ -58,6 +59,22 @@ public final class PlanPanelViewModel: ObservableObject {
         didSet { if isEnabled != oldValue { poll.sync() } }
     }
 
+    /// Whether a conversation screen is following this plan right now.
+    ///
+    /// The console never gated the poll on its drawer: the timer's guard is `enablePlan && currentPlanExpanded
+    /// && currentPlan` (`ChatWindow.tsx:649-669`), because the card the reading feeds sits in the message stream
+    /// (`:2479-2585`), not in the drawer. This flag is the difference between "a chat screen is on this
+    /// conversation" and "somebody mounted the panel and walked away from it".
+    public private(set) var isFollowing = false
+
+    /// The conversation screen's hook: a reading that put a different plan on the panel than was there before,
+    /// told to whoever is drawing the inline card.
+    ///
+    /// A callback rather than a published value the screen watches, because the rule that matters is *changed*:
+    /// a poll that answers the same plan again must not rewrite the stream, and the plan going away must leave the
+    /// card on screen (`:2576-2584`) — so a `nil` here is news of its own, and the listener decides to ignore it.
+    @MainActor public var onCurrentPlanRead: ((PlanNote?) -> Void)?
+
     private let sessionId: String
     private let reading: any PlanReading
     /// The console's `planRefreshTimerRef` cadence (`ChatWindow.tsx:602`), a test seam like every other screen's.
@@ -85,10 +102,10 @@ public final class PlanPanelViewModel: ObservableObject {
 
     // MARK: - the cadence rule
 
-    /// All three conditions at once, because the console's effect guard is all three at once. A session with no
-    /// plan open asks no questions about a plan.
+    /// All of the console's guards at once, because its effect guard is all of them at once. A session with no
+    /// plan open asks no questions about a plan, and neither does a screen that has stopped following one.
     public var nextInterval: Duration? {
-        guard isOpen, isEnabled, isCurrentPlanExpanded, current != nil else { return nil }
+        guard isOpen || isFollowing, isEnabled, isCurrentPlanExpanded, current != nil else { return nil }
         return pollInterval
     }
 
@@ -106,11 +123,48 @@ public final class PlanPanelViewModel: ObservableObject {
         await reload()
     }
 
-    /// Closing the drawer. The data stays so a reopen does not flash an empty panel, and the loop goes with the
-    /// panel rather than with the screen.
+    /// Closing the drawer. The data stays so a reopen does not flash an empty panel, and the loop is *re-synced*
+    /// rather than cut: a conversation still following this plan is watching the card in its own message stream,
+    /// and `ChatWindow.tsx:649-669` never had the drawer in its guard. With nothing following, the sync retires
+    /// the loop, which is `handleTogglePlanPanel`'s else-branch.
     public func close() {
         isOpen = false
-        poll.cancel()
+        poll.sync()
+    }
+
+    // MARK: - following the plan
+
+    /// A conversation screen has this plan's card on screen and wants it kept current: read it once, now, and arm
+    /// the loop for as long as the follow lasts (`ChatWindow.tsx:1503`, where the plan call starts the load, and
+    /// `:642-646`, where an open switch does).
+    ///
+    /// Idempotent, because the chat screen calls this on a frame *and* on the switch arriving from the config
+    /// read: a follow already running asks nothing.
+    public func startFollowing() async {
+        guard !isFollowing else { return }
+        isFollowing = true
+        // `reporting: false`: a follow that fails has nothing on screen to spoil, and an error band on a panel
+        // the user did not open is not theirs to read. `loadCurrent` re-syncs the loop off whatever came back.
+        await loadCurrent(reporting: false)
+    }
+
+    /// The conversation stopped caring: the switch went off, the screen went away, or it moved on to another
+    /// session. The data stays for the drawer, and the loop goes with the follow.
+    public func stopFollowing() {
+        guard isFollowing else { return }
+        isFollowing = false
+        poll.sync()
+    }
+
+    /// `plan_exit` came back (`ChatWindow.tsx:1587-1590`): the plan is over, so the card stops being followed and
+    /// the loop retires. What is already drawn stays drawn — in the drawer and in the stream alike.
+    ///
+    /// The follow flag goes too, which is what lets the next `plan_write` reach `startFollowing()` again rather
+    /// than finding itself guarded out by one that has finished.
+    public func exitCurrentPlan() {
+        isFollowing = false
+        current = nil
+        settle()
     }
 
     /// `common.retry` on a panel that failed before it had anything to show: both reads again, in full.
@@ -175,7 +229,14 @@ public final class PlanPanelViewModel: ObservableObject {
         switch await reading.currentPlan(sessionId: sessionId) {
         case let .success(plan):
             // The name is the validity flag, so an unnamed plan reads as no plan rather than as a blank card.
-            current = plan.valid ? plan.note : nil
+            let note = plan.valid ? plan.note : nil
+            // Only a *different* reading is news: the poll answers the same plan again every 2 s while the run
+            // works on it, and the card in the stream has no reason to be rewritten for that. A plan that went
+            // away is a change too, and gets said — the listener decides to leave the card where it is
+            // (`ChatWindow.tsx:2576-2584`).
+            let changed = note != current
+            current = note
+            if changed { onCurrentPlanRead?(note) }
         case let .failure(error):
             guard reporting else { return }
             lastFailure = ErrorMessage.text(for: error)

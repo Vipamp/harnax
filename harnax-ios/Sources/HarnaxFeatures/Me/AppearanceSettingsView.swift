@@ -43,7 +43,9 @@ public struct AppearanceSettingsView: View {
                     divider: language != HarnaxLanguage.allCases.last,
                     trailing: {
                         if catalog.language == language {
-                            HXStatusDot(tone: .success)
+                            // Hue alone would leave the active catalogue unannounced, so the dot
+                            // says out loud which row is in use.
+                            HXStatusDot(tone: .success, label: hx("me.language.current"))
                         }
                     }
                 )

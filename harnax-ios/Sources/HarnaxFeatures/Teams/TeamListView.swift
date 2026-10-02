@@ -7,18 +7,34 @@ import HarnaxKit
 ///
 /// `GET /api/admin/teams/page` fills the lead's skills and the members per row, so the drill-down costs
 /// nothing extra.
+///
+/// The menu's Edit row and the toolbar's create button both open `TeamFormView`, in `.edit(row)` and `.create`.
+/// No row action here asks the account's permission first, because the console's team row asks none
+/// (`harnax-webui/src/pages/team/index.tsx:250`-`:295`).
 public struct TeamListView: View {
     @StateObject private var vm: TeamListViewModel
+    /// The wizard reads the model page, the skill repositories and the agent pool as well as teams, so the
+    /// screen takes the whole bag rather than the team slice.
+    private let dependencies: HarnaxDependencies
     private let refresher: any SessionRefreshing
     private let account: AccountSnapshot?
 
     @State private var drillDown: TeamSummary?
     @State private var refreshTarget: SessionRefreshTarget?
+    /// The wizard, in whichever mode opened it. A struct rather than the mode itself because `.edit` carries
+    /// no identity a `@State` flag could key on.
+    @State private var editor: Editor?
 
-    public init(teams: any TeamCataloging, sessionRefresher: any SessionRefreshing, account: AccountSnapshot?) {
-        _vm = StateObject(wrappedValue: TeamListViewModel(teams: teams))
-        self.refresher = sessionRefresher
+    public init(dependencies: HarnaxDependencies, account: AccountSnapshot?) {
+        _vm = StateObject(wrappedValue: TeamListViewModel(teams: dependencies.teams))
+        self.dependencies = dependencies
+        self.refresher = dependencies.sessionRefresher
         self.account = account
+    }
+
+    struct Editor: Identifiable {
+        let id = UUID()
+        let mode: TeamFormViewModel.Mode
     }
 
     public var body: some View {
@@ -26,6 +42,7 @@ public struct TeamListView: View {
             .harnaxScreen()
             .searchable(text: $vm.keyword, prompt: Text(verbatim: hx("team.search")))
             .toolbar {
+                ToolbarItem(placement: .primaryAction) { createButton }
                 ToolbarItem(placement: .primaryAction) { filterMenu }
             }
             .task {
@@ -33,6 +50,11 @@ public struct TeamListView: View {
             }
             .refreshable { await vm.refresh() }
             .sheet(item: $drillDown) { TeamBindingsSheet(team: $0) }
+            .sheet(item: $editor) { editor in
+                TeamFormView(dependencies: dependencies, mode: editor.mode, account: account) {
+                    Task { await vm.refresh() }
+                }
+            }
             .sheet(item: $refreshTarget) { target in
                 HXSessionRefreshSheet(target: target, refresher: refresher)
             }
@@ -60,21 +82,19 @@ public struct TeamListView: View {
             }
     }
 
+    /// The console's team page keeps a create button beside the search box
+    /// (`harnax-webui/src/pages/team/index.tsx:318`-`:320`); this app puts it in the toolbar as a `+`, because
+    /// every entity list here opens the same way and a text button would be the one place that does not.
+    private var createButton: some View {
+        HXPlusButton(titleKey: "team.create") { editor = Editor(mode: .create) }
+    }
+
     private var filterMenu: some View {
-        Menu {
-            ForEach(StatusFilter.allCases) { option in
-                Button {
-                    vm.filter = option
-                } label: {
-                    HStack {
-                        HXText(option.titleKey)
-                        if vm.filter == option { Image(systemName: "checkmark") }
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: vm.filter == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-        }
+        HXFilterMenu(
+            isFiltering: vm.filter != .all,
+            accessibilityLabel: hx("state.filter.status"),
+            choices: statusFilterChoices(vm.filter) { vm.filter = $0 }
+        )
     }
 
     @ViewBuilder
@@ -110,8 +130,8 @@ public struct TeamListView: View {
                         enabled: vm.status(of: team),
                         isPending: team.id.flatMap(vm.pendingIDs.contains) ?? false,
                         isChecking: team.id == vm.deleteTarget?.team.id && vm.isCheckingDelete,
-                        canManage: (account?.canManage(creator: team.creator)) ?? false,
                         onToggle: { value in Task { await vm.setStatus(value, for: team) } },
+                        onEdit: { editor = Editor(mode: .edit(team)) },
                         onDrillDown: { drillDown = team },
                         onRefresh: { refreshTarget = vm.refreshTarget(for: team) },
                         onDelete: { Task { await vm.requestDelete(team) } }
@@ -137,8 +157,8 @@ struct TeamRecordCard: View {
     let isPending: Bool
     /// The pre-flight read is on the wire, so the row shows progress instead of looking inert.
     let isChecking: Bool
-    let canManage: Bool
     let onToggle: (Bool) -> Void
+    let onEdit: () -> Void
     let onDrillDown: () -> Void
     let onRefresh: () -> Void
     let onDelete: () -> Void
@@ -223,21 +243,25 @@ struct TeamRecordCard: View {
             Button { onToggle(!enabled) } label: {
                 HXText(enabled ? "state.action.disable" : "state.action.enable")
             }
-            .disabled(!canManage || isPending)
+            // The console's row carries no permission check on any of these three (`harnax-webui/src/pages/
+            // team/index.tsx:250`-`:295` renders a bare `StatusSwitch` and always both Edit and Delete), so the
+            // only thing that may hold a row inert here is the row's own write being on the wire.
+            .disabled(isPending)
+
+            Button(action: onEdit) { HXText("state.action.edit") }
 
             Button(action: onRefresh) { HXText("state.action.refresh") }
 
-            if canManage {
-                Button(role: .destructive, action: onDelete) {
-                    HXText(isChecking ? "state.delete.checking" : "state.action.delete")
-                }
-                .disabled(isChecking)
+            Button(role: .destructive, action: onDelete) {
+                HXText(isChecking ? "state.delete.checking" : "state.action.delete")
             }
+            .disabled(isChecking)
         } label: {
             Image(systemName: isPending || isChecking ? "hourglass" : "ellipsis")
                 .foregroundStyle(Color.hx(.textTertiary))
                 .frame(width: 30, height: 30)
                 .background(Color.hx(.surfaceAlt), in: Circle())
         }
+        .accessibilityLabel(hx("state.action.more"))
     }
 }

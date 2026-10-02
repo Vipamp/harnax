@@ -407,6 +407,410 @@ final class TokenMonitorViewModelTests: XCTestCase {
         }
     }
 
+    // MARK: - the interactive legend
+
+    /// Three models of a window that holds a million, so every slice has a distinct share of it.
+    private func threeModels() -> [TokenModelStat] {
+        [
+            TokenStub.model("qwen-max", id: 1, total: 500_000),
+            TokenStub.model("gpt-4o", id: 2, total: 300_000),
+            TokenStub.model("claude", id: 3, total: 200_000),
+        ]
+    }
+
+    func testASwitchedOffSliceLeavesTheOtherRowsSharesAndTheSevenNumbersAlone() async {
+        let (vm, catalog) = viewModel()
+        catalog.aggregationReplies = [.success(TokenStub.payload(
+            total: 1_000_000, models: 3, modelRows: threeModels()
+        ))]
+        await vm.refresh()
+        XCTAssertEqual(vm.modelSlices.map(\.share), ["50.0%", "30.0%", "20.0%"])
+
+        vm.toggleLegend("0-qwen-max", in: .modelPie)
+
+        let drawn = vm.visibleSlices(vm.modelSlices, in: .modelPie)
+        XCTAssertEqual(drawn.map(\.id), ["1-gpt-4o", "2-claude"])
+        // The percentages keep the window as their denominator: a hidden row is still a row the server counted,
+        // so switching one off restates only the ring, never the numbers beside it (`index.tsx:275-281`).
+        XCTAssertEqual(drawn.map(\.share), ["30.0%", "20.0%"])
+        XCTAssertEqual(vm.card(.total)?.value, "1.00M")
+        XCTAssertTrue(vm.isHidden("0-qwen-max", in: .modelPie))
+    }
+
+    func testSwitchingTheSameEntryBackDrawsEveryRowAgain() async {
+        let (vm, catalog) = viewModel()
+        catalog.aggregationReplies = [.success(TokenStub.payload(
+            total: 1_000_000, models: 3, modelRows: threeModels()
+        ))]
+        await vm.refresh()
+
+        vm.toggleLegend("1-gpt-4o", in: .modelPie)
+        XCTAssertEqual(vm.visibleSlices(vm.modelSlices, in: .modelPie).count, 2)
+        vm.toggleLegend("1-gpt-4o", in: .modelPie)
+
+        XCTAssertFalse(vm.isHidden("1-gpt-4o", in: .modelPie))
+        XCTAssertEqual(vm.visibleSlices(vm.modelSlices, in: .modelPie).count, 3)
+        XCTAssertEqual(vm.modelSlices.count, 3, "the row was never dropped from the reply, only from the ring")
+    }
+
+    func testTheThreeDonutsDoNotShareOneSwitchedOffEntryEvenOnTheSameName() async {
+        let (vm, catalog) = viewModel()
+        // A model and an agent can be named the same thing, and both are the first row of their own list, so both
+        // slices carry the id `0-同名`. Muting the pie being read must not mute the pie beside it.
+        catalog.aggregationReplies = [.success(TokenStub.payload(
+            total: 1_000_000,
+            agents: 1,
+            models: 1,
+            modelRows: [TokenStub.model("同名", id: 1, total: 400_000)],
+            agentRows: [TokenStub.agent("同名", id: 7, total: 600_000)]
+        ))]
+        await vm.refresh()
+        XCTAssertEqual(vm.modelSlices.first?.id, "0-同名")
+        XCTAssertEqual(vm.agentSlices.first?.id, "0-同名")
+
+        vm.toggleLegend("0-同名", in: .modelPie)
+
+        XCTAssertTrue(vm.visibleSlices(vm.modelSlices, in: .modelPie).isEmpty)
+        XCTAssertEqual(vm.visibleSlices(vm.agentSlices, in: .agentPie).count, 1)
+        XCTAssertTrue(vm.visibleSlices(vm.sessionSlices, in: .sessionPie).isEmpty)
+        XCTAssertFalse(vm.isHidden("0-同名", in: .agentPie))
+    }
+
+    func testASwitchedOffLineIsGoneFromItsOwnChartOnly() async {
+        let (vm, catalog) = viewModel()
+        queue(catalog, .modelTrend, TokenStub.series(named: "qwen-max", [100, 200]))
+        queue(catalog, .agentTrend, TokenStub.series(named: "qwen-max", [50, 60]))
+        await vm.refresh()
+
+        vm.toggleLegend("qwen-max", in: .modelTrend)
+
+        XCTAssertTrue(vm.visibleSeries(vm.modelSeries, in: .modelTrend).isEmpty)
+        XCTAssertEqual(vm.visibleSeries(vm.agentSeries, in: .agentTrend).count, 1)
+        // The series is still what the route answered — the toggle is a reading aid, not a filter.
+        XCTAssertEqual(vm.modelSeries.count, 1)
+    }
+
+    func testAToggleOnItsOwnCostsNoRequest() async {
+        let (vm, catalog) = viewModel()
+        queueEverywhere(catalog)
+        catalog.aggregationReplies = [.success(TokenStub.payload(
+            total: 1_000_000, models: 3, modelRows: threeModels()
+        ))]
+        await vm.refresh()
+
+        let before = catalog.totalRequestCount
+        vm.toggleLegend("0-qwen-max", in: .modelPie)
+        vm.toggleLegend("input", in: .overallTrend)
+
+        XCTAssertEqual(catalog.totalRequestCount, before)
+        XCTAssertEqual(vm.state(for: .aggregate), .loaded)
+        XCTAssertEqual(vm.state(for: .trend), .loaded)
+    }
+
+    func testAWindowReloadRetiresTheEntriesSwitchedOffWithTheRowsTheyNamed() async throws {
+        let (vm, catalog) = viewModel()
+        queueEverywhere(catalog, rounds: 2)
+        catalog.aggregationReplies = [
+            .success(TokenStub.payload(total: 1_000_000, models: 3, modelRows: threeModels())),
+            .success(TokenStub.payload(total: 900_000, models: 1, modelRows: [
+                TokenStub.model("glm-4", id: 9, total: 900_000)
+            ])),
+        ]
+        await vm.refresh()
+        vm.toggleLegend("0-qwen-max", in: .modelPie)
+        XCTAssertEqual(vm.visibleSlices(vm.modelSlices, in: .modelPie).count, 2)
+
+        vm.range = .thirtyDays
+        try await waitUntil { catalog.requestCount(for: .aggregate) == 2 }
+        try await waitUntil { vm.modelSlices.count == 1 }
+
+        // The newer reply's row zero is a different model, and the older id would silently mute it.
+        XCTAssertTrue(vm.hiddenIDs[.modelPie]?.isEmpty ?? true)
+        XCTAssertEqual(vm.visibleSlices(vm.modelSlices, in: .modelPie).map(\.id), ["0-glm-4"])
+    }
+
+    func testABucketChangeRetiresTheLineTogglesAndKeepsTheDonutOnes() async throws {
+        let (vm, catalog) = viewModel()
+        queueEverywhere(catalog, rounds: 2, chartRows: TokenStub.series(named: "qwen-max", [100]))
+        catalog.aggregationReplies = [.success(TokenStub.payload(
+            total: 1_000_000, models: 3, modelRows: threeModels()
+        ))]
+        await vm.refresh()
+        vm.toggleLegend("0-qwen-max", in: .modelPie)
+        vm.toggleLegend("qwen-max", in: .modelTrend)
+
+        vm.granularity = .week
+        try await waitUntil { catalog.requestCount(for: .modelTrend) == 2 }
+
+        // `/aggregation` was never re-asked, so the pie still holds the same rows and the same toggle still
+        // means the same row (`TokenStatsController.kt:41-49`).
+        XCTAssertTrue(vm.isHidden("0-qwen-max", in: .modelPie))
+        XCTAssertEqual(vm.visibleSlices(vm.modelSlices, in: .modelPie).count, 2)
+        XCTAssertTrue(vm.hiddenIDs[.modelTrend]?.isEmpty ?? true)
+        XCTAssertFalse(vm.isHidden("qwen-max", in: .modelTrend))
+    }
+
+    func testAMeasureSwitchKeepsTheEntriesSwitchedOff() async {
+        let (vm, catalog) = viewModel()
+        catalog.aggregationReplies = [.success(TokenStub.payload(
+            total: 1_000_000, fee: 20, models: 3,
+            modelRows: [
+                TokenStub.model("qwen-max", id: 1, total: 500_000, fee: 12),
+                TokenStub.model("gpt-4o", id: 2, total: 300_000, fee: 5),
+                TokenStub.model("claude", id: 3, total: 200_000, fee: 3),
+            ]
+        ))]
+        await vm.refresh()
+        vm.toggleLegend("0-qwen-max", in: .modelPie)
+
+        // The third filter redraws from the rows already in hand, so the ids — and the toggle on one of them —
+        // survive it.
+        vm.measure = .fee
+        XCTAssertTrue(vm.isHidden("0-qwen-max", in: .modelPie))
+        let drawn = vm.visibleSlices(vm.modelSlices, in: .modelPie)
+        XCTAssertEqual(drawn.map(\.value), ["¥5.00", "¥3.00"])
+        XCTAssertEqual(drawn.map(\.share), ["25.0%", "15.0%"])
+    }
+
+    func testEveryChartWithALegendIsOwnedByExactlyOneRead() {
+        XCTAssertEqual(TokenMonitorViewModel.LegendChart.allCases.count, 7)
+        for chart in [TokenMonitorViewModel.LegendChart.modelPie, .agentPie, .sessionPie] {
+            XCTAssertEqual(chart.block, .aggregate)
+        }
+        XCTAssertEqual(TokenMonitorViewModel.LegendChart.overallTrend.block, .trend)
+        for chart in [TokenMonitorViewModel.LegendChart.modelTrend, .agentTrend, .sessionTrend] {
+            XCTAssertEqual(chart.block.rawValue, chart.rawValue)
+        }
+    }
+
+    // MARK: - the drill-down
+
+    /// The ring's own geometry: `chartAngleSelection` reports the touched position as a running total of the
+    /// sector values, so the row is the one whose span on the ring holds it. Each model is read at an angle in
+    /// the middle of its own wedge, and the two edges of the whole ring are what decide whether a tap can fall
+    /// off the end.
+    func testTheAngleUnderAFingerPicksTheRowWhoseSpanItCrosses() async {
+        let (vm, catalog) = viewModel()
+        catalog.aggregationReplies = [.success(TokenStub.payload(
+            total: 1_000_000, models: 3, modelRows: threeModels()
+        ))]
+        await vm.refresh()
+
+        XCTAssertEqual(vm.slice(atAngle: 0, in: .modelPie)?.id, "0-qwen-max")
+        XCTAssertEqual(vm.slice(atAngle: 250_000, in: .modelPie)?.id, "0-qwen-max")
+        XCTAssertEqual(vm.slice(atAngle: 650_000, in: .modelPie)?.id, "1-gpt-4o")
+        XCTAssertEqual(vm.slice(atAngle: 900_000, in: .modelPie)?.id, "2-claude")
+        // The far edge of the last wedge is the window total, and a touch there is still that wedge.
+        XCTAssertEqual(vm.slice(atAngle: 1_000_000, in: .modelPie)?.id, "2-claude")
+        XCTAssertNil(vm.slice(atAngle: 1_000_001, in: .modelPie))
+        XCTAssertNil(vm.slice(atAngle: -1, in: .modelPie))
+    }
+
+    func testARowWithNothingToPlotTakesNoAngleSoATapSkipsIt() async {
+        let (vm, catalog) = viewModel()
+        // Under the fee measure a model with no fee draws no wedge at all, and the wedges beside it close up:
+        // the angle where it would have been belongs to the next row.
+        catalog.aggregationReplies = [.success(TokenStub.payload(
+            total: 1_000_000, fee: 15, models: 3,
+            modelRows: [
+                TokenStub.model("qwen-max", id: 1, total: 500_000, fee: 12),
+                TokenStub.model("gpt-4o", id: 2, total: 300_000, fee: 0),
+                TokenStub.model("claude", id: 3, total: 200_000, fee: 3),
+            ]
+        ))]
+        await vm.refresh()
+        vm.measure = .fee
+
+        XCTAssertEqual(vm.slice(atAngle: 6, in: .modelPie)?.id, "0-qwen-max")
+        XCTAssertEqual(vm.slice(atAngle: 13, in: .modelPie)?.id, "2-claude")
+        XCTAssertEqual(vm.slice(atAngle: 15, in: .modelPie)?.id, "2-claude")
+        XCTAssertNil(vm.slice(atAngle: 16, in: .modelPie))
+    }
+
+    func testASwitchedOffRowIsNotWhatATapPicksBecauseItsWedgeIsGone() async {
+        let (vm, catalog) = viewModel()
+        catalog.aggregationReplies = [.success(TokenStub.payload(
+            total: 1_000_000, models: 3, modelRows: threeModels()
+        ))]
+        await vm.refresh()
+
+        // 600 000 sits inside gpt-4o while the ring draws all three rows ...
+        XCTAssertEqual(vm.slice(atAngle: 600_000, in: .modelPie)?.id, "1-gpt-4o")
+
+        // ... and inside claude once gpt-4o is switched off, because the remaining wedges close up.
+        vm.toggleLegend("1-gpt-4o", in: .modelPie)
+        XCTAssertEqual(vm.slice(atAngle: 600_000, in: .modelPie)?.id, "2-claude")
+        XCTAssertNil(vm.slice(atAngle: 800_000, in: .modelPie))
+    }
+
+    func testTappingTheRowAlreadyOpenClosesItsPanel() async {
+        let (vm, catalog) = viewModel()
+        catalog.aggregationReplies = [.success(TokenStub.payload(
+            total: 1_000_000, models: 3, modelRows: threeModels()
+        ))]
+        await vm.refresh()
+        let second = vm.modelSlices[1]
+
+        vm.drill(second, in: .modelPie)
+        XCTAssertEqual(vm.drilledSlice(in: .modelPie)?.id, second.id)
+        vm.drill(second, in: .modelPie)
+        XCTAssertNil(vm.drilledSlice(in: .modelPie))
+    }
+
+    /// The point of the panel: the ring draws one column, and the tap resolves the other three out of the same
+    /// row the aggregation read already sent.
+    func testTheOpenedRowShowsItsOwnFourFiguresNotOnlyTheColumnTheRingDrew() async {
+        let (vm, catalog) = viewModel()
+        catalog.aggregationReplies = [.success(TokenStub.payload(
+            total: 1_000_000, fee: 20, models: 3,
+            modelRows: [TokenStub.model(
+                "qwen-max", id: 1, input: 300_000, output: 200_000, total: 500_000, fee: 12
+            )]
+        ))]
+        await vm.refresh()
+
+        vm.drill(vm.modelSlices[0], in: .modelPie)
+        guard let drilled = vm.drilledSlice(in: .modelPie) else { return XCTFail("no row opened") }
+        XCTAssertEqual(drilled.value, "500.00K", "the ring's own column")
+        XCTAssertEqual(drilled.share, "50.0%")
+        XCTAssertEqual(
+            [drilled.breakdown.input, drilled.breakdown.output, drilled.breakdown.total, drilled.breakdown.fee],
+            ["300.00K", "200.00K", "500.00K", "¥12.00"]
+        )
+
+        // Under the fee measure the wedge shrinks to the fee; the four figures underneath stay the same four.
+        vm.measure = .fee
+        XCTAssertEqual(vm.drilledSlice(in: .modelPie)?.value, "¥12.00")
+        XCTAssertEqual(vm.drilledSlice(in: .modelPie)?.breakdown.total, "500.00K")
+    }
+
+    func testAnOpenedRowBelongsToItsOwnDonutAlone() async {
+        let (vm, catalog) = viewModel()
+        catalog.aggregationReplies = [.success(TokenStub.payload(
+            total: 1_000_000,
+            agents: 1,
+            models: 1,
+            modelRows: [TokenStub.model("同名", id: 1, total: 400_000)],
+            agentRows: [TokenStub.agent("同名", id: 7, total: 600_000)]
+        ))]
+        await vm.refresh()
+
+        vm.drill(vm.modelSlices[0], in: .modelPie)
+
+        XCTAssertEqual(vm.drilledSlice(in: .modelPie)?.id, "0-同名")
+        XCTAssertNil(vm.drilledSlice(in: .agentPie))
+        XCTAssertNil(vm.drilledSlice(in: .sessionPie))
+    }
+
+    func testSwitchingAnOpenedRowOffTakesItsPanelWithIt() async {
+        let (vm, catalog) = viewModel()
+        catalog.aggregationReplies = [.success(TokenStub.payload(
+            total: 1_000_000, models: 3, modelRows: threeModels()
+        ))]
+        await vm.refresh()
+        vm.drill(vm.modelSlices[0], in: .modelPie)
+
+        vm.toggleLegend("0-qwen-max", in: .modelPie)
+
+        XCTAssertNil(vm.drilledSlice(in: .modelPie), "a row the ring no longer draws has no panel to keep open")
+        vm.toggleLegend("0-qwen-max", in: .modelPie)
+        XCTAssertNil(vm.drilledSlice(in: .modelPie), "and switching it back on does not reopen the old read")
+    }
+
+    // MARK: - the bucket readout
+
+    func testATappedBucketReadsOutEveryLineThatHasAPointThere() async {
+        let (vm, catalog) = viewModel()
+        queue(catalog, .modelTrend, [
+            TokenStub.point("2026-09-22 00:00:00", name: "qwen-max", total: 100, fee: 4),
+            TokenStub.point("2026-09-23 00:00:00", name: "qwen-max", total: 200, fee: 9),
+            TokenStub.point("2026-09-22 00:00:00", name: "gpt-4o", total: 10, fee: 1),
+            // gpt-4o has no 09-23 row at all: a dimension quiet that day contributes nothing to that bucket.
+        ])
+        await vm.refresh()
+
+        vm.pickBucket("2026-09-22 00:00:00", in: .modelTrend)
+        XCTAssertEqual(vm.readoutBucket(in: .modelTrend), "09-22")
+        XCTAssertEqual(vm.readings(in: .modelTrend).map(\.name), ["qwen-max", "gpt-4o"])
+        XCTAssertEqual(vm.readings(in: .modelTrend).map(\.value), ["100", "10"])
+
+        vm.measure = .fee
+        XCTAssertEqual(vm.readings(in: .modelTrend).map(\.value), ["¥4.00", "¥1.00"])
+        XCTAssertEqual(vm.readings(in: .modelTrend).map(\.slot), [.brand, .warning])
+
+        vm.pickBucket("2026-09-23 00:00:00", in: .modelTrend)
+        XCTAssertEqual(vm.readings(in: .modelTrend).map(\.name), ["qwen-max"])
+        XCTAssertEqual(vm.readings(in: .modelTrend).map(\.value), ["¥9.00"])
+    }
+
+    func testATapOnTheBucketAlreadyReadOutClosesTheReadout() async {
+        let (vm, catalog) = viewModel()
+        queue(catalog, .agentTrend, TokenStub.series(named: "翻译官", [100, 200]))
+        await vm.refresh()
+
+        vm.pickBucket("2026-09-22 00:00:00", in: .agentTrend)
+        XCTAssertFalse(vm.readings(in: .agentTrend).isEmpty)
+
+        vm.pickBucket("2026-09-22 00:00:00", in: .agentTrend)
+        XCTAssertNil(vm.readoutBucket(in: .agentTrend))
+        XCTAssertTrue(vm.readings(in: .agentTrend).isEmpty)
+    }
+
+    func testABucketChosenOnOneChartMarksNoOtherChart() async {
+        let (vm, catalog) = viewModel()
+        queue(catalog, .modelTrend, TokenStub.series(named: "qwen-max", [100]))
+        queue(catalog, .agentTrend, TokenStub.series(named: "翻译官", [100]))
+        await vm.refresh()
+
+        vm.pickBucket("2026-09-22 00:00:00", in: .modelTrend)
+
+        XCTAssertEqual(vm.readings(in: .modelTrend).count, 1)
+        XCTAssertTrue(vm.readings(in: .agentTrend).isEmpty)
+        XCTAssertNil(vm.readoutBucket(in: .agentTrend))
+        XCTAssertTrue(vm.readings(in: .overallTrend).isEmpty)
+    }
+
+    func testALineSwitchedOffIsAbsentFromTheReadoutItWasIn() async {
+        let (vm, catalog) = viewModel()
+        queue(catalog, .modelTrend, [
+            TokenStub.point("2026-09-22 00:00:00", name: "qwen-max", total: 100),
+            TokenStub.point("2026-09-22 00:00:00", name: "gpt-4o", total: 10),
+        ])
+        await vm.refresh()
+        vm.pickBucket("2026-09-22 00:00:00", in: .modelTrend)
+        XCTAssertEqual(vm.readings(in: .modelTrend).count, 2)
+
+        vm.toggleLegend("gpt-4o", in: .modelTrend)
+
+        XCTAssertEqual(vm.readings(in: .modelTrend).map(\.name), ["qwen-max"])
+    }
+
+    func testAReadoutForABucketTheNewReplyDoesNotHaveSaysNothing() async throws {
+        let (vm, catalog) = viewModel()
+        queueEverywhere(catalog, rounds: 2, chartRows: TokenStub.series(named: "qwen-max", [100]))
+        catalog.aggregationReplies = [
+            .success(TokenStub.payload(total: 1_000_000, models: 3, modelRows: threeModels())),
+            .success(TokenStub.payload(total: 900_000, models: 1, modelRows: [
+                TokenStub.model("glm-4", id: 9, total: 900_000)
+            ])),
+        ]
+        await vm.refresh()
+        vm.drill(vm.modelSlices[1], in: .modelPie)
+        vm.pickBucket("2026-09-22 00:00:00", in: .modelTrend)
+
+        vm.granularity = .week
+        try await waitUntil { catalog.requestCount(for: .modelTrend) == 2 }
+        vm.range = .thirtyDays
+        try await waitUntil { catalog.requestCount(for: .aggregate) == 2 }
+        try await waitUntil { vm.modelSlices.count == 1 }
+
+        // Both were read off the previous reply: the re-asked window has other rows and its own buckets, so the
+        // panel and the marker go with them rather than pointing at nothing.
+        XCTAssertNil(vm.drilledSlice(in: .modelPie))
+        XCTAssertNil(vm.readoutBucket(in: .modelTrend))
+        XCTAssertTrue(vm.readings(in: .modelTrend).isEmpty)
+    }
+
     // MARK: - plumbing
 
     private func waitUntil(_ condition: @escaping @MainActor () -> Bool) async throws {

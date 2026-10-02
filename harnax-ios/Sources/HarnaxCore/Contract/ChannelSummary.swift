@@ -119,6 +119,21 @@ public enum ChannelType: String, CaseIterable, Sendable {
     /// with one legal value (`CreateForm.tsx:254-267`, `UpdateForm.tsx:308-320`).
     public var hidesModePicker: Bool { self == .wechat }
 
+    /// O7 — whether the runtime can actually serve this type.
+    ///
+    /// Everything else about `http` looks legitimate: the backend accepts the code, it has a runnable mode
+    /// (`modes`) and a credential field (`fields(mode:)`), and the web console lists it as a plain option
+    /// (`harnax-webui/src/pages/channel/index.tsx:44-50`). What does not exist is a registered adaptor, so a
+    /// channel started from it only fails later with `no adaptor registered`
+    /// (`harnax-ios/specs/03-system-domain.md:54`). iOS decided that an operator should not fill a whole form
+    /// to learn that: the option stays visible, carries a not-supported marker resolved from a catalogue key,
+    /// and takes no submit (`harnax-ios/DESIGN.md` §15 O7).
+    ///
+    /// This is a rule about writes only. A row the server already holds with this type stays listed and stays
+    /// openable for reading, which is why the form's guard reads it rather than the type being dropped from
+    /// `allCases`.
+    public var hasRuntimeAdaptor: Bool { self != .http }
+
     /// The credential fields this type/mode pair owns, with the label the platform's own console uses.
     ///
     /// `appId` means "Bot ID" on WeCom and "App Key" on DingTalk, which is why the labels hang off the pair

@@ -2,7 +2,7 @@ import Foundation
 import HarnaxCore
 
 /// One double per tab a test never opens: `UnwiredCatalogs` for the five context catalogs and the scheduled
-/// tasks, `UnwiredChat` for the nine conversation dependencies, `UnwiredSystem` for the four system catalogs
+/// tasks, `UnwiredChat` for the ten conversation dependencies, `UnwiredSystem` for the four system catalogs
 /// and `UnwiredSaving` for the two agent and team forms.
 ///
 /// `AppModelTests` builds a `HarnaxDependencies` to exercise restore, login and the tab bar; the catalogs
@@ -59,8 +59,11 @@ struct UnwiredCatalogs: ModelCataloging, ToolCataloging, SkillCataloging, McpCat
     func modelPage(
         providerID: Int64,
         name: String?,
+        modelType: String?,
         status: Int?,
         tags: [String],
+        minPrice: Double?,
+        maxPrice: Double?,
         num: Int,
         size: Int
     ) async -> Result<Page<ModelSummary>, APIError> { .failure(unwired()) }
@@ -78,12 +81,7 @@ struct UnwiredCatalogs: ModelCataloging, ToolCataloging, SkillCataloging, McpCat
 
     // MARK: - tools
 
-    func toolPage(
-        keyword: String?,
-        status: Int?,
-        num: Int,
-        size: Int
-    ) async -> Result<Page<ToolSummary>, APIError> { .failure(unwired()) }
+    func builtinTools() async -> Result<[ToolSummary], APIError> { .failure(unwired()) }
 
     func toolDetail(id: Int64) async -> Result<ToolSummary, APIError> { .failure(unwired()) }
 
@@ -168,6 +166,17 @@ struct UnwiredCatalogs: ModelCataloging, ToolCataloging, SkillCataloging, McpCat
 
     func mcpTools(id: Int64) async -> Result<[McpToolRow], APIError> { .failure(unwired()) }
 
+    func discoverMcpOAuth(id: Int64) async -> Result<McpOAuthDiscovery, APIError> { .failure(unwired()) }
+
+    func saveOAuthClient(
+        id: Int64,
+        _ draft: McpOAuthClientDraft
+    ) async -> Result<McpOAuthDiscovery, APIError> { .failure(unwired()) }
+
+    func exchangeOAuthCode(
+        _ draft: McpOAuthExchangeDraft
+    ) async -> Result<McpOAuthExchangeOutcome, APIError> { .failure(unwired()) }
+
     func mcpOAuthStatus(id: Int64) async -> Result<McpOAuthStatus, APIError> { .failure(unwired()) }
 
     func revokeMcpOAuth(id: Int64) async -> Result<McpOAuthRevokeResult, APIError> { .failure(unwired()) }
@@ -242,7 +251,7 @@ struct UnwiredCatalogs: ModelCataloging, ToolCataloging, SkillCataloging, McpCat
 /// Same rule as `UnwiredCatalogs`: every method fails, so a screen reaching this object in a test shows up as
 /// a failing call rather than as a list or a stream that quietly renders nothing.
 struct UnwiredChat: SessionCataloging, ChatHistoryReading, AgentCommanding, AgentStreaming, SessionCreating,
-    SessionConfiguring, SessionWorkspaceReading, TeamArtifactReading, PlanReading {
+    SessionConfiguring, SessionWorkspaceReading, TeamArtifactReading, PlanReading, ExecutorReading {
     private func unwired() -> APIError {
         .business(code: -1, message: "this test never wires the chat tab")
     }
@@ -292,6 +301,12 @@ struct UnwiredChat: SessionCataloging, ChatHistoryReading, AgentCommanding, Agen
         sessionId: String,
         _ change: SessionChatChange
     ) async -> Result<EmptyResponse, APIError> { .failure(unwired()) }
+
+    // MARK: - the executor's own row
+
+    func agent(id: Int64) async -> Result<AgentSummary, APIError> { .failure(unwired()) }
+
+    func team(id: Int64) async -> Result<TeamSummary, APIError> { .failure(unwired()) }
 
     // MARK: - workspace
 

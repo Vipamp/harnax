@@ -25,12 +25,21 @@ final class FakeClis: CliCataloging, @unchecked Sendable {
     var gateRelatedAgents = false
 
     private var parked: [() -> Void] = []
+    private var parkedWrites: [() -> Void] = []
 
     private(set) var relatedSessionRequests: [Int64] = []
     var relatedSessionsReply: Result<[RelatedSession], APIError> = .success([])
 
     private(set) var statusCalls: [(id: Int64, enabled: Bool)] = []
     var statusReplies: [Result<EmptyResponse, APIError>] = []
+
+    /// The switch's own POST is parkable, so a second tap can be thrown while the first is still out
+    /// (`RowWriteReentryTests`).
+    var gateWrites = false
+
+    /// The page read is parkable: an append has to be able to stay in flight while the reader changes the
+    /// query (`ListAppendIdentityTests`).
+    let pageGate = PageReadGate<Result<Page<CliSummary>, APIError>>()
 
     /// Queues one page answer for every test that only needs rows on screen.
     func seedPage(_ records: [[String: Any]], total: Int? = nil) throws {
@@ -40,7 +49,7 @@ final class FakeClis: CliCataloging, @unchecked Sendable {
     func cliPage(name: String?, status: Int?, num: Int, size: Int) async -> Result<Page<CliSummary>, APIError> {
         requests.append((num: num, size: size))
         filters.append((name: name, status: status))
-        return replies.isEmpty ? .failure(.decoding) : replies.removeFirst()
+        return await pageGate.absorb(replies.isEmpty ? .failure(.decoding) : replies.removeFirst())
     }
 
     func cliDetail(id: Int64) async -> Result<CliSummary, APIError> {
@@ -70,7 +79,21 @@ final class FakeClis: CliCataloging, @unchecked Sendable {
 
     func setCliStatus(id: Int64, enabled: Bool) async -> Result<EmptyResponse, APIError> {
         statusCalls.append((id: id, enabled: enabled))
-        return statusReplies.isEmpty ? .success(EmptyResponse()) : statusReplies.removeFirst()
+        guard gateWrites else { return nextStatusReply() }
+        return await withCheckedContinuation { continuation in
+            parkedWrites.append { continuation.resume(returning: self.nextStatusReply()) }
+        }
+    }
+
+    /// Runs every parked write in the order it went out, each pulling its own next reply.
+    func releaseWrites() {
+        let waiting = parkedWrites
+        parkedWrites = []
+        for resume in waiting { resume() }
+    }
+
+    private func nextStatusReply() -> Result<EmptyResponse, APIError> {
+        statusReplies.isEmpty ? .success(EmptyResponse()) : statusReplies.removeFirst()
     }
 }
 

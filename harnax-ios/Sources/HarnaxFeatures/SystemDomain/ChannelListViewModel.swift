@@ -58,6 +58,9 @@ public final class ChannelListViewModel: ObservableObject {
     private var refreshGeneration = 0
     private var isRefreshing = false
     private var rerunRequested = false
+    /// An append asked for while a refresh is on the wire is remembered, not dropped — see
+    /// `AgentListViewModel`.
+    private var appendRequested = false
     /// Bumped by every page load so a slow sandbox answer cannot overwrite a newer page's rows.
     private var sandboxGeneration = 0
 
@@ -73,6 +76,14 @@ public final class ChannelListViewModel: ObservableObject {
 
     public func sandboxStatus(of row: ChannelSummary) -> SandboxStatus {
         SandboxStatus(from: row.sessionId.flatMap { sandboxStates[$0] })
+    }
+
+    /// What this row may claim about its sandbox.
+    ///
+    /// Three states and not one: `sandboxStatus(of:)` cannot tell "there is no session to ask about" from
+    /// "the runtime has not answered", and the row used to wear the same warning capsule for both.
+    public func sandboxLight(of row: ChannelSummary) -> ChannelSandboxLight {
+        ChannelSandboxLight(sessionId: row.sessionId, status: sandboxStatus(of: row))
     }
 
     public var isFiltered: Bool {
@@ -112,6 +123,7 @@ public final class ChannelListViewModel: ObservableObject {
             statusOverrides = statusOverrides.filter { pendingIDs.contains($0.key) }
             apply()
             await loadSandboxStatuses()
+            await reissueAppend()
         case let .failure(error):
             guard generation == refreshGeneration else { return }
             let text = ErrorMessage.text(for: error)
@@ -125,6 +137,18 @@ public final class ChannelListViewModel: ObservableObject {
 
     public func loadMore() async {
         guard canLoadMore, !isAppending else { return }
+        guard !isRefreshing else {
+            appendRequested = true
+            return
+        }
+        await runAppend()
+    }
+
+    /// The tail read, under the identity of the query that was on screen when the scroll happened, as
+    /// `AgentListViewModel` documents it. The guard sits in front of the sandbox read too: a retired page must
+    /// not so much as ask the runtime about rows that never landed here.
+    private func runAppend() async {
+        let generation = refreshGeneration
         isAppending = true
         defer { isAppending = false }
         switch await catalog.channelPage(
@@ -135,13 +159,21 @@ public final class ChannelListViewModel: ObservableObject {
             size: pages.pageSize
         ) {
         case let .success(page):
+            guard generation == refreshGeneration else { return }
             inlineError = nil
             pages.append(with: page)
             apply()
             await loadSandboxStatuses()
         case let .failure(error):
+            guard generation == refreshGeneration else { return }
             inlineError = ErrorMessage.text(for: error)
         }
+    }
+
+    private func reissueAppend() async {
+        guard appendRequested, canLoadMore, !isAppending else { return }
+        appendRequested = false
+        await runAppend()
     }
 
     /// Optimistic: the toggle answers `ResultVo<Void>` and no pre-flight runs server-side
@@ -151,6 +183,7 @@ public final class ChannelListViewModel: ObservableObject {
     /// console lists the channel. It does not disconnect a live listener.
     public func setStatus(_ running: Bool, for row: ChannelSummary) async {
         guard let id = row.id else { return }
+        guard !pendingIDs.contains(id) else { return }
         statusOverrides[id] = running
         pendingIDs.insert(id)
         defer { pendingIDs.remove(id) }
@@ -211,6 +244,65 @@ public final class ChannelListViewModel: ObservableObject {
         canLoadMore = pages.hasMore
         phase = pages.isEmpty ? .empty : .content
     }
+}
+
+/// What a channel row is allowed to say about its sandbox.
+///
+/// The web console splits this three ways and iOS now follows
+/// (`harnax-webui/src/pages/channel/index.tsx:317-327`): no `sessionId` prints a bare `-`, a session the
+/// status map does not answer for prints a default-coloured `-`, and only a real answer gets a coloured tag.
+/// The two "no answer" branches used to be one `.unknown` here, and the row painted it warning — so every
+/// session-less channel, which is a normal configuration and not a fault, wore the same capsule as a
+/// sandbox the runtime refused to describe.
+///
+/// The status lookup itself is unchanged: `SandboxStatus` is still the runtime's three-value answer, and
+/// this type is what a *row* makes of it given whether it even has a session to look up.
+public enum ChannelSandboxLight: Equatable, Sendable {
+    /// No session id: there is nothing to ask the runtime about, so the row shows no capsule at all.
+    ///
+    /// Not a `-` in a pill: an empty capsule on this screen reads as a rendering failure rather than as a
+    /// deliberate blank (`ChannelListView.swift`'s own comment on the type column).
+    case noSession
+    /// A session exists and the bulk lookup has not answered — in flight, refused, or silent about this id.
+    case unanswered
+    case running
+    case idle
+
+    public init(sessionId: String?, status: SandboxStatus) {
+        guard hxPresented(sessionId) != nil else {
+            self = .noSession
+            return
+        }
+        switch status {
+        case .running: self = .running
+        case .idle: self = .idle
+        case .unknown: self = .unanswered
+        }
+    }
+
+    /// `nil` is the row's instruction to draw nothing, which is why the capsule is conditional rather than
+    /// always present with some fallback word.
+    public var labelKey: String? {
+        switch self {
+        case .noSession: nil
+        case .unanswered: "channel.sandbox.unknown"
+        case .running: "channel.sandbox.running"
+        case .idle: "channel.sandbox.idle"
+        }
+    }
+
+    /// Neutral for "asked, nothing came back": the console gives that branch its default tag, and a warning
+    /// slot on a row that merely has no session yet tells the operator something is broken when nothing is.
+    public var tone: PaletteSlot? {
+        switch self {
+        case .noSession: nil
+        case .unanswered: .textTertiary
+        case .running: .success
+        case .idle: .textTertiary
+        }
+    }
+
+    public var showsCapsule: Bool { labelKey != nil }
 }
 
 /// The type menu's options. `all` sends no `type` parameter at all; a picked type sends its exact lower-case

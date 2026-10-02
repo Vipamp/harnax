@@ -19,8 +19,10 @@ public struct ChatTabView: View {
         SessionListView(
             sessions: dependencies.sessions,
             creating: dependencies.sessionCreate,
+            config: dependencies.sessionConfig,
             workspace: dependencies.workspace,
-            teamArtifacts: dependencies.teamArtifacts
+            teamArtifacts: dependencies.teamArtifacts,
+            executor: dependencies.executor
         ) { conversation in
             open = conversation
         }

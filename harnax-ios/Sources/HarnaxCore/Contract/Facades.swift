@@ -45,7 +45,8 @@ public struct AccountSnapshot: Codable, Equatable, Sendable {
     }
 
     /// Cold restore has no login response to read, so the identity card is filled from `me`. That payload
-    /// answers no tenant fields at all — `mergingWith` folds the cached ones back in.
+    /// answers a tenant id and no tenant name (`AuthController.kt:121`); `mergingWith` folds the cached fields
+    /// back in for the keys it leaves out.
     public static func live(from me: MeInfo) -> AccountSnapshot {
         AccountSnapshot(
             username: me.username ?? "",
@@ -68,22 +69,25 @@ public struct AccountSnapshot: Codable, Equatable, Sendable {
         return try? JSONDecoder().decode(AccountSnapshot.self, from: data)
     }
 
-    /// Fills the fields `me` does not answer with — the tenant has no key there at all, and an omitted
-    /// username would otherwise blank the card after one refresh.
+    /// Fills the fields `me` does not answer with — no name among them, and an omitted username would
+    /// otherwise blank the card after one refresh. The one exception is the tenant *name*: `me` answers a tenant
+    /// id (`AuthController.kt:121`) and no name, so when that id is not the cached one, the label beside it
+    /// belongs to a workspace the session has left and has to go rather than misname the new one.
     public func mergingWith(_ previous: AccountSnapshot?) -> AccountSnapshot {
         guard let previous else { return self }
+        let tenantMoved = tenantID != nil && tenantID != previous.tenantID
         return AccountSnapshot(
             username: username.isEmpty ? previous.username : username,
             nickname: nickname ?? previous.nickname,
             email: email ?? previous.email,
             tenantID: tenantID ?? previous.tenantID,
-            tenantName: tenantName ?? previous.tenantName,
+            tenantName: tenantMoved ? nil : tenantName ?? previous.tenantName,
             isAdministrator: isAdministrator
         )
     }
 
-    /// The card follows the token: after a switch the session's tenant is the chosen row, and `me` answers
-    /// no tenant fields at all, so nothing else would ever correct these two.
+    /// The card follows the token: after a switch the session's tenant is the chosen row, and `me` answers no
+    /// name for it, so a label for the new tenant exists only because this wrote one.
     public func withTenant(id: Int64, name: String?) -> AccountSnapshot {
         AccountSnapshot(
             username: username,
@@ -162,9 +166,12 @@ public protocol AuthFlowing: Sendable {
 
 /// Everything the agent card screen does, read and write.
 ///
-/// There is no per-row detail call: `GET /api/admin/agents/page` already fills the four binding lists and
-/// the session list for each row (`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AgentServiceImpl.kt:265-395`),
-/// which is where the card, its drill-down sheets and a later edit form all read from.
+/// The card screen needs no per-row detail call: `GET /api/admin/agents/page` already fills the four binding
+/// lists and the session list for each row
+/// (`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AgentServiceImpl.kt:265-395`),
+/// which is where the card, its drill-down sheets and a later edit form all read from. The one screen that
+/// does ask for the row by id is a conversation's detail sheet, and it reads through `ExecutorReading`
+/// rather than through this contract (`harnax-ios/Sources/HarnaxCore/Contract/ExecutorReading.swift`).
 ///
 /// `name` is a keyword the backend matches with `LIKE`, `status` the raw 0/1 flag; both are optional
 /// (`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/AgentController.kt:36-55`).

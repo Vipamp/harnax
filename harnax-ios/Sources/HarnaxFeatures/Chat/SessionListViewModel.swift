@@ -66,6 +66,9 @@ public final class SessionListViewModel: ObservableObject {
     private var refreshGeneration = 0
     private var isRefreshing = false
     private var rerunRequested = false
+    /// An append asked for while a refresh is on the wire is remembered, not dropped — see
+    /// `AgentListViewModel`.
+    private var appendRequested = false
 
     public init(sessions: any SessionCataloging, pageSize: Int = 20) {
         self.sessions = sessions
@@ -129,6 +132,7 @@ public final class SessionListViewModel: ObservableObject {
             statusOverrides = statusOverrides.filter { pendingIDs.contains($0.key) }
             titleOverrides = titleOverrides.filter { pendingIDs.contains($0.key) }
             apply()
+            await reissueAppend()
         case let .failure(error):
             guard generation == refreshGeneration else { return }
             let text = ErrorMessage.text(for: error)
@@ -142,6 +146,18 @@ public final class SessionListViewModel: ObservableObject {
 
     public func loadMore() async {
         guard canLoadMore, !isAppending else { return }
+        guard !isRefreshing else {
+            appendRequested = true
+            return
+        }
+        await runAppend()
+    }
+
+    /// The tail read, under the identity of the query that was on screen when the scroll happened, as
+    /// `AgentListViewModel` documents it: a retired answer may take none of the rows, the total or the page
+    /// counter with it.
+    private func runAppend() async {
+        let generation = refreshGeneration
         isAppending = true
         defer { isAppending = false }
         switch await sessions.sessionPage(
@@ -151,18 +167,27 @@ public final class SessionListViewModel: ObservableObject {
             size: pages.pageSize
         ) {
         case let .success(page):
+            guard generation == refreshGeneration else { return }
             inlineError = nil
             pages.append(with: page)
             apply()
         case let .failure(error):
+            guard generation == refreshGeneration else { return }
             // The list is still usable, so the page counter is left alone and the next scroll retries the
             // same page number.
             inlineError = ErrorMessage.text(for: error)
         }
     }
 
+    private func reissueAppend() async {
+        guard appendRequested, canLoadMore, !isAppending else { return }
+        appendRequested = false
+        await runAppend()
+    }
+
     public func setStatus(_ enabled: Bool, for session: SessionSummary) async {
         guard let id = session.id else { return }
+        guard !pendingIDs.contains(id) else { return }
         statusOverrides[id] = enabled
         pendingIDs.insert(id)
         defer { pendingIDs.remove(id) }
@@ -185,6 +210,9 @@ public final class SessionListViewModel: ObservableObject {
         guard let trimmed = hxPresented(title) else { return .invalid(hx("chat.rename.required")) }
         guard trimmed.count <= 100 else { return .invalid(hx("chat.rename.long")) }
         let id = session.id
+        // A second tap while the first rename is out says nothing new: the row is already saving, and the sheet
+        // stays open with the copy it shows while a save is on the wire.
+        if let id, pendingIDs.contains(id) { return .invalid(hx("chat.rename.saving")) }
         if let id { pendingIDs.insert(id) }
         let result = await sessions.renameSession(session, to: trimmed)
         if let id { pendingIDs.remove(id) }
@@ -224,6 +252,7 @@ public final class SessionListViewModel: ObservableObject {
     public func clearMessages(_ session: SessionSummary) async {
         guard let sessionId = hxPresented(session.sessionId) else { return }
         let id = session.id
+        if let id, pendingIDs.contains(id) { return }
         if let id { pendingIDs.insert(id) }
         let result = await sessions.clearMessages(sessionId: sessionId)
         if let id { pendingIDs.remove(id) }

@@ -405,17 +405,22 @@ final class McpContractTests: XCTestCase {
 
         XCTAssertEqual(tools[0].name, "read_file")
         XCTAssertEqual(tools[0].parameters.count, 2)
-        XCTAssertEqual(tools[0].parameters[0].label, "path — Absolute path inside the allowed root")
-        XCTAssertEqual(tools[0].parameters[1].type, "integer", "a declared type survives the flattening")
-        XCTAssertEqual(tools[0].parameters[1].label, "offset", "an empty description falls back to the name")
+        XCTAssertEqual(tools[0].parameters[0].name, "path")
+        XCTAssertEqual(tools[0].parameters[0].declaredType, "string")
+        XCTAssertEqual(tools[0].parameters[0].documentation, "Absolute path inside the allowed root")
+        XCTAssertEqual(tools[0].parameters[1].declaredType, "integer", "a declared type survives the flattening")
+        XCTAssertNil(
+            tools[0].parameters[1].documentation,
+            "a blank description stays absent — the screen says 「暂无描述」 rather than inventing the name"
+        )
 
         XCTAssertTrue(tools[1].parameters.isEmpty)
         XCTAssertEqual(tools[1].id, "list_dir")
         XCTAssertEqual(tools[1].displayName, "list_dir")
 
-        XCTAssertEqual(tools[2].parameters[0].type, "string", "the controller's default for a schema that "
-            + "declared no type (`McpServerController.kt:161`) is indistinguishable from a real string param")
-        XCTAssertEqual(tools[2].parameters[0].label, "lines")
+        XCTAssertEqual(tools[2].parameters[0].declaredType, "string", "the controller's default for a schema "
+            + "that declared no type (`McpServerController.kt:161`) is indistinguishable from a real string param")
+        XCTAssertNil(tools[2].parameters[0].documentation)
 
         XCTAssertEqual(tools[3].name, "")
         XCTAssertNil(tools[3].displayName, "no name is no title")
@@ -449,10 +454,14 @@ final class McpContractTests: XCTestCase {
     /// (`McpToolResponse.kt:20-29`), so all three keys always arrive — and the Swift defaults in its init
     /// (`McpToolRow.swift:29-33`) are what a hand-built row in this app has to agree with.
     func testParameterDefaultsMatchTheKotlinDefaults() throws {
-        XCTAssertEqual(McpToolParameter().type, "string")
-        XCTAssertEqual(McpToolParameter().name, "")
-        XCTAssertEqual(McpToolParameter().label, "")
-        XCTAssertEqual(McpToolParameter(name: "q", type: "string", description: "  ").label, "q")
+        let bare = McpToolParameter()
+        XCTAssertEqual(bare.name, "")
+        XCTAssertEqual(bare.declaredType, "string", "`McpToolResponse.kt:23` defaults the type itself")
+        XCTAssertNil(bare.documentation)
+
+        let spaced = McpToolParameter(name: "q", type: " ", description: "  ")
+        XCTAssertNil(spaced.declaredType, "a blank type is not the controller's default, so nothing claims one")
+        XCTAssertNil(spaced.documentation)
     }
 
     // MARK: - per-user OAuth status
@@ -639,6 +648,254 @@ final class McpContractTests: XCTestCase {
         XCTAssertEqual(grant.issuer, "https://auth.example.com/realms/harnax")
         XCTAssertEqual(grant.requestedScopes, ["mcp:tools", "offline_access"])
         XCTAssertEqual(grant.scopes.count, 2, "requested, not granted — the server may answer narrower")
+    }
+
+    // MARK: - the OAuth setup block
+
+    /// The value the in-app return leg has to recognise is inside the request the server just built:
+    /// `redirect_uri` is the stored registration verbatim (`McpOAuthUserServiceImpl.kt:103-107`, `:152`), so
+    /// a device that watches for it needs no discovery run and no second call. An authorize URL without that
+    /// key is a request this app cannot finish, and it reads as nil rather than as an empty needle.
+    func testRedirectURIIsReadableOffTheAuthorizeUrl() throws {
+        let grant = try Fixture.decode(Envelope<McpOAuthAuthorization>.self, "mcp-oauth-authorize-url").data!
+        XCTAssertEqual(grant.redirectURL, "http://127.0.0.1:28081/mcp/oauth/callback")
+
+        let bare = try JSONDecoder().decode(
+            McpOAuthAuthorization.self,
+            from: Data(
+                #"{"authorizeUrl":"https://auth.example.com/authorize?response_type=code&state=x","issuer":"https://auth.example.com","scopes":[],"expiresIn":300}"#
+                    .utf8
+            )
+        )
+        XCTAssertNil(bare.redirectURL)
+    }
+
+    /// One discovery run answers the authorization server's own document plus what it wrote into
+    /// `mcp_oauth_client` because of it (`McpOAuthServiceImpl.kt:62-76`, `toResponse` at `:403-422`). The five
+    /// nullable columns are absent rather than null here (`application.yml:25`), and the two arrays and the
+    /// secret flag always arrive.
+    func testDiscoveryAnswersWithEverythingThePanelNeeds() throws {
+        let discovery = try Fixture.decode(Envelope<McpOAuthDiscovery>.self, "mcp-oauth-discovery").data!
+        XCTAssertEqual(Set(try body("mcp-oauth-discovery").keys), [
+            "issuer", "issuerSource", "authorizationEndpoint", "tokenEndpoint", "revocationEndpoint",
+            "scopesSupported", "unknownScopes", "clientId", "clientSecretPresent", "callbackUrl",
+            "defaultCallbackUrl",
+        ])
+        XCTAssertEqual(discovery.knownIssuer, "https://auth.example.com/realms/harnax")
+        XCTAssertEqual(discovery.issuerSource, "PROTECTED_RESOURCE")
+        XCTAssertEqual(discovery.authorizationEndpoint, "https://auth.example.com/realms/harnax/protocol/oauth/authorize")
+        XCTAssertNil(discovery.registrationEndpoint, "no DCR advertised, and no key on the wire (`McpOAuthDiscoveryResponse.kt:29`)")
+        XCTAssertTrue(discovery.hasRevocationEndpoint)
+        XCTAssertEqual(discovery.scopesSupported, ["mcp:tools", "offline_access"])
+        XCTAssertEqual(discovery.unknownScopes, ["mcp:write"])
+        XCTAssertTrue(discovery.isClientRegistered)
+        XCTAssertEqual(discovery.registeredClientID, "harnax-crm-client-7f3a")
+        XCTAssertTrue(discovery.clientSecretPresent)
+        XCTAssertTrue(
+            discovery.isCallbackStale,
+            "the stored registration predates the move to this build's own address (`OAuthPanel.tsx:390-517`)"
+        )
+    }
+
+    /// A discovery run that found the authorization server but no client: `clientId` is the empty column and
+    /// `takeIf { it.isNotBlank() }` drops it (`McpOAuthServiceImpl.kt:419`), which is exactly the state the
+    /// authorize hand-off refuses to send a user into (`McpOAuthUserServiceImpl.kt:101-107`). `scopesSupported`
+    /// is empty because the AS answered nothing, and with it `unknownScopes` is empty by the same line — so an
+    /// empty advertisement never calls every requested scope unknown.
+    func testDiscoveryBeforeAnyClientRegistration() throws {
+        let discovery = try Fixture.decode(Envelope<McpOAuthDiscovery>.self, "mcp-oauth-discovery-no-client").data!
+        XCTAssertNil(discovery.clientId)
+        XCTAssertFalse(discovery.isClientRegistered)
+        XCTAssertFalse(discovery.clientSecretPresent)
+        XCTAssertFalse(discovery.hasRevocationEndpoint)
+        XCTAssertFalse(discovery.isCallbackStale, "stored and current are the same string")
+        XCTAssertTrue(discovery.unknownScopes.isEmpty)
+        XCTAssertEqual(Set(try body("mcp-oauth-discovery-no-client").keys), [
+            "issuer", "issuerSource", "authorizationEndpoint", "tokenEndpoint", "scopesSupported",
+            "unknownScopes", "clientSecretPresent", "callbackUrl", "defaultCallbackUrl",
+        ])
+        // The Swift default is what a hand-built row has to agree with: `clientId` blank means unregistered.
+        XCTAssertFalse(McpOAuthDiscovery().isClientRegistered)
+        XCTAssertEqual(McpOAuthDiscovery(clientId: "  ").registeredClientID, nil)
+    }
+
+    /// The success answer: `authorized` is the verdict and the scopes are the ones actually granted, which may
+    /// be narrower than those asked for (`McpOAuthExchangeResponse.kt:22-31`). No field here can hold a token,
+    /// and none does (`:34-38`).
+    func testExchangeGrantsReadTheVerdictOffAuthorized() throws {
+        let outcome = try Fixture.decode(Envelope<McpOAuthExchangeOutcome>.self, "mcp-oauth-exchange-granted").data!
+        XCTAssertTrue(outcome.authorized)
+        XCTAssertEqual(outcome.explanation, "This MCP server is authorized for your account")
+        XCTAssertEqual(outcome.grantedScopes, ["mcp:tools", "offline_access"])
+        XCTAssertEqual(outcome.accessExpiresAt, "2026-09-28 10:12:00")
+        XCTAssertNil(try body("mcp-oauth-exchange-granted")["accessToken"], "the browser never sees a credential")
+    }
+
+    /// A refusal by the authorization server is a *successful* answer saying no
+    /// (`McpOAuthController.kt:101-102`, `McpOAuthUserServiceImpl.kt:199-208`), carrying the upstream's own
+    /// sentence. So a caller must read `authorized` and can never infer the outcome from the transport — the
+    /// claim at `McpOAuth.swift:336-339`, upheld by the payload.
+    func testRefusalIsASuccessfulAnswerSayingNo() throws {
+        let outcome = try Fixture.decode(Envelope<McpOAuthExchangeOutcome>.self, "mcp-oauth-exchange-refused").data!
+        XCTAssertFalse(outcome.authorized)
+        XCTAssertEqual(
+            outcome.explanation,
+            "The authorization server refused: access_denied - please start the authorization again"
+        )
+        XCTAssertTrue(outcome.grantedScopes.isEmpty)
+        XCTAssertNil(outcome.accessExpiresAt)
+        XCTAssertEqual(Set(try body("mcp-oauth-exchange-refused").keys), ["authorized", "message", "scopes"])
+    }
+
+    /// `scopes` is declared non-optional because the DTO defaults it to `emptyList()` and empty arrays survive
+    /// `non_null` — the same reasoning that makes `testOAuthStatusNeedsItsScopesKey` assert the status body, so
+    /// the exchange body is asserted the same way.
+    func testExchangeNeedsItsScopesKey() throws {
+        XCTAssertThrowsError(try JSONDecoder().decode(
+            McpOAuthExchangeOutcome.self,
+            from: Data(#"{"authorized":true,"message":"ok"}"#.utf8)
+        ))
+    }
+
+    /// What the exchange endpoint is handed, as bytes. All four keys are optional
+    /// (`McpOAuthExchangeRequest.kt:26-39`), and the three cases the server distinguishes — a consent, a
+    /// refusal, an empty body — have to stay distinguishable on the wire.
+    func testExchangeDraftCarriesOnlyWhatTheServerSent() throws {
+        let consent = try XCTUnwrap(JSONObject(McpOAuthExchangeDraft(code: "abc", state: "xyz")))
+        XCTAssertEqual(Set(consent.keys), ["code", "state"])
+        let refusal = try XCTUnwrap(JSONObject(McpOAuthExchangeDraft(error: "access_denied")))
+        XCTAssertEqual(Set(refusal.keys), ["error"])
+        let nothing = try XCTUnwrap(JSONObject(McpOAuthExchangeDraft()))
+        XCTAssertTrue(nothing.keys.isEmpty, "a draft with no values sends {} — no key is sent as null")
+        XCTAssertTrue(McpOAuthExchangeDraft().isEmpty)
+    }
+
+    // MARK: - the return leg
+
+    /// The redirect is recognised by location, with the query dropped: the authorization server appends
+    /// `code`, `state` and sometimes a `session_state` to the registered value
+    /// (`oauth-callback.tsx:35-44` reads the same way), and the registered value may or may not carry the
+    /// trailing slash the AS redirects with.
+    func testCallbackMatchComparesLocations() throws {
+        let stored = "http://127.0.0.1:28081/mcp/oauth/callback"
+        XCTAssertTrue(McpOAuthCallback.matches(
+            try XCTUnwrap(URL(string: "\(stored)?code=A&state=B")),
+            redirect: stored
+        ))
+        XCTAssertTrue(McpOAuthCallback.matches(
+            try XCTUnwrap(URL(string: "http://127.0.0.1:28081/mcp/oauth/callback/")),
+            redirect: stored
+        ), "the slash the AS adds is not a different registration")
+        XCTAssertTrue(McpOAuthCallback.matches(
+            try XCTUnwrap(URL(string: "HTTP://127.0.0.1:28081/mcp/oauth/callback")),
+            redirect: stored
+        ), "scheme and host are case-insensitive per RFC 3986")
+        XCTAssertFalse(McpOAuthCallback.matches(
+            try XCTUnwrap(URL(string: "http://127.0.0.1:28082/mcp/oauth/callback?code=A")),
+            redirect: stored
+        ), "another port is another registration")
+        XCTAssertFalse(McpOAuthCallback.matches(
+            try XCTUnwrap(URL(string: "http://evil.example.com/mcp/oauth/callback?code=A")),
+            redirect: stored
+        ))
+        XCTAssertFalse(McpOAuthCallback.matches(try XCTUnwrap(URL(string: stored)), redirect: nil))
+        XCTAssertFalse(McpOAuthCallback.matches(try XCTUnwrap(URL(string: stored)), redirect: "   "))
+    }
+
+    /// The four keys come from the query only, and a navigation that carries neither a code nor an error is
+    /// not a return leg at all — handing the exchange endpoint an empty body would spend a state it never had
+    /// (`oauth-callback.tsx:19-28`, `McpOAuthExchangeRequest`), so that check cannot be left to the server.
+    func testCallbackDraftReadsTheFourKeys() throws {
+        let consent = try XCTUnwrap(McpOAuthCallback.draft(from: try XCTUnwrap(URL(string:
+            "http://127.0.0.1:28081/mcp/oauth/callback?code=Sp%2Bend&state=kQ7x"
+        ))))
+        XCTAssertEqual(consent.code, "Sp+end", "a percent-encoded plus survives as a plus")
+        XCTAssertEqual(consent.state, "kQ7x")
+        XCTAssertNil(consent.error)
+        XCTAssertFalse(consent.isRefusal)
+        XCTAssertFalse(consent.isEmpty)
+
+        let refusal = try XCTUnwrap(McpOAuthCallback.draft(from: try XCTUnwrap(URL(string:
+            "http://127.0.0.1:28081/mcp/oauth/callback?error=access_denied&error_description=The%20user%20said%20no"
+        ))))
+        XCTAssertNil(refusal.code)
+        XCTAssertEqual(refusal.errorDescription, "The user said no")
+        XCTAssertTrue(refusal.isRefusal)
+
+        XCTAssertNil(McpOAuthCallback.draft(from: try XCTUnwrap(URL(string:
+            "http://127.0.0.1:28081/mcp/oauth/callback?state=kQ7x"
+        ))), "a state with no code is nothing to spend")
+        XCTAssertNil(McpOAuthCallback.draft(from: try XCTUnwrap(URL(string:
+            "http://127.0.0.1:28081/mcp/oauth/callback?code="
+        ))), "an empty code is no code")
+        // The fragment is not the query: an AS that sent its keys there would be refused, not half-read.
+        XCTAssertNil(McpOAuthCallback.draft(from: try XCTUnwrap(URL(string:
+            "http://127.0.0.1:28081/mcp/oauth/callback#code=A&state=B"
+        ))))
+    }
+
+    // MARK: - the client registration body
+
+    /// Absent means "keep the column" and an empty secret means "clear it"
+    /// (`McpOAuthClientRequest.kt:22-31`, `SecretFieldEncryptor.kt:94-104`) — two different statements that
+    /// must not collapse. So the unset halves are dropped rather than sent as nulls, and the clear is sent as
+    /// the empty string it has to be.
+    func testClientDraftOmitsTheUnsetHalves() throws {
+        let onlyID = try XCTUnwrap(JSONObject(McpOAuthClientDraft(clientId: "harnax-mcp")))
+        XCTAssertEqual(Set(onlyID.keys), ["clientId"])
+
+        let replaced = try XCTUnwrap(JSONObject(McpOAuthClientDraft(
+            clientId: "harnax-mcp",
+            clientSecret: "s3cret",
+            callbackUrl: "https://harnax.example.com/mcp/oauth/callback"
+        )))
+        XCTAssertEqual(Set(replaced.keys), ["clientId", "clientSecret", "callbackUrl"])
+
+        let cleared = try XCTUnwrap(JSONObject(McpOAuthClientDraft(clientId: "harnax-mcp", clientSecret: "")))
+        XCTAssertEqual(Set(cleared.keys), ["clientId", "clientSecret"])
+        XCTAssertEqual(cleared["clientSecret"] as? String, "", "the only spelling that clears the column")
+    }
+
+    /// `@NotBlank` on the trimmed value and `@Size(max = 255)` measured in UTF-16 code units, which is what
+    /// Jakarta's `CharSequence.length()` gives and what `McpOAuthClientDraft` counts. The two only part
+    /// company above the BMP: a CJK character is one unit, an emoji is two, so a 128-emoji name is the
+    /// otherwise-unremarkable string the server refuses.
+    func testClientIDBoundMirrorsTheServer() {
+        XCTAssertTrue(McpOAuthClientDraft.isClientIDUsable(String(repeating: "a", count: 255)))
+        XCTAssertFalse(McpOAuthClientDraft.isClientIDUsable(String(repeating: "a", count: 256)))
+        XCTAssertFalse(McpOAuthClientDraft.isClientIDUsable("   "))
+        XCTAssertFalse(McpOAuthClientDraft.isClientIDUsable(""))
+        let cjk = String(repeating: "字", count: 128)
+        XCTAssertEqual(cjk.utf16.count, 128, "one BMP character, one unit, on both sides")
+        XCTAssertTrue(McpOAuthClientDraft.isClientIDUsable(cjk))
+        let emoji = String(repeating: "😀", count: 128)
+        XCTAssertEqual(emoji.count, 128)
+        XCTAssertEqual(emoji.utf16.count, 256)
+        XCTAssertFalse(
+            McpOAuthClientDraft.isClientIDUsable(emoji),
+            "128 of these is 256 UTF-16 units, and the server refuses it at 255"
+        )
+    }
+
+    /// `validateHttpUrl` demands the http(s) scheme *and* a host, then the 500-unit bound
+    /// (`McpOAuthServiceImpl.kt:433-448`, `URL_MAX_LEN` at `:525`), and it is applied to this field at
+    /// `:103-109`. That is also the finding that makes a `harnax://` return address unregistrable — asserted
+    /// here so the premise cannot quietly come back. Left blank the field is a legal edit, because blank means
+    /// "keep what is registered" (`:107-109`).
+    func testCallbackBoundMirrorsValidateHttpUrl() {
+        XCTAssertTrue(McpOAuthClientDraft.isCallbackURLUsable(""))
+        XCTAssertTrue(McpOAuthClientDraft.isCallbackURLUsable("   "))
+        XCTAssertTrue(McpOAuthClientDraft.isCallbackURLUsable("http://127.0.0.1:28081/mcp/oauth/callback"))
+        XCTAssertTrue(McpOAuthClientDraft.isCallbackURLUsable("https://harnax.example.com/mcp/oauth/callback"))
+        XCTAssertFalse(
+            McpOAuthClientDraft.isCallbackURLUsable("harnax://oauth-callback"),
+            "a custom scheme cannot be registered: the server only accepts http(s) with a host"
+        )
+        XCTAssertFalse(McpOAuthClientDraft.isCallbackURLUsable("ftp://harnax.example.com/callback"))
+        XCTAssertFalse(McpOAuthClientDraft.isCallbackURLUsable("https:///callback"), "a URL with no host")
+        XCTAssertFalse(McpOAuthClientDraft.isCallbackURLUsable("/mcp/oauth/callback"))
+        XCTAssertFalse(McpOAuthClientDraft.isCallbackURLUsable(String(repeating: "a", count: 501)))
+        XCTAssertTrue(McpOAuthClientDraft.isCallbackURLUsable("https://harnax.example.com/" + String(repeating: "a", count: 467)))
     }
 
     // MARK: - the write bodies

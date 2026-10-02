@@ -18,10 +18,11 @@ public struct KeychainStore: SecretStoring {
             kSecAttrService as String: service,
             kSecAttrAccount as String: key.rawValue,
         ]
-        // iOS ships against the data-protection keychain. On macOS the same attribute needs a code
-        // identity, which a bare `swift test` binary does not have (-34018), so the host build uses
-        // the classic file keychain and the real SecItem path still gets covered on the Mac.
-        #if os(iOS)
+        // iOS ships against the data-protection keychain. Two environments are excluded: macOS, where the same
+        // attribute needs a code identity a bare `swift test` binary does not have (-34018), and the simulator,
+        // where Xcode signs ad-hoc with no `application-identifier` at all and the same status comes back. Both
+        // fall to the classic file keychain, and the real SecItem path still gets covered on the Mac.
+        #if os(iOS) && !targetEnvironment(simulator)
         query[kSecUseDataProtectionKeychain as String] = true
         #endif
         return query

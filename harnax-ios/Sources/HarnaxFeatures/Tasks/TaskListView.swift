@@ -62,8 +62,8 @@ public struct TaskListView: View {
             .navigationTitle(Text(verbatim: hx("task.title")))
             .searchable(text: $vm.keyword, prompt: Text(verbatim: hx("task.search")))
             .toolbar {
-                ToolbarItem(placement: .navigation) { filterMenu }
                 ToolbarItem(placement: .primaryAction) { addButton }
+                ToolbarItem(placement: .primaryAction) { filterMenu }
             }
             .task {
                 if vm.phase == .loading { await vm.refresh() }
@@ -118,18 +118,16 @@ public struct TaskListView: View {
     }
 
     private var addButton: some View {
-        Button {
-            target = .create
-        } label: {
-            Image(systemName: "plus")
-        }
-        .accessibilityLabel(hx("task.form.create"))
+        HXPlusButton(titleKey: "task.form.create") { target = .create }
     }
 
     /// The status dropdown. `all` leaves the parameter off the query entirely — the page filters on
     /// `taskStatus` (`AgentTaskMapper.xml:92-94`), and this app never sends a sentinel for "no opinion".
     private var filterMenu: some View {
-        Menu {
+        HXFilterMenu(
+            isFiltering: vm.filter != .all,
+            accessibilityLabel: hx("state.filter.status")
+        ) {
             Picker(selection: $vm.filter) {
                 ForEach(StatusFilter.allCases) { option in
                     HXText(option.titleKey).tag(option)
@@ -137,10 +135,6 @@ public struct TaskListView: View {
             } label: {
                 HXText("state.filter.status")
             }
-        } label: {
-            Image(systemName: vm.isFiltered
-                ? "line.3.horizontal.decrease.circle.fill"
-                : "line.3.horizontal.decrease.circle")
         }
     }
 
@@ -416,6 +410,7 @@ public struct TaskRecordCard: View {
                 .frame(width: 30, height: 30)
                 .background(Color.hx(.surfaceAlt), in: Circle())
         }
+        .accessibilityLabel(hx("state.action.more"))
     }
 }
 

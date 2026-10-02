@@ -11,8 +11,8 @@ public struct ServerConfig: Equatable, Sendable {
     public let routerBaseURL: String
 
     // 127.0.0.1 would point a real device at itself; the dev stack is reached over the LAN instead.
-    public static let devAdminBaseURL = "http://192.168.1.6:28080"
-    public static let devRouterBaseURL = "http://192.168.1.6:28081"
+    public static let devAdminBaseURL = "http://172.20.10.2:28080"
+    public static let devRouterBaseURL = "http://172.20.10.2:28081"
 
     public init(adminBaseURL: String, routerBaseURL: String) throws {
         self.adminBaseURL = try Self.normalized(adminBaseURL, label: "admin")

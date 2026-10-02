@@ -121,6 +121,41 @@ public enum McpToolState: Equatable {
     }
 }
 
+/// What the delete dialog is allowed to claim about the blast radius.
+///
+/// The web console names the dependents rather than only counting them
+/// (`harnax-webui/src/pages/mcp/index.tsx:327-337`: `agents.slice(0, 5).map(a => a.agentName).join('、')`),
+/// because an operator who is about to unbind five agents reads a name differently from a number. The join
+/// character is that language's own list separator and it comes from the catalog, not from this file: 顿号 in
+/// Chinese, comma-space in English, and a hardcoded 「、」 would read as broken punctuation on an English row.
+///
+/// The console truncates at five silently — the sentence still says seven. Here the tail says so
+/// (`mcp.delete.names.more`); that marker is this app's addition, not a transcription.
+public enum McpDeleteCopy {
+    /// How many names the sentence carries before it stops being readable on a phone-width dialog.
+    public static let nameLimit = 5
+
+    public static func message(for agents: [RelatedAgent]) -> String {
+        guard !agents.isEmpty else { return hx("mcp.delete.clear") }
+        let names = nameList(for: agents)
+        guard !names.isEmpty else {
+            // RelatedAgentInfo declares `agentName` non-null server-side, so this is a payload that has lost
+            // the names in transit. The count-only sentence is still true; a bare pair of brackets is not.
+            return hx("mcp.delete.bound", agents.count)
+        }
+        return hx("mcp.delete.boundNamed", agents.count, names)
+    }
+
+    /// The first `nameLimit` names, joined for this language. Empty when the rows carry no readable name at
+    /// all, which is the caller's signal to fall back to the count.
+    public static func nameList(for agents: [RelatedAgent]) -> String {
+        let names = agents.prefix(nameLimit).compactMap { hxPresented($0.agentName) }
+        guard !names.isEmpty else { return "" }
+        let joined = names.joined(separator: hx("mcp.delete.nameSeparator"))
+        return agents.count > nameLimit ? joined + hx("mcp.delete.names.more") : joined
+    }
+}
+
 /// What the OAuth block of the detail screen may and may not say.
 ///
 /// One entry, one badge: `authorized` is the only field read for the verdict, because an expired token and
@@ -144,5 +179,21 @@ public enum McpOAuthPresentation {
 
     public static func actionKey(for status: McpOAuthStatus?) -> String {
         status?.authorized == true ? "mcp.oauth.action.reauthorize" : "mcp.oauth.action.authorize"
+    }
+
+    /// How the issuer was located, in the console's own words
+    /// (`harnax-webui/src/pages/mcp/components/OAuthPanel.tsx:22-35`).
+    ///
+    /// A source this build does not know shows the raw column: the discovery response names one of three
+    /// values today, and a fourth way of finding an authorization server should read as itself rather than
+    /// as one of these three.
+    public static func issuerSource(_ raw: String?) -> String? {
+        guard let value = hxPresented(raw) else { return nil }
+        switch value {
+        case "CONFIG": return hx("mcp.oauth.setup.issuerSource.config")
+        case "PROTECTED_RESOURCE": return hx("mcp.oauth.setup.issuerSource.protectedResource")
+        case "RESOURCE_METADATA": return hx("mcp.oauth.setup.issuerSource.resourceMetadata")
+        default: return value
+        }
     }
 }

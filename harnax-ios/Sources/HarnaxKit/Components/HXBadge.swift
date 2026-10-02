@@ -46,17 +46,27 @@ public struct HXChip: View {
     }
 }
 
-/// A dot used on list rows where the mockup marks enabled/disabled without words.
+/// A dot on a list row that marks a state. Hue alone is invisible to a screen reader, so a caller that means
+/// something by the colour passes the word for it; a dot that only echoes text already on the row stays
+/// decorative and is spoken past.
 public struct HXStatusDot: View {
     private let slot: PaletteSlot
+    private let label: String?
 
-    public init(tone: PaletteSlot) {
+    public init(tone: PaletteSlot, label: String? = nil) {
         self.slot = tone
+        self.label = label
     }
 
+    @ViewBuilder
     public var body: some View {
-        Circle()
+        let dot = Circle()
             .fill(Color.hx(slot))
             .frame(width: 8, height: 8)
+        if let label {
+            dot.accessibilityLabel(Text(verbatim: label))
+        } else {
+            dot.accessibilityHidden(true)
+        }
     }
 }

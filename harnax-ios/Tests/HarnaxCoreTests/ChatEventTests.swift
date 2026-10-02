@@ -3,6 +3,12 @@ import XCTest
 
 /// The eight frames the agent can send (`ChatEvent.kt:23-32`). Everything the chat screen draws is a fold
 /// over these, so the discriminator and each payload's required keys are pinned here.
+///
+/// Provenance (`DESIGN.md:239` asks for it): these payloads are transcribed from the DTO the router
+/// actually serves — `com.agnetix.harnax.agent.protocol.ChatEvent`, the import at
+/// `AgentProxyController.kt:5` — not lifted off a live stream. Re-read against that file field by field on
+/// 2026-09-30. The `harnax-client-common` copy of the same eight names is a different consumer and carries
+/// no `attachments`/`source`, so it is not the wire shape.
 final class ChatEventTests: XCTestCase {
     private func event(_ json: String) throws -> ChatEvent {
         try ChatEvent.decode(json)

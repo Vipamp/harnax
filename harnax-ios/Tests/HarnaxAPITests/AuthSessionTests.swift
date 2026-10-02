@@ -87,19 +87,34 @@ final class AuthSessionTests: XCTestCase {
         XCTAssertEqual(error, .unauthorized)
     }
 
-    func testNeedsRefreshUsesTheSixtySecondWindow() async throws {
+    /// DESIGN §5.3 puts the trigger at one third of the lifetime instead of a fixed lead: a renewal only
+    /// works while the old token still verifies, so a production JWT (`JWT_EXPIRATION` = 7 200 000 ms) has to
+    /// start renewing 40 minutes out rather than in its last minute.
+    func testNeedsRefreshTriggersBelowOneThirdOfTheLifetime() async throws {
         let (session, _, clock) = makeSession()
-        try await session.signIn(response(Wire.login(token: "tok-1", expiresIn: 3600)))
-        let fresh = try await session.needsRefresh()
-        XCTAssertFalse(fresh)
+        try await session.signIn(response(Wire.login(token: "tok-1", expiresIn: 7200)))
 
-        clock.advance(3600 - 61)
-        let almostExpired = try await session.needsRefresh()
-        XCTAssertFalse(almostExpired)
+        clock.advance(7200 - 2401)
+        let aboveThird = try await session.needsRefresh()
+        XCTAssertFalse(aboveThird, "2 401 seconds of a 7 200 second life is still above one third")
 
-        clock.advance(30)
-        let expired = try await session.needsRefresh()
-        XCTAssertTrue(expired)
+        clock.advance(2)
+        let belowThird = try await session.needsRefresh()
+        XCTAssertTrue(belowThird, "2 399 seconds left is below one third, and the old token is still valid")
+    }
+
+    /// A login answer naming only an absolute deadline records no lifetime to divide, so there the flat window
+    /// is the whole rule.
+    func testMissingLifetimeFallsBackToTheSixtySecondWindow() async throws {
+        let (session, _, clock) = makeSession()
+        let deadline = Int64(clock.date.timeIntervalSince1970 * 1000) + 61_000
+        try await session.signIn(response(Wire.login(token: "tok-1", expiresIn: nil, expiresAt: deadline)))
+        let beyond = try await session.needsRefresh()
+        XCTAssertFalse(beyond)
+
+        clock.advance(2)
+        let inside = try await session.needsRefresh()
+        XCTAssertTrue(inside)
     }
 
     /// A token with no recorded deadline cannot be judged, so it is refreshed rather than trusted.

@@ -5,8 +5,9 @@ import HarnaxKit
 /// C5 — the skill detail: one read, two tabs, no writes.
 ///
 /// Both tabs come out of the same `GET /api/admin/skills/{id}` answer, so nothing here refetches per file
-/// (`detail.tsx:192-224`). The body is monospaced plain text this round: iOS 17's `AttributedString(markdown:)`
-/// only handles inline syntax, and tables, fences and lists come out wrong through it.
+/// (`detail.tsx:192-224`). The body is Markdown and is drawn as a document by `HXMarkdownText`, which reads
+/// it through `HXMarkdownParser`; the files under the tree keep the monospaced pane, because a fetched source
+/// file loses its shape when read as prose.
 public struct SkillDetailView: View {
     @StateObject private var vm: SkillDetailViewModel
 
@@ -67,7 +68,9 @@ public struct SkillDetailView: View {
     @ViewBuilder
     private var body_: some View {
         if let text = vm.body {
-            SkillCodeText(text: text)
+            // SKILL.md is prose with headings, fences, task lists and tables in it; the console renders it
+            // with ReactMarkdown (`detail.tsx:291-354`) and this is the same document, not a source file.
+            HXMarkdownText(text)
         } else {
             HXStateView(.empty, message: hx("skill.detail.noBody"))
         }

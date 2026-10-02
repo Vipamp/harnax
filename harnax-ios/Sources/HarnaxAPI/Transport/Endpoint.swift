@@ -25,6 +25,11 @@ public struct Endpoint: Sendable {
     public let contentType: String?
     /// Login and refresh are the two endpoints that must be sent without a bearer token.
     public let authenticated: Bool
+    /// `false` for the one call that ends the session instead of using it. It still carries the bearer — the
+    /// backend reads the token off the header to revoke it (`AuthController.kt:54-58`) — but neither the
+    /// proactive refresh nor the 401 replay runs for it, so a logout can never mint a fresher token than the
+    /// one the user is throwing away, nor answer its own 401 with a second logout.
+    public let mayRefresh: Bool
     /// `false` for the one route the console sends on the bearer token alone: the team artifact download reads
     /// the tenant off the session row rather than off a header
     /// (`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/TeamArtifactController.kt:108-127`),
@@ -40,6 +45,7 @@ public struct Endpoint: Sendable {
         base: APIBase = .admin,
         contentType: String? = nil,
         authenticated: Bool = true,
+        mayRefresh: Bool = true,
         sendsTenantHeader: Bool = true
     ) {
         self.method = method
@@ -49,6 +55,7 @@ public struct Endpoint: Sendable {
         self.base = base
         self.contentType = contentType
         self.authenticated = authenticated
+        self.mayRefresh = mayRefresh
         self.sendsTenantHeader = sendsTenantHeader
     }
 
@@ -74,6 +81,15 @@ extension Endpoint {
             items.append(URLQueryItem(name: "status", value: String(status)))
         }
         return items
+    }
+
+    /// A number going into the query string. Spring binds `2.0` and `2` the same, but the console puts a bare
+    /// JavaScript number into the parameter
+    /// (`harnax-webui/src/pages/model/components/ModelListTable.tsx:73-77`), and one shape on both apps is what
+    /// lets a request be diffed by eye. A value no `Int` holds exactly keeps Swift's own rendering.
+    static func number(_ value: Double) -> String {
+        if let whole = Int(exactly: value) { return String(whole) }
+        return String(value)
     }
 
     /// A caller-supplied value going into one path segment. Opaque ids reach the path as often as the query,

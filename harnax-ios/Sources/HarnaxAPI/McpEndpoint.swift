@@ -70,6 +70,23 @@ enum McpEndpoint {
         Endpoint(.get, path: "\(base)/\(id)/list_tools")
     }
 
+    /// No body: the run reads the server row and reaches the network itself
+    /// (`McpOAuthController.kt:45-56`).
+    static func oauthDiscover(id: Int64) -> Endpoint {
+        Endpoint(.post, path: "\(base)/\(id)/oauth/discover")
+    }
+
+    static func oauthClient(id: Int64, _ draft: McpOAuthClientDraft) throws -> Endpoint {
+        Endpoint(.post, path: "\(base)/\(id)/oauth/client", body: try APIClient.encodeBody(draft))
+    }
+
+    /// Not under `/{id}`: the pending request the state names already says which server this consent was
+    /// for, and taking an id here would let a captured state be pointed at a server of the caller's
+    /// choosing (`McpOAuthController.kt:90-104`).
+    static func oauthExchange(_ draft: McpOAuthExchangeDraft) throws -> Endpoint {
+        Endpoint(.post, path: "\(base)/oauth/exchange", body: try APIClient.encodeBody(draft))
+    }
+
     static func oauthStatus(id: Int64) -> Endpoint {
         Endpoint(.get, path: "\(base)/\(id)/oauth/status")
     }

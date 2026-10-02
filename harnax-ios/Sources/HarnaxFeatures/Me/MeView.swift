@@ -4,14 +4,18 @@ import HarnaxKit
 
 /// Push destinations inside a tab. Value-based so the stack owns the history, not the row.
 public enum HarnaxRoute: Hashable, Sendable {
-    case appearance
     case serverAddress
 }
 
-/// F1 — who is signed in, which tenant the session is in, the preferences this build owns, and signing out.
+/// F1 — who is signed in, which tenant the session is in, the preferences this build owns, the administration
+/// domains that had a tab of their own, and signing out.
 ///
-/// The permanent API key is not on this screen: it needs a backend call that does not exist, and a row that
-/// does nothing is worse than no row.
+/// Everything this screen can change is on it. The two appearance picks and the tenant are menu rows rather
+/// than a sub-screen and a sheet: a pick you have to navigate to reads as information, and the tenant entry
+/// used to appear only once an account had a second membership, which is how it went unnoticed.
+///
+/// The account's own permanent key is no longer displayed here (O5's visible-here half). The administrator's
+/// key list is a row of the group that came over from the 系统 tab, and it keeps that tab's gate.
 public struct MeView: View {
     @ObservedObject var model: AppModel
     @StateObject private var vm: MeViewModel
@@ -19,7 +23,6 @@ public struct MeView: View {
     @AppStorage(ThemeMode.storageKey) private var storedTheme = ThemeMode.system.rawValue
     @AppStorage(BiometricGate.defaultsKey) private var storedBiometricGate = false
     @State private var showsLogoutPrompt = false
-    @State private var showsTenants = false
 
     public init(model: AppModel) {
         self.model = model
@@ -35,30 +38,20 @@ public struct MeView: View {
                 if let error = vm.tenantErrorText {
                     HXBanner("me.tenant.readFailed", message: error, systemImage: "exclamationmark.triangle", tone: .danger)
                 }
+                if let error = vm.switchErrorText {
+                    HXBanner("me.tenant.switch", message: error, systemImage: "exclamationmark.triangle", tone: .danger)
+                }
                 if let account = model.account {
-                    if vm.canSwitchTenant {
-                        Button { showsTenants = true } label: {
-                            identityCard(account, showsChevron: true)
-                        }
-                        .buttonStyle(.plain)
-                    } else {
-                        identityCard(account, showsChevron: false)
-                    }
+                    identityCard(account)
+                }
+                HXSectionHeader("me.section.account")
+                HXGroupCard {
+                    tenantRow
                 }
                 HXSectionHeader("me.section.preferences")
                 HXGroupCard {
-                    NavigationLink(value: HarnaxRoute.appearance) {
-                        HXRow(
-                            "me.themeAndLanguage",
-                            subtitle: AppearanceSummary.line(
-                                mode: ThemeMode.stored(storedTheme),
-                                language: catalog.language
-                            ),
-                            systemImage: "paintbrush",
-                            trailing: { HXChevron() }
-                        )
-                    }
-                    .buttonStyle(.plain)
+                    themeRow
+                    languageRow
                     NavigationLink(value: HarnaxRoute.serverAddress) {
                         HXRow(
                             "me.server.address",
@@ -83,6 +76,22 @@ public struct MeView: View {
                         )
                     }
                 }
+                let routes = SystemRoute.visible(for: model.account)
+                HXSectionHeader("system.section.administration")
+                HXGroupCard {
+                    ForEach(Array(routes.enumerated()), id: \.element) { offset, route in
+                        NavigationLink(value: route) {
+                            HXRow(
+                                route.titleKey,
+                                subtitle: hx(route.subtitleKey),
+                                systemImage: route.systemImage,
+                                divider: offset < routes.count - 1,
+                                trailing: { HXChevron() }
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
                 signOut
             }
             .padding(16)
@@ -91,24 +100,23 @@ public struct MeView: View {
         .harnaxScreen()
         .navigationDestination(for: HarnaxRoute.self) { route in
             switch route {
-            case .appearance: AppearanceSettingsView()
             case .serverAddress: ServerAddressView(auth: model.dependencies.auth)
             }
         }
-        .sheet(isPresented: $showsTenants) {
-            TenantSwitchSheet(
-                tenants: vm.tenants,
-                currentID: model.account?.tenantID,
-                isBusy: vm.isSwitching,
-                errorText: vm.switchErrorText
-            ) { tenant in
-                Task {
-                    let moved = await vm.switchTo(tenant)
-                    if moved { showsTenants = false }
-                    // The account copy carries the tenant the card shows, and a 401 on the way in has
-                    // already ended the session — either way the root has to re-read it.
-                    await model.sync()
-                }
+        .navigationDestination(for: SystemRoute.self) { route in
+            switch route {
+            case .envVars:
+                EnvVarListView(catalog: model.dependencies.envVars)
+            case .apiKeys:
+                ApiKeyListView(catalog: model.dependencies.apiKeys, account: model.account)
+            case .channels:
+                ChannelListView(
+                    catalog: model.dependencies.channels,
+                    agents: model.dependencies.agents,
+                    account: model.account
+                )
+            case .tokenMonitor:
+                TokenMonitorView(catalog: model.dependencies.tokenStats)
             }
         }
         .task {
@@ -119,7 +127,97 @@ public struct MeView: View {
         }
     }
 
-    private func identityCard(_ account: AccountSnapshot, showsChevron: Bool) -> some View {
+    // MARK: - tenant
+
+    /// The tenant the session is in, and the way out of it. The row stays when there is only one membership —
+    /// an account still gets to read which tenant it is — and the menu is what refuses to open.
+    @ViewBuilder
+    private var tenantRow: some View {
+        if model.account?.tenantID != nil && !vm.tenantChoices.isEmpty {
+            HXRow("me.tenant.switch", divider: false) {
+                Picker(selection: tenantSelection) {
+                    ForEach(vm.tenantChoices, id: \.id) { tenant in
+                        Text(verbatim: tenantLabel(tenant)).tag(tenant.id)
+                    }
+                } label: {
+                    HXText("me.tenant.switch")
+                }
+                .pickerStyle(.menu)
+                .tint(Color.hx(.brand))
+                .disabled(!vm.canSwitchTenant || vm.isSwitching)
+            }
+        } else {
+            // Either the read has no answerable row or the session has no tenant id yet; both leave a name to
+            // show and nothing to switch to.
+            HXRow("me.tenant.switch", divider: false) {
+                Text(verbatim: currentTenantName)
+                    .font(.footnote)
+                    .foregroundStyle(Color.hx(.textPrimary))
+            }
+        }
+    }
+
+    private var currentTenantName: String {
+        guard let name = model.account?.tenantName, !name.isEmpty else { return hx("me.tenant.unknown") }
+        return name
+    }
+
+    /// The sheet that listed the tenants had a chip for a disabled one; a menu has only its option text, and
+    /// the backend still hands out a token for a disabled tenant, so the row stays selectable and the status
+    /// has to be said in words.
+    private func tenantLabel(_ tenant: TenantSummary) -> String {
+        let name = tenant.name ?? hx("me.tenant.unknown")
+        return tenant.status == 0 ? "\(name) · \(hx("me.tenant.disabled"))" : name
+    }
+
+    /// The menu moves the session. Only a real pick goes out, and the selection reads back `AppModel`, so a
+    /// refusal puts the marker on the tenant still in effect rather than the one that was refused.
+    private var tenantSelection: Binding<Int64?> {
+        Binding(
+            get: { model.account?.tenantID },
+            set: { id in
+                guard id != model.account?.tenantID,
+                      let tenant = vm.tenantChoices.first(where: { $0.id == id }) else { return }
+                Task {
+                    _ = await vm.switchTo(tenant)
+                    // A switch replaces the token, a refusal may have spent it; either way the root re-reads.
+                    await model.sync()
+                }
+            }
+        )
+    }
+
+    // MARK: - preferences
+
+    private var themeRow: some View {
+        HXRow("me.theme") {
+            Picker(selection: $storedTheme) {
+                ForEach(ThemeMode.allCases, id: \.rawValue) { mode in
+                    Text(verbatim: hx(AppearanceSummary.themeKey(mode))).tag(mode.rawValue)
+                }
+            } label: {
+                HXText("me.theme")
+            }
+            .pickerStyle(.menu)
+            .tint(Color.hx(.brand))
+        }
+    }
+
+    private var languageRow: some View {
+        HXRow("me.language") {
+            Picker(selection: $catalog.language) {
+                ForEach(HarnaxLanguage.allCases, id: \.rawValue) { language in
+                    Text(verbatim: AppearanceSummary.languageLabel(language)).tag(language)
+                }
+            } label: {
+                HXText("me.language")
+            }
+            .pickerStyle(.menu)
+            .tint(Color.hx(.brand))
+        }
+    }
+
+    private func identityCard(_ account: AccountSnapshot) -> some View {
         HXCard {
             HStack(spacing: 12) {
                 HXAvatar(name: account.displayName, size: .large)
@@ -140,7 +238,6 @@ public struct MeView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
-                if showsChevron { HXChevron() }
             }
         }
     }

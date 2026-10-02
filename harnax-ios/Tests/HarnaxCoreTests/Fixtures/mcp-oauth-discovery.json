@@ -1,0 +1,24 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "issuer": "https://auth.example.com/realms/harnax",
+    "issuerSource": "PROTECTED_RESOURCE",
+    "authorizationEndpoint": "https://auth.example.com/realms/harnax/protocol/oauth/authorize",
+    "tokenEndpoint": "https://auth.example.com/realms/harnax/protocol/oauth/token",
+    "revocationEndpoint": "https://auth.example.com/realms/harnax/protocol/oauth/revoke",
+    "scopesSupported": [
+      "mcp:tools",
+      "offline_access"
+    ],
+    "unknownScopes": [
+      "mcp:write"
+    ],
+    "clientId": "harnax-crm-client-7f3a",
+    "clientSecretPresent": true,
+    "callbackUrl": "http://127.0.0.1:28081/mcp/oauth/callback",
+    "defaultCallbackUrl": "https://harnax.example.com/mcp/oauth/callback"
+  },
+  "timestamp": 1759026030000,
+  "isSuccess": true
+}

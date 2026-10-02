@@ -2,7 +2,7 @@ import XCTest
 import HarnaxCore
 @testable import HarnaxAPI
 
-/// The three page routes that carry their search box as `keyword`.
+/// The two page routes that carry their search box as `keyword`.
 ///
 /// `hxPresented` already has its own cases for what a blank string means; what these pin is that the call
 /// sites go through it at all. The difference is visible on the wire: a keyword of only spaces reaches
@@ -34,13 +34,6 @@ final class KeywordFilterTests: XCTestCase {
         XCTAssertEqual(
             query(of: ApiKeyEndpoint.page(keyword: " ci ", enabled: nil, num: 1, size: 20)),
             "pageNum=1&pageSize=20&keyword=ci"
-        )
-    }
-
-    func testTheToolPageSendsNoKeywordForSpaces() {
-        XCTAssertEqual(
-            query(of: ToolEndpoint.page(keyword: "  \n ", status: nil, num: 1, size: 20)),
-            "pageNum=1&pageSize=20"
         )
     }
 }

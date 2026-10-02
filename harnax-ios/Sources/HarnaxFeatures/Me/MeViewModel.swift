@@ -28,6 +28,10 @@ public final class MeViewModel: ObservableObject {
     /// One tenant is the ordinary account, and a picker over a single row is a step to nowhere.
     public var canSwitchTenant: Bool { tenants.count > 1 }
 
+    /// The rows the tenant menu offers. `tenantId` is the only thing the switch route sends, so a row without
+    /// one would look tappable and do nothing.
+    public var tenantChoices: [TenantSummary] { tenants.filter { $0.id != nil } }
+
     /// A 401 here has already cleared the session inside `AuthFlowing`; the root re-reads the state and
     /// swaps the screen, which is why nothing below says "signed out".
     public func reload() async {

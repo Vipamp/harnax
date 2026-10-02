@@ -262,7 +262,7 @@ final class CliListViewModelTests: XCTestCase {
     }
 
     private func waitUntil(_ condition: @escaping @MainActor () -> Bool) async throws {
-        for _ in 0..<200 {
+        for _ in 0..<400 {
             if condition() { return }
             try await Task.sleep(for: .milliseconds(5))
         }

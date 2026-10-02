@@ -5,8 +5,9 @@ import HarnaxKit
 /// The chat tab's landing screen — the conversation list half.
 ///
 /// Rows carry more than a title because `GET /api/admin/sessions/page` already denormalises the executor's
-/// name, its model, and both binding lists onto every row (`SessionServiceImpl.kt:86-120`), so the card and
-/// its drill-down need no second request.
+/// name, its model, and both binding lists onto every row (`SessionServiceImpl.kt:86-120`), so the card needs
+/// no second request. What a row does not carry is the executor's tools, CLI packages and members, and that is
+/// why the detail sheet this screen presents reads the executor's own row (`ExecutorReading.swift`).
 ///
 /// What a row *cannot* do is reach the message stream: opening one is handed to `onOpen`, which the
 /// composition root fills with the chat window this screen knows nothing about.
@@ -18,8 +19,12 @@ import HarnaxKit
 public struct SessionListView: View {
     @StateObject private var vm: SessionListViewModel
     private let creating: (any SessionCreating)?
+    private let config: (any SessionConfiguring)?
     private let workspace: (any SessionWorkspaceReading)?
     private let teamArtifacts: (any TeamArtifactReading)?
+    /// The by-id read the detail sheet fires for its tools, CLI and member panels. A host that wires none gets
+    /// the panels the conversation's own row can answer for, and no line saying otherwise.
+    private let executor: (any ExecutorReading)?
     private let onOpen: ((ChatConversation) -> Void)?
 
     @State private var renameTarget: SessionSummary?
@@ -29,22 +34,33 @@ public struct SessionListView: View {
     @State private var artifactsTarget: SessionSummary?
     @State private var pendingClear: SessionSummary?
     @State private var pendingDelete: SessionSummary?
+    /// Set by the detail sheet when its config write landed, and spent by its dismissal. The row the sheet was
+    /// built from is a snapshot of this list's own page, so a write through admin has moved four columns this
+    /// screen still shows the old values of — invisible on the card, which draws none of them, and wrong the
+    /// moment the sheet is reopened from the same row.
+    @State private var configMoved = false
 
     /// `creating` is the new-conversation route. A host that has not wired it gets no create button rather
     /// than a sheet that cannot submit — the same optional-dependency shape the chat window uses for its
     /// command and history legs. `workspace` and `teamArtifacts` open the two file drawers the card menu
-    /// offers; an unwired one simply leaves its item off the menu.
+    /// offers; an unwired one simply leaves its item off the menu. `config` is the one admin write the detail
+    /// sheet can make; without it the sheet stays the reading surface it has always been. `executor` is the
+    /// read that sheet fires for its tools, CLI and member panels.
     public init(
         sessions: any SessionCataloging,
         creating: (any SessionCreating)? = nil,
+        config: (any SessionConfiguring)? = nil,
         workspace: (any SessionWorkspaceReading)? = nil,
         teamArtifacts: (any TeamArtifactReading)? = nil,
+        executor: (any ExecutorReading)? = nil,
         onOpen: ((ChatConversation) -> Void)? = nil
     ) {
         _vm = StateObject(wrappedValue: SessionListViewModel(sessions: sessions))
         self.creating = creating
+        self.config = config
         self.workspace = workspace
         self.teamArtifacts = teamArtifacts
+        self.executor = executor
         self.onOpen = onOpen
     }
 
@@ -53,10 +69,10 @@ public struct SessionListView: View {
             .harnaxScreen()
             .searchable(text: $vm.keyword, prompt: Text(verbatim: hx("chat.search")))
             .toolbar {
-                ToolbarItem(placement: .navigation) { filterMenu }
                 if creating != nil {
                     ToolbarItem(placement: .primaryAction) { addButton }
                 }
+                ToolbarItem(placement: .primaryAction) { filterMenu }
             }
             .task {
                 if vm.phase == .loading { await vm.refresh() }
@@ -65,8 +81,13 @@ public struct SessionListView: View {
             .sheet(item: $renameTarget) { session in
                 SessionRenameSheet(vm: vm, session: session)
             }
-            .sheet(item: $detailTarget) { session in
-                SessionDetailSheet(session: session)
+            .sheet(item: $detailTarget, onDismiss: refreshIfConfigMoved) { session in
+                SessionDetailSheet(
+                    session: session,
+                    config: config,
+                    executor: executor,
+                    onWritten: { configMoved = true }
+                )
             }
             .sheet(item: $workspaceTarget) { session in
                 if let workspace, let sessionId = hxPresented(session.sessionId) {
@@ -123,31 +144,24 @@ public struct SessionListView: View {
             }
     }
 
+    /// The detail sheet's dismissal: a page re-read if and only if that sheet wrote something. Closing a
+    /// conversation's detail after merely reading it must not churn the list the user was scrolling.
+    private func refreshIfConfigMoved() {
+        guard configMoved else { return }
+        configMoved = false
+        Task { await vm.refresh() }
+    }
+
     private var addButton: some View {
-        Button {
-            isCreating = true
-        } label: {
-            Image(systemName: "plus")
-        }
-        .accessibilityLabel(hx("session.create.sheet.title"))
+        HXPlusButton(titleKey: "session.create.sheet.title") { isCreating = true }
     }
 
     private var filterMenu: some View {
-        Menu {
-            ForEach(StatusFilter.allCases) { option in
-                Button {
-                    vm.filter = option
-                } label: {
-                    HStack {
-                        HXText(option.titleKey)
-                        if vm.filter == option { Image(systemName: "checkmark") }
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: vm.filter == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-        }
-        .accessibilityLabel(Text(verbatim: hx("state.filter.status")))
+        HXFilterMenu(
+            isFiltering: vm.filter != .all,
+            accessibilityLabel: hx("state.filter.status"),
+            choices: statusFilterChoices(vm.filter) { vm.filter = $0 }
+        )
     }
 
     @ViewBuilder
@@ -388,6 +402,7 @@ struct SessionRecordCard: View {
                 .frame(width: 30, height: 30)
                 .background(Color.hx(.surfaceAlt), in: Circle())
         }
+        .accessibilityLabel(hx("state.action.more"))
     }
 }
 

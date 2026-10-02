@@ -52,8 +52,11 @@ extension AdminClient: ModelCataloging {
     public func modelPage(
         providerID: Int64,
         name: String?,
+        modelType: String?,
         status: Int?,
         tags: [String],
+        minPrice: Double?,
+        maxPrice: Double?,
         num: Int,
         size: Int
     ) async -> Result<Page<ModelSummary>, APIError> {
@@ -62,8 +65,11 @@ extension AdminClient: ModelCataloging {
             ModelEndpoint.modelPage(
                 providerID: providerID,
                 name: name,
+                modelType: modelType,
                 status: status,
                 tags: tags,
+                minPrice: minPrice,
+                maxPrice: maxPrice,
                 num: num,
                 size: size
             )

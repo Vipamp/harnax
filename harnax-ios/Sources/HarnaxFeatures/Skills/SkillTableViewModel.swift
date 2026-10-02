@@ -50,6 +50,9 @@ public final class SkillTableViewModel: ObservableObject {
     private var refreshGeneration = 0
     private var isRefreshing = false
     private var rerunRequested = false
+    /// An append asked for while a refresh is on the wire is remembered, not dropped — see
+    /// `AgentListViewModel`.
+    private var appendRequested = false
 
     public init(skills: any SkillCataloging, pageSize: Int = 20) {
         self.skills = skills
@@ -116,6 +119,7 @@ public final class SkillTableViewModel: ObservableObject {
             pages.replace(with: page)
             statusOverrides = statusOverrides.filter { pendingIDs.contains($0.key) }
             apply()
+            await reissueAppend()
         case let .failure(error):
             guard generation == refreshGeneration else { return }
             let text = ErrorMessage.text(for: error)
@@ -128,7 +132,19 @@ public final class SkillTableViewModel: ObservableObject {
     }
 
     public func loadMore() async {
-        guard canLoadMore, !isAppending, let sourceID else { return }
+        guard canLoadMore, !isAppending, sourceID != nil else { return }
+        guard !isRefreshing else {
+            appendRequested = true
+            return
+        }
+        await runAppend()
+    }
+
+    /// The tail read, under the identity of the query that was on screen when the scroll happened. See
+    /// `AgentListViewModel`.
+    private func runAppend() async {
+        guard let sourceID else { return }
+        let generation = refreshGeneration
         isAppending = true
         defer { isAppending = false }
         switch await skills.skillPage(
@@ -139,12 +155,20 @@ public final class SkillTableViewModel: ObservableObject {
             size: pages.pageSize
         ) {
         case let .success(page):
+            guard generation == refreshGeneration else { return }
             inlineError = nil
             pages.append(with: page)
             apply()
         case let .failure(error):
+            guard generation == refreshGeneration else { return }
             inlineError = ErrorMessage.text(for: error)
         }
+    }
+
+    private func reissueAppend() async {
+        guard appendRequested, canLoadMore, !isAppending, sourceID != nil else { return }
+        appendRequested = false
+        await runAppend()
     }
 
     /// The binding counts on the row are the gate, so the switch never sends a write the stack will refuse:
@@ -154,6 +178,7 @@ public final class SkillTableViewModel: ObservableObject {
     public func setStatus(_ enabled: Bool, for skill: SkillItem) async {
         boundNotice = nil
         guard let id = skill.id else { return }
+        guard !pendingIDs.contains(id) else { return }
         // Only the disable direction is gated: a row that has since been bound still has to be switchable
         // back on, and the server would refuse the disable anyway.
         if !enabled, skill.isBound {

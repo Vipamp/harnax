@@ -77,6 +77,9 @@ public final class TaskListViewModel: ObservableObject {
     private var refreshGeneration = 0
     private var isRefreshing = false
     private var rerunRequested = false
+    /// An append asked for while a refresh is on the wire is remembered, not dropped — see
+    /// `AgentListViewModel`.
+    private var appendRequested = false
     /// `§2.5`: three seconds, but only while the page holds a Running or Stopping row — the loop cancels itself
     /// the moment the data stops asking, which is what makes this poll data-driven rather than constant.
     private let pollInterval: Duration
@@ -130,7 +133,8 @@ public final class TaskListViewModel: ObservableObject {
         inlineError = nil
         noticeLines = []
         if items.isEmpty { phase = .loading }
-        await reload(reporting: true, generation: generation)
+        guard await reload(reporting: true, generation: generation) else { return }
+        await reissueAppend()
     }
 
     /// The same page, read again without touching the banners.
@@ -146,18 +150,22 @@ public final class TaskListViewModel: ObservableObject {
         await reload(reporting: false, generation: refreshGeneration)
     }
 
-    private func reload(reporting: Bool, generation: Int) async {
+    /// Whether the page landed, because a queued append is only owed a re-issue once the screen really has a
+    /// first page of its own query to append to.
+    @discardableResult
+    private func reload(reporting: Bool, generation: Int) async -> Bool {
         switch await catalog.agentTaskPage(name: keyword, taskStatus: filter.queryValue, num: 1, size: pages.pageSize) {
         case let .success(page):
-            absorb(page, generation: generation)
+            return absorb(page, generation: generation)
         case let .failure(error):
-            guard reporting, generation == refreshGeneration else { return }
+            guard reporting, generation == refreshGeneration else { return false }
             let text = ErrorMessage.text(for: error)
             if items.isEmpty {
                 phase = .failed(text)
             } else {
                 inlineError = text
             }
+            return false
         }
     }
 
@@ -166,15 +174,28 @@ public final class TaskListViewModel: ObservableObject {
     /// An optimistic switch survives only while its own write is still in flight: once the request has answered,
     /// the page carries the very value the override was standing in for, and keeping the override would let a
     /// three-second poll leave a switch pointing the wrong way for good.
-    private func absorb(_ page: Page<AgentTaskSummary>, generation: Int) {
-        guard generation == refreshGeneration else { return }
+    @discardableResult
+    private func absorb(_ page: Page<AgentTaskSummary>, generation: Int) -> Bool {
+        guard generation == refreshGeneration else { return false }
         pages.replace(with: page)
         statusOverrides = statusOverrides.filter { pendingIDs.contains($0.key) }
         apply()
+        return true
     }
 
     public func loadMore() async {
         guard canLoadMore, !isAppending else { return }
+        guard !isRefreshing else {
+            appendRequested = true
+            return
+        }
+        await runAppend()
+    }
+
+    /// The tail read, under the identity of the query that was on screen when the scroll happened. See
+    /// `AgentListViewModel`.
+    private func runAppend() async {
+        let generation = refreshGeneration
         isAppending = true
         defer { isAppending = false }
         switch await catalog.agentTaskPage(
@@ -184,14 +205,22 @@ public final class TaskListViewModel: ObservableObject {
             size: pages.pageSize
         ) {
         case let .success(page):
+            guard generation == refreshGeneration else { return }
             inlineError = nil
             pages.append(with: page)
             apply()
         case let .failure(error):
+            guard generation == refreshGeneration else { return }
             // The list stays usable, so the page counter is left alone and the next scroll retries the
             // same page number.
             inlineError = ErrorMessage.text(for: error)
         }
+    }
+
+    private func reissueAppend() async {
+        guard appendRequested, canLoadMore, !isAppending else { return }
+        appendRequested = false
+        await runAppend()
     }
 
     /// Optimistic, because the answer is a bare `ResultVo<Void>` and the switch is the row's own state.
@@ -202,6 +231,7 @@ public final class TaskListViewModel: ObservableObject {
     /// message is shown as it arrived.
     public func setStatus(_ enabled: Bool, for row: AgentTaskSummary) async {
         guard let id = row.id else { return }
+        guard !pendingIDs.contains(id) else { return }
         statusOverrides[id] = enabled
         pendingIDs.insert(id)
         defer { pendingIDs.remove(id) }
@@ -220,6 +250,7 @@ public final class TaskListViewModel: ObservableObject {
     @discardableResult
     public func trigger(_ row: AgentTaskSummary) async -> Bool {
         guard let id = row.id else { return false }
+        guard !pendingIDs.contains(id) else { return false }
         pendingIDs.insert(id)
         defer { pendingIDs.remove(id) }
         if case let .failure(error) = await catalog.triggerAgentTask(id: id) {

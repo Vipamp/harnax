@@ -373,7 +373,7 @@ final class SkillContractTests: XCTestCase {
         let detailKeys = try wireKeys(of: "skill-detail", at: ["data"])
         XCTAssertEqual(pageKeys, detailKeys)
         XCTAssertEqual(
-            Set(detailKeys),
+            detailKeys,
             [
                 "id", "name", "repositoryId", "repositoryName", "repositoryUrl", "repositoryBranch",
                 "description", "skillmd", "resources", "status", "boundAgentCount", "boundTeamCount",
@@ -554,8 +554,10 @@ final class SkillContractTests: XCTestCase {
         try JSONSerialization.jsonObject(with: try JSONEncoder().encode(value)) as? [String: Any]
     }
 
-    /// The keys the server really sent, read before any projection through a Swift type.
-    private func wireKeys(of fixture: String, at path: [Any]) throws -> [String] {
+    /// The keys the server really sent, read before any projection through a Swift type. A set: `Dictionary`
+    /// hands its keys out in an order that is not stable across processes, and this gate asks only which keys
+    /// arrived.
+    private func wireKeys(of fixture: String, at path: [Any]) throws -> Set<String> {
         var cursor: Any = try JSONSerialization.jsonObject(with: try Fixture.data(fixture))
         for step in path {
             switch step {
@@ -564,7 +566,7 @@ final class SkillContractTests: XCTestCase {
             default: throw FixtureError.missing("\(step)")
             }
         }
-        return Array(try XCTUnwrap((cursor as? [String: Any])?.keys))
+        return Set(try XCTUnwrap((cursor as? [String: Any])?.keys))
     }
 }
 

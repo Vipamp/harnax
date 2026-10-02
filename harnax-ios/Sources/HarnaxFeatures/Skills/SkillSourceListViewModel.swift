@@ -33,6 +33,14 @@ public final class SkillSourceListViewModel: ObservableObject {
     @Published public private(set) var blockedMessage: String?
     /// What the last create or upload did — graded, because a `200` there does not mean the skills landed.
     @Published public private(set) var lastReport: SkillInstallReport?
+    /// The open repository form, `nil` when no sheet is up. Settable because it is what `.sheet(item:)`
+    /// presents: a write that landed clears it here, and a refused one leaves it — and its own `errorText` —
+    /// on screen for the operator to fix.
+    @Published public var repositoryForm: SkillRepositoryFormModel?
+    /// What an edit leaves behind instead of a success: a PUT stores configuration and re-reads nothing, so
+    /// saying "updated" would tell the operator the skills had already moved
+    /// (`RepositoryForm.tsx:115-124`).
+    @Published public private(set) var configurationHint: String?
     /// The picker hands this back, and the sheet keeps it until the upload has been answered. It is a plain
     /// `let` because it is an observable object in its own right — the sheet binds into it directly.
     public let upload: SkillUploadModel
@@ -60,6 +68,10 @@ public final class SkillSourceListViewModel: ObservableObject {
     @Published private(set) var statusOverrides: [Int64: Bool] = [:]
 
     private let skills: any SkillCataloging
+    /// The row's writes already gate on it in the view, and the repository form needs the same account for
+    /// one control of its own: `isPublic` is disabled rather than hidden
+    /// (`harnax-webui/src/utils/permissionUtil.ts:57-75`).
+    private let account: AccountSnapshot?
     private var pages: PagedState<SkillSourceSummary>
     private var searchTask: Task<Void, Never>?
     /// Refresh identity and the one-in-flight rule, exactly as `AgentListViewModel` documents them: the
@@ -67,9 +79,13 @@ public final class SkillSourceListViewModel: ObservableObject {
     private var refreshGeneration = 0
     private var isRefreshing = false
     private var rerunRequested = false
+    /// An append asked for while a refresh is on the wire is remembered, not dropped — see
+    /// `AgentListViewModel`.
+    private var appendRequested = false
 
-    public init(skills: any SkillCataloging, pageSize: Int = 20) {
+    public init(skills: any SkillCataloging, account: AccountSnapshot? = nil, pageSize: Int = 20) {
         self.skills = skills
+        self.account = account
         pages = PagedState(pageSize: pageSize)
         upload = SkillUploadModel(catalog: skills)
     }
@@ -129,6 +145,7 @@ public final class SkillSourceListViewModel: ObservableObject {
             pages.replace(with: page)
             statusOverrides = statusOverrides.filter { pendingIDs.contains($0.key) }
             apply()
+            await reissueAppend()
         case let .failure(error):
             guard generation == refreshGeneration else { return }
             let text = ErrorMessage.text(for: error)
@@ -142,6 +159,18 @@ public final class SkillSourceListViewModel: ObservableObject {
 
     public func loadMore() async {
         guard canLoadMore, !isAppending else { return }
+        guard !isRefreshing else {
+            appendRequested = true
+            return
+        }
+        await runAppend()
+    }
+
+    /// The tail read, under the identity of the query that was on screen when the scroll happened, as
+    /// `AgentListViewModel` documents it: a retired answer may take none of the rows, the total or the page
+    /// counter with it.
+    private func runAppend() async {
+        let generation = refreshGeneration
         isAppending = true
         defer { isAppending = false }
         switch await skills.sourcePage(
@@ -152,15 +181,24 @@ public final class SkillSourceListViewModel: ObservableObject {
             size: pages.pageSize
         ) {
         case let .success(page):
+            guard generation == refreshGeneration else { return }
             inlineError = nil
             pages.append(with: page)
             apply()
         case let .failure(error):
+            guard generation == refreshGeneration else { return }
             inlineError = ErrorMessage.text(for: error)
         }
     }
 
+    private func reissueAppend() async {
+        guard appendRequested, canLoadMore, !isAppending else { return }
+        appendRequested = false
+        await runAppend()
+    }
+
     public func setStatus(_ enabled: Bool, for source: SkillSourceSummary) async {
+        guard !pendingIDs.contains(source.id) else { return }
         statusOverrides[source.id] = enabled
         pendingIDs.insert(source.id)
         defer { pendingIDs.remove(source.id) }
@@ -175,6 +213,7 @@ public final class SkillSourceListViewModel: ObservableObject {
     /// carry per-skill failures — and the previous run's report goes first, since the sheet opens on a
     /// *change* of it and two identical answers would otherwise be one published value.
     public func installAll(_ source: SkillSourceSummary) async {
+        guard !pendingIDs.contains(source.id) else { return }
         inlineError = nil
         lastReport = nil
         pendingIDs.insert(source.id)
@@ -225,6 +264,52 @@ public final class SkillSourceListViewModel: ObservableObject {
         lastReport = nil
         lastReport = await upload.submit()
         if upload.succeeded { await refresh() }
+    }
+
+    /// SKILL-1 — opens the create form. The console has one Create button on the repository card
+    /// (`harnax-webui/src/pages/skill/index.tsx:191-195,289-294`); the ZIP half of that button's form is this
+    /// screen's own upload entry, because the create route refuses a ZIP
+    /// (`SkillSourceServiceImpl.kt:119-123`).
+    public func beginRepositoryCreate() {
+        configurationHint = nil
+        repositoryForm = SkillRepositoryFormModel(mode: .create, catalog: skills, account: account)
+    }
+
+    /// SKILL-2 — opens the same form seeded from one row. The console selects the row on the way into the
+    /// edit (`RepositoryList.tsx:459-464`), and so does this: the highlight follows what is being changed.
+    public func beginRepositoryEdit(_ source: SkillSourceSummary) {
+        configurationHint = nil
+        selection = source.id
+        repositoryForm = SkillRepositoryFormModel(mode: .edit(source), catalog: skills, account: account)
+    }
+
+    /// The sheet's submit, and the only place either write reloads the list. The reload is the same
+    /// generation-tokened `refresh()` the pull-to-refresh and the reinstall use, because a create installs
+    /// rows the moment it stores the source and an edit changes a row the next sync will read
+    /// (`harnax-webui/src/pages/skill/index.tsx:101-104`).
+    ///
+    /// The answer goes up *after* that reload and the sheet comes down before it: the report sheet opens on a
+    /// change of `lastReport`, and presenting it while the form is still on screen would stack two sheets on
+    /// one view. A write that was refused leaves the sheet — and its `errorText` — exactly where they were,
+    /// which is what the console does by not calling `onSuccess()` at all (`RepositoryForm.tsx:133-134`).
+    public func submitRepositoryForm() async {
+        guard let form = repositoryForm else { return }
+        lastReport = nil
+        configurationHint = nil
+        guard let outcome = await form.save() else { return }
+        repositoryForm = nil
+        await refresh()
+        switch outcome {
+        case let .created(report):
+            lastReport = report
+        case .updated:
+            configurationHint = hx("skill.repository.updateHint")
+        }
+    }
+
+    /// The list calls this when the operator has read the hint.
+    public func dismissConfigurationHint() {
+        configurationHint = nil
     }
 
     /// The sheet calls this as it closes. A report nobody has read left published would make "nothing yet" and

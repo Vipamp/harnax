@@ -364,6 +364,52 @@ final class ChatTranscriptTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(transcript.turns.last).hasContent)
     }
 
+    // MARK: - copying a whole bubble
+
+    func testCopyJoinsTheTextRunsInStreamOrder() throws {
+        var transcript = started()
+        try fold(&transcript,
+                 ChatFrames.text("前面"),
+                 ChatFrames.thinking("中间在想"),
+                 ChatFrames.text("后面"))
+
+        XCTAssertEqual(transcript.turns.last?.copyableText, "前面\n后面")
+    }
+
+    func testCopyLeavesOutThinkingToolsAndFiles() throws {
+        var transcript = started()
+        try fold(&transcript,
+                 ChatFrames.text("答案"),
+                 ChatFrames.thinking("思路"),
+                 ChatFrames.call(id: "t-1", name: "bash", arguments: #"{"command":"ls"}"#),
+                 ChatFrames.result(id: "t-1", name: "bash", message: "a.md"),
+                 ChatFrames.end(attachments: "[\(ChatFrames.file(id: "f-1", name: "a.md"))]"))
+
+        XCTAssertEqual(transcript.turns.last?.copyableText, "答案")
+    }
+
+    func testCopyLeavesOutThePlanBlock() throws {
+        var transcript = started()
+        try fold(&transcript, ChatFrames.text("答案"))
+        XCTAssertTrue(transcript.showPlan(PlanNote(name: "翻译整本书")))
+
+        XCTAssertEqual(transcript.turns.last?.copyableText, "答案")
+    }
+
+    func testAThinkingOnlyAnswerHasNothingToCopy() throws {
+        var transcript = started()
+        try fold(&transcript, ChatFrames.thinking("只在想"))
+
+        XCTAssertEqual(transcript.turns.last?.copyableText, "")
+    }
+
+    func testTheUserBubbleCopiesItsOwnWords() {
+        var transcript = ChatTranscript()
+        transcript.send("跑一下")
+
+        XCTAssertEqual(transcript.turns.first?.copyableText, "跑一下")
+    }
+
     // MARK: - arguments text
 
     func testArgumentsPrintSortedAndLiteral() throws {

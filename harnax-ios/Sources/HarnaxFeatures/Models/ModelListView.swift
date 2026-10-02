@@ -28,7 +28,7 @@ public struct ModelListView: View {
     }
 
     public var body: some View {
-        content
+        screen
             .harnaxScreen()
             .searchable(text: $vm.keyword, prompt: Text(verbatim: hx("model.search")))
             .navigationTitle(Text(verbatim: ModelProviderPresenter.title(for: provider)))
@@ -75,26 +75,62 @@ public struct ModelListView: View {
             }
     }
 
-    private var createButton: some View {
-        Button { isCreating = true } label: {
-            Image(systemName: "plus")
+    /// The price boxes sit above the phase switch rather than inside the list: a filter that removed every row
+    /// has to leave them on screen, or the very boxes that caused the empty screen would vanish with the rows.
+    /// The choices that used to ride along here are in the toolbar menu now, and that one cannot scroll away.
+    @ViewBuilder
+    private var screen: some View {
+        VStack(spacing: 0) {
+            if vm.phase == .content || (vm.phase == .empty && vm.isFiltered) {
+                priceFilter
+            }
+            content
         }
     }
 
+    private var createButton: some View {
+        HXPlusButton(titleKey: "model.create") { isCreating = true }
+    }
+
+    /// The three choice-shaped filters on the page endpoint: status and model type
+    /// (`ModelController.kt:37,43-44`) and the capability tags, which the endpoint ANDs into one comma-joined
+    /// `tags` parameter (`ModelServiceImpl.kt:47-52`). The price bounds stay below as fields, because a menu can
+    /// hold a choice but not a number the user types.
     private var filterMenu: some View {
-        Menu {
-            ForEach(StatusFilter.allCases) { option in
-                Button {
-                    vm.filter = option
-                } label: {
-                    HStack {
-                        HXText(option.titleKey)
-                        if vm.filter == option { Image(systemName: "checkmark") }
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: vm.filter == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+        HXFilterMenu(
+            isFiltering: vm.filter != .all || vm.typeFilter != nil || !vm.selectedTags.isEmpty,
+            accessibilityLabel: hx("state.filter")
+        ) {
+            HXFilterChoices(statusFilterChoices(vm.filter) { vm.filter = $0 })
+            Divider()
+            HXFilterChoices(typeChoices)
+            Divider()
+            HXFilterChoices(tagChoices)
+        }
+    }
+
+    private var typeChoices: [HXFilterChoice] {
+        [HXFilterChoice(
+            id: "state.filter.all",
+            titleKey: "state.filter.all",
+            isSelected: vm.typeFilter == nil
+        ) { vm.typeFilter = nil }] + ModelType.allCases.map { option in
+            HXFilterChoice(
+                id: option.titleKey,
+                titleKey: option.titleKey,
+                isSelected: vm.typeFilter == option
+            ) { vm.typeFilter = option }
+        }
+    }
+
+    /// The one group that stacks: a tick means the tag is in the set, and tapping it again takes it out.
+    private var tagChoices: [HXFilterChoice] {
+        ModelCapability.allCases.map { tag in
+            HXFilterChoice(
+                id: tag.titleKey,
+                titleKey: tag.titleKey,
+                isSelected: vm.selectedTags.contains(tag)
+            ) { Task { await vm.toggle(tag) } }
         }
     }
 
@@ -127,7 +163,6 @@ public struct ModelListView: View {
                         tone: .danger
                     )
                 }
-                tagFilter
                 // Index identity, as on every other list here: the row's own `id` may be null, and two null
                 // ids under one identity would drop a row.
                 ForEach(Array(vm.items.enumerated()), id: \.offset) { index, model in
@@ -154,33 +189,24 @@ public struct ModelListView: View {
         }
     }
 
-    /// The five capability tags double as the filter, because that is what the page endpoint's `tags`
-    /// parameter accepts — one comma-joined string it splits again
-    /// (`ModelServiceImpl.kt:47-52`).
-    private var tagFilter: some View {
-        HXFlow(spacing: 8) {
-            ForEach(ModelCapability.allCases) { tag in
-                let selected = vm.selectedTags.contains(tag)
-                Button {
-                    Task { await vm.toggle(tag) }
-                } label: {
-                    HXChip(hx(tag.titleKey), tone: selected ? .brand : nil)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 3)
-                        .background(
-                            selected ? Color.hxFill(.brand, alpha: 0.10) : Color.hx(.surface),
-                            in: Capsule()
-                        )
-                        .overlay(
-                            Capsule().strokeBorder(
-                                selected ? Color.hx(.brand) : Color.hx(.separator),
-                                lineWidth: 1
-                            )
-                        )
-                }
-                .buttonStyle(.plain)
-            }
+    /// The price bounds — the same two optional numbers the console puts after the status in its filter bar
+    /// (`harnax-webui/src/pages/model/index.tsx:559-576`). They need no clear button: a box that is empty, or
+    /// holds text that is not a number, sends no bound at all, so emptying it lifts the filter. The comparison
+    /// itself is server-side and inclusive at both ends (`ModelMapper.xml:150-155`).
+    private var priceFilter: some View {
+        HStack(spacing: 8) {
+            HXField("model.filter.minPrice", text: $vm.minPriceText, systemImage: "yensign", kind: .number)
+                .frame(maxWidth: 150)
+            Text(verbatim: "–")
+                .font(.footnote)
+                .foregroundStyle(Color.hx(.textTertiary))
+            HXField("model.filter.maxPrice", text: $vm.maxPriceText, systemImage: "yensign", kind: .number)
+                .frame(maxWidth: 150)
+            Spacer(minLength: 0)
         }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 2)
     }
 }
 
@@ -296,5 +322,6 @@ struct ModelRow: View {
                 .frame(width: 30, height: 30)
                 .background(Color.hx(.surfaceAlt), in: Circle())
         }
+        .accessibilityLabel(hx("state.action.more"))
     }
 }

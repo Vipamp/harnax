@@ -9,24 +9,31 @@ final class SessionDetailViewModelTests: XCTestCase {
     private let basic = "chat.detail.section.basic"
     private let executor = "chat.detail.section.executor"
     private let teamLead = "chat.detail.section.teamLead"
+    private let tools = "chat.detail.section.tools"
     private let skills = "chat.detail.section.skills"
+    private let cli = "chat.detail.section.cli"
+    private let members = "chat.detail.section.members"
     private let mcp = "chat.detail.section.mcp"
 
     private func panels(
         _ session: SessionSummary,
+        bindings: SessionExecutorBindings? = nil,
         expanded: Bool = false,
-        availability: (SessionSkillItem) -> Bool? = { _ in nil }
+        chinese: Bool = false
     ) -> [SessionDetailSection] {
-        SessionDetailPresenter.sections(for: session, isPromptExpanded: expanded, availability: availability)
+        SessionDetailPresenter.sections(
+            for: session, bindings: bindings, isPromptExpanded: expanded, chinese: chinese
+        )
     }
 
     private func panel(
         _ session: SessionSummary,
         _ titleKey: String,
+        bindings: SessionExecutorBindings? = nil,
         expanded: Bool = false,
-        availability: (SessionSkillItem) -> Bool? = { _ in nil }
+        chinese: Bool = false
     ) throws -> SessionDetailSection {
-        let sections = panels(session, expanded: expanded, availability: availability)
+        let sections = panels(session, bindings: bindings, expanded: expanded, chinese: chinese)
         return try XCTUnwrap(
             sections.first { $0.titleKey == titleKey },
             "no panel \(titleKey) in \(sections.map(\.titleKey))"
@@ -91,13 +98,36 @@ final class SessionDetailViewModelTests: XCTestCase {
         XCTAssertFalse(panels(nameless).contains { $0.titleKey == skills })
     }
 
-    func testTheFourPanelsKeepTheConsolesOrder() throws {
+    func testThePanelsKeepTheConsolesOrder() throws {
         let session = SessionSummary.stub(
             mcpList: [SessionMcpItem.stub()],
             skillList: [SessionSkillItem.stub()],
             isPublic: 1
         )
-        XCTAssertEqual(panels(session).map(\.titleKey), [basic, executor, skills, mcp])
+        XCTAssertEqual(panels(session).map(\.titleKey), [basic, executor, mcp, skills])
+
+        // The console's own order is basic, agent, tools, mcp, skill, cli, members
+        // (`DetailModal.tsx:192-561`), so an agent row puts the MCP panel before the skill panel — the two
+        // binding tails it can reach through `agentId` sit between them.
+        let agent = try ExecutorRows.agent(
+            mcp: [ExecutorRows.mcp()], skills: [ExecutorRows.agentSkill()],
+            tools: [ExecutorRows.tool()], cli: [ExecutorRows.cli()]
+        )
+        XCTAssertEqual(
+            panels(session, bindings: .agent(agent)).map(\.titleKey),
+            [basic, executor, tools, mcp, skills, cli]
+        )
+
+        // A team row owns the lead's skills and its members, and binds nothing else
+        // (`DetailModal.tsx:114-128` clears the three agent-side lists).
+        let teamSession = SessionSummary.stub(agentId: nil, teamId: 12)
+        let team = try ExecutorRows.team(
+            skills: [ExecutorRows.teamSkill()], members: [ExecutorRows.member()]
+        )
+        XCTAssertEqual(
+            panels(teamSession, bindings: .team(team)).map(\.titleKey),
+            [basic, teamLead, skills, members]
+        )
     }
 
     // MARK: - price (`¥{n}/M`)
@@ -178,28 +208,50 @@ final class SessionDetailViewModelTests: XCTestCase {
 
     // MARK: - the 失效 badge
 
-    func testTheUnavailableBadgeAppearsOnlyWhenTheFlagSaysSo() throws {
-        // No repository column on this fixture: the marks array then says exactly what availability said.
-        let skillList = [SessionSkillItem.stub(repositoryName: nil)]
-        let marked = try panel(
-            SessionSummary.stub(skillList: skillList), skills, availability: { _ in false }
+    func testTheUnavailableBadgeAppearsOnlyWhenTheTeamRowSaysSo() throws {
+        // No repository column on these fixtures: the marks array then says exactly what the flag said.
+        let session = SessionSummary.stub(agentId: nil, teamId: 12)
+        let dead = try panel(
+            session, skills,
+            bindings: .team(ExecutorRows.team(skills: [ExecutorRows.teamSkill(repository: nil, available: false)]))
         )
         XCTAssertEqual(
-            marked.rows.first?.marks,
+            dead.rows.first?.marks,
             [.badge(key: "chat.detail.badge.unavailable", tone: .danger)]
         )
 
         let live = try panel(
-            SessionSummary.stub(skillList: skillList), skills, availability: { _ in true }
+            session, skills,
+            bindings: .team(ExecutorRows.team(skills: [ExecutorRows.teamSkill(repository: nil)]))
         )
         XCTAssertTrue(try XCTUnwrap(live.rows.first).marks.isEmpty)
     }
 
-    func testTheRowItselfNeverClaimsASkillIsGone() throws {
-        // A session row has no `skillAvailable` column at all, so the screen's own reading of the DTO must
-        // not invent one — the badge stays off when the caller has nothing to say.
-        let section = try panel(SessionSummary.stub(skillList: [SessionSkillItem.stub(repositoryName: nil)]), skills)
-        XCTAssertTrue(try XCTUnwrap(section.rows.first).marks.isEmpty)
+    func testNeitherTheAgentRowNorTheSnapshotClaimsASkillIsGone() throws {
+        // `AgentResponse.SkillItem` has no availability column at all (`AgentResponse.kt:106-121`), and a
+        // deleted skill never reached the conversation's own copy (`SessionServiceImpl.kt:145`). The badge is
+        // therefore the team row's alone, and both other sources must render the same skill unflagged.
+        let agent = try panel(
+            SessionSummary.stub(), skills,
+            bindings: .agent(ExecutorRows.agent(skills: [ExecutorRows.agentSkill(repository: nil)]))
+        )
+        XCTAssertTrue(try XCTUnwrap(agent.rows.first).marks.isEmpty)
+
+        let snapshot = try panel(SessionSummary.stub(skillList: [SessionSkillItem.stub(repositoryName: nil)]), skills)
+        XCTAssertTrue(try XCTUnwrap(snapshot.rows.first).marks.isEmpty)
+    }
+
+    func testTheTeamRowOwnsTheSkillPanelOnceItIsIn() throws {
+        // The conversation's copy is dropped as soon as the authoritative row arrives, not merged with it: the
+        // two lists disagree precisely when a binding has been deleted, and then the by-id row is the true one.
+        let session = SessionSummary.stub(
+            agentId: nil, teamId: 12, skillList: [SessionSkillItem.stub(skillName: "旧快照里的技能")]
+        )
+        let section = try panel(
+            session, skills,
+            bindings: .team(ExecutorRows.team(skills: [ExecutorRows.teamSkill(skillName: "公告解析")]))
+        )
+        XCTAssertEqual(section.rows.map(\.value), ["公告解析"])
     }
 
     func testASkillMarksItsSourceRepositoryBesideItsName() throws {
