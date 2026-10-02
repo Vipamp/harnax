@@ -34,10 +34,12 @@ interface ModelProviderService {
     fun getModelProvider(id: Long): ModelProvider?
 
     /**
-     * Get model provider details as far as the current tenant may see it
+     * Get model provider details as far as the current caller may see it: its tenant's rows, the shared
+     * ones plus its own.
      *
      * @param id ID
-     * @return Model provider response, null when the row belongs to another tenant and is not public
+     * @return Model provider response, null when the row belongs to another tenant or is private to
+     *         somebody else within it
      */
     fun getVisibleModelProvider(id: Long): ModelProvider?
 

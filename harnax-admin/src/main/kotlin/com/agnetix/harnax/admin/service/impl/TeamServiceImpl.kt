@@ -236,17 +236,19 @@ class TeamServiceImpl(
      *
      * Stricter than the agent side, which never looked: delivery has no fallback for a lead whose model
      * cannot be used, so what the guard refuses here is exactly what would otherwise become a team that
-     * starts and then fails on its first message. Visibility follows the model picker's own rule, which
-     * is now the tenant's — own row or `is_public`, so a model shared to the platform stays pickable
-     * while another tenant's private rows do not.
+     * starts and then fails on its first message. The rule is the model picker's own one — the tenant is
+     * a wall, and inside it a row is usable when it is shared with the tenant or is the caller's own.
      */
     private fun requireUsableModel(modelId: Long) {
         val model = modelMapper.selectById(modelId) ?: throw BizException("Lead model not found: $modelId")
-        if (model.tenantId != currentTenantId() && model.isPublic != 1) {
+        if (model.tenantId != currentTenantId()) {
             throw BizException("Lead model is not available to the current tenant: $modelId")
         }
         if (model.status != 1) {
             throw BizException("Lead model is disabled: ${model.modelName}")
+        }
+        if (model.isPublic != 1 && model.creator != UserContextUtil.getCurrentUsername(jwtUtil)) {
+            throw BizException("Lead model is not available to the current user: ${model.modelName}")
         }
         if (model.modelType != "chat") {
             throw BizException("Lead model is not a chat model: ${model.modelName}")

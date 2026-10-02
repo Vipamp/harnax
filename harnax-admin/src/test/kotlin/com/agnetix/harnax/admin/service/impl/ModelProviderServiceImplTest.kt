@@ -96,7 +96,7 @@ class ModelProviderServiceImplTest {
         fun `page should return paginated provider list`() {
             // Given
             val providers = listOf(testProvider)
-            `when`(modelProviderMapper.selectModelProviderList(null, null, null, null, 1L))
+            `when`(modelProviderMapper.selectModelProviderList(null, null, null, null, "admin", 1L))
                 .thenReturn(providers)
 
             // When
@@ -104,14 +104,14 @@ class ModelProviderServiceImplTest {
 
             // Then
             assertNotNull(result)
-            verify(modelProviderMapper).selectModelProviderList(null, null, null, null, 1L)
+            verify(modelProviderMapper).selectModelProviderList(null, null, null, null, "admin", 1L)
         }
 
         @Test
         @DisplayName("page - Filter by name and status")
         fun `page should filter by name and status`() {
             // Given
-            `when`(modelProviderMapper.selectModelProviderList("Test", "openai", 1, null, 1L))
+            `when`(modelProviderMapper.selectModelProviderList("Test", "openai", 1, null, "admin", 1L))
                 .thenReturn(listOf(testProvider))
 
             // When
@@ -119,7 +119,20 @@ class ModelProviderServiceImplTest {
 
             // Then
             assertNotNull(result)
-            verify(modelProviderMapper).selectModelProviderList("Test", "openai", 1, null, 1L)
+            verify(modelProviderMapper).selectModelProviderList("Test", "openai", 1, null, "admin", 1L)
+        }
+
+        @Test
+        @DisplayName("page - The caller's own name is what the private-row clause runs on")
+        fun `page should carry the caller name into the query`() {
+            // Given
+            `when`(jwtUtil.getUsernameFromToken(anyString())).thenReturn("bob")
+
+            // When
+            modelProviderService.page(null, null, null, null, 1, 10)
+
+            // Then
+            verify(modelProviderMapper).selectModelProviderList(null, null, null, null, "bob", 1L)
         }
     }
 
@@ -509,7 +522,7 @@ class ModelProviderServiceImplTest {
         @Test
         @DisplayName("getModelStats - A public provider of another tenant has no stats to hand out")
         fun `getModelStats should refuse another tenant provider`() {
-            // Given - public only decides "whether others may use it"; the stats describe the owner's own model list
+            // Given - sharing stops at the tenant, so a public flag on another tenant's row buys nothing here
             val foreign = ModelProvider().apply {
                 id = 1L
                 tenantId = 2L
@@ -521,6 +534,40 @@ class ModelProviderServiceImplTest {
                 creator = "other"
             }
             `when`(modelProviderMapper.selectById(1L)).thenReturn(foreign)
+
+            val exception = assertThrows<BizException> { modelProviderService.getModelStats(1L) }
+
+            assertEquals("error.model.provider.notfound", exception.message)
+            verify(modelMapper, never()).countModelsByProviderId(anyLong())
+        }
+
+        @Test
+        @DisplayName("getModelStats - A provider shared with the tenant counts for its other members")
+        fun `getModelStats should return statistics to another member of the tenant`() {
+            // Given - tenant 1's own row, shared, made by someone else
+            testProvider.creator = "other"
+            `when`(modelProviderMapper.selectById(1L)).thenReturn(testProvider)
+            `when`(jwtUtil.getUsernameFromToken(anyString())).thenReturn("bob")
+            `when`(modelMapper.countModelsByProviderId(1L)).thenReturn(10)
+            `when`(modelMapper.countActiveModelsByProviderId(1L)).thenReturn(7)
+            `when`(modelMapper.countDisabledModelsByProviderId(1L)).thenReturn(3)
+
+            // When
+            val result = modelProviderService.getModelStats(1L)
+
+            // Then
+            assertEquals(10, result.totalModels)
+            assertEquals(7, result.enabledModels)
+        }
+
+        @Test
+        @DisplayName("getModelStats - A colleague's private provider has no stats to hand out")
+        fun `getModelStats should refuse a colleague private provider`() {
+            // Given - the tenant's own row, kept private by its creator
+            testProvider.creator = "other"
+            testProvider.isPublic = 0
+            `when`(modelProviderMapper.selectById(1L)).thenReturn(testProvider)
+            `when`(jwtUtil.getUsernameFromToken(anyString())).thenReturn("bob")
 
             val exception = assertThrows<BizException> { modelProviderService.getModelStats(1L) }
 
@@ -587,7 +634,7 @@ class ModelProviderServiceImplTest {
             TenantContext.clear()
         }
 
-        private fun providerOf(tenantId: Long, publicFlag: Int): ModelProvider = ModelProvider().apply {
+        private fun providerOf(tenantId: Long, publicFlag: Int, createdBy: String = "admin"): ModelProvider = ModelProvider().apply {
             id = 1L
             this.tenantId = tenantId
             name = "Tenant $tenantId Provider"
@@ -596,7 +643,15 @@ class ModelProviderServiceImplTest {
             isPublic = publicFlag
             status = 1
             active = 1
-            creator = "admin"
+            creator = createdBy
+        }
+
+        /**
+         * Act as a different member of the tenant the header already names, so a test can tell a shared row
+         * from one that only its creator may reach.
+         */
+        private fun actAsColleague(username: String) {
+            `when`(jwtUtil.getUsernameFromToken(anyString())).thenReturn(username)
         }
 
         @Test
@@ -609,11 +664,31 @@ class ModelProviderServiceImplTest {
         }
 
         @Test
-        @DisplayName("getVisibleModelProvider - Public row of another tenant is visible")
-        fun `getVisibleModelProvider should return another tenant public row`() {
+        @DisplayName("getVisibleModelProvider - Public row of another tenant reads as absent")
+        fun `getVisibleModelProvider should hide another tenant public row`() {
             `when`(modelProviderMapper.selectById(1L)).thenReturn(providerOf(9L, 1))
 
+            assertNull(modelProviderService.getVisibleModelProvider(1L))
+        }
+
+        @Test
+        @DisplayName("getVisibleModelProvider - A shared provider reaches a colleague of the same tenant")
+        fun `getVisibleModelProvider should return a shared provider to another member of its tenant`() {
+            TenantContext.setTenantId(1L)
+            actAsColleague("it_mate")
+            `when`(modelProviderMapper.selectById(1L)).thenReturn(providerOf(1L, 1))
+
             assertNotNull(modelProviderService.getVisibleModelProvider(1L))
+        }
+
+        @Test
+        @DisplayName("getVisibleModelProvider - A colleague's private provider reads as absent")
+        fun `getVisibleModelProvider should hide a colleague private provider`() {
+            TenantContext.setTenantId(1L)
+            actAsColleague("it_mate")
+            `when`(modelProviderMapper.selectById(1L)).thenReturn(providerOf(1L, 0))
+
+            assertNull(modelProviderService.getVisibleModelProvider(1L))
         }
 
         @Test
@@ -635,6 +710,31 @@ class ModelProviderServiceImplTest {
 
             assertEquals("error.model.provider.notfound", exception.message)
             verify(modelProviderMapper, never()).updateById(any())
+        }
+
+        @Test
+        @DisplayName("updateModelProvider - A colleague's private provider within the tenant is not writable")
+        fun `updateModelProvider should refuse a colleague private provider`() {
+            TenantContext.setTenantId(1L)
+            actAsColleague("it_mate")
+            `when`(modelProviderMapper.selectById(1L)).thenReturn(providerOf(1L, 0))
+
+            val exception = assertThrows<BizException> {
+                modelProviderService.updateModelProvider(1L, ModelProviderUpdateRequest(description = "hijack"))
+            }
+
+            assertEquals("error.model.provider.notfound", exception.message)
+            verify(modelProviderMapper, never()).updateById(any())
+        }
+
+        @Test
+        @DisplayName("connectivityTest - A shared provider of the same tenant is spendable by every member")
+        fun `connectivityTest should accept a shared provider of the same tenant`() {
+            TenantContext.setTenantId(1L)
+            actAsColleague("it_mate")
+            `when`(modelProviderMapper.selectById(1L)).thenReturn(providerOf(1L, 1))
+
+            assertTrue(modelProviderService.connectivityTest(1L))
         }
 
         @Test

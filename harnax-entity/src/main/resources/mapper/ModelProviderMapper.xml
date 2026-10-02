@@ -67,11 +67,12 @@
         UPDATE model_provider SET status = #{status}, update_time = NOW() WHERE id = #{id} AND active = 1
     </update>
 
-    <!-- selectModelProviderList: own tenant plus anything published to the platform -->
+    <!-- selectModelProviderList: this tenant's rows, shared ones plus the caller's own private ones -->
     <select id="selectModelProviderList" resultMap="ModelProviderResultMap">
         SELECT * FROM model_provider
         WHERE active = 1
-        AND (tenant_id = #{tenantId} OR is_public = 1)
+        AND tenant_id = #{tenantId}
+        AND (is_public = 1 OR creator = #{currentUsername})
         <if test="name != null and name != ''">
             AND (name LIKE CONCAT('%', #{name}, '%') OR description LIKE CONCAT('%', #{name}, '%'))
         </if>

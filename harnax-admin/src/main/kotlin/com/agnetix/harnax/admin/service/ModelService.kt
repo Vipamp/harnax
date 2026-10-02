@@ -46,13 +46,13 @@ interface ModelService {
     fun getModel(id: Long): Model?
 
     /**
-     * Get model details as the current tenant sees them: its own rows plus published ones.
+     * Get model details as the current caller sees them: its tenant's rows, the shared ones plus its own.
      *
      * [getModel] is left to callers that resolve the model a binding names without a tenant of their
      * own - runtime spec assembly and headerless mobile reads - not to anything the console renders.
      *
      * @param id ID
-     * @return Model entity, or null when this tenant may not see it
+     * @return Model entity, or null when this caller may not see it
      */
     fun getVisibleModel(id: Long): Model?
 

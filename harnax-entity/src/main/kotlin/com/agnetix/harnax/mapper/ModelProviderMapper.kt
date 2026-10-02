@@ -23,11 +23,17 @@ interface ModelProviderMapper {
     fun updateStatus(@Param("id") id: Long, @Param("status") status: Int): Int
 
     // ==================== Custom Query Methods ====================
+
+    /**
+     * The providers of [tenantId] that [currentUsername] may see: its own rows, and within them the
+     * shared ones plus the private ones this user created.
+     */
     fun selectModelProviderList(
         @Param("name") name: String?,
         @Param("type") type: String?,
         @Param("status") status: Int?,
         @Param("isPublic") isPublic: Int?,
+        @Param("currentUsername") currentUsername: String,
         @Param("tenantId") tenantId: Long,
     ): List<ModelProvider>
 

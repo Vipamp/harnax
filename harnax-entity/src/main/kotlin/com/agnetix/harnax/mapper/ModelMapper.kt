@@ -24,6 +24,12 @@ interface ModelMapper {
     fun updateStatus(@Param("id") id: Long, @Param("status") status: Int): Int
 
     // ==================== Custom Query Methods ====================
+
+    /**
+     * The models of [tenantId] that [currentUsername] may see: its own rows, and within them the shared
+     * ones plus the private ones this user created. `is_public` is a tenant-internal switch here, the
+     * same reading `selectAgentList` gives it.
+     */
     fun selectModelList(
         @Param("name") name: String?,
         @Param("providerId") providerId: Long?,
@@ -32,12 +38,23 @@ interface ModelMapper {
         @Param("tags") tags: List<String>?,
         @Param("minPrice") minPrice: Double?,
         @Param("maxPrice") maxPrice: Double?,
+        @Param("currentUsername") currentUsername: String,
         @Param("tenantId") tenantId: Long,
     ): List<Model>
 
-    fun countByProviderIdAndName(@Param("providerId") providerId: Long, @Param("name") name: String): Int
+    /** Whether this tenant already names a model [name] under this provider. */
+    fun countByProviderIdAndName(
+        @Param("providerId") providerId: Long,
+        @Param("name") name: String,
+        @Param("tenantId") tenantId: Long,
+    ): Int
 
-    fun countByProviderIdAndModelName(@Param("providerId") providerId: Long, @Param("modelName") modelName: String): Int
+    /** Whether this tenant already names a model [modelName] under this provider. */
+    fun countByProviderIdAndModelName(
+        @Param("providerId") providerId: Long,
+        @Param("modelName") modelName: String,
+        @Param("tenantId") tenantId: Long,
+    ): Int
 
     fun countActiveModelsByProviderId(@Param("providerId") providerId: Long): Int
 

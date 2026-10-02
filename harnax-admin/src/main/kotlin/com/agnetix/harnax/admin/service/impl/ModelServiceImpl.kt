@@ -43,8 +43,9 @@ class ModelServiceImpl(
         pageNum: Int,
         pageSize: Int,
     ): Page<Model> {
-        // One tenant resolution shared by the page and the per-row visibility check
+        // The tenant and the caller together decide which rows this page may carry
         val tenantId = currentTenantId()
+        val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
 
         // 将标签字符串转为列表
         val tagsList = if (hasText(tags)) {
@@ -65,6 +66,7 @@ class ModelServiceImpl(
                 tagsList,
                 minPrice,
                 maxPrice,
+                currentUsername,
                 tenantId,
             ),
         )
@@ -72,14 +74,20 @@ class ModelServiceImpl(
 
     override fun getModel(id: Long): Model? = this.modelMapper.selectById(id)
 
-    override fun getVisibleModel(id: Long): Model? = modelMapper.selectById(id)?.takeIf { it.tenantId == currentTenantId() || it.isPublic == 1 }
+    override fun getVisibleModel(id: Long): Model? = modelMapper.selectById(id)?.takeIf { visibleToCaller(it) }
 
     /**
-     * A row this tenant may change. Another tenant's row reads as absent even when it is public: naming
-     * it here would confirm which ids belong to somebody else, and a public model is meant to be used,
-     * not edited, from outside its owning tenant.
+     * The row-level read rule, in the same shape the list query applies: the tenant is a wall, and
+     * `is_public` only decides whether the caller must be the creator to get past it.
      */
-    private fun ownedModel(id: Long): Model = modelMapper.selectById(id)?.takeIf { it.tenantId == currentTenantId() }
+    private fun visibleToCaller(model: Model): Boolean = model.tenantId == currentTenantId() && (model.isPublic == 1 || model.creator == UserContextUtil.getCurrentUsername(jwtUtil))
+
+    /**
+     * A row this caller may change: the same predicate the list and the by-id read apply, so a row that
+     * reads as absent cannot be written by guessing its id. Sharing stops at the tenant, so a `is_public`
+     * row is not a row the rest of the platform may write to either.
+     */
+    private fun ownedModel(id: Long): Model = modelMapper.selectById(id)?.takeIf { visibleToCaller(it) }
         ?: throw BizException(messageUtil.getMessage("error.model.notfound"))
 
     /**
@@ -90,19 +98,20 @@ class ModelServiceImpl(
 
     override fun createModel(request: ModelCreateRequest): Boolean {
         val tenantId = currentTenantId()
+        val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
 
-        // The provider must exist and be visible to this tenant
+        // The provider must be one this caller may use: its own tenant's, and shared or its own
         val provider = modelProviderMapper.selectById(request.providerId)
-            ?.takeIf { it.tenantId == tenantId || it.isPublic == 1 }
+            ?.takeIf { it.tenantId == tenantId && (it.isPublic == 1 || it.creator == currentUsername) }
             ?: throw BizException(messageUtil.getMessage("error.model.provider.notfound"))
 
         // 检查同一服务商下名称是否已存在
-        if (modelMapper.countByProviderIdAndName(request.providerId, request.name) > 0) {
+        if (modelMapper.countByProviderIdAndName(request.providerId, request.name, tenantId) > 0) {
             throw BizException(messageUtil.getMessage("error.model.name_exists"))
         }
 
         // 检查同一服务商下模型标识是否已存在
-        if (modelMapper.countByProviderIdAndModelName(request.providerId, request.modelName) > 0) {
+        if (modelMapper.countByProviderIdAndModelName(request.providerId, request.modelName, tenantId) > 0) {
             throw BizException(messageUtil.getMessage("error.model.model_name_exists"))
         }
 
@@ -124,7 +133,6 @@ class ModelServiceImpl(
         model.isPublic = request.isPublic ?: 1
 
         // Stamp the creator and the owning tenant
-        val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         model.creator = currentUsername
         model.tenantId = tenantId
         return this.modelMapper.insert(model) > 0
@@ -132,17 +140,18 @@ class ModelServiceImpl(
 
     override fun updateModel(id: Long, request: ModelUpdateRequest): Boolean {
         val model = ownedModel(id)
+        val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
 
-        // A changed provider must exist and be visible to this tenant
+        // A changed provider must be one this caller may use: the row's own tenant's, shared or its own
         if (request.providerId != null && request.providerId != model.providerId) {
             modelProviderMapper.selectById(request.providerId)
-                ?.takeIf { it.tenantId == model.tenantId || it.isPublic == 1 }
+                ?.takeIf { it.tenantId == model.tenantId && (it.isPublic == 1 || it.creator == currentUsername) }
                 ?: throw BizException(messageUtil.getMessage("error.model.provider.notfound"))
         }
 
         // 如果修改了名称，检查是否与其他模型冲突
         if (request.name != null && request.name != model.name) {
-            if (modelMapper.countByProviderIdAndName(model.providerId, request.name) > 0) {
+            if (modelMapper.countByProviderIdAndName(model.providerId, request.name, model.tenantId) > 0) {
                 throw BizException(messageUtil.getMessage("error.model.name_exists"))
             }
             model.name = request.name
@@ -150,7 +159,7 @@ class ModelServiceImpl(
 
         // 如果修改了模型标识，检查是否与其他模型冲突
         if (request.modelName != null && request.modelName != model.modelName) {
-            if (modelMapper.countByProviderIdAndModelName(model.providerId, request.modelName) > 0) {
+            if (modelMapper.countByProviderIdAndModelName(model.providerId, request.modelName, model.tenantId) > 0) {
                 throw BizException(messageUtil.getMessage("error.model.model_name_exists"))
             }
             model.modelName = request.modelName
@@ -202,8 +211,9 @@ class ModelServiceImpl(
         val model = ownedModel(id)
 
         // A dangling model_id is not visible until the row that carries it is used: the agent then
-        // resolves no model at run time. Release the references first. The count is deliberately
-        // cross-tenant: a public model another tenant's agent stands on is still in use here.
+        // resolves no model at run time. Release the references first. The count stays cross-tenant:
+        // sharing no longer crosses a tenant, but a binding written before that could, and one such
+        // row still runs on this model.
         val usage = modelMapper.selectUsageByModelId(id)
         val refs = listOfNotNull(
             usage.agentCount.takeIf { it > 0 }?.let { "$it agent(s)" },

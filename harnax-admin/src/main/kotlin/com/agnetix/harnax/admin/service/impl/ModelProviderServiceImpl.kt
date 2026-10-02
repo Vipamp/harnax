@@ -37,18 +37,34 @@ class ModelProviderServiceImpl(
         val safePageNum = pageNum.coerceAtLeast(1)
         val safePageSize = pageSize.coerceIn(1, 1000)
         PageHelper.startPage<Agent>(safePageNum, safePageSize)
-        return Page.fromPageInfo(modelProviderMapper.selectModelProviderList(name, type, status, isPublic, currentTenantId()))
+        return Page.fromPageInfo(
+            modelProviderMapper.selectModelProviderList(
+                name,
+                type,
+                status,
+                isPublic,
+                UserContextUtil.getCurrentUsername(jwtUtil),
+                currentTenantId(),
+            ),
+        )
     }
 
     override fun getModelProvider(id: Long): ModelProvider? = this.modelProviderMapper.selectById(id)
 
-    override fun getVisibleModelProvider(id: Long): ModelProvider? = modelProviderMapper.selectById(id)?.takeIf { it.tenantId == currentTenantId() || it.isPublic == 1 }
+    override fun getVisibleModelProvider(id: Long): ModelProvider? = modelProviderMapper.selectById(id)?.takeIf { visibleToCaller(it) }
 
     /**
-     * A row this tenant may change. Another tenant's provider reads as absent even when it is public:
-     * its API key is the owning tenant's credential, and naming the row would confirm who holds it.
+     * The row-level read rule, in the same shape the list query applies: the tenant is a wall, and
+     * `is_public` only decides whether the caller must be the creator to get past it.
      */
-    private fun ownedProvider(id: Long): ModelProvider = modelProviderMapper.selectById(id)?.takeIf { it.tenantId == currentTenantId() }
+    private fun visibleToCaller(provider: ModelProvider): Boolean = provider.tenantId == currentTenantId() && (provider.isPublic == 1 || provider.creator == UserContextUtil.getCurrentUsername(jwtUtil))
+
+    /**
+     * A row this caller may change. Another tenant's provider reads as absent, and so does a colleague's
+     * private one: its API key is the owning tenant's credential, and naming the row would confirm who
+     * holds it. Same predicate the list uses, as `McpServerServiceImpl.requireVisibleServer` does.
+     */
+    private fun ownedProvider(id: Long): ModelProvider = modelProviderMapper.selectById(id)?.takeIf { visibleToCaller(it) }
         ?: throw BizException(messageUtil.getMessage("error.model.provider.notfound"))
 
     /**
@@ -150,8 +166,8 @@ class ModelProviderServiceImpl(
     override fun convertToResponse(it: ModelProvider): ModelProviderResponse = ModelProviderResponse.fromEntity(it)
 
     override fun getModelStats(providerId: Long): ModelStatsInfo {
-        // The counts describe the owning tenant's catalogue, and the test spends its API key, so both
-        // stay with the owner: a provider merely visible through is_public has no stats to hand out.
+        // The counts describe the owning tenant's catalogue, and the test spends its API key, so they stop
+        // where the row itself stops: another tenant's provider, and a colleague's private one, read as absent.
         val modelProvider = ownedProvider(providerId)
 
         val totalModels = modelMapper.countModelsByProviderId(modelProvider.id)

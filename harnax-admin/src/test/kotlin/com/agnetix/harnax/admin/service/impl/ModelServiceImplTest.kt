@@ -127,6 +127,7 @@ class ModelServiceImplTest {
                     listOf("advanced"),
                     0.01,
                     0.05,
+                    "admin",
                     1L,
                 ),
             ).thenReturn(models)
@@ -154,6 +155,7 @@ class ModelServiceImplTest {
                 listOf("advanced"),
                 0.01,
                 0.05,
+                "admin",
                 1L,
             )
         }
@@ -172,6 +174,7 @@ class ModelServiceImplTest {
                     null,
                     null,
                     null,
+                    "admin",
                     1L,
                 ),
             ).thenReturn(models)
@@ -199,6 +202,30 @@ class ModelServiceImplTest {
                 null,
                 null,
                 null,
+                "admin",
+                1L,
+            )
+        }
+
+        @Test
+        @DisplayName("page - The caller's own name is what the private-row clause runs on")
+        fun `page should carry the caller name into the query`() {
+            // Given - a different member of the same tenant
+            `when`(jwtUtil.getUsernameFromToken(anyString())).thenReturn("bob")
+
+            // When
+            modelService.page(null, null, null, null, null, null, null, 1, 10)
+
+            // Then - the query gets this caller, not whoever the page was written for
+            verify(modelMapper).selectModelList(
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                "bob",
                 1L,
             )
         }
@@ -264,8 +291,8 @@ class ModelServiceImplTest {
             )
 
             `when`(modelProviderMapper.selectById(1L)).thenReturn(testProvider)
-            `when`(modelMapper.countByProviderIdAndName(1L, "GPT-4o")).thenReturn(0)
-            `when`(modelMapper.countByProviderIdAndModelName(1L, "gpt-4o")).thenReturn(0)
+            `when`(modelMapper.countByProviderIdAndName(1L, "GPT-4o", 1L)).thenReturn(0)
+            `when`(modelMapper.countByProviderIdAndModelName(1L, "gpt-4o", 1L)).thenReturn(0)
             `when`(modelMapper.insert(any())).thenReturn(1)
 
             // When
@@ -274,8 +301,8 @@ class ModelServiceImplTest {
             // Then
             assertTrue(result)
             verify(modelProviderMapper).selectById(1L)
-            verify(modelMapper).countByProviderIdAndName(1L, "GPT-4o")
-            verify(modelMapper).countByProviderIdAndModelName(1L, "gpt-4o")
+            verify(modelMapper).countByProviderIdAndName(1L, "GPT-4o", 1L)
+            verify(modelMapper).countByProviderIdAndModelName(1L, "gpt-4o", 1L)
             verify(modelMapper).insert(any())
         }
 
@@ -313,14 +340,14 @@ class ModelServiceImplTest {
             )
 
             `when`(modelProviderMapper.selectById(1L)).thenReturn(testProvider)
-            `when`(modelMapper.countByProviderIdAndName(1L, "GPT-4")).thenReturn(1)
+            `when`(modelMapper.countByProviderIdAndName(1L, "GPT-4", 1L)).thenReturn(1)
 
             // When & Then
             val exception = assertThrows<BizException> {
                 modelService.createModel(request)
             }
             assertEquals("error.model.name_exists", exception.message)
-            verify(modelMapper, never()).countByProviderIdAndModelName(anyLong(), anyString())
+            verify(modelMapper, never()).countByProviderIdAndModelName(anyLong(), anyString(), anyLong())
             verify(modelMapper, never()).insert(any())
         }
 
@@ -336,8 +363,8 @@ class ModelServiceImplTest {
             )
 
             `when`(modelProviderMapper.selectById(1L)).thenReturn(testProvider)
-            `when`(modelMapper.countByProviderIdAndName(1L, "GPT-4o")).thenReturn(0)
-            `when`(modelMapper.countByProviderIdAndModelName(1L, "gpt-4")).thenReturn(1)
+            `when`(modelMapper.countByProviderIdAndName(1L, "GPT-4o", 1L)).thenReturn(0)
+            `when`(modelMapper.countByProviderIdAndModelName(1L, "gpt-4", 1L)).thenReturn(1)
 
             // When & Then
             val exception = assertThrows<BizException> {
@@ -359,8 +386,8 @@ class ModelServiceImplTest {
             )
 
             `when`(modelProviderMapper.selectById(1L)).thenReturn(testProvider)
-            `when`(modelMapper.countByProviderIdAndName(1L, "GPT-3.5")).thenReturn(0)
-            `when`(modelMapper.countByProviderIdAndModelName(1L, "gpt-3.5-turbo")).thenReturn(0)
+            `when`(modelMapper.countByProviderIdAndName(1L, "GPT-3.5", 1L)).thenReturn(0)
+            `when`(modelMapper.countByProviderIdAndModelName(1L, "gpt-3.5-turbo", 1L)).thenReturn(0)
             `when`(modelMapper.insert(any())).thenReturn(1)
 
             // When
@@ -457,7 +484,7 @@ class ModelServiceImplTest {
             val request = ModelUpdateRequest(name = "GPT-4-Existing")
 
             `when`(modelMapper.selectById(1L)).thenReturn(testModel)
-            `when`(modelMapper.countByProviderIdAndName(1L, "GPT-4-Existing")).thenReturn(1)
+            `when`(modelMapper.countByProviderIdAndName(1L, "GPT-4-Existing", 1L)).thenReturn(1)
 
             // When & Then
             val exception = assertThrows<BizException> {
@@ -474,7 +501,7 @@ class ModelServiceImplTest {
             val request = ModelUpdateRequest(modelName = "gpt-4-existing")
 
             `when`(modelMapper.selectById(1L)).thenReturn(testModel)
-            `when`(modelMapper.countByProviderIdAndModelName(1L, "gpt-4-existing")).thenReturn(1)
+            `when`(modelMapper.countByProviderIdAndModelName(1L, "gpt-4-existing", 1L)).thenReturn(1)
 
             // When & Then
             val exception = assertThrows<BizException> {
@@ -750,7 +777,7 @@ class ModelServiceImplTest {
             TenantContext.clear()
         }
 
-        private fun modelOf(tenantId: Long, publicFlag: Int): Model = Model().apply {
+        private fun modelOf(tenantId: Long, publicFlag: Int, createdBy: String = "admin"): Model = Model().apply {
             id = 1L
             this.tenantId = tenantId
             name = "GPT-4"
@@ -760,7 +787,15 @@ class ModelServiceImplTest {
             isPublic = publicFlag
             status = 1
             active = 1
-            creator = "admin"
+            creator = createdBy
+        }
+
+        /**
+         * Act as a different member of the tenant the header already names, so a test can tell a shared row
+         * from one that only its creator may reach.
+         */
+        private fun actAsColleague(username: String) {
+            `when`(jwtUtil.getUsernameFromToken(anyString())).thenReturn(username)
         }
 
         @Test
@@ -773,11 +808,31 @@ class ModelServiceImplTest {
         }
 
         @Test
-        @DisplayName("getVisibleModel - Public row of another tenant is visible")
-        fun `getVisibleModel should return another tenant public row`() {
+        @DisplayName("getVisibleModel - Public row of another tenant reads as absent")
+        fun `getVisibleModel should hide another tenant public row`() {
             `when`(modelMapper.selectById(1L)).thenReturn(modelOf(9L, 1))
 
+            assertNull(modelService.getVisibleModel(1L))
+        }
+
+        @Test
+        @DisplayName("getVisibleModel - A shared row reaches a colleague of the same tenant")
+        fun `getVisibleModel should return a shared row to another member of its tenant`() {
+            TenantContext.setTenantId(1L)
+            actAsColleague("it_mate")
+            `when`(modelMapper.selectById(1L)).thenReturn(modelOf(1L, 1))
+
             assertNotNull(modelService.getVisibleModel(1L))
+        }
+
+        @Test
+        @DisplayName("getVisibleModel - A colleague's private row reads as absent")
+        fun `getVisibleModel should hide a colleague private row`() {
+            TenantContext.setTenantId(1L)
+            actAsColleague("it_mate")
+            `when`(modelMapper.selectById(1L)).thenReturn(modelOf(1L, 0))
+
+            assertNull(modelService.getVisibleModel(1L))
         }
 
         @Test
@@ -799,6 +854,32 @@ class ModelServiceImplTest {
 
             assertEquals("error.model.notfound", exception.message)
             verify(modelMapper, never()).updateById(any())
+        }
+
+        @Test
+        @DisplayName("updateModel - A colleague's private row within the tenant is not writable either")
+        fun `updateModel should refuse a colleague private row`() {
+            TenantContext.setTenantId(1L)
+            actAsColleague("it_mate")
+            `when`(modelMapper.selectById(1L)).thenReturn(modelOf(1L, 0))
+
+            val exception = assertThrows<BizException> {
+                modelService.updateModel(1L, ModelUpdateRequest(name = "Hijacked"))
+            }
+
+            assertEquals("error.model.notfound", exception.message)
+            verify(modelMapper, never()).updateById(any())
+        }
+
+        @Test
+        @DisplayName("updateModel - A shared row within the tenant stays writable")
+        fun `updateModel should accept a shared row of the same tenant`() {
+            TenantContext.setTenantId(1L)
+            `when`(modelMapper.selectById(1L)).thenReturn(modelOf(1L, 1))
+            `when`(modelMapper.updateById(any())).thenReturn(1)
+
+            assertTrue(modelService.updateModel(1L, ModelUpdateRequest(description = "Updated")))
+            verify(modelMapper).updateById(any())
         }
 
         @Test
@@ -864,6 +945,52 @@ class ModelServiceImplTest {
 
             assertEquals("error.model.provider.notfound", exception.message)
             verify(modelMapper, never()).insert(any())
+        }
+
+        @Test
+        @DisplayName("createModel - A public provider of another tenant is no base either")
+        fun `createModel should refuse a provider another tenant shares`() {
+            val foreignPublic = ModelProvider().apply {
+                id = 1L
+                tenantId = 9L
+                isPublic = 1
+                status = 1
+                active = 1
+            }
+            `when`(modelProviderMapper.selectById(1L)).thenReturn(foreignPublic)
+
+            val exception = assertThrows<BizException> {
+                modelService.createModel(
+                    ModelCreateRequest(name = "New Model", modelName = "new-model", providerId = 1L, modelType = "chat"),
+                )
+            }
+
+            assertEquals("error.model.provider.notfound", exception.message)
+            verify(modelMapper, never()).insert(any())
+        }
+
+        @Test
+        @DisplayName("createModel - A shared provider of the same tenant is usable by every member")
+        fun `createModel should build on a provider a colleague shared`() {
+            TenantContext.setTenantId(1L)
+            actAsColleague("it_mate")
+            val colleaguesProvider = ModelProvider().apply {
+                id = 1L
+                tenantId = 1L
+                isPublic = 1
+                creator = "admin"
+                status = 1
+                active = 1
+            }
+            `when`(modelProviderMapper.selectById(1L)).thenReturn(colleaguesProvider)
+            `when`(modelMapper.insert(any())).thenReturn(1)
+
+            val created = modelService.createModel(
+                ModelCreateRequest(name = "New Model", modelName = "new-model", providerId = 1L, modelType = "chat"),
+            )
+
+            assertTrue(created)
+            verify(modelMapper).insert(argThat { tenantId == 1L && creator == "it_mate" })
         }
     }
 }

@@ -7,9 +7,10 @@ import java.time.LocalDateTime
 /**
  * Model entity
  *
- * Tenant-scoped like the provider it belongs to: a row is visible to its own tenant and, when
- * `is_public`, to every tenant (see `selectModelList`). `tenant_id` is a column of the table and is
- * stamped from the caller's tenant on create.
+ * Tenant-scoped like the provider it belongs to: a row is visible only inside its own tenant, and
+ * `is_public` says whether the rest of that tenant may see it too — the same reading agent and skill
+ * give the column (see `selectModelList`). `tenant_id` is a column of the table and is stamped from
+ * the caller's tenant on create.
  */
 @Schema(description = "Model entity")
 class Model : Serializable {

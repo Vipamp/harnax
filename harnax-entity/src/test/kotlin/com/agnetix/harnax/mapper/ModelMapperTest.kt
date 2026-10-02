@@ -201,7 +201,7 @@ open class ModelMapperTest {
         @DisplayName("selectModelList - Query all models")
         fun `selectModelList should return all models`() {
             // When
-            val models = modelMapper.selectModelList(null, null, null, null, null, null, null, 1L)
+            val models = modelMapper.selectModelList(null, null, null, null, null, null, null, "admin", 1L)
 
             // Then
             assertTrue(models.isNotEmpty())
@@ -212,7 +212,7 @@ open class ModelMapperTest {
         @DisplayName("selectModelList - Filter by provider ID")
         fun `selectModelList should filter by provider id`() {
             // When
-            val models = modelMapper.selectModelList(null, 1L, null, null, null, null, null, 1L)
+            val models = modelMapper.selectModelList(null, 1L, null, null, null, null, null, "admin", 1L)
 
             // Then
             assertTrue(models.isNotEmpty())
@@ -225,7 +225,7 @@ open class ModelMapperTest {
         @DisplayName("selectModelList - Filter by model type")
         fun `selectModelList should filter by model type`() {
             // When
-            val models = modelMapper.selectModelList(null, null, "chat", null, null, null, null, 1L)
+            val models = modelMapper.selectModelList(null, null, "chat", null, null, null, null, "admin", 1L)
 
             // Then
             assertTrue(models.isNotEmpty())
@@ -235,25 +235,46 @@ open class ModelMapperTest {
         }
 
         @Test
-        @DisplayName("selectModelList - Own tenant plus public rows of others")
-        fun `selectModelList should follow the tenant and public visibility rule`() {
-            // Given - seed: id 6 is tenant 1 private, id 7 is tenant 2 public
+        @DisplayName("selectModelList - The tenant is a wall, whatever is_public says")
+        fun `selectModelList should keep another tenant rows out`() {
+            // Given - seed: id 6 is tenant 1 private, id 7 is tenant 2's row published to that tenant
             val otherTenantPrivateId = 6L
             val otherTenantPublicId = 7L
 
             // When
-            val forTenant1 = modelMapper.selectModelList(null, null, null, null, null, null, null, 1L)
-            val forTenant2 = modelMapper.selectModelList(null, null, null, null, null, null, null, 2L)
+            val forTenant1 = modelMapper.selectModelList(null, null, null, null, null, null, null, "admin", 1L)
+            val forTenant2 = modelMapper.selectModelList(null, null, null, null, null, null, null, "admin", 2L)
 
             // Then
-            assertTrue(forTenant1.any { it.id == otherTenantPrivateId }, "own private rows stay listed")
+            assertTrue(
+                forTenant1.none { it.id == otherTenantPublicId },
+                "a row shared inside tenant 2 is not tenant 1's to list",
+            )
             assertTrue(
                 forTenant2.none { it.id == otherTenantPrivateId },
                 "another tenant's private row must not be listed",
             )
+            assertTrue(forTenant2.any { it.id == otherTenantPublicId }, "a shared row is listed for its own tenant")
+        }
+
+        @Test
+        @DisplayName("selectModelList - Inside one tenant, shared rows are for everyone and private ones for their creator")
+        fun `selectModelList should share publicly inside the tenant and privately with the creator`() {
+            // Given - id 1 is tenant 1's shared row, id 6 is tenant 1's row kept private by testuser1
+            val ownSharedId = 1L
+            val memberPrivateId = 6L
+
+            // When
+            val asAnotherMember = modelMapper.selectModelList(null, null, null, null, null, null, null, "admin", 1L)
+            val asCreator = modelMapper.selectModelList(null, null, null, null, null, null, null, "testuser1", 1L)
+
+            // Then
+            assertTrue(asAnotherMember.all { it.tenantId == 1L }, "every row of a tenant page is that tenant's own")
+            assertTrue(asAnotherMember.none { it.id == memberPrivateId }, "another member's private row is not this member's list")
+            assertTrue(asCreator.any { it.id == memberPrivateId }, "a member's own private row is listed for that member")
             assertTrue(
-                forTenant1.any { it.id == otherTenantPublicId } && forTenant2.any { it.id == otherTenantPublicId },
-                "a model published to the platform stays listed for every tenant",
+                asAnotherMember.any { it.id == ownSharedId } && asCreator.any { it.id == ownSharedId },
+                "a shared row is listed for every member of the owning tenant",
             )
         }
 
@@ -261,17 +282,27 @@ open class ModelMapperTest {
         @DisplayName("countByProviderIdAndName - Count models by provider and name")
         fun `countByProviderIdAndName should count models by provider and name`() {
             // When
-            val count = modelMapper.countByProviderIdAndName(1L, "GPT-4")
+            val count = modelMapper.countByProviderIdAndName(1L, "GPT-4", 1L)
 
             // Then
             assertEquals(1, count)
         }
 
         @Test
+        @DisplayName("countByProviderIdAndName - Ignore the same name held by another tenant")
+        fun `countByProviderIdAndName should ignore a name another tenant holds`() {
+            // When - 'GPT-4' is tenant 1's row, so tenant 2 is free to take that name
+            val asTenant2 = modelMapper.countByProviderIdAndName(1L, "GPT-4", 2L)
+
+            // Then
+            assertEquals(0, asTenant2, "name collisions are scoped to the owning tenant")
+        }
+
+        @Test
         @DisplayName("countByProviderIdAndModelName - Count models by provider and model name")
         fun `countByProviderIdAndModelName should count models by provider and model name`() {
             // When
-            val count = modelMapper.countByProviderIdAndModelName(1L, "gpt-4")
+            val count = modelMapper.countByProviderIdAndModelName(1L, "gpt-4", 1L)
 
             // Then
             assertEquals(1, count)

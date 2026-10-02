@@ -42,22 +42,46 @@ class ModelTenantIsolationIT : BaseAdminIT() {
     private val sharedProvider = "it_t1_shared_provider_$suffix"
     private val otherProvider = "it_t2_provider_$suffix"
     private val otherPrivateModel = "it_t2_private_model_$suffix"
+    private val sharedModel = "it_t1_shared_model_$suffix"
+    private val sharedModelTechnical = "it-t1-shared-$suffix"
+    private val matePrivateModel = "it_t1_mate_private_model_$suffix"
 
     private var ownPrivateProviderId: Long = -1
     private var sharedProviderId: Long = -1
     private var otherProviderId: Long = -1
     private var otherPrivateModelId: Long = -1
+    private var sharedModelId: Long = -1
+    private var matePrivateModelId: Long = -1
+
+    /**
+     * A second account inside tenant 1, which is the half of the rule the tenant header cannot show:
+     * sharing is for the rest of *this* tenant, so a colleague must reach a shared row and no further.
+     */
+    private val mateToken: String by lazy { jwtUtil.generateToken(99997L, "it_mate_$suffix", 1L, 0) }
 
     /** The same name held by the other tenant, to prove uniqueness stopped being global. */
     private var clashProviderId: Long = -1
 
-    /** Records on a name-filtered page carrying exactly this name, as the given tenant sees them. */
+    /**
+     * Records on a name-filtered page carrying exactly this name, as [token] sees them from within
+     * [tenantId]. Both default to the admin caller, so an existing assertion need not spell them out.
+     */
     private fun rowsNamed(
         basePath: String,
         name: String,
         tenantId: Long? = null,
+        token: String? = null,
     ): List<JsonNode> {
-        val data = assertOk(parseBody(exchange(HttpMethod.GET, "$basePath?pageNum=1&pageSize=50&name=$name", tenantId = tenantId)))
+        val data = assertOk(
+            parseBody(
+                exchange(
+                    HttpMethod.GET,
+                    "$basePath?pageNum=1&pageSize=50&name=$name",
+                    tenantId = tenantId,
+                    token = token ?: adminToken(),
+                ),
+            ),
+        )
         val records = data["records"]
         return if (records == null || !records.isArray) emptyList() else records.filter { it["name"]?.asText() == name }
     }
@@ -65,8 +89,9 @@ class ModelTenantIsolationIT : BaseAdminIT() {
     private fun rowId(
         basePath: String,
         name: String,
-        tenantId: Long?,
-    ): Long = rowsNamed(basePath, name, tenantId)
+        tenantId: Long? = null,
+        token: String? = null,
+    ): Long = rowsNamed(basePath, name, tenantId, token)
         .firstOrNull()
         ?.get("id")
         ?.asLong()
@@ -140,14 +165,22 @@ class ModelTenantIsolationIT : BaseAdminIT() {
 
     @Test
     @Order(3)
-    fun `a public row of one tenant is listed for the other yet stays unwritable`() {
+    fun `a public row stays inside its tenant and unreadable from the other`() {
         assertOk(postJson("/api/admin/model-providers", mapOf("type" to "it_t1_shared_$suffix", "name" to sharedProvider, "isPublic" to 1)))
         sharedProviderId = rowId("/api/admin/model-providers/page", sharedProvider, null)
 
-        assertEquals(1, rowsNamed("/api/admin/model-providers/page", sharedProvider, otherTenant).size, "a public row is listed for the rest of the platform")
-        assertEquals(sharedProvider, assertOk(parseBody(exchange(HttpMethod.GET, "/api/admin/model-providers/$sharedProviderId", tenantId = otherTenant)))["name"].asText())
+        // Publication is a within-tenant act: the other tenant's page never carries the row at all.
+        assertTrue(rowsNamed("/api/admin/model-providers/page", sharedProvider, otherTenant).isEmpty(), "a public row must stay out of another tenant's list")
 
-        // Visible is not editable: the stored API key is the owning tenant's credential.
+        // And by id it answers exactly like a row nobody holds, so the id space is not askable.
+        val hidden = parseBody(exchange(HttpMethod.GET, "/api/admin/model-providers/$sharedProviderId", tenantId = otherTenant))
+        val absent = parseBody(exchange(HttpMethod.GET, "/api/admin/model-providers/$noSuchId", tenantId = otherTenant))
+        assertEquals(absent["code"].asInt(), hidden["code"].asInt(), "an invisible row must not read differently from a missing one")
+        assertEquals(messageOf(absent), messageOf(hidden), "the refusal must not reveal that the row exists at all")
+        assertTrue(answersAsAbsent(hidden), "another tenant's public provider must not be readable by id")
+
+        // Visible is not editable even inside its own tenant, and across one it is not even visible: the
+        // stored API key is the owning tenant's credential.
         val write = mapOf("description" to "hijacked")
         val refused = parseBody(exchange(HttpMethod.PUT, "/api/admin/model-providers/update/$sharedProviderId", write, tenantId = otherTenant))
         assertErr(refused)
@@ -310,7 +343,73 @@ class ModelTenantIsolationIT : BaseAdminIT() {
 
     @Test
     @Order(9)
+    fun `a public row is visible and usable by every member of its own tenant`() {
+        // Two rows in tenant 1 that differ only in the sharing flag, plus one a colleague keeps private.
+        assertOk(
+            postJson(
+                "/api/admin/models",
+                mapOf("name" to sharedModel, "modelName" to "it-t1-shared-$suffix", "providerId" to sharedProviderId, "modelType" to "chat", "isPublic" to 1),
+            ),
+        )
+        sharedModelId = rowId("/api/admin/models/page", sharedModel, null)
+        assertOk(
+            parseBody(
+                exchange(
+                    HttpMethod.POST,
+                    "/api/admin/models",
+                    mapOf("name" to matePrivateModel, "modelName" to "it-t1-mate-private-$suffix", "providerId" to sharedProviderId, "modelType" to "chat", "isPublic" to 0),
+                    mateToken,
+                ),
+            ),
+        )
+        matePrivateModelId = rowId("/api/admin/models/page", matePrivateModel, token = mateToken)
+
+        // The colleague lists the shared provider and the shared model, and reads both by id: within the
+        // tenant, public means the rest of the tenant may use it.
+        assertEquals(1, rowsNamed("/api/admin/model-providers/page", sharedProvider, token = mateToken).size, "a shared provider must reach a colleague of its tenant")
+        assertEquals(sharedProvider, assertOk(parseBody(exchange(HttpMethod.GET, "/api/admin/model-providers/$sharedProviderId", token = mateToken)))["name"].asText())
+        assertEquals(1, rowsNamed("/api/admin/models/page", sharedModel, token = mateToken).size, "a shared model must reach a colleague of its tenant")
+        assertEquals(sharedModel, assertOk(parseBody(exchange(HttpMethod.GET, "/api/admin/models/$sharedModelId", token = mateToken)))["name"].asText())
+
+        // Usable, not merely named: the colleague's own agent resolves the shared model through the read.
+        val mateAgent = "it_mate_agent_$suffix"
+        assertOk(
+            parseBody(
+                exchange(
+                    HttpMethod.POST,
+                    "/api/admin/agents",
+                    agentCreateBody(mateAgent) + mapOf("modelId" to sharedModelId),
+                    mateToken,
+                ),
+            ),
+        )
+        val mateAgentRow = assertOk(parseBody(exchange(HttpMethod.GET, "/api/admin/agents/page?pageNum=1&pageSize=50&name=$mateAgent", token = mateToken)))
+        val mateAgentId = mateAgentRow["records"].firstOrNull { it["name"]?.asText() == mateAgent }?.get("id")?.asLong()
+            ?: error("the colleague's own agent vanished from its own page: $mateAgentRow")
+        assertEquals(
+            sharedModelTechnical,
+            assertOk(parseBody(exchange(HttpMethod.GET, "/api/admin/agents/$mateAgentId", token = mateToken)))["modelName"].asText(),
+            "a shared model must be usable by the colleague, not just listed",
+        )
+        assertOk(parseBody(exchange(HttpMethod.DELETE, "/api/admin/agents/$mateAgentId", token = mateToken)))
+
+        // The colleague's private row stops there: absent from the tenant's other members either way.
+        assertTrue(rowsNamed("/api/admin/models/page", matePrivateModel).isEmpty(), "a private model must stay out of a colleague's list")
+        val hiddenFromAdmin = parseBody(exchange(HttpMethod.GET, "/api/admin/models/$matePrivateModelId"))
+        val absent = parseBody(exchange(HttpMethod.GET, "/api/admin/models/$noSuchId"))
+        assertEquals(absent["code"].asInt(), hiddenFromAdmin["code"].asInt(), "a colleague's private row must not read differently from a missing one")
+        assertEquals(messageOf(absent), messageOf(hiddenFromAdmin), "the refusal must not reveal that the row exists at all")
+        assertTrue(answersAsAbsent(hiddenFromAdmin))
+
+        // The admin's private provider is equally absent from the colleague, in both directions of one tenant.
+        assertTrue(rowsNamed("/api/admin/model-providers/page", ownPrivateProvider, token = mateToken).isEmpty(), "a private provider must stay out of a colleague's list")
+    }
+
+    @Test
+    @Order(10)
     fun `cleanup removes what this class created`() {
+        assertOk(parseBody(exchange(HttpMethod.DELETE, "/api/admin/models/$matePrivateModelId", token = mateToken)))
+        assertOk(deleteJson("/api/admin/models/$sharedModelId"))
         assertOk(parseBody(exchange(HttpMethod.DELETE, "/api/admin/models/$otherPrivateModelId", tenantId = otherTenant)))
         assertOk(parseBody(exchange(HttpMethod.DELETE, "/api/admin/model-providers/$otherProviderId", tenantId = otherTenant)))
         assertOk(parseBody(exchange(HttpMethod.DELETE, "/api/admin/model-providers/$clashProviderId", tenantId = otherTenant)))

@@ -78,7 +78,7 @@ A team session resolves its lead by `team_id`, so a client cannot submit a lead 
 Saving a team (`TeamServiceImpl.createTeam` / `updateTeam`) checks:
 
 - The name is unique within the tenant.
-- The lead's model exists, is available to this tenant (own row or `is_public`), is enabled and is of type chat. The runtime adds no second gate: delivery only asks whether the model row resolves, so switching a model off after saving does not stop a team from running on it; deleting the model row makes the lead fail at build time when no model configuration can be found.
+- The lead's model exists, belongs to this tenant and is available to the caller (shared within the tenant or created by them), is enabled and is of type chat. The runtime adds no second gate: delivery only asks whether the model row resolves, so switching a model off after saving does not stop a team from running on it; deleting the model row makes the lead fail at build time when no model configuration can be found.
 - At least one member, member ids present and not repeated; each member must exist, share the tenant, be enabled and be visible under the caller's own read rule (`is_public` or created by them). Seeing a team does not hand out its private agents.
 - The lead's skills pass the same selectable range and write-time checks as on the agent side (`SkillBindingResolver.resolveBindable`): missing, disabled, built-in CLI repository source and name collisions are all refused.
 - On update, omitting `members` leaves the roster alone; `skillIds` null leaves the lead's skills alone and an empty list clears them. The skill set is resolved before anything is written.

@@ -45,14 +45,14 @@
         UPDATE model SET active = 0 WHERE id = #{id}
     </update>
 
-    <!-- countByProviderIdAndName -->
+    <!-- countByProviderIdAndName: a name collides only inside the tenant that owns the provider -->
     <select id="countByProviderIdAndName" resultType="int">
-        SELECT COUNT(*) FROM model WHERE provider_id = #{providerId} AND name = #{name} AND active = 1
+        SELECT COUNT(*) FROM model WHERE provider_id = #{providerId} AND tenant_id = #{tenantId} AND name = #{name} AND active = 1
     </select>
 
     <!-- countByProviderIdAndModelName -->
     <select id="countByProviderIdAndModelName" resultType="int">
-        SELECT COUNT(*) FROM model WHERE provider_id = #{providerId} AND model_name = #{modelName} AND active = 1
+        SELECT COUNT(*) FROM model WHERE provider_id = #{providerId} AND tenant_id = #{tenantId} AND model_name = #{modelName} AND active = 1
     </select>
 
     <!-- countActiveModelsByProviderId -->
@@ -116,11 +116,12 @@
         UPDATE model SET status = #{status}, update_time = NOW() WHERE id = #{id} AND active = 1
     </update>
 
-    <!-- selectModelList: own tenant plus anything published to the platform -->
+    <!-- selectModelList: this tenant's rows, shared ones plus the caller's own private ones -->
     <select id="selectModelList" resultMap="ModelResultMap">
         SELECT * FROM model
         WHERE active = 1
-        AND (tenant_id = #{tenantId} OR is_public = 1)
+        AND tenant_id = #{tenantId}
+        AND (is_public = 1 OR creator = #{currentUsername})
         <if test='name != null and name != ""'>
             AND (name LIKE CONCAT('%', #{name}, '%')
             OR model_name LIKE CONCAT('%', #{name}, '%'))

@@ -191,7 +191,7 @@ open class ModelProviderMapperTest {
         @DisplayName("selectModelProviderList - Query all model providers")
         fun `selectModelProviderList should return all providers`() {
             // When
-            val providers = modelProviderMapper.selectModelProviderList(null, null, null, 1, 1L)
+            val providers = modelProviderMapper.selectModelProviderList(null, null, null, 1, "admin", 1L)
 
             // Then
             assertTrue(providers.isNotEmpty())
@@ -202,7 +202,7 @@ open class ModelProviderMapperTest {
         @DisplayName("selectModelProviderList - Filter by name")
         fun `selectModelProviderList should filter by name`() {
             // When
-            val providers = modelProviderMapper.selectModelProviderList(null, null, null, 1, 1L)
+            val providers = modelProviderMapper.selectModelProviderList(null, null, null, 1, "admin", 1L)
 
             // Then
             assertTrue(providers.isNotEmpty())
@@ -212,31 +212,36 @@ open class ModelProviderMapperTest {
         }
 
         @Test
-        @DisplayName("selectModelProviderList - Another tenant sees public rows but not private ones")
-        fun `selectModelProviderList should keep another tenant private rows out`() {
-            // Given - seed has tenant 1 private row (id 5) and tenant 2 public row (id 6)
-            val tenant2ProviderId = 6L
-
-            // When
-            val forTenant2 = modelProviderMapper.selectModelProviderList(null, null, null, null, 2L)
-            val forTenant1 = modelProviderMapper.selectModelProviderList(null, null, null, null, 1L)
+        @DisplayName("selectModelProviderList - The tenant is a wall, whatever is_public says")
+        fun `selectModelProviderList should keep another tenant rows out`() {
+            // When - tenant 2 asks for its own page as its creator and as a plain member
+            val asOwner = modelProviderMapper.selectModelProviderList(null, null, null, null, "testuser2", 2L)
+            val asMember = modelProviderMapper.selectModelProviderList(null, null, null, null, "admin", 2L)
 
             // Then
+            assertTrue(asOwner.any { it.id == 6L }, "the tenant's own row must be listed for that tenant")
+            assertTrue(asMember.any { it.id == 6L }, "a shared row is listed for the tenant's other members too")
             assertTrue(
-                forTenant2.any { it.id == tenant2ProviderId },
-                "the tenant's own row must be listed for that tenant",
+                asMember.none { it.id == 1L || it.id == 2L || it.id == 3L },
+                "tenant 1 rows stay out of tenant 2's list now that sharing stops at the tenant",
             )
+            assertTrue(asOwner.none { it.id == 5L }, "a private row of another tenant must never be listed")
+        }
+
+        @Test
+        @DisplayName("selectModelProviderList - Inside one tenant, shared rows are for everyone and private ones for their creator")
+        fun `selectModelProviderList should share publicly inside the tenant and privately with the creator`() {
+            // When - the same tenant, two members: id 5 is that tenant's own private row
+            val asAdmin = modelProviderMapper.selectModelProviderList(null, null, null, null, "admin", 1L)
+            val asCreator = modelProviderMapper.selectModelProviderList(null, null, null, null, "testuser1", 1L)
+
+            // Then
+            assertTrue(asAdmin.all { it.tenantId == 1L }, "every row of a tenant page is that tenant's own")
+            assertTrue(asAdmin.none { it.id == 5L }, "another member's private row is not this member's list")
+            assertTrue(asCreator.any { it.id == 5L }, "a member's own private row is listed for that member")
             assertTrue(
-                forTenant2.any { it.id == 1L },
-                "tenant 1 public rows stay visible to tenant 2",
-            )
-            assertTrue(
-                forTenant1.any { it.id == 5L },
-                "tenant 1 private row belongs to tenant 1's list",
-            )
-            assertTrue(
-                forTenant2.none { it.id == 5L },
-                "a private row of another tenant must never be listed",
+                asAdmin.any { it.id == 1L } && asCreator.any { it.id == 1L },
+                "a shared row is listed for every member of the owning tenant",
             )
         }
 

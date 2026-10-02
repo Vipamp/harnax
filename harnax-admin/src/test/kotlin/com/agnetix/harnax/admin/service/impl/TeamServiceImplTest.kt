@@ -214,18 +214,30 @@ class TeamServiceImplTest {
         }
 
         @Test
-        fun `a private model of another user in this tenant may lead`() {
-            // the isolation granularity is tenant: a private row in the same tenant is selectable within the same tenant, and the model list gives it the same way
+        fun `a private model of another user in this tenant is refused`() {
             models[MODEL] = model(MODEL, "qwen3-max", isPublic = 0, creator = "other-user")
+
+            val error = assertThrows<BizException> { service.createTeam(createRequest()) }
+
+            assertEquals("Lead model is not available to the current user: qwen3-max-2026-07-15", error.message)
+        }
+
+        @Test
+        fun `a model another member shared to the tenant may lead`() {
+            // Sharing is for the rest of the owning tenant, so a colleague's public row is usable here —
+            // which is what makes the picker and this guard agree about the same row.
+            models[MODEL] = model(MODEL, "qwen3-max", isPublic = 1, creator = "other-user")
 
             assertTrue(service.createTeam(createRequest()))
         }
 
         @Test
-        fun `a public model of another tenant may lead`() {
+        fun `a public model of another tenant cannot lead`() {
             models[MODEL] = model(MODEL, "qwen3-max", isPublic = 1, tenantId = TENANT + 1)
 
-            assertTrue(service.createTeam(createRequest()))
+            val error = assertThrows<BizException> { service.createTeam(createRequest()) }
+
+            assertEquals("Lead model is not available to the current tenant: $MODEL", error.message)
         }
 
         @Test
