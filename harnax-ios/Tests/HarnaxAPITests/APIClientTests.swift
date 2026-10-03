@@ -252,7 +252,7 @@ final class APIClientTests: XCTestCase {
 
         let page = await harness.agents.page(name: nil, status: nil, num: 1, size: 20)
 
-        XCTAssertEqual(page.failure, APIError.offline)
+        XCTAssertEqual(page.failure, APIError.unreachable)
         let token = try await harness.session.accessToken()
         XCTAssertEqual(token, "tok-1")
     }
@@ -284,7 +284,7 @@ final class APIClientTests: XCTestCase {
         let result = await stack.client.send([TenantSummary].self, AdminEndpoint.tenants)
         let token = try await stack.session.accessToken()
 
-        XCTAssertEqual(result.failure, APIError.offline)
+        XCTAssertEqual(result.failure, APIError.requestNotSent)
         XCTAssertEqual(token, "tok-1", "the token still in the keychain is the one the server minted")
     }
 
@@ -399,12 +399,60 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(page.failure, APIError.timeout)
     }
 
-    func testUnreachableHostIsReportedAsOffline() async throws {
+    /// A host that answered nothing is not the phone having no network. `error.offline` sends the user to
+    /// their Wi-Fi settings for a stack that is simply not running, so the two stay separate outcomes.
+    func testAConnectionThatWasNeverMadeIsReportedAsUnreachable() async throws {
         let harness = await signedInHarness()
         harness.transport.enqueueFailure(URLError(.cannotConnectToHost))
 
         let page = await harness.agents.page(name: nil, status: nil, num: 1, size: 20)
+        XCTAssertEqual(page.failure, APIError.unreachable)
+    }
+
+    /// The one case that keeps the network sentence: the device has no route to anywhere.
+    func testNoConnectionAtAllIsStillReportedAsOffline() async throws {
+        let harness = await signedInHarness()
+        harness.transport.enqueueFailure(URLError(.notConnectedToInternet))
+
+        let page = await harness.agents.page(name: nil, status: nil, num: 1, size: 20)
         XCTAssertEqual(page.failure, APIError.offline)
+    }
+
+    /// A read this side stopped is not a network verdict. `.refreshable` and a superseded query cancel the
+    /// task in flight, and the answer that never came used to arrive here as the network-down sentence.
+    func testACancelledReadIsNotReportedAsANetworkFailure() async throws {
+        let harness = await signedInHarness()
+        harness.transport.enqueueFailure(URLError(.cancelled))
+
+        let page = await harness.agents.page(name: nil, status: nil, num: 1, size: 20)
+        XCTAssertEqual(page.failure, APIError.cancelled)
+    }
+
+    /// The bearer lives in the keychain, and a read that was refused happens before any socket opens. The
+    /// remedy is nowhere near the network settings.
+    func testACredentialThatCannotBeReadIsReportedBeforeAnythingIsSent() async throws {
+        let stack = KeychainStack()
+        try await stack.signIn()
+        stack.store.failRead(-25308, for: .accessToken)
+
+        let result = await stack.client.send([TenantSummary].self, AdminEndpoint.tenants)
+
+        XCTAssertEqual(result.failure, APIError.requestNotSent)
+        XCTAssertEqual(stack.transport.callCount, 0, "nothing went on the wire")
+    }
+
+    /// A stored address this side cannot parse is a settings problem, and the catalogue already names it —
+    /// it must not be downgraded to a transport failure on the way out.
+    func testASavedAddressThatIsNotAnAddressKeepsItsOwnCopy() async throws {
+        let stack = KeychainStack()
+        try await stack.signIn()
+        try stack.store.setValue("not a url", for: .adminBaseURL)
+        await stack.configs.invalidate()
+
+        let result = await stack.client.send([TenantSummary].self, AdminEndpoint.tenants)
+
+        XCTAssertEqual(result.failure, APIError.invalidServerConfig("admin: not a url"))
+        XCTAssertEqual(stack.transport.callCount, 0)
     }
 
     /// The address sheet writes through the store, so the very next call has to hit the new host.

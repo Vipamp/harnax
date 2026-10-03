@@ -119,7 +119,6 @@ public final class SessionListViewModel: ObservableObject {
         defer { isRefreshing = false }
         inlineError = nil
         notice = nil
-        if items.isEmpty { phase = .loading }
         switch await sessions.sessionPage(
             keyword: keyword,
             status: filter.queryValue,
@@ -135,6 +134,7 @@ public final class SessionListViewModel: ObservableObject {
             await reissueAppend()
         case let .failure(error):
             guard generation == refreshGeneration else { return }
+            guard ErrorMessage.carriesNews(error) else { return }
             let text = ErrorMessage.text(for: error)
             if items.isEmpty {
                 phase = .failed(text)

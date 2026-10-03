@@ -26,18 +26,25 @@ public struct URLSessionTransport: HTTPRequesting {
     public func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {
-            throw APIError.offline
+            throw APIError.unreachable
         }
         return (data, http)
     }
 
-    /// Everything the socket can say is folded into two user-facing outcomes; unknown failures read as
-    /// offline because the remedy the user can act on is the same.
+    /// Which of the four pre-answer outcomes the socket reported, because each names a different thing to
+    /// go and check. The `default` is deliberately *not* `.offline`: claiming the user's network failed is
+    /// the one reading this side has no evidence for, and an unknown code at worst says the server never
+    /// answered, which is what almost every unsorted `URLError` really was.
     public static func map(_ error: Error) -> APIError {
-        guard let urlError = error as? URLError else { return .offline }
+        if error is CancellationError { return .cancelled }
+        guard let urlError = error as? URLError else { return .requestNotSent }
         switch urlError.code {
         case .timedOut: return .timeout
-        default: return .offline
+        case .cancelled: return .cancelled
+        case .notConnectedToInternet, .networkConnectionLost, .cannotFindHost, .dataNotAllowed:
+            return .offline
+        case .badURL, .unsupportedURL: return .requestNotSent
+        default: return .unreachable
         }
     }
 }

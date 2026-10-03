@@ -31,28 +31,28 @@ public struct AgentHomeView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
+        // The bar goes into the column instead of sitting above it, so it leaves with the rows the way the
+        // title and the search field do. `ContextView` hands its five domains down the same channel.
+        column.harnaxSegmentBar {
             HXSegmented(
                 Section.allCases.map { HXSegmentOption(id: $0.rawValue, $0.titleKey) },
                 selection: Binding(get: { section.rawValue }, set: { section = Section(rawValue: $0) ?? .agents })
             )
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-            .padding(.bottom, 4)
+        }
+    }
 
-            // One column on screen at a time: leaving a segment discards its view model, so a search term
-            // does not survive the round trip. The console keeps these three as separate routes, which
-            // lose the same state on a menu click, so this is the behaviour rather than a difference.
-            Group {
-                switch section {
-                case .agents:
-                    AgentListView(dependencies: dependencies, account: account)
-                case .teams:
-                    TeamListView(dependencies: dependencies, account: account)
-                case .tasks:
-                    TaskListView(catalog: dependencies.tasks, account: account)
-                }
-            }
+    @ViewBuilder
+    private var column: some View {
+        // One column on screen at a time: leaving a segment discards its view model, so a search term
+        // does not survive the round trip. The console keeps these three as separate routes, which
+        // lose the same state on a menu click, so this is the behaviour rather than a difference.
+        switch section {
+        case .agents:
+            AgentListView(dependencies: dependencies, account: account)
+        case .teams:
+            TeamListView(dependencies: dependencies, account: account)
+        case .tasks:
+            TaskListView(catalog: dependencies.tasks, account: account)
         }
     }
 }

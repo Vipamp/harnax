@@ -294,6 +294,7 @@ public final class WorkspaceViewModel: ObservableObject {
             preview = nil
             phase = files.isEmpty ? .emptyDirectory : .content
         case let .failure(error):
+            guard ErrorMessage.carriesNews(error) else { return }
             let text = ErrorMessage.text(for: error)
             inlineError = text
             if files.isEmpty {

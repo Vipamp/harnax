@@ -127,7 +127,6 @@ public final class TaskLogListViewModel: ObservableObject {
     public func refresh() async {
         inlineError = nil
         noticeLine = nil
-        if items.isEmpty { phase = .loading }
         await reload(reporting: true)
     }
 
@@ -159,6 +158,7 @@ public final class TaskLogListViewModel: ObservableObject {
             return true
         case let .failure(error):
             guard reporting, generation == refreshGeneration else { return false }
+            guard ErrorMessage.carriesNews(error) else { return false }
             let text = ErrorMessage.text(for: error)
             if items.isEmpty {
                 phase = .failed(text)

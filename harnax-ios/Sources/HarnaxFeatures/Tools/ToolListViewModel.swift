@@ -65,7 +65,6 @@ public final class ToolListViewModel: ObservableObject {
         refreshGeneration += 1
         let generation = refreshGeneration
         inlineError = nil
-        if items.isEmpty { phase = .loading }
         switch await tools.builtinTools() {
         case let .success(rows):
             guard generation == refreshGeneration else { return }
@@ -75,6 +74,7 @@ public final class ToolListViewModel: ObservableObject {
             apply()
         case let .failure(error):
             guard generation == refreshGeneration else { return }
+            guard ErrorMessage.carriesNews(error) else { return }
             let text = ErrorMessage.text(for: error)
             if items.isEmpty {
                 phase = .failed(text)

@@ -2,9 +2,22 @@ import Foundation
 
 /// Failure taxonomy for one request. Three layers stay distinct because the remedy differs: a transport
 /// failure retries itself, a business error is the server's answer and must be shown, and 401 is a
-/// session event that logs the user out rather than surfacing text.
+/// session event that logs the user out rather than surfacing text. Within the first layer the ways a call
+/// can die before anything answered are separate cases too — one sentence for all of them blames whatever
+/// the user can check first, not what actually went wrong.
 public enum APIError: Error, Equatable, Sendable {
+    /// The device has no route: no connection, the host could not be resolved, the link dropped mid-request.
     case offline
+    /// An address was known and no connection was made to it — refused, reset, TLS rejected, nothing
+    /// listening. Kept apart from `.offline` because the phone is online and telling it otherwise sends the
+    /// user to settings that are fine.
+    case unreachable
+    /// Nothing went on the wire. The request could not be assembled — a keychain read was refused, a stored
+    /// address unreadable — or the transport failed before it reached the network at all.
+    case requestNotSent
+    /// The task that owned the call went away: a refresh superseded mid-flight, a screen dismissed. The
+    /// missing answer says nothing about the network, which is why it is not folded into either case above.
+    case cancelled
     case timeout
     /// 401. The body is not the usual envelope, so its message is never shown.
     case unauthorized
@@ -45,6 +58,9 @@ public enum APIError: Error, Equatable, Sendable {
     public var copyKey: String? {
         switch self {
         case .offline: "error.offline"
+        case .unreachable: "error.unreachable"
+        case .requestNotSent: "error.requestNotSent"
+        case .cancelled: "error.cancelled"
         case .timeout: "error.timeout"
         case .unauthorized: "error.unauthorized"
         case .business: serverMessage?.isEmpty == false ? nil : "error.business"

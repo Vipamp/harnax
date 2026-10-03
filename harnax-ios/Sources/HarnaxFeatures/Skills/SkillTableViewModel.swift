@@ -106,7 +106,6 @@ public final class SkillTableViewModel: ObservableObject {
         isRefreshing = true
         defer { isRefreshing = false }
         inlineError = nil
-        if items.isEmpty { phase = .loading }
         switch await skills.skillPage(
             name: keyword,
             repositoryID: sourceID,
@@ -122,6 +121,7 @@ public final class SkillTableViewModel: ObservableObject {
             await reissueAppend()
         case let .failure(error):
             guard generation == refreshGeneration else { return }
+            guard ErrorMessage.carriesNews(error) else { return }
             let text = ErrorMessage.text(for: error)
             if items.isEmpty {
                 phase = .failed(text)

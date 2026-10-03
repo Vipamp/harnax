@@ -88,7 +88,6 @@ public final class TeamListViewModel: ObservableObject {
         isRefreshing = true
         defer { isRefreshing = false }
         inlineError = nil
-        if items.isEmpty { phase = .loading }
         switch await teams.teamPage(name: keyword, status: filter.queryValue, num: 1, size: pages.pageSize) {
         case let .success(page):
             guard generation == refreshGeneration else { return }
@@ -97,6 +96,7 @@ public final class TeamListViewModel: ObservableObject {
             apply()
         case let .failure(error):
             guard generation == refreshGeneration else { return }
+            guard ErrorMessage.carriesNews(error) else { return }
             let text = ErrorMessage.text(for: error)
             if items.isEmpty {
                 phase = .failed(text)

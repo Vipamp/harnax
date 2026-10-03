@@ -18,9 +18,22 @@ final class CopyResolutionTests: XCTestCase {
     func testTransportFailuresUseTheClientDictionary() {
         XCTAssertEqual(ErrorMessage.text(for: .offline), hx("error.offline"))
         XCTAssertEqual(ErrorMessage.text(for: .timeout), hx("error.timeout"))
+        XCTAssertEqual(ErrorMessage.text(for: .unreachable), hx("error.unreachable"))
+        XCTAssertEqual(ErrorMessage.text(for: .requestNotSent), hx("error.requestNotSent"))
+        XCTAssertEqual(ErrorMessage.text(for: .cancelled), hx("error.cancelled"))
         XCTAssertEqual(ErrorMessage.text(for: .decoding), hx("error.decoding"))
         XCTAssertEqual(ErrorMessage.text(for: .unpackable), hx("error.unpackable"))
         XCTAssertEqual(ErrorMessage.text(for: .invalidServerConfig("admin: x")), hx("error.serverConfig"))
+    }
+
+    /// Five different remedies, so one sentence may not cover them: check the connection, wait, check the
+    /// server is running, retry, reload. Folding them was how a screen with nothing wrong with the network
+    /// came to tell the user their network was down.
+    func testPreAnswerFailuresEachRenderTheirOwnSentence() {
+        let failures: [APIError] = [.offline, .timeout, .unreachable, .requestNotSent, .cancelled]
+        let texts = failures.map { ErrorMessage.text(for: $0) }
+        XCTAssertEqual(Set(texts).count, failures.count, "two outcomes share a sentence: \(texts)")
+        for text in texts { XCTAssertFalse(text.isEmpty) }
     }
 
     func testThrottlingCarriesItsSecondCount() {

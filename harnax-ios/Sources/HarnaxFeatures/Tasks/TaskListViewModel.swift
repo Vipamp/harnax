@@ -132,7 +132,6 @@ public final class TaskListViewModel: ObservableObject {
         defer { isRefreshing = false }
         inlineError = nil
         noticeLines = []
-        if items.isEmpty { phase = .loading }
         guard await reload(reporting: true, generation: generation) else { return }
         await reissueAppend()
     }
@@ -159,6 +158,7 @@ public final class TaskListViewModel: ObservableObject {
             return absorb(page, generation: generation)
         case let .failure(error):
             guard reporting, generation == refreshGeneration else { return false }
+            guard ErrorMessage.carriesNews(error) else { return false }
             let text = ErrorMessage.text(for: error)
             if items.isEmpty {
                 phase = .failed(text)

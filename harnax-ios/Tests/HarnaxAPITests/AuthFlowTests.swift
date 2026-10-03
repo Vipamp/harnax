@@ -91,8 +91,8 @@ final class AuthFlowTests: XCTestCase {
     func testTransportFailuresDoNotGrowTheStreak() async throws {
         let harness = APIHarness()
         harness.transport.enqueueFailure(URLError(.cannotConnectToHost))
-        let offline = await harness.auth.login(username: "admin", password: "admin123")
-        XCTAssertEqual(offline.failure, APIError.offline)
+        let refused = await harness.auth.login(username: "admin", password: "admin123")
+        XCTAssertEqual(refused.failure, APIError.unreachable)
 
         harness.transport.enqueue(200, businessError())
         let rejected = await harness.auth.login(username: "admin", password: "admin123")

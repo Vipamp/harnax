@@ -56,7 +56,6 @@ public final class TeamArtifactsViewModel: ObservableObject {
     /// the app's own convention everywhere else is to keep the rows.
     public func load() async {
         inlineError = nil
-        if artifacts.isEmpty { phase = .loading }
         switch await reading.teamArtifacts(sessionId: sessionId) {
         case let .success(rows):
             artifacts = rows
@@ -66,6 +65,7 @@ public final class TeamArtifactsViewModel: ObservableObject {
                 phase = .objectStoreDisabled
                 return
             }
+            guard ErrorMessage.carriesNews(error) else { return }
             let text = ErrorMessage.text(for: error)
             if artifacts.isEmpty {
                 phase = .failed(text)

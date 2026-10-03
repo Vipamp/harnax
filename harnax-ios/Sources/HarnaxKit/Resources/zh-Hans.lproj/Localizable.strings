@@ -28,6 +28,9 @@
 
 /* ---- 错误 ---- */
 "error.offline" = "当前网络不可用，请检查网络连接。";
+"error.unreachable" = "无法连接到服务器，请确认服务已启动。";
+"error.requestNotSent" = "请求未能发出，请稍后重试。";
+"error.cancelled" = "请求已中断，请重新加载。";
 "error.timeout" = "请求超时，请稍后重试。";
 "error.unauthorized" = "登录已过期，请重新登录。";
 "error.business" = "服务器拒绝了本次请求。";

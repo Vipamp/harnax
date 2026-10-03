@@ -17,25 +17,31 @@ public struct SkillSourceListView: View {
     /// the sheet cannot read it through the dismissal it triggers on the way out.
     @State private var reportToShow: SkillInstallReport?
 
-    /// Hands back the picked source's id and the name to title the next screen with. The name travels here
-    /// rather than being re-read deeper down, because an empty table has no row to ask.
-    private let onSelect: (Int64?, String?) -> Void
     private let skills: any SkillCataloging
     private let account: AccountSnapshot?
 
+    /// Read here rather than drawn through `HXSegmentBarRow`: that row is an `EmptyView` when the host has no
+    /// bar, and an empty row in a `List` still costs its insets and its background — which is what the
+    /// walkthrough screen mounting this list bare would show.
+    @Environment(\.harnaxSegmentBar) private var segmentBar: AnyView?
+
     public init(
         skills: any SkillCataloging,
-        account: AccountSnapshot? = nil,
-        onSelect: @escaping (Int64?, String?) -> Void = { _, _ in }
+        account: AccountSnapshot? = nil
     ) {
         _vm = StateObject(wrappedValue: SkillSourceListViewModel(skills: skills, account: account))
         self.skills = skills
         self.account = account
-        self.onSelect = onSelect
     }
 
     public var body: some View {
         List {
+            if let segmentBar {
+                segmentBar
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
             if let error = vm.inlineError {
                 HXBanner("state.error.title", message: error, systemImage: "exclamationmark.triangle", tone: .danger)
                     .listRowBackground(Color.hx(.surface))
@@ -100,11 +106,6 @@ public struct SkillSourceListView: View {
             }
         }
         .task { await vm.refresh() }
-        .onChange(of: vm.pendingOpen) { _, source in
-            guard let source else { return }
-            onSelect(source.id, hxPresented(source.title))
-            vm.didOpen()
-        }
         .refreshable { await vm.refresh() }
         .sheet(item: $syncing) { source in
             // A sync rewrites the rows this list shows — the skill count and the last-sync column both come
@@ -162,34 +163,37 @@ public struct SkillSourceListView: View {
     @ViewBuilder
     private func card(_ source: SkillSourceSummary) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 10) {
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 6) {
-                        Text(verbatim: source.title)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Color.hx(.textPrimary))
-                            .lineLimit(1)
-                        HXChip(hx(typeKey(for: source)), tone: source.isEnabled ? .brand : .textTertiary)
-                        if !source.type.isRefreshable {
-                            HXChip(hx("skill.source.readonly"), tone: .purple)
+            NavigationLink(value: SkillSourceRoute(id: source.id, name: hxPresented(source.title))) {
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(spacing: 6) {
+                            Text(verbatim: source.title)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Color.hx(.textPrimary))
+                                .lineLimit(1)
+                            HXChip(hx(typeKey(for: source)), tone: source.isEnabled ? .brand : .textTertiary)
+                            if !source.type.isRefreshable {
+                                HXChip(hx("skill.source.readonly"), tone: .purple)
+                            }
+                        }
+                        if let endpoint = source.endpoint {
+                            HXValueText(endpoint)
+                        }
+                        HStack(spacing: 8) {
+                            if let count = source.enabledSkills {
+                                HXChip(hx("skill.source.skills", count), tone: .teal)
+                            }
+                            syncBadge(source)
                         }
                     }
-                    if let endpoint = source.endpoint {
-                        HXValueText(endpoint)
-                    }
-                    HStack(spacing: 8) {
-                        if let count = source.enabledSkills {
-                            HXChip(hx("skill.source.skills", count), tone: .teal)
-                        }
-                        syncBadge(source)
-                    }
+                    Spacer(minLength: 0)
+                    HXStatusDot(
+                        tone: source.isEnabled ? .success : .textTertiary,
+                        label: hx(source.isEnabled ? "state.badge.enabled" : "state.badge.disabled")
+                    )
                 }
-                Spacer(minLength: 0)
-                HXStatusDot(
-                    tone: source.isEnabled ? .success : .textTertiary,
-                    label: hx(source.isEnabled ? "state.badge.enabled" : "state.badge.disabled")
-                )
             }
+            .buttonStyle(.plain)
             if mayWrite(source) {
                 menu(source)
             }
@@ -199,8 +203,6 @@ public struct SkillSourceListView: View {
             Color.hx(vm.selection == source.id ? .surfaceAlt : .surface),
             in: RoundedRectangle(cornerRadius: 14, style: .continuous)
         )
-        .contentShape(Rectangle())
-        .onTapGesture { vm.open(source) }
     }
 
     @ViewBuilder

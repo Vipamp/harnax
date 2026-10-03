@@ -135,7 +135,7 @@ public struct ChatStreamClient: AgentStreaming {
         into continuation: AsyncThrowingStream<ChatEvent, any Error>.Continuation
     ) async throws {
         let (bytes, response) = try await urlSession.bytes(for: request)
-        guard let http = response as? HTTPURLResponse else { throw APIError.offline }
+        guard let http = response as? HTTPURLResponse else { throw APIError.unreachable }
         guard http.value(forHTTPHeaderField: "Content-Type")?.contains("text/event-stream") ?? false else {
             // A rejected call answers a JSON envelope instead of a stream.
             var body = Data()

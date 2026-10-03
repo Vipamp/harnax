@@ -132,6 +132,85 @@ final class ListRefreshIdentityTests: XCTestCase {
     }
 }
 
+/// A pull that is torn down mid-flight is not a load that failed.
+///
+/// Two things went wrong together on a column with nothing on screen: `runRefresh` swapped the empty card
+/// for a full-screen spinner while the pull was still open — a change to the very hierarchy the refresh
+/// control hangs on — and the answer that came back afterwards was rendered as a refusal. The phone showed
+/// that refusal as `error.cancelled` on 2026-10-03: nobody was waiting for the page any more, and that says
+/// nothing about the data.
+@MainActor
+final class PullRefreshCancellationTests: XCTestCase {
+    /// The card the operator is pulling stays on screen. Its replacement is what churns the pull's own
+    /// container, and the pull already carries a spinner of its own.
+    func testAPullFromAnEmptyColumnKeepsTheCardItIsPulling() async throws {
+        let agents = ParkedPageAgents()
+        agents.replies = [
+            .success(try PageStub.page([], total: 0, pageSize: 1)),
+            .success(try PageStub.page([], total: 0, pageSize: 1)),
+        ]
+        let vm = AgentListViewModel(agents: agents, pageSize: 1)
+        await vm.refresh()
+        XCTAssertEqual(vm.phase, .empty)
+
+        agents.gateNextRead = true
+        let pull = Task { await vm.refresh() }
+        try await waitUntil { agents.pageCalls == 2 }
+        XCTAssertEqual(vm.phase, .empty, "the pull is loading, and its own indicator is where that shows")
+
+        agents.releaseRead()
+        await pull.value
+    }
+
+    func testACancelledReadOnAnEmptyColumnRaisesNoError() async throws {
+        let agents = ParkedPageAgents()
+        agents.replies = [.success(try PageStub.page([], total: 0, pageSize: 1)), .failure(.cancelled)]
+        let vm = AgentListViewModel(agents: agents, pageSize: 1)
+        await vm.refresh()
+
+        agents.gateNextRead = true
+        let pull = Task { await vm.refresh() }
+        try await waitUntil { agents.pageCalls == 2 }
+        pull.cancel()
+        agents.releaseRead()
+        await pull.value
+
+        XCTAssertEqual(vm.phase, .empty, "a read nobody is waiting for is not news about the stack")
+        XCTAssertNil(vm.inlineError)
+    }
+
+    /// The same verdict on a column that has rows: the banner above them reports calls that were refused,
+    /// not calls the screen stopped asking for.
+    func testACancelledReadOnAColumnWithRowsRaisesNoBanner() async throws {
+        let agents = ParkedPageAgents()
+        agents.replies = [
+            .success(try PageStub.page([["id": 1, "name": "客服助手"]], total: 1, pageSize: 1)),
+            .failure(.cancelled),
+        ]
+        let vm = AgentListViewModel(agents: agents, pageSize: 1)
+        await vm.refresh()
+
+        agents.gateNextRead = true
+        let pull = Task { await vm.refresh() }
+        try await waitUntil { agents.pageCalls == 2 }
+        pull.cancel()
+        agents.releaseRead()
+        await pull.value
+
+        XCTAssertNil(vm.inlineError)
+        XCTAssertEqual(vm.phase, .content)
+        XCTAssertEqual(vm.items.compactMap(\.name), ["客服助手"])
+    }
+
+    private func waitUntil(_ condition: @escaping @MainActor () -> Bool) async throws {
+        for _ in 0..<400 {
+            if condition() { return }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTFail("condition never became true")
+    }
+}
+
 /// The tasks screen carries a reader nobody asked for: the three-second tick an in-flight row keeps armed.
 ///
 /// That makes it the worst case of the rule rather than another copy of it — the stale answer is not a

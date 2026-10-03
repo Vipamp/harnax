@@ -46,17 +46,10 @@ public final class SkillSourceListViewModel: ObservableObject {
     public let upload: SkillUploadModel
 
     /// Auto-selection follows the console (`harnax-webui/src/pages/skill/index.tsx:58-62`): the first row is
-    /// picked so the right-hand table always has a subject. An explicit tap wins over it, and a selection
-    /// that has paged or been deleted out of the list falls back to the new head.
+    /// picked so the list is never reading as unselected, and a selection that has paged or been deleted out of
+    /// the list falls back to the new head. Opening a table is not this state's job: the source row carries its
+    /// own link value, so only a press can push one.
     @Published public var selection: Int64?
-    /// The source whose table the operator just asked for, and the only thing that pushes one.
-    ///
-    /// `selection` cannot carry this: `apply()` picks the head row on its own after every load, so a screen
-    /// that pushed on that change opened a table the moment the tab appeared. There the automatic selection
-    /// only decides which source the right-hand panel shows on the same screen
-    /// (`harnax-webui/src/pages/skill/index.tsx:58-62`); here that panel is a pushed screen, so it follows the
-    /// tap alone.
-    @Published public private(set) var pendingOpen: SkillSourceSummary?
     @Published public var keyword = "" {
         didSet { if keyword != oldValue { scheduleSearch() } }
     }
@@ -95,18 +88,6 @@ public final class SkillSourceListViewModel: ObservableObject {
         return items.first { $0.id == selection }
     }
 
-    /// The row's gesture. It highlights as it goes, so the card that was pressed reads as the one whose table
-    /// is on screen.
-    public func open(_ source: SkillSourceSummary) {
-        selection = source.id
-        pendingOpen = source
-    }
-
-    /// The screen calls this once it has pushed, so a second press of the same row is a change again.
-    public func didOpen() {
-        pendingOpen = nil
-    }
-
     public func status(of source: SkillSourceSummary) -> Bool {
         statusOverrides[source.id] ?? source.isEnabled
     }
@@ -132,7 +113,6 @@ public final class SkillSourceListViewModel: ObservableObject {
         isRefreshing = true
         defer { isRefreshing = false }
         inlineError = nil
-        if items.isEmpty { phase = .loading }
         switch await skills.sourcePage(
             name: keyword,
             sourceType: nil,
@@ -148,6 +128,7 @@ public final class SkillSourceListViewModel: ObservableObject {
             await reissueAppend()
         case let .failure(error):
             guard generation == refreshGeneration else { return }
+            guard ErrorMessage.carriesNews(error) else { return }
             let text = ErrorMessage.text(for: error)
             if items.isEmpty {
                 phase = .failed(text)

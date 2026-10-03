@@ -15,4 +15,14 @@ public enum ErrorMessage {
         }
         return error.serverMessage ?? hx("error.business")
     }
+
+    /// Whether a failed read is news the screen should say out loud.
+    ///
+    /// `cancelled` reports the reader going away — a pull torn down mid-flight, a screen dismissed — and
+    /// that is silence about the call, not a verdict on it. Every other pre-answer failure names something
+    /// the operator can go and check, so it is worth a sentence.
+    public static func carriesNews(_ error: APIError) -> Bool {
+        if case .cancelled = error { return false }
+        return true
+    }
 }

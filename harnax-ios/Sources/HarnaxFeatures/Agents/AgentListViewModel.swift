@@ -86,7 +86,6 @@ public final class AgentListViewModel: ObservableObject {
         isRefreshing = true
         defer { isRefreshing = false }
         inlineError = nil
-        if items.isEmpty { phase = .loading }
         switch await agents.page(name: keyword, status: filter.queryValue, num: 1, size: pages.pageSize) {
         case let .success(page):
             guard generation == refreshGeneration else { return }
@@ -96,6 +95,7 @@ public final class AgentListViewModel: ObservableObject {
             await reissueAppend()
         case let .failure(error):
             guard generation == refreshGeneration else { return }
+            guard ErrorMessage.carriesNews(error) else { return }
             let text = ErrorMessage.text(for: error)
             if items.isEmpty {
                 phase = .failed(text)

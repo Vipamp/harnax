@@ -49,47 +49,53 @@ public struct ToolListView: View {
         )
     }
 
-    @ViewBuilder
+    /// One scroll for the whole column: the host's switch row first, then whichever phase this screen is in.
+    ///
+    /// The bar rides inside rather than above because pinned outside it held still while the rows and the
+    /// navigation bar moved. A state card is only a shorter column, so it scrolls here too — the bar stays
+    /// reachable and pulling it is still this list's refresh.
     private var content: some View {
-        switch vm.phase {
-        case .loading:
-            HXStateView(.loading)
-        case .empty:
-            // A filter that matches nothing is not the same sentence as an installation that registers no
-            // tools.
-            HXStateView(
-                .empty,
-                message: vm.isFiltered ? hx("tool.empty.filtered") : hx("tool.empty"),
-                retry: { Task { await vm.refresh() } }
-            )
-        case let .failed(message):
-            HXStateView(.error, message: message, retry: { Task { await vm.refresh() } })
-        case .content:
-            list
-        }
-    }
-
-    private var list: some View {
         ScrollView {
             LazyVStack(spacing: 12) {
-                if let inline = vm.inlineError {
-                    HXBanner("state.error.title", message: inline, systemImage: "exclamationmark.triangle", tone: .danger)
-                }
-                Text(verbatim: hx("tool.readonly.note"))
-                    .font(.caption)
-                    .foregroundStyle(Color.hx(.textTertiary))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                // Row identity is the array index: a page may carry rows whose `id` the backend left null,
-                // and two nil ids under one `ForEach` identity would drop a card.
-                ForEach(Array(vm.items.enumerated()), id: \.offset) { _, tool in
-                    ToolRecordCard(tool: tool, chinese: catalog.language.prefersChinese) {
-                        drillDown = tool
-                    }
+                HXSegmentBarRow()
+                switch vm.phase {
+                case .loading:
+                    HXStateView(.loading)
+                case .empty:
+                    // A filter that matches nothing is not the same sentence as an installation that registers no
+                    // tools.
+                    HXStateView(
+                        .empty,
+                        message: vm.isFiltered ? hx("tool.empty.filtered") : hx("tool.empty"),
+                        retry: { Task { await vm.refresh() } }
+                    )
+                case let .failed(message):
+                    HXStateView(.error, message: message, retry: { Task { await vm.refresh() } })
+                case .content:
+                    rows
                 }
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
             .padding(.bottom, HXLayout.tabBarClearance)
+        }
+    }
+
+    @ViewBuilder
+    private var rows: some View {
+        if let inline = vm.inlineError {
+            HXBanner("state.error.title", message: inline, systemImage: "exclamationmark.triangle", tone: .danger)
+        }
+        Text(verbatim: hx("tool.readonly.note"))
+            .font(.caption)
+            .foregroundStyle(Color.hx(.textTertiary))
+            .frame(maxWidth: .infinity, alignment: .leading)
+        // Row identity is the array index: a page may carry rows whose `id` the backend left null,
+        // and two nil ids under one `ForEach` identity would drop a card.
+        ForEach(Array(vm.items.enumerated()), id: \.offset) { _, tool in
+            ToolRecordCard(tool: tool, chinese: catalog.language.prefersChinese) {
+                drillDown = tool
+            }
         }
     }
 }

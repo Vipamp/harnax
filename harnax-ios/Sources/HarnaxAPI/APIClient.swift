@@ -83,8 +83,8 @@ public actor APIClient {
     /// (`harnax-webui/src/requestErrorConfig.ts:135-176`).
     ///
     /// So the refresh's own error goes back verbatim, which also keeps the caller honest: `AuthFlow.profile()`
-    /// and `switchTenant(to:)` treat `.unauthorized` as a session event, and an `.offline` reaching them means
-    /// "retry", not "log out".
+    /// and `switchTenant(to:)` treat `.unauthorized` as a session event, and any of the pre-answer failures
+    /// reaching them means "retry", not "log out".
     private func settleRefresh(_ error: any Error) async -> APIError {
         let failure = (error as? APIError) ?? URLSessionTransport.map(error)
         guard case .unauthorized = failure else { return failure }
@@ -98,6 +98,16 @@ public actor APIClient {
         if case .failure(.unauthorized) = replay { try? await session.signOut() }
     }
 
+    /// What it means that no request was ever built: the address sheet can store a value this side cannot
+    /// turn into a URL, and a keychain read can be refused by the OS. Neither is a verdict about the network,
+    /// and neither route below reaches the transport on one.
+    private func notSent(_ error: any Error) -> APIError {
+        if let config = error as? ServerConfigError, case let .invalid(detail) = config {
+            return .invalidServerConfig(detail)
+        }
+        return .requestNotSent
+    }
+
     private func perform<T: Decodable>(_ type: T.Type, _ endpoint: Endpoint) async -> Result<T, APIError> {
         let request: URLRequest
         do {
@@ -105,7 +115,7 @@ public actor APIClient {
         } catch let error as APIError {
             return .failure(error)
         } catch {
-            return .failure(.offline)
+            return .failure(notSent(error))
         }
         let data: Data
         let response: HTTPURLResponse
@@ -133,7 +143,7 @@ public actor APIClient {
         } catch let error as APIError {
             return .failure(error)
         } catch {
-            return .failure(.offline)
+            return .failure(notSent(error))
         }
         let data: Data
         let response: HTTPURLResponse

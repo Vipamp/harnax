@@ -109,7 +109,6 @@ public final class ChannelListViewModel: ObservableObject {
         isRefreshing = true
         defer { isRefreshing = false }
         inlineError = nil
-        if items.isEmpty { phase = .loading }
         switch await catalog.channelPage(
             keyword: keyword,
             type: typeFilter.code,
@@ -126,6 +125,7 @@ public final class ChannelListViewModel: ObservableObject {
             await reissueAppend()
         case let .failure(error):
             guard generation == refreshGeneration else { return }
+            guard ErrorMessage.carriesNews(error) else { return }
             let text = ErrorMessage.text(for: error)
             if items.isEmpty {
                 phase = .failed(text)

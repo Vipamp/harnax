@@ -130,6 +130,7 @@ public final class McpDetailViewModel: ObservableObject {
             await loadTools()
             if row.requiresPerUserOAuth { await loadOAuth() }
         case let .failure(error):
+            guard ErrorMessage.carriesNews(error) else { return }
             let text = ErrorMessage.text(for: error)
             if server == nil {
                 phase = .failed(text)

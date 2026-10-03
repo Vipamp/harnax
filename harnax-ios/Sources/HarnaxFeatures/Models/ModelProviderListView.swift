@@ -82,65 +82,71 @@ public struct ModelProviderListView: View {
         )
     }
 
-    @ViewBuilder
+    /// One scroll for the whole column: the host's switch row first, then whichever phase this screen is in.
+    ///
+    /// The bar rides inside rather than above because pinned outside it held still while the rows and the
+    /// navigation bar moved. A state card is only a shorter column, so it scrolls here too — the bar stays
+    /// reachable and pulling it is still this list's refresh.
     private var content: some View {
-        switch vm.phase {
-        case .loading:
-            HXStateView(.loading)
-        case .empty:
-            HXStateView(
-                .empty,
-                message: vm.isFiltered ? hx("model.provider.empty.filtered") : hx("model.provider.empty"),
-                retry: { Task { await vm.refresh() } }
-            )
-        case let .failed(message):
-            HXStateView(.error, message: message, retry: { Task { await vm.refresh() } })
-        case .content:
-            list
-        }
-    }
-
-    private var list: some View {
         ScrollView {
             LazyVStack(spacing: 12) {
-                if let inline = vm.inlineError {
-                    HXBanner(
-                        "state.error.title",
-                        message: inline,
-                        systemImage: "exclamationmark.triangle",
-                        tone: .danger
-                    )
-                }
-                // The provider's own identity: the counts a card shows are keyed the same way, so a row that
-                // moved must not keep the read of whoever held that slot before. This DTO declares `id`
-                // non-null (`ModelProviderResponse.kt:13-43`), so no row is unkeyable.
-                ForEach(vm.items, id: \.providerID) { provider in
-                    ModelProviderCard(
-                        provider: provider,
-                        enabled: vm.status(of: provider),
-                        isPending: vm.pendingIDs.contains(provider.providerID),
-                        stats: vm.statsState(for: provider),
-                        test: vm.testOutcome(for: provider),
-                        canManage: account?.canManage(creator: provider.creator) ?? false,
-                        onToggle: { value in Task { await vm.setStatus(value, for: provider) } },
-                        onAppear: { Task { await vm.loadStats(for: provider) } },
-                        onTest: { Task { await vm.test(provider) } },
-                        onEdit: { editing = provider },
-                        onDelete: { pendingDelete = provider }
-                    )
-                    .onAppear {
-                        if provider.providerID == vm.items.last?.providerID {
-                            Task { await vm.loadMore() }
-                        }
-                    }
-                }
-                if vm.isAppending {
+                HXSegmentBarRow()
+                switch vm.phase {
+                case .loading:
                     HXStateView(.loading)
+                case .empty:
+                    HXStateView(
+                        .empty,
+                        message: vm.isFiltered ? hx("model.provider.empty.filtered") : hx("model.provider.empty"),
+                        retry: { Task { await vm.refresh() } }
+                    )
+                case let .failed(message):
+                    HXStateView(.error, message: message, retry: { Task { await vm.refresh() } })
+                case .content:
+                    rows
                 }
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
             .padding(.bottom, HXLayout.tabBarClearance)
+        }
+    }
+
+    @ViewBuilder
+    private var rows: some View {
+        if let inline = vm.inlineError {
+            HXBanner(
+                "state.error.title",
+                message: inline,
+                systemImage: "exclamationmark.triangle",
+                tone: .danger
+            )
+        }
+        // The provider's own identity: the counts a card shows are keyed the same way, so a row that
+        // moved must not keep the read of whoever held that slot before. This DTO declares `id`
+        // non-null (`ModelProviderResponse.kt:13-43`), so no row is unkeyable.
+        ForEach(vm.items, id: \.providerID) { provider in
+            ModelProviderCard(
+                provider: provider,
+                enabled: vm.status(of: provider),
+                isPending: vm.pendingIDs.contains(provider.providerID),
+                stats: vm.statsState(for: provider),
+                test: vm.testOutcome(for: provider),
+                canManage: account?.canManage(creator: provider.creator) ?? false,
+                onToggle: { value in Task { await vm.setStatus(value, for: provider) } },
+                onAppear: { Task { await vm.loadStats(for: provider) } },
+                onTest: { Task { await vm.test(provider) } },
+                onEdit: { editing = provider },
+                onDelete: { pendingDelete = provider }
+            )
+            .onAppear {
+                if provider.providerID == vm.items.last?.providerID {
+                    Task { await vm.loadMore() }
+                }
+            }
+        }
+        if vm.isAppending {
+            HXStateView(.loading)
         }
     }
 }
