@@ -4,13 +4,18 @@ import com.agnetix.harnax.agent.chat.MsgExtractHelper
 import com.agnetix.harnax.agent.protocol.ChatEvent
 import com.agnetix.harnax.agent.protocol.ChatEventConverter
 import com.agnetix.harnax.agent.protocol.ChatResponse
+import com.agnetix.harnax.agent.protocol.ContextUsageResponse
+import com.agnetix.harnax.agent.protocol.ContextWindowSource
 import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.agent.protocol.FileAttachment
 import com.agnetix.harnax.agent.protocol.PendingCallTool
 import com.agnetix.harnax.agent.protocol.ToolConfirmChatEvent
+import com.agnetix.harnax.agent.session.MysqlSessionMessageStore
 import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.common.error.HarnaxException
+import com.agnetix.harnax.harness.compaction.CompactionOutcome
+import com.agnetix.harnax.harness.compaction.ContextCompactionService
 import com.agnetix.harnax.harness.output.OutputFileDetector
 import com.agnetix.harnax.harness.output.OutputFileStore
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
@@ -41,6 +46,8 @@ import io.agentscope.core.state.AgentState
 import io.agentscope.core.state.Task
 import io.agentscope.core.tool.mcp.McpClientWrapper
 import io.agentscope.harness.agent.HarnessAgent
+import io.agentscope.harness.agent.memory.compaction.CompactionConfig
+import io.agentscope.harness.agent.memory.compaction.TokenCounterUtil
 import io.agentscope.harness.agent.sandbox.SandboxContext
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec
 import io.agentscope.harness.agent.sandbox.impl.docker.DockerSandboxClient
@@ -108,6 +115,17 @@ class HarnessAgentWrapper(
      * agent and leaves this null, which is what makes [release] safe to hand the whole team over to.
      */
     val teamOrchestrator: TeamOrchestrator? = null,
+    /**
+     * Append-only history the chat page reads, over the same session database as the state store. Null when the
+     * session database is not MySQL, which leaves [archiveContext] a no-op and history on the context alone.
+     */
+    val sessionMessageStore: MysqlSessionMessageStore? = null,
+    /**
+     * `model.context_window` exactly as the model domain holds it, kept separate because [harnessAgent]'s model
+     * answers only with the number it settled on — configured value or its own name-based guess — and the usage
+     * ratio has to say which of the two divided it.
+     */
+    val configuredContextWindow: Int? = null,
 ) {
 
     private val log = LoggerFactory.getLogger(HarnessAgentWrapper::class.java)
@@ -286,6 +304,116 @@ class HarnessAgentWrapper(
             log.debug("[harness] getLiveAgentState via stateStore failed for session={}: {}", sessionId, e.message)
             null
         }
+    }
+
+    /**
+     * Records this turn's whole context into the chat history archive.
+     *
+     * Written as the full context rather than the turn's new messages, so a failed write is healed by the next
+     * turn and neither compaction path needs a hook of its own: the archive is the read side, and compaction
+     * only ever rewrites the model's copy.
+     *
+     * Best-effort by contract — one retry, then a warning. A reply that landed must not be lost over a history
+     * row, and only a message trimmed by a compaction before the next write is gone for good.
+     */
+    fun archiveContext() {
+        val store = sessionMessageStore ?: return
+        val context = try {
+            // The live state, not the store's copy: this runs while the turn's messages are in memory and the
+            // persisted row may still be the previous turn's.
+            harnessAgent.delegate?.getAgentState(userId, sessionId)?.context
+        } catch (e: Exception) {
+            log.warn("[archive] Could not read the live context for session={}: {}", sessionId, e.message)
+            null
+        } ?: return
+        if (context.isEmpty()) return
+        try {
+            store.archive(userId, sessionId, context)
+        } catch (first: Exception) {
+            try {
+                store.archive(userId, sessionId, context)
+            } catch (retry: Exception) {
+                log.warn(
+                    "[archive] Archiving session={} failed twice, leaving it to the next turn: {}",
+                    sessionId,
+                    retry.message,
+                )
+            }
+        }
+    }
+
+    /**
+     * Runs one on-demand compaction of this session's context.
+     *
+     * Lives here rather than at the command's call site because the agent, the session and the user bucket are
+     * the three keys this wrapper's own turns run under. `getAgentState` addresses a slot by all three, so a
+     * caller that supplied its own user id would summarize a different conversation than the one it named.
+     *
+     * @param keepTokens tail budget from `/compact <N>`; null keeps the dynamic tier
+     */
+    fun compactManually(keepTokens: Int?): CompactionOutcome = ContextCompactionService.compact(
+        harnessAgent,
+        sessionId,
+        userId,
+        keepTokens,
+    )
+
+    /**
+     * How full this session's model context is, or null when no context can be read for it.
+     *
+     * Reads through [getLiveAgentState], including its state-store fallback: this is a read, and after a restart
+     * the persisted context is exactly what the next turn loads, so it is the honest numerator either way.
+     *
+     * The trigger numbers come from upstream's default [CompactionConfig] because that is what this runtime
+     * builds with — no builder call here overrides the compaction tier.
+     *
+     * @param lastCallInputTokens billed input tokens of this session's latest model call, read by the caller
+     *   from `token_stats`; null when nothing has been recorded yet
+     */
+    fun contextUsage(lastCallInputTokens: Int?): ContextUsageResponse? {
+        val context = getLiveAgentState()?.context ?: return null
+        val estimated = TokenCounterUtil.calculateToken(context)
+        val defaultConfig = CompactionConfig.builder().build()
+        val modelWindow = harnessAgent.model.contextWindowSize
+        val (window, source) = resolveContextWindow(modelWindow)
+        return ContextUsageResponse(
+            messageCount = context.size,
+            estimatedTokens = estimated,
+            lastCallInputTokens = lastCallInputTokens,
+            contextWindow = window,
+            windowSource = source,
+            ratio = if (window > 0) estimated.toDouble() / window else 0.0,
+            triggerTokens = triggerTokens(modelWindow, defaultConfig),
+            triggerMessages = defaultConfig.triggerMessages,
+        )
+    }
+
+    /**
+     * The denominator of the usage ratio: the operator's number, then the window upstream inferred from the
+     * model name, then upstream's own fallback constant — the same number it falls back to when a model reports
+     * no window, so a guessed ratio and a guessed trigger cannot drift apart.
+     */
+    private fun resolveContextWindow(modelWindow: Int): Pair<Int, ContextWindowSource> {
+        val configured = configuredContextWindow
+        return when {
+            configured != null && configured > 0 -> configured to ContextWindowSource.MODEL_FIELD
+            modelWindow > 0 -> modelWindow to ContextWindowSource.UPSTREAM_TABLE
+            else -> CompactionConfig.FALLBACK_TRIGGER_TOKENS to ContextWindowSource.FALLBACK
+        }
+    }
+
+    /**
+     * Where the automatic path compacts this model, recomputed as `CompactionMiddleware.resolveEffectiveConfig`
+     * does: the window minus the reserved margin, clamped to half the window when the margin would eat it, and
+     * the fallback constant when no window is known at all.
+     */
+    private fun triggerTokens(
+        modelWindow: Int,
+        config: CompactionConfig,
+    ): Int {
+        if (modelWindow <= 0) return CompactionConfig.FALLBACK_TRIGGER_TOKENS
+        val trigger = modelWindow - config.reserved
+        return if (trigger <= 0) maxOf(1, modelWindow / 2) else trigger
     }
 
     /**

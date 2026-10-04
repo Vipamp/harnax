@@ -708,6 +708,8 @@ class HarnessAgentLauncher(
             // every `confirmHeartbeatSeconds`. That is why this number sits above both of them — see
             // `TeamConfig.turnTimeoutSeconds`.
             turnTimeoutSeconds = turnBudget(teamRole),
+            sessionMessageStore = sessionMessageStore,
+            configuredContextWindow = chatModelConfig.contextWindow,
         )
     }
 

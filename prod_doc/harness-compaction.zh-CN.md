@@ -137,7 +137,7 @@ CREATE TABLE IF NOT EXISTS session_message (
 | `lastCallInputTokens` | `token_stats.input_token` 该会话最近一行 | 账单真值，由 `TokenStatsMiddleware.kt:41-67` 每次模型调用写一行。**它含系统提示与工具清单而 `context` 不含，所以必然比估算大 —— 这是口径差不是 bug**；且它反映上一轮，压缩之后要到下一轮才降 |
 | `contextWindow` | 三级回退：模型域新列 `model.context_window` → 上游 `getContextWindowSize()`（`ChatModelBase.java:38-40`；builder 没给值时由 `ModelContextWindows.lookup` 按模型名做最长前缀匹配，未命中返回 0，`ModelContextWindows.java:151`）→ `160_000` | `windowSource` 取 `MODEL_FIELD` / `UPSTREAM_TABLE` / `FALLBACK`，让调用方知道这个分母是配的还是猜的 |
 | `ratio` | `estimatedTokens / contextWindow` | 展示用 |
-| `triggerTokens` | 窗口 > 0 时 `contextWindow - reserved(20_000)`，该值 ≤0 时上游钳成 `max(1, contextWindow/2)`；窗口报不出（≤0）时取 `160_000`（`CompactionMiddleware.java:164-190`）。另带 `triggerMessages = 50` | "自动压缩还差多少兜底"，与自动路径同一个算法 |
+| `triggerTokens` | 用**模型自己报的窗口** `model.getContextWindowSize()` 走 `CompactionMiddleware.java:164-190` 那段算法：>0 时 `窗口 - reserved(20_000)`，该值 ≤0 时上游钳成 `max(1, 窗口/2)`；窗口报不出（≤0）时取 `160_000`。另带 `triggerMessages = 50` | "自动压缩还差多少兜底"。这里刻意不用上一行的三级回退值当被减数：中间件只看得到模型自己报的数，两者一旦分叉，三级都拿不到时就会报出一个 `160_000 - 20_000 = 140_000` 而实际兜底是 `160_000` —— 报错的阈值比报不了更糟 |
 | `messageCount` | `context.size` | 与 `triggerMessages` 同判据 |
 
 新增读接口 `GET /api/agent/context/{sessionId}`，挂在 `AgentController.kt`（同类已有 `:104` 的 `/chat/history/{sessionId}`），鉴权形状照它：`@InternalOnly` + sessionId 作用域、不带租户谓词 —— 这是既有先例，照用并在此标明。注意 `@InternalOnly` 打在类上（`:32`，同处 `@RequestMapping("/api/agent")` 在 `:31`），新方法挂在同一个 controller 里就自动继承，不需要逐个方法标注。真实 token 那条查询因此只按 `session_id` 过滤。响应体沿用 `ResultVo`。
@@ -169,7 +169,7 @@ CREATE TABLE IF NOT EXISTS session_message (
 - **仓库根**：`pom.xml:39` 的 `<agent-scope.version>` 改 2.0.4（第 3 节的前置动作；上游检出需先 `mvn install`）。
 - **harnax-entity**：`Model.kt` 加列映射；`ModelConfigDto`/`AgentSpecInfoResponse` 加 `contextWindow`；`TokenStatsMapper.kt` + `.xml` 加一条按 sessionId 的最新 `input_token` select；`schema-test.sql` 跟基线。
 - **harnax-admin**：`V1__init_schema.sql` 加列；模型 CRUD 的校验与表单加一个可选字段。
-- **harnax-harness-core**：`agent/session/` 新增 `MysqlSessionMessageStore`（自建表、幂等写、按会话读、按会话删，纯 JDBC，照 `MysqlAgentStateStore.kt` 的形状）；`HarnessAgentLauncher.kt:786` 的 `loadSessionMessages` 改读归档并保留两级回退；`HarnessAgentWrapper.kt` 新增两个能力 —— 归档当前 context、算占用比例；`HarnessAgentBuilder`/`HarnessAgentLauncher` 把窗口值带到 wrapper；`HarnessAgentBuilder.kt` 加 `disableTranscript()` 透传（现有 disable 一族在 `:148-158`），并在 `HarnessAgentLauncher.kt` 的两条装配分支上都调用它（第 3 节第 1 行）。
+- **harnax-harness-core**：`agent/session/` 新增 `MysqlSessionMessageStore`（自建表、幂等写、按会话读、按会话删，纯 JDBC，照 `MysqlAgentStateStore.kt` 的形状）；`HarnessAgentLauncher.kt:786` 的 `loadSessionMessages` 改读归档并保留两级回退；`HarnessAgentWrapper.kt` 新增三个能力 —— 归档当前 context、按命令压缩（`compactManually`：agent / sessionId / user 桶三个值一律取自 wrapper 自身，就是为守住第 4 节末条那条隐藏不变量）、算占用比例；`HarnessAgentLauncher` 把归档表与 `context_window` 原值带到 wrapper；`HarnessAgentBuilder.kt` 加 `disableTranscript()` 透传（现有 disable 一族在 `:148-158`），并在 `HarnessAgentLauncher.kt` 的两条装配分支上都调用它（第 3 节第 1 行）。
 - **harnax-agent-service**：`DefaultAgentRunner.kt:245` 的 COMPACT 分支换真实现，并在两条轮次收尾处（流的 `doFinally`、批量的 `finally`）挂归档；`AgentController.kt` 加 `GET /api/agent/context/{sessionId}`；`clearSession` 连带删档。
 - **harnax-session-router**：新接口按会话绑定转发一条 —— 转发调用落在 `src/main/kotlin/com/agnetix/harnax/router/proxy/SessionRouterService.kt`（照 `:365` 的 `loadHistory` 同款），对外端点落在 `src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt`（照 `:105-113` 的 `/command` 代理形状）。
 - **harnax-webui**：只有 admin 侧模型表单那一处。聊天页不改（它能发 `/compact` 这件事本来就是通的）。
