@@ -145,24 +145,23 @@ class HarnessAgentSessionHistoryReadTest {
         override fun getModelName(): String = "stub"
     }
 
+    /** A conversation long enough for the default tier to trim: `keepMessages` is 20. */
+    private fun turns(count: Int): List<Msg> = (1..count).map {
+        Msg.builder()
+            .id("m$it")
+            .role(if (it % 2 == 1) MsgRole.USER else MsgRole.ASSISTANT)
+            .name(if (it % 2 == 1) "user" else "assistant")
+            .textContent("turn $it: " + "x".repeat(200))
+            .build()
+    }
+
     /**
-     * The main assertion: compacting a session shrinks what the model carries without touching what the page
-     * shows. The case above hand-builds a compacted context; this one lets the upstream compactor produce it,
-     * so the two data sources are seen diverging on a single session — same archive, same live [AgentState],
-     * same session id — rather than on a fixture that already knows the answer.
+     * A wrapper over a real [AgentState] whose compaction the upstream compactor performs against
+     * [StubSummaryModel]. The state comes back because it is the model's half of the split — mutating it is
+     * what a compaction is, and the assertion needs to look at it.
      */
-    @Test
-    @DisplayName("compaction shrinks the model's context but not the page")
-    fun `a compacted session still reads back every original bubble`() {
-        val original = (1..25).map {
-            Msg.builder()
-                .id("m$it")
-                .role(if (it % 2 == 1) MsgRole.USER else MsgRole.ASSISTANT)
-                .name(if (it % 2 == 1) "user" else "assistant")
-                .textContent("turn $it: " + "x".repeat(200))
-                .build()
-        }
-        val state = AgentState.builder().sessionId("s1").context(original.toMutableList()).build()
+    private fun liveWrapper(messages: List<Msg>): Pair<AgentState, HarnessAgentWrapper> {
+        val state = AgentState.builder().sessionId("s1").context(messages.toMutableList()).build()
         val delegate = mock(ReActAgent::class.java)
         `when`(delegate.getAgentState(any(), any())).thenReturn(state)
         val agent = mock(HarnessAgent::class.java)
@@ -177,17 +176,14 @@ class HarnessAgentSessionHistoryReadTest {
             sessionMessageStore = archive,
             configuredContextWindow = null,
         )
+        return state to wrapper
+    }
 
-        // In a live turn the hook writes the archive before any command can reach the session.
-        wrapper.archiveContext()
-        val before = launcher(archive).loadSessionMessages("s1")
-
-        val outcome = wrapper.compactManually(null)
-
-        val success = assertInstanceOf(CompactionOutcome.Success::class.java, outcome)
-        assertTrue(success.compacted, "25 turns over keepMessages=20 must actually compact")
-
-        val after = launcher(archive).loadSessionMessages("s1")
+    /** The page's side of the invariant, asserted the same way for every way a compaction can arrive. */
+    private fun assertPageUnchanged(
+        before: List<Msg>,
+        after: List<Msg>,
+    ) {
         assertEquals((1..25).map { "m$it" }, before.map { it.id }, "the archive must answer with every turn")
         assertEquals(before.map { it.id }, after.map { it.id })
         assertEquals(before.map { it.textContent }, after.map { it.textContent })
@@ -196,12 +192,58 @@ class HarnessAgentSessionHistoryReadTest {
             after.none { (it.textContent ?: "").contains(SUMMARY_REPLY) },
             "the summary is a USER message, so a leaked one reads as a bubble nobody typed",
         )
+    }
+
+    /**
+     * The main assertion: compacting a session shrinks what the model carries without touching what the page
+     * shows. The case above hand-builds a compacted context; this one lets the upstream compactor produce it,
+     * so the two data sources are seen diverging on a single session — same archive, same live [AgentState],
+     * same session id — rather than on a fixture that already knows the answer.
+     */
+    @Test
+    @DisplayName("compaction shrinks the model's context but not the page")
+    fun `a compacted session still reads back every original bubble`() {
+        val (state, wrapper) = liveWrapper(turns(25))
+
+        // In a live turn the hook writes the archive before any command can reach the session.
+        wrapper.archiveContext()
+        val before = launcher(archive).loadSessionMessages("s1")
+
+        val success = assertInstanceOf(
+            CompactionOutcome.Success::class.java,
+            wrapper.compactManually(null),
+        )
+        assertTrue(success.compacted, "25 turns over keepMessages=20 must actually compact")
+
+        assertPageUnchanged(before, launcher(archive).loadSessionMessages("s1"))
 
         // The other half of the split: the model did get a shorter buffer, and it starts with the summary.
         val context = state.contextMutable()
         assertEquals(21, context.size)
         assertEquals(ConversationCompactor.SUMMARY_MSG_NAME, context[0].name)
         assertEquals((6..25).map { "m$it" }, context.drop(1).map { it.id })
+    }
+
+    /**
+     * The same claim for a session that predates the archive table: no turn has written it yet, so the command
+     * is the first thing that touches that session, and compaction would otherwise trim the only copy the read
+     * path can still reach — the early bubbles would be gone from the page for good.
+     */
+    @Test
+    @DisplayName("a legacy session with an empty archive keeps its head turns after the command")
+    fun `the command itself records what it is about to trim`() {
+        val (state, wrapper) = liveWrapper(turns(25))
+        assertTrue(archive.load("", "s1").isEmpty(), "the fixture is a session the archive has never seen")
+
+        val success = assertInstanceOf(
+            CompactionOutcome.Success::class.java,
+            wrapper.compactManually(null),
+        )
+        assertTrue(success.compacted)
+
+        // The command path is exactly the one that skipped the turn-end hook, so this is the page's read.
+        assertPageUnchanged(archive.load("", "s1"), launcher(archive).loadSessionMessages("s1"))
+        assertEquals(21, state.contextMutable().size, "the model side must still be the one that shrank")
     }
 
     @Test

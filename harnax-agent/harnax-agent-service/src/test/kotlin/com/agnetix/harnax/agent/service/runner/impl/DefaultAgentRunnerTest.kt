@@ -342,6 +342,31 @@ class DefaultAgentRunnerTest {
             verify(agentWrapper, never()).compactManually(anyOrNull())
         }
 
+        /**
+         * The refusal above only protects one direction until the compaction registers itself as a live
+         * execution: it is the slow write, so a second one landing underneath it rewrites the same context
+         * list from a snapshot taken before the first changed anything.
+         */
+        @Test
+        fun `a compaction holds the session live while it writes and releases it after`() {
+            @Suppress("UNCHECKED_CAST")
+            val activeCalls = ReflectionTestUtils.getField(runner, "activeCalls") as MutableSet<String>
+            var liveWhileWriting: Boolean? = null
+            stubAgentCreation()
+            `when`(agentWrapper.compactManually(anyOrNull())).thenAnswer {
+                liveWhileWriting = activeCalls.contains("session-1")
+                compacted()
+            }
+
+            val response = runner.executeCommand(
+                CommandAgentRequest(sessionId = "session-1", command = CommandType.COMPACT),
+            )
+
+            assertTrue(response.success)
+            assertTrue(liveWhileWriting == true, "a second compaction of this session must be refused mid-write")
+            assertFalse(activeCalls.contains("session-1"), "the registration must not outlive the command")
+        }
+
         @Test
         fun `executeCommand APPROVE delegates to confirm and collects stream`() {
             stubAgentCreation()

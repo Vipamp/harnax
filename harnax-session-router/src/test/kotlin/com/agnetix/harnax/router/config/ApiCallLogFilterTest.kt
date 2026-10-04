@@ -3,6 +3,7 @@ package com.agnetix.harnax.router.config
 import com.agnetix.harnax.auth.AuthContext
 import com.agnetix.harnax.auth.AuthContextHolder
 import com.agnetix.harnax.auth.CallerType
+import com.agnetix.harnax.router.controller.AgentProxyController
 import com.agnetix.harnax.router.entity.ApiCallLog
 import com.agnetix.harnax.router.proxy.SessionRouterService
 import com.agnetix.harnax.router.service.AdminClientService
@@ -26,6 +27,8 @@ import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.eq
+import org.springframework.core.annotation.AnnotatedElementUtils
+import org.springframework.web.bind.annotation.RequestMapping
 
 class ApiCallLogFilterTest {
 
@@ -457,5 +460,41 @@ class ApiCallLogFilterTest {
             any(), any(), anyOrNull(), any(), any(), anyOrNull(),
             any(), any(), eq("inst-7"), anyOrNull(),
         )
+    }
+
+    /**
+     * The exemption list is hand-maintained, and forgetting an entry does not fail loudly: the wrapped
+     * coroutine gets an empty body flushed at the end of the filter chain, so the caller sees a successful
+     * read with no content. Deriving the paths from the controller is what turns the next added endpoint into
+     * a red test rather than a production mystery.
+     */
+    @Test
+    fun `every suspend endpoint is exempted from the response wrapper`() {
+        val basePath = AnnotatedElementUtils
+            .findMergedAnnotation(AgentProxyController::class.java, RequestMapping::class.java)!!
+            .path
+            .first()
+        val isSuspendEndpoint = ApiCallLogFilter::class.java
+            .getDeclaredMethod("isSuspendEndpoint", String::class.java)
+            .apply { isAccessible = true }
+
+        val suspendPaths = AgentProxyController::class.java.declaredMethods
+            .filter { !it.isSynthetic && java.lang.reflect.Modifier.isPublic(it.modifiers) }
+            .filter { method -> method.parameterTypes.any { it.getName() == "kotlin.coroutines.Continuation" } }
+            .map { method ->
+                val mapping = AnnotatedElementUtils.findMergedAnnotation(method, RequestMapping::class.java)
+                    ?: error("${method.name} is a suspend endpoint with no path to check")
+                basePath + mapping.path.first()
+            }
+        // Without this the check below could pass on an empty list, which is exactly what a changed
+        // annotation shape or a renamed controller would produce.
+        assertTrue(
+            "/api/router/agent/context/{sessionId}" in suspendPaths,
+            "the derivation must see the endpoints: $suspendPaths",
+        )
+
+        val uncovered = suspendPaths.filterNot { path -> isSuspendEndpoint.invoke(filter, path) as Boolean }
+
+        assertTrue(uncovered.isEmpty(), "suspend endpoints the filter would wrap and flush empty: $uncovered")
     }
 }

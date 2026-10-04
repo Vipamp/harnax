@@ -351,6 +351,23 @@ class HarnessAgentContextArchiveAndUsageTest {
             assertInstanceOf(CompactionOutcome.Success::class.java, outcome)
             verify(delegate).saveAgentState("u9", SESSION_ID)
         }
+
+        @Test
+        @DisplayName("a session the archive could not be written to is not compacted")
+        fun refusesWhenTheArchiveDidNotLand() {
+            // Without this refusal the command would rewrite a context whose head the page has no copy of,
+            // and the loss is permanent: the trimmed messages are gone from `agent_state` too.
+            val store = mock(MysqlSessionMessageStore::class.java)
+            whenever(store.archive(anyOrNull(), anyString(), anyList()))
+                .thenThrow(RuntimeException("the session database is down"))
+            val (agent, delegate) = liveAgent(conversation(25))
+
+            val outcome = wrapper(agent, archiveStore = store).compactManually(null)
+
+            assertInstanceOf(CompactionOutcome.Failed::class.java, outcome)
+            verify(store, times(2)).archive(anyOrNull(), anyString(), anyList())
+            verify(delegate, never()).saveAgentState(any(), any())
+        }
     }
 
     private companion object {

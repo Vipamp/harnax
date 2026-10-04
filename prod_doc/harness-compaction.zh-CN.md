@@ -84,8 +84,8 @@ CREATE TABLE IF NOT EXISTS session_message (
 | 设计点 | 取定 | 理由 |
 |---|---|---|
 | 唯一键 | `(session_id, msg_id)`，`msg_id` 取 `Msg.id` | core 的 `Msg` 自带 UUID 且随 JSON 序列化（`Msg.java:113,139`），同一条消息跨轮次、跨进程都是同一个 id |
-| 冲突处理 | `ON DUPLICATE KEY UPDATE json_value = VALUES(json_value)` | 上游会用同一个 id 重建消息对象 —— `Msg.java:668,687,704` 的 `withGenerateReason`/`withContent`/`withMetadata` 各把 `this.id` 原样交回构造器（`:672,689,706`），后到的版本内容更全，取后者 |
-| 写点 | 每轮结束时读 live context 全量，逐条幂等落档 | 只增不改 + 每轮全量补写，使自动压缩与手动压缩**都不需要挂钩子**。中间件顺序决定 harnax 拿不到"压缩覆写之前那一刻"的上下文（`CompactionMiddleware` 在 `onReasoning` 内部就地把裁掉的 `input` 交给下游，`CompactionMiddleware.java:132-147`），所以"压缩前抓一份"这条路在自动压缩上走不通 |
+| 冲突处理 | `ON DUPLICATE KEY UPDATE`，正文只在**新版本更长**时才换，`role`/`msg_name` 随同一版本走 | 上游会用同一个 id 重建消息对象，而且两个方向都有：`Msg.java:668,687,704` 的 `withGenerateReason`/`withContent`/`withMetadata` 各把 `this.id` 原样交回构造器（`:672,689,706`），内容变长；而 `ConversationCompactor.pruneToolResults`（`ConversationCompactor.java:510-588`）在压缩时把长工具结果换成头尾拼起的预览并**保留原 id**（`:578`），内容变短。prune 在 2.0.4 是默认开的（`CompactionConfig.java:285` 取 `PruneConfig.defaults()`，阈值 `protectTokens=40_000`/`minimumTokens=20_000`/`maxOutputChars=2_000`，`:576-578`）。所以"后到的"不等于"更全的"，这张表按最长正文保，页面才不会因为一次压缩把气泡裁短 |
+| 写点 | 每轮结束时读 live context 全量，逐条幂等落档；`/compact` 额外在压缩之前补写一次 | 只增不改 + 每轮全量补写，使**自动压缩不需要挂钩子**：中间件顺序决定 harnax 拿不到"压缩覆写之前那一刻"的上下文（`CompactionMiddleware` 在 `onReasoning` 内部就地把裁掉的 `input` 交给下游，`CompactionMiddleware.java:132-147`），所以"压缩前抓一份"这条路在它身上走不通。手动那条是自己按下的，能先写：老会话在档案里还是零行（下一行的回退分支正是为它们留的），此时手压会把头部消息同时从 `context` 和回退读数里抹掉，所以命令把"档案写得进去"当前置条件，写不进去就拒（第 5 节第 2 步） |
 | 排序 | 本地自增 `id` | 会话库连接参数是 `serverTimezone=UTC`（`SessionConfig.kt:44`），主库是 `Asia/Shanghai`，跨库时间列不可比。展示用的时间戳来自 `Msg.timestamp`，`MessageLogConverter.kt:44-66` 今天就在读它 |
 | 序列化 | `JsonUtils.getJsonCodec().toJson(msg)`，读回 `Msg` | 与 `MysqlAgentStateStore.kt:77` 同一把 codec，工具调用/工具结果/图片块的原样形状因此保住，`MessageLogConverter` 不动，客户端契约不动 |
 | **排除项** | 跳过 `msg.name == ConversationCompactor.SUMMARY_MSG_NAME`（常量值 `__compaction_summary__`，`ConversationCompactor.java:65`） | 摘要消息由 `buildSummaryMessage`（`:454`）以 `.role(MsgRole.USER)` 构造（`:471-472`），收进档就会在页面上多出一坨用户气泡装摘要全文 —— 直接违背第 1 节第 2 条。框架的合成提醒（`Msg.java:102` 的 `METADATA_SYNTHETIC`）不写入 context —— `TaskReminderMiddleware.java:45-48` 的类注释原文写明它"只临时追加进推理输入，从不写进 `AgentState.context`，因此从不被持久化、压缩或召回"，所以不需要再判 |
@@ -95,8 +95,8 @@ CREATE TABLE IF NOT EXISTS session_message (
 连带改动：
 
 - 成员子会话自动覆盖 —— `TeamHistoryReplay.kt:44` 走的就是这个方法，成员的气泡也随之全量。
-- 删会话要连带删档：`DefaultAgentRunner.kt:444-455` 的 `clearSession` 已对成员子会话递归，跟着删即可。
-- 用户桶是这条链路的隐藏不变量：压缩写回、归档读写、历史读路径必须落在同一个 user 桶。三侧都把空值归一成 `__anon__`（`MysqlAgentStateStore.kt:70,247`、`ReActAgent.java:394-399`），而 harnax 唯一的 wrapper 构造点不传 userId（`HarnessAgentLauncher.kt:675-690`，字段默认 `null`，见 `HarnessAgentWrapper.kt:77`），历史读路径则写死 `""`（`:788`）—— 今天两边同桶。任何一方将来单独开始传真实用户 id，写死的 `""` 就会与 live slot 分叉，表现成"压了但历史读回旧的"。
+- 删会话要连带删档：`DefaultAgentRunner.kt:477-489` 的 `clearSession` 已对成员子会话递归，跟着删即可。
+- 用户桶是这条链路的隐藏不变量：压缩写回、归档读写、历史读路径必须落在同一个 user 桶。三侧都把空值归一成 `__anon__`（`MysqlAgentStateStore.kt:70,247`、`ReActAgent.java:394-399`），而 harnax 唯一的 wrapper 构造点不传 userId（`HarnessAgentLauncher.kt:688-712`，字段默认 `null`，见 `HarnessAgentWrapper.kt:84`），历史读路径则写死 `""`（`:808`）—— 今天两边同桶。任何一方将来单独开始传真实用户 id，写死的 `""` 就会与 live slot 分叉，表现成"压了但历史读回旧的"。
 - 归档写失败不影响回答，但要重试一次并记 warn。理由：这条数据不可再生（与 `TokenStatsMiddleware.kt:68-78` 那种"少一行统计"不同）；而"每轮全量补写"的写法使下一轮自然把漏掉的补回来，只有在那之前被压缩裁走的消息才真丢。
 
 **一个必须写明的既有限制**：自动压缩已经默认在跑（第 2 节事实一），本次上线之前被它裁掉的早期消息已经不在 `context` 里，也不在任何地方，**无法追回**。上线后新产生的压缩才保证不丢。
@@ -105,25 +105,26 @@ CREATE TABLE IF NOT EXISTS session_message (
 
 ## 5. `/compact` 命令压缩
 
-`DefaultAgentRunner.kt:245-249` 的 stub 换成真实现。runner 那一侧只做前置判定与结果映射，第 2~4 步（取 live `AgentState`、调压缩、成功才覆写并保存）落在 harnax-harness-core 的 `ContextCompactionService.compact(...)`，经 `HarnessAgentWrapper.compactManually(keepTokens)` 暴露 —— agent、sessionId、user 桶三个键一律取自 wrapper 自身，这正是第 4 节末条不变量的守法：调用方传不进第二个 userId。流程五步：
+命令入口是 `DefaultAgentRunner.kt:247` 的 `executeCommand` 中 `COMPACT` 那一支。runner 那一侧只做前置判定与结果映射，第 3~5 步（取 live `AgentState`、调压缩、成功才覆写并保存）落在 harnax-harness-core 的 `ContextCompactionService.compact(...)`，第 2 步落在 wrapper 自己的 `archiveContext()`，两步都经 `HarnessAgentWrapper.compactManually(keepTokens)` 暴露 —— agent、sessionId、user 桶三个键一律取自 wrapper 自身，这正是第 4 节末条不变量的守法：调用方传不进第二个 userId。流程六步：
 
 1. 前置判定（见下表）。
-2. `val delegate = harnessAgent.delegate`；取不到 live `AgentState` 就拒。
-3. `ConversationCompactor(model, MemoryFlushManager(workspaceManager, model)).compactIfNeeded(rc, context, forceConfig, agentId, sessionId)`（构造器 `ConversationCompactor.java:70`、`MemoryFlushManager.java:95`），`rc` 照 `HarnessAgentWrapper.kt:301` 的形状用 `RuntimeContext.builder().sessionId(sessionId).userId(userId ?: "")` 构。
-4. 结果判空/判失败串 → 成功才覆写 `state.contextMutable()`（`AgentState.java:176`）并 `delegate.saveAgentState(userId, sessionId)`（`ReActAgent.java:4691-4700`，走 `agent_state` 键回到 `MysqlAgentStateStore`）。它只在 `stateCache` 命中该 slot 时才写库（`:4696-4699`），而第 2 步的 `getAgentState(userId, sessionId)` 自己就用 `computeIfAbsent` 把 slot 建出来（`:4449-4462`），所以按本流程"先取 live state 再保存"两步连着走一定能落库。2.0.4 把这一写包进了 `persistAgentStateCas`（调用点 `:4699`），但对 harnax 仍是无条件覆盖，理由见第 3 节第 3 行。
-5. 返回 `CommandResponse.success(sessionId, message, result = {beforeTokens, afterTokens, beforeMessages, afterMessages, window, windowSource})`。
+2. `archiveContext()` 补写归档，返回 false（没有归档表 / 读不到 live context / 重试两次仍失败）就回 failure —— 这条命令不许裁掉页面没有副本的内容。
+3. `val delegate = harnessAgent.delegate`；取不到 live `AgentState` 就拒。
+4. `ConversationCompactor(model, MemoryFlushManager(workspaceManager, model)).compactIfNeeded(rc, context, forceConfig, agentId, sessionId)`（构造器 `ConversationCompactor.java:70`、`MemoryFlushManager.java:95`），`rc` 照 `HarnessAgentWrapper.kt:454` 的形状用 `RuntimeContext.builder().sessionId(sessionId).userId(userId ?: "")` 构。
+5. 结果判空/判失败串 → 成功才覆写 `state.contextMutable()`（`AgentState.java:176`）并 `delegate.saveAgentState(userId, sessionId)`（`ReActAgent.java:4691-4700`，走 `agent_state` 键回到 `MysqlAgentStateStore`）。它只在 `stateCache` 命中该 slot 时才写库（`:4696-4699`），而第 3 步的 `getAgentState(userId, sessionId)` 自己就用 `computeIfAbsent` 把 slot 建出来（`:4449-4462`），所以按本流程"先取 live state 再保存"两步连着走一定能落库。2.0.4 把这一写包进了 `persistAgentStateCas`（调用点 `:4699`），但对 harnax 仍是无条件覆盖，理由见第 3 节第 3 行。
+6. 返回 `CommandResponse.success(sessionId, message, result = {beforeTokens, afterTokens, beforeMessages, afterMessages, window, windowSource})`。
 
 | 判定点 | 取定 |
 |---|---|
 | 压缩档位 | `CompactionConfig.builder().triggerMessages(1).flushBeforeCompact(false).offloadBeforeCompact(false).build()`。`triggerMessages(1)` 与上游溢出兜底逐字同构（`HarnessAgent.java:1071`），含义是"用户既然发了命令就别拿阈值挡我"；真正的"值不值得压"由 cutoff 判定把关 —— 消息数不足以留出 `keepMessages=20` 的尾部时上游直接返回 `Optional.empty()`（`ConversationCompactor.java:112,118`），我们据此回"当前会话还短，没有可压缩的内容" |
 | `args` 语义 | `/compact <N>` → `keepTokens = N`（保留尾部约 N token）。缺省走动态档。非数字或 ≤0 → 忽略并照默认档，`message` 里说明被忽略 |
 | flush / offload | **两条都关**。代码上确认可关：两步各由 `config.isFlushBeforeCompact()`（`ConversationCompactor.java:136`）/ `isOffloadBeforeCompact()`（`:156`）把守，关了就是一句空 `Mono`，不付 LLM 调用也不落文件。取舍：开着能留下 `sessions/<id>.jsonl` 原文副本，但那份文件既不在 harnax 的产物可见范围也不在清会话的删除清单里，lead 侧还落在宿主 `user.dir` 子树，用户和运维都取不到；同时 flush 会多付一次模型调用、写出的日报没有任何读回入口。所以手动压缩只出摘要那一次调用。第 3 节第 1 行的 `disableTranscript()` 与这条同源：默认路径留下的文件产物一律按"取不到就不算收益"处理 |
-| 并发闸 | 该会话有在跑的流或阻塞调用即拒（`activeStreams` 在 `DefaultAgentRunner.kt:76`、`activeCalls` 在 `:85`，同一对判据的现有用法见 `:99`）。mid-turn 覆写 `context` 会和轮次结束时的 `saveStateToSession`（`ReActAgent.java:475`）抢同一个对象 |
-| 会话范围 | 只压 root 会话。`task-` 前缀直接拒（同 `:952` 的先例）；team 成员各自的子会话不在本轮 —— 成员的上下文由成员自己跑完时的自动压缩负责 |
+| 并发闸 | 该会话有在跑的流或阻塞调用即拒（`activeStreams` 在 `DefaultAgentRunner.kt:87`、`activeCalls` 在 `:96`，同一对判据的现有用法见 `:110`）。mid-turn 覆写 `context` 会和轮次结束时的 `saveStateToSession`（`ReActAgent.java:475`）抢同一个对象。压缩自己也在这一次写入的整个跨度里 `registerCall`/`unregisterCall`（与阻塞轮同款，`DefaultAgentRunner.kt:134-141`），于是同一会话的第二次压缩被同一条闸挡在外面，压缩期间该会话的 agent 也不会被驱逐后释放；仍未闭合的是反方向——压缩在跑时新起一轮对话不会因此被拒，见第 11 节 |
+| 会话范围 | 只压 root 会话。`task-` 前缀直接拒（同 `:1075` 能力开关那条的先例）；team 成员各自的子会话不在本轮 —— 成员的上下文由成员自己跑完时的自动压缩负责 |
 | 摘要失败 | **不落库，直接回 failure。** 上游把摘要调用的异常吞成字符串 `"(Summarization failed: …)"` / `"(Summary unavailable)"` 并照常返回一个"压缩结果"（`ConversationCompactor.java:375,382`）。自动路径下这是可接受的降级，手动路径下等于用一坨错误文本把模型上下文换掉、且因为第 4 节的分离用户看不见、下一次轮就照着它答 —— 判据是结果首条 `name == __compaction_summary__` 且正文**包含** `(Summarization failed` 或 `(Summary unavailable)`。取"包含"而非"开头"是因为标记并不写在开头：`buildSummaryMessage` 先拼固定引导语 `"Here is a summary of the conversation to date:\n\n"`（`ConversationCompactor.java:467`），标记只会落在它后面；而"包含"带来的唯一代价是把一句真提到该字样的成功摘要也判为失败，这个方向上误判便宜（命令重试一次、上下文原样保留），反向漏判才贵 |
-| 无缓存 agent | 照 `getOrCreateAgent` 正常重建（`:757-762`），压缩不必是"活跃会话"专属 |
+| 无缓存 agent | 照 `getOrCreateAgent` 正常重建（`:772-783` 的 `cachedAgent` 判空后由 `:790` 建），压缩不必是"活跃会话"专属 |
 | 阻塞与超时 | 命令这条链全程同步返回 `ResultVo<CommandResponse>`（router `AgentProxyController.kt:105-113`、agent-service `AgentController.kt:76-85`），而 `compactIfNeeded` 回的是 `Mono`，所以实现就地 `block()` 等那一次摘要调用。够用：router 对 JSON 代理的读超时 600s（`harnax-session-router/src/main/resources/application.yml:103`）、webflux `request-timeout` 1800s（同文件 `:22`），一次摘要远在其内，与 `HarnessConfig.turnTimeoutSeconds = 300`（`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/config/HarnessConfig.kt:26`）同一量级。不为它另开异步通道 |
-| 走 store 兜底副本 | 禁止。`HarnessAgentWrapper.kt:268-289` 的 `getLiveAgentState()` 在 delegate 缺席时会返回从库里反序列化出来的副本，改它再 `saveAgentState` 会静默 no-op（只保存 cache 里已有的 slot）。压缩这条路径只认 delegate |
+| 走 store 兜底副本 | 禁止。`HarnessAgentWrapper.kt:286-305` 的 `getLiveAgentState()` 在 delegate 缺席时会返回从库里反序列化出来的副本，改它再 `saveAgentState` 会静默 no-op（只保存 cache 里已有的 slot）。压缩这条路径只认 delegate |
 
 ---
 
@@ -153,7 +154,7 @@ CREATE TABLE IF NOT EXISTS session_message (
 |---|---|
 | `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql:335`（`model` 表） | 加一列 `context_window int DEFAULT NULL COMMENT 'Model context window in tokens'` |
 | `harnax-entity/src/test/resources/schema-test.sql` | 同一列逐字跟上（它是 admin 基线的逐字副本） |
-| `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Model.kt:16-81`、同目录 `dto/ModelConfigDto.kt:10-43`、同目录 `dto/AgentSpecInfoResponse.kt:25-92` | 各加一个可空 `contextWindow` 字段 |
+| `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Model.kt:16-81`、同目录 `dto/ModelConfigDto.kt:45` | 各加一个可空 `contextWindow` 字段。窗口值进运行时只有两条通道，都从这两处读：`ChatModelConfigAdaptorImpl.kt:72,82,89` 取 `cfg.contextWindow`（`ModelConfigDto`），`:109,119,126` 取 `model.contextWindow`（实体）。`AgentSpecInfoResponse` 不在任一条通道上，也没有读窗口的调用方，因此**不加**这个字段 —— 加了就是一列死数据 |
 | `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/ChatModelConfigAdaptorImpl.kt:61,95` | 把窗口值透传进 `ChatModelConfig`；模型对象最终由 `harnax-agent/harnax-agent-utils/src/main/kotlin/com/agnetix/harnax/agent/adaptor/model/ModelHelper.kt:52,75` 走上游 `DashScopeChatModel.builder()` / `OpenAIChatModel.builder()` 构造，窗口值要么进那个 builder，要么走上方字段表里 `contextWindow` 的三级回退直接读列 |
 | admin 模型表单 | 一个可选数字输入框（单位：token） |
 | 已部署环境 | 基线折进 V1 意味着**清库重建**；不想清库的话就改出前向增量 `V2__model_context_window.sql`。两条都写得出来，默认走清库重建 |
@@ -167,7 +168,7 @@ CREATE TABLE IF NOT EXISTS session_message (
 按模块，文件级：
 
 - **仓库根**：`pom.xml:39` 的 `<agent-scope.version>` 改 2.0.4（第 3 节的前置动作；上游检出需先 `mvn install`）。
-- **harnax-entity**：`Model.kt` 加列映射；`ModelConfigDto`/`AgentSpecInfoResponse` 加 `contextWindow`；`TokenStatsMapper.kt` + `.xml` 加一条按 sessionId 的最新 `input_token` select；`schema-test.sql` 跟基线。
+- **harnax-entity**：`Model.kt` 加列映射；`ModelConfigDto` 加 `contextWindow`；`TokenStatsMapper.kt` + `.xml` 加一条按 sessionId 的最新 `input_token` select；`schema-test.sql` 跟基线。
 - **harnax-admin**：`V1__init_schema.sql` 加列；模型 CRUD 的校验与表单加一个可选字段。
 - **harnax-harness-core**：`agent/session/` 新增 `MysqlSessionMessageStore`（自建表、幂等写、按会话读、按会话删，纯 JDBC，照 `MysqlAgentStateStore.kt` 的形状）；`HarnessAgentLauncher.kt:786` 的 `loadSessionMessages` 改读归档并保留两级回退；`HarnessAgentWrapper.kt` 新增三个能力 —— 归档当前 context、按命令压缩（`compactManually`：agent / sessionId / user 桶三个值一律取自 wrapper 自身，就是为守住第 4 节末条那条隐藏不变量）、算占用比例；`HarnessAgentLauncher` 把归档表与 `context_window` 原值带到 wrapper；`HarnessAgentBuilder.kt` 加 `disableTranscript()` 透传（现有 disable 一族在 `:148-158`），并在 `HarnessAgentLauncher.kt` 的两条装配分支上都调用它（第 3 节第 1 行）。
 - **harnax-harness-core（team 侧）**：`team/TeamOrchestrator.kt` 的成员轮次以 `collectTurn` 的轮末 `finally` 归档该成员子会话 —— 成员会话没有别的收尾点，且它必须与委派成功与否无关：到达过 context 的就是页面已经给用户看过的内容。`team/TeamRuntimeSpec.kt` 的 `TeamSessions` 加成员子会话谓词（键的拼法只有这一个所有者，判定不能由调用方自己拼字符串），由 `HarnessAgentLauncher.isMemberChildSession` 转发给 runner 做 `/compact` 的前置拒绝。
@@ -185,10 +186,13 @@ CREATE TABLE IF NOT EXISTS session_message (
 | 会话太短，cutoff 留不出尾部 | 回成功但 `result.afterTokens == beforeTokens`，`message` 说明"没有可压缩的内容"；不覆写、不落库 |
 | 摘要模型调用失败 | 回 failure，`context` 与库都不动，用户可原样重试 |
 | 调用方在服务端完成前断开 | 已 `block()` 的那次覆写不回滚（服务端不知道连接断了）。用户重发 `/compact` 时，cutoff 判定会把已压过的会话判成"没有可压缩的内容"，因此不会二次摘要 —— 这条命令因此是幂等安全的 |
-| delegate 取不到 live state | 回 failure，并在 `message` 里指明"该会话当前不可压缩"（不做副本兜底，见第 5 节末行） |
+| delegate 取不到 live state | 第 5 节第 2 步先拒：读不到 live context 就是归档写不进去，`message` 说明会话未被记录。服务内部那道 delegate 判定（第 3 步）因此是纵深防御，命令路径上不会先到它 |
 | 该会话正有流/阻塞调用在跑 | 回 failure |
 | `task-` 会话 / 成员子会话收到命令 | 回 failure，说明只支持主管/普通会话 |
 | 归档写失败 | warn + 重试一次；不回滚回答。下一轮全量补写会自愈，只有在此之前被裁走的消息才真丢 |
+| 归档写不进去时收到 `/compact` | 回 failure，`context` 与两处库都不动（第 5 节第 2 步把它当前置条件）。这条命令不能裁掉页面没有副本的内容 |
+| 压缩里有超长工具结果 | 上游 prune 把 live context 里的工具结果换成头尾拼起的预览并保留原 id（第 4 节冲突处理行）；模型看到的是预览，页面读的那张表按最长正文保，气泡不缩短 |
+| 同一会话第二次 `/compact` | 前一次还在跑就回 failure（压缩自己占着 `activeCalls`），不会两次覆写抢同一份 context |
 | 窗口三级都拿不到 | `windowSource = FALLBACK`、`contextWindow = 160_000`，接口照常返回但 `ratio` 是估计值 |
 | `model.context_window` 填了个比真实窗口大的数 | 服务端不校验（无法校验），后果是自动压缩推迟、`ratio` 偏小。表单里按"留空则由运行时按模型名推断"提示 |
 | 老会话（上线前建的） | 档案为空 → 读路径回退 `agent_state.context`，翻页行为与今天一致；发过新消息后开始建档案 |
@@ -200,11 +204,11 @@ CREATE TABLE IF NOT EXISTS session_message (
 
 主断言（缺一条就不算做完第 1 节）：
 
-1. **压缩不改历史**：构造一个 context 消息数 > `keepMessages` 的会话，先取 `loadHistory` 快照 → 调 `COMPACT` 命令 → 再取快照，断言两次的逐条正文与条数完全一致，且新列表里不出现任何含 `__compaction_summary__` 或其摘要正文的气泡。用替身 model 桩摘要调用，避免测试真打模型。
+1. **压缩不改历史**：构造一个 context 消息数 > `keepMessages` 的会话，先取 `loadHistory` 快照 → 调 `COMPACT` 命令 → 再取快照，断言两次的逐条正文与条数完全一致，且新列表里不出现任何含 `__compaction_summary__` 或其摘要正文的气泡。用替身 model 桩摘要调用，避免测试真打模型。同一条判据再走一遍**档案为空**的会话（用例里不许自己先调 `archiveContext()`，否则正好绕过第 5 节第 2 步要守的那条路径）：命令自己先把要裁的头部写进档案，页面才仍然全量。
 2. **压缩确实降下了模型侧上下文**：同一用例里断言 `agent_state.context` 的消息数在压缩后变小、且首条是 `name = __compaction_summary__`（`AgentState.context` 与历史读的是两份数据，这条正是分离的证据）。
-3. **归档幂等与补写**：连续两轮写入同一 `msg_id` 的更大版本，断言只有一行且内容是后者；断言跨轮不会重复插行。
+3. **归档幂等与补写**：连续两轮写入同一 `msg_id` 的更大版本，断言只有一行且内容是后者；再写入一个**更短**的版本（上游 prune 那种带原 id 的预览），断言正文仍是最长那份 —— 页面缩短就是第 1 节破防；断言跨轮不会重复插行。
 4. **失败不覆写**：把摘要桩成抛异常，断言 `context` 未变、`agent_state` 未重写、命令回 failure。
-5. **并发闸**：`activeCalls` 里放了该会话时发压缩命令，断言 failure 且 `context` 未变。
+5. **并发闸**：`activeCalls` 里放了该会话时发压缩命令，断言 failure 且 `context` 未变；反向断言压缩在跑的整个跨度里该会话确实在 `activeCalls` 中、命令返回后又被摘掉（第二次压缩因此被同一条闸拒）。
 6. **占用比例**：窗口三级各一条用例（配了列 / 列为空但模型名命中上游表 / 两者都没有），断言 `windowSource` 与 `ratio` 的算法；再一条断言 `estimatedTokens` 与 `TokenCounterUtil.calculateToken(同一份 context)` 逐字相等（防止自己另写一套估算）。
 7. **`args` 语义**：`/compact 500` 落 `keepTokens=500`、`/compact abc` 被忽略并走默认档。
 8. **删会话连带删档**：`clearSession` 之后 `session_message` 该会话零行，成员子会话同样。
@@ -223,6 +227,8 @@ CREATE TABLE IF NOT EXISTS session_message (
 5. team 成员子会话在长时间 delegation 后自身被自动压缩，其成员气泡是否会因此变短 —— 归档写点已覆盖成员轮次（`collectTurn` 的轮末 `finally`），按第 4 节的读路径设计不会变短，但要看真栈上一段多轮 delegation 后的页面。
 6. 2.0.4 与 harnax 依赖树（Jackson 3、Kotlin 2.2.20、Spring Boot BOM）的共存只验到全量编译与单测；服务真起来跑一轮对话、并让上游的自动压缩在真实模型上触发一次，还没做过。
 7. `disableTranscript()` 之外的另一种选择（注入 harnax 自己的 `TranscriptStore`）有没有将来要用的场景 —— 本轮结论是不留，若后续要做"会话原文检索"要重开这条。
+8. 第 4 节"冲突保最长"的那条 upsert（`CASE WHEN CHAR_LENGTH(VALUES(json_value)) > CHAR_LENGTH(json_value)`）只在 H2 的 `MODE=MySQL` 上验过（`MysqlSessionMessageStoreH2Test`）。`VALUES()` 引用与"旧列在同一条语句里被读"这两点在 MySQL 8 上的语义没有实跑核对过，需要在真栈上把一条长工具结果被 prune 成预览的场景走一遍，看页面气泡有没有被截短。
+9. 第 9 节第 9 条的实跑断言（跑一轮对话后 store/工作区没有 transcript 产物）仍未做过。目前有的两层证据：`HarnessAgentBuilderTranscriptTest` 在装配后的中间件链上断言 `TranscriptMiddleware` 缺席，并且带一条"2.0.4 默认会装"的前提用例；`disableTranscript()` 在生产侧只有一个构造点（`HarnessAgentLauncher.kt:220` 建 builder，`:617` 无条件调用，位置在所有装配分支合流之后），所以没有分支能绕过它。这两层都不是"运行时真的没写过对象"的证据。
 
 ---
 
@@ -234,4 +240,6 @@ CREATE TABLE IF NOT EXISTS session_message (
 - 把 `session_message` 用于跨会话检索（`session_search` 那类能力）。
 - 用上游 transcript 或 `TranscriptStore` 承载用户可见历史 —— 第 3 节第 1 行已给出否决理由（截断常量不可配、且它记的是压缩后的 live context）。
 - mp 模块的 `mp_chat_message`（该模块已定废弃），不复用、不迁移。
-- `DefaultAgentRunner.kt:246` 那条 TODO 之外的一切 TODO。
+- 并发闸的反方向：压缩在跑时用户发一条聊天**不拒**（`activeCalls` 只在压缩侧被读）。撞车时两侧都在写同一个 live `AgentState`：页面侧不受影响（档案只增不改、且保最长，两端各自轮末补写都不丢内容），受损的是模型侧 —— 要么压缩被轮末的 `saveStateToSession` 覆回去（命令等于没生效，重试即可），要么刚答完那一轮从 `context` 里丢（模型下一页不再记得，但页面上还在）。要把三方互斥得把忙判据铺到聊天的三个入口，而窗口只有一次摘要调用那么长，本轮只做"压缩不与压缩/轮次抢同一个 context"这一半。
+- **旧会话在首次归档之前被自动压缩裁掉的头部气泡**：第 5 节第 2 步的"档案可写才允许压缩"只管手动命令；自动压缩在轮内 `onReasoning` 触发，轮末才写档，所以一个档案尚空的老会话如果在它的第一条新消息那一轮就被自动压缩裁走头部，那一段从未落过档 —— 第 4 节末的既有限制因此对新会话同样成立一次（会话首次使用时），本轮不补，补法是给自动路径也前置一次写档。
+- 本节未点名的其它 TODO 与既有缺陷。

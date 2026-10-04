@@ -310,14 +310,19 @@ class HarnessAgentWrapper(
      * Records this turn's whole context into the chat history archive.
      *
      * Written as the full context rather than the turn's new messages, so a failed write is healed by the next
-     * turn and neither compaction path needs a hook of its own: the archive is the read side, and compaction
-     * only ever rewrites the model's copy.
+     * turn and the automatic compaction needs no hook of its own: by the time the middleware trims a context,
+     * the previous turn already archived what it is about to trim. The on-demand command cannot rely on that,
+     * so [compactManually] writes first.
      *
-     * Best-effort by contract — one retry, then a warning. A reply that landed must not be lost over a history
-     * row, and only a message trimmed by a compaction before the next write is gone for good.
+     * Best-effort by contract — one retry with a warning on each failure. A reply that landed must not be lost
+     * over a history row, and only a message trimmed before a later write succeeds is gone for good.
+     *
+     * @return whether the archive now holds this context. The turn-end callers ignore it because their turn is
+     *   already answered; the on-demand compaction cannot, since trimming a context the page has no copy of is
+     *   the one failure this command is not allowed to cause.
      */
-    fun archiveContext() {
-        val store = sessionMessageStore ?: return
+    fun archiveContext(): Boolean {
+        val store = sessionMessageStore ?: return false
         val context = try {
             // The live state, not the store's copy: this runs while the turn's messages are in memory and the
             // persisted row may still be the previous turn's.
@@ -325,19 +330,27 @@ class HarnessAgentWrapper(
         } catch (e: Exception) {
             log.warn("[archive] Could not read the live context for session={}: {}", sessionId, e.message)
             null
-        } ?: return
-        if (context.isEmpty()) return
-        try {
+        } ?: return false
+        if (context.isEmpty()) return true
+        return try {
             store.archive(userId, sessionId, context)
+            true
         } catch (first: Exception) {
+            log.warn(
+                "[archive] Archiving session={} failed, retrying once: {}",
+                sessionId,
+                first.message,
+            )
             try {
                 store.archive(userId, sessionId, context)
+                true
             } catch (retry: Exception) {
                 log.warn(
                     "[archive] Archiving session={} failed twice, leaving it to the next turn: {}",
                     sessionId,
                     retry.message,
                 )
+                false
             }
         }
     }
@@ -349,14 +362,26 @@ class HarnessAgentWrapper(
      * the three keys this wrapper's own turns run under. `getAgentState` addresses a slot by all three, so a
      * caller that supplied its own user id would summarize a different conversation than the one it named.
      *
+     * It archives first because a session that predates the archive has nothing recorded yet, and compaction is
+     * the step that makes its early turns unreadable from `agent_state` as well; without that write the page
+     * would lose those bubbles for good. The write is idempotent, so for a session that has had a turn since
+     * the archive exists this is a no-op refresh of rows it already owns.
+     *
+     * On this path the write is a precondition rather than the best effort the turn-end callers get away with:
+     * a session the archive could not be written to is a session whose history would shrink, and trimming what
+     * the page is required to show in full is refused instead of warned about.
+     *
      * @param keepTokens tail budget from `/compact <N>`; null keeps the dynamic tier
      */
-    fun compactManually(keepTokens: Int?): CompactionOutcome = ContextCompactionService.compact(
-        harnessAgent,
-        sessionId,
-        userId,
-        keepTokens,
-    )
+    fun compactManually(keepTokens: Int?): CompactionOutcome {
+        if (!archiveContext()) {
+            return CompactionOutcome.Failed(
+                "This session's conversation could not be recorded where the page reads it, so compacting now " +
+                    "would trim bubbles the page has to keep showing",
+            )
+        }
+        return ContextCompactionService.compact(harnessAgent, sessionId, userId, keepTokens)
+    }
 
     /**
      * How full this session's model context is, or null when no context can be read for it.

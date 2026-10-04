@@ -75,9 +75,9 @@ class MysqlSessionMessageStore(
      *
      * Called with the whole live context each turn rather than with a per-turn delta, so a write that
      * fails is healed by the next turn and neither compaction path needs a hook of its own. A message
-     * whose id already exists is overwritten with the newer body: upstream rebuilds the same `Msg.id`
-     * with more content (`withContent` / `withMetadata` / `withGenerateReason` all pass `this.id` back
-     * to the constructor), and the later version is the fuller one.
+     * whose id already exists is compared, not replaced: upstream rebuilds the same `Msg.id` in both
+     * directions — `withContent` / `withMetadata` / `withGenerateReason` append, while the compactor's
+     * prune step replaces a long tool result with a preview — and the page must keep the fullest body.
      *
      * Compaction summaries are skipped on purpose — they are built as `USER` messages, so archiving one
      * would put a bubble of summary text on a page that must show only the original conversation.
@@ -91,10 +91,17 @@ class MysqlSessionMessageStore(
     ): Int {
         if (messages.isEmpty()) return 0
         val uid = normalizeUserId(userId)
+        // "Newer" is not the same as "fuller": upstream's prune step rewrites the SAME Msg.id with a
+        // 2000-char preview of a long tool result, so an unconditional overwrite would take the trimmed
+        // body into the table the page reads. The row keeps the longest version ever written, and
+        // role/msg_name follow that same version rather than the newest one.
         val sql = """
             INSERT INTO $tableName (user_id, session_id, msg_id, role, msg_name, json_value)
             VALUES (?, ?, ?, ?, ?, ?)
-            ON DUPLICATE KEY UPDATE json_value = VALUES(json_value), role = VALUES(role), msg_name = VALUES(msg_name)
+            ON DUPLICATE KEY UPDATE
+                json_value = CASE WHEN CHAR_LENGTH(VALUES(json_value)) > CHAR_LENGTH(json_value) THEN VALUES(json_value) ELSE json_value END,
+                role = CASE WHEN CHAR_LENGTH(VALUES(json_value)) > CHAR_LENGTH(json_value) THEN VALUES(role) ELSE role END,
+                msg_name = CASE WHEN CHAR_LENGTH(VALUES(json_value)) > CHAR_LENGTH(json_value) THEN VALUES(msg_name) ELSE msg_name END
         """.trimIndent()
         var recorded = 0
         dataSource.connection.use { conn ->

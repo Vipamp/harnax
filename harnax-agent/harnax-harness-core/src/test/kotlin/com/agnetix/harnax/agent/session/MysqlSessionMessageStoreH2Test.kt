@@ -110,6 +110,20 @@ class MysqlSessionMessageStoreH2Test {
         }
 
         @Test
+        fun `a rebuild that trims the body keeps the archived original`() {
+            // Upstream's prune step rewrites the SAME Msg.id with a short preview of a long tool result, so
+            // the newer version is not automatically the fuller one. The page reads this table, so a preview
+            // taking over would cut a bubble down to what only the model is meant to still see.
+            store.archive("", "s1", listOf(msg("m1", MsgRole.ASSISTANT, "assistant", "x".repeat(5000))))
+            store.archive("", "s1", listOf(msg("m1", MsgRole.ASSISTANT, "assistant", "x".repeat(200))))
+
+            val loaded = store.load("", "s1")
+
+            assertEquals(1, loaded.size)
+            assertEquals(5000, loaded[0].textContent.length, "the fullest version is the one the page keeps")
+        }
+
+        @Test
         fun `writing the whole context every turn never duplicates a row`() {
             val first = listOf(
                 msg("m1", MsgRole.USER, "user", "one"),

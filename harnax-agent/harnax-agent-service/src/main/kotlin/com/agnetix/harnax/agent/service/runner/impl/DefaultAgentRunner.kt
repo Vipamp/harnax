@@ -905,6 +905,9 @@ class DefaultAgentRunner(
      * write lands second; and a member child session is that member's own conversation, whose context the
      * automatic path takes care of when its delegation ends.
      *
+     * The compaction then registers itself as a live execution for its whole span, so that same gate answers
+     * a second compaction of this session — the check is symmetric, the write is the slow one.
+     *
      * `args` is the tail budget (`/compact <N>`). A value that is not a positive number is ignored rather than
      * refused, and says so — the default tier still answers what the user asked for.
      */
@@ -930,25 +933,34 @@ class DefaultAgentRunner(
         }
 
         val keepTokens = args.trim().toIntOrNull()?.takeIf { it > 0 }
-        val agent = getOrCreateAgent(sessionId, UserIdentifier(userId))
-        return when (val outcome = agent.compactManually(keepTokens)) {
-            is CompactionOutcome.Failed -> CommandResponse.failure(sessionId, outcome.message)
-            is CompactionOutcome.Success -> {
-                // Read once: the window comes from the same live context the compaction just rewrote.
-                val usage = agent.contextUsage(null)
-                CommandResponse.success(
-                    sessionId,
-                    result = mapOf(
-                        "beforeMessages" to outcome.beforeMessages,
-                        "afterMessages" to outcome.afterMessages,
-                        "beforeTokens" to outcome.beforeTokens,
-                        "afterTokens" to outcome.afterTokens,
-                        "window" to usage?.contextWindow,
-                        "windowSource" to usage?.windowSource?.name,
-                    ),
-                    message = compactMessage(outcome, args, keepTokens),
-                )
+        // Registered for the whole span, the way a blocking turn is: a second compaction of this session is
+        // then refused by the check above instead of racing the first over the same live context list, and an
+        // eviction cannot release the agent between the read and the rewrite. A compaction is slow by design
+        // — it is one summarization call with the whole head of the conversation as its input.
+        registerCall(sessionId)
+        return try {
+            val agent = getOrCreateAgent(sessionId, UserIdentifier(userId))
+            when (val outcome = agent.compactManually(keepTokens)) {
+                is CompactionOutcome.Failed -> CommandResponse.failure(sessionId, outcome.message)
+                is CompactionOutcome.Success -> {
+                    // Read once: the window comes from the same live context the compaction just rewrote.
+                    val usage = agent.contextUsage(null)
+                    CommandResponse.success(
+                        sessionId,
+                        result = mapOf(
+                            "beforeMessages" to outcome.beforeMessages,
+                            "afterMessages" to outcome.afterMessages,
+                            "beforeTokens" to outcome.beforeTokens,
+                            "afterTokens" to outcome.afterTokens,
+                            "window" to usage?.contextWindow,
+                            "windowSource" to usage?.windowSource?.name,
+                        ),
+                        message = compactMessage(outcome, args, keepTokens),
+                    )
+                }
             }
+        } finally {
+            unregisterCall(sessionId)
         }
     }
 
