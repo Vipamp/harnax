@@ -52,6 +52,7 @@ class ModelHelperDashScopeTest {
         enableThinking: Boolean = true,
         enableSearch: Boolean = false,
         forceMultimodalEndpoint: Boolean = false,
+        contextWindow: Int? = null,
     ) = DashScopeChatModelConfig(
         modelName = modelName,
         apiKey = apiKey,
@@ -60,6 +61,7 @@ class ModelHelperDashScopeTest {
         enableThinking = enableThinking,
         enableSearch = enableSearch,
         forceMultimodalEndpoint = forceMultimodalEndpoint,
+        contextWindow = contextWindow,
     )
 
     @Nested
@@ -179,6 +181,7 @@ class ModelHelperDashScopeTest {
             assertNull(config.options)
             assertFalse(config.encrypt)
             assertFalse(config.forceMultimodalEndpoint)
+            assertNull(config.contextWindow)
         }
     }
 
@@ -259,6 +262,35 @@ class ModelHelperDashScopeTest {
 
             val endpointType: EndpointType? = readField(model, "endpointType")
             assertEquals(EndpointType.MULTIMODAL, endpointType, "support_vision 模型应强制多模态端点")
+        }
+    }
+
+    @Nested
+    @DisplayName("createChatModel - 上下文窗口")
+    inner class ContextWindowTests {
+
+        @Test
+        fun `should apply the configured context window`() {
+            val model = ModelHelper.createChatModel(dashScopeConfig(contextWindow = 131072)) as DashScopeChatModel
+
+            assertEquals(131072, model.contextWindowSize, "模型域配了窗口值时不得再由模型名推断")
+        }
+
+        @Test
+        fun `should keep the upstream inference when no window is configured`() {
+            val model = ModelHelper.createChatModel(dashScopeConfig()) as DashScopeChatModel
+
+            val upstreamDefault = DashScopeChatModel.builder()
+                .apiKey(TEST_API_KEY)
+                .modelName(TEST_MODEL)
+                .build()
+                .contextWindowSize
+
+            assertEquals(
+                upstreamDefault,
+                model.contextWindowSize,
+                "未配置窗口时必须与上游按模型名推断的结果逐字相等",
+            )
         }
     }
 

@@ -61,6 +61,7 @@ object ModelHelper {
             builder.endpointType(EndpointType.MULTIMODAL)
         }
         config.baseUrl?.let { builder.baseUrl(it) }
+        config.contextWindow?.let { builder.contextWindowSize(it) }
         config.httpTransport?.let { builder.httpTransport(it) }
         config.options?.let { builder.defaultOptions(it) }
         return builder.build()
@@ -78,6 +79,7 @@ object ModelHelper {
             .stream(config.stream)
         config.baseUrl?.let { builder.baseUrl(it) }
         config.endpointPath?.let { builder.endpointPath(it) }
+        config.contextWindow?.let { builder.contextWindowSize(it) }
         config.httpTransport?.let { builder.httpTransport(it) }
         config.options?.let { builder.generateOptions(it) }
         return builder.build()
@@ -99,6 +101,7 @@ object ModelHelper {
             .modelName(config.modelName)
             .baseUrl(config.baseUrl)
         config.httpTransport?.let { builder.httpTransport(it) }
+        config.contextWindow?.let { builder.contextWindowSize(it) }
         config.options?.let { builder.defaultOptions(it) }
         return builder.build()
     }

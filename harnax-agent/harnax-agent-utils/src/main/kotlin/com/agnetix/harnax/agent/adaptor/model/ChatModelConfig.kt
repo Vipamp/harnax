@@ -15,6 +15,14 @@ import io.agentscope.extensions.model.ollama.options.OllamaOptions
  */
 sealed interface ChatModelConfig {
     val modelName: String
+
+    /**
+     * Token budget of one model call. Null leaves the upstream default in place, which infers the
+     * window from the model name; the auto-compaction trigger and the context usage ratio both read
+     * the value that ends up on the built model.
+     */
+    val contextWindow: Int?
+        get() = null
 }
 
 /**
@@ -38,6 +46,7 @@ data class DashScopeChatModelConfig(
      * 此时需由模型的 support_vision 标记驱动强制切换。
      */
     val forceMultimodalEndpoint: Boolean = false,
+    override val contextWindow: Int? = null,
 ) : ChatModelConfig
 
 /**
@@ -52,6 +61,7 @@ data class OpenAIChatModelConfig(
     val endpointPath: String? = null,
     val httpTransport: HttpTransport? = null,
     val options: GenerateOptions? = null,
+    override val contextWindow: Int? = null,
 ) : ChatModelConfig
 
 /**
@@ -63,4 +73,5 @@ data class OllamaChatModelConfig(
     val baseUrl: String = "http://localhost:11434",
     val httpTransport: HttpTransport? = null,
     val options: OllamaOptions? = null,
+    override val contextWindow: Int? = null,
 ) : ChatModelConfig

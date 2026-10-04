@@ -69,6 +69,7 @@ class ChatModelConfigAdaptorImpl(
             options = null,
             encrypt = false,
             forceMultimodalEndpoint = cfg.supportVision == 1,
+            contextWindow = cfg.contextWindow,
         )
         "openai" -> OpenAIChatModelConfig(
             cfg.modelName,
@@ -78,12 +79,14 @@ class ChatModelConfigAdaptorImpl(
             null,
             null,
             null,
+            contextWindow = cfg.contextWindow,
         )
         "ollama" -> OllamaChatModelConfig(
             cfg.modelName,
             cfg.baseUrl ?: "http://localhost:11434",
             null,
             null,
+            contextWindow = cfg.contextWindow,
         )
         else -> {
             log.warn("Unsupported provider type: $providerType")
@@ -103,6 +106,7 @@ class ChatModelConfigAdaptorImpl(
             options = null,
             encrypt = false,
             forceMultimodalEndpoint = model.supportVision == 1,
+            contextWindow = model.contextWindow,
         )
         "openai" -> OpenAIChatModelConfig(
             model.modelName,
@@ -112,12 +116,14 @@ class ChatModelConfigAdaptorImpl(
             null,
             null,
             null,
+            contextWindow = model.contextWindow,
         )
         "ollama" -> OllamaChatModelConfig(
             model.modelName,
             provider.baseUrl ?: "http://localhost:11434",
             null,
             null,
+            contextWindow = model.contextWindow,
         )
         else -> {
             log.warn("Unsupported provider type: $providerType")

@@ -44,13 +44,14 @@ class ChatModelConfigAdaptorImplTest {
         `when`(specContextHolder.get()).thenReturn(specInfo)
     }
 
-    private fun stubDbFallback(modelId: Long, providerType: String, apiKey: String = "test-key") {
+    private fun stubDbFallback(modelId: Long, providerType: String, apiKey: String = "test-key", window: Int? = null) {
         `when`(specContextHolder.get()).thenReturn(null)
         val model = Model().apply {
             id = modelId
             modelName = "db-model-$modelId"
             providerId = 100L
             modelType = "chat"
+            contextWindow = window
         }
         val provider = ModelProvider().apply {
             id = 100L
@@ -163,6 +164,39 @@ class ChatModelConfigAdaptorImplTest {
             assertTrue(result is DashScopeChatModelConfig)
             verify(modelMapper).selectById(1L)
         }
+
+        @Test
+        fun `getConfig should carry the context window delivered by admin`() {
+            stubContext(
+                ModelConfigDto(
+                    modelId = 1L,
+                    modelName = "qwen-max",
+                    providerType = "dashscope",
+                    apiKey = "sk-dashscope-123",
+                    contextWindow = 131072,
+                ),
+            )
+
+            val result = adaptor.getConfig(1L)
+
+            assertEquals(131072, (result as DashScopeChatModelConfig).contextWindow)
+        }
+
+        @Test
+        fun `getConfig should leave the context window unset when admin delivered none`() {
+            stubContext(
+                ModelConfigDto(
+                    modelId = 1L,
+                    modelName = "qwen-max",
+                    providerType = "dashscope",
+                    apiKey = "sk-dashscope-123",
+                ),
+            )
+
+            val result = adaptor.getConfig(1L)
+
+            assertNull((result as DashScopeChatModelConfig).contextWindow, "null keeps the upstream name-based inference")
+        }
     }
 
     @Nested
@@ -177,6 +211,15 @@ class ChatModelConfigAdaptorImplTest {
 
             assertNotNull(result)
             assertTrue(result is OllamaChatModelConfig)
+        }
+
+        @Test
+        fun `DB fallback should carry the model row's context window`() {
+            stubDbFallback(6L, "dashscope", window = 32768)
+
+            val result = adaptor.getConfig(6L)
+
+            assertEquals(32768, (result as DashScopeChatModelConfig).contextWindow)
         }
 
         @Test
