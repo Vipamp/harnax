@@ -8,25 +8,37 @@ import com.agnetix.harnax.agent.adaptor.SkillAdaptor
 import com.agnetix.harnax.agent.adaptor.TokenStatAdaptor
 import com.agnetix.harnax.agent.adaptor.model.OpenAIChatModelConfig
 import com.agnetix.harnax.agent.session.MysqlSessionMessageStore
+import com.agnetix.harnax.harness.compaction.CompactionOutcome
 import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
+import io.agentscope.core.ReActAgent
+import io.agentscope.core.message.ContentBlock
 import io.agentscope.core.message.Msg
 import io.agentscope.core.message.MsgRole
+import io.agentscope.core.message.TextBlock
+import io.agentscope.core.model.ChatResponse
+import io.agentscope.core.model.GenerateOptions
+import io.agentscope.core.model.Model
+import io.agentscope.core.model.ToolSchema
 import io.agentscope.core.state.AgentState
 import io.agentscope.core.state.AgentStateStore
+import io.agentscope.harness.agent.HarnessAgent
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor
 import org.h2.jdbcx.JdbcDataSource
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.ArgumentMatchers.eq
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
+import reactor.core.publisher.Flux
 import java.nio.file.Path
 import java.util.Optional
 
@@ -39,7 +51,10 @@ import java.util.Optional
  * so a leaked one renders as a bubble the user never typed.
  *
  * The archive side is a real H2 database, because which of the three levels answers and what a summary does to
- * the result are both properties of the read path as a whole, not of one class.
+ * the result are both properties of the read path as a whole, not of one class. One case drives a real compaction
+ * through both sides at once — the upstream compactor rewriting a live state while the archive keeps the original
+ * turns — so the invariant is checked on the compactor's own output, not only on a compacted context someone
+ * wrote out by hand.
  */
 class HarnessAgentSessionHistoryReadTest {
 
@@ -115,6 +130,80 @@ class HarnessAgentSessionHistoryReadTest {
         assertEquals(original.map { it.textContent }, history.map { it.textContent })
     }
 
+    /** Answers the one summarization call a compaction makes. */
+    private class StubSummaryModel : Model {
+        override fun stream(
+            messages: List<Msg>,
+            tools: List<ToolSchema>?,
+            options: GenerateOptions?,
+        ): Flux<ChatResponse> = Flux.just(
+            ChatResponse.builder()
+                .content(listOf<ContentBlock>(TextBlock.builder().text(SUMMARY_REPLY).build()))
+                .build(),
+        )
+
+        override fun getModelName(): String = "stub"
+    }
+
+    /**
+     * The main assertion: compacting a session shrinks what the model carries without touching what the page
+     * shows. The case above hand-builds a compacted context; this one lets the upstream compactor produce it,
+     * so the two data sources are seen diverging on a single session — same archive, same live [AgentState],
+     * same session id — rather than on a fixture that already knows the answer.
+     */
+    @Test
+    @DisplayName("compaction shrinks the model's context but not the page")
+    fun `a compacted session still reads back every original bubble`() {
+        val original = (1..25).map {
+            Msg.builder()
+                .id("m$it")
+                .role(if (it % 2 == 1) MsgRole.USER else MsgRole.ASSISTANT)
+                .name(if (it % 2 == 1) "user" else "assistant")
+                .textContent("turn $it: " + "x".repeat(200))
+                .build()
+        }
+        val state = AgentState.builder().sessionId("s1").context(original.toMutableList()).build()
+        val delegate = mock(ReActAgent::class.java)
+        `when`(delegate.getAgentState(any(), any())).thenReturn(state)
+        val agent = mock(HarnessAgent::class.java)
+        `when`(agent.delegate).thenReturn(delegate)
+        `when`(agent.model).thenReturn(StubSummaryModel())
+        `when`(agent.name).thenReturn("tester")
+        val wrapper = HarnessAgentWrapper(
+            harnessAgent = agent,
+            dangerousTools = emptySet(),
+            sessionId = "s1",
+            userId = null,
+            sessionMessageStore = archive,
+            configuredContextWindow = null,
+        )
+
+        // In a live turn the hook writes the archive before any command can reach the session.
+        wrapper.archiveContext()
+        val before = launcher(archive).loadSessionMessages("s1")
+
+        val outcome = wrapper.compactManually(null)
+
+        val success = assertInstanceOf(CompactionOutcome.Success::class.java, outcome)
+        assertTrue(success.compacted, "25 turns over keepMessages=20 must actually compact")
+
+        val after = launcher(archive).loadSessionMessages("s1")
+        assertEquals((1..25).map { "m$it" }, before.map { it.id }, "the archive must answer with every turn")
+        assertEquals(before.map { it.id }, after.map { it.id })
+        assertEquals(before.map { it.textContent }, after.map { it.textContent })
+        assertTrue(after.none { it.name == ConversationCompactor.SUMMARY_MSG_NAME })
+        assertTrue(
+            after.none { (it.textContent ?: "").contains(SUMMARY_REPLY) },
+            "the summary is a USER message, so a leaked one reads as a bubble nobody typed",
+        )
+
+        // The other half of the split: the model did get a shorter buffer, and it starts with the summary.
+        val context = state.contextMutable()
+        assertEquals(21, context.size)
+        assertEquals(ConversationCompactor.SUMMARY_MSG_NAME, context[0].name)
+        assertEquals((6..25).map { "m$it" }, context.drop(1).map { it.id })
+    }
+
     @Test
     @DisplayName("an empty archive falls back to the live context and drops the summary")
     fun `fallback to agent_state filters the summary`() {
@@ -170,5 +259,9 @@ class HarnessAgentSessionHistoryReadTest {
         assertEquals(listOf("m2"), archive.load("", "s2").map { it.id })
         verify(stateStore).delete("", "s1")
         verify(stateStore, never()).delete("", "s2")
+    }
+
+    private companion object {
+        const val SUMMARY_REPLY = "The user asked for the workspace files; three were listed."
     }
 }
