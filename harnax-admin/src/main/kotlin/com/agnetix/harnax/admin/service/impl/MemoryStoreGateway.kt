@@ -11,8 +11,10 @@ import io.minio.GetObjectArgs
 import io.minio.ListObjectsArgs
 import io.minio.MinioClient
 import io.minio.RemoveObjectArgs
+import io.minio.errors.ErrorResponseException
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 import tools.jackson.databind.ObjectMapper
 import java.nio.charset.StandardCharsets
@@ -28,12 +30,13 @@ import java.time.ZonedDateTime
  * passed [MemoryObjectKeys.isValidAgentId].
  *
  * Three rules hold everywhere below:
- * 1. Every listing starts at `store/tenants/<tenantId>/users/<userId>/`, and a key that does not decode
+ * 1. Every listing starts at the caller's own owner prefix — `store/tenants/<tenantId>/users/<userId>/`, or
+ *    `store/users/<userId>/` when the writer's tenant-scoped switch is off — and a key that does not decode
  *    under that prefix is dropped before it can be read or deleted.
  * 2. The bytes only ever come from keys the object store itself returned, never from a rebuilt path.
- * 3. A storage failure is thrown, never logged and answered as "no memory": an owner told they have
- *    nothing because the server was unreachable would stop looking, and an admin whose user delete left
- *    memory behind would believe the account was cleaned.
+ * 3. A storage failure is thrown, never logged and answered as "no memory", on the listing and on the read
+ *    alike: an owner told they have nothing because the server was unreachable would stop looking, and an
+ *    admin whose user delete left memory behind would believe the account was cleaned.
  *
  * The client and its properties arrive through [ObjectProvider] because `minio.enabled=false` is a
  * supported deployment — the client bean is conditional. Without a store there is no memory to show, and
@@ -44,6 +47,9 @@ class MemoryStoreGateway(
     private val minioClientProvider: ObjectProvider<MinioClient>,
     private val minioPropertiesProvider: ObjectProvider<AdminMinioProperties>,
     private val objectMapper: ObjectMapper,
+    // The writer's switch, read from the same env var so one deployment value steers both sides: off means the
+    // runtime keys memory `store/users/<uid>/…` and a tenant prefix here would list an empty area.
+    @Value("\${harnax.memory.tenant-scoped:true}") private val tenantScoped: Boolean = true,
 ) {
     private val log = LoggerFactory.getLogger(MemoryStoreGateway::class.java)
 
@@ -136,13 +142,20 @@ class MemoryStoreGateway(
     /**
      * Deletes everything one user ever wrote, across every agent: the sweep an admin's user deletion runs.
      *
-     * Tenant and user both come from a row, never from a path variable, and the only prefix this method can
-     * list is `store/tenants/<tenantId>/users/<userId>/`.
+     * The runtime keys the bucket on the tenant of the agent that was talked to, so an owner who is a member
+     * of several tenants has memory spread over one prefix per tenant, and a sweep of only the row's home
+     * tenant leaves the rest of a "deleted" account's memory behind. Tenant and user both come from rows,
+     * never from a path variable.
      */
     fun deleteUser(
-        tenantId: Long,
+        tenantIds: Collection<Long>,
         userId: String,
-    ): Int = deleteAll(list(ownerPrefix(tenantId, userId)), "user $userId in tenant $tenantId")
+    ): Int {
+        // With the switch off every tenant names the same area, and one sweep of that owner is the truth.
+        val prefixes = tenantIds.map { ownerPrefix(it, userId) }.distinct()
+        val targets = prefixes.flatMap { list(it) }
+        return deleteAll(targets, "user $userId in ${prefixes.size} memory prefix(es)")
+    }
 
     /**
      * Whether this instance can reach a memory store at all.
@@ -169,7 +182,7 @@ class MemoryStoreGateway(
     private fun ownerPrefix(
         tenantId: Long,
         userId: String,
-    ): String = MemoryObjectKeys.ownerPrefix(keyPrefix(), tenantId, userId)
+    ): String = MemoryObjectKeys.ownerPrefix(keyPrefix(), tenantId, userId, tenantScoped)
 
     /** The objects under [prefix] that decode to a memory location of this owner. */
     private fun list(prefix: String): List<Stored> {
@@ -210,7 +223,14 @@ class MemoryStoreGateway(
         .groupBy { it.location.agentId }
         .filter { (agentId, _) -> MemoryObjectKeys.isValidAgentId(agentId) }
 
-    /** The file text and embedded timestamp of one object, or null when its envelope cannot be read. */
+    /**
+     * The file text and embedded timestamp of one object, or null when the object carries no readable text.
+     *
+     * Two answers are "nothing to show" and they are both about this object: a 404 (removed after the listing
+     * handed it out) and a body that is not a store envelope. Everything else is the store refusing to answer,
+     * which is thrown — a caller whose memory domain is on a machine that is down would be told they have no
+     * memory, and rule 3 exists because that is the one answer an owner cannot check for themselves.
+     */
     private fun readBody(stored: Stored): MemoryRecordParser.Record? = try {
         val (client, bucket) = storage()
         client.getObject(
@@ -218,10 +238,21 @@ class MemoryStoreGateway(
         ).use { response ->
             MemoryRecordParser.parse(response.bufferedReader(StandardCharsets.UTF_8).readText(), objectMapper)
         }
+    } catch (e: ErrorResponseException) {
+        if (isMissingObject(e)) {
+            log.debug("[memory] Object {} went away after the listing: {}", stored.objectKey, e.errorResponse().code())
+            null
+        } else {
+            throw BizException(503, "Memory object ${stored.objectKey} could not be read", e)
+        }
     } catch (e: Exception) {
-        log.warn("[memory] Object {} could not be read, showing it empty: {}", stored.objectKey, e.message)
-        null
+        log.error("[memory] Reading object {} failed", stored.objectKey, e)
+        throw BizException(503, "Memory object ${stored.objectKey} could not be read", e)
     }
+
+    /** What an object store answers for a key that is not there. */
+    private fun isMissingObject(e: ErrorResponseException): Boolean = e.response().code == 404 &&
+        e.errorResponse().code() == "NoSuchKey"
 
     /** The object's storage time, falling back to the timestamp the writer embedded in the envelope. */
     private fun storageTime(

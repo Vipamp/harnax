@@ -20,6 +20,9 @@ import com.agnetix.harnax.harness.minio.MinioBaseStore
 import com.agnetix.harnax.tools.sdk.UserIdentifier
 import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import io.agentscope.core.state.AgentStateStore
+import io.agentscope.harness.agent.IsolationScope
+import io.agentscope.harness.agent.coordination.LocalPeriodicGate
+import io.agentscope.harness.agent.coordination.StoreBackedPeriodicGate
 import io.agentscope.harness.agent.filesystem.CompositeFilesystem
 import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem
 import io.agentscope.harness.agent.middleware.MemoryFlushMiddleware
@@ -265,26 +268,79 @@ class HarnessAgentLauncherMemoryTest {
 
         val agent = requireNotNull(built) { "an ownerless delivery still has to get an agent" }
         assertTrue(memoryTools(agent).isEmpty(), "an ownerless agent must not be offered memory: ${memoryTools(agent)}")
+        // The two hooks go with the domain, not with the operator's separate switch: left installed they keep
+        // extracting into the framework's own MEMORY.md — the host directory, or whatever isolation scope the
+        // sandbox was configured with — while the warn above says this agent got no memory at all.
+        assertTrue(middlewares(agent).none { it is MemoryFlushMiddleware }, "an ownerless agent must not run extraction")
+        assertTrue(
+            middlewares(agent).none { it is MemoryMaintenanceMiddleware },
+            "an ownerless agent must not run consolidation",
+        )
         val said = lines.filter { it.contains("names no user") }
         assertEquals(1, said.size, "assembly has to say why memory stayed off, got $said")
     }
 
+    /** The two hooks this domain installs, whichever order the middleware list happens to be in. */
+    private fun memoryHooks(agent: HarnessAgentWrapper) = middlewares(agent).filter { it is MemoryFlushMiddleware || it is MemoryMaintenanceMiddleware }
+
+    /**
+     * Upstream keeps both fields private and picks them itself, so the honest answer to "which gate did this
+     * agent get" is the field the hook will consult at flush time — not the line logged about it.
+     */
+    private fun privateField(target: Any, name: String): Any = target.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(target)
+
     @Test
-    fun `which consolidation gate the agent got is said out loud`(@TempDir workspace: Path) {
-        // The plan allows two answers for the throttle gate but not a silent one: with no distributed store
-        // upstream picks a per-replica gate, and a deployment that reads as "memory never consolidates" is
-        // otherwise indistinguishable from a broken bucket.
-        val perReplica = reporting { build(workspace, Memory(enabled = true), enableMemoryHooks = true) }
+    fun `the gate the log names is the gate the hooks got`(@TempDir workspace: Path) {
+        // The plan allows two answers for the throttle gate but not a silent one, because a deployment that
+        // reads as "memory never consolidates" is otherwise indistinguishable from a broken bucket. The
+        // message is only worth having once the fields it describes are checked as well: upstream chooses the
+        // gate from the distributed store alone, and the two hooks share it under two separate slot keys.
+        var local: HarnessAgentWrapper? = null
+        val perReplica = reporting { local = build(workspace, Memory(enabled = true), enableMemoryHooks = true) }
             .filter { it.contains("consolidation gate") }
+        val localHooks = memoryHooks(requireNotNull(local))
 
         assertEquals(1, perReplica.size, "assembly must say which gate is in effect, got $perReplica")
-        assertTrue(perReplica.single().contains("replica"), "the non-sandbox branch has no distributed store: ${perReplica.single()}")
+        assertEquals(2, localHooks.size, "both hooks were asked for, got $localHooks")
+        localHooks.forEach {
+            assertInstanceOf(
+                LocalPeriodicGate::class.java,
+                privateField(it, "periodicGate"),
+                "with no distributed store upstream falls back to the per-replica gate: ${perReplica.single()}",
+            )
+            assertEquals(IsolationScope.SESSION, privateField(it, "isolationScope"))
+        }
+        assertSame(
+            privateField(localHooks.first(), "periodicGate"),
+            privateField(localHooks.last(), "periodicGate"),
+            "one gate for both hooks, so the message may name a single gate",
+        )
 
-        val shared = reporting {
-            build(workspace, Memory(enabled = true), enableMemoryHooks = true, sandboxEnabled = true)
+        var shared: HarnessAgentWrapper? = null
+        val sharedLines = reporting {
+            shared = build(workspace, Memory(enabled = true), enableMemoryHooks = true, sandboxEnabled = true)
         }.filter { it.contains("consolidation gate") }
+        val sharedHooks = memoryHooks(requireNotNull(shared))
 
-        assertEquals(1, shared.size, "assembly must say which gate is in effect, got $shared")
-        assertTrue(shared.single().contains("store"), "the sandbox branch gets the store-backed gate: ${shared.single()}")
+        assertEquals(1, sharedLines.size, "assembly must say which gate is in effect, got $sharedLines")
+        assertEquals(2, sharedHooks.size, "both hooks were asked for, got $sharedHooks")
+        sharedHooks.forEach {
+            assertInstanceOf(
+                StoreBackedPeriodicGate::class.java,
+                privateField(it, "periodicGate"),
+                "the sandbox branch has a distributed store, so the throttle is shared by every replica: ${sharedLines.single()}",
+            )
+            assertEquals(IsolationScope.SESSION, privateField(it, "isolationScope"))
+        }
+
+        // Flush and maintenance are two slots of one gate, each prefixed with its own name: an operator who
+        // goes looking for the throttle has to be told both keys, and "one slot" would send them to one.
+        for (line in listOf(perReplica.single(), sharedLines.single())) {
+            assertTrue(line.contains("memory-flush"), "the flush slot key has to be named, got: $line")
+            assertTrue(line.contains("memory-maintenance"), "the consolidation slot key has to be named, got: $line")
+            assertTrue(line.contains("SESSION"), "the scope in the key has to be named, got: $line")
+        }
+        assertTrue(perReplica.single().contains("replica"), "the non-sandbox branch has no distributed store: ${perReplica.single()}")
+        assertTrue(sharedLines.single().contains("replica"), "the sandbox branch is the shared one: ${sharedLines.single()}")
     }
 }

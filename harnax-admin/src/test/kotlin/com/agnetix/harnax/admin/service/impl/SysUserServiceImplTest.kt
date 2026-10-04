@@ -869,11 +869,38 @@ class SysUserServiceImplTest {
             val owned = testUser.apply { tenantId = 4L }
             `when`(sysUserMapper.selectById(1L)).thenReturn(owned)
             `when`(sysUserMapper.deleteById(1L)).thenReturn(1)
-            `when`(userMemoryCleaner.deleteForUser(owned)).thenReturn(3)
+            `when`(userMemoryCleaner.deleteForUser(owned, emptyList())).thenReturn(3)
 
             assertTrue(sysUserService.deleteUser(1L))
 
-            verify(userMemoryCleaner).deleteForUser(owned)
+            verify(userMemoryCleaner).deleteForUser(owned, emptyList())
+        }
+
+        /**
+         * The memory bucket is keyed on the tenant of the agent that was talked to, so the memberships this
+         * method already read decide where the owner's objects are. Handing the sweep only the row's home
+         * tenant leaves memory of another workspace behind while reporting the account as cleaned.
+         */
+        @Test
+        @DisplayName("deleteUser - sweeps memory in every tenant the account belonged to")
+        fun `deleteUser should sweep memory in every tenant the user was a member of`() {
+            val owned = testUser.apply { tenantId = 4L }
+            `when`(sysUserMapper.selectById(1L)).thenReturn(owned)
+            `when`(sysUserMapper.deleteById(1L)).thenReturn(1)
+            `when`(userTenantMapper.selectByUserId(1L)).thenReturn(
+                listOf(
+                    UserTenantEntity().apply {
+                        userId = 1L
+                        tenantId = 5L
+                        role = "member"
+                        status = 1
+                    },
+                ),
+            )
+
+            assertTrue(sysUserService.deleteUser(1L))
+
+            verify(userMemoryCleaner).deleteForUser(owned, listOf(5L))
         }
 
         /** The order is the safety property: the row first, so a store failure rolls back a retryable state. */
@@ -888,7 +915,7 @@ class SysUserServiceImplTest {
 
             inOrder(sysUserMapper, userMemoryCleaner).apply {
                 verify(sysUserMapper).deleteById(1L)
-                verify(userMemoryCleaner).deleteForUser(owned)
+                verify(userMemoryCleaner).deleteForUser(owned, emptyList())
             }
         }
 
@@ -901,7 +928,7 @@ class SysUserServiceImplTest {
 
             assertFalse(sysUserService.deleteUser(1L))
 
-            verify(userMemoryCleaner, never()).deleteForUser(any())
+            verify(userMemoryCleaner, never()).deleteForUser(any(), anyList())
         }
 
         /**
@@ -915,7 +942,7 @@ class SysUserServiceImplTest {
             val owned = testUser.apply { tenantId = 4L }
             `when`(sysUserMapper.selectById(1L)).thenReturn(owned)
             `when`(sysUserMapper.deleteById(1L)).thenReturn(1)
-            `when`(userMemoryCleaner.deleteForUser(owned))
+            `when`(userMemoryCleaner.deleteForUser(owned, emptyList()))
                 .thenThrow(BizException(503, "Memory could not be fully deleted for user 1 in tenant 4"))
 
             val failure = assertThrows<BizException> { sysUserService.deleteUser(1L) }

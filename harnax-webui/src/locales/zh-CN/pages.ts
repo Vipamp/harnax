@@ -1170,6 +1170,8 @@ export default {
   'pages.memory.deleteWarning': '删除不可撤销：该智能体的整理记忆与全部每日记录会被一并删除，本账号无法恢复。',
   'pages.memory.deleteTooltip': '删除该智能体的记忆',
   'pages.memory.deleteConfirm': '删除「{name}」的记忆？整理记忆与全部每日记录会一并删除，且无法恢复。',
+  'pages.memory.deletedObjects': '删除成功，共移除 {count} 个记忆对象',
+  'pages.memory.deleteNothingFound': '未找到该智能体可删除的记忆，没有删除任何内容',
   'pages.memory.detail.empty': '暂无记忆详情',
   'pages.memory.curatedSection': '整理后的记忆（MEMORY.md）',
   'pages.memory.dailySection': '每日记录',

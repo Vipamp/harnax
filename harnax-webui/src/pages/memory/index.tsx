@@ -88,16 +88,35 @@ const MyAgentMemory: React.FC = () => {
     setDeleting(agentId);
     try {
       const res = await deleteMemory(agentId);
+      // `deletedObjects` counts what actually left the bucket, and admin drops null keys from the
+      // JSON — so an absent count means nothing was reported removed, exactly like 0.
+      const deletedObjects = res.data?.deletedObjects ?? 0;
       if (res.code === 200) {
-        messageApi.success(
-          intl.formatMessage({
-            id: 'pages.message.deleteSuccess',
-            defaultMessage: 'Deleted successfully',
-          }),
-        );
-        // The drawer reads the memory that just stopped existing.
-        if (detailTarget?.agentId === agentId) {
-          setDetailTarget(undefined);
+        if (deletedObjects > 0) {
+          messageApi.success(
+            intl.formatMessage(
+              {
+                id: 'pages.memory.deletedObjects',
+                defaultMessage:
+                  'Deleted successfully, {count} object(s) removed',
+              },
+              { count: deletedObjects },
+            ),
+          );
+          // The drawer reads the memory that just stopped existing.
+          if (detailTarget?.agentId === agentId) {
+            setDetailTarget(undefined);
+          }
+        } else {
+          // Nothing left the bucket: the memory is still there or was never ours to erase, so this
+          // must not read as a completed erasure — a user who believes it would stop looking.
+          messageApi.warning(
+            intl.formatMessage({
+              id: 'pages.memory.deleteNothingFound',
+              defaultMessage:
+                'No memory of this agent was found to delete, nothing was removed',
+            }),
+          );
         }
         await loadData();
       } else {

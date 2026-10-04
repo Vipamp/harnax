@@ -140,9 +140,16 @@ abstract class BaseAdminIT {
         return rest.exchange(url(path), method, HttpEntity(payload, headers), String::class.java)
     }
 
-    protected fun getJson(path: String): JsonNode = parseBody(exchange(HttpMethod.GET, path))
+    protected fun getJson(
+        path: String,
+        tenantId: Long? = null,
+    ): JsonNode = parseBody(exchange(HttpMethod.GET, path, tenantId = tenantId))
 
-    protected fun postJson(path: String, body: Any? = null): JsonNode = parseBody(exchange(HttpMethod.POST, path, body))
+    protected fun postJson(
+        path: String,
+        body: Any? = null,
+        tenantId: Long? = null,
+    ): JsonNode = parseBody(exchange(HttpMethod.POST, path, body, tenantId = tenantId))
 
     protected fun putJson(path: String, body: Any? = null): JsonNode = parseBody(exchange(HttpMethod.PUT, path, body))
 
@@ -189,11 +196,16 @@ abstract class BaseAdminIT {
     }
 
     /** Find the first record in a Page response matching the predicate, paging through all pages. */
-    protected fun findInPage(basePath: String, extraQuery: String = "", predicate: (JsonNode) -> Boolean): JsonNode? {
+    protected fun findInPage(
+        basePath: String,
+        extraQuery: String = "",
+        tenantId: Long? = null,
+        predicate: (JsonNode) -> Boolean,
+    ): JsonNode? {
         var pageNum = 1
         while (true) {
             val sep = if (extraQuery.isEmpty()) "" else "&$extraQuery"
-            val data = assertOk(getJson("$basePath?pageNum=$pageNum&pageSize=50$sep"))
+            val data = assertOk(getJson("$basePath?pageNum=$pageNum&pageSize=50$sep", tenantId))
             val records = data["records"]
             if (records == null || !records.isArray || records.isEmpty) return null
             records.forEach { if (predicate(it)) return it }
@@ -203,19 +215,30 @@ abstract class BaseAdminIT {
         }
     }
 
-    private var agentModelId: Long = 0
+    /** One fixture model per acting tenant, keyed 0 for the token's own tenant. */
+    private val agentModelIds = mutableMapOf<Long, Long>()
 
     /**
-     * A model usable as `agent.modelId`, created on demand through the API.
+     * A model usable as `agent.modelId` by a caller acting as [tenantId], created on demand through the API.
      *
      * `createAgent` dereferences `modelId` before it writes anything, so an IT that needs an agent has
-     * to name a real model or every agent-dependent case in the class dies on the same 500.
+     * to name a real model or every agent-dependent case in the class dies on the same 500. The model is
+     * built under the tenant the case acts as, because visibility stopped crossing tenants: a row from
+     * another tenant reads as missing, so one shared id would make every cross-tenant create fail on the
+     * prerequisite rather than on the rule under test.
      */
-    protected fun ensureAgentModelId(): Long {
-        if (agentModelId > 0) return agentModelId
+    protected fun ensureAgentModelId(tenantId: Long? = null): Long {
+        val key = tenantId ?: 0L
+        agentModelIds[key]?.let { return it }
         val tag = Random.nextInt(100000, 999999)
-        assertOk(postJson("/api/admin/model-providers", mapOf("type" to "it_base_$tag", "name" to "it_base_provider_$tag")))
-        val provider = findInPage("/api/admin/model-providers/page", "name=it_base_provider_$tag") {
+        assertOk(
+            postJson(
+                "/api/admin/model-providers",
+                mapOf("type" to "it_base_$tag", "name" to "it_base_provider_$tag"),
+                tenantId,
+            ),
+        )
+        val provider = findInPage("/api/admin/model-providers/page", "name=it_base_provider_$tag", tenantId) {
             it["name"]?.asText() == "it_base_provider_$tag"
         } ?: error("prerequisite provider should exist")
         assertOk(
@@ -227,13 +250,14 @@ abstract class BaseAdminIT {
                     "providerId" to provider["id"].asLong(),
                     "modelType" to "chat",
                 ),
+                tenantId,
             ),
         )
-        val model = findInPage("/api/admin/models/page", "name=it_base_model_$tag") {
+        val model = findInPage("/api/admin/models/page", "name=it_base_model_$tag", tenantId) {
             it["name"]?.asText() == "it_base_model_$tag"
         } ?: error("prerequisite model should exist")
-        agentModelId = model["id"].asLong()
-        return agentModelId
+        agentModelIds[key] = model["id"].asLong()
+        return model["id"].asLong()
     }
 
     /**
@@ -242,13 +266,18 @@ abstract class BaseAdminIT {
      * `description`, `systemPrompt` and `modelId` are required: since AGENT-20 the DTO validates them,
      * so an omitted one is a named 400 rather than the 500 it used to be. Since AGENT-07 the write also
      * resolves `modelId` through the visibility rule, so the id has to name a row the caller may see —
-     * which is what [ensureAgentModelId] hands out — and an id pointing at another tenant's private
-     * model is refused rather than stored. An empty description or prompt stays legal.
+     * which is what [ensureAgentModelId] hands out, under the same tenant the body is posted as — and an
+     * id pointing at another tenant's private model is refused rather than stored. An empty description
+     * or prompt stays legal.
      */
-    protected fun agentCreateBody(name: String, description: String = ""): Map<String, Any?> = mapOf(
+    protected fun agentCreateBody(
+        name: String,
+        description: String = "",
+        tenantId: Long? = null,
+    ): Map<String, Any?> = mapOf(
         "name" to name,
         "description" to description,
         "systemPrompt" to "",
-        "modelId" to ensureAgentModelId(),
+        "modelId" to ensureAgentModelId(tenantId),
     )
 }

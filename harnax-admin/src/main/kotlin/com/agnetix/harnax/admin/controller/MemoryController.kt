@@ -22,8 +22,9 @@ import org.springframework.web.bind.annotation.RestController
  * The memory files are the agent's, not the platform's — they hold what a user told an agent to remember —
  * so the owner has to be able to read them and to have them removed. Everything the runtime wrote goes
  * through `MinioBaseStore` into the shared store bucket under
- * `store/tenants/<tenantId>/users/<userId>/agents/<agentId>/…`, and this is the admin-side reader of that
- * layout.
+ * `store/tenants/<tenantId>/users/<userId>/agents/<agentId>/…` — the tenant pair drops out when
+ * `harnax.memory.tenant-scoped` is off, the switch the runtime writes with — and this is the admin-side
+ * reader of that layout.
  *
  * Three things about the shape of these endpoints:
  * 1. There is no user or tenant parameter. Both come from the session, so no request can name somebody

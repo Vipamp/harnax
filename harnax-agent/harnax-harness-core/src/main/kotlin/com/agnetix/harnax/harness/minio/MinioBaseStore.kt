@@ -39,12 +39,12 @@ class MinioBaseStore(
 
     override fun get(namespace: List<String>, key: String): StoreItem? {
         val record = load(buildKey(namespace, key)) ?: return null
-        return StoreItem(record.wrapper.key, record.wrapper.value, record.wrapper.version)
+        return StoreItem(record.wrapper.key, record.wrapper.value, effectiveVersion(record.wrapper))
     }
 
     override fun put(namespace: List<String>, key: String, value: Map<String, Any>) {
         val objectKey = buildKey(namespace, key)
-        val version = (load(objectKey)?.wrapper?.version ?: 0L) + 1
+        val version = effectiveVersion(load(objectKey)?.wrapper) + 1
         write(objectKey, key, value, version)
     }
 
@@ -56,7 +56,7 @@ class MinioBaseStore(
     ): Boolean {
         val objectKey = buildKey(namespace, key)
         val current = load(objectKey)
-        val version = current?.wrapper?.version ?: 0L
+        val version = effectiveVersion(current?.wrapper)
         if (version != expectedVersion) return false
         val precondition = when {
             current == null -> mapOf("If-None-Match" to "*")
@@ -66,6 +66,25 @@ class MinioBaseStore(
         return write(objectKey, key, value, version + 1, precondition)
     }
 
+    /**
+     * The version a record answers with: 0 when there is no record, at least 1 when there is one.
+     *
+     * [StoreBackedPeriodicGate] reads 0 as "this slot was never claimed", so a record that predates the
+     * embedded version — or one seeded by hand — must not answer with it, or an existing slot becomes
+     * claimable as though it were empty.
+     */
+    private fun effectiveVersion(wrapper: StoreWrapper?): Long = wrapper?.version?.coerceAtLeast(1L) ?: 0L
+
+    /**
+     * Reads one object, answering null only when the object is genuinely not there.
+     *
+     * Anything else the server or the client complains about is thrown, and thrown as a
+     * [RuntimeException]: the callers upstream — the periodic gate and the memory middleware — guard
+     * exactly that type, while minio's own exceptions are checked and would sail past their catch. A
+     * swallowed read here is worse than a failed one, because
+     * [io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem] answers a null with "file not
+     * found" and the consolidator then rewrites `MEMORY.md` from an empty base.
+     */
     private fun load(objectKey: String): Record? = try {
         minioClient.getObject(
             GetObjectArgs.builder()
@@ -76,10 +95,24 @@ class MinioBaseStore(
             val json = response.bufferedReader(StandardCharsets.UTF_8).readText()
             Record(objectMapper.readValue(json, StoreWrapper::class.java), response.headers()["ETag"])
         }
+    } catch (e: ErrorResponseException) {
+        if (isMissingObject(e)) {
+            log.debug("[minio-store] object not found: key={}", objectKey)
+            null
+        } else {
+            throw unreadable(objectKey, e)
+        }
     } catch (e: Exception) {
-        log.debug("[minio-store] object not readable: key={}", objectKey)
-        null
+        throw unreadable(objectKey, e)
     }
+
+    /** Whether this 404 means the object itself is absent, rather than the bucket or the route to it. */
+    private fun isMissingObject(e: ErrorResponseException): Boolean = e.response().code == 404 && e.errorResponse().code() == "NoSuchKey"
+
+    private fun unreadable(
+        objectKey: String,
+        cause: Exception,
+    ): RuntimeException = IllegalStateException("Memory store object $objectKey could not be read", cause)
 
     private fun write(
         objectKey: String,
@@ -107,7 +140,7 @@ class MinioBaseStore(
                 log.debug("[minio-store] write() precondition failed: key={}", objectKey)
                 false
             } else {
-                throw e
+                throw IllegalStateException("Memory store object $objectKey could not be written", e)
             }
         }
     }
@@ -142,19 +175,10 @@ class MinioBaseStore(
             }
             if (items.size >= limit) break
 
-            try {
-                val stream = minioClient.getObject(
-                    GetObjectArgs.builder()
-                        .bucket(bucketName)
-                        .`object`(objectKey)
-                        .build(),
-                )
-                val json = stream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
-                val wrapper = objectMapper.readValue(json, StoreWrapper::class.java)
-                items.add(StoreItem(wrapper.key, wrapper.value, wrapper.version))
-            } catch (e: Exception) {
-                log.warn("[minio-store] search() failed to read object {}: {}", objectKey, e.message)
-            }
+            // The same read path get() uses, so a listing cannot answer a different version for an object
+            // than the object itself does, and a fault is not silently a missing file.
+            val record = load(objectKey) ?: continue
+            items.add(StoreItem(record.wrapper.key, record.wrapper.value, effectiveVersion(record.wrapper)))
         }
 
         return items

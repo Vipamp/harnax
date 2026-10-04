@@ -67,7 +67,7 @@ harness-core 通过 Spring Boot 自动配置（`HarnessAutoConfiguration`）注�
 harness:
   # === 全局开关 ===
   enableWorkspaceContext: false     # 代码默认值。是否注入 AGENTS.md / skills 上下文到 system prompt
-  enableMemoryHooks: false          # 是否启用内置记忆 Hook（Harnax 使用自定义 Hook，通常关闭）
+  enableMemoryHooks: false          # 内置的记忆抽取与合并两个 Hook。记忆域跑在它们上面：harness.memory.enabled=true 要求这一项同为 true，否则装配直接拒绝该智能体
   enableSessionPersistence: true    # 是否启用 session 自动持久化
 
   # === 沙箱配置 ===
@@ -89,6 +89,15 @@ harness:
     storeBucket: harnax-store       # KV 存储 Bucket
     snapshotPrefix: snapshots/      # 快照对象前缀
     storePrefix: store/             # KV 对象前缀
+
+  # === 长期记忆（整域默认关闭）===
+  memory:
+    enabled: false                  # 桶挂与否。要求 minio.enabled=true 且 enableMemoryHooks=true，并强制打开 enableWorkspaceContext（注入 MEMORY.md 的只有那一条中间件）
+    modelId: 0                      # 抽取与合并用的模型，取模型域行 id；0 沿用各智能体自己的主模型
+    flushTrigger: throttled         # always=每轮一次抽取调用，throttled=每 flushMinGap 至多一次，never=台账不再增长
+    flushMinGap: 5m
+    toolsEnabled: true              # memory_search / memory_get / memory_save 给不给模型
+    tenantScoped: true              # 桶键 store/tenants/<tenantId>/users/<userId>/agents/<智能体名>/… 是否含租户对；admin 的 harnax.memory.tenant-scoped 必须同值
 ```
 
 ### 会话持久化配置
@@ -187,7 +196,7 @@ session:
   database-name: agentscope
 
 harness:
-    enable-workspace-context: false   # 沙箱只在对话阶段激活，开 true 会刷出读不到 AGENTS.md 的告警；compose 即为 false
+  enable-workspace-context: false   # 沙箱只在对话阶段激活，开 true 会刷出读不到 AGENTS.md 的告警；compose 即为 false。开启记忆域会被强制打开
   enable-memory-hooks: false
   enable-session-persistence: true
   sandbox:
