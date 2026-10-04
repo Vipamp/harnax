@@ -162,4 +162,69 @@ open class TokenStatsMapperTest {
             assertTrue(nobody.isNullOrEmpty(), "a tenant with no rows gets no bucket at all: $nobody")
         }
     }
+
+    @Nested
+    @DisplayName("Latest billed input of one session")
+    inner class LatestInputTokenTests {
+
+        @Test
+        @DisplayName("the last recorded call wins even when its ts is older")
+        fun `should take the last inserted row rather than the latest ts`() {
+            // One turn bills several calls inside the same second, so insertion order — not ts — is what says
+            // which call the context was last sized by. Reversing the ts proves the read follows `id`.
+            val ts = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
+            assertEquals(
+                1,
+                tokenStatsMapper.insert(
+                    stat("it-usage-order", ts.minusHours(1)).apply {
+                        agentId = null
+                        inputToken = 4000L
+                    },
+                ),
+            )
+            assertEquals(
+                1,
+                tokenStatsMapper.insert(
+                    stat("it-usage-order", ts.minusHours(2)).apply {
+                        agentId = null
+                        inputToken = 9000L
+                    },
+                ),
+            )
+
+            assertEquals(9000L, tokenStatsMapper.selectLatestInputTokenBySession("it-usage-order"))
+        }
+
+        @Test
+        @DisplayName("one session's row is not another session's answer")
+        fun `should read only the named session`() {
+            val ts = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
+            assertEquals(
+                1,
+                tokenStatsMapper.insert(
+                    stat("it-usage-neighbour", ts).apply {
+                        agentId = null
+                        inputToken = 11L
+                    },
+                ),
+            )
+            assertEquals(
+                1,
+                tokenStatsMapper.insert(
+                    stat("it-usage-own", ts.plusSeconds(1)).apply {
+                        agentId = null
+                        inputToken = 22L
+                    },
+                ),
+            )
+
+            assertEquals(22L, tokenStatsMapper.selectLatestInputTokenBySession("it-usage-own"))
+        }
+
+        @Test
+        @DisplayName("a session nothing has been billed for reports nothing")
+        fun `should return null for a session with no rows`() {
+            assertNull(tokenStatsMapper.selectLatestInputTokenBySession("it-usage-never-called"))
+        }
+    }
 }

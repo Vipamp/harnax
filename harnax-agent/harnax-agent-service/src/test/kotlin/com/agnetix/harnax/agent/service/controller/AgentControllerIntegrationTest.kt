@@ -9,6 +9,8 @@ import com.agnetix.harnax.agent.protocol.ChatResponse
 import com.agnetix.harnax.agent.protocol.CommandAgentRequest
 import com.agnetix.harnax.agent.protocol.CommandResponse
 import com.agnetix.harnax.agent.protocol.CommandType
+import com.agnetix.harnax.agent.protocol.ContextUsageResponse
+import com.agnetix.harnax.agent.protocol.ContextWindowSource
 import com.agnetix.harnax.agent.service.runner.AgentRunner
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
@@ -215,6 +217,48 @@ class AgentControllerIntegrationTest {
                 .andExpect(status().isOk)
                 .andExpect(jsonPath("$.data").isArray)
                 .andExpect(jsonPath("$.data.length()").value(0))
+        }
+    }
+
+    // ==================== GET /api/agent/context/{sessionId} ====================
+
+    @Nested
+    inner class ContextUsageEndpoint {
+        @Test
+        fun `contextUsage reports both token readings and where the window came from`() {
+            `when`(agentRunner.loadContextUsage("sess-1")).thenReturn(
+                ContextUsageResponse(
+                    messageCount = 12,
+                    estimatedTokens = 40_000,
+                    lastCallInputTokens = 9_000,
+                    contextWindow = 131_072,
+                    windowSource = ContextWindowSource.MODEL_FIELD,
+                    ratio = 0.305,
+                    triggerTokens = 111_072,
+                    triggerMessages = 50,
+                ),
+            )
+
+            mockMvc.perform(get("/api/agent/context/sess-1"))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.messageCount").value(12))
+                .andExpect(jsonPath("$.data.estimatedTokens").value(40000))
+                .andExpect(jsonPath("$.data.lastCallInputTokens").value(9000))
+                .andExpect(jsonPath("$.data.contextWindow").value(131072))
+                .andExpect(jsonPath("$.data.windowSource").value("MODEL_FIELD"))
+                .andExpect(jsonPath("$.data.ratio").value(0.305))
+                .andExpect(jsonPath("$.data.triggerTokens").value(111072))
+        }
+
+        @Test
+        fun `contextUsage says so when no context can be read for the session`() {
+            `when`(agentRunner.loadContextUsage("sess-none")).thenReturn(null)
+
+            mockMvc.perform(get("/api/agent/context/sess-none"))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.code").value(500))
+                .andExpect(jsonPath("$.data").doesNotExist())
         }
     }
 

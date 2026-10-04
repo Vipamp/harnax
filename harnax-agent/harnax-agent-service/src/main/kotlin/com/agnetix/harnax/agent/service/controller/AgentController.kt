@@ -8,6 +8,7 @@ import com.agnetix.harnax.agent.protocol.ChatResponse
 import com.agnetix.harnax.agent.protocol.CommandAgentRequest
 import com.agnetix.harnax.agent.protocol.CommandResponse
 import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
+import com.agnetix.harnax.agent.protocol.ContextUsageResponse
 import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.agent.service.runner.AgentRunner
@@ -110,6 +111,27 @@ class AgentController(
         } catch (e: Exception) {
             ResultVo.error(e.message ?: "Failed to load history")
         }
+    }
+
+    /**
+     * Report how full one session's model context is.
+     *
+     * A read that rewrites nothing. The numbers come from the same state the session's next turn loads, so a
+     * session this process no longer holds an agent for costs one rebuild to answer — the window denominator
+     * is that session's model's, and nothing else can supply it.
+     */
+    @GetMapping("/context/{sessionId}")
+    @Operation(summary = "Load context usage", description = "How full a session's model context is, with both token readings")
+    fun contextUsage(@PathVariable sessionId: String): ResultVo<ContextUsageResponse> {
+        log.info("Loading context usage for session=$sessionId")
+        val usage = try {
+            agentRunner.loadContextUsage(sessionId)
+        } catch (e: Exception) {
+            return ResultVo.error(e.message ?: "Failed to load context usage")
+        }
+        // The same miss shape as /chat/interrupt: nothing to report, no invented status code.
+        return usage?.let { ResultVo.success(it) }
+            ?: ResultVo.error("No context can be read for session $sessionId")
     }
 
     /**

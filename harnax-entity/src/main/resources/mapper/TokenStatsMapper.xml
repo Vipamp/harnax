@@ -27,6 +27,20 @@
         )
     </insert>
 
+    <!--
+      The one session-scoped read, deliberately outside the tenant fragment: it answers "how big was this
+      conversation's last model call", and the endpoint that serves it authenticates by session id the same way
+      the chat-history read does. Ordered by `id` because a turn writes several rows sharing one second-
+      precision `ts`, and only insertion order says which call came last.
+    -->
+    <select id="selectLatestInputTokenBySession" resultType="java.lang.Long">
+        SELECT input_token
+        FROM token_stats
+        WHERE session_id = #{sessionId}
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
     <!-- ==================== Aggregations ==================== -->
     <!--
       The column labels are the wire contract: TokenStatsServiceImpl reads these result maps by the

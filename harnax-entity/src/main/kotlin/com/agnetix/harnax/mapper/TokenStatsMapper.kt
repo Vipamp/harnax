@@ -8,12 +8,16 @@ import org.apache.ibatis.annotations.Param
  * Token Consumption Statistics Mapper interface
  * SQL configuration in resources/mapper/TokenStatsMapper.xml
  *
- * Every read here names a tenant, and `tenantId` is a non-null `Long` on purpose: there is no value that
- * means "all tenants", so a caller that cannot resolve one has nothing to ask for. The predicate itself
+ * Every aggregation read here names a tenant, and `tenantId` is a non-null `Long` on purpose: there is no value
+ * that means "all tenants", so a caller that cannot resolve one has nothing to ask for. The predicate itself
  * sits once in the shared `tenantAndTimeWindow` fragment that all 20 aggregations include, which is the
- * only reason adding a 21st statement cannot quietly come out unscoped.
+ * only reason adding a 21st aggregation cannot quietly come out unscoped.
  *
- * Rows inserted with a NULL `tenant_id` (a run nothing attributed it to) match no read here. That is
+ * The one exception is [selectLatestInputTokenBySession]: it answers a question about a single conversation and
+ * is served by the same session-scoped, internal-only read path as the chat history, so its predicate is the
+ * session id. Nothing else here may follow that shape.
+ *
+ * Rows inserted with a NULL `tenant_id` (a run nothing attributed it to) match no aggregation here. That is
  * the trade for not guessing a tenant on the way in.
  */
 @Mapper
@@ -22,6 +26,19 @@ interface TokenStatsMapper {
     // ==================== Basic CRUD Methods ====================
 
     fun insert(tokenStats: TokenStats): Int
+
+    /**
+     * The billed input tokens of the most recent model call recorded for one session.
+     *
+     * Ordered by `id` rather than `ts` because several calls of one turn share a `ts` written to the second,
+     * and insertion order is the only thing that says which of them was last.
+     *
+     * @param sessionId Session to read; no tenant predicate — see the interface comment
+     * @return `input_token` of that session's newest row, or null when nothing has been recorded for it
+     */
+    fun selectLatestInputTokenBySession(
+        @Param("sessionId") sessionId: String,
+    ): Long?
 
     /**
      * Aggregate query Token consumption by model

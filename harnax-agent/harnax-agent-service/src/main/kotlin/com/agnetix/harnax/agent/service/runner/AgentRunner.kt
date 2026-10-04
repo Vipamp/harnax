@@ -8,6 +8,7 @@ import com.agnetix.harnax.agent.protocol.ChatResponse
 import com.agnetix.harnax.agent.protocol.CommandAgentRequest
 import com.agnetix.harnax.agent.protocol.CommandResponse
 import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
+import com.agnetix.harnax.agent.protocol.ContextUsageResponse
 import reactor.core.publisher.Flux
 
 /**
@@ -58,6 +59,14 @@ interface AgentRunner {
      * @return List of MessageLog representing the conversation history
      */
     fun loadHistory(sessionId: String): List<MessageLog>
+
+    /**
+     * How full one session's model context is, as the runtime that owns it sees it.
+     *
+     * @param sessionId Session identifier
+     * @return The usage reading, or null when no context can be read for that session at all
+     */
+    fun loadContextUsage(sessionId: String): ContextUsageResponse?
 
     /**
      * Confirm or reject pending tool execution.

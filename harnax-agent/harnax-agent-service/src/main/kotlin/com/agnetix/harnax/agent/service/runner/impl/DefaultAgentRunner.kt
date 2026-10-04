@@ -12,6 +12,7 @@ import com.agnetix.harnax.agent.protocol.CommandAgentRequest
 import com.agnetix.harnax.agent.protocol.CommandResponse
 import com.agnetix.harnax.agent.protocol.CommandType
 import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
+import com.agnetix.harnax.agent.protocol.ContextUsageResponse
 import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.agent.protocol.StreamTextChatEvent
@@ -30,6 +31,7 @@ import com.agnetix.harnax.harness.compaction.CompactionOutcome
 import com.agnetix.harnax.harness.team.ConfirmationOutcome
 import com.agnetix.harnax.harness.team.TeamArtifactGateway
 import com.agnetix.harnax.harness.team.TeamOrchestrator
+import com.agnetix.harnax.mapper.TokenStatsMapper
 import com.agnetix.harnax.tools.sdk.UserIdentifier
 import com.github.benmanes.caffeine.cache.Caffeine
 import io.agentscope.core.event.ConfirmResult
@@ -56,6 +58,14 @@ class DefaultAgentRunner(
     private val agentSpecResolver: AgentSpecResolver,
     private val specContextHolder: AgentSpecContextHolder,
     private val adminApiClient: AdminApiClient,
+    /**
+     * Billed input tokens of a session's latest model call: the second numerator of the usage reading.
+     *
+     * Read here rather than behind [com.agnetix.harnax.agent.adaptor.TokenStatAdaptor] because that funnel is
+     * the middleware's write path — a `fun interface` the harness builds lambdas for — and one session-scoped
+     * select does not earn a second abstraction next to it.
+     */
+    private val tokenStatsMapper: TokenStatsMapper,
     /** The gateway bean only exists with MinIO enabled; a team can still delegate, it just cannot pass files. */
     private val teamArtifactGateways: ObjectProvider<TeamArtifactGateway>,
     /** Merges member child sessions into the root session's chat history, so team bubbles survive a reload. */
@@ -344,6 +354,21 @@ class DefaultAgentRunner(
         sessionId,
         launcher.loadSessionMessages(sessionId).flatMap { MessageLogConverter.convert(it) },
     )
+
+    /**
+     * How full one session's model context is, read through the wrapper that owns it.
+     *
+     * A live agent is reused whatever user it was built for: it holds the conversation this reading is about,
+     * and going through [cachedAgent] instead would evict an agent owned by another bucket — a rebuild that
+     * displaces a running turn for the price of a read. A cold session is built to be answered, because the
+     * window denominator comes from that session's model and nothing else can say what it is.
+     */
+    override fun loadContextUsage(sessionId: String): ContextUsageResponse? {
+        val billed = tokenStatsMapper.selectLatestInputTokenBySession(sessionId)?.toInt()
+        val agent = agentCache.getIfPresent(sessionId)?.agent
+            ?: getOrCreateAgent(sessionId, UserIdentifier(null))
+        return agent.contextUsage(billed)
+    }
 
     override fun confirm(request: ConfirmAgentRequest): Flux<ChatEvent> {
         val sessionId = request.sessionId

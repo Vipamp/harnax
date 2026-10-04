@@ -31,6 +31,7 @@ import com.agnetix.harnax.harness.team.ConfirmationOutcome
 import com.agnetix.harnax.harness.team.TeamArtifactGateway
 import com.agnetix.harnax.harness.team.TeamOrchestrator
 import com.agnetix.harnax.harness.team.TeamRuntimeSpec
+import com.agnetix.harnax.mapper.TokenStatsMapper
 import com.agnetix.harnax.tools.sdk.UserIdentifier
 import io.agentscope.core.message.ToolUseBlock
 import org.junit.jupiter.api.Assertions.*
@@ -55,6 +56,7 @@ class DefaultAgentRunnerTest {
     private lateinit var agentSpecResolver: AgentSpecResolver
     private lateinit var specContextHolder: AgentSpecContextHolder
     private lateinit var adminApiClient: AdminApiClient
+    private lateinit var tokenStatsMapper: TokenStatsMapper
     private lateinit var teamArtifactGateways: ObjectProvider<TeamArtifactGateway>
     private lateinit var runner: DefaultAgentRunner
     private lateinit var agentWrapper: HarnessAgentWrapper
@@ -67,6 +69,8 @@ class DefaultAgentRunnerTest {
         specContextHolder = mock(AgentSpecContextHolder::class.java)
         agentWrapper = mock(HarnessAgentWrapper::class.java)
         adminApiClient = mock(AdminApiClient::class.java)
+        // Mockito answers an unstubbed boxed-Long read with 0, not null, so each case states which shape it wants.
+        tokenStatsMapper = mock(TokenStatsMapper::class.java)
         // getIfAvailable() stays null: the same shape as a deployment without MinIO.
         teamArtifactGateways = mock(ObjectProvider::class.java) as ObjectProvider<TeamArtifactGateway>
 
@@ -75,6 +79,7 @@ class DefaultAgentRunnerTest {
             agentSpecResolver = agentSpecResolver,
             specContextHolder = specContextHolder,
             adminApiClient = adminApiClient,
+            tokenStatsMapper = tokenStatsMapper,
             teamArtifactGateways = teamArtifactGateways,
             // Real object over the same mocks: no member child session is stubbed, so history stays
             // lead-only in these tests, which is the ordinary-session shape.
@@ -1033,6 +1038,67 @@ class DefaultAgentRunnerTest {
 
             assertTrue(history.isEmpty())
             verify(launcher).loadSessionMessages("session-1")
+        }
+    }
+
+    // ==================== loadContextUsage ====================
+
+    @Nested
+    inner class LoadContextUsage {
+        private fun usage() = ContextUsageResponse(
+            messageCount = 12,
+            estimatedTokens = 40_000,
+            lastCallInputTokens = 9_000,
+            contextWindow = 131_072,
+            windowSource = ContextWindowSource.MODEL_FIELD,
+            ratio = 0.305,
+            triggerTokens = 111_072,
+            triggerMessages = 50,
+        )
+
+        @Test
+        fun `the reading carries this session's last billed call into the wrapper`() {
+            stubAgentCreation()
+            `when`(tokenStatsMapper.selectLatestInputTokenBySession("session-1")).thenReturn(9_000L)
+            val expected = usage()
+            `when`(agentWrapper.contextUsage(9_000)).thenReturn(expected)
+
+            assertEquals(expected, runner.loadContextUsage("session-1"))
+            verify(agentWrapper).contextUsage(9_000)
+        }
+
+        @Test
+        fun `a session nothing has billed for reads as unbilled, not as zero`() {
+            stubAgentCreation()
+            // What the store answers when the session has no row at all, asserted in TokenStatsMapperTest.
+            `when`(tokenStatsMapper.selectLatestInputTokenBySession("session-1")).thenReturn(null)
+            val expected = usage().copy(lastCallInputTokens = null)
+            `when`(agentWrapper.contextUsage(null)).thenReturn(expected)
+
+            assertEquals(expected, runner.loadContextUsage("session-1"))
+            verify(agentWrapper).contextUsage(null)
+        }
+
+        @Test
+        fun `an agent this process still holds answers, even one built for another user`() {
+            stubAgentCreation()
+            `when`(agentWrapper.call(any<String>(), any()))
+                .thenReturn(ChatResponse(sessionId = "session-1", content = "hi"))
+            runner.process(ChatAgentRequest(sessionId = "session-1", message = "hello", userId = 7L))
+            val expected = usage()
+            `when`(agentWrapper.contextUsage(anyOrNull())).thenReturn(expected)
+
+            assertEquals(expected, runner.loadContextUsage("session-1"))
+            // A rebuild here would mean the read evicted the live agent over a bucket mismatch.
+            verify(launcher, times(1)).createSingleAgent(any(), any(), any<Boolean>(), any(), any())
+        }
+
+        @Test
+        fun `no context at all reports no usage`() {
+            stubAgentCreation()
+            `when`(agentWrapper.contextUsage(anyOrNull())).thenReturn(null)
+
+            assertNull(runner.loadContextUsage("session-1"))
         }
     }
 
