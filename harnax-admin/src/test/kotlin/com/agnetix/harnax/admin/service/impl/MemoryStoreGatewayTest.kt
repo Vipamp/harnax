@@ -8,6 +8,7 @@ import io.minio.ListObjectsArgs
 import io.minio.MinioClient
 import io.minio.RemoveObjectArgs
 import io.minio.Result
+import io.minio.errors.ErrorResponseException
 import io.minio.messages.Item
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -98,6 +99,14 @@ class MemoryStoreGatewayTest {
 
     private fun bucket(vararg entries: Result<Item>) {
         `when`(minioClient.listObjects(any<ListObjectsArgs>())).thenReturn(entries.toList())
+    }
+
+    /** Different rows per requested prefix, for a sweep that has to address more than one owner namespace. */
+    private fun bucketByPrefix(vararg entriesByPrefix: Pair<String, List<Result<Item>>>) {
+        val byPrefix = entriesByPrefix.toMap()
+        `when`(minioClient.listObjects(any<ListObjectsArgs>())).thenAnswer { invocation ->
+            byPrefix[invocation.getArgument<ListObjectsArgs>(0).prefix() ?: ""] ?: emptyList<Result<Item>>()
+        }
     }
 
     /** The envelope `MinioBaseStore` writes, with [content] at `value.content`. */
@@ -333,6 +342,51 @@ class MemoryStoreGatewayTest {
         }
 
         /**
+         * Rule 3, on the read leg: the listing said this object is there, so a refusal is the store failing,
+         * not an owner having nothing. Shown as an empty `MEMORY.md` it is indistinguishable from a curated
+         * layer that was genuinely cleared, and the owner stops looking at a live bucket.
+         */
+        @Test
+        fun `an object the store refused to return is a fault and not an empty memory`() {
+            bucket(stored("${ownerPrefix}agents/Research/root/MEMORY.md"))
+            `when`(minioClient.getObject(any<GetObjectArgs>())).thenThrow(RuntimeException("connection reset"))
+
+            val failure = assertThrows(BizException::class.java) { gateway.readAgent(tenantId, userId, "Research") }
+
+            assertEquals(503, failure.code)
+            assertTrue(failure.message!!.contains("could not be read"), failure.message ?: "")
+        }
+
+        /** Gone between the listing and the read is a real state — a concurrent delete, or the sweep of the same owner. */
+        @Test
+        fun `an object that went away between the listing and the read is empty, not a fault`() {
+            bucket(stored("${ownerPrefix}agents/Research/root/MEMORY.md"))
+            val missing = missingObject()
+            `when`(minioClient.getObject(any<GetObjectArgs>())).thenThrow(missing)
+
+            val detail = gateway.readAgent(tenantId, userId, "Research")
+
+            assertEquals("", detail?.content)
+        }
+
+        /**
+         * A minio 404/`NoSuchKey`, the answer an object store gives for a key that is not there.
+         *
+         * Each mock is stubbed on its own line: beginning a nested stubbing while the outer one is still
+         * unfinished is what Mockito reports as `UnfinishedStubbing`, not as a useful failure message.
+         */
+        private fun missingObject(): ErrorResponseException {
+            val http = mock(okhttp3.Response::class.java)
+            `when`(http.code).thenReturn(404)
+            val error = mock(io.minio.messages.ErrorResponse::class.java)
+            `when`(error.code()).thenReturn("NoSuchKey")
+            val failure = mock(ErrorResponseException::class.java)
+            `when`(failure.response()).thenReturn(http)
+            `when`(failure.errorResponse()).thenReturn(error)
+            return failure
+        }
+
+        /**
          * The path variable is the traversal boundary, and it is refused before a prefix is built, so a
          * caller cannot make the gateway ask for another owner's namespace at all.
          */
@@ -438,11 +492,51 @@ class MemoryStoreGatewayTest {
                 stored("${ownerPrefix}agents/Ops/root/MEMORY.md"),
             )
 
-            val removed = gateway.deleteUser(tenantId, userId)
+            val removed = gateway.deleteUser(listOf(tenantId), userId)
 
             assertEquals(3, removed)
             assertEquals(listOf("harnax-store" to ownerPrefix), listedPrefixes())
             deletedKeys().forEach { (_, key) -> assertTrue(key.startsWith(ownerPrefix), key) }
+        }
+
+        /**
+         * The bucket is keyed on the tenant of the agent that was talked to, not on the row's home tenant, so
+         * an owner who is a member of two of them has memory under both. Sweeping only `sys_user.tenant_id`
+         * leaves the other one behind and reports the account as cleaned.
+         */
+        @Test
+        fun `every membership named by the caller gets its own prefix`() {
+            bucketByPrefix(
+                ownerPrefix to listOf(stored("${ownerPrefix}agents/Research/root/MEMORY.md")),
+                "store/tenants/5/users/7/" to listOf(stored("store/tenants/5/users/7/agents/Ops/root/MEMORY.md")),
+            )
+
+            val removed = gateway.deleteUser(listOf(4L, 5L), userId)
+
+            assertEquals(2, removed)
+            assertEquals(
+                listOf("harnax-store" to ownerPrefix, "harnax-store" to "store/tenants/5/users/7/"),
+                listedPrefixes(),
+            )
+        }
+
+        /** A membership listed twice is one prefix, so a repeated tenant cannot delete the same key twice. */
+        @Test
+        fun `the same tenant named twice is swept once`() {
+            bucket(stored("${ownerPrefix}agents/Research/root/MEMORY.md"))
+
+            val removed = gateway.deleteUser(listOf(tenantId, tenantId), userId)
+
+            assertEquals(1, removed)
+            assertEquals(listOf("harnax-store" to ownerPrefix), listedPrefixes())
+        }
+
+        /** The sweep of an owner with no membership at all addresses nothing, rather than a guessed workspace. */
+        @Test
+        fun `no memberships delete nothing`() {
+            assertEquals(0, gateway.deleteUser(emptyList(), userId))
+            verify(minioClient, never()).listObjects(any<ListObjectsArgs>())
+            verify(minioClient, never()).removeObject(any<RemoveObjectArgs>())
         }
 
         /** A listing that returns a foreign key must not get that key deleted, prefix or no prefix. */
@@ -453,7 +547,7 @@ class MemoryStoreGatewayTest {
                 stored("store/tenants/5/users/8/agents/Research/root/MEMORY.md"),
             )
 
-            assertEquals(1, gateway.deleteUser(tenantId, userId))
+            assertEquals(1, gateway.deleteUser(listOf(tenantId), userId))
             assertEquals(listOf("harnax-store" to "${ownerPrefix}agents/Research/root/MEMORY.md"), deletedKeys())
         }
 
@@ -462,16 +556,49 @@ class MemoryStoreGatewayTest {
             bucket(stored("${ownerPrefix}agents/Research/root/MEMORY.md"))
             doThrow(RuntimeException("access denied")).`when`(minioClient).removeObject(any<RemoveObjectArgs>())
 
-            assertThrows(BizException::class.java) { gateway.deleteUser(tenantId, userId) }
+            assertThrows(BizException::class.java) { gateway.deleteUser(listOf(tenantId), userId) }
         }
 
         @Test
         fun `another user id is only ever another owner prefix`() {
             bucket()
 
-            gateway.deleteUser(tenantId, "8")
+            gateway.deleteUser(listOf(tenantId), "8")
 
             assertEquals(listOf("harnax-store" to "store/tenants/4/users/8/"), listedPrefixes())
+        }
+    }
+
+    /**
+     * `harnax.memory.tenant-scoped` decides the key on the writer's side, and this side has to follow the same
+     * env var: with it off the runtime writes `store/users/<uid>/…`, and a gateway that kept prefixing the
+     * tenant would list an empty area and tell a live owner they have no memory.
+     */
+    @Nested
+    @DisplayName("A deployment with unscoped memory keys")
+    inner class UnscopedTenantKeying {
+
+        private fun unscopedGateway() = MemoryStoreGateway(clientProvider, propertiesProvider, objectMapper, false)
+
+        @Test
+        fun `the listing drops the tenant from the owner prefix`() {
+            bucket(stored("store/users/7/agents/Research/root/MEMORY.md"))
+            serveWrapper("- mine")
+
+            val agents = unscopedGateway().listAgents(tenantId, userId)
+
+            assertEquals(listOf("harnax-store" to "store/users/7/"), listedPrefixes())
+            assertEquals(listOf("Research"), agents.map { it.agentId })
+        }
+
+        @Test
+        fun `the sweep of an owner is one prefix, whichever tenant the agent lived in`() {
+            bucket(stored("store/users/7/agents/Research/root/MEMORY.md"))
+
+            val removed = unscopedGateway().deleteUser(listOf(4L, 5L), userId)
+
+            assertEquals(1, removed)
+            assertEquals(listOf("harnax-store" to "store/users/7/"), listedPrefixes())
         }
     }
 
@@ -492,7 +619,7 @@ class MemoryStoreGatewayTest {
         fun `a blank store bucket is refused before any key is built`() {
             `when`(propertiesProvider.ifAvailable).thenReturn(AdminMinioProperties().apply { storeBucket = "" })
 
-            val failure = assertThrows(BizException::class.java) { gateway.deleteUser(tenantId, userId) }
+            val failure = assertThrows(BizException::class.java) { gateway.deleteUser(listOf(tenantId), userId) }
 
             assertEquals(503, failure.code)
             verify(minioClient, never()).removeObject(any<RemoveObjectArgs>())

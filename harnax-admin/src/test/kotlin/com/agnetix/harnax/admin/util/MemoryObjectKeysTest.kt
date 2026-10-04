@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Test
  * Admin reads that same bucket, so a key that differs by one character is a memory file admin cannot see,
  * and a key that differs in the wrong direction is somebody else's file. The exact strings below are the
  * contract; they are written out rather than computed, so a change in either module breaks this test.
+ * The write side measures the same strings against a live MinIO in `MemoryObjectKeyCrossCheckTest`
+ * (harnax-harness-core); the two tests share no code, so moving one without the other is a real risk.
  */
 @DisplayName("MemoryObjectKeys - the store layout admin reads memory out of")
 class MemoryObjectKeysTest {
@@ -86,6 +88,50 @@ class MemoryObjectKeysTest {
         }
     }
 
+    /**
+     * `harness.memory.tenant-scoped` decides whether the tenant is in the key at all, and the same env var
+     * has to decide it here: a deployment that turned it off writes `store/users/<uid>/…`, and an admin that
+     * kept prefixing `tenants/<id>` would list an empty area and report that owner as having no memory.
+     */
+    @Nested
+    @DisplayName("The tenant-scoped switch")
+    inner class TenantScope {
+
+        @Test
+        fun `an unscoped namespace drops the tenant pair from the front`() {
+            assertEquals(
+                listOf("users", "u-1", "agents", "Research", "root"),
+                MemoryObjectKeys.rootNamespace(4L, "u-1", "Research", tenantScoped = false),
+            )
+            assertEquals(
+                listOf("users", "u-1", "agents", "Research", "memory"),
+                MemoryObjectKeys.memoryNamespace(4L, "u-1", "Research", tenantScoped = false),
+            )
+        }
+
+        @Test
+        fun `an unscoped key and prefix stop at the user`() {
+            assertEquals(
+                "store/users/u-1/agents/Research/root/MEMORY.md",
+                MemoryObjectKeys.memoryMdKey(prefix, 4L, "u-1", "Research", tenantScoped = false),
+            )
+            assertEquals("store/users/u-1/", MemoryObjectKeys.ownerPrefix(prefix, 4L, "u-1", tenantScoped = false))
+            assertEquals(
+                "store/users/u-1/agents/Research/",
+                MemoryObjectKeys.agentPrefix(prefix, 4L, "u-1", "Research", tenantScoped = false),
+            )
+        }
+
+        /** Off means one owner shares a bucket area across tenants, so a sweep of that owner is one prefix. */
+        @Test
+        fun `two tenants of one unscoped owner are the same prefix`() {
+            assertEquals(
+                MemoryObjectKeys.ownerPrefix(prefix, 4L, "u-1", tenantScoped = false),
+                MemoryObjectKeys.ownerPrefix(prefix, 5L, "u-1", tenantScoped = false),
+            )
+        }
+    }
+
     @Nested
     @DisplayName("agentId allow-pattern")
     inner class AgentIdValidation {
@@ -94,6 +140,19 @@ class MemoryObjectKeysTest {
         fun `an ordinary agent name is accepted`() {
             listOf("Research", "assistant", "my-agent", "ops_agent", "v2.1", "研究助手").forEach { name ->
                 assertEquals(true, MemoryObjectKeys.isValidAgentId(name), "$name should be addressable")
+            }
+        }
+
+        /**
+         * `agent.name` is a free `varchar(100)` with no pattern on the create form, so these names exist in
+         * real deployments. They are one object key segment as written, and refusing them here would drop
+         * that agent's memory from the owner's page and make it undeletable — a name the runtime could write
+         * is a name admin has to be able to address.
+         */
+        @Test
+        fun `a name with punctuation or a space inside is still addressable`() {
+            listOf("Ops Agent", "summariser (beta)", "研究 助手", "agent,name", "助手：周报", "a(b)c", "v1 - draft").forEach { name ->
+                assertEquals(true, MemoryObjectKeys.isValidAgentId(name), "'$name' should be addressable")
             }
         }
 

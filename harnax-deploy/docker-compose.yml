@@ -158,6 +158,11 @@ services:
       # stdio MCP servers are processes agent-service starts, and that container mounts the host
       # Docker socket - off until the runtime is isolated. One variable also sets the agent side.
       HARNAX_MCP_STDIO_ENABLED: ${HARNAX_MCP_STDIO_ENABLED:-false}
+      # Which memory bucket the memory page reads and clears: it has to carry the same value as the
+      # agent-service key of this name, because that is what the runtime wrote with. One side flipped
+      # does not leak another owner's memory - it keys a prefix that has nothing under it, so every
+      # owner's memory reads as empty.
+      HARNAX_MEMORY_TENANT_SCOPED: ${HARNAX_MEMORY_TENANT_SCOPED:-true}
       # Router URL (for internal service communication)
       HARNAX_ROUTER_URL: ${HARNAX_ROUTER_URL:-http://router:8081}
       # Scheduler URL (for task trigger/start/pause)
@@ -521,7 +526,28 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # Workspace context reads AGENTS.md via sandbox filesystem, but sandbox is only
       # active during acting phase — causes noisy SandboxConfigurationException logs.
+      # Memory turns this back on by itself whatever the value below says (that middleware is the only
+      # place the curated MEMORY.md reaches the model), so enabling memory brings that noise with it.
       HARNESS_ENABLE_WORKSPACE_CONTEXT: "false"
+      # Long-term memory: an owner bucket per tenant x user x agent, a curated MEMORY.md in it plus one
+      # append-only ledger per day. Off by default. It is three switches that have to agree - the bucket,
+      # the hooks that extract and consolidate, and the reader above - and enabled=true with the hooks
+      # left off is the one combination that refuses the agent at assembly rather than starting a memory
+      # that silently writes nothing. So the two below flip together, in .env, and only there: every
+      # default here is the same value application.yml already has.
+      HARNESS_ENABLE_MEMORY_HOOKS: ${HARNESS_ENABLE_MEMORY_HOOKS:-false}
+      HARNAX_MEMORY_ENABLED: ${HARNAX_MEMORY_ENABLED:-false}
+      # Model-domain row id doing the extraction and consolidation; 0 keeps each agent's own chat model.
+      HARNAX_MEMORY_MODEL_ID: ${HARNAX_MEMORY_MODEL_ID:-0}
+      # always = one extraction call per turn, throttled = at most one per the gap below (the store's
+      # compare-and-swap is what makes that safe), never = the ledger stops growing.
+      HARNAX_MEMORY_FLUSH_TRIGGER: ${HARNAX_MEMORY_FLUSH_TRIGGER:-throttled}
+      HARNAX_MEMORY_FLUSH_MIN_GAP: ${HARNAX_MEMORY_FLUSH_MIN_GAP:-5m}
+      # Whether the model gets memory_search / memory_get / memory_save.
+      HARNAX_MEMORY_TOOLS_ENABLED: ${HARNAX_MEMORY_TOOLS_ENABLED:-true}
+      # Bucket key: on = store/tenants/<tenantId>/users/<userId>/agents/<agent>/..., off = the same
+      # without the tenant pair. The admin reader holds the same variable; see the admin service.
+      HARNAX_MEMORY_TENANT_SCOPED: ${HARNAX_MEMORY_TENANT_SCOPED:-true}
       # Second line of defence for stdio MCP servers: this is the runtime that would spawn the
       # process. Admin holds such rows back from delivery as well; both have to be on to run one.
       HARNAX_MCP_STDIO_ENABLED: ${HARNAX_MCP_STDIO_ENABLED:-false}

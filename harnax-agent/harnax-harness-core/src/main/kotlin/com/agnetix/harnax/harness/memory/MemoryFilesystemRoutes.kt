@@ -35,7 +35,7 @@ object MemoryFilesystemRoutes {
 
     fun routes(
         store: BaseStore,
-        tenantId: Long,
+        tenantId: Long?,
         userId: String,
         agentId: String,
         tenantScoped: Boolean,
@@ -46,20 +46,23 @@ object MemoryFilesystemRoutes {
 
     /**
      * The bucket tuple, one segment pair per owner dimension: `tenants/<id>/users/<uid>/agents/<agentId>`
-     * plus this route's own tail. `agents/<agentId>` is kept because the framework writes it into every
-     * default route — dropping it would make an agent's memory follow the user across agents, which is a
-     * different product decision than the one the bucket made here.
+     * plus this route's own tail. [agentId] is `AgentSpec.name`, the value the runtime keys memory by, and
+     * it is kept because the framework writes it into every default route — dropping it would make an
+     * agent's memory follow the user across agents, which is a different product decision than the one the
+     * bucket made here.
      */
     fun namespace(
-        tenantId: Long,
+        tenantId: Long?,
         userId: String,
         agentId: String,
         tenantScoped: Boolean,
         segment: String,
     ): List<String> = buildList {
         if (tenantScoped) {
+            // The launcher refuses a tenant-scoped agent with no tenant before it reaches this factory, so
+            // a null here is a caller that skipped that check rather than a deployment shape.
             add("tenants")
-            add(tenantId.toString())
+            add(checkNotNull(tenantId) { "tenantScoped memory needs a tenant to key the bucket on" }.toString())
         }
         add("users")
         add(userId)
@@ -70,7 +73,7 @@ object MemoryFilesystemRoutes {
 
     private fun route(
         store: BaseStore,
-        tenantId: Long,
+        tenantId: Long?,
         userId: String,
         agentId: String,
         tenantScoped: Boolean,

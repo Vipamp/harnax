@@ -1173,6 +1173,10 @@ export default {
   'pages.memory.deleteTooltip': 'Delete this memory',
   'pages.memory.deleteConfirm':
     'Delete the memory of {name}? Its curated memory and all daily notes go with it, and nothing can be restored.',
+  'pages.memory.deletedObjects':
+    'Deleted successfully, {count} object(s) removed',
+  'pages.memory.deleteNothingFound':
+    'No memory of this agent was found to delete, nothing was removed',
   'pages.memory.detail.empty': 'No memory detail available',
   'pages.memory.curatedSection': 'Curated memory (MEMORY.md)',
   'pages.memory.dailySection': 'Daily notes',

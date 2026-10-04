@@ -54,6 +54,10 @@ const MemoryDetailDrawer: React.FC<MemoryDetailDrawerProps> = ({
       const res = await getMemoryDetail(agentId);
       if (res.code === 200) {
         setDetail(res.data as API.MemoryDetail);
+      } else if (res.code === 404) {
+        // Admin answers 404 inside the envelope when this agent has no memory object at all. That
+        // is an empty state, not a failure: the Empty below is the right UI and no toast is due.
+        setDetail(undefined);
       } else {
         setDetail(undefined);
         message.error(

@@ -8,7 +8,7 @@
 |---|---|---|
 | 本文档的版本基线 | `agentscope-harness` / `agentscope-core` **2.0.4** | 上游检出 `~/code/opensource/agentscope-java/`，分支 `release/2.0.4`，HEAD `3c1c29c0`；其 `pom.xml:30` `<revision>2.0.4-SNAPSHOT</revision>` |
 | 2.0.4 事实来源 | 上述检出的 `agentscope-harness/src/main/java/` 与 `agentscope-core/src/main/java/`，本篇全部上游锚点都取这里 | 与基线同一份代码，不另解 sources jar |
-| harnax 当前依赖 | 仍钉在 **2.0.2**；本篇任何一支落地前都要先把 `<agent-scope.version>` 改到 2.0.4，这是前置动作不是背景 | 仓库根 `pom.xml:39`（`<agent-scope.version>2.0.2</agent-scope.version>`） |
+| harnax 当前依赖 | **2.0.4**，与本文档基线同版本 | 仓库根 `pom.xml:39`（`<agent-scope.version>2.0.4</agent-scope.version>`） |
 | 记忆的字节落在哪 | MinIO，bucket `harnax-store`、全局前缀 `store/` | `harnax-agent/harnax-agent-service/src/main/resources/application.yml:63,68`、`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/config/MinioConfig.kt:25,29`；对象键形状见同目录 `minio/MinioBaseStore.kt:21` 的类注释样例 `store/agents/myAgent/sessions/sess-123/MEMORY.md` |
 | 这个 store 由谁装配 | 两条分支各建一个 `MinioBaseStore` —— 沙箱分支 `HarnessAgentLauncher.kt:569-572`、非沙箱分支 `:585-588` | 同文件；两档下的键形状必须一致，见第 7 节 |
 | harnax 主数据源 | `harnax_admin` 库 | `.../application.yml:10` |
@@ -16,7 +16,9 @@
 
 锚点约定：上游文件一律省略前缀 `agentscope-harness/src/main/java/io/agentscope/harness/agent/`（`HarnessAgent.java`、`middleware/`、`memory/`、`memory/compaction/`、`filesystem/`、`coordination/`、`tool/`、`workspace/` 全在这一棵树下），core 侧三个文件省略前缀 `agentscope-core/src/main/java/io/agentscope/core/`。harnax 侧 `HarnessAgentLauncher.kt` / `HarnessAgentWrapper.kt` / `HarnessAgentBuilder.kt` 省略前缀 `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/`，同目录的 `HarnessConfig.kt` 与 `SandboxConfig.kt` 在 `config/`、`MinioBaseStore.kt` 在 `minio/`、`HarnessAutoConfiguration.kt` 在 `spring/`，`SessionConfig.kt` 另属 `.../agnetix/harnax/agent/session/`；`DefaultAgentRunner.kt` 省略 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/`，同模块的 `AgentController.kt` 省略 `.../agent/service/controller/`；admin 侧 `SysUserController.kt` 与 `TeamArtifactController.kt` 省略 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/`，`SysUserServiceImpl.kt` 省略 `.../admin/service/impl/`，`AdminMinioConfig.kt` 省略 `.../admin/config/`。两个易踩点：`AgentController.kt` 在 agent-service 与 admin 各有一份，本篇提到的**一律指 agent-service 那一份**（`:104` 是它的 `GET /chat/history/{sessionId}`）；`IsolationScope` 与 `MemoryConfig` 都是上游类型，不是 harnax 的配置类。凡"现在跑成什么样"的断言以 2.0.4 源码为准。
 
-取证方式：源码静态阅读 + 配置比对，未启动任何 harnax 服务。标 **未验** 的条目需实跑或产物级核对后才能当事实用。
+取证方式：方案定稿前是源码静态阅读 + 配置比对，未启动任何 harnax 服务；落地后第 8 节的断言跑在真 `MinioBaseStore`（Testcontainers 起 MinIO）与真装配出来的 agent 上，服务本身仍未启动。
+
+阅读范围：本篇是已执行并合入 `kotlin-dev` 的方案。第 2 节与第 4 节里凡称"harnax 今天/当前"的句子，描述的是执行前的仓库形状；执行后的形状以第 6 节的改动清单与代码为准，第 9 节逐条标注哪些已测掉、哪些仍未验。
 
 ---
 
@@ -87,15 +89,15 @@ core 的长期记忆接口整族标了 `@Deprecated(forRemoval = true, since = "
 | `enableMemoryHooks` | `false` | `true` | 装 flush 与 maintenance 两条钩子，两者在同一个 `!disableMemoryHooks` 块里（`HarnessAgent.java:2563-2599`） |
 | `disableMemoryTools()` | 从未调用，builder 也没有透传 | 新增 `harness.memory.toolsEnabled`，假则调 `disableMemoryTools()` | 今天关不掉。四个工具在 `HarnessAgent.java:2688-2692`，注册条件是 `!disableMemoryTools` |
 | `IsolationScope`（filesystem） | `SESSION` | `SESSION` 不动，记忆走单挂路由 | 见第 3 节 |
-| `flushTrigger` | 缺省 `always()` | **两段式**：CAS 落地前保持 `always()`，落地后才切 `throttled(5m)` | `MemoryConfig.java:240` 的初值是 always，不改等于每轮多付一次模型调用；但事实五证明 `throttled` 在 CAS 缺失的 store 上直接静默，而 `always` 不经闸。所以这一档与 P3 绑死，配置项要能只改配置就切换 |
+| `flushTrigger` | 缺省 `always()` | **两段式已走到第二段**：`throttled(5m)`，由 `HARNAX_MEMORY_FLUSH_TRIGGER` 切换 | `MemoryConfig.java:240` 的初值是 always，不改等于每轮多付一次模型调用；但事实五证明 `throttled` 在 CAS 缺失的 store 上直接静默，而 `always` 不经闸。所以这一档与 P3 绑死，配置项要能只改配置就切换 |
 | `distributedStore` | 沙箱分支才给（`HarnessAgentLauncher.kt:582`） | 保持 | 但它一存在就选中 `StoreBackedPeriodicGate`（`HarnessAgent.java:2409-2412`），于是撞上事实五 |
 
 ## 5. `MemoryConfig` 取定
 
 | 字段 | 取定 | 理由 |
 |---|---|---|
-| `model` | 记忆域专用小模型，按模型域的 code 解析 | `MemoryConfig.java:247-261` 支持独立 model；不配就用主模型（`HarnessAgent.java:2562`）。按事实七，压缩与兜底两条路仍走主模型，这一处要写在验收之外 |
-| `flushTrigger` | 两段式：先 `always()`，`MinioBaseStore` 补上 CAS 后切 `throttled(5m)` | 每轮一次在长会话里等于每轮多付一次抽取调用，但节流档走那把坏闸（事实五）。`throttled` 的语义是首次立即跑、最小间隔只作用于其后（`MemoryConfig.java:45,76-84`） |
+| `model` | 记忆域专用小模型，按模型域的行 id 解析：`HARNAX_MEMORY_MODEL_ID`，`0` 沿用各 agent 自己的主模型 | `MemoryConfig.java:247-261` 支持独立 model；不配就用主模型（`HarnessAgent.java:2562`）。按事实七，压缩与兜底两条路仍走主模型，这一处要写在验收之外 |
+| `flushTrigger` | `throttled(5m)`——两段式的第二段，`MinioBaseStore` 的 CAS 已落地 | 每轮一次在长会话里等于每轮多付一次抽取调用，但节流档走那把坏闸（事实五）。`throttled` 的语义是首次立即跑、最小间隔只作用于其后（`MemoryConfig.java:45,76-84`） |
 | `consolidationMinGap` | `30m`（显式钉上缺省值，`MemoryConfig.java:58`） | 让"每桶每 30 分钟至多一次整写"成为可判定条款，而不是缺省的副作用 |
 | `consolidationMaxTokens` | `4_000`（缺省，`MemoryConfig.java:55`） | 整篇 `MEMORY.md` 的预算，直接决定注入的 token 上限 |
 | `dailyFileRetentionDays` / `sessionRetentionDays` | `90` / `180`（缺省，`MemoryConfig.java:61,64`） | 日报归档天数与会话 JSONL 保留天数；本轮不引入新的清理器 |
@@ -112,10 +114,11 @@ core 的长期记忆接口整族标了 `@Deprecated(forRemoval = true, since = "
   - `harness/minio/MinioBaseStore.kt` 补 `putIfVersion` 与带版本的 `get`（事实五是硬前置，且它同时决定节流档抽取会不会跑）。MinIO 侧可用条件写或"版本号对象 + `If-Match`"实现；确实做不到就在装配时显式改选 `LocalPeriodicGate`（代价是每副本各整写一次），二选一，不许沉默。
   - `HarnessAgentBuilder.kt` 加三个透传：`memory(MemoryConfig)`、`disableMemoryTools()`、`filesystemRoute(String, AbstractFilesystem)`，对应上游 `HarnessAgent.java:1893,2232,1862`。
   - `HarnessAgentLauncher.kt` 的记忆装配段：按第 3 节与第 4 节挂记忆路由、装 `MemoryConfig` 与三个开关。路由的归属取自装配入参 `userIdentifier.userId`，取不到就整域关掉并 warn（见第 3 节「匿名调用」行）。`HarnessAgentWrapper.kt` 的 `userId` 因此保持不填——它进 `RuntimeContext` 就成了 `agent_state` 的分桶键，而历史读取按空用户寻址（事实四）。
-  - `harness/config/HarnessConfig.kt` 与 `spring/HarnessAutoConfiguration.kt`：新增 `harness.memory.*`（enabled、model-code、flush-min-gap、tools-enabled、桶形状），默认 `enabled = false`，绑定形状照现有 `enableMemoryHooks`（`HarnessConfig.kt:23-24`、`HarnessAutoConfiguration.kt:82-83,246-247`）。两条分支上的 `MinioBaseStore`（`:569-572`、`:585-588`）要同时换成补了 CAS 的那一份。
+  - `harness/config/HarnessConfig.kt` 与 `spring/HarnessAutoConfiguration.kt`：新增 `harness.memory.*`（`enabled`、`model-id`、`flush-trigger`、`flush-min-gap`、`tools-enabled`、`tenant-scoped` 桶形状），默认 `enabled = false`，绑定形状照现有 `enableMemoryHooks`（`HarnessConfig.kt:23-24`、`HarnessAutoConfiguration.kt:82-83,246-247`）。两条分支上的 `MinioBaseStore`（`:569-572`、`:585-588`）要同时换成补了 CAS 的那一份。
 - **harnax-agent-service**：`clearSession` 明确不清记忆（该动作只归会话数据）。
-- **harnax-admin**：记忆的读与删两个接口，作用域限于当前登录用户自己的桶，供页面核对与合规删除；删用户的记忆清理挂在既有删用户链上（`SysUserController.kt:119` 的 `DELETE /{id}`，实现 `SysUserServiceImpl.kt`），按桶前缀清 `root/MEMORY.md` 与 `memory/` 下全部对象；admin 已有自己的 MinIO 客户端（`AdminMinioConfig.kt`）与按对象读写 MinIO 的先例（`TeamArtifactController.kt`），这两个接口直接照那一形状走，不经 agent-service；记忆小模型复用模型域。
+- **harnax-admin**：记忆的读与删两个接口，作用域限于当前登录用户自己的桶，供页面核对与合规删除；删用户的记忆清理挂在既有删用户链上（`SysUserController.kt:119` 的 `DELETE /{id}`，实现 `SysUserServiceImpl.kt`），按桶前缀清 `root/MEMORY.md` 与 `memory/` 下全部对象，且**该用户所属的每一个租户各清一遍**（记忆桶按租户分键，只清当前租户会留下其余租户的对象）；admin 另读一颗与写入侧同名的开关 `harnax.memory.tenant-scoped`（`HARNAX_MEMORY_TENANT_SCOPED`，与 runtime 的 `harness.memory.tenant-scoped` 同值），关掉后桶键不含租户对，读侧必须跟着走，否则整桶记忆表现为空；store 拒绝一次读要答成故障（信封 503），不许伪装成"这个 owner 没有记忆"。admin 已有自己的 MinIO 客户端（`AdminMinioConfig.kt`）与按对象读写 MinIO 的先例（`TeamArtifactController.kt`），这两个接口直接照那一形状走，不经 agent-service；记忆小模型复用模型域。
 - **harnax-session-router**：本轮不加新转发 —— 记忆不是实例本地状态，而是共享 store 里的对象，按第 3 节的桶键寻址；同一用户的两个会话即使绑在不同实例上，也读到同一份 `MEMORY.md`。抽取只在当次调用所在实例异步发生，不需要跨实例寻址。
+- **harnax-deploy**：`docker-compose.yml` 给 agent-service 注入 `HARNESS_ENABLE_MEMORY_HOOKS` 与 `HARNAX_MEMORY_ENABLED` / `_MODEL_ID` / `_FLUSH_TRIGGER` / `_FLUSH_MIN_GAP` / `_TOOLS_ENABLED` / `_TENANT_SCOPED`，给 admin 注入 `HARNAX_MEMORY_TENANT_SCOPED`，每一行的 `${VAR:-default}` 都取 application.yml 里同一个值——不在 `.env` 里给值的部署，行为与本域存在之前一致。这一层透传是这一域在集群部署里能不能打开的分界：compose 用的是逐服务的 `environment:` 而不是 `env_file`，没有对应行的变量在容器里根本不存在，`.env` 里单写 `HARNAX_MEMORY_ENABLED=true` 只会停在工作树。域的开法记在 `.env.example` 与 `docs/deploy-harnax-agent-service.md`、`docs/deploy-harnax-admin.md` 的环境表、`docs/deploy-harnax-harness-core.md` 的配置参考里：`HARNAX_MEMORY_ENABLED` 与 `HARNESS_ENABLE_MEMORY_HOOKS` 要一起给，只给前者会在装配时拒掉整个智能体（连普通对话一起起不来），而 compose 钉成 `false` 的 `HARNESS_ENABLE_WORKSPACE_CONTEXT` 不看这一域的请求——`enabled=true` 会强制打开它，那条 `SandboxConfigurationException` 噪声随记忆一起回来。
 - **harnax-webui / harnax-ios**：只做 admin 侧那一页；聊天页与 App 不出现记忆入口。
 
 ## 7. 边界、失败与限制
@@ -150,7 +153,18 @@ core 的长期记忆接口整族标了 `@Deprecated(forRemoval = true, since = "
 
 跑法沿用本仓既有配方（JDK 21、先探 Docker 再决定排除 IT）。桶的读写在单测里可以用 `InMemoryStore` 顶，但第 4 条必须打在 `MinioBaseStore` 的真实现上，否则正好绕过事实五。
 
-## 9. 未验（需要实跑或产物级核对）
+## 9. 验证与未验（逐条对账）
+
+编号沿用本节正文六条，正文保持定稿时的措辞：
+
+| 条 | 状态 | 判据 |
+|---|---|---|
+| 1 | 已验 | 覆盖关系与两条装配分支由 `HarnessAgentLauncherMemoryTest` 的 `the two memory files move to the owner bucket while everything else stays put` 与 `a sandbox deployment gets the same owner bucket for its memory` 断言，两条都带"其余文件留在原处"的反证；`glob("*.md", "memory")` 走的是桶由 `MemoryBucketPipelineTest.the ledger glob answers from the owner bucket` 断言 |
+| 2 | 已验（MinIO） | `MinioBaseStoreCasTest` 在真 MinIO 上断言 CAS 建槽、版本不符退 `false`、多写者只放一个、以及上游 `StoreBackedPeriodicGate` 按窗口只放行一次。其它 S3 兼容档是否给得出 CAS 仍未验 |
+| 3 | 已验 | `MemoryGateFalsificationTest` 直接以 `MemoryBackgroundTasks.awaitQuiescence(60s)` 当落盘探针，进程级计数没有把用例耗时变成阻塞问题 |
+| 4 | 未验 | 抽取质量要真模型，替身 model 测不出来 |
+| 5 | 未验 | 只断了布尔形状（`on needs the workspace context even when that knob stayed off`），`AGENTS.md` 与 `knowledge` 注入回来之后的 token 与行为变化没测 |
+| 6 | 已验（挂桶侧） | `MemoryBucketPipelineTest.the memory pipeline leaves no copy on the host disk` 断言抽取与整写两条腿都不在宿主盘留 `MEMORY.md` 与日报；未挂桶（匿名）装配下宿主回退到底读到什么仍未验 |
 
 1. 单挂路由与 spec 内置路由的**覆盖**关系：源码层成立（外层 Composite 先匹配），但 `MEMORY.md` 与 `memory/` 两条前缀同时被覆盖时，`glob("*.md", "memory")` 走哪一层要实测。沙箱分支的 routes 走的是 `RoutedSandboxFilesystem`（`HarnessAgent.java:2451-2455`），记忆读写不落进容器这条同样需要实测。
 2. MinIO 能否给出 CAS 语义（条件写、版本号对象或 `If-Match`），取决于部署的兼容档位。若不行，`LocalPeriodicGate` 在多副本下的真实代价（每副本各整写一次 `MEMORY.md`）需要实测一次才好选边。
@@ -159,11 +173,13 @@ core 的长期记忆接口整族标了 `@Deprecated(forRemoval = true, since = "
 5. `enableWorkspaceContext = true` 的连带影响面：本轮只在测试第 5 条断言布尔形状，`AGENTS.md` 与 `knowledge` 注入回来之后的 token 与行为变化没有测。
 6. 宿主盘的两个根不一致：`readWithOverride` 的回退读的是不带命名空间的 `workspace/MEMORY.md`（`WorkspaceManager.java:823`），而 `listMemoryFilePaths` 扫的是 `resolveRuntimeDataPath(rc, MEMORY_MD)`（`:960`）。两者不同根，`memory_search` 能列到而 `<memory_context>` 读到的可能不是同一份，反之亦然 —— 需要实测确认在挂了所有者桶与没挂桶（第 7 节「投递没有指名用户」那一行）两种装配下各读到的到底是什么。
 
-## 10. 明确不在本轮 + 待拍板
+## 10. 明确不在本轮 + 拍板结果
 
 不在本轮：记忆内容的页面编辑与语义检索、`extensions-mem`（Mem0、ReMe、百炼）与 `agentscope-service` 的托管记忆服务、`MEMORY.md` 的版本历史、日报归档的回读、跨 agent 的用户记忆合并、iOS 与聊天页的任何改动、以及把记忆用于跨会话检索。
 
-| 待拍板 | 选项与推荐 |
+五处拍板都按表中"推荐"项执行，第 6 节的改动清单即其落地形状；本节保留备查，不是待定项。
+
+| 拍板项 | 选项与推荐 |
 |---|---|
 | P1 记忆归属维度 | 推荐 `tenant × user × agent` 单挂路由（第 3 节）；次选纯 `user × agent`（改动最小，但同 `userId` 跨租户同桶）；不建议把 filesystem 的 `IsolationScope` 整体翻成 `USER` —— 它一处管三样（远端键元组、本地命名空间、flush 与 maintenance 的节流键，见第 3 节），翻它是搬家 |
 | P2 存储落点 | 推荐 A（MinIO 文件层，不加表）；B（MySQL 投影 `agent_memory`）只在要页面编辑或语义检索时才有价值，而这两件都排在上一段之外 |

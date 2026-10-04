@@ -282,10 +282,12 @@ class SysUserServiceImpl(
 
             // Long-term memory is not a row: the agent runtime wrote into this owner's bucket in the store
             // on every conversation, and once the account is gone nothing can name those objects again.
+            // The memberships above decide where those objects are — the bucket is keyed on the tenant of the
+            // agent that was talked to — so all of them are swept, not only the row's home tenant.
             // The sweep runs last on purpose — this method is a transaction, so a store that cannot delete
             // rolls the account back and the admin retries the same call, while objects deleted first
             // would be lost for a user who survived the failure.
-            userMemoryCleaner.deleteForUser(user)
+            userMemoryCleaner.deleteForUser(user, userTenants.map { it.tenantId })
         }
         return deleted
     }

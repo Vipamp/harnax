@@ -635,18 +635,24 @@ class HarnessAgentLauncher(
                 // The same tuple on both assembly branches, so moving a deployment between them does not
                 // read as "the memory disappeared" for the same owner.
                 MemoryFilesystemRoutes
-                    .routes(store, tenantId ?: 0L, owner, agentSpec.name, memory.tenantScoped)
+                    .routes(store, tenantId, owner, agentSpec.name, memory.tenantScoped)
                     .forEach { (prefix, route) -> agentBuilder.filesystemRoute(prefix, route) }
                 agentBuilder.memory(MemoryConfigFactory.build(memory, memoryModel(memory)))
                 // Upstream chooses the gate from the distributed store alone, so say which one this agent got:
                 // a deployment where consolidation never fires otherwise reads exactly like a broken bucket.
+                // The two hooks share that gate under two slot keys, each prefixed with its own name and keyed
+                // on the isolation scope the memory middleware got — which follows the filesystem spec, never
+                // the owner, whose id is not part of either key.
                 val sharedGate = harnessConfig.sandbox.enabled && snapshotSpec != null
+                val gateScope = if (sharedGate) harnessConfig.sandbox.isolationScope else IsolationScope.SESSION
                 log.info(
-                    "Agent '{}' memory uses the {} consolidation gate: the flush window and the consolidation " +
-                        "bound are {}",
+                    "Agent '{}' memory uses the {} consolidation gate: 'memory-flush:{}' and " +
+                        "'memory-maintenance:{}' are two slots of it, {}",
                     agentSpec.name,
                     if (sharedGate) "store-backed" else "local",
-                    if (sharedGate) "shared by every replica of this owner" else "per replica",
+                    gateScope,
+                    gateScope,
+                    if (sharedGate) "shared by every replica" else "counted in this replica alone",
                 )
             }
         }
@@ -661,7 +667,12 @@ class HarnessAgentLauncher(
         if (!memoryEnabled || !memory.toolsEnabled) {
             agentBuilder.disableMemoryTools()
         }
-        if (!harnessConfig.enableMemoryHooks) {
+        if (!harnessConfig.enableMemoryHooks || (memory.enabled && !memoryEnabled)) {
+            // The second half is the degraded domain: memory was asked for and this delivery could not bind
+            // an owner to it. Left installed, the hooks keep extracting into the framework's own default
+            // memory — the host directory, or whichever isolation scope the sandbox picked — on the very
+            // agent the log above just said has no memory. An operator who turns the hooks on with memory
+            // off is a different case, and stays as they asked.
             agentBuilder.disableMemoryHooks()
         }
         if (!harnessConfig.enableSessionPersistence) {
