@@ -75,6 +75,29 @@ class InternalApiAuthFilterTest {
             assertNotNull(chain.request)
             assertEquals(HttpServletResponse.SC_OK, response.status)
         }
+
+        @Test
+        @DisplayName("memory endpoints - 任何 Authorization 形态都放行")
+        fun `doFilter should pass through the memory endpoints whatever the header carries`() {
+            // The memory endpoints answer to a logged-in session, so they must stay outside this filter's
+            // prefix. Were `/api/admin/memory` ever gated here, the platform's shared secret alone would list
+            // an owner's agent memory without anybody logging in — and the converse matters too: a page
+            // request that carries no secret at all has to reach Spring Security, which is what actually
+            // refuses it.
+            val filter = createFilter()
+            for (uri in listOf("/api/admin/memory", "/api/admin/memory/Research")) {
+                for (header in listOf(null, "Bearer $CORRECT_SECRET", "Bearer wrong-secret")) {
+                    val request = buildRequest(uri, authHeader = header)
+                    val response = MockHttpServletResponse()
+                    val chain = MockFilterChain()
+
+                    filter.doFilter(request, response, chain)
+
+                    assertNotNull(chain.request, "$uri must reach the rest of the chain with header=$header")
+                    assertEquals(HttpServletResponse.SC_OK, response.status, "$uri must not be answered by this filter")
+                }
+            }
+        }
     }
 
     @Nested

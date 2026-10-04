@@ -56,6 +56,13 @@ export default [
         path: '/agent/task',
         component: './agent-task',
       },
+      {
+        // 自助合规页：每个登录用户都要能看到并清掉自己智能体的记忆，所以不加 access
+        name: 'memory',
+        icon: 'book',
+        path: '/agent/memory',
+        component: './memory',
+      },
     ],
   },
   {

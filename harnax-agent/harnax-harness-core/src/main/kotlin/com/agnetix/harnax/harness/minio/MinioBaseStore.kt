@@ -7,6 +7,7 @@ import io.minio.ListObjectsArgs
 import io.minio.MinioClient
 import io.minio.PutObjectArgs
 import io.minio.RemoveObjectArgs
+import io.minio.errors.ErrorResponseException
 import org.slf4j.LoggerFactory
 import tools.jackson.databind.ObjectMapper
 import tools.jackson.module.kotlin.jacksonObjectMapper
@@ -37,38 +38,84 @@ class MinioBaseStore(
     private val log = LoggerFactory.getLogger(MinioBaseStore::class.java)
 
     override fun get(namespace: List<String>, key: String): StoreItem? {
-        val objectKey = buildKey(namespace, key)
-        return try {
-            val stream = minioClient.getObject(
-                GetObjectArgs.builder()
-                    .bucket(bucketName)
-                    .`object`(objectKey)
-                    .build(),
-            )
-            val json = stream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
-            val wrapper = objectMapper.readValue(json, StoreWrapper::class.java)
-            StoreItem(wrapper.key, wrapper.value)
-        } catch (e: Exception) {
-            log.debug("[minio-store] get() not found: key={}", objectKey)
-            null
-        }
+        val record = load(buildKey(namespace, key)) ?: return null
+        return StoreItem(record.wrapper.key, record.wrapper.value, record.wrapper.version)
     }
 
     override fun put(namespace: List<String>, key: String, value: Map<String, Any>) {
         val objectKey = buildKey(namespace, key)
-        val wrapper = StoreWrapper(key, value)
-        val json = objectMapper.writeValueAsString(wrapper)
-        val bytes = json.toByteArray(StandardCharsets.UTF_8)
-        minioClient.putObject(
-            PutObjectArgs.builder()
+        val version = (load(objectKey)?.wrapper?.version ?: 0L) + 1
+        write(objectKey, key, value, version)
+    }
+
+    override fun putIfVersion(
+        namespace: List<String>,
+        key: String,
+        value: Map<String, Any>,
+        expectedVersion: Long,
+    ): Boolean {
+        val objectKey = buildKey(namespace, key)
+        val current = load(objectKey)
+        val version = current?.wrapper?.version ?: 0L
+        if (version != expectedVersion) return false
+        val precondition = when {
+            current == null -> mapOf("If-None-Match" to "*")
+            current.etag != null -> mapOf("If-Match" to current.etag)
+            else -> return false
+        }
+        return write(objectKey, key, value, version + 1, precondition)
+    }
+
+    private fun load(objectKey: String): Record? = try {
+        minioClient.getObject(
+            GetObjectArgs.builder()
                 .bucket(bucketName)
                 .`object`(objectKey)
-                .stream(ByteArrayInputStream(bytes), bytes.size.toLong(), -1)
-                .contentType("application/json")
                 .build(),
-        )
-        log.debug("[minio-store] put() key={}", objectKey)
+        ).use { response ->
+            val json = response.bufferedReader(StandardCharsets.UTF_8).readText()
+            Record(objectMapper.readValue(json, StoreWrapper::class.java), response.headers()["ETag"])
+        }
+    } catch (e: Exception) {
+        log.debug("[minio-store] object not readable: key={}", objectKey)
+        null
     }
+
+    private fun write(
+        objectKey: String,
+        key: String,
+        value: Map<String, Any>,
+        version: Long,
+        precondition: Map<String, String> = emptyMap(),
+    ): Boolean {
+        val json = objectMapper.writeValueAsString(StoreWrapper(key, value, version))
+        val bytes = json.toByteArray(StandardCharsets.UTF_8)
+        val builder = PutObjectArgs.builder()
+            .bucket(bucketName)
+            .`object`(objectKey)
+            .stream(ByteArrayInputStream(bytes), bytes.size.toLong(), -1)
+            .contentType("application/json")
+        if (precondition.isNotEmpty()) {
+            builder.extraHeaders(precondition)
+        }
+        return try {
+            minioClient.putObject(builder.build())
+            log.debug("[minio-store] write() key={} version={}", objectKey, version)
+            true
+        } catch (e: ErrorResponseException) {
+            if (e.response().code == 412) {
+                log.debug("[minio-store] write() precondition failed: key={}", objectKey)
+                false
+            } else {
+                throw e
+            }
+        }
+    }
+
+    private class Record(
+        val wrapper: StoreWrapper,
+        val etag: String?,
+    )
 
     override fun search(namespace: List<String>, limit: Int, offset: Int): List<StoreItem> {
         val prefix = buildPrefix(namespace)
@@ -104,7 +151,7 @@ class MinioBaseStore(
                 )
                 val json = stream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
                 val wrapper = objectMapper.readValue(json, StoreWrapper::class.java)
-                items.add(StoreItem(wrapper.key, wrapper.value))
+                items.add(StoreItem(wrapper.key, wrapper.value, wrapper.version))
             } catch (e: Exception) {
                 log.warn("[minio-store] search() failed to read object {}: {}", objectKey, e.message)
             }
@@ -163,5 +210,6 @@ class MinioBaseStore(
     data class StoreWrapper(
         val key: String,
         val value: Map<String, Any>,
+        val version: Long = 0L,
     )
 }

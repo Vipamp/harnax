@@ -1,0 +1,189 @@
+package com.agnetix.harnax.admin.util
+
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Nested
+import org.junit.jupiter.api.Test
+
+/**
+ * The memory bucket keys, asserted against the strings the agent runtime writes.
+ *
+ * `MinioBaseStore` (harnax-harness-core) builds every object key as `keyPrefix + namespace + "/" + itemKey`
+ * and `MemoryFilesystemRoutes` builds the namespace as `tenants/<id>/users/<uid>/agents/<agentId>/<tail>`.
+ * Admin reads that same bucket, so a key that differs by one character is a memory file admin cannot see,
+ * and a key that differs in the wrong direction is somebody else's file. The exact strings below are the
+ * contract; they are written out rather than computed, so a change in either module breaks this test.
+ */
+@DisplayName("MemoryObjectKeys - the store layout admin reads memory out of")
+class MemoryObjectKeysTest {
+
+    private val prefix = MemoryObjectKeys.DEFAULT_KEY_PREFIX
+
+    @Nested
+    @DisplayName("Exact object keys")
+    inner class Keys {
+
+        @Test
+        fun `the curated layer is keyed under the root route segment`() {
+            assertEquals(
+                "store/tenants/4/users/u-1/agents/Research/root/MEMORY.md",
+                MemoryObjectKeys.memoryMdKey(prefix, 4L, "u-1", "Research"),
+            )
+        }
+
+        @Test
+        fun `one daily ledger is keyed under the memory route segment`() {
+            assertEquals(
+                "store/tenants/4/users/u-1/agents/Research/memory/2026-10-05.md",
+                MemoryObjectKeys.dailyKey(prefix, 4L, "u-1", "Research", "2026-10-05"),
+            )
+        }
+
+        @Test
+        fun `the namespace is tenants users agents route in that order`() {
+            assertEquals(
+                listOf("tenants", "4", "users", "u-1", "agents", "Research", "root"),
+                MemoryObjectKeys.rootNamespace(4L, "u-1", "Research"),
+            )
+            assertEquals(
+                listOf("tenants", "4", "users", "u-1", "agents", "Research", "memory"),
+                MemoryObjectKeys.memoryNamespace(4L, "u-1", "Research"),
+            )
+        }
+
+        /** The rule `MinioBaseStore.buildKey` documents: the item key's leading slash is dropped. */
+        @Test
+        fun `an item key keeps no leading slash in the object key`() {
+            assertEquals(
+                "store/agents/myAgent/sessions/sess-123/MEMORY.md",
+                MemoryObjectKeys.buildKey(
+                    "store/",
+                    listOf("agents", "myAgent", "sessions", "sess-123"),
+                    "/MEMORY.md",
+                ),
+            )
+        }
+
+        @Test
+        fun `the owner prefix ends with a slash and stops at the owner`() {
+            assertEquals("store/tenants/4/users/u-1/", MemoryObjectKeys.ownerPrefix(prefix, 4L, "u-1"))
+            assertEquals(
+                "store/tenants/4/users/u-1/agents/Research/",
+                MemoryObjectKeys.agentPrefix(prefix, 4L, "u-1", "Research"),
+            )
+        }
+
+        /** The runtime's owner id is the numeric `sys_user.id`; this is the one place that says so. */
+        @Test
+        fun `the user segment is the numeric id as the runtime carries it`() {
+            assertEquals("7", MemoryObjectKeys.userSegment(7L))
+            assertEquals(
+                "store/tenants/4/users/7/agents/Research/root/MEMORY.md",
+                MemoryObjectKeys.memoryMdKey(prefix, 4L, MemoryObjectKeys.userSegment(7L), "Research"),
+            )
+        }
+    }
+
+    @Nested
+    @DisplayName("agentId allow-pattern")
+    inner class AgentIdValidation {
+
+        @Test
+        fun `an ordinary agent name is accepted`() {
+            listOf("Research", "assistant", "my-agent", "ops_agent", "v2.1", "研究助手").forEach { name ->
+                assertEquals(true, MemoryObjectKeys.isValidAgentId(name), "$name should be addressable")
+            }
+        }
+
+        /**
+         * The traversal boundary. Every one of these would add a path level, climb out of the caller's
+         * namespace, or split a request line if it reached the key builder, so none may build a key.
+         */
+        @Test
+        fun `anything that could name a path is rejected`() {
+            listOf(
+                "../secret",
+                "..",
+                "Research/../../other-user",
+                "a/b",
+                "/etc/passwd",
+                "root/MEMORY.md",
+                "agent\\name",
+                "..\\..\\windows",
+                "Research\r\nX-Injected: 1",
+                "Research\u0000",
+                " Research",
+                "Research ",
+                "",
+                "   ",
+            ).forEach { candidate ->
+                assertEquals(false, MemoryObjectKeys.isValidAgentId(candidate), "'$candidate' must not be addressable")
+            }
+        }
+
+        @Test
+        fun `null and an over-long name are rejected`() {
+            assertEquals(false, MemoryObjectKeys.isValidAgentId(null))
+            // `agent.name` is a 100 character column; a namespace segment longer than that was not written
+            // by anything this deployment knows about.
+            assertEquals(false, MemoryObjectKeys.isValidAgentId("a".repeat(101)))
+            assertEquals(true, MemoryObjectKeys.isValidAgentId("a".repeat(100)))
+        }
+
+        /** A dot-dot anywhere is refused, not only a leading one: `..` is the traversal, in any position. */
+        @Test
+        fun `a dot-dot sequence inside an otherwise legal name is rejected`() {
+            assertEquals(false, MemoryObjectKeys.isValidAgentId("Research..archive"))
+            assertEquals(false, MemoryObjectKeys.isValidAgentId("a...b"))
+        }
+    }
+
+    @Nested
+    @DisplayName("Decoding a listed key")
+    inner class Locations {
+
+        private val owner = "store/tenants/4/users/7/"
+
+        @Test
+        fun `a curated object decodes to its agent and route`() {
+            val location = MemoryObjectKeys.locationOf(owner, "${owner}agents/Research/root/MEMORY.md")
+            assertNotNull(location)
+            assertEquals("Research", location!!.agentId)
+            assertEquals("root", location.segment)
+            assertEquals("/MEMORY.md", location.itemKey)
+        }
+
+        @Test
+        fun `a ledger object decodes to its agent route and dated item key`() {
+            val location = MemoryObjectKeys.locationOf(owner, "${owner}agents/Research/memory/2026-10-05.md")
+            assertNotNull(location)
+            assertEquals("Research", location!!.agentId)
+            assertEquals("memory", location.segment)
+            assertEquals("/2026-10-05.md", location.itemKey)
+            assertEquals("2026-10-05", MemoryObjectKeys.dateOf(location.itemKey))
+        }
+
+        /**
+         * A key the caller's prefix returned but that is not a memory object — some other writer's file, or
+         * an agent whose own name contains a slash and therefore shifted the route segment out of place —
+         * decodes to nothing. The gateway then neither reads nor deletes it.
+         */
+        @Test
+        fun `anything that is not a memory object of this owner decodes to nothing`() {
+            assertNull(MemoryObjectKeys.locationOf(owner, "store/tenants/5/users/8/agents/Research/root/MEMORY.md"))
+            assertNull(MemoryObjectKeys.locationOf(owner, "${owner}sessions/sess-1/agent_state.json"))
+            assertNull(MemoryObjectKeys.locationOf(owner, "${owner}agents/Research/notes.md"))
+            assertNull(MemoryObjectKeys.locationOf(owner, "${owner}agents//root/MEMORY.md"))
+        }
+
+        @Test
+        fun `only a dated markdown item is a ledger date`() {
+            assertEquals("2026-10-05", MemoryObjectKeys.dateOf("/2026-10-05.md"))
+            assertNull(MemoryObjectKeys.dateOf("/MEMORY.md"))
+            assertNull(MemoryObjectKeys.dateOf("/notes.md"))
+            assertNull(MemoryObjectKeys.dateOf("/2026-13-45.md"))
+        }
+    }
+}

@@ -15,8 +15,10 @@ import io.agentscope.core.tool.Toolkit
 import io.agentscope.core.tool.mcp.McpClientWrapper
 import io.agentscope.harness.agent.DistributedStore
 import io.agentscope.harness.agent.HarnessAgent
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec
+import io.agentscope.harness.agent.memory.MemoryConfig
 import org.slf4j.LoggerFactory
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
@@ -143,11 +145,35 @@ class HarnessAgentBuilder {
         builder.distributedStore(store)
     }
 
+    /**
+     * The extraction/consolidation pipeline configuration: which model writes the memory files, how
+     * often, and with what prompt.
+     */
+    fun memory(config: MemoryConfig): HarnessAgentBuilder = apply { builder.memory(config) }
+
+    /**
+     * Mounts [filesystem] under [prefix], ahead of the filesystem the spec describes.
+     *
+     * A route is the only way to move two paths into a bucket of harnax's own choosing without moving
+     * everything else with them: the composite matches by longest prefix, so `MEMORY.md` here wins over
+     * the route the spec builds for the same name while every other file keeps the isolation scope it
+     * has today.
+     */
+    fun filesystemRoute(prefix: String, filesystem: AbstractFilesystem): HarnessAgentBuilder = apply {
+        builder.filesystemRoute(prefix, filesystem)
+    }
+
     // ===== Disable built-in features =====
 
     fun disableWorkspaceContext(): HarnessAgentBuilder = apply { builder.disableWorkspaceContext() }
 
     fun disableMemoryHooks(): HarnessAgentBuilder = apply { builder.disableMemoryHooks() }
+
+    /**
+     * Skips the four tools the harness registers by default (`memory_search`, `memory_get`,
+     * `memory_save`, `session_search`). There was no way to turn them off before this passthrough.
+     */
+    fun disableMemoryTools(): HarnessAgentBuilder = apply { builder.disableMemoryTools() }
 
     fun disableSessionPersistence(): HarnessAgentBuilder = apply { builder.disableSessionPersistence() }
 

@@ -43,6 +43,24 @@ harness:
   enable-workspace-context: ${HARNESS_ENABLE_WORKSPACE_CONTEXT:true}
   enable-memory-hooks: ${HARNESS_ENABLE_MEMORY_HOOKS:false}
   enable-session-persistence: ${HARNESS_ENABLE_SESSION_PERSISTENCE:true}
+  # Cross-session long-term memory: a curated MEMORY.md plus one append-only ledger per day, bucketed by
+  # tenant x user x agent in MinIO. Off by default. `enabled=true` needs `harness.minio.enabled=true` and
+  # `enable-memory-hooks=true` — assembly refuses that agent instead of starting a memory domain that
+  # silently writes nothing — and it forces the workspace-context injection on whatever the value above
+  # says, because that middleware is the only place `<memory_context>` reaches the model.
+  memory:
+    enabled: ${HARNAX_MEMORY_ENABLED:false}
+    # Model-domain row that does the extraction and consolidation; 0 keeps each agent's own chat model.
+    model-id: ${HARNAX_MEMORY_MODEL_ID:0}
+    # always = one extraction call per turn. throttled = at most one per flush-min-gap, which is what the
+    # store's compare-and-swap makes safe. never = the ledger stops growing.
+    flush-trigger: ${HARNAX_MEMORY_FLUSH_TRIGGER:throttled}
+    flush-min-gap: ${HARNAX_MEMORY_FLUSH_MIN_GAP:5m}
+    # Offers memory_search / memory_get / memory_save to the model. `session_search` is not part of this
+    # batch: it greps transcripts on one replica's host disk, not in the owner's bucket.
+    tools-enabled: ${HARNAX_MEMORY_TOOLS_ENABLED:true}
+    # Keep true: with it off, one user id shares a bucket across tenants.
+    tenant-scoped: ${HARNAX_MEMORY_TENANT_SCOPED:true}
   # Budget of one agent turn (batch and streaming). A turn inside a team is not bound by this: it gets
   # `harness.team.turn-timeout-seconds` below, because a team turn is legitimately silent for longer.
   turn-timeout-seconds: ${HARNAX_TURN_TIMEOUT_SECONDS:300}

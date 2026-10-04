@@ -1156,4 +1156,27 @@ export default {
   'pages.tokenMonitor.endDate': 'End date',
   'pages.tokenMonitor.statDimension': 'Stat dimension',
   'pages.tokenMonitor.fee': 'Fee',
+
+  // My agent memory (self-service compliance page)
+  'pages.memory.title': 'My Agent Memory',
+  'pages.memory.subtitle': 'Only the agents owned by the signed-in account are listed here',
+  'pages.memory.agentName': 'Agent',
+  'pages.memory.detailOpen': 'Click to read what this agent remembers',
+  'pages.memory.curated': 'Curated Memory',
+  'pages.memory.noCurated': 'Nothing curated yet',
+  'pages.memory.dailyCount': 'Daily Notes',
+  'pages.memory.updatedAt': 'Last Updated',
+  'pages.memory.noData': 'None of your agents has long-term memory',
+  'pages.memory.loadFailed': 'Failed to load your agent memory, please retry',
+  'pages.memory.deleteWarning':
+    'Deleting is final: the curated memory and every daily note of that agent are removed together and cannot be restored.',
+  'pages.memory.deleteTooltip': 'Delete this memory',
+  'pages.memory.deleteConfirm':
+    'Delete the memory of {name}? Its curated memory and all daily notes go with it, and nothing can be restored.',
+  'pages.memory.detail.empty': 'No memory detail available',
+  'pages.memory.curatedSection': 'Curated memory (MEMORY.md)',
+  'pages.memory.dailySection': 'Daily notes',
+  'pages.memory.emptyCurated': 'This agent has not curated any long-term memory yet',
+  'pages.memory.emptyDaily': 'No daily notes',
+  'pages.memory.emptyDailyEntry': 'This day has an empty note',
 };

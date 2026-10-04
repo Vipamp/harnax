@@ -641,6 +641,47 @@ message?: string;
   };
 
   /**
+   * @zh-CN 我的智能体记忆列表行（GET /api/admin/memory，只含当前登录用户的智能体）
+   */
+  export type MemoryAgentItem = {
+    /** The agent's name — memory is keyed by name, not by numeric id */
+    agentId: string;
+    /** Curated MEMORY.md text; admin sends "" when nothing has been curated yet */
+    content: string;
+    /** Last write of the curated layer; absent when admin had no timestamp to report */
+    lastModified?: string;
+    /** Days that have a daily note, e.g. `2026-10-05`, oldest first */
+    dates: string[];
+  };
+
+  /**
+   * @zh-CN 某一天的记忆原文（只有详情接口返回）
+   */
+  export type MemoryDailyEntry = {
+    date: string;
+    content: string;
+    lastModified?: string;
+  };
+
+  /**
+   * @zh-CN 单个智能体的记忆详情（GET /api/admin/memory/{agentId}）
+   */
+  export type MemoryDetail = {
+    agentId: string;
+    content: string;
+    lastModified?: string;
+    entries: MemoryDailyEntry[];
+  };
+
+  /**
+   * @zh-CN 删除记忆的应答（objects removed from the shared bucket, both routes together）
+   */
+  export type MemoryDeleteResponse = {
+    agentId: string;
+    deletedObjects: number;
+  };
+
+  /**
    * @zh-CN 智能体创建请求
    */
   export type AgentCreateRequest = {
