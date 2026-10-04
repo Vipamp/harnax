@@ -60,6 +60,17 @@ internal object TeamSessions {
 
     /** Shared prefix of every member child session of this root session. */
     fun prefix(rootSessionId: String): String = "team-$rootSessionId-m"
+
+    /**
+     * Whether a key has the shape [childSessionId] produces — which session keys belong to a member rather
+     * than to someone's conversation, answerable without knowing the root.
+     *
+     * The one way to be wrong is a root session *named* like a child key, and the only caller today refuses
+     * the command that would compact it, so the mistake costs a user one clearer "not supported here".
+     */
+    fun isChildSession(sessionId: String): Boolean = CHILD_SHAPE.matches(sessionId)
+
+    private val CHILD_SHAPE = Regex("team-.+-m[0-9]+")
 }
 
 /**

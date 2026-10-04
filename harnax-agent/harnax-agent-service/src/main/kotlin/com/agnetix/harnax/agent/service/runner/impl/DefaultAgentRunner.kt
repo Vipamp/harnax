@@ -26,6 +26,7 @@ import com.agnetix.harnax.common.error.HarnaxException
 import com.agnetix.harnax.harness.AgentStatePlanData
 import com.agnetix.harnax.harness.HarnessAgentLauncher
 import com.agnetix.harnax.harness.HarnessAgentWrapper
+import com.agnetix.harnax.harness.compaction.CompactionOutcome
 import com.agnetix.harnax.harness.team.ConfirmationOutcome
 import com.agnetix.harnax.harness.team.TeamArtifactGateway
 import com.agnetix.harnax.harness.team.TeamOrchestrator
@@ -144,7 +145,13 @@ class DefaultAgentRunner(
             registerCall(sessionId)
             return try {
                 val agent = getOrCreateAgent(sessionId, userIdentifier)
-                agent.call(message, imageUrls)
+                try {
+                    agent.call(message, imageUrls)
+                } finally {
+                    // Runs while the session is still registered as live, and on a failed turn too: what
+                    // reached the context is what the page has to keep showing.
+                    agent.archiveContext()
+                }
             } finally {
                 unregisterCall(sessionId)
             }
@@ -174,6 +181,8 @@ class DefaultAgentRunner(
                     log.debug("Stream started for session=$sessionId")
                 }
                 .doFinally {
+                    // First, before anything is released: closing an agent clears the state cache this reads.
+                    agent.archiveContext()
                     activeStreams.remove(sessionId)
                     drainPendingRelease(sessionId)
                     log.debug("Stream ended for session=$sessionId")
@@ -242,11 +251,7 @@ class DefaultAgentRunner(
                 clearSession(sessionId)
                 CommandResponse.success(sessionId, message = "Session cleared")
             }
-            CommandType.COMPACT -> {
-                // TODO: implement memory compaction/summarization (args may carry token limit etc.)
-                log.info("Compact command received for session=$sessionId, args='$args' (not yet implemented)")
-                CommandResponse.success(sessionId, message = "Compact not yet implemented")
-            }
+            CommandType.COMPACT -> handleCompact(sessionId, args, userId = request.userId)
             CommandType.APPROVE -> handleApproveOrDeny(sessionId, isConfirmed = true, userId = request.userId)
             CommandType.DENY -> handleApproveOrDeny(sessionId, isConfirmed = false, userId = request.userId)
             CommandType.STOP_SANDBOX -> {
@@ -387,6 +392,9 @@ class DefaultAgentRunner(
                 log.debug("Confirm stream started for session=$sessionId")
             }
             .doFinally {
+                // The resumed turn is a turn: its messages belong in the archive like any other, and before a
+                // deferred release closes the agent whose state they are read from.
+                agent.archiveContext()
                 activeStreams.remove(sessionId)
                 drainPendingRelease(sessionId)
                 log.debug("Confirm stream ended for session=$sessionId")
@@ -862,6 +870,84 @@ class DefaultAgentRunner(
             teamSpec.members.map { it.memberAgentId },
         )
         return CachedAgent(agent, userIdentifier.userId)
+    }
+
+    /**
+     * Handle `/compact` by rewriting this session's model context in place.
+     *
+     * Two refusals come before any work, both because a compaction is a write rather than a read: a turn still
+     * running saves the context it holds when it ends, so overwriting that object mid-turn loses whichever
+     * write lands second; and a member child session is that member's own conversation, whose context the
+     * automatic path takes care of when its delegation ends.
+     *
+     * `args` is the tail budget (`/compact <N>`). A value that is not a positive number is ignored rather than
+     * refused, and says so — the default tier still answers what the user asked for.
+     */
+    private fun handleCompact(
+        sessionId: String,
+        args: String,
+        userId: Long?,
+    ): CommandResponse {
+        if (sessionId.startsWith("task-")) {
+            return CommandResponse.failure(sessionId, "Compaction is not supported for task sessions")
+        }
+        if (launcher.isMemberChildSession(sessionId)) {
+            return CommandResponse.failure(
+                sessionId,
+                "This is a team member's own session; compact the team session instead",
+            )
+        }
+        if (activeStreams.containsKey(sessionId) || activeCalls.contains(sessionId)) {
+            return CommandResponse.failure(
+                sessionId,
+                "This session is answering right now; wait for the turn to end and compact again",
+            )
+        }
+
+        val keepTokens = args.trim().toIntOrNull()?.takeIf { it > 0 }
+        val agent = getOrCreateAgent(sessionId, UserIdentifier(userId))
+        return when (val outcome = agent.compactManually(keepTokens)) {
+            is CompactionOutcome.Failed -> CommandResponse.failure(sessionId, outcome.message)
+            is CompactionOutcome.Success -> {
+                // Read once: the window comes from the same live context the compaction just rewrote.
+                val usage = agent.contextUsage(null)
+                CommandResponse.success(
+                    sessionId,
+                    result = mapOf(
+                        "beforeMessages" to outcome.beforeMessages,
+                        "afterMessages" to outcome.afterMessages,
+                        "beforeTokens" to outcome.beforeTokens,
+                        "afterTokens" to outcome.afterTokens,
+                        "window" to usage?.contextWindow,
+                        "windowSource" to usage?.windowSource?.name,
+                    ),
+                    message = compactMessage(outcome, args, keepTokens),
+                )
+            }
+        }
+    }
+
+    /**
+     * What one `/compact` reports back. A session too short to leave a tail is a successful command that
+     * changed nothing, so it says so instead of reporting zero-sized numbers as if they were a result.
+     */
+    private fun compactMessage(
+        outcome: CompactionOutcome.Success,
+        args: String,
+        keepTokens: Int?,
+    ): String {
+        val head = if (outcome.compacted) {
+            "Compacted ${outcome.beforeMessages} messages (${outcome.beforeTokens} tokens) into " +
+                "${outcome.afterMessages} (${outcome.afterTokens} tokens)."
+        } else {
+            "Nothing to compact — this conversation is too short to leave a tail, so the context is unchanged."
+        }
+        val note = if (args.isNotBlank() && keepTokens == null) {
+            " '$args' is not a token count; the default tier was used."
+        } else {
+            ""
+        }
+        return head + note
     }
 
     /**

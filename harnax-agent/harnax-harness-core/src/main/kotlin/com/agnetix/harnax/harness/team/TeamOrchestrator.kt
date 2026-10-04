@@ -346,15 +346,23 @@ class TeamOrchestrator(
         msg: Msg,
     ): List<ChatEvent> {
         val events = mutableListOf<ChatEvent>()
-        wrapper.callStream(msg)
-            .timeout(Duration.ofSeconds(config.memberTurnTimeoutSeconds))
-            .doOnNext { event ->
-                if (event !is EndEventChatEvent) {
-                    events.add(event)
-                    publish(event.withSource(run.source))
+        try {
+            wrapper.callStream(msg)
+                .timeout(Duration.ofSeconds(config.memberTurnTimeoutSeconds))
+                .doOnNext { event ->
+                    if (event !is EndEventChatEvent) {
+                        events.add(event)
+                        publish(event.withSource(run.source))
+                    }
                 }
-            }
-            .blockLast()
+                .blockLast()
+        } finally {
+            // A member conversation lives on its own child session, and this is the only place that ends one
+            // of its turns. Without this write the page reads that session's trimmed live context as soon as
+            // the automatic path compacts it mid-delegation. Runs even when the turn failed or timed out:
+            // whatever reached the context is what the user already saw.
+            wrapper.archiveContext()
+        }
         return events
     }
 

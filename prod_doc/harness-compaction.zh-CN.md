@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS session_message (
 
 ## 5. `/compact` 命令压缩
 
-`DefaultAgentRunner.kt:245-249` 的 stub 换成真实现，流程五步：
+`DefaultAgentRunner.kt:245-249` 的 stub 换成真实现。runner 那一侧只做前置判定与结果映射，第 2~4 步（取 live `AgentState`、调压缩、成功才覆写并保存）落在 harnax-harness-core 的 `ContextCompactionService.compact(...)`，经 `HarnessAgentWrapper.compactManually(keepTokens)` 暴露 —— agent、sessionId、user 桶三个键一律取自 wrapper 自身，这正是第 4 节末条不变量的守法：调用方传不进第二个 userId。流程五步：
 
 1. 前置判定（见下表）。
 2. `val delegate = harnessAgent.delegate`；取不到 live `AgentState` 就拒。
@@ -170,7 +170,8 @@ CREATE TABLE IF NOT EXISTS session_message (
 - **harnax-entity**：`Model.kt` 加列映射；`ModelConfigDto`/`AgentSpecInfoResponse` 加 `contextWindow`；`TokenStatsMapper.kt` + `.xml` 加一条按 sessionId 的最新 `input_token` select；`schema-test.sql` 跟基线。
 - **harnax-admin**：`V1__init_schema.sql` 加列；模型 CRUD 的校验与表单加一个可选字段。
 - **harnax-harness-core**：`agent/session/` 新增 `MysqlSessionMessageStore`（自建表、幂等写、按会话读、按会话删，纯 JDBC，照 `MysqlAgentStateStore.kt` 的形状）；`HarnessAgentLauncher.kt:786` 的 `loadSessionMessages` 改读归档并保留两级回退；`HarnessAgentWrapper.kt` 新增三个能力 —— 归档当前 context、按命令压缩（`compactManually`：agent / sessionId / user 桶三个值一律取自 wrapper 自身，就是为守住第 4 节末条那条隐藏不变量）、算占用比例；`HarnessAgentLauncher` 把归档表与 `context_window` 原值带到 wrapper；`HarnessAgentBuilder.kt` 加 `disableTranscript()` 透传（现有 disable 一族在 `:148-158`），并在 `HarnessAgentLauncher.kt` 的两条装配分支上都调用它（第 3 节第 1 行）。
-- **harnax-agent-service**：`DefaultAgentRunner.kt:245` 的 COMPACT 分支换真实现，并在两条轮次收尾处（流的 `doFinally`、批量的 `finally`）挂归档；`AgentController.kt` 加 `GET /api/agent/context/{sessionId}`；`clearSession` 连带删档。
+- **harnax-harness-core（team 侧）**：`team/TeamOrchestrator.kt` 的成员轮次以 `collectTurn` 的轮末 `finally` 归档该成员子会话 —— 成员会话没有别的收尾点，且它必须与委派成功与否无关：到达过 context 的就是页面已经给用户看过的内容。`team/TeamRuntimeSpec.kt` 的 `TeamSessions` 加成员子会话谓词（键的拼法只有这一个所有者，判定不能由调用方自己拼字符串），由 `HarnessAgentLauncher.isMemberChildSession` 转发给 runner 做 `/compact` 的前置拒绝。
+- **harnax-agent-service**：`DefaultAgentRunner.kt:245` 的 COMPACT 分支换真实现；归档挂在三条轮次收尾处 —— 阻塞轮的 `finally`、流式轮的 `doFinally`、HITL 确认续跑那轮的 `doFinally`（它是另一条流，与 `:343-398` 同源）。三处都排在 `drainPendingRelease`／`unregisterCall` 之前：deferred 的 `release()` 会清掉归档要读的那份 state cache，一前一后决定归档有没有内容可读。`AgentController.kt` 加 `GET /api/agent/context/{sessionId}`；`clearSession` 连带删档。
 - **harnax-session-router**：新接口按会话绑定转发一条 —— 转发调用落在 `src/main/kotlin/com/agnetix/harnax/router/proxy/SessionRouterService.kt`（照 `:365` 的 `loadHistory` 同款），对外端点落在 `src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt`（照 `:105-113` 的 `/command` 代理形状）。
 - **harnax-webui**：只有 admin 侧模型表单那一处。聊天页不改（它能发 `/compact` 这件事本来就是通的）。
 - **harnax-ios**：不改。
@@ -218,9 +219,9 @@ CREATE TABLE IF NOT EXISTS session_message (
 1. `estimatedTokens` 与真实 `input_token` 的偏差幅度 —— 上游估算按字符数 / 2.5，中文与代码混合的偏差方向未知，2.0.4 起思考内容也计入（第 3 节第 2 行），需要在真栈上跑一段会话对两个数。这直接决定 `ratio` 该给用户看到几位有效数字。
 2. 关掉 offload 之后，压缩掉的早期内容是否有任何可追回路径 —— 按源码读是没有（`session_search` 这类工具在 harnax 当前装配下读不到东西），但没实测。
 3. 运行时是否真的全程用匿名桶 —— 第 4 节已在源码层证明空值两侧都归一成 `__anon__`（`ReActAgent.java:394-399`、`MysqlAgentStateStore.kt:70`），静态也只见到一个不传 userId 的 wrapper 构造点；但渠道固定 UUID 会话、团队子会话这些入口有没有带进非空 userId，要看实跑后 `agent_state.user_id` 的取值分布才能定。
-4. 流式路径的归档时机：`doFinally` 是否总能覆盖 HITL 确认后续跑那一轮（`DefaultAgentRunner.kt:343-398` 用的是另一条流）。
-5. team 成员子会话在长时间 delegation 后自身被自动压缩，其成员气泡是否会因此变短 —— 归档写点覆盖成员会话则不会，需要实测确认。
-6. 上游检出 `mvn install` 到本地仓库后，2.0.4 的 `agentscope-core`/`agentscope-harness` 与 harnax 现有依赖树（Jackson 3、Kotlin 2.2.20、Spring Boot BOM）能否共存 —— 本篇只读了上游源码，没做集成构建。
+4. 归档在异常收尾路径上的覆盖面：三条轮次收尾都挂上了钩子、确认续跑那条也单独挂了（单测覆盖到调用与顺序），但客户端断连／上游取消时 `doFinally` 是否仍跑到并留下内容，要真栈验证。
+5. team 成员子会话在长时间 delegation 后自身被自动压缩，其成员气泡是否会因此变短 —— 归档写点已覆盖成员轮次（`collectTurn` 的轮末 `finally`），按第 4 节的读路径设计不会变短，但要看真栈上一段多轮 delegation 后的页面。
+6. 2.0.4 与 harnax 依赖树（Jackson 3、Kotlin 2.2.20、Spring Boot BOM）的共存只验到全量编译与单测；服务真起来跑一轮对话、并让上游的自动压缩在真实模型上触发一次，还没做过。
 7. `disableTranscript()` 之外的另一种选择（注入 harnax 自己的 `TranscriptStore`）有没有将来要用的场景 —— 本轮结论是不留，若后续要做"会话原文检索"要重开这条。
 
 ---

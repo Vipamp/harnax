@@ -229,6 +229,35 @@ class TeamOrchestratorTest {
             assertTrue(builtSessions.all { it.second == "team-$rootSession-m2" }, "$builtSessions")
         }
 
+        /**
+         * A member's conversation is its own child session, and this turn is the only place one of its turns
+         * ends. Without the archive write there, a reload would read the member's live context — which the
+         * automatic path has already trimmed if the delegation ran long.
+         */
+        @Test
+        fun `every member turn ends by archiving that member session`() {
+            val orchestrator = newOrchestrator(listOf(member(2L, "Analyst")))
+            stubTurns(2L, text("working"))
+            orchestrator.openEventStream()
+
+            orchestrator.delegate(2L, "first")
+
+            verify(wrapperFor(2L)).archiveContext()
+        }
+
+        /** The write runs from a `finally`, so a failed turn still puts what it emitted on the page. */
+        @Test
+        fun `a member turn that fails still archives what reached the context`() {
+            val orchestrator = newOrchestrator(listOf(member(2L, "Analyst")))
+            whenever(wrapperFor(2L).callStream(msg = any())).thenThrow(RuntimeException("agent poisoned"))
+            orchestrator.openEventStream()
+
+            val report = orchestrator.delegate(2L, "first")
+
+            assertTrue(report.contains("执行失败"), report)
+            verify(wrapperFor(2L)).archiveContext()
+        }
+
         @Test
         fun `a second task is refused while the member still owns the first one`() {
             val orchestrator = newOrchestrator(listOf(member(2L, "Analyst")))

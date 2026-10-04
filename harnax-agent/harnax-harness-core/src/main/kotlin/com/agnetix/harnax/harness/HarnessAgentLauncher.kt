@@ -840,6 +840,14 @@ class HarnessAgentLauncher(
         memberAgentId: Long,
     ): String = TeamSessions.childSessionId(rootSessionId, memberAgentId)
 
+    /**
+     * Whether this key is a member's own child conversation rather than a root one.
+     *
+     * Read from [TeamSessions] rather than matched here, because a caller that spelled the shape itself would
+     * drift from the side that writes it.
+     */
+    fun isMemberChildSession(sessionId: String): Boolean = TeamSessions.isChildSession(sessionId)
+
     fun loadSessionHistoryPlan(sessionId: String): List<PlanNote> = planNoteAdaptor.getPlanNotes(sessionId)
 
     /**

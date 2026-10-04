@@ -8,6 +8,8 @@ import com.agnetix.harnax.agent.protocol.ChatResponse
 import com.agnetix.harnax.agent.protocol.CommandAgentRequest
 import com.agnetix.harnax.agent.protocol.CommandType
 import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
+import com.agnetix.harnax.agent.protocol.ContextUsageResponse
+import com.agnetix.harnax.agent.protocol.ContextWindowSource
 import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.agent.protocol.StreamTextChatEvent
@@ -22,6 +24,7 @@ import com.agnetix.harnax.common.error.HarnaxException
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
 import com.agnetix.harnax.harness.HarnessAgentLauncher
 import com.agnetix.harnax.harness.HarnessAgentWrapper
+import com.agnetix.harnax.harness.compaction.CompactionOutcome
 import com.agnetix.harnax.harness.config.HarnessConfig
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
 import com.agnetix.harnax.harness.team.ConfirmationOutcome
@@ -36,6 +39,7 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.*
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.argumentCaptor
 import org.reactivestreams.Subscription
 import org.springframework.beans.factory.ObjectProvider
@@ -157,18 +161,180 @@ class DefaultAgentRunnerTest {
             verify(launcher).clearSession("session-1")
         }
 
+        /** Stubs a session that has something to compact: an agent in cache plus the answer `/compact` gives. */
+        private fun stubCompact(outcome: CompactionOutcome) {
+            stubAgentCreation()
+            `when`(agentWrapper.compactManually(anyOrNull())).thenReturn(outcome)
+            `when`(agentWrapper.contextUsage(anyOrNull())).thenReturn(
+                ContextUsageResponse(
+                    messageCount = 21,
+                    estimatedTokens = 640,
+                    contextWindow = 131_072,
+                    windowSource = ContextWindowSource.MODEL_FIELD,
+                    ratio = 0.004882,
+                    triggerTokens = 111_072,
+                    triggerMessages = 50,
+                ),
+            )
+        }
+
+        private fun compacted() = CompactionOutcome.Success(
+            beforeMessages = 30,
+            afterMessages = 21,
+            beforeTokens = 1200,
+            afterTokens = 640,
+            compacted = true,
+        )
+
+        /**
+         * `/compact` on a session with something to compact: the numbers the user asked for, and the window
+         * they are measured against.
+         */
         @Test
-        fun `executeCommand COMPACT returns not-implemented message`() {
-            val request = CommandAgentRequest(
-                sessionId = "session-1",
-                command = CommandType.COMPACT,
-                args = "500",
+        fun `executeCommand COMPACT reports both sizes and the window it measured against`() {
+            stubCompact(compacted())
+
+            val response = runner.executeCommand(
+                CommandAgentRequest(sessionId = "session-1", command = CommandType.COMPACT, args = "500"),
             )
 
-            val response = runner.executeCommand(request)
+            assertTrue(response.success)
+            assertEquals("Compacted 30 messages (1200 tokens) into 21 (640 tokens).", response.message)
+            @Suppress("UNCHECKED_CAST")
+            val result = response.result as Map<String, Any?>
+            assertEquals(30, result["beforeMessages"])
+            assertEquals(21, result["afterMessages"])
+            assertEquals(1200, result["beforeTokens"])
+            assertEquals(640, result["afterTokens"])
+            assertEquals(131_072, result["window"])
+            assertEquals("MODEL_FIELD", result["windowSource"])
+            // The tail budget reaches the compaction as its own argument, not as a tier the caller re-derives.
+            verify(agentWrapper).compactManually(500)
+        }
+
+        @Test
+        fun `a tail budget that is not a number is ignored and says so`() {
+            stubCompact(compacted())
+
+            val response = runner.executeCommand(
+                CommandAgentRequest(sessionId = "session-1", command = CommandType.COMPACT, args = "abc"),
+            )
+
+            verify(agentWrapper).compactManually(null)
+            assertTrue(response.success)
+            assertTrue(
+                response.message?.contains("'abc' is not a token count; the default tier was used.") == true,
+                response.message ?: "no message",
+            )
+        }
+
+        /** `/compact 0` would ask for a tail of nothing, which is not what the tier does with a zero. */
+        @Test
+        fun `a tail budget that is not positive is ignored too`() {
+            stubCompact(compacted())
+
+            runner.executeCommand(
+                CommandAgentRequest(sessionId = "session-1", command = CommandType.COMPACT, args = "0"),
+            )
+
+            verify(agentWrapper).compactManually(null)
+        }
+
+        /** A conversation too short to leave a tail is a command that succeeded and changed nothing, not an error. */
+        @Test
+        fun `a session too short to compact succeeds with the same numbers on both sides`() {
+            stubCompact(
+                CompactionOutcome.Success(
+                    beforeMessages = 4,
+                    afterMessages = 4,
+                    beforeTokens = 160,
+                    afterTokens = 160,
+                    compacted = false,
+                ),
+            )
+
+            val response = runner.executeCommand(
+                CommandAgentRequest(sessionId = "session-1", command = CommandType.COMPACT),
+            )
 
             assertTrue(response.success)
-            assertTrue(response.message?.contains("not yet implemented") == true)
+            assertTrue(response.message?.startsWith("Nothing to compact") == true, response.message ?: "no message")
+            @Suppress("UNCHECKED_CAST")
+            val result = response.result as Map<String, Any?>
+            assertEquals(result["beforeTokens"], result["afterTokens"])
+            assertEquals(result["beforeMessages"], result["afterMessages"])
+        }
+
+        @Test
+        fun `a summary that did not come back fails the command with its reason`() {
+            stubCompact(CompactionOutcome.Failed("The summary model did not return a summary; the conversation is unchanged."))
+
+            val response = runner.executeCommand(
+                CommandAgentRequest(sessionId = "session-1", command = CommandType.COMPACT),
+            )
+
+            assertFalse(response.success)
+            assertEquals("The summary model did not return a summary; the conversation is unchanged.", response.message)
+            assertNull(response.result)
+        }
+
+        @Test
+        fun `executeCommand COMPACT for a task session is refused before anything is asked of admin`() {
+            val response = runner.executeCommand(
+                CommandAgentRequest(sessionId = "task-123-run", command = CommandType.COMPACT),
+            )
+
+            assertFalse(response.success)
+            assertTrue(response.message?.contains("task sessions") == true, response.message ?: "no message")
+            verifyNoInteractions(launcher)
+        }
+
+        @Test
+        fun `a team member child session is refused`() {
+            `when`(launcher.isMemberChildSession("team-session-1-m2")).thenReturn(true)
+
+            val response = runner.executeCommand(
+                CommandAgentRequest(sessionId = "team-session-1-m2", command = CommandType.COMPACT),
+            )
+
+            assertFalse(response.success)
+            assertTrue(response.message?.contains("member's own session") == true, response.message ?: "no message")
+            verify(launcher, never()).createSingleAgent(any(), any(), any<Boolean>(), any(), any())
+        }
+
+        /**
+         * A turn in flight saves the context it holds when it ends, so compacting that same object underneath
+         * it loses whichever write lands second. Both liveness markers refuse the command — and the blocking
+         * one matters on its own, because a channel conversation registers no subscription to check.
+         */
+        @Test
+        fun `a session with a blocking call in flight is refused`() {
+            stubCompact(compacted())
+            @Suppress("UNCHECKED_CAST")
+            val activeCalls = ReflectionTestUtils.getField(runner, "activeCalls") as MutableSet<String>
+            activeCalls.add("session-1")
+
+            val response = runner.executeCommand(
+                CommandAgentRequest(sessionId = "session-1", command = CommandType.COMPACT),
+            )
+
+            assertFalse(response.success)
+            verify(agentWrapper, never()).compactManually(anyOrNull())
+        }
+
+        @Test
+        fun `a session with an active stream is refused`() {
+            stubCompact(compacted())
+            @Suppress("UNCHECKED_CAST")
+            val activeStreams = ReflectionTestUtils.getField(runner, "activeStreams") as MutableMap<String, Subscription>
+            activeStreams["session-1"] = mock(Subscription::class.java)
+
+            val response = runner.executeCommand(
+                CommandAgentRequest(sessionId = "session-1", command = CommandType.COMPACT),
+            )
+
+            assertFalse(response.success)
+            verify(agentWrapper, never()).compactManually(anyOrNull())
         }
 
         @Test
@@ -670,6 +836,82 @@ class DefaultAgentRunnerTest {
 
             assertTrue(response.success)
             verify(adminApiClient).toggleCapability("session-1", "thinking", true)
+        }
+    }
+
+    // ==================== history archive hooks ====================
+
+    /**
+     * Every turn ends by writing its whole context to the archive the chat page reads. Compaction only ever
+     * rewrites the model's copy, so a message that never reached that table is gone from the page for good
+     * once something trims it — which makes the write point, not the writer, the thing worth pinning here.
+     */
+    @Nested
+    inner class HistoryArchive {
+        @Test
+        fun `a blocking turn archives its context`() {
+            stubAgentCreation()
+            `when`(agentWrapper.call(any<String>(), any())).thenReturn(
+                ChatResponse(sessionId = "session-1", content = "ok"),
+            )
+
+            runner.process(ChatAgentRequest(sessionId = "session-1", message = "hi"))
+
+            verify(agentWrapper).archiveContext()
+        }
+
+        /** Written from a `finally`: the user message of a turn that threw is on the page all the same. */
+        @Test
+        fun `a failed blocking turn still archives what reached the context`() {
+            stubAgentCreation()
+            `when`(agentWrapper.call(any<String>(), any())).thenThrow(RuntimeException("model down"))
+
+            assertThrows(HarnaxException::class.java) {
+                runner.process(ChatAgentRequest(sessionId = "session-1", message = "hi"))
+            }
+
+            verify(agentWrapper).archiveContext()
+        }
+
+        @Test
+        fun `a streamed turn archives when its stream ends`() {
+            stubAgentCreation()
+            `when`(agentWrapper.callStream(any<String>(), any())).thenReturn(Flux.just(EndEventChatEvent()))
+
+            runner.streamProcess(ChatAgentRequest(sessionId = "session-1", message = "hi")).collectList().block()
+
+            verify(agentWrapper).archiveContext()
+        }
+
+        @Test
+        fun `a turn resumed by a confirmation archives too`() {
+            stubAgentCreation()
+            stubPendingToolCalls()
+            `when`(agentWrapper.callStream(msg = any())).thenReturn(Flux.just(EndEventChatEvent()))
+
+            runner.confirm(ConfirmAgentRequest(sessionId = "session-1", isConfirmed = true)).collectList().block()
+
+            verify(agentWrapper).archiveContext()
+        }
+
+        /**
+         * Releasing an agent clears the state cache the archive reads through, so the write happens first
+         * inside the same `doFinally`. This is the one case where a release is already waiting — the shape an
+         * eviction mid-stream leaves behind.
+         */
+        @Test
+        fun `the archive is written before an agent waiting to be released is closed`() {
+            stubAgentCreation()
+            `when`(agentWrapper.callStream(any<String>(), any())).thenReturn(Flux.just(EndEventChatEvent()))
+            @Suppress("UNCHECKED_CAST")
+            val pendingRelease = ReflectionTestUtils.getField(runner, "pendingRelease") as MutableMap<String, HarnessAgentWrapper>
+            pendingRelease["session-1"] = agentWrapper
+
+            runner.streamProcess(ChatAgentRequest(sessionId = "session-1", message = "hi")).collectList().block()
+
+            val order = inOrder(agentWrapper)
+            order.verify(agentWrapper).archiveContext()
+            order.verify(agentWrapper).release()
         }
     }
 
