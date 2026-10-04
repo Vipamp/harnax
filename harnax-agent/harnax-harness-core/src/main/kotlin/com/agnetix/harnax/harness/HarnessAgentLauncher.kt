@@ -17,6 +17,7 @@ import com.agnetix.harnax.agent.adaptor.model.ModelHelper
 import com.agnetix.harnax.agent.adaptor.token.TokenStatBuilder
 import com.agnetix.harnax.agent.provider.middleware.ProcessLogMiddleware
 import com.agnetix.harnax.agent.provider.middleware.TokenStatsMiddleware
+import com.agnetix.harnax.agent.session.MysqlSessionMessageStore
 import com.agnetix.harnax.agent.session.SessionConfig
 import com.agnetix.harnax.agent.session.SessionLoader
 import com.agnetix.harnax.common.mcp.McpConfigDecryptor
@@ -53,6 +54,7 @@ import io.agentscope.core.tool.mcp.McpClientWrapper
 import io.agentscope.harness.agent.DistributedStore
 import io.agentscope.harness.agent.IsolationScope
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec
+import io.agentscope.harness.agent.memory.compaction.ConversationCompactor
 import io.agentscope.harness.agent.sandbox.impl.docker.DockerFilesystemSpec
 import io.agentscope.harness.agent.sandbox.snapshot.LocalSnapshotSpec
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotSpec
@@ -109,6 +111,11 @@ class HarnessAgentLauncher(
     val outputFileDetector: OutputFileDetector? = null,
     val outputFileStore: OutputFileStore? = null,
     val mcpTokenSourceFactory: McpAccessTokenSourceFactory? = null,
+    /**
+     * Append-only history the chat page reads, over the same session database as [stateStore]. Null when the
+     * session database is not MySQL, which leaves history on [stateStore] alone.
+     */
+    val sessionMessageStore: MysqlSessionMessageStore? = null,
 ) {
 
     private val log = LoggerFactory.getLogger(HarnessAgentLauncher::class.java)
@@ -777,6 +784,7 @@ class HarnessAgentLauncher(
     fun clearSession(sessionId: String) {
         // Delete all state for this session (userId="" covers the default anonymous user)
         stateStore.delete("", sessionId)
+        sessionMessageStore?.delete("", sessionId)
         planNoteAdaptor.deletePlan(sessionId)
         // Destroy the sandbox container; destroy() persists the workspace snapshot first,
         // so workspace state survives and will be restored on next container creation.
@@ -784,19 +792,29 @@ class HarnessAgentLauncher(
     }
 
     /**
-     * Loads session messages from the AgentStateStore.
+     * Loads the messages a session has shown, oldest first.
      *
-     * In agentscope 2.0.0, messages are stored in AgentState.context under key "agent_state".
-     * Falls back to legacy "memory_messages" key for backward compatibility.
+     * Three levels, most complete first:
+     * 1. the `session_message` archive, which is never trimmed and so survives compaction of the model context,
+     * 2. `AgentState.context` under the 2.0.0 `agent_state` key,
+     * 3. the legacy `memory_messages` key.
+     *
+     * Level 1 is empty for a session that predates the archive or has not finished a turn yet; both still have
+     * their whole history in the state store, so the fallback is not a degraded read but the only read there is.
      */
     fun loadSessionMessages(sessionId: String): List<Msg> {
-        // Try loading from agent_state (2.0.0 format) first
+        val archived = sessionMessageStore?.load("", sessionId)
+        if (!archived.isNullOrEmpty()) return archived
+
         val agentState = stateStore.get("", sessionId, "agent_state", AgentState::class.java)
-        if (agentState.isPresent) {
-            return agentState.get().context
+        val messages = if (agentState.isPresent) {
+            agentState.get().context
+        } else {
+            stateStore.getList("", sessionId, "memory_messages", Msg::class.java)
         }
-        // Fall back to legacy memory_messages key
-        return stateStore.getList("", sessionId, "memory_messages", Msg::class.java)
+        // A compacted context starts with the summary, and the summary is built as a USER message — replaying
+        // it would put a bubble of summary text on a page that shows the original conversation.
+        return messages.filterNot { it.name == ConversationCompactor.SUMMARY_MSG_NAME }
     }
 
     /**
@@ -947,10 +965,11 @@ class HarnessAgentLauncher(
             } else {
                 null
             }
+            val stores = SessionLoader.loadStores(sessionConfig)
             return HarnessAgentLauncher(
                 chatModelConfigAdaptor = chatModelConfigAdaptor,
                 mcpConfigAdaptor = mcpConfigAdaptor,
-                stateStore = SessionLoader.load(sessionConfig),
+                stateStore = stores.stateStore,
                 skillAdaptor = skillAdaptor,
                 tokenStatAdaptor = tokenStatAdaptor,
                 processLogAdaptor = processLogAdaptor,
@@ -968,6 +987,7 @@ class HarnessAgentLauncher(
                 outputFileDetector = outputFileDetector,
                 outputFileStore = outputFileStore,
                 mcpTokenSourceFactory = mcpTokenSourceFactory,
+                sessionMessageStore = stores.messageStore,
             )
         }
 
