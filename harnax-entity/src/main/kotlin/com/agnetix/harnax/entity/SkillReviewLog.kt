@@ -9,8 +9,8 @@ import java.time.LocalDateTime
  *
  * `actor` is the whole point of the table: the upstream harness audit writes a literal `"agent"` for
  * everything its own tools do, which would erase the difference between a skill an agent produced and
- * a human agreeing to ship it. Every write here therefore names a real `sys_user` username, or the
- * documented sentinel [ACTOR_SYSTEM] when no human is on the path.
+ * a human agreeing to ship it. Every write here therefore names a real `sys_user` username, or one of the
+ * documented sentinels [ACTOR_AGENT] / [ACTOR_SYSTEM] when no human is on the path.
  */
 @Schema(description = "Skill domain audit entry")
 class SkillReviewLog : Serializable {
@@ -23,6 +23,9 @@ class SkillReviewLog : Serializable {
 
         /** Sentinel for a write with no human on the path, such as the runtime recording a scan. */
         const val ACTOR_SYSTEM = "system"
+
+        /** Sentinel for an action the agent itself took, such as proposing a draft skill. */
+        const val ACTOR_AGENT = "agent"
 
         const val ACTION_PROPOSE = "PROPOSE"
         const val ACTION_SCAN = "SCAN"

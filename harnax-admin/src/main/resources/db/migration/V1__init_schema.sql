@@ -507,6 +507,31 @@ CREATE TABLE IF NOT EXISTS `skill` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `skill_draft` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Draft ID',
+  `tenant_id` bigint NOT NULL COMMENT 'Tenant resolved server-side from the session, never taken from the request body',
+  `name` varchar(100) NOT NULL COMMENT 'Proposed skill name; same-name proposals may coexist, dedup happens at promotion',
+  `description` text COMMENT 'Proposed description',
+  `skillmd` mediumtext NOT NULL COMMENT 'Proposed SKILL.md body',
+  `resources` mediumtext COMMENT 'path -> content JSON, the same shape as skill.resources',
+  `script_previews` mediumtext COMMENT 'relPath / headPreview / totalLines / sha256 per script, from SkillCandidate.scriptFiles',
+  `scan_verdict` varchar(16) DEFAULT NULL COMMENT 'Upstream SkillSecurityScanner verdict: SAFE / CAUTION / DANGEROUS',
+  `scan_findings` mediumtext COMMENT 'Upstream scan findings as JSON; rescanned and overwritten at promotion',
+  `source_session_id` varchar(64) NOT NULL COMMENT 'Session the agent proposed the skill in',
+  `agent_id` bigint DEFAULT NULL COMMENT 'Agent that proposed it, resolved from the session',
+  `status` varchar(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING / APPROVED / REJECTED / EXPIRED',
+  `reviewed_by` varchar(100) DEFAULT NULL COMMENT 'Reviewer username, once decided',
+  `reviewed_at` datetime DEFAULT NULL COMMENT 'Review time, once decided',
+  `reject_reason` varchar(512) DEFAULT NULL COMMENT 'Why a reviewer rejected it',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_skill_draft_tenant_status` (`tenant_id`,`status`),
+  KEY `idx_skill_draft_session` (`source_session_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Agent-proposed skills awaiting human review';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE IF NOT EXISTS `skill_repository` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Repository ID',
   `tenant_id` bigint NOT NULL DEFAULT '1' COMMENT 'Tenant ID',

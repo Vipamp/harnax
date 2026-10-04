@@ -1,11 +1,13 @@
 package com.agnetix.harnax.admin.controller
 
+import com.agnetix.harnax.admin.dto.SkillDraftSubmitRequest
 import com.agnetix.harnax.admin.dto.SkillUsageReportRequest
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.registrar.BuiltinToolAutoRegistrar
 import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.service.McpOAuthUserService
 import com.agnetix.harnax.admin.service.McpStdioPolicy
+import com.agnetix.harnax.admin.service.SkillDraftService
 import com.agnetix.harnax.admin.service.SkillUsageService
 import com.agnetix.harnax.admin.skill.SkillBindingResolver
 import com.agnetix.harnax.admin.skill.SkillVisibilityCodec
@@ -81,6 +83,7 @@ class InternalApiController(
     private val builtinToolAutoRegistrar: BuiltinToolAutoRegistrar,
     private val skillBindingResolver: SkillBindingResolver,
     private val skillUsageService: SkillUsageService,
+    private val skillDraftService: SkillDraftService,
 ) {
 
     private val log = LoggerFactory.getLogger(InternalApiController::class.java)
@@ -291,6 +294,26 @@ class InternalApiController(
     } catch (e: Exception) {
         log.error("Skill usage intake failed for session {}", request.sessionId, e)
         ResultVo.error(500, "Skill usage intake failed")
+    }
+
+    /**
+     * Queues a skill an agent wrote during one session, for a human to decide on (design section 6.1).
+     *
+     * The opposite error policy from [reportSkillUsage] right above, on purpose. Usage is a counter, so a
+     * runtime must never learn about its failures; this is a draft that only exists if a reviewer is told
+     * about it, and a gate that swallowed the refusal would leave the model believing its proposal is
+     * waiting for approval when no queue holds it. So the reason comes back, and the gate turns it into a
+     * rejection the model reads.
+     */
+    @PostMapping("/skills/drafts")
+    fun submitSkillDraft(@RequestBody request: SkillDraftSubmitRequest): ResultVo<Long> = try {
+        ResultVo.success(skillDraftService.submit(request))
+    } catch (e: BizException) {
+        log.warn("Draft intake refused for session {}: {}", request.sessionId, e.message)
+        ResultVo.error(e.code, e.message ?: "Skill draft intake failed")
+    } catch (e: Exception) {
+        log.error("Skill draft intake failed for session {}", request.sessionId, e)
+        ResultVo.error(500, "Skill draft intake failed")
     }
 
     // ========================================

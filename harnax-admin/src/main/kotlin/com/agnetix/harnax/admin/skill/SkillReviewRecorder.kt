@@ -54,6 +54,30 @@ class SkillReviewRecorder(
         tenantId: Long,
     ): List<SkillReviewLog> = skillReviewLogMapper.selectBySubject(tenantId, subject, subjectId)
 
+    /**
+     * Records one event of an agent-proposed draft.
+     *
+     * A draft is its own subject rather than a `SKILL` row with no table behind it: the proposal exists
+     * precisely because no skill row does yet, and "agent proposed this, nobody approved it" has to stay
+     * readable as the two different facts it is.
+     */
+    fun recordDraft(
+        draftId: Long,
+        action: String,
+        detail: String? = null,
+        tenantId: Long? = null,
+        actor: String? = null,
+    ) {
+        record(
+            subject = SkillReviewLog.SUBJECT_DRAFT,
+            subjectId = draftId,
+            action = action,
+            detail = detail,
+            tenantId = tenantId,
+            actor = actor,
+        )
+    }
+
     private fun record(
         subject: String,
         subjectId: Long,

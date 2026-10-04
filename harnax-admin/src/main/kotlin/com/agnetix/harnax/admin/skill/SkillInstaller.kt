@@ -325,7 +325,7 @@ class SkillInstaller(
         skillRepositoryMapper.deleteById(repository.id)
     }
 
-    private companion object {
+    companion object {
         /** Mirrors the `skill.name` column, see `V1__init_schema.sql`. */
         const val MAX_SKILL_NAME_LENGTH = 100
     }
