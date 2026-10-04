@@ -439,6 +439,7 @@ class InternalApiController(
             enableSearch = session.enableSearch,
             enablePlan = session.enablePlan,
             permissionMode = session.permissionMode,
+            skillSelfWrite = agent.skillSelfWrite,
         )
     }
 
@@ -462,6 +463,7 @@ class InternalApiController(
             enableThink = channel.enableThink,
             enableSearch = channel.enableSearch,
             enablePlan = channel.enablePlan,
+            skillSelfWrite = agent.skillSelfWrite,
         )
     }
 
@@ -498,6 +500,7 @@ class InternalApiController(
             model = model,
             agentTenantId = agent.tenantId,
             permissionMode = "BYPASS",
+            skillSelfWrite = agent.skillSelfWrite,
         )
     }
 
@@ -594,6 +597,7 @@ class InternalApiController(
             enableSearch = enableSearch,
             enablePlan = enablePlan,
             permissionMode = permissionMode,
+            skillSelfWrite = agent.skillSelfWrite,
         )
     }
 
@@ -659,6 +663,9 @@ class InternalApiController(
         enableThink: Int = 0,
         enableSearch: Int = 0,
         enablePlan: Int = 0,
+        // Left at 0 for a team's lead: it has no workspace of its own, so there is nowhere to stage a draft
+        // even if a row asked for it.
+        skillSelfWrite: Int = 0,
         permissionMode: String = "DEFAULT",
         toolBindings: List<AgentToolBinding> = toolBindingMapper.selectByAgentId(agentId),
         mcpBindings: List<AgentMcpBinding> = mcpBindingMapper.selectByAgentId(agentId),
@@ -915,6 +922,7 @@ class InternalApiController(
             enableThink = enableThink,
             enableSearch = enableSearch,
             enablePlan = enablePlan,
+            skillSelfWrite = skillSelfWrite,
             permissionMode = permissionMode,
             modelSupportInternet = model?.supportInternet ?: 0,
             modelSupportReasoning = model?.supportReasoning ?: 0,

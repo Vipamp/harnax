@@ -50,10 +50,12 @@ class WorkspaceDraftFilesReaderTest {
         }
     }
 
+    private fun reader(): WorkspaceDraftFilesReader = WorkspaceDraftFilesReader(filesystem, DRAFTS)
+
     private fun read(
         skillName: String = "invoice-fill",
         context: RuntimeContext? = ctx,
-    ): Map<String, String> = WorkspaceDraftFilesReader(filesystem, DRAFTS).read(skillName, context)
+    ): Map<String, String> = reader().read(skillName, context)
 
     private fun stubDir(
         dir: String,
@@ -151,6 +153,34 @@ class WorkspaceDraftFilesReaderTest {
         val seen = argumentCaptor<RuntimeContext>()
         verify(filesystem).glob(seen.capture(), anyString(), eq("$DRAFTS/invoice-fill/scripts"))
         assertNotNull(seen.firstValue)
+    }
+
+    @Test
+    fun `every staged draft is listed by its own name`() {
+        stubListing("invoice-fill", "weekly-report")
+
+        assertEquals(listOf("invoice-fill", "weekly-report"), reader().listDraftSkillNames(ctx))
+    }
+
+    @Test
+    fun `a draft the agent deleted is not offered as a proposal`() {
+        // Deletion is a move to `.archive/<name>-<ts>/`, one level below the staging directory. Listing it
+        // would start a promotion for a skill that is already gone from the live set.
+        stubListing(".archive/invoice-fill-1728000000")
+
+        assertTrue(reader().listDraftSkillNames(ctx).isEmpty())
+    }
+
+    @Test
+    fun `a staging area that will not list reads as no drafts`() {
+        `when`(filesystem.glob(any(), eq("SKILL.md"), eq(DRAFTS))).thenThrow(RuntimeException("sandbox is gone"))
+
+        assertTrue(reader().listDraftSkillNames(ctx).isEmpty())
+    }
+
+    private fun stubListing(vararg names: String) {
+        val matches = names.map { FileInfo.ofFile("$DRAFTS/$it/SKILL.md", 1L, "2026-10-05T00:00:00Z") }
+        `when`(filesystem.glob(any(), eq("SKILL.md"), eq(DRAFTS))).thenReturn(GlobResult.success(matches))
     }
 
     private companion object {

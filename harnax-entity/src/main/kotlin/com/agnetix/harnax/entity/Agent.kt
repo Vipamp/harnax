@@ -69,6 +69,16 @@ class Agent : Serializable {
     var isPublic: Int = 1
 
     /**
+     * Skill self-write status (0:no, 1:yes)
+     *
+     * The grant the runtime reads at assembly time to decide whether to install the skill-authoring tools
+     * at all. They have to be refused there rather than filtered afterwards: the framework registers them
+     * into the toolkit directly, past harnax's tool configuration filter.
+     */
+    @Schema(description = "Skill self-write status (0:no, 1:yes)")
+    var skillSelfWrite: Int = 0
+
+    /**
      * Creator
      */
     @Schema(description = "Creator")

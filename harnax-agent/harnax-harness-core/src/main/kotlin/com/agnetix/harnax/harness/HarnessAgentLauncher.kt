@@ -10,6 +10,7 @@ import com.agnetix.harnax.agent.adaptor.PlanNote
 import com.agnetix.harnax.agent.adaptor.PlanNoteAdaptor
 import com.agnetix.harnax.agent.adaptor.ProcessLogAdaptor
 import com.agnetix.harnax.agent.adaptor.SkillAdaptor
+import com.agnetix.harnax.agent.adaptor.SkillDraftAdaptor
 import com.agnetix.harnax.agent.adaptor.SkillUsageAdaptor
 import com.agnetix.harnax.agent.adaptor.TokenStatAdaptor
 import com.agnetix.harnax.agent.adaptor.mcp.McpHelper
@@ -32,6 +33,8 @@ import com.agnetix.harnax.harness.output.OutputFileStore
 import com.agnetix.harnax.harness.sandbox.CliImageBuilder
 import com.agnetix.harnax.harness.sandbox.CliPackageStore
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
+import com.agnetix.harnax.harness.skill.AdminBackedPromotionGate
+import com.agnetix.harnax.harness.skill.SkillDraftStaging
 import com.agnetix.harnax.harness.skill.TenantSkillVisibilityFilter
 import com.agnetix.harnax.harness.team.TeamLeadToolBox
 import com.agnetix.harnax.harness.team.TeamMemberSpec
@@ -83,6 +86,8 @@ import java.util.UUID
  * @param skillAdaptor adaptor for skill loading
  * @param skillUsageAdaptor adaptor that counts the delivered skills entering a session's context; absent
  * means the runtime reports no usage at all
+ * @param skillDraftAdaptor intake a staged draft is filed with for a human to review; absent means no agent
+ * may author skills, whatever its own grant says
  * @param tokenStatAdaptor adaptor for token stat persistence
  * @param processLogAdaptor adaptor for process logging
  * @param toolCallLogAdaptor adaptor for tool call logging (optional)
@@ -115,6 +120,7 @@ class HarnessAgentLauncher(
     val outputFileStore: OutputFileStore? = null,
     val mcpTokenSourceFactory: McpAccessTokenSourceFactory? = null,
     val skillUsageAdaptor: SkillUsageAdaptor? = null,
+    val skillDraftAdaptor: SkillDraftAdaptor? = null,
 ) {
 
     private val log = LoggerFactory.getLogger(HarnessAgentLauncher::class.java)
@@ -496,6 +502,33 @@ class HarnessAgentLauncher(
             )
         }
 
+        // ----- Skill self-write -----
+        // Decided here, at assembly, because the framework registers `skill_manage` and `propose_skill` into
+        // its own toolkit: the tool sweep above walks ToolBoxes known to the registry, so it cannot take an
+        // agent's own skills away from an agent that was never granted them. A lead is excluded on top of that
+        // — `disableFilesystemTools()` and `disableShellTool()` below leave it without a workspace to stage
+        // into, and `disableSubagents()` leaves it without anything that would write one.
+        val skillDraftIntake = skillDraftAdaptor?.takeIf { agentSpec.skillSelfWrite && !isLead }
+        if (agentSpec.skillSelfWrite && !isLead && skillDraftAdaptor == null) {
+            log.warn(
+                "Agent '{}' is granted skill self-write but no SkillDraftAdaptor is configured: the drafts " +
+                    "it stages would have nowhere to be reviewed, so the authoring tools are not installed.",
+                agentSpec.name,
+            )
+        }
+        if (skillDraftIntake != null) {
+            val staging = SkillDraftStaging()
+            agentBuilder.skillSelfWrite(
+                staging = staging,
+                gate = AdminBackedPromotionGate(sessionId, skillDraftIntake, staging),
+            )
+            log.info(
+                "Agent '{}' may author skills: drafts stage in '{}', every one of them waits for review",
+                agentSpec.name,
+                staging.draftsDir,
+            )
+        }
+
         // ----- Team tools -----
         // Registered after the tool sweep, so nothing on the ordinary path removes them: that sweep only
         // walks ToolBoxes known to the registry, and these are built here.
@@ -655,6 +688,10 @@ class HarnessAgentLauncher(
             "todo_write",
             "agent_spawn", "agent_send", "agent_list",
             "task_output", "task_list",
+            // Registered by the framework itself when this agent may author skills. Left without a rule they
+            // would fall to the engine's DEFAULT ask, and a proposal that is about to sit in a reviewer's
+            // queue is not a decision the person chatting has any way to make — it installs nothing by itself.
+            "skill_manage", "propose_skill",
         ) + teamToolNames
         val permCtxBuilder = PermissionContextState.builder()
         frameworkAllowTools.forEach { toolName ->
@@ -929,6 +966,7 @@ class HarnessAgentLauncher(
             outputFileStore: OutputFileStore? = null,
             mcpTokenSourceFactory: McpAccessTokenSourceFactory? = null,
             skillUsageAdaptor: SkillUsageAdaptor? = null,
+            skillDraftAdaptor: SkillDraftAdaptor? = null,
         ): HarnessAgentLauncher {
             minioConfig?.ensureBuckets()
 
@@ -1001,6 +1039,7 @@ class HarnessAgentLauncher(
                 outputFileStore = outputFileStore,
                 mcpTokenSourceFactory = mcpTokenSourceFactory,
                 skillUsageAdaptor = skillUsageAdaptor,
+                skillDraftAdaptor = skillDraftAdaptor,
             )
         }
 

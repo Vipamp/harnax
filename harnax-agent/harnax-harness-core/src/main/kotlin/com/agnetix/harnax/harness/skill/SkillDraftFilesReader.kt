@@ -41,6 +41,34 @@ class WorkspaceDraftFilesReader(
 
     private val log = LoggerFactory.getLogger(WorkspaceDraftFilesReader::class.java)
 
+    /**
+     * The drafts currently staged, by name.
+     *
+     * A draft is one directory holding a `SKILL.md`, which is how upstream discovers skills as well
+     * (`WorkspaceSkillRepository` globs for that same file), so anything the agent wrote elsewhere in the
+     * staging area is not a proposal for anything. Exactly one level deep, because a skill the agent deleted
+     * is not a proposal either: upstream archives it to `.archive/<name>-<ts>/`, one level lower.
+     *
+     * A staging area that will not list reads as no drafts, the same posture as [read]: a scan that failed
+     * says nothing to anyone, while the next turn's scan gets the same answer anyway.
+     */
+    fun listDraftSkillNames(ctx: RuntimeContext?): List<String> {
+        val effectiveCtx = ctx ?: RuntimeContext.empty()
+        val matches = try {
+            val glob = filesystem.glob(effectiveCtx, SKILL_FILE, draftsDir)
+            if (glob.isSuccess) glob.matches() ?: emptyList() else emptyList()
+        } catch (e: Exception) {
+            log.warn("Could not list the drafts under {}: {}", draftsDir, e.message)
+            emptyList()
+        }
+        return matches.mapNotNull { match ->
+            val path = match.path()?.replace('\\', '/') ?: return@mapNotNull null
+            // Relative to the staging directory, a draft's text sits at exactly `<name>/SKILL.md`.
+            val segments = path.substringAfter("$draftsDir/", "").split('/')
+            segments.takeIf { it.size == 2 && it[1] == SKILL_FILE && it[0].isNotEmpty() }?.first()
+        }.distinct()
+    }
+
     override fun read(
         skillName: String,
         ctx: RuntimeContext?,
@@ -77,5 +105,8 @@ class WorkspaceDraftFilesReader(
     companion object {
         /** Upstream's own list, from `SkillPromoter.loadDraftResources`. */
         private val SUPPORT_DIRS = listOf("scripts", "references", "templates", "assets")
+
+        /** Upstream's own marker for "this directory is a skill", the file `WorkspaceSkillRepository` globs for. */
+        private const val SKILL_FILE = "SKILL.md"
     }
 }

@@ -54,6 +54,9 @@ data class AgentResponse(
     @Schema(description = "Whether public (0:no, 1:yes)", example = "1")
     var isPublic: Int? = null,
 
+    @Schema(description = "Skill self-write (0:no, 1:yes)", example = "0")
+    var skillSelfWrite: Int? = null,
+
     @Schema(description = "Creator", example = "admin")
     var creator: String? = null,
 
@@ -78,6 +81,7 @@ data class AgentResponse(
                 owner = agent.owner,
                 status = agent.status,
                 isPublic = agent.isPublic,
+                skillSelfWrite = agent.skillSelfWrite,
                 creator = agent.creator,
                 createTime = agent.createTime,
                 updateTime = agent.updateTime,

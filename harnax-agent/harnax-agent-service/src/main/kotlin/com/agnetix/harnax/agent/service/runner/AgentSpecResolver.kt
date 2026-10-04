@@ -228,6 +228,9 @@ class AgentSpecResolver(
             .description(specInfo.description)
             .systemPrompt(specInfo.systemPrompt)
             .chatModelId(specInfo.modelId)
+            // Granted only by the exact value admin writes: this one opens a capability rather than a
+            // preference, so a stray value must not read as a grant.
+            .skillSelfWrite(specInfo.skillSelfWrite == 1)
 
         // Collect all env bindings for ToolEnvContext (flat map, merged across tools and MCPs)
         val allEnvBindings = mutableMapOf<String, String>()

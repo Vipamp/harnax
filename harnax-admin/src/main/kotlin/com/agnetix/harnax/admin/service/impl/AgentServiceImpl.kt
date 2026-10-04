@@ -124,6 +124,8 @@ class AgentServiceImpl(
         agent.owner = currentUsername
         agent.status = request.status ?: 1
         agent.isPublic = request.isPublic ?: 0
+        // Off unless the form says otherwise: this is a grant, and an omitted field must not read as one.
+        agent.skillSelfWrite = request.skillSelfWrite ?: 0
         agent.tenantId = tenantId
         agent.creator = currentUsername
 
@@ -173,6 +175,7 @@ class AgentServiceImpl(
             agent.modelId = modelId
         }
         request.isPublic?.let { agent.isPublic = it }
+        request.skillSelfWrite?.let { agent.skillSelfWrite = it }
 
         agent.updateTime = LocalDateTime.now()
         agentMapper.updateById(agent)
@@ -283,6 +286,7 @@ class AgentServiceImpl(
         response.owner = agent.owner
         response.status = agent.status
         response.isPublic = agent.isPublic
+        response.skillSelfWrite = agent.skillSelfWrite
         response.creator = agent.creator
         response.createTime = agent.createTime
         response.updateTime = agent.updateTime

@@ -59,6 +59,13 @@ data class AgentSpecInfoResponse(
     @Schema(description = "Planning enabled (0:no, 1:yes)")
     val enablePlan: Int = 0,
 
+    @Schema(
+        description = "Agent may author skills itself (0:no, 1:yes), read from the agent row. " +
+            "Off unless admin says otherwise, because the runtime installs the skill-writing tools " +
+            "outside every other tool filter",
+    )
+    val skillSelfWrite: Int = 0,
+
     @Schema(description = "Permission mode (DEFAULT/ACCEPT_EDITS/EXPLORE/BYPASS/DONT_ASK)")
     val permissionMode: String = "DEFAULT",
 

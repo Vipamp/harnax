@@ -6,6 +6,7 @@ import com.agnetix.harnax.agent.adaptor.McpConfigAdaptor
 import com.agnetix.harnax.agent.adaptor.PlanNoteAdaptor
 import com.agnetix.harnax.agent.adaptor.ProcessLogAdaptor
 import com.agnetix.harnax.agent.adaptor.SkillAdaptor
+import com.agnetix.harnax.agent.adaptor.SkillDraftAdaptor
 import com.agnetix.harnax.agent.adaptor.SkillUsageAdaptor
 import com.agnetix.harnax.agent.adaptor.TokenStatAdaptor
 import com.agnetix.harnax.agent.session.SessionConfig
@@ -292,6 +293,7 @@ class HarnessAutoConfiguration {
         outputFileStoreProvider: ObjectProvider<OutputFileStore>,
         mcpTokenSourceFactoryProvider: ObjectProvider<McpAccessTokenSourceFactory>,
         skillUsageAdaptorProvider: ObjectProvider<SkillUsageAdaptor>,
+        skillDraftAdaptorProvider: ObjectProvider<SkillDraftAdaptor>,
     ): HarnessAgentLauncher {
         val toolCallLogAdaptor = toolCallLogAdaptorProvider.ifAvailable
             ?: ToolCallLogAdaptor { /* no-op */ }
@@ -325,6 +327,9 @@ class HarnessAutoConfiguration {
             // Absent means the runtime reports no skill views: the delivery path is untouched, and a
             // runtime that cannot reach Admin's intake endpoint is not one that should stall a turn.
             skillUsageAdaptor = skillUsageAdaptorProvider.ifAvailable,
+            // Absent means nobody may author a skill: a draft with nowhere to be filed is unreviewed text
+            // sitting in a workspace, which is the one thing this feature exists to prevent.
+            skillDraftAdaptor = skillDraftAdaptorProvider.ifAvailable,
         )
     }
 }
