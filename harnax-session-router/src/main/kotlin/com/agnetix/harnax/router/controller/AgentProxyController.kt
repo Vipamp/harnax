@@ -177,6 +177,19 @@ class AgentProxyController(
         return sessionRouterService.proxyLoadCurrentPlan(sessionId)
     }
 
+    /**
+     * Proxy a context usage request to the correct agent-service instance.
+     */
+    @GetMapping("/context/{sessionId}")
+    suspend fun proxyLoadContext(
+        @PathVariable sessionId: String,
+        httpRequest: HttpServletRequest,
+    ): ResultVo<Any?> {
+        httpRequest.setAttribute(SESSION_ID_ATTR, sessionId)
+        log.debug("Received context usage proxy request for session: $sessionId")
+        return sessionRouterService.proxyLoadContext(sessionId)
+    }
+
     // ---- Workspace proxy endpoints ----
 
     /**

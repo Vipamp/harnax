@@ -62,6 +62,7 @@ class ApiCallLogFilter(
             "/api/router/agent/command",
             "/api/router/agent/session",
             "/api/router/agent/chat/history",
+            "/api/router/agent/context",
             "/api/router/agent/workspace",
         )
     }

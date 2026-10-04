@@ -955,6 +955,36 @@ class SessionRouterServiceTest {
     }
 
     @Test
+    fun `reading context asks the instance that holds the session even when it looks stale`() {
+        // The ratio is measured from that agent's live state, so an instance switch would report a
+        // different model's window — and, for a session mid-turn, would not answer at all.
+        `when`(sessionMappingService.getInstanceId("session-1")).thenReturn("inst-1")
+        `when`(instanceRegistry.getInstance("inst-1")).thenReturn(staleInstance("inst-1"))
+        runBlocking {
+            `when`(agentServiceClient.loadContext(any(), eq("session-1")))
+                .thenReturn(ResultVo.success(mapOf("ratio" to 0.75)))
+        }
+
+        val result = runBlocking { service.proxyLoadContext("session-1") }
+
+        assertTrue(result.isSuccess())
+        assertEquals(mapOf("ratio" to 0.75), result.data)
+        verifyNeverRerouted("session-1")
+    }
+
+    @Test
+    fun `a session that never routed has no context to report`() {
+        `when`(sessionMappingService.getInstanceId("session-1")).thenReturn(null)
+
+        val result = runBlocking { service.proxyLoadContext("session-1") }
+
+        assertTrue(result.isSuccess())
+        assertNull(result.data, "nothing was placed anywhere, so there is no window to measure against")
+        verifyNeverRerouted("session-1")
+        verifyNoInteractions(agentServiceClient)
+    }
+
+    @Test
     fun `an upload with no instance to upload into is refused`() {
         `when`(sessionMappingService.getInstanceId("session-1")).thenReturn(null)
 
@@ -1377,6 +1407,7 @@ class SessionRouterServiceTest {
             ProxyEntryPoint("proxyLoadHistory") { target, id -> runBlocking { target.proxyLoadHistory(id) } },
             ProxyEntryPoint("proxyLoadPlans") { target, id -> runBlocking { target.proxyLoadPlans(id) } },
             ProxyEntryPoint("proxyLoadCurrentPlan") { target, id -> runBlocking { target.proxyLoadCurrentPlan(id) } },
+            ProxyEntryPoint("proxyLoadContext") { target, id -> runBlocking { target.proxyLoadContext(id) } },
             ProxyEntryPoint("proxyWorkspaceListFiles") { target, id ->
                 runBlocking { target.proxyWorkspaceListFiles(id, "/workspace") }
             },

@@ -394,6 +394,18 @@ class SessionRouterService(
         }
     }
 
+    suspend fun proxyLoadContext(sessionId: String): ResultVo<Any?> {
+        setMDC(sessionId, null)
+        try {
+            val instance = boundInstance(sessionId) ?: return ResultVo.success(null)
+            return callBound(sessionId, "loadContext", instance) { target ->
+                agentServiceClient.loadContext(target.getBaseUrl(), sessionId)
+            }
+        } finally {
+            clearMDC()
+        }
+    }
+
     // ---- Workspace proxy methods ----
 
     suspend fun proxyWorkspaceListFiles(sessionId: String, path: String): ResultVo<List<Map<String, Any>>> {

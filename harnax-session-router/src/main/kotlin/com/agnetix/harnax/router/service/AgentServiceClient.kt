@@ -186,6 +186,19 @@ class AgentServiceClient(
             ?: throw emptyBody(url.toString())
     }
 
+    /**
+     * Read how full a session's model context is from agent-service.
+     */
+    suspend fun loadContext(baseUrl: String, sessionId: String): ResultVo<Any?> {
+        val url = agentUrl(baseUrl, "/api/agent/context/${segment(sessionId)}")
+        return webClient.get()
+            .uri(url)
+            .retrieve()
+            .bodyToMono(object : ParameterizedTypeReference<ResultVo<Any?>>() {})
+            .awaitSingleOrNull()
+            ?: throw emptyBody(url.toString())
+    }
+
     // ==================== Workspace ====================
 
     /**
