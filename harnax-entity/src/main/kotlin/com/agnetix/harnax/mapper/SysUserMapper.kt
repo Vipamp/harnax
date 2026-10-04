@@ -22,6 +22,16 @@ interface SysUserMapper {
     fun selectById(@Param("id") id: Long): SysUser?
 
     /**
+     * Query users by ID, in one round trip.
+     *
+     * Callers hold the non-empty precondition: an empty list renders `IN ()`, which MySQL rejects.
+     *
+     * @param ids User IDs
+     * @return Users found; an id with no live row is simply absent
+     */
+    fun selectByIds(@Param("ids") ids: List<Long>): List<SysUser>
+
+    /**
      * Insert user
      *
      * @param sysuser User entity

@@ -96,19 +96,22 @@ class SkillUsageFlowIT : BaseAdminIT() {
 
     /**
      * Posts to the intake endpoint with the body written out as wire text, in the exact shape
-     * `AdminApiClient.reportSkillUsage` serialises: `{"sessionId":…,"events":[{skillId,event}]}`.
+     * `AdminApiClient.reportSkillUsage` serialises:
+     * `{"sessionId":…,"userId":…,"events":[{skillId,event}]}`.
      *
      * @return the number of events admin filed
      */
     private fun report(
         sessionId: String,
         vararg events: Pair<Long, String>,
+        userId: Long? = null,
     ): Int {
         val eventsJson = events.joinToString(",") { """{"skillId":${it.first},"event":"${it.second}"}""" }
+        val userJson = userId?.let { """"userId":$it,""" } ?: ""
         val response = exchange(
             HttpMethod.POST,
             "/api/admin/internal/skills/usage",
-            body = """{"sessionId":"$sessionId","events":[$eventsJson]}""",
+            body = """{"sessionId":"$sessionId",$userJson"events":[$eventsJson]}""",
             token = internalSecret,
         )
         return assertOk(parseBody(response)).asInt()
@@ -185,5 +188,16 @@ class SkillUsageFlowIT : BaseAdminIT() {
         val skill = ensureSkill()
 
         assertEquals(1, report(ensureSession(), skill to "HOVER", skill to "VIEW"))
+    }
+
+    @Test
+    @Order(7)
+    fun `a user id outside the session tenant costs the count nothing`() {
+        // The attribution is what a foreign id loses, not the event: this load really entered this session's
+        // context. Which column value the guard ends up storing is the service unit tests' fact — no read path
+        // of the product exposes a per-user row, so the wire here can only be asked whether it still filed.
+        val skill = ensureSkill()
+
+        assertEquals(1, report(ensureSession(), skill to "VIEW", userId = 9_999_999L))
     }
 }

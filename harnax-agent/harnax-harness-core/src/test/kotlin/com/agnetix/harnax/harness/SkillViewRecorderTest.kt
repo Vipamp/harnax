@@ -15,15 +15,18 @@ import org.junit.jupiter.api.Test
  */
 class SkillViewRecorderTest {
 
-    /** Records every batch it was handed, in order. */
+    /** Records every batch it was handed, in order, with the user each batch named. */
     private class FakeAdaptor(private val onFailure: () -> Throwable? = { null }) : SkillUsageAdaptor {
         val batches = mutableListOf<Pair<String, List<Long>>>()
+        val users = mutableListOf<Long?>()
 
         override fun reportViews(
             sessionId: String,
             skillIds: List<Long>,
+            userId: Long?,
         ) {
             batches += sessionId to skillIds
+            users += userId
             onFailure()?.let { throw it }
         }
     }
@@ -38,9 +41,10 @@ class SkillViewRecorderTest {
         adaptor: SkillUsageAdaptor,
         startMillis: Long = 0L,
         cooldownMillis: Long = 60_000L,
+        userId: Long? = 1L,
     ): Pair<SkillViewRecorder, () -> Unit> {
         var now = startMillis
-        val recorder = SkillViewRecorder("web-1", adaptor, cooldownMillis) { now }
+        val recorder = SkillViewRecorder("web-1", userId, adaptor, cooldownMillis) { now }
         return recorder to { now += cooldownMillis }
     }
 
@@ -142,5 +146,31 @@ class SkillViewRecorderTest {
         recorder.onRead(listOf(skill("report")))
 
         assertEquals(listOf("web-1" to listOf(9L)), adaptor.batches)
+    }
+
+    @Test
+    fun `the batch carries the end user this build was attributed to`() {
+        val attributed = FakeAdaptor()
+        val attributedRecorder = recorder(attributed, userId = 42L).first
+        attributedRecorder.attribute("pdf-tools", 7L)
+
+        attributedRecorder.onRead(listOf(skill("pdf-tools")))
+
+        // A count nobody can trace to a person cannot answer what the visibility control plane asks: did
+        // the allow-listed user actually get this skill into their context.
+        assertEquals(listOf(42L), attributed.users)
+    }
+
+    @Test
+    fun `a build with no user names nobody`() {
+        // A channel conversation reaches the runtime with no harnax identity, and turning that into an id
+        // would file every anonymous load against whoever happened to be first.
+        val anonymous = FakeAdaptor()
+        val anonymousRecorder = recorder(anonymous, userId = null).first
+        anonymousRecorder.attribute("pdf-tools", 7L)
+
+        anonymousRecorder.onRead(listOf(skill("pdf-tools")))
+
+        assertEquals(listOf<Long?>(null), anonymous.users)
     }
 }

@@ -241,7 +241,7 @@ class AgentSpecResolver(
         // Note: the skills the selected CLIs ship are already merged in by `withCliSkills`, which reads
         // them off `cliDetails[].skill` — a package's skill has no existence apart from its CLI.
         for (skill in specInfo.skillDetails) {
-            builder.addSkill(SkillSpec(skillId = skill.id, skillName = skill.name))
+            builder.addSkill(SkillSpec(skillId = skill.id, skillName = skill.name, visibility = skill.visibility))
         }
 
         // ── CLI details (package coordinates for the sandbox image + env bindings) ──

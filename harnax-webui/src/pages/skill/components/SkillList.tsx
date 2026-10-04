@@ -8,6 +8,7 @@ import dayjs from 'dayjs';
 import { useIntl } from '@umijs/max';
 import StatusSwitch from '@/components/StatusSwitch';
 import SkillOriginTag from './SkillOriginTag';
+import SkillVisibilityModal from './SkillVisibilityModal';
 
 interface SkillListProps {
   repositoryId: number;
@@ -24,6 +25,40 @@ const SkillList: React.FC<SkillListProps> = ({ repositoryId, filters, onRefresh,
   const [total, setTotal] = useState(0);
   const [pageNum, setPageNum] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [visibilitySkill, setVisibilitySkill] = useState<API.SkillItem | null>(null);
+
+  /**
+   * The list carries only a summary — mode, percentage, user count, labels — because a page of 20 rows must
+   * not drag 20 allow-lists along. A row with no summary has no policy row at all, which is the same answer
+   * the runtime gives: everyone loads it.
+   */
+  const visibilityTag = (record: API.SkillItem) => {
+    const summary = record.visibility;
+    switch (summary?.mode) {
+      case 'CANARY':
+        return intl.formatMessage(
+          { id: 'pages.skill.visibility.tag.canary', defaultMessage: 'Rollout {pct}%' },
+          { pct: summary.canaryPct ?? 0 },
+        );
+      case 'ALLOW_LIST':
+        return intl.formatMessage(
+          { id: 'pages.skill.visibility.tag.allowList', defaultMessage: '{count} named user(s)' },
+          { count: summary.userCount ?? 0 },
+        );
+      case 'ENV':
+        return intl.formatMessage(
+          {
+            id: 'pages.skill.visibility.tag.env',
+            defaultMessage: 'Only {environments}',
+          },
+          { environments: (summary.environments || []).join('、') || '-' },
+        );
+      default:
+        return intl.formatMessage({ id: 'pages.skill.visibility.mode.all', defaultMessage: 'Everyone' });
+    }
+  };
+
+  const isGated = (record: API.SkillItem) => !!record.visibility?.mode && record.visibility?.mode !== 'ALL';
 
   const columns: ColumnsType<API.SkillItem> = [
     {
@@ -77,6 +112,28 @@ const SkillList: React.FC<SkillListProps> = ({ repositoryId, filters, onRefresh,
       key: 'origin',
       width: 120,
       render: (origin: string, record) => <SkillOriginTag origin={origin} originRef={record.originRef} />,
+    },
+    {
+      title: intl.formatMessage({ id: 'pages.skill.list.visibility', defaultMessage: 'Visibility' }),
+      key: 'visibility',
+      width: 140,
+      render: (_, record) => (
+        <Tooltip
+          placement="topLeft"
+          title={intl.formatMessage({
+            id: 'pages.skill.visibility.open',
+            defaultMessage: 'Who may load this skill at runtime — click to change',
+          })}
+        >
+          <Tag
+            color={isGated(record) ? 'orange' : undefined}
+            style={{ cursor: 'pointer' }}
+            onClick={() => setVisibilitySkill(record)}
+          >
+            {visibilityTag(record)}
+          </Tag>
+        </Tooltip>
+      ),
     },
     {
       title: intl.formatMessage({ id: 'pages.skill.list.updateTime', defaultMessage: 'Sync Time' }),
@@ -188,26 +245,40 @@ const SkillList: React.FC<SkillListProps> = ({ repositoryId, filters, onRefresh,
   };
 
   return (
-    <Table
-      className="styled-pro-table"
-      rowKey="id"
-      columns={columns}
-      dataSource={data}
-      loading={loading}
-      size="small"
-      scroll={{ x: 'max-content' }}
-      pagination={{
-        current: pageNum,
-        pageSize,
-        total,
-        showSizeChanger: true,
-        showTotal: (t) => `${intl.formatMessage({ id: 'pages.common.total', defaultMessage: 'Total' })} ${t} ${intl.formatMessage({ id: 'pages.common.items', defaultMessage: 'items' })}`,
-        onChange: (page, size) => {
-          setPageNum(page);
-          setPageSize(size);
-        },
-      }}
-    />
+    <>
+      <Table
+        className="styled-pro-table"
+        rowKey="id"
+        columns={columns}
+        dataSource={data}
+        loading={loading}
+        size="small"
+        scroll={{ x: 'max-content' }}
+        pagination={{
+          current: pageNum,
+          pageSize,
+          total,
+          showSizeChanger: true,
+          showTotal: (t) => `${intl.formatMessage({ id: 'pages.common.total', defaultMessage: 'Total' })} ${t} ${intl.formatMessage({ id: 'pages.common.items', defaultMessage: 'items' })}`,
+          onChange: (page, size) => {
+            setPageNum(page);
+            setPageSize(size);
+          },
+        }}
+      />
+      {visibilitySkill && (
+        <SkillVisibilityModal
+          skillId={visibilitySkill.id}
+          skillName={visibilitySkill.name}
+          open
+          onCancel={() => setVisibilitySkill(null)}
+          onSaved={() => {
+            setVisibilitySkill(null);
+            loadData();
+          }}
+        />
+      )}
+    </>
   );
 };
 

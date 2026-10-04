@@ -8,6 +8,7 @@ import com.agnetix.harnax.admin.service.McpOAuthUserService
 import com.agnetix.harnax.admin.service.McpStdioPolicy
 import com.agnetix.harnax.admin.service.SkillUsageService
 import com.agnetix.harnax.admin.skill.SkillBindingResolver
+import com.agnetix.harnax.admin.skill.SkillVisibilityCodec
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.common.dto.ResultVo
@@ -19,6 +20,7 @@ import com.agnetix.harnax.entity.AgentToolBinding
 import com.agnetix.harnax.entity.Cli
 import com.agnetix.harnax.entity.Model
 import com.agnetix.harnax.entity.Skill
+import com.agnetix.harnax.entity.SkillVisibilityPolicy
 import com.agnetix.harnax.entity.Team
 import com.agnetix.harnax.entity.dto.AgentCliSetDto
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
@@ -781,6 +783,9 @@ class InternalApiController(
         // has no tenant condition and an internal call carries no trustworthy tenant header, so a
         // cross-tenant binding row would otherwise hand over another tenant's SKILL.md and resources.
         val skillById = skillBindingResolver.deliverable(skillIdsToDeliver, agentTenantId).associateBy { it.id }
+        // One batched read for the whole delivery, keyed by the ids that actually resolved: skills with no
+        // policy row are absent here, and absent means visible
+        val skillPolicies = skillBindingResolver.policiesOf(skillById.keys.toList())
 
         val skillDetails = skillIdsToDeliver.mapNotNull { skillId ->
             val skill = skillById[skillId]
@@ -796,7 +801,7 @@ class InternalApiController(
                 log.info("Skill '{}' (id={}) is disabled, skipping", skill.name, skill.id)
                 null
             } else {
-                skillDetail(skill)
+                skillDetail(skill, skillPolicies[skill.id])
             }
         }
         // ── CLI bindings (full detail DTOs, each carrying the skill it ships) ──
@@ -810,6 +815,7 @@ class InternalApiController(
             // before the save-time guard existed must not carry another tenant's SKILL.md inside the
             // package that ships it.
             val cliSkillById = skillBindingResolver.deliverable(skillIds, agentTenantId).associateBy { it.id }
+            val cliSkillPolicies = skillBindingResolver.policiesOf(cliSkillById.keys.toList())
             cliBindings.mapNotNull { binding ->
                 val cli = clisById[binding.cliId]
                 if (cli == null) {
@@ -842,7 +848,7 @@ class InternalApiController(
                                     log.info("Skill '{}' (id={}) of CLI '{}' is disabled, skipping it", skill.name, skill.id, cli.name)
                                     null
                                 }
-                                else -> skillDetail(skill)
+                                else -> skillDetail(skill, cliSkillPolicies[skill.id])
                             }
                         },
                     )
@@ -989,13 +995,19 @@ class InternalApiController(
         return perAgent + defaults
     }
 
-    private fun skillDetail(skill: Skill): SkillDetailDto = SkillDetailDto(
+    private fun skillDetail(
+        skill: Skill,
+        policy: SkillVisibilityPolicy?,
+    ): SkillDetailDto = SkillDetailDto(
         id = skill.id,
         name = skill.name,
         description = skill.description,
         skillmd = skill.skillmd,
         resources = skill.resources,
         version = skill.version,
+        // Null stays off the wire and the runtime reads its absence as visible; the policy has to travel
+        // with the spec because the filter runs per conversation, where no admin call can be made
+        visibility = policy?.let { SkillVisibilityCodec.toDto(it) },
     )
 
     /**

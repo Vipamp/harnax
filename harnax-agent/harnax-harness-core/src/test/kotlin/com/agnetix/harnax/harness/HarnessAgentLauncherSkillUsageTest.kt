@@ -34,12 +34,15 @@ class HarnessAgentLauncherSkillUsageTest {
 
     private class FakeUsage : SkillUsageAdaptor {
         val batches = mutableListOf<Pair<String, List<Long>>>()
+        val users = mutableListOf<Long?>()
 
         override fun reportViews(
             sessionId: String,
             skillIds: List<Long>,
+            userId: Long?,
         ) {
             batches += sessionId to skillIds
+            users += userId
         }
     }
 
@@ -116,6 +119,24 @@ class HarnessAgentLauncherSkillUsageTest {
             "nothing was delivered, so no repository should hold a skill",
         )
         assertTrue(usage.batches.isEmpty(), "an undelivered skill must produce no event: ${usage.batches}")
+    }
+
+    @Test
+    fun `the count names the user this run was built for`(@TempDir workspace: Path) {
+        // The identity reaches the runtime on the request, and only the launcher can carry it to the
+        // recorder; a recorder built without it would leave every per-user question unanswerable.
+        val usage = FakeUsage()
+        val agent = launcher(SkillAdaptor { skill("report-style") }, usage)
+            .createSingleAgent(
+                agentSpec = spec(skillId = 5L, skillName = "report-style"),
+                sessionId = "web-7",
+                chatSpec = ChatSpec.builder().build(),
+                userIdentifier = UserIdentifier(userId = 7L),
+            )
+
+        delivered(agent).allSkills
+
+        assertEquals(listOf(7L), usage.users)
     }
 
     @Test

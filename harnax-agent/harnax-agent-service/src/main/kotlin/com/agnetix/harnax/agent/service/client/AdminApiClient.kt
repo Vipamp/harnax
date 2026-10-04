@@ -237,20 +237,29 @@ class AdminApiClient(
     /**
      * File the skills this session had loaded into its context (design section 3.4).
      *
-     * The session id is the only identity sent: admin resolves the tenant from it rather than from
-     * anything the runtime claims, and stamps receipt time itself. VIEW is the one event this caller
-     * can assert — the runtime knows a skill entered the context, not what the model did with it.
+     * The session id is what decides the tenant: admin resolves it from that id rather than from anything
+     * the runtime claims, and stamps receipt time itself. The user id is reported because the runtime now
+     * knows it — the router authenticated the end user behind this run — and admin keeps the row with an
+     * empty user column if the id does not belong to the tenant the session resolved to. VIEW is the one
+     * event this caller can assert — the runtime knows a skill entered the context, not what the model did
+     * with it.
      *
      * @param sessionId the runtime session that read the skills
      * @param skillIds Admin skill ids, never names
+     * @param userId the end user this run is attributed to, null when the conversation has none
      * @return true if admin accepted the batch
      */
-    fun reportSkillUsage(sessionId: String, skillIds: List<Long>): Boolean {
+    fun reportSkillUsage(
+        sessionId: String,
+        skillIds: List<Long>,
+        userId: Long?,
+    ): Boolean {
         val url = "$adminUrl/api/admin/internal/skills/usage"
         log.debug("[Agent→Admin] POST {} - reporting {} VIEW event(s)", url, skillIds.size)
 
         val body = mapOf(
             "sessionId" to sessionId,
+            "userId" to userId,
             "events" to skillIds.map { mapOf("skillId" to it, "event" to "VIEW") },
         )
         val responseType = object : ParameterizedTypeReference<ResultVo<Int>>() {}

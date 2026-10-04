@@ -4,6 +4,7 @@ import com.agnetix.harnax.admin.dto.SkillUsageReportRequest
 import com.agnetix.harnax.admin.dto.SkillUsageSummaryResponse
 import com.agnetix.harnax.admin.service.SkillRepositoryService
 import com.agnetix.harnax.admin.service.SkillUsageService
+import com.agnetix.harnax.admin.service.UserTenantService
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.TenantResolver
 import com.agnetix.harnax.common.session.TaskSessionId
@@ -28,6 +29,7 @@ class SkillUsageServiceImpl(
     private val channelMapper: ChannelMapper,
     private val agentMapper: AgentMapper,
     private val skillRepositoryService: SkillRepositoryService,
+    private val userTenantService: UserTenantService,
     private val jwtUtil: JwtUtil,
 ) : SkillUsageService {
 
@@ -50,6 +52,19 @@ class SkillUsageServiceImpl(
         val tenantId = resolveTenant(sessionId) ?: run {
             log.warn("Session {} resolves to no tenant, so its {} skill usage events were dropped", sessionId, events.size)
             return 0
+        }
+
+        // The runtime names the end user it was serving; the session still decides whose workspace that is.
+        // An id with no membership row here would put counts beside people who were not in this tenant, so it
+        // is dropped the way a skill id invisible to the tenant is. A channel conversation reports no user at
+        // all, and that is the ordinary case rather than something to warn about.
+        val userId = request.userId?.takeUnless { it <= 0 }?.let { reported ->
+            if (userTenantService.isUserInTenant(reported, tenantId)) {
+                reported
+            } else {
+                log.warn("Session {} reported user {} outside tenant {}, so its usage is left unattributed", sessionId, reported, tenantId)
+                null
+            }
         }
 
         val kept = events.take(MAX_EVENTS_PER_REPORT)
@@ -80,8 +95,9 @@ class SkillUsageServiceImpl(
                 SkillUsage().apply {
                     this.tenantId = tenantId
                     this.skillId = skillId
-                    // Left null on purpose: the runtime has no user to name yet (design section 4.1), and a
-                    // sentinel would make per-user reporting look like it was bucketed by somebody.
+                    // Already checked against this tenant, or null: a channel conversation has no harnax user
+                    // to name, and a sentinel would make per-user reporting look like it was bucketed by somebody.
+                    this.userId = userId
                     this.event = kind
                     this.sessionId = sessionId
                     this.occurredAt = occurredAt

@@ -16,6 +16,9 @@ package com.agnetix.harnax.harness.config
  * @param mcpStdioEnabled whether an MCP server of type stdio may be started as a local process; off by
  *   default because this process runs without isolation against the host (see the admin's
  *   `McpStdioPolicy`, which holds such rows back from delivery as the first line of defence)
+ * @param environment this deployment's label, matched against a skill's ENV visibility policy. One value
+ *   per service rather than per conversation, because it describes the process holding the agent: a
+ *   staging deployment reads the same skills as production only if an operator says so here.
  * @param team budgets of one team run, enforced by the runtime rather than negotiated by the lead
  */
 data class HarnessConfig(
@@ -25,6 +28,7 @@ data class HarnessConfig(
     val enableSessionPersistence: Boolean = true,
     val turnTimeoutSeconds: Long = 300,
     val mcpStdioEnabled: Boolean = false,
+    val environment: String = "prod",
     val team: TeamConfig = TeamConfig(),
 )
 

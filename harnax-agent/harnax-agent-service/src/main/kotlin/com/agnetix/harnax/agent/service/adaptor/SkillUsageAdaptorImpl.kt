@@ -45,6 +45,7 @@ class SkillUsageAdaptorImpl(
     override fun reportViews(
         sessionId: String,
         skillIds: List<Long>,
+        userId: Long?,
     ) {
         if (skillIds.isEmpty()) return
         try {
@@ -52,7 +53,7 @@ class SkillUsageAdaptorImpl(
                 try {
                     // The client turns transport failures into `false`; logged here too, so the reason for a
                     // missing count survives even when Admin answered with a business error instead of throwing.
-                    if (!adminApiClient.reportSkillUsage(sessionId, skillIds)) {
+                    if (!adminApiClient.reportSkillUsage(sessionId, skillIds, userId)) {
                         log.debug("Skill usage batch for session {} ({} skill(s)) was not accepted by Admin", sessionId, skillIds.size)
                     }
                 } catch (e: Exception) {

@@ -11,11 +11,13 @@ import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.SkillRepositoryService
 import com.agnetix.harnax.admin.service.SkillService
+import com.agnetix.harnax.admin.skill.SkillBindingResolver
 import com.agnetix.harnax.admin.skill.SkillInstaller
 import com.agnetix.harnax.admin.skill.SkillReviewRecorder
 import com.agnetix.harnax.admin.skill.SkillSourceConfigs
 import com.agnetix.harnax.admin.skill.SkillSourcePolicy
 import com.agnetix.harnax.admin.skill.SkillSyncRecorder
+import com.agnetix.harnax.admin.skill.SkillVisibilityCodec
 import com.agnetix.harnax.admin.skill.loader.SkillLoaderRegistry
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.TenantResolver
@@ -26,6 +28,7 @@ import com.agnetix.harnax.entity.SkillReviewLog
 import com.agnetix.harnax.mapper.AgentSkillBindingMapper
 import com.agnetix.harnax.mapper.CliMapper
 import com.agnetix.harnax.mapper.SkillMapper
+import com.agnetix.harnax.mapper.SkillVisibilityPolicyMapper
 import com.agnetix.harnax.mapper.TeamSkillBindingMapper
 import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
@@ -51,6 +54,8 @@ class SkillServiceImpl(
     private val skillInstaller: SkillInstaller,
     private val skillSyncRecorder: SkillSyncRecorder,
     private val skillReviewRecorder: SkillReviewRecorder,
+    private val skillVisibilityPolicyMapper: SkillVisibilityPolicyMapper,
+    private val skillBindingResolver: SkillBindingResolver,
     @Value($$"${local.tmp-dir}") private val localTmpDir: String,
     private val messageUtil: MessageUtil,
 ) : SkillService {
@@ -248,6 +253,9 @@ class SkillServiceImpl(
 
         // Remove agent references so no dangling binding survives the delete
         agentSkillBindingMapper.deleteBySkillIds(listOf(id))
+        // Same reason as the bindings: the policy is keyed by skill id, and a row left behind would be
+        // the only trace of a rule nobody can read or clear any more
+        skillVisibilityPolicyMapper.deleteBySkillId(id)
 
         val deleted = skillMapper.deleteById(id) > 0
         if (deleted) {
@@ -417,6 +425,7 @@ class SkillServiceImpl(
             repository,
             boundAgentCount = boundAgentCounts(listOf(skill.id))[skill.id] ?: 0,
             boundTeamCount = boundTeamCounts(listOf(skill.id))[skill.id] ?: 0,
+            visibility = visibilitySummaries(listOf(skill.id))[skill.id],
         )
     }
 
@@ -427,14 +436,38 @@ class SkillServiceImpl(
         val ids = skills.map { it.id }
         val boundAgents = boundAgentCounts(ids)
         val boundTeams = boundTeamCounts(ids)
+        val visibility = visibilitySummaries(ids)
         return skills.map {
             SkillResponse.fromEntity(
                 it,
                 repositories[it.repositoryId],
                 boundAgentCount = boundAgents[it.id] ?: 0,
                 boundTeamCount = boundTeams[it.id] ?: 0,
+                visibility = visibility[it.id],
             )
         }
+    }
+
+    /**
+     * Stored rollout rules for [skillIds], as the list renders them.
+     *
+     * Asked for the ids the page already holds, so the tenant gate that produced those rows is the only
+     * filter needed here — a policy for a skill the caller cannot see is never looked up. One read per
+     * page, like [boundAgentCounts]: asked per row, a rollout column would cost a query per skill, and a
+     * page that shows nothing for a restricted skill tells the operator the opposite of the truth.
+     *
+     * [SkillBindingResolver.policiesOf] is reused rather than the mapper called directly, because it holds
+     * the empty-batch guard: an unfiltered `IN ()` is a MySQL syntax error, and a second copy of that
+     * guard is how one of the two call sites ends up without it.
+     */
+    private fun visibilitySummaries(skillIds: List<Long>): Map<Long, SkillResponse.VisibilitySummary> = skillBindingResolver.policiesOf(skillIds).mapValues { (_, policy) ->
+        val dto = SkillVisibilityCodec.toDto(policy)
+        SkillResponse.VisibilitySummary(
+            mode = dto.mode,
+            canaryPct = dto.canaryPct,
+            userCount = dto.userIds.size,
+            environments = dto.environments,
+        )
     }
 
     /**

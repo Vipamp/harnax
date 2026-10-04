@@ -1,6 +1,7 @@
 package com.agnetix.harnax.agent
 
 import com.agnetix.harnax.entity.dto.CliDetailDto
+import com.agnetix.harnax.entity.dto.SkillVisibilityDto
 import com.agnetix.harnax.tools.sdk.ToolSpec
 
 /**
@@ -124,9 +125,18 @@ data class McpSpec(
     val isAsync: Boolean = true,
 )
 
+/**
+ * One skill bound to the agent, with the rollout rule Admin attached to it.
+ *
+ * [visibility] is the delivered copy of `skill_visibility_policy`, and the only reason the runtime can
+ * decide visibility at all: the filter runs once per composed prompt, on the inference path, where asking
+ * Admin would either add a round trip to every answer or fail open on every timeout. Null means Admin had
+ * no policy row, which reads as visible to everyone.
+ */
 data class SkillSpec(
     val skillId: Long,
     val skillName: String,
+    val visibility: SkillVisibilityDto? = null,
 )
 
 /**

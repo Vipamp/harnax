@@ -3,6 +3,7 @@ package com.agnetix.harnax.admin.service.impl
 import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.SkillUsageReportRequest
 import com.agnetix.harnax.admin.service.SkillRepositoryService
+import com.agnetix.harnax.admin.service.UserTenantService
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.common.session.TaskSessionId
 import com.agnetix.harnax.entity.Agent
@@ -32,6 +33,7 @@ import org.mockito.Mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
+import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
@@ -76,6 +78,9 @@ class SkillUsageServiceImplTest {
     private lateinit var skillRepositoryService: SkillRepositoryService
 
     @Mock
+    private lateinit var userTenantService: UserTenantService
+
+    @Mock
     private lateinit var jwtUtil: JwtUtil
 
     private lateinit var service: SkillUsageServiceImpl
@@ -83,13 +88,14 @@ class SkillUsageServiceImplTest {
     @BeforeEach
     fun setUp() {
         service = SkillUsageServiceImpl(
-            skillUsageMapper,
-            skillMapper,
-            sessionMapper,
-            channelMapper,
-            agentMapper,
-            skillRepositoryService,
-            jwtUtil,
+            skillUsageMapper = skillUsageMapper,
+            skillMapper = skillMapper,
+            sessionMapper = sessionMapper,
+            channelMapper = channelMapper,
+            agentMapper = agentMapper,
+            skillRepositoryService = skillRepositoryService,
+            userTenantService = userTenantService,
+            jwtUtil = jwtUtil,
         )
     }
 
@@ -126,9 +132,11 @@ class SkillUsageServiceImplTest {
     private fun report(
         sessionId: String?,
         vararg events: Pair<Long?, String?>,
+        userId: Long? = null,
     ) = service.report(
         SkillUsageReportRequest(
             sessionId = sessionId,
+            userId = userId,
             events = events.map { SkillUsageReportRequest.Event(skillId = it.first, event = it.second) },
         ),
     )
@@ -171,7 +179,7 @@ class SkillUsageServiceImplTest {
             assertEquals(1L, stored.skillId)
             assertEquals(SkillUsage.EVENT_VIEW, stored.event)
             assertEquals("web-42", stored.sessionId)
-            assertNull(stored.userId, "the runtime has no user yet and a sentinel would fake a bucketed per-user read")
+            assertNull(stored.userId, "a report that names no user must not invent one")
         }
 
         @Test
@@ -360,6 +368,81 @@ class SkillUsageServiceImplTest {
             `when`(skillUsageMapper.insert(any())).thenReturn(0)
 
             assertEquals(0, report("web-1", 1L to SkillUsage.EVENT_VIEW))
+        }
+    }
+
+    @Nested
+    @DisplayName("Who a report is attributed to")
+    inner class UserAttributionTests {
+
+        @Test
+        @DisplayName("report - stores the end user the runtime named when it belongs to this tenant")
+        fun `report should keep a user of the session tenant`() {
+            stubSession("web-42", 7L)
+            stubVisibleSkills(skill(1L, 7L))
+            stubInsertAcks()
+            `when`(userTenantService.isUserInTenant(42L, 7L)).thenReturn(true)
+
+            assertEquals(1, report("web-42", 1L to SkillUsage.EVENT_VIEW, userId = 42L))
+
+            val captor = argumentCaptor<SkillUsage>()
+            verify(skillUsageMapper).insert(captor.capture())
+            assertEquals(42L, captor.firstValue.userId)
+        }
+
+        @Test
+        @DisplayName("report - keeps the count but drops a user from another tenant")
+        fun `report should not attribute a user outside the session tenant`() {
+            // The events really happened in tenant 7; only the name attached to them is unverifiable. Refusing
+            // the whole batch would lose real counts, and keeping the id would write them onto another tenant's
+            // per-user read.
+            stubSession("web-42", 7L)
+            stubVisibleSkills(skill(1L, 7L))
+            stubInsertAcks()
+            `when`(userTenantService.isUserInTenant(99L, 7L)).thenReturn(false)
+
+            assertEquals(1, report("web-42", 1L to SkillUsage.EVENT_VIEW, userId = 99L))
+
+            val captor = argumentCaptor<SkillUsage>()
+            verify(skillUsageMapper).insert(captor.capture())
+            assertNull(captor.firstValue.userId)
+            assertEquals(7L, captor.firstValue.tenantId)
+        }
+
+        @Test
+        @DisplayName("report - treats a non-positive user id as no user and asks nothing about it")
+        fun `report should ignore a user id that names no account`() {
+            stubSession("web-42", 7L)
+            stubVisibleSkills(skill(1L, 7L))
+            stubInsertAcks()
+
+            assertEquals(1, report("web-42", 1L to SkillUsage.EVENT_VIEW, userId = 0L))
+
+            verifyNoInteractions(userTenantService)
+            val captor = argumentCaptor<SkillUsage>()
+            verify(skillUsageMapper).insert(captor.capture())
+            assertNull(captor.firstValue.userId)
+        }
+
+        @Test
+        @DisplayName("report - checks one membership per report, not once per event")
+        fun `report should resolve the user once for a batch`() {
+            stubSession("web-42", 7L)
+            stubVisibleSkills(skill(1L, 7L), skill(2L, 7L))
+            stubInsertAcks()
+            `when`(userTenantService.isUserInTenant(42L, 7L)).thenReturn(true)
+
+            assertEquals(
+                2,
+                report(
+                    "web-42",
+                    1L to SkillUsage.EVENT_VIEW,
+                    2L to SkillUsage.EVENT_USE,
+                    userId = 42L,
+                ),
+            )
+
+            verify(userTenantService, times(1)).isUserInTenant(42L, 7L)
         }
     }
 

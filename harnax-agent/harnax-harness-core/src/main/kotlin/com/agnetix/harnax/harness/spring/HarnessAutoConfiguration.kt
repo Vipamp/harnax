@@ -97,6 +97,13 @@ class HarnessProperties {
      * Bound from `harness.mcp-stdio-enabled`, and set from `HARNAX_MCP_STDIO_ENABLED`.
      */
     var mcpStdioEnabled: Boolean = false
+
+    /**
+     * This deployment's environment label, matched against a skill's ENV visibility policy. Bound from
+     * `harness.environment`, set from `HARNESS_ENVIRONMENT`. Defaults to the label upstream and Admin both
+     * read an unset policy against, so an operator who never configures it gets production behaviour.
+     */
+    var environment: String = "prod"
 }
 
 /**
@@ -249,6 +256,7 @@ class HarnessAutoConfiguration {
         enableSessionPersistence = harnessProps.enableSessionPersistence,
         turnTimeoutSeconds = harnessProps.turnTimeoutSeconds,
         mcpStdioEnabled = harnessProps.mcpStdioEnabled,
+        environment = harnessProps.environment,
         team = TeamConfig(
             maxDelegations = teamProps.maxDelegations,
             memberTurnTimeoutSeconds = teamProps.memberTurnTimeoutSeconds,

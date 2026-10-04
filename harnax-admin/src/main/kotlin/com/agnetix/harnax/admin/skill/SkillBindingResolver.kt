@@ -6,7 +6,9 @@ import com.agnetix.harnax.admin.service.SkillRepositoryService
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.TenantResolver
 import com.agnetix.harnax.entity.Skill
+import com.agnetix.harnax.entity.SkillVisibilityPolicy
 import com.agnetix.harnax.mapper.SkillMapper
+import com.agnetix.harnax.mapper.SkillVisibilityPolicyMapper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 
@@ -24,6 +26,7 @@ class SkillBindingResolver(
     private val jwtUtil: JwtUtil,
     private val skillMapper: SkillMapper,
     private val skillRepositoryService: SkillRepositoryService,
+    private val skillVisibilityPolicyMapper: SkillVisibilityPolicyMapper,
 ) {
 
     private val log = LoggerFactory.getLogger(SkillBindingResolver::class.java)
@@ -116,6 +119,21 @@ class SkillBindingResolver(
         // Checked before the builtin lookup: an agent with no skills must not pay for a SELECT
         if (skillIds.isEmpty()) return emptyList()
         return deliverableWithin(skillIds, tenantId, skillRepositoryService.getBuiltinRepository()?.id)
+    }
+
+    /**
+     * Visibility policies for [skillIds], keyed by skill id. Skills with no row are simply absent, and
+     * the reader treats that as visible — the default has to be permissive, or a table that is only
+     * ever half populated would hide most of the fleet.
+     *
+     * The lookup has no tenant condition, which is safe only because [skillIds] is expected to be the
+     * output of [deliverable]: a caller passing raw request ids would be handing out another tenant's
+     * policy. Policies decide who may *load* a skill, never who may read its row, so an over-wide result
+     * is an authorization answer the runtime would act on.
+     */
+    fun policiesOf(skillIds: List<Long>): Map<Long, SkillVisibilityPolicy> {
+        if (skillIds.isEmpty()) return emptyMap()
+        return skillVisibilityPolicyMapper.selectBySkillIds(skillIds).associateBy { it.skillId }
     }
 
     /**

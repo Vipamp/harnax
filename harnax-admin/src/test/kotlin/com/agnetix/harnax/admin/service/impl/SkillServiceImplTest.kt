@@ -7,6 +7,7 @@ import com.agnetix.harnax.admin.dto.SkillUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.SkillRepositoryService
+import com.agnetix.harnax.admin.skill.SkillBindingResolver
 import com.agnetix.harnax.admin.skill.SkillInstaller
 import com.agnetix.harnax.admin.skill.SkillReviewRecorder
 import com.agnetix.harnax.admin.skill.SkillSyncRecorder
@@ -19,6 +20,7 @@ import com.agnetix.harnax.entity.Cli
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.SkillRepository
 import com.agnetix.harnax.entity.SkillReviewLog
+import com.agnetix.harnax.entity.SkillVisibilityPolicy
 import com.agnetix.harnax.entity.dto.SkillAgentBindingCount
 import com.agnetix.harnax.entity.dto.SkillTeamBindingCount
 import com.agnetix.harnax.mapper.AgentSkillBindingMapper
@@ -26,6 +28,7 @@ import com.agnetix.harnax.mapper.CliMapper
 import com.agnetix.harnax.mapper.SkillMapper
 import com.agnetix.harnax.mapper.SkillRepositoryMapper
 import com.agnetix.harnax.mapper.SkillReviewLogMapper
+import com.agnetix.harnax.mapper.SkillVisibilityPolicyMapper
 import com.agnetix.harnax.mapper.TeamSkillBindingMapper
 import io.agentscope.core.skill.AgentSkill
 import org.junit.jupiter.api.AfterEach
@@ -98,6 +101,14 @@ class SkillServiceImplTest {
     /** Every enable/disable/delete trail lands here, so the assertions read the rows themselves. */
     @Mock
     private lateinit var skillReviewLogMapper: SkillReviewLogMapper
+
+    /** The rollout policy of a skill goes with the skill, so a delete has to clear this too. */
+    @Mock
+    private lateinit var skillVisibilityPolicyMapper: SkillVisibilityPolicyMapper
+
+    /** Stands for the one batch read behind the list's rollout column; unstubbed means no skill is restricted. */
+    @Mock
+    private lateinit var skillBindingResolver: SkillBindingResolver
 
     @Mock
     private lateinit var messageUtil: MessageUtil
@@ -207,6 +218,8 @@ class SkillServiceImplTest {
         // The real recorder over the mocked log mapper: the assertions below are about which rows the
         // service asked for, which a mocked recorder would answer with a call and no content
         skillReviewRecorder = SkillReviewRecorder(skillReviewLogMapper, jwtUtil),
+        skillVisibilityPolicyMapper = skillVisibilityPolicyMapper,
+        skillBindingResolver = skillBindingResolver,
         localTmpDir = "/tmp/harnax-skill-test",
         messageUtil = messageUtil,
     )
@@ -1722,6 +1735,73 @@ class SkillServiceImplTest {
 
             // Then
             assertTrue(result.isEmpty())
+        }
+
+        /**
+         * A restricted skill has to look restricted in the list. A row that says nothing about a 20%
+         * rollout tells the operator the skill is open to everybody — the opposite of what the guard does,
+         * and the one mistake a rollout column can make. Answered from one read for the whole page, like
+         * the binding counts.
+         */
+        @Test
+        @DisplayName("convertToResponses - carries the stored rollout rule of each skill")
+        fun `convertToResponses carries the rollout rule and leaves an open skill unmarked`() {
+            val skill2 = Skill().apply {
+                id = 2L
+                name = "doc-writer"
+                repositoryId = 5L
+            }
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(skillBindingResolver.policiesOf(listOf(1L, 2L))).thenReturn(
+                mapOf(1L to policy(SkillVisibilityPolicy.MODE_CANARY).apply { canaryPct = 20 }),
+            )
+
+            val result = createService().convertToResponses(listOf(testSkill, skill2))
+
+            assertEquals(SkillVisibilityPolicy.MODE_CANARY, result[0].visibility?.mode)
+            assertEquals(20, result[0].visibility?.canaryPct)
+            assertNull(result[1].visibility, "no policy row means open, the same answer the runtime filter gives")
+            verify(skillBindingResolver).policiesOf(listOf(1L, 2L))
+        }
+
+        /**
+         * The ids themselves belong to whoever opens the form, not to every row of a page: an allow-list of
+         * two hundred users repeated twenty times per page is a list page that cannot load.
+         */
+        @Test
+        @DisplayName("convertToResponses - answers an allow-list with a count")
+        fun `convertToResponses answers an allow-list with a count`() {
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(skillBindingResolver.policiesOf(listOf(1L)))
+                .thenReturn(mapOf(1L to policy(SkillVisibilityPolicy.MODE_ALLOW_LIST).apply { userIds = "[42,43]" }))
+
+            val visibility = createService().convertToResponses(listOf(testSkill)).single().visibility
+
+            assertEquals(SkillVisibilityPolicy.MODE_ALLOW_LIST, visibility?.mode)
+            assertEquals(2, visibility?.userCount)
+        }
+
+        /**
+         * The row decodes through the same codec the delivered spec uses. Shown the raw column instead,
+         * a stored `staging, canary ` would read as one environment named with a trailing space, and the
+         * list would disagree with the runtime about a rule that gates real traffic.
+         */
+        @Test
+        @DisplayName("convertToResponses - decodes environment labels")
+        fun `convertToResponses decodes the environment labels`() {
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(skillBindingResolver.policiesOf(listOf(1L)))
+                .thenReturn(mapOf(1L to policy(SkillVisibilityPolicy.MODE_ENV).apply { environments = "staging, canary " }))
+
+            val visibility = createService().convertToResponses(listOf(testSkill)).single().visibility
+
+            assertEquals(listOf("staging", "canary"), visibility?.environments)
+        }
+
+        private fun policy(mode: String): SkillVisibilityPolicy = SkillVisibilityPolicy().apply {
+            skillId = 1L
+            tenantId = 1L
+            this.mode = mode
         }
     }
 

@@ -11,7 +11,8 @@ import java.util.concurrent.ConcurrentHashMap
  * One instance belongs to one agent build, so its state is one session's view of which skills are in play.
  * The delivered [AgentSkill] carries no database id — Admin's `skill.id` lives in the spec that produced it
  * — so the launcher attributes each name to its id as it adds the skill, and a name nobody attributed is
- * reported not at all rather than guessed at.
+ * reported not at all rather than guessed at. The end user is fixed the same way, once per build: one build
+ * is one run and one run has one identity, so no report of it can disagree with any other.
  *
  * Throttled by design. The harness re-reads its repositories every time it composes a system prompt, which
  * is once per model call inside a single answer, so an unthrottled recorder would write one event per skill
@@ -24,6 +25,7 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class SkillViewRecorder(
     private val sessionId: String,
+    private val userId: Long?,
     private val adaptor: SkillUsageAdaptor,
     private val cooldownMillis: Long = DEFAULT_COOLDOWN_MILLIS,
     private val clock: () -> Long = System::currentTimeMillis,
@@ -53,7 +55,7 @@ class SkillViewRecorder(
         if (due.isEmpty()) return
         due.forEach { lastReportedAt[it] = now }
         try {
-            adaptor.reportViews(sessionId, due)
+            adaptor.reportViews(sessionId, due, userId)
         } catch (e: Exception) {
             // A counter is not worth an error banner in front of the user, and the events this batch
             // covered will be picked up by the next read of the same skill

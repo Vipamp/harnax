@@ -7,9 +7,12 @@ import com.agnetix.harnax.admin.service.SkillRepositoryService
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.SkillRepository
+import com.agnetix.harnax.entity.SkillVisibilityPolicy
 import com.agnetix.harnax.mapper.SkillMapper
+import com.agnetix.harnax.mapper.SkillVisibilityPolicyMapper
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -17,6 +20,7 @@ import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.Mock
 import org.mockito.Mockito.never
+import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
@@ -46,7 +50,11 @@ class SkillBindingResolverTest {
     @Mock
     private lateinit var jwtUtil: JwtUtil
 
+    @Mock
+    private lateinit var skillVisibilityPolicyMapper: SkillVisibilityPolicyMapper
+
     private val skills = mutableMapOf<Long, Skill>()
+    private val policies = mutableMapOf<Long, SkillVisibilityPolicy>()
     private lateinit var resolver: SkillBindingResolver
 
     @BeforeEach
@@ -55,9 +63,12 @@ class SkillBindingResolverTest {
         `when`(skillMapper.selectByIds(any())).thenAnswer { invocation ->
             invocation.getArgument<List<Long>>(0).mapNotNull { skills[it] }
         }
+        `when`(skillVisibilityPolicyMapper.selectBySkillIds(any())).thenAnswer { invocation ->
+            invocation.getArgument<List<Long>>(0).mapNotNull { policies[it] }
+        }
         `when`(skillRepositoryService.getBuiltinRepository())
             .thenReturn(SkillRepository().apply { id = BUILTIN_REPO })
-        resolver = SkillBindingResolver(jwtUtil, skillMapper, skillRepositoryService)
+        resolver = SkillBindingResolver(jwtUtil, skillMapper, skillRepositoryService, skillVisibilityPolicyMapper)
     }
 
     @AfterEach
@@ -206,6 +217,42 @@ class SkillBindingResolverTest {
         // ordering it ahead of the empty check made every skill-less agent's spec pay for it
         verify(skillRepositoryService, never()).getBuiltinRepository()
         verify(skillMapper, never()).selectByIds(any())
+    }
+
+    private fun policy(
+        skillId: Long,
+        mode: String,
+    ): SkillVisibilityPolicy = SkillVisibilityPolicy().apply {
+        this.skillId = skillId
+        tenantId = TENANT
+        this.mode = mode
+    }.also { policies[skillId] = it }
+
+    @Test
+    @DisplayName("an empty id list asks the policy table nothing at all")
+    fun readsNothingForAnEmptyBatch() {
+        assertEquals(emptyMap<Long, SkillVisibilityPolicy>(), resolver.policiesOf(emptyList()))
+
+        // Not a micro-optimisation: `selectBySkillIds([])` renders `IN ()`, which MySQL rejects
+        verify(skillVisibilityPolicyMapper, never()).selectBySkillIds(any())
+    }
+
+    @Test
+    @DisplayName("one read answers the whole batch, keyed by skill id, with no row left absent")
+    fun readsTheBatchInOneQuery() {
+        policy(1L, SkillVisibilityPolicy.MODE_CANARY)
+        policy(2L, SkillVisibilityPolicy.MODE_ALLOW_LIST)
+
+        val delivered = resolver.policiesOf(listOf(1L, 2L, 3L))
+
+        verify(skillVisibilityPolicyMapper, times(1)).selectBySkillIds(listOf(1L, 2L, 3L))
+        assertEquals(setOf(1L, 2L), delivered.keys)
+        assertEquals(SkillVisibilityPolicy.MODE_CANARY, delivered[1L]?.mode)
+        assertNull(
+            delivered[3L],
+            "a skill nobody configured is absent, which the reader answers as visible — a materialised ALL row " +
+                "would make every unconfigured skill look like an operator decision",
+        )
     }
 }
 

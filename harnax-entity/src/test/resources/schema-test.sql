@@ -552,6 +552,22 @@ CREATE TABLE IF NOT EXISTS `skill_usage` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `skill_visibility_policy` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Policy ID',
+  `skill_id` bigint NOT NULL COMMENT 'Skill the policy restricts, one row per skill',
+  `tenant_id` bigint NOT NULL COMMENT 'Tenant owning that skill',
+  `mode` varchar(16) NOT NULL COMMENT 'ALL / CANARY / ALLOW_LIST / ENV',
+  `canary_pct` int DEFAULT NULL COMMENT 'Rollout percentage 0-100, when mode = CANARY',
+  `user_ids` text COMMENT 'User id list as JSON, when mode = ALLOW_LIST',
+  `environments` varchar(255) DEFAULT NULL COMMENT 'Environment labels, comma separated, when mode = ENV',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_skill_visibility_policy_skill` (`skill_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Runtime visibility policy of one skill';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE IF NOT EXISTS `sys_token_blacklist` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Blacklist ID',
   `token` varchar(512) NOT NULL COMMENT 'JWT Token',

@@ -17,6 +17,7 @@ import io.agentscope.harness.agent.DistributedStore
 import io.agentscope.harness.agent.HarnessAgent
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec
+import io.agentscope.harness.agent.skill.curator.SkillVisibilityFilter
 import org.slf4j.LoggerFactory
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
@@ -41,6 +42,7 @@ class HarnessAgentBuilder {
     private var toolkit: Toolkit = Toolkit()
     private val skills: MutableList<AgentSkill> = mutableListOf()
     private var skillsReadListener: ((List<AgentSkill>) -> Unit)? = null
+    private var visibilityFilter: SkillVisibilityFilter? = null
 
     private val log = LoggerFactory.getLogger(HarnessAgentBuilder::class.java)
 
@@ -126,6 +128,18 @@ class HarnessAgentBuilder {
     }
 
     /**
+     * Restricts which of the delivered skills reach the model on this session's calls.
+     *
+     * Only the visibility half of the upstream pair is used here. `enableSkillPromotionGate(gate, filter)`
+     * is one setter, and its `gate` argument is read only inside the `skill_manage` block of the harness
+     * builder — which this agent does not enable — so passing null for it installs the filter without
+     * opening any path where an agent writes a skill.
+     */
+    fun skillVisibilityFilter(filter: SkillVisibilityFilter?): HarnessAgentBuilder = apply {
+        this.visibilityFilter = filter
+    }
+
+    /**
      * Adds a middleware (replaces addHook in agentscope 2.0.0).
      */
     fun addMiddleware(middleware: MiddlewareBase): HarnessAgentBuilder = apply { builder.middleware(middleware) }
@@ -184,6 +198,9 @@ class HarnessAgentBuilder {
         if (skills.isNotEmpty()) {
             builder.skillRepository(InMemorySkillRepository(skills.toList(), skillsReadListener))
         }
+        // Outside the skills block on purpose: a filter set with no skills delivered is a valid state and
+        // the harness installs its middleware from the composed repository list, not from this call
+        visibilityFilter?.let { builder.enableSkillPromotionGate(null, it) }
         return builder.build()
     }
 

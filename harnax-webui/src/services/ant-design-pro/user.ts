@@ -9,6 +9,8 @@ export async function getUserPage(
    pageSize?: number;
     keyword?: string;
    status?: number;
+    /** Omitted means every tenant, so a picker that must stay inside one tenant has to send it */
+    tenantId?: number;
   },
   options?: { [key: string]: any },
 ) {

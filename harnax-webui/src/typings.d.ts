@@ -431,6 +431,51 @@ message?: string;
     originRef?: string;
     createTime?: string;
     updateTime?: string;
+    /** Compact rollout state of this skill; absent means everybody may load it (same as mode ALL) */
+    visibility?: SkillVisibilitySummary;
+  };
+
+  /**
+   * @zh-CN 技能运行时可见性的列表侧摘要
+   */
+  export type SkillVisibilitySummary = {
+    /** ALL / CANARY / ALLOW_LIST / ENV */
+    mode: string;
+    /** Rollout percentage, when mode is CANARY */
+    canaryPct?: number;
+    /** How many users are allowed, when mode is ALLOW_LIST; the ids themselves come from the detail read */
+    userCount?: number;
+    /** Environment labels, when mode is ENV */
+    environments?: string[];
+  };
+
+  /**
+   * @zh-CN 技能可见性整条规则（PUT 提交全部字段，所选模式用不到的字段由服务端清空）
+   */
+  export type SkillVisibilityUpdateRequest = {
+    mode: string;
+    canaryPct?: number;
+    userIds?: number[];
+    environments?: string[];
+  };
+
+  /**
+   * @zh-CN 技能可见性策略详情（GET 返回，含可编辑标记与白名单用户姓名）
+   */
+  export type SkillVisibilityInfo = {
+    skillId?: number;
+    skillName?: string;
+    mode?: string;
+    canaryPct?: number;
+    userIds?: number[];
+    /** The allowed users with their usernames; a missing username is an account that no longer exists */
+    users?: { id: number; username?: string }[];
+    environments?: string[];
+    /** Whether this caller's tenant may write this policy */
+    editable?: boolean;
+    /** Tenant owning the skill, which is the tenant the allow-list has to pick members of */
+    tenantId?: number;
+    updateTime?: string;
   };
 
   /**

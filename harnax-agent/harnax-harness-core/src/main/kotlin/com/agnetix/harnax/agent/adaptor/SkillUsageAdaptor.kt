@@ -13,5 +13,16 @@ package com.agnetix.harnax.agent.adaptor
  * implementation: log them, drop the batch, never rethrow.
  */
 fun interface SkillUsageAdaptor {
-    fun reportViews(sessionId: String, skillIds: List<Long>)
+    /**
+     * @param userId the [com.agnetix.harnax.tools.sdk.UserIdentifier] this run is attributed to, or null when
+     * the conversation names no harnax user — a channel conversation, or a service caller that did not
+     * resolve one. Admin keeps the row and leaves its user column empty; it does not take the id on faith,
+     * since the tenant of the report is resolved from [sessionId] and a user outside that tenant would put a
+     * count on somebody else's analytics page.
+     */
+    fun reportViews(
+        sessionId: String,
+        skillIds: List<Long>,
+        userId: Long?,
+    )
 }

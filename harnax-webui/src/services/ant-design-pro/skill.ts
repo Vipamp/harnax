@@ -44,3 +44,27 @@ export async function toggleSkillStatus(
     ...(options || {}),
   });
 }
+
+/** 读取技能可见性策略 GET /api/admin/skill-visibility/${skillId} */
+export async function getSkillVisibility(skillId: number, options?: { [key: string]: any }) {
+  return request(`/api/admin/skill-visibility/${skillId}`, {
+    method: 'GET',
+    ...(options || {}),
+  });
+}
+
+/** 设置技能可见性策略 PUT /api/admin/skill-visibility/${skillId} */
+export async function updateSkillVisibility(
+  skillId: number,
+  data: API.SkillVisibilityUpdateRequest,
+  options?: { [key: string]: any },
+) {
+  return request(`/api/admin/skill-visibility/${skillId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    data: data,
+    ...(options || {}),
+  });
+}

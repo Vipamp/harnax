@@ -22,6 +22,7 @@ import com.agnetix.harnax.agent.session.SessionConfig
 import com.agnetix.harnax.agent.session.SessionLoader
 import com.agnetix.harnax.common.mcp.McpConfigDecryptor
 import com.agnetix.harnax.entity.McpAuthTypes
+import com.agnetix.harnax.entity.dto.SkillVisibilityDto
 import com.agnetix.harnax.harness.config.HarnessConfig
 import com.agnetix.harnax.harness.config.MinioConfig
 import com.agnetix.harnax.harness.minio.MinioBaseStore
@@ -31,6 +32,7 @@ import com.agnetix.harnax.harness.output.OutputFileStore
 import com.agnetix.harnax.harness.sandbox.CliImageBuilder
 import com.agnetix.harnax.harness.sandbox.CliPackageStore
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
+import com.agnetix.harnax.harness.skill.TenantSkillVisibilityFilter
 import com.agnetix.harnax.harness.team.TeamLeadToolBox
 import com.agnetix.harnax.harness.team.TeamMemberSpec
 import com.agnetix.harnax.harness.team.TeamMemberToolBox
@@ -443,10 +445,15 @@ class HarnessAgentLauncher(
         // A fresh recorder per build, for the same reason as the middlewares below: it holds one session's
         // attribution and one session's cooldown windows. Without an adaptor there is nowhere to send the
         // count, and the delivery path is left exactly as it was.
-        val skillViewRecorder = skillUsageAdaptor?.let { SkillViewRecorder(sessionId, it) }
+        val skillViewRecorder = skillUsageAdaptor?.let { SkillViewRecorder(sessionId, userIdentifier.userId, it) }
         if (skillViewRecorder != null) {
             agentBuilder.onSkillsRead(skillViewRecorder::onRead)
         }
+        // Keyed by the name of the skill that was actually loaded, which is the only name the harness
+        // filter will later match on: a policy for a skill whose row vanished between delivery and build
+        // would be dead weight, and one keyed by the spec's copy of the name could disagree with the
+        // repository's for a skill Admin delivered under a different one.
+        val visibilityPolicies = mutableMapOf<String, SkillVisibilityDto>()
         agentSpec.skills.forEach {
             // A miss means the row was deleted between delivery and build, or it holds something
             // `AgentSkill` refuses (see SkillAdaptorImpl). Either way the loader has already logged
@@ -457,6 +464,7 @@ class HarnessAgentLauncher(
                 // The delivered AgentSkill carries no id, so this is the only place the count can learn
                 // which row stands behind the name the repository reads back.
                 skillViewRecorder?.attribute(skill.name, it.skillId)
+                it.visibility?.let { policy -> visibilityPolicies[skill.name] = policy }
                 if (isLead && skill.resources.isNotEmpty()) {
                     log.warn(
                         "Skill '{}' (id={}) is loaded for lead '{}' and its {} file(s) {} are projected into the " +
@@ -471,6 +479,21 @@ class HarnessAgentLauncher(
             } else {
                 log.warn("Skill '{}' (id={}) is not loaded.", it.skillName, it.skillId)
             }
+        }
+        if (visibilityPolicies.isNotEmpty()) {
+            // The identity is this run's, taken from the same value every attribution of the run uses, and
+            // fixed here rather than read per call. `RuntimeContext.userId` is deliberately not the source:
+            // upstream derives the persisted agent-state slot from it (ReActAgent keys `agent_state` by
+            // user id and session id), and this deployment has always run with an empty one — filling it in
+            // now would move every existing session's state bucket and break clear/history replay for rows
+            // already stored (design section 4.1). A filter built per session needs no per-call identity.
+            agentBuilder.skillVisibilityFilter(
+                TenantSkillVisibilityFilter(
+                    policiesByName = visibilityPolicies,
+                    userId = userIdentifier.userId,
+                    environment = harnessConfig.environment,
+                ),
+            )
         }
 
         // ----- Team tools -----

@@ -54,6 +54,9 @@ harness:
   # Second line of defence for stdio MCP servers: admin holds such rows back from delivery, and this
   # runtime refuses to start one even if a row reaches it. Same env var as the admin's own switch.
   mcp-stdio-enabled: ${HARNAX_MCP_STDIO_ENABLED:false}
+  # Which deployment this is, for a skill whose visibility is scoped by environment. Defaults to prod so an
+  # unset label behaves like every skill being open to production, rather than hiding skills nobody scoped.
+  environment: ${HARNESS_ENVIRONMENT:prod}
   minio:
     enabled: ${MINIO_ENABLED:false}
     endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
