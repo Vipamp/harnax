@@ -235,6 +235,40 @@ class AdminApiClient(
     }
 
     /**
+     * File the skills this session had loaded into its context (design section 3.4).
+     *
+     * The session id is the only identity sent: admin resolves the tenant from it rather than from
+     * anything the runtime claims, and stamps receipt time itself. VIEW is the one event this caller
+     * can assert — the runtime knows a skill entered the context, not what the model did with it.
+     *
+     * @param sessionId the runtime session that read the skills
+     * @param skillIds Admin skill ids, never names
+     * @return true if admin accepted the batch
+     */
+    fun reportSkillUsage(sessionId: String, skillIds: List<Long>): Boolean {
+        val url = "$adminUrl/api/admin/internal/skills/usage"
+        log.debug("[Agent→Admin] POST {} - reporting {} VIEW event(s)", url, skillIds.size)
+
+        val body = mapOf(
+            "sessionId" to sessionId,
+            "events" to skillIds.map { mapOf("skillId" to it, "event" to "VIEW") },
+        )
+        val responseType = object : ParameterizedTypeReference<ResultVo<Int>>() {}
+        val response = try {
+            restTemplate.exchange(url, HttpMethod.POST, HttpEntity(body), responseType).body
+        } catch (e: Exception) {
+            log.warn("[Agent←Admin] Failed to report skill usage: sessionId={}, {} skill(s): {}", sessionId, skillIds.size, e.message)
+            return false
+        }
+
+        val success = response != null && response.code == 200
+        if (!success) {
+            log.warn("[Agent←Admin] Report skill usage failed: sessionId={}, msg={}", sessionId, response?.message)
+        }
+        return success
+    }
+
+    /**
      * Mint (or renew) the access token that the owner of this session granted for one OAuth MCP server.
      *
      * The session id is the whole request: admin resolves who owns it and answers for that person, so

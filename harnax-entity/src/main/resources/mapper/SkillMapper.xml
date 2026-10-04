@@ -18,6 +18,8 @@
         <result column="active" property="active"/>
         <result column="create_time" property="createTime"/>
         <result column="update_time" property="updateTime"/>
+        <result column="origin" property="origin"/>
+        <result column="origin_ref" property="originRef"/>
     </resultMap>
 
     <!-- ==================== Basic CRUD Methods ==================== -->
@@ -58,13 +60,19 @@
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO skill (
-        tenant_id, name, repository_id, description, skillmd, resources, version, status, is_public, creator, active, create_time, update_time
+        tenant_id, name, repository_id, description, skillmd, resources, version, status, is_public, creator, active, create_time, update_time, origin, origin_ref
         ) VALUES (
-        #{tenantId}, #{name}, #{repositoryId}, #{description}, #{skillmd}, #{resources}, #{version}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime}, #{updateTime}
+        #{tenantId}, #{name}, #{repositoryId}, #{description}, #{skillmd}, #{resources}, #{version}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime}, #{updateTime}, #{origin}, #{originRef}
         )
     </insert>
 
     <!-- updateById -->
+    <!--
+        `origin` and `origin_ref` are deliberately not here: provenance is written when the row is
+        created and when a draft is promoted onto an existing skill, never by a content edit. A
+        routine save that relabels an agent's skill as human-authored would quietly retire the only
+        column the review trail can be checked against.
+    -->
     <update id="updateById">
         UPDATE skill SET
         name = #{name},

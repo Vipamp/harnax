@@ -7,6 +7,7 @@ import { history } from '@umijs/max';
 import dayjs from 'dayjs';
 import { useIntl } from '@umijs/max';
 import StatusSwitch from '@/components/StatusSwitch';
+import SkillOriginTag from './SkillOriginTag';
 
 interface SkillListProps {
   repositoryId: number;
@@ -69,6 +70,13 @@ const SkillList: React.FC<SkillListProps> = ({ repositoryId, filters, onRefresh,
       key: 'creator',
       width: 120,
       render: (creator: string) => creator || '-',
+    },
+    {
+      title: intl.formatMessage({ id: 'pages.skill.list.origin', defaultMessage: 'Origin' }),
+      dataIndex: 'origin',
+      key: 'origin',
+      width: 120,
+      render: (origin: string, record) => <SkillOriginTag origin={origin} originRef={record.originRef} />,
     },
     {
       title: intl.formatMessage({ id: 'pages.skill.list.updateTime', defaultMessage: 'Sync Time' }),

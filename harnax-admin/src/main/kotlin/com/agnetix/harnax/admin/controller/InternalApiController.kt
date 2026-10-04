@@ -1,10 +1,12 @@
 package com.agnetix.harnax.admin.controller
 
+import com.agnetix.harnax.admin.dto.SkillUsageReportRequest
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.registrar.BuiltinToolAutoRegistrar
 import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.service.McpOAuthUserService
 import com.agnetix.harnax.admin.service.McpStdioPolicy
+import com.agnetix.harnax.admin.service.SkillUsageService
 import com.agnetix.harnax.admin.skill.SkillBindingResolver
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.admin.util.SecretFieldEncryptor
@@ -76,6 +78,7 @@ class InternalApiController(
     private val teamSkillBindingMapper: TeamSkillBindingMapper,
     private val builtinToolAutoRegistrar: BuiltinToolAutoRegistrar,
     private val skillBindingResolver: SkillBindingResolver,
+    private val skillUsageService: SkillUsageService,
 ) {
 
     private val log = LoggerFactory.getLogger(InternalApiController::class.java)
@@ -269,6 +272,23 @@ class InternalApiController(
             log.error("MCP token issuance failed for session {}", request.sessionId, e)
             ResultVo.error(500, "MCP token issuance failed")
         }
+    }
+
+    /**
+     * Stores what one runtime session loaded and used, for the skill analytics page (design section 3.4).
+     *
+     * The answer is a count, not a verdict: this runs inside a live conversation, so every way it can fail
+     * — an id this admin has no session for, a skill that no longer exists, a tenant that cannot see the
+     * skill it claims to have used — is logged and dropped rather than thrown back at the caller. A
+     * runtime that cannot record telemetry still has the conversation; a runtime that surfaces this error
+     * would turn an analytics table into a dependency of inference.
+     */
+    @PostMapping("/skills/usage")
+    fun reportSkillUsage(@RequestBody request: SkillUsageReportRequest): ResultVo<Int> = try {
+        ResultVo.success(skillUsageService.report(request))
+    } catch (e: Exception) {
+        log.error("Skill usage intake failed for session {}", request.sessionId, e)
+        ResultVo.error(500, "Skill usage intake failed")
     }
 
     // ========================================

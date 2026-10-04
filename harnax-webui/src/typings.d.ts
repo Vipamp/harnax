@@ -425,6 +425,10 @@ message?: string;
     boundTeamCount?: number;
     isPublic?: number;
     creator?: string;
+    /** Provenance: human (configured here) or agent_promoted (an agent wrote it) */
+    origin?: string;
+    /** The session an agent proposed the skill in; null for a human skill */
+    originRef?: string;
     createTime?: string;
     updateTime?: string;
   };
@@ -472,6 +476,34 @@ message?: string;
    */
   export type SkillResponse = {
     records: SkillSyncItem[];
+  };
+
+  /**
+   * @zh-CN 单条技能在统计窗口内的用量（对应后端 SkillUsageSummaryResponse.Row）
+   */
+  export type SkillUsageRow = {
+    skillId: number;
+    name: string;
+    repositoryId: number;
+    repositoryName?: string;
+    status: number;
+    origin?: string;
+    viewCount: number;
+    useCount: number;
+    lastUsedAt?: string;
+  };
+
+  /**
+   * @zh-CN 技能用量汇总：零使用的技能也在 rows 里，这张页要回答的正是哪条从没被装载过
+   */
+  export type SkillUsageSummary = {
+    days: number;
+    since?: string;
+    totalSkills: number;
+    zeroUseCount: number;
+    totalViews: number;
+    totalUses: number;
+    rows: SkillUsageRow[];
   };
 
   /**

@@ -482,6 +482,8 @@ CREATE TABLE IF NOT EXISTS `skill` (
   `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
   `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `active_name` varchar(100) GENERATED ALWAYS AS (if((`active` = 1),`name`,NULL)) VIRTUAL,
+  `origin` varchar(16) NOT NULL DEFAULT 'human' COMMENT 'Provenance: human / agent_promoted',
+  `origin_ref` varchar(64) DEFAULT NULL COMMENT 'Session the agent proposed this skill in, NULL for human skills',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_skill_repo_active_name` (`repository_id`,`active_name`),
   KEY `idx_tenant_id` (`tenant_id`)
@@ -516,6 +518,37 @@ CREATE TABLE IF NOT EXISTS `skill_repository` (
   KEY `idx_tenant_id` (`tenant_id`),
   KEY `idx_skill_repository_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Skill Repository table';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `skill_review_log` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Log ID',
+  `tenant_id` bigint NOT NULL COMMENT 'Tenant ID',
+  `subject` varchar(16) NOT NULL COMMENT 'What the row is about: SKILL / DRAFT',
+  `subject_id` bigint NOT NULL COMMENT 'Row id of the subject',
+  `actor` varchar(64) NOT NULL COMMENT 'Real operator: a sys_user username, or the sentinel agent / system',
+  `action` varchar(32) NOT NULL COMMENT 'PROPOSE / SCAN / APPROVE / REJECT / ENABLE / DISABLE / DELETE / VISIBILITY_CHANGE',
+  `detail` mediumtext COMMENT 'Scan findings, reject reason, policy before and after, as JSON',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_skill_review_log_subject` (`subject`,`subject_id`),
+  KEY `idx_skill_review_log_tenant_time` (`tenant_id`,`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Audit trail for skill-domain state changes';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `skill_usage` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Event ID',
+  `tenant_id` bigint NOT NULL COMMENT 'Tenant ID',
+  `skill_id` bigint NOT NULL COMMENT 'Skill ID; never keyed by name, which is only unique inside one repository',
+  `user_id` bigint DEFAULT NULL COMMENT 'Owning user id, NULL until the runtime carries one; never a sentinel',
+  `event` varchar(16) NOT NULL COMMENT 'VIEW=loaded into the context, USE=its instructions were executed',
+  `session_id` varchar(64) NOT NULL COMMENT 'Session that produced the event',
+  `occurred_at` datetime NOT NULL COMMENT 'Event time',
+  PRIMARY KEY (`id`),
+  KEY `idx_skill_usage_skill_time` (`skill_id`,`occurred_at`),
+  KEY `idx_skill_usage_tenant_skill` (`tenant_id`,`skill_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Skill load and use stream';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;

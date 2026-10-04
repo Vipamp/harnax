@@ -67,4 +67,36 @@ class HarnessAgentBuilderSkillTest {
         val resolved = delivered.single().getSkill("report")
         assertEquals("# second", resolved.skillContent)
     }
+
+    @Test
+    fun `the read listener fires on the merge read and on nothing else`(@TempDir workspace: Path) {
+        // This is the whole instrumentation surface: `HarnessSkillMiddleware.mergeRepositories` calls
+        // `getAllSkills()` once per system-prompt composition, which is where a delivered skill actually
+        // enters the model's context. A name listing is not a load, so the listener must stay quiet for it.
+        val reads = mutableListOf<List<String>>()
+        val agent = HarnessAgentBuilder()
+            .name("tester")
+            .description("tester")
+            .maxIters(1)
+            .systemPrompt("prompt")
+            .model(mock(ChatModelBase::class.java))
+            .workspace(workspace)
+            .addSkill(skill("pdf-tools", "# from admin"))
+            .addSkill(skill("report", "# from admin"))
+            .onSkillsRead { delivered -> reads.add(delivered.map { it.name }) }
+            .build()
+
+        val repository = agent.skillRepositories.single { it.source == "in-memory" }
+
+        repository.allSkillNames
+        assertTrue(reads.isEmpty(), "listing names must not count as a load: $reads")
+
+        val skills = repository.allSkills
+        assertEquals(listOf(listOf("pdf-tools", "report")), reads)
+        assertEquals(listOf("pdf-tools", "report"), skills.map { it.name })
+
+        // A second composition reports again — the recorder upstream is what decides whether it counts.
+        repository.allSkills
+        assertEquals(2, reads.size)
+    }
 }

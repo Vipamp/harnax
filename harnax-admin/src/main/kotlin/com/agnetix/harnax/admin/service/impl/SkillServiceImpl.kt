@@ -12,6 +12,7 @@ import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.SkillRepositoryService
 import com.agnetix.harnax.admin.service.SkillService
 import com.agnetix.harnax.admin.skill.SkillInstaller
+import com.agnetix.harnax.admin.skill.SkillReviewRecorder
 import com.agnetix.harnax.admin.skill.SkillSourceConfigs
 import com.agnetix.harnax.admin.skill.SkillSourcePolicy
 import com.agnetix.harnax.admin.skill.SkillSyncRecorder
@@ -21,6 +22,7 @@ import com.agnetix.harnax.admin.util.TenantResolver
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.SkillRepository
+import com.agnetix.harnax.entity.SkillReviewLog
 import com.agnetix.harnax.mapper.AgentSkillBindingMapper
 import com.agnetix.harnax.mapper.CliMapper
 import com.agnetix.harnax.mapper.SkillMapper
@@ -30,6 +32,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import tools.jackson.databind.ObjectMapper
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -47,11 +50,13 @@ class SkillServiceImpl(
     private val skillLoaderRegistry: SkillLoaderRegistry,
     private val skillInstaller: SkillInstaller,
     private val skillSyncRecorder: SkillSyncRecorder,
+    private val skillReviewRecorder: SkillReviewRecorder,
     @Value($$"${local.tmp-dir}") private val localTmpDir: String,
     private val messageUtil: MessageUtil,
 ) : SkillService {
 
     private val log = LoggerFactory.getLogger(SkillServiceImpl::class.java)
+    private val objectMapper = ObjectMapper()
 
     override fun page(
         name: String?,
@@ -198,7 +203,12 @@ class SkillServiceImpl(
             SkillSourcePolicy.requireStatus(newStatus)
             if (newStatus != skill.status) {
                 if (newStatus == 0) requireUnbound(skill, "disabled")
-                skillMapper.updateStatus(id, newStatus)
+                if (skillMapper.updateStatus(id, newStatus) > 0) {
+                    // The same trail PUT /skills/toggle/{id} writes: this entry point reaches the same
+                    // column, and a history that only covers one of the two would read as if nobody
+                    // switched this skill off.
+                    recordStatusChange(skill, newStatus)
+                }
                 skill.status = newStatus
             }
         }
@@ -219,7 +229,9 @@ class SkillServiceImpl(
         requireWritableRepo(skill.repositoryId)
         if (status == 0 && skill.status == 1) requireUnbound(skill, "disabled")
 
-        return skillMapper.updateStatus(id, status) > 0
+        val changed = skillMapper.updateStatus(id, status) > 0
+        if (changed) recordStatusChange(skill, status)
+        return changed
     }
 
     @Transactional(rollbackFor = [Exception::class])
@@ -237,8 +249,44 @@ class SkillServiceImpl(
         // Remove agent references so no dangling binding survives the delete
         agentSkillBindingMapper.deleteBySkillIds(listOf(id))
 
-        return skillMapper.deleteById(id) > 0
+        val deleted = skillMapper.deleteById(id) > 0
+        if (deleted) {
+            // After the row, deliberately: a trail for a delete that did not happen would be worse than
+            // none, and this is the one entry that names a skill nobody can read any more
+            skillReviewRecorder.recordSkill(
+                skillId = id,
+                action = SkillReviewLog.ACTION_DELETE,
+                detail = identityDetail(skill),
+                tenantId = skill.tenantId,
+            )
+        }
+        return deleted
     }
+
+    /**
+     * The enable/disable trail, shared by both entry points that reach `updateStatus`.
+     *
+     * Both the tenant and the `detail` come from the row rather than from the request. The tenant because
+     * the trail is read per tenant and a CLI or internal call reaches this service with no tenant header at
+     * all, so the skill being changed is the only trustworthy answer. The name because this row can be
+     * deleted later: a history that only says "skill 17 was disabled" cannot be checked against anything
+     * once the skill is gone.
+     */
+    private fun recordStatusChange(
+        skill: Skill,
+        status: Int,
+    ) {
+        skillReviewRecorder.recordSkill(
+            skillId = skill.id,
+            action = if (status == 1) SkillReviewLog.ACTION_ENABLE else SkillReviewLog.ACTION_DISABLE,
+            detail = identityDetail(skill),
+            tenantId = skill.tenantId,
+        )
+    }
+
+    private fun identityDetail(skill: Skill): String = objectMapper.writeValueAsString(
+        mapOf("name" to skill.name, "repositoryId" to skill.repositoryId),
+    )
 
     /**
      * Refuses to take a skill out of circulation while something binds it.

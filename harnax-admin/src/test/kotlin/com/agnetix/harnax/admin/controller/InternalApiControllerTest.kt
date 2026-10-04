@@ -5,6 +5,7 @@ import com.agnetix.harnax.admin.registrar.BuiltinToolAutoRegistrar
 import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.service.McpOAuthUserService
 import com.agnetix.harnax.admin.service.McpStdioPolicy
+import com.agnetix.harnax.admin.service.SkillUsageService
 import com.agnetix.harnax.admin.skill.SkillBindingResolver
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.admin.util.SecretFieldEncryptor
@@ -159,6 +160,10 @@ class InternalApiControllerTest {
 
     @Mock
     private lateinit var skillBindingResolver: SkillBindingResolver
+
+    /** Stands in for the usage intake endpoint's collaborator; these cases deliver a spec, they report no event. */
+    @Mock
+    private lateinit var skillUsageService: SkillUsageService
 
     @InjectMocks
     private lateinit var controller: InternalApiController

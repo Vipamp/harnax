@@ -1,0 +1,95 @@
+package com.agnetix.harnax.agent.service.adaptor
+
+import com.agnetix.harnax.agent.adaptor.SkillUsageAdaptor
+import com.agnetix.harnax.agent.service.client.AdminApiClient
+import jakarta.annotation.PreDestroy
+import org.slf4j.LoggerFactory
+import org.springframework.stereotype.Component
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
+
+/**
+ * Posts skill VIEW events to Admin over HTTP, on a thread that is not the model's.
+ *
+ * The read entry point this serves sits inside system-prompt composition, so the call is offloaded rather
+ * than made inline: a slow or unreachable Admin must not add its latency to every model call, and it
+ * certainly must not fail the turn. Admin being down is a reporting outage, not an inference outage.
+ *
+ * One worker and a short queue, because the events are counters. When the queue is full the newest batch is
+ * dropped rather than the backlog grown: the recorder upstream re-reports a skill once its cooldown window
+ * passes, so a drop costs one window of one count — the same order of error a throttled counter already
+ * tolerates — while dropping is also what bounds memory when Admin stays unreachable for a long time.
+ */
+@Component
+class SkillUsageAdaptorImpl(
+    private val adminApiClient: AdminApiClient,
+) : SkillUsageAdaptor {
+
+    private val log = LoggerFactory.getLogger(SkillUsageAdaptorImpl::class.java)
+
+    /** Counted rather than silently discarded: "the usage page is empty" needs a number proving the queue overflowed. */
+    private val dropped = AtomicLong()
+
+    private val reporter = ThreadPoolExecutor(
+        1,
+        1,
+        0L,
+        TimeUnit.MILLISECONDS,
+        ArrayBlockingQueue(QUEUE_CAPACITY),
+    ) { runnable ->
+        Thread(runnable, "skill-usage-reporter").apply { isDaemon = true }
+    }
+
+    override fun reportViews(
+        sessionId: String,
+        skillIds: List<Long>,
+    ) {
+        if (skillIds.isEmpty()) return
+        try {
+            reporter.execute {
+                try {
+                    // The client turns transport failures into `false`; logged here too, so the reason for a
+                    // missing count survives even when Admin answered with a business error instead of throwing.
+                    if (!adminApiClient.reportSkillUsage(sessionId, skillIds)) {
+                        log.debug("Skill usage batch for session {} ({} skill(s)) was not accepted by Admin", sessionId, skillIds.size)
+                    }
+                } catch (e: Exception) {
+                    // Caught rather than left to kill the worker: an implementation that throws is breaking
+                    // its side of the contract, and the batches after it still owe Admin a count.
+                    log.warn("Skill usage batch for session {} ({} skill(s)) failed: {}", sessionId, skillIds.size, e.message)
+                }
+            }
+        } catch (e: Exception) {
+            // RejectedExecutionException, both when the queue is full and after shutdown. A counter
+            // never reaches the caller: this is the last line of the non-blocking, never-throws contract.
+            val total = dropped.incrementAndGet()
+            if (total == 1L || total % DROP_LOG_EVERY == 0L) {
+                log.warn(
+                    "Skill usage batch for session {} dropped ({} dropped so far): {}",
+                    sessionId,
+                    total,
+                    e.message,
+                )
+            }
+        }
+    }
+
+    @PreDestroy
+    fun shutdown() {
+        // Give what is already queued a few seconds, then stop: pending events are counters, not state.
+        reporter.shutdown()
+        try {
+            if (!reporter.awaitTermination(5, TimeUnit.SECONDS)) reporter.shutdownNow()
+        } catch (e: InterruptedException) {
+            reporter.shutdownNow()
+            Thread.currentThread().interrupt()
+        }
+    }
+
+    companion object {
+        private const val QUEUE_CAPACITY = 64
+        private const val DROP_LOG_EVERY = 50L
+    }
+}

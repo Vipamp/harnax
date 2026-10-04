@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agnetix.harnax.mapper.SkillUsageMapper">
+
+    <resultMap id="SkillUsageAggregateResultMap" type="com.agnetix.harnax.entity.dto.SkillUsageAggregate">
+        <result column="skill_id" property="skillId"/>
+        <result column="name" property="name"/>
+        <result column="repository_id" property="repositoryId"/>
+        <result column="status" property="status"/>
+        <result column="origin" property="origin"/>
+        <result column="view_count" property="viewCount"/>
+        <result column="use_count" property="useCount"/>
+        <result column="last_used_at" property="lastUsedAt"/>
+    </resultMap>
+
+    <!-- insert -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO skill_usage (tenant_id, skill_id, user_id, event, session_id, occurred_at)
+        VALUES (#{tenantId}, #{skillId}, #{userId}, #{event}, #{sessionId}, #{occurredAt})
+    </insert>
+
+    <!-- selectUsageByTenant -->
+    <select id="selectUsageByTenant" resultMap="SkillUsageAggregateResultMap">
+        <!--
+            The window lives in the join, not in the WHERE: filtering there would drop a skill that has
+            no events at all, and an absent row reads as "unknown" while a zero row reads as "unused".
+            Aggregating over skill rather than over skill_usage also keeps this keyed by id, since a
+            skill name is only unique inside one repository.
+
+            The event-side tenant predicate goes in the same ON clause for the same reason, and it is
+            what makes a shared skill answer per tenant: builtin rows are visible to every tenant, so
+            without it one tenant's usage would inflate another tenant's numbers.
+        -->
+        SELECT s.id AS skill_id,
+               s.name,
+               s.repository_id,
+               s.status,
+               s.origin,
+               COALESCE(SUM(CASE WHEN u.event = 'VIEW' THEN 1 ELSE 0 END), 0) AS view_count,
+               COALESCE(SUM(CASE WHEN u.event = 'USE' THEN 1 ELSE 0 END), 0) AS use_count,
+               MAX(u.occurred_at) AS last_used_at
+        FROM skill s
+        LEFT JOIN skill_usage u
+            ON u.skill_id = s.id
+            AND u.tenant_id = #{tenantId}
+            AND u.occurred_at &gt;= #{since}
+        WHERE s.active = 1
+        <!-- Skills of the shared builtin repository are measured here too, but only on this tenant's events -->
+        AND (s.tenant_id = #{tenantId}
+        <if test="builtinRepositoryId != null">
+            OR s.repository_id = #{builtinRepositoryId}
+        </if>
+        )
+        GROUP BY s.id, s.name, s.repository_id, s.status, s.origin
+        ORDER BY view_count DESC, use_count DESC, s.name ASC
+    </select>
+
+</mapper>

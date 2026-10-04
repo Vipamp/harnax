@@ -40,6 +40,7 @@ class HarnessAgentBuilder {
     private val builder: HarnessAgent.Builder = HarnessAgent.builder()
     private var toolkit: Toolkit = Toolkit()
     private val skills: MutableList<AgentSkill> = mutableListOf()
+    private var skillsReadListener: ((List<AgentSkill>) -> Unit)? = null
 
     private val log = LoggerFactory.getLogger(HarnessAgentBuilder::class.java)
 
@@ -111,6 +112,20 @@ class HarnessAgentBuilder {
     }
 
     /**
+     * Receives the delivered skills each time the harness reads them out of the repository.
+     *
+     * That read is where Admin's choice for this session becomes the model's context, so it is the one place
+     * a load count can be taken. Two consequences for the listener: the harness merges its repositories once
+     * per system-prompt composition — once per model call inside a single answer — so it must throttle or it
+     * counts prompt renders; and it must not throw, because the harness swallows an exception from a
+     * repository and skips that repository, which would drop every delivered skill from the prompt over a
+     * lost counter.
+     */
+    fun onSkillsRead(listener: (List<AgentSkill>) -> Unit): HarnessAgentBuilder = apply {
+        this.skillsReadListener = listener
+    }
+
+    /**
      * Adds a middleware (replaces addHook in agentscope 2.0.0).
      */
     fun addMiddleware(middleware: MiddlewareBase): HarnessAgentBuilder = apply { builder.middleware(middleware) }
@@ -167,7 +182,7 @@ class HarnessAgentBuilder {
         // `enableSkillManageTool` is never called and no skill directory is provisioned.
         builder.disableDefaultWorkspaceSkills()
         if (skills.isNotEmpty()) {
-            builder.skillRepository(InMemorySkillRepository(skills.toList()))
+            builder.skillRepository(InMemorySkillRepository(skills.toList(), skillsReadListener))
         }
         return builder.build()
     }
@@ -207,15 +222,21 @@ class HarnessAgentBuilder {
 
     /**
      * Simple in-memory [AgentSkillRepository] that wraps a pre-loaded list of [AgentSkill]s.
+     *
+     * @param onRead invoked with the delivered list on every [getAllSkills] read; see [onSkillsRead]
      */
     private class InMemorySkillRepository(
         private val skills: List<AgentSkill>,
+        private val onRead: ((List<AgentSkill>) -> Unit)? = null,
     ) : AgentSkillRepository {
         override fun getSkill(name: String): AgentSkill = skills.first { it.name == name }
 
         override fun getAllSkillNames(): List<String> = skills.map { it.name }
 
-        override fun getAllSkills(): List<AgentSkill> = skills
+        override fun getAllSkills(): List<AgentSkill> {
+            onRead?.invoke(skills)
+            return skills
+        }
 
         override fun save(skills: List<AgentSkill>, force: Boolean): Boolean = false
 

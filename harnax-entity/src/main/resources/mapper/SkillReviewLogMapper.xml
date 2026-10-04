@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agnetix.harnax.mapper.SkillReviewLogMapper">
+
+    <resultMap id="SkillReviewLogResultMap" type="com.agnetix.harnax.entity.SkillReviewLog">
+        <id column="id" property="id"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="subject" property="subject"/>
+        <result column="subject_id" property="subjectId"/>
+        <result column="actor" property="actor"/>
+        <result column="action" property="action"/>
+        <result column="detail" property="detail"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+
+    <!-- insert -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO skill_review_log (tenant_id, subject, subject_id, actor, action, detail, create_time)
+        VALUES (#{tenantId}, #{subject}, #{subjectId}, #{actor}, #{action}, #{detail}, #{createTime})
+    </insert>
+
+    <!-- selectBySubject -->
+    <select id="selectBySubject" resultMap="SkillReviewLogResultMap">
+        SELECT * FROM skill_review_log
+        WHERE tenant_id = #{tenantId} AND subject = #{subject} AND subject_id = #{subjectId}
+        ORDER BY id DESC
+    </select>
+
+</mapper>

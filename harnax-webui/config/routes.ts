@@ -93,6 +93,11 @@ export default [
         component: './skill',
       },
       {
+        name: 'skill.usage',
+        path: '/context/skill-usage',
+        component: './skill/usage',
+      },
+      {
         path: '/context/skill/detail/:id',
         component: './skill/detail',
         hideInMenu: true,

@@ -8,6 +8,9 @@ import java.time.LocalDateTime
 class Skill : Serializable {
     companion object {
         private const val serialVersionUID = 1L
+
+        const val ORIGIN_HUMAN = "human"
+        const val ORIGIN_AGENT_PROMOTED = "agent_promoted"
     }
 
     @Schema(description = "ID")
@@ -51,4 +54,10 @@ class Skill : Serializable {
 
     @Schema(description = "Update time")
     var updateTime: LocalDateTime = LocalDateTime.now()
+
+    @Schema(description = "Provenance (human / agent_promoted)")
+    var origin: String = ORIGIN_HUMAN
+
+    @Schema(description = "Session an agent proposed this skill in; null for human skills")
+    var originRef: String? = null
 }

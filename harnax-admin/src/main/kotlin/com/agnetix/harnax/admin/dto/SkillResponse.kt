@@ -38,6 +38,10 @@ data class SkillResponse(
     val isPublic: Int? = null,
     @Schema(description = "Creator", example = "admin")
     val creator: String? = null,
+    @Schema(description = "Provenance: human / agent_promoted", example = "human")
+    val origin: String? = null,
+    @Schema(description = "Session an agent proposed this skill in; null for human skills")
+    val originRef: String? = null,
     @Schema(description = "Creation time", example = "2026-03-16 12:00:00")
     val createTime: LocalDateTime? = null,
     @Schema(description = "Update time", example = "2026-03-16 12:00:00")
@@ -72,6 +76,8 @@ data class SkillResponse(
                 boundTeamCount = boundTeamCount,
                 isPublic = skill.isPublic,
                 creator = skill.creator,
+                origin = skill.origin,
+                originRef = skill.originRef,
                 createTime = skill.createTime,
                 updateTime = skill.updateTime,
             )

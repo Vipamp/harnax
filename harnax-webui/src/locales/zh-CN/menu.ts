@@ -7,6 +7,7 @@ export default {
   'menu.context.model': '模型管理',
   'menu.context.mcp': 'MCP 服务',
   'menu.context.skill': '技能管理',
+  'menu.context.skill.usage': '技能用量',
   'menu.context.cli': 'CLI 工具',
   'menu.context.tool': '工具管理',
 

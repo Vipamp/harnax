@@ -10,6 +10,7 @@ import com.agnetix.harnax.agent.adaptor.PlanNote
 import com.agnetix.harnax.agent.adaptor.PlanNoteAdaptor
 import com.agnetix.harnax.agent.adaptor.ProcessLogAdaptor
 import com.agnetix.harnax.agent.adaptor.SkillAdaptor
+import com.agnetix.harnax.agent.adaptor.SkillUsageAdaptor
 import com.agnetix.harnax.agent.adaptor.TokenStatAdaptor
 import com.agnetix.harnax.agent.adaptor.mcp.McpHelper
 import com.agnetix.harnax.agent.adaptor.model.ModelErrorCode
@@ -78,6 +79,8 @@ import java.util.UUID
  * @param mcpConfigAdaptor adaptor for MCP service configuration
  * @param stateStore distributed [AgentStateStore] backend (replaces Session)
  * @param skillAdaptor adaptor for skill loading
+ * @param skillUsageAdaptor adaptor that counts the delivered skills entering a session's context; absent
+ * means the runtime reports no usage at all
  * @param tokenStatAdaptor adaptor for token stat persistence
  * @param processLogAdaptor adaptor for process logging
  * @param toolCallLogAdaptor adaptor for tool call logging (optional)
@@ -109,6 +112,7 @@ class HarnessAgentLauncher(
     val outputFileDetector: OutputFileDetector? = null,
     val outputFileStore: OutputFileStore? = null,
     val mcpTokenSourceFactory: McpAccessTokenSourceFactory? = null,
+    val skillUsageAdaptor: SkillUsageAdaptor? = null,
 ) {
 
     private val log = LoggerFactory.getLogger(HarnessAgentLauncher::class.java)
@@ -436,6 +440,13 @@ class HarnessAgentLauncher(
         // rather than dropped. Nothing strands the model on a `<files-root>` path the way a member can be:
         // `disableShellTool()` makes the harness resolve to ShellPathPolicy.noShell(), which never renders
         // that prefix.
+        // A fresh recorder per build, for the same reason as the middlewares below: it holds one session's
+        // attribution and one session's cooldown windows. Without an adaptor there is nowhere to send the
+        // count, and the delivery path is left exactly as it was.
+        val skillViewRecorder = skillUsageAdaptor?.let { SkillViewRecorder(sessionId, it) }
+        if (skillViewRecorder != null) {
+            agentBuilder.onSkillsRead(skillViewRecorder::onRead)
+        }
         agentSpec.skills.forEach {
             // A miss means the row was deleted between delivery and build, or it holds something
             // `AgentSkill` refuses (see SkillAdaptorImpl). Either way the loader has already logged
@@ -443,6 +454,9 @@ class HarnessAgentLauncher(
             val skill = skillAdaptor.getSkill(it.skillId)
             if (skill != null) {
                 agentBuilder.addSkill(skill)
+                // The delivered AgentSkill carries no id, so this is the only place the count can learn
+                // which row stands behind the name the repository reads back.
+                skillViewRecorder?.attribute(skill.name, it.skillId)
                 if (isLead && skill.resources.isNotEmpty()) {
                     log.warn(
                         "Skill '{}' (id={}) is loaded for lead '{}' and its {} file(s) {} are projected into the " +
@@ -891,6 +905,7 @@ class HarnessAgentLauncher(
             outputFileDetector: OutputFileDetector? = null,
             outputFileStore: OutputFileStore? = null,
             mcpTokenSourceFactory: McpAccessTokenSourceFactory? = null,
+            skillUsageAdaptor: SkillUsageAdaptor? = null,
         ): HarnessAgentLauncher {
             minioConfig?.ensureBuckets()
 
@@ -962,6 +977,7 @@ class HarnessAgentLauncher(
                 outputFileDetector = outputFileDetector,
                 outputFileStore = outputFileStore,
                 mcpTokenSourceFactory = mcpTokenSourceFactory,
+                skillUsageAdaptor = skillUsageAdaptor,
             )
         }
 
