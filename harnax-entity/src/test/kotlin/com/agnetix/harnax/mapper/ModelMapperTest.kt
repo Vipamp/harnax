@@ -110,6 +110,7 @@ open class ModelMapperTest {
                 supportTool = 1
                 supportMcp = 0
                 supportVision = 0
+                contextWindow = 128000
                 price = 0.0100
                 status = 1
                 isPublic = 1
@@ -130,6 +131,7 @@ open class ModelMapperTest {
             assertNotNull(insertedModel)
             assertEquals("New Model", insertedModel.name)
             assertEquals(8L, insertedModel.tenantId, "the insert must carry the tenant, not the DDL default")
+            assertEquals(128000, insertedModel.contextWindow, "the insert must carry the configured token budget")
         }
 
         @Test
@@ -143,6 +145,7 @@ open class ModelMapperTest {
             // When
             model.name = "Updated Model"
             model.description = "更新后的描述"
+            model.contextWindow = 32000
             model.updateTime = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
             val result = modelMapper.updateById(model)
 
@@ -151,6 +154,7 @@ open class ModelMapperTest {
             val updatedModel = modelMapper.selectById(modelId)
             assertNotNull(updatedModel)
             assertEquals("Updated Model", updatedModel.name)
+            assertEquals(32000, updatedModel.contextWindow)
         }
 
         @Test

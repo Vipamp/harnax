@@ -129,6 +129,7 @@ class ModelServiceImpl(
         model.supportTool = request.supportTool ?: 0
         model.supportMcp = request.supportMcp ?: 0
         model.supportVision = request.supportVision ?: 0
+        model.contextWindow = request.contextWindow
         model.price = request.price ?: 0.0
         model.isPublic = request.isPublic ?: 1
 
@@ -182,6 +183,7 @@ class ModelServiceImpl(
         request.supportTool?.let { model.supportTool = it }
         request.supportMcp?.let { model.supportMcp = it }
         request.supportVision?.let { model.supportVision = it }
+        request.contextWindow?.let { model.contextWindow = it }
         request.price?.let { model.price = it }
         request.isPublic?.let { model.isPublic = it }
 

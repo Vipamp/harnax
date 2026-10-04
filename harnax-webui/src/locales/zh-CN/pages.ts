@@ -94,6 +94,8 @@ export default {
   'pages.model.embedding': '嵌入模型',
   'pages.model.modelName': '模型名称',
   'pages.model.price': '价格（元/百万token）',
+  'pages.model.contextWindow': '上下文窗口（token）',
+  'pages.model.contextWindow.tooltip': '单次模型调用可容纳的 token 上限，用于计算上下文占用比例并决定自动压缩的触发点；留空则由运行时按模型名称推断',
   'pages.model.capabilities': '模型能力',
   'pages.model.isPublic': '是否公开',
   'pages.model.public': '公开',

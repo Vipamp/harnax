@@ -40,4 +40,7 @@ data class ModelConfigDto(
 
     @Schema(description = "Supports MCP (0:no, 1:yes)")
     val supportMcp: Int = 0,
+
+    @Schema(description = "Context window in tokens (null: inferred from the model name at runtime)")
+    val contextWindow: Int? = null,
 )

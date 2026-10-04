@@ -94,6 +94,8 @@ export default {
   'pages.model.embedding': 'Embedding Model',
   'pages.model.modelName': 'Model Name',
   'pages.model.price': 'Price (CNY/M tokens)',
+  'pages.model.contextWindow': 'Context Window (tokens)',
+  'pages.model.contextWindow.tooltip': 'Token budget of one model call; used for the context usage ratio and the auto-compaction trigger. Leave blank to let the runtime infer it from the model name',
   'pages.model.capabilities': 'Capabilities',
   'pages.model.isPublic': 'Is Public',
   'pages.model.public': 'Public',

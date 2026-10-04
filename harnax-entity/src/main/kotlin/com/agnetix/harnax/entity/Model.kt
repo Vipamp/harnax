@@ -58,6 +58,9 @@ class Model : Serializable {
     @Schema(description = "Vision support (0:no, 1:yes)")
     var supportVision: Int = 0
 
+    @Schema(description = "Context window in tokens (null: inferred from the model name at runtime)")
+    var contextWindow: Int? = null
+
     @Schema(description = "Price (CNY per million tokens)")
     var price: Double = 0.0
 

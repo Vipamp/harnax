@@ -37,6 +37,8 @@ data class ModelResponse(
     var supportMcp: Int? = null,
     @Schema(description = "Whether supports vision", example = "0")
     var supportVision: Int? = null,
+    @Schema(description = "Context window in tokens", example = "128000")
+    var contextWindow: Int? = null,
     @Schema(description = "Price (CNY/million tokens)", example = "0.0000")
     var price: Double? = null,
     @Schema(description = "Status (0:disabled, 1:enabled)", example = "1")
@@ -65,6 +67,7 @@ data class ModelResponse(
             supportTool = model.supportTool,
             supportMcp = model.supportMcp,
             supportVision = model.supportVision,
+            contextWindow = model.contextWindow,
             price = model.price,
             status = model.status,
             isPublic = model.isPublic,

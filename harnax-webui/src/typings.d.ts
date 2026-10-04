@@ -719,6 +719,8 @@ message?: string;
     supportTool?: number;
     supportMcp?: number;
     supportVision?: number;
+    /** Operator-declared token budget; absent means the runtime infers it from the model name */
+    contextWindow?: number;
     price?: number;
     status?: number;
     isPublic?: number;

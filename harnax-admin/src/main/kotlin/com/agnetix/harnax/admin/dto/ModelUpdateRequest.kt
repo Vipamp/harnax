@@ -45,6 +45,10 @@ data class ModelUpdateRequest(
     @Schema(description = "Whether supports vision", example = "0")
     val supportVision: Int? = null,
 
+    @Schema(description = "Context window in tokens (null keeps the stored value)", example = "128000")
+    @field:Min(value = 1, message = "Context window must be a positive token count")
+    val contextWindow: Int? = null,
+
     @Schema(description = "Price (CNY/million tokens)", example = "0.0000")
     @field:DecimalMin(value = "0.0", message = "Price cannot be less than 0")
     val price: Double? = null,

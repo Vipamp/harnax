@@ -107,6 +107,7 @@ declare namespace API {
     supportTool?: number;
     supportMcp?: number;
     supportVision?: number;
+    contextWindow?: number | null;
     price?: number;
     status?: number;
   };
@@ -124,6 +125,7 @@ declare namespace API {
     supportTool?: number;
     supportMcp?: number;
     supportVision?: number;
+    contextWindow?: number | null;
     price?: number;
     status?: number;
   };

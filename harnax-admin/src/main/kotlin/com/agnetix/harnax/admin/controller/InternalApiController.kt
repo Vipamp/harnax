@@ -845,6 +845,7 @@ class InternalApiController(
                 supportTool = model.supportTool,
                 supportVision = model.supportVision,
                 supportMcp = model.supportMcp,
+                contextWindow = model.contextWindow,
             )
         } else {
             null

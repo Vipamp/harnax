@@ -17,6 +17,7 @@
         <result column="support_tool" property="supportTool"/>
         <result column="support_mcp" property="supportMcp"/>
         <result column="support_vision" property="supportVision"/>
+        <result column="context_window" property="contextWindow"/>
         <result column="price" property="price"/>
         <result column="status" property="status"/>
         <result column="is_public" property="isPublic"/>
@@ -82,10 +83,10 @@
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO model (
         tenant_id, name, model_name, provider_id, description, model_type, support_internet, support_reasoning, thinking_mode, support_tool,
-        support_mcp, support_vision, price, status, is_public, creator, active, create_time, update_time
+        support_mcp, support_vision, context_window, price, status, is_public, creator, active, create_time, update_time
         ) VALUES (
         #{tenantId}, #{name}, #{modelName}, #{providerId}, #{description}, #{modelType}, #{supportInternet}, #{supportReasoning},
-        #{thinkingMode}, #{supportTool}, #{supportMcp}, #{supportVision}, #{price}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime},
+        #{thinkingMode}, #{supportTool}, #{supportMcp}, #{supportVision}, #{contextWindow}, #{price}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime},
         #{updateTime}
         )
     </insert>
@@ -104,6 +105,7 @@
         support_tool = #{supportTool},
         support_mcp = #{supportMcp},
         support_vision = #{supportVision},
+        context_window = #{contextWindow},
         price = #{price},
         is_public = #{isPublic},
         active = #{active},

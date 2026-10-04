@@ -40,6 +40,7 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
           description: values.description,
           modelType: values.modelType,
           price: values.price,
+          contextWindow: values.contextWindow,
           supportInternet: values.supportInternet === 1,
           thinkingMode: values.thinkingMode ?? (values.supportReasoning === 1 ? 1 : 0),
           supportTool: values.supportTool === 1,
@@ -88,6 +89,7 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
         description: formValues.description,
         modelType: formValues.modelType,
         price: formValues.price ? parseFloat(formValues.price) : null,
+        contextWindow: formValues.contextWindow ? parseInt(formValues.contextWindow, 10) : null,
         supportInternet: formValues.supportInternet ? 1 : 0,
         thinkingMode: formValues.thinkingMode ?? 0,
         supportReasoning: (formValues.thinkingMode ?? 0) >= 1 ? 1 : 0,
@@ -178,6 +180,19 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
             type="number" 
             step="0.0001" 
             placeholder={intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.model.price', defaultMessage: 'Price' })} 
+          />
+        </Form.Item>
+
+        <Form.Item
+          name="contextWindow"
+          label={intl.formatMessage({ id: 'pages.model.contextWindow', defaultMessage: 'Context Window (tokens)' })}
+          tooltip={intl.formatMessage({ id: 'pages.model.contextWindow.tooltip', defaultMessage: 'Token budget of one model call; used for the context usage ratio and the auto-compaction trigger. Leave blank to let the runtime infer it from the model name' })}
+        >
+          <Input
+            type="number"
+            step="1"
+            min={1}
+            placeholder={intl.formatMessage({ id: 'pages.placeholder.example', defaultMessage: 'e.g.: ' }) + '128000'}
           />
         </Form.Item>
 

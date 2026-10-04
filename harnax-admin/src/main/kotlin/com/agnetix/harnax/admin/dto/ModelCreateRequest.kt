@@ -49,6 +49,10 @@ data class ModelCreateRequest(
     @Schema(description = "Whether supports vision", example = "0")
     val supportVision: Int? = 0,
 
+    @Schema(description = "Context window in tokens (omit to let the runtime infer it from the model name)", example = "128000")
+    @field:Min(value = 1, message = "Context window must be a positive token count")
+    val contextWindow: Int? = null,
+
     @Schema(description = "Price (CNY/million tokens)", example = "0.0000")
     @field:DecimalMin(value = "0.0", message = "Price cannot be less than 0")
     val price: Double? = 0.0,

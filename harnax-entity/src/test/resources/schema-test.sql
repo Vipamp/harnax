@@ -330,6 +330,7 @@ CREATE TABLE IF NOT EXISTS `model` (
   `support_tool` tinyint(1) DEFAULT '0' COMMENT 'Support tools (0: No, 1: Yes)',
   `support_mcp` tinyint(1) DEFAULT '0' COMMENT 'Support MCP (0: No, 1: Yes)',
   `support_vision` tinyint(1) DEFAULT '0' COMMENT 'Support vision (0: No, 1: Yes)',
+  `context_window` int DEFAULT NULL COMMENT 'Model context window in tokens',
   `price` decimal(10,4) DEFAULT '0.0000' COMMENT 'Price (CNY per million tokens)',
   `status` tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
   `is_public` tinyint(1) DEFAULT '1' COMMENT 'Public visibility (0: Private, 1: Public)',
