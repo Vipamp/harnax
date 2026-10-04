@@ -157,6 +157,8 @@ class HarnessAgentBuilder {
 
     fun disableSubagents(): HarnessAgentBuilder = apply { builder.disableSubagents() }
 
+    fun disableTranscript(): HarnessAgentBuilder = apply { builder.disableTranscript() }
+
     // ===== Build =====
 
     fun build(): HarnessAgent {

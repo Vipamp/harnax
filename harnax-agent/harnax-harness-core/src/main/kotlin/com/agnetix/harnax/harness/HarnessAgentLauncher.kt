@@ -602,6 +602,12 @@ class HarnessAgentLauncher(
         if (!harnessConfig.enableSessionPersistence) {
             agentBuilder.disableSessionPersistence()
         }
+        // 2.0.4 installs a transcript middleware by default that appends the live context to an
+        // object-store or host-disk transcript at the end of every turn. Harnax reads history from the
+        // `session_message` archive instead, and that copy would be truncated (500/1000 chars, no knob),
+        // track auto-compaction, offer no read-back path and stay outside `clearSession`'s deletes.
+        // Applies to every assembly branch, including the two that carry a filesystem.
+        agentBuilder.disableTranscript()
         if (isLead) {
             // A lead has nothing to read, run or reimplement: it has no workspace of its own, and the
             // framework's own subagents would be a second, unmanaged delegation path.
