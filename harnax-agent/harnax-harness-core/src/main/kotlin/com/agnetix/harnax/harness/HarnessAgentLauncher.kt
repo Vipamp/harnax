@@ -22,7 +22,10 @@ import com.agnetix.harnax.agent.session.SessionLoader
 import com.agnetix.harnax.common.mcp.McpConfigDecryptor
 import com.agnetix.harnax.entity.McpAuthTypes
 import com.agnetix.harnax.harness.config.HarnessConfig
+import com.agnetix.harnax.harness.config.Memory
 import com.agnetix.harnax.harness.config.MinioConfig
+import com.agnetix.harnax.harness.memory.MemoryConfigFactory
+import com.agnetix.harnax.harness.memory.MemoryFilesystemRoutes
 import com.agnetix.harnax.harness.minio.MinioBaseStore
 import com.agnetix.harnax.harness.minio.MinioSnapshotClient
 import com.agnetix.harnax.harness.output.OutputFileDetector
@@ -44,6 +47,7 @@ import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import com.agnetix.harnax.tools.sdk.adaptor.ToolConfigAdaptor
 import com.agnetix.harnax.tools.sdk.registry.ToolRegistry
 import io.agentscope.core.message.Msg
+import io.agentscope.core.model.Model
 import io.agentscope.core.permission.PermissionBehavior
 import io.agentscope.core.permission.PermissionContextState
 import io.agentscope.core.permission.PermissionRule
@@ -546,6 +550,11 @@ class HarnessAgentLauncher(
         }
 
         // ----- Docker Sandbox + Snapshot (snapshotSpec pre-created in initLauncher) -----
+        // One store for the filesystem spec and the memory routes below: they address the same bucket,
+        // so a second client would buy nothing but another connection pool.
+        val minioStore = minioConfig?.let {
+            MinioBaseStore(it.createMinioClient(), it.storeBucket, it.storePrefix)
+        }
         if (!isLead && harnessConfig.sandbox.enabled && snapshotSpec != null) {
             // DockerFilesystemSpec moved to io.agentscope.harness.agent.sandbox.impl.docker in 2.0.0
             // .sandboxStateStore() is removed — sandbox state is now managed via DistributedStore
@@ -564,14 +573,8 @@ class HarnessAgentLauncher(
             // Build DistributedStore (replaces SandboxDistributedOptions in 2.0.0)
             val distributedStoreBuilder = DistributedStore.builder()
                 .agentStateStore(stateStore)
-            if (minioConfig != null) {
-                distributedStoreBuilder.baseStore(
-                    MinioBaseStore(
-                        minioConfig.createMinioClient(),
-                        minioConfig.storeBucket,
-                        minioConfig.storePrefix,
-                    ),
-                )
+            if (minioStore != null) {
+                distributedStoreBuilder.baseStore(minioStore)
             } else {
                 // Use a no-op base store when MinIO is not configured
                 distributedStoreBuilder.baseStore(
@@ -580,21 +583,83 @@ class HarnessAgentLauncher(
             }
             distributedStoreBuilder.sandboxSnapshotSpec(snapshotSpec)
             agentBuilder.distributedStore(distributedStoreBuilder.build())
-        } else if (!isLead && minioConfig != null) {
+        } else if (!isLead && minioStore != null) {
             // ----- MinIO distributed filesystem (non-sandbox mode) -----
-            val minioStore = MinioBaseStore(
-                minioConfig.createMinioClient(),
-                minioConfig.storeBucket,
-                minioConfig.storePrefix,
-            )
             val remoteFsSpec = RemoteFilesystemSpec(minioStore)
                 .isolationScope(IsolationScope.SESSION)
             agentBuilder.filesystem(remoteFsSpec)
         }
 
+        // ----- Memory: bucket, hooks and tools switch together -----
+        // Half-open was the status quo: four tools advertised to every model while the hooks that fill
+        // the bucket were never installed and nothing read it back. An agent with no workspace of its own
+        // has no memory either, so a lead is out of this domain by construction.
+        val memory = harnessConfig.memory
+        var memoryEnabled = memory.enabled && !isLead
+        if (memory.enabled && isLead) {
+            log.info("Agent '{}' is a team lead, which has no workspace: memory stays off for it", agentSpec.name)
+        }
+        if (memoryEnabled) {
+            val store = minioStore ?: throw IllegalStateException(
+                "harness.memory.enabled=true but this runtime has no MinIO to put the bucket in — " +
+                    "memory needs the shared store, an in-process map dies with the replica",
+            )
+            if (!harnessConfig.enableMemoryHooks) {
+                throw IllegalStateException(
+                    "harness.memory.enabled=true needs harness.enable-memory-hooks=true: those two hooks are " +
+                        "what extract the ledger and consolidate it",
+                )
+            }
+            val tenantId = agentSpec.tenantId
+            if (memory.tenantScoped && tenantId == null) {
+                throw IllegalStateException(
+                    "harness.memory.tenant-scoped=true but agent '${agentSpec.name}' carries no tenant, " +
+                        "so its bucket would be keyed on tenants/0 and shared with every other unscoped agent",
+                )
+            }
+            // The bucket binds its owner here, because the userId a call carries is also the key upstream
+            // uses for the persisted agent state and cannot be moved just to reach memory.
+            val owner = userIdentifier.userId?.toString()
+            if (owner.isNullOrBlank()) {
+                // No memory rather than a refused delivery: a caller that names no user still has to be able
+                // to chat. Everything goes off together — bucket, MemoryConfig, tools — so this is not the
+                // half-open state of a tool offered against a memory domain that never fills.
+                memoryEnabled = false
+                log.warn(
+                    "Agent '{}' has memory enabled but this delivery names no user, so memory stays off for " +
+                        "it: its bucket would be keyed on users/ and shared with every other caller that " +
+                        "names none",
+                    agentSpec.name,
+                )
+            } else {
+                // The same tuple on both assembly branches, so moving a deployment between them does not
+                // read as "the memory disappeared" for the same owner.
+                MemoryFilesystemRoutes
+                    .routes(store, tenantId ?: 0L, owner, agentSpec.name, memory.tenantScoped)
+                    .forEach { (prefix, route) -> agentBuilder.filesystemRoute(prefix, route) }
+                agentBuilder.memory(MemoryConfigFactory.build(memory, memoryModel(memory)))
+                // Upstream chooses the gate from the distributed store alone, so say which one this agent got:
+                // a deployment where consolidation never fires otherwise reads exactly like a broken bucket.
+                val sharedGate = harnessConfig.sandbox.enabled && snapshotSpec != null
+                log.info(
+                    "Agent '{}' memory uses the {} consolidation gate: the flush window and the consolidation " +
+                        "bound are {}",
+                    agentSpec.name,
+                    if (sharedGate) "store-backed" else "local",
+                    if (sharedGate) "shared by every replica of this owner" else "per replica",
+                )
+            }
+        }
+
         // ----- Disable built-in features that conflict with Harnax custom middleware -----
-        if (!harnessConfig.enableWorkspaceContext) {
+        // Memory forces the reader on: `<memory_context>` is injected by this middleware alone, so with
+        // it off the bucket gets written and never read back. The cost is that AGENTS.md, knowledge and
+        // plans come back with it.
+        if (!harnessConfig.enableWorkspaceContext && !memoryEnabled) {
             agentBuilder.disableWorkspaceContext()
+        }
+        if (!memoryEnabled || !memory.toolsEnabled) {
+            agentBuilder.disableMemoryTools()
         }
         if (!harnessConfig.enableMemoryHooks) {
             agentBuilder.disableMemoryHooks()
@@ -664,6 +729,13 @@ class HarnessAgentLauncher(
 
         // ----- Build -----
         val agent = agentBuilder.build()
+        if (memoryEnabled && memory.toolsEnabled) {
+            // The harness registers these four in one block with no switch for the fourth on its own
+            // (HarnessAgent.java:2688-2692), so the only way to keep `session_search` out of the memory
+            // batch is to take it back after the fact: it greps `.log.jsonl` transcripts on this
+            // replica's host disk, which is neither the owner's bucket nor the other replicas'.
+            agent.toolkit.removeTool("session_search")
+        }
         log.info(
             "HarnessAgent '{}' built for session={} [sandbox={}, minio={}]",
             agentSpec.name,
@@ -722,6 +794,23 @@ class HarnessAgentLauncher(
     }
 
     /**
+     * The model that extracts the ledger and consolidates `MEMORY.md`, or null to let the harness use
+     * the agent's own model for both.
+     *
+     * An id rather than a code because the `model` table has no code column. A non-zero id that resolves
+     * to nothing means admin and this runtime disagree about a model row, so assembly stops rather than
+     * quietly consolidating with the main model the operator asked to replace.
+     */
+    private fun memoryModel(memory: Memory): Model? {
+        if (memory.modelId == 0L) return null
+        val config = chatModelConfigAdaptor.getConfig(memory.modelId)
+            ?: throw IllegalStateException(
+                "harness.memory.model-id = ${memory.modelId} names no model this runtime can load",
+            )
+        return ModelHelper.createChatModel(config, false, false)
+    }
+
+    /**
      * Environment the selected CLI packages ask the platform to inject, plus the agent's own bindings.
      *
      * admin guarantees a `runtimeEnv` value is either a literal or exactly one supported slot, so an
@@ -767,6 +856,10 @@ class HarnessAgentLauncher(
      * when the session is resumed.
      *
      * In 2.0.0, Session.delete(SimpleSessionKey) → AgentStateStore.delete(userId, sessionId).
+     *
+     * Long-term memory is deliberately left alone: it is bucketed by owner, not by session, so "clear
+     * this conversation" must not quietly cost the user everything they had told this agent in earlier
+     * ones. Removing memory belongs to the admin's delete-user chain.
      */
     fun clearSession(sessionId: String) {
         // Delete all state for this session (userId="" covers the default anonymous user)

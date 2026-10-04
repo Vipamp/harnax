@@ -31,6 +31,7 @@ class SysUserServiceImpl(
     private val messageUtil: MessageUtil,
     private val apiKeyService: ApiKeyService,
     private val mcpUserCredentialMapper: McpUserCredentialMapper,
+    private val userMemoryCleaner: UserMemoryCleaner,
 ) : SysUserService {
 
     private val log = LoggerFactory.getLogger(SysUserServiceImpl::class.java)
@@ -278,6 +279,13 @@ class SysUserServiceImpl(
             if (grants > 0) {
                 log.info("User {} deleted, {} MCP grant(s) cleared", id, grants)
             }
+
+            // Long-term memory is not a row: the agent runtime wrote into this owner's bucket in the store
+            // on every conversation, and once the account is gone nothing can name those objects again.
+            // The sweep runs last on purpose — this method is a transaction, so a store that cannot delete
+            // rolls the account back and the admin retries the same call, while objects deleted first
+            // would be lost for a user who survived the failure.
+            userMemoryCleaner.deleteForUser(user)
         }
         return deleted
     }
