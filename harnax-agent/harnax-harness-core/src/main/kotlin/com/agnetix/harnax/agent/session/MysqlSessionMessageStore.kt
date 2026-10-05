@@ -97,13 +97,17 @@ class MysqlSessionMessageStore(
         // 2000-char preview of a long tool result, so an unconditional overwrite would take the trimmed
         // body into the table the page reads. The row keeps the longest version ever written, and
         // role/msg_name follow that same version rather than the newest one.
+        //
+        // json_value is assigned LAST on purpose: MySQL evaluates these assignments left to right and lets a
+        // later one see the already-updated column, so writing the body first would compare the two lengths
+        // after they are equal and leave role/msg_name stuck on the oldest version. H2 does not behave this way.
         val sql = """
             INSERT INTO $tableName (user_id, session_id, msg_id, role, msg_name, json_value)
             VALUES (?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
-                json_value = CASE WHEN CHAR_LENGTH(VALUES(json_value)) > CHAR_LENGTH(json_value) THEN VALUES(json_value) ELSE json_value END,
                 role = CASE WHEN CHAR_LENGTH(VALUES(json_value)) > CHAR_LENGTH(json_value) THEN VALUES(role) ELSE role END,
-                msg_name = CASE WHEN CHAR_LENGTH(VALUES(json_value)) > CHAR_LENGTH(json_value) THEN VALUES(msg_name) ELSE msg_name END
+                msg_name = CASE WHEN CHAR_LENGTH(VALUES(json_value)) > CHAR_LENGTH(json_value) THEN VALUES(msg_name) ELSE msg_name END,
+                json_value = CASE WHEN CHAR_LENGTH(VALUES(json_value)) > CHAR_LENGTH(json_value) THEN VALUES(json_value) ELSE json_value END
         """.trimIndent()
         var recorded = 0
         dataSource.connection.use { conn ->

@@ -118,6 +118,13 @@
             <version>1.21.4</version>
             <scope>test</scope>
         </dependency>
+        <!-- The archive's upsert keeps the fullest version, and only MySQL evaluates those assignments left to right -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>mysql</artifactId>
+            <version>1.21.4</version>
+            <scope>test</scope>
+        </dependency>
 
         <!-- H2 Database (for JDBC integration tests) -->
         <dependency>
