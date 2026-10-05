@@ -169,6 +169,25 @@ declare namespace API {
     skillDescription?: string;
   };
 
+  /**
+   * One readout of how full this session's model context is.
+   *
+   * `ratio` divides the billed input of the latest model call (`lastCallInputTokens`) when that session
+   * has one, and the upstream estimate otherwise — the two are not proportional, so both are reported and
+   * only the billed one drives the displayed percentage. The endpoint answers null when this instance does
+   * not hold the session's agent, which is a missing reading rather than an empty context.
+   */
+  type ContextUsage = {
+    messageCount: number;
+    estimatedTokens: number;
+    lastCallInputTokens?: number | null;
+    contextWindow: number;
+    windowSource?: 'MODEL_FIELD' | 'UPSTREAM_TABLE' | 'FALLBACK';
+    ratio: number;
+    triggerTokens?: number;
+    triggerMessages?: number;
+  };
+
   type SessionCreateRequest = {
     title: string;
     sessionDescription?: string;

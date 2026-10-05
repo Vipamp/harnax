@@ -27,12 +27,15 @@ import {
   EyeInvisibleOutlined,
   ThunderboltOutlined,
   StopOutlined,
+  CompressOutlined,
+  LoadingOutlined,
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { getSessionMessages, getSessionConfig } from '@/services/ant-design-pro/chat';
+import { compactionOutcome } from './contextUsage';
 import { getWorkspaceStatus } from '@/services/ant-design-pro/workspace';
 import {
   TEAM_DELEGATE_TOOL,
@@ -105,6 +108,11 @@ interface MemberRunState {
 
 interface ChatWindowProps {
   sessionId: string;
+  /**
+   * Called once a turn finishes and once a compaction returns, so the header readout re-reads a number that
+   * only moves after the turn that changed the context.
+   */
+  onContextChanged?: () => void;
 }
 
 interface PlanSubTask {
@@ -561,7 +569,7 @@ const LoadingDots: React.FC = () => (
 );
 
 /* ═══════════════ 主组件 ═══════════════ */
-const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
+const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onContextChanged }) => {
   const intl = useIntl();
   const SUGGESTIONS = [
     intl.formatMessage({ id: 'pages.session.quickSuggestion.javaSort', defaultMessage: 'Help me write a Java sorting algorithm' }),
@@ -572,6 +580,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
+  /** A compaction command is in flight; its entry stays disabled until the reply lands. */
+  const [compacting, setCompacting] = useState(false);
+  const prevLoadingRef = useRef(false);
   const [enableThink, setEnableThink] = useState(false);
   const [showThinking, setShowThinking] = useState(true); // 是否显示思考过程
   const [enableSearch, setEnableSearch] = useState(false);
@@ -2429,6 +2440,72 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     }
   };
 
+  /* ─── 压缩本会话的模型上下文 ─── */
+  const handleCompact = async () => {
+    if (!sessionId || loading || compacting) return;
+    setCompacting(true);
+    try {
+      const response = await fetch('/api/router/agent/command', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getRouterHeaders(),
+        },
+        body: JSON.stringify({ type: 'COMMAND', sessionId, command: 'COMPACT', args: '' }),
+      });
+      const result = await response.json();
+      const reply = result?.data;
+      const outcome = compactionOutcome(reply);
+      const before = reply?.result?.beforeMessages;
+      const after = reply?.result?.afterMessages;
+      if (outcome === 'done' && typeof before === 'number' && typeof after === 'number') {
+        message.success(
+          intl.formatMessage(
+            {
+              id: 'pages.session.context.compactDone',
+              defaultMessage: 'Context compacted: {before} -> {after} messages',
+            },
+            { before, after },
+          ),
+        );
+      } else if (outcome === 'done') {
+        message.success(
+          intl.formatMessage({ id: 'pages.session.context.compactDonePlain', defaultMessage: 'Context compacted' }),
+        );
+      } else if (outcome === 'noop') {
+        message.info(
+          intl.formatMessage({
+            id: 'pages.session.context.compactNoop',
+            defaultMessage: 'This session is still too short to compact',
+          }),
+        );
+      } else {
+        // Rejections carry the reason (member child sessions, task sessions, a call already running),
+        // which is more actionable than a generic local failure string. An envelope-level failure
+        // carries it at the top level instead, with no reply at all.
+        message.warning(
+          reply?.message ||
+            result?.message ||
+            intl.formatMessage({ id: 'pages.session.context.compactFailed', defaultMessage: 'Compaction failed' }),
+        );
+      }
+    } catch (error) {
+      console.error('[ChatWindow] compact failed', error);
+      message.warning(
+        intl.formatMessage({ id: 'pages.session.context.compactFailed', defaultMessage: 'Compaction failed' }),
+      );
+    } finally {
+      setCompacting(false);
+      onContextChanged?.();
+    }
+  };
+
+  /** The reading follows the last completed call, so it is only worth re-reading once a turn has ended. */
+  useEffect(() => {
+    if (prevLoadingRef.current && !loading) onContextChanged?.();
+    prevLoadingRef.current = loading;
+  }, [loading, onContextChanged]);
+
   const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -3636,6 +3713,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                   <span>{intl.formatMessage({ id: `pages.session.permissionMode.${permissionMode}`, defaultMessage: permissionMode })}</span>
                 </div>
               </Dropdown>
+              <div
+                className={`${styles.optionItem} ${styles.clearOption} ${loading || compacting ? styles.optionDisabled : ''}`}
+                title={intl.formatMessage({
+                  id: 'pages.session.context.compactTip',
+                  defaultMessage: 'Summarize the older turns of this session in the model context. The chat page keeps showing every original message.',
+                })}
+                onClick={handleCompact}
+              >
+                {compacting ? <LoadingOutlined /> : <CompressOutlined />}
+                <span>{intl.formatMessage({ id: 'pages.session.context.compact', defaultMessage: 'Compact Context' })}</span>
+              </div>
               <div
                 className={`${styles.optionItem} ${styles.clearOption}`}
                 onClick={async () => {

@@ -43,6 +43,23 @@ export async function getSessionMessages(
 }
 
 /**
+ * Read how full this session's model context is. Answers null data when no instance holds the session's
+ * agent, so callers must treat "no reading" separately from "nothing in context".
+ */
+export async function getContextUsage(
+  sessionId: string,
+  options?: { [key: string]: any },
+) {
+  return request<API.Result<API.ContextUsage>>(
+    `/api/router/agent/context/${sessionId}`,
+    {
+      method: 'GET',
+      ...buildRouterOptions(options),
+    },
+  );
+}
+
+/**
  * 获取会话的聊天配置
  */
 export async function getSessionConfig(
