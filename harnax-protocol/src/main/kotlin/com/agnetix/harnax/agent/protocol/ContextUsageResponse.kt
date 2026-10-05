@@ -19,16 +19,21 @@ enum class ContextWindowSource {
  * ContextUsageResponse - how full one session's model context is.
  *
  * Two token numbers are reported because they answer different questions: [estimatedTokens] is the same
- * estimate the automatic compaction triggers on, while [lastCallInputTokens] is the billed input of the
- * last model call. The billed one is always larger — it carries the system prompt and the tool list,
- * which the context buffer does not — and it only drops on the turn after a compaction.
+ * estimate the automatic compaction triggers on and it moves on the turn a compaction runs, while
+ * [lastCallInputTokens] is the billed input of the last model call — the real size of that request, system
+ * prompt and tool list included, but it only moves on the turn *after* a compaction. The two are not
+ * proportional: measured on one deployment the estimate came out between roughly a tenth of the billed
+ * figure and slightly above it, because the estimate counts reasoning content that is not replayed into
+ * later turns while the bill carries the prompt and tool list the estimate never sees. [ratio] therefore
+ * takes the billed numerator whenever one exists.
  *
  * @property messageCount       messages currently in the model context; compare with [triggerMessages]
  * @property estimatedTokens    upstream's token estimate over the context
  * @property lastCallInputTokens billed input tokens of the latest model call for this session, null when none recorded
  * @property contextWindow      denominator, resolved from [windowSource]
  * @property windowSource       which of the three resolutions supplied [contextWindow]
- * @property ratio              [estimatedTokens] over [contextWindow]
+ * @property ratio              [lastCallInputTokens] over [contextWindow], or [estimatedTokens] over it until
+ *   this session has a billed call to report
  * @property triggerTokens      where the automatic compaction fires for this model, from the same math
  * @property triggerMessages    the message-count trigger the automatic path uses
  */

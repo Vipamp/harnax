@@ -270,6 +270,18 @@ class HarnessAgentContextArchiveAndUsageTest {
             assertEquals(131_072, usage.contextWindow)
             assertEquals(ContextWindowSource.MODEL_FIELD, usage.windowSource)
             assertEquals(40_000, usage.lastCallInputTokens)
+            assertEquals(40_000.0 / 131_072.0, usage.ratio, 0.0)
+        }
+
+        @Test
+        @DisplayName("the ratio divides the billed number while the estimate keeps answering for the trigger")
+        fun ratioGoesOnBilledTokens() {
+            val (agent, _) = liveAgent(listOf(msg("m1")))
+
+            val usage = wrapper(agent, configured = 100_000).contextUsage(4_000)!!
+
+            assertEquals(4_000.0 / 100_000.0, usage.ratio, 0.0)
+            assertEquals(29, usage.estimatedTokens)
         }
 
         @Test
