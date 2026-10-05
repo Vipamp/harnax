@@ -29,6 +29,7 @@ import com.agnetix.harnax.harness.config.HarnessConfig
 import com.agnetix.harnax.harness.config.Memory
 import com.agnetix.harnax.harness.config.MinioConfig
 import com.agnetix.harnax.harness.memory.BucketScopedWatermarkStore
+import com.agnetix.harnax.harness.memory.LongTermMemoryContextMiddleware
 import com.agnetix.harnax.harness.memory.MemoryConfigFactory
 import com.agnetix.harnax.harness.memory.MemoryDomain
 import com.agnetix.harnax.harness.minio.MinioBaseStore
@@ -651,6 +652,14 @@ class HarnessAgentLauncher(
         // consolidation would advance the progress that decides which of another owner's daily entries count
         // as already merged.
         val memoryDomain = memoryDomainOf(minioStore, agentSpec, userIdentifier, isLead, memory)
+        // Whether this conversation keeps its own layer as well. The second switch only participates where the
+        // agent already got a bucket: the first row of 11.3's matrix says long-term off means no memory domain
+        // at all, and a conversation bucket of its own would be extraction into a bucket no promotion owns.
+        val sessionLayer = memoryDomain != null && agentSpec.sessionMemoryEnabled
+        // The bucket the routes mounted below point at. Upstream advances the consolidation progress of
+        // whichever bucket it was handed, so scoping it anywhere else would mark one layer's ledgers done on
+        // another layer's pass — the same object 11.7 moved out of the deployment-wide address.
+        val mountedBucket = memoryDomain?.namespace(if (sessionLayer) sessionId else null)
         if (!isLead && harnessConfig.sandbox.enabled && snapshotSpec != null) {
             // DockerFilesystemSpec moved to io.agentscope.harness.agent.sandbox.impl.docker in 2.0.0
             // .sandboxStateStore() is removed — sandbox state is now managed via DistributedStore
@@ -672,7 +681,7 @@ class HarnessAgentLauncher(
             if (minioStore != null) {
                 // Upstream builds the consolidation gate from this store alone, so this is the only place
                 // a store that cannot compare versions can be answered for.
-                distributedStoreBuilder.baseStore(memoryStore(wantsMemory, memoryDomain, minioStore))
+                distributedStoreBuilder.baseStore(memoryStore(wantsMemory, mountedBucket, minioStore))
             } else {
                 // Use a no-op base store when MinIO is not configured
                 distributedStoreBuilder.baseStore(
@@ -698,7 +707,15 @@ class HarnessAgentLauncher(
         if (memoryDomain != null) {
             // The same tuple on both assembly branches, so moving a deployment between them does not
             // read as "the memory disappeared" for the same owner.
-            memoryDomain.routes().forEach { (prefix, route) -> agentBuilder.filesystemRoute(prefix, route) }
+            val mounted = if (sessionLayer) memoryDomain.routes(sessionId) else memoryDomain.routes()
+            mounted.forEach { (prefix, route) -> agentBuilder.filesystemRoute(prefix, route) }
+            if (sessionLayer) {
+                // The two canonical prefixes now answer from this conversation, which is what makes the flush,
+                // the consolidation and the four tools write the session layer instead of the owner's. The
+                // curated layer cannot share those prefixes without becoming writable by the model, so it
+                // arrives as its own read-only block.
+                agentBuilder.addMiddleware(LongTermMemoryContextMiddleware(memoryDomain))
+            }
             agentBuilder.memory(MemoryConfigFactory.build(memory, memoryModel(memory)))
             // Upstream chooses the gate from the distributed store alone, so say which one this agent got:
             // a deployment where consolidation never fires otherwise reads exactly like a broken bucket.
@@ -1135,7 +1152,7 @@ class HarnessAgentLauncher(
 
     /**
      * The store to hand upstream for an agent that may consolidate: the gate's store, with the
-     * consolidation progress moved into [domain]'s bucket.
+     * consolidation progress moved into the bucket this delivery's routes point at.
      *
      * Upstream keeps that progress at one address for the whole deployment — a namespace of its own, with
      * no tenant, user, agent or session in it — so on a shared store one owner's pass decides which of
@@ -1143,10 +1160,10 @@ class HarnessAgentLauncher(
      * one that never asked for memory, and one that asked and could not bind an owner, which mounts no
      * routes and writes no memory at all.
      */
-    internal fun memoryStore(wantsMemory: Boolean, domain: MemoryDomain?, store: BaseStore): BaseStore {
+    internal fun memoryStore(wantsMemory: Boolean, bucket: List<String>?, store: BaseStore): BaseStore {
         if (!wantsMemory) return store
         val gated = coordinationStore(store)
-        return domain?.let { BucketScopedWatermarkStore(gated, it.namespace(null)) } ?: gated
+        return bucket?.let { BucketScopedWatermarkStore(gated, it) } ?: gated
     }
 
     companion object {

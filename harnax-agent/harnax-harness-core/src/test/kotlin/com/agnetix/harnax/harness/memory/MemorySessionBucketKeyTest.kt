@@ -133,4 +133,22 @@ class MemorySessionBucketKeyTest {
             MemoryFilesystemRoutes.namespace(tenantId, owner, agentId, false, "memory"),
         )
     }
+
+    @Test
+    fun `the domain hands out whichever bucket it was bound to`() {
+        // The launcher mounts what this returns and nothing else decides which layer a conversation extracts
+        // into, so the two calls have to agree with the tuple the same domain gives the progress store.
+        val store = InMemoryStore()
+        val domain = MemoryDomain(store, tenantId, owner, agentId, true)
+
+        domain.routes("sess-A").getValue(MemoryFilesystemRoutes.MEMORY_MD_ROUTE)
+            .write(rc("sess-A"), "/MEMORY.md", "- this conversation")
+        domain.routes().getValue(MemoryFilesystemRoutes.MEMORY_DIR_ROUTE)
+            .write(rc("sess-A"), "/2026-10-05.md", "- the owner")
+
+        assertNotNull(store.get(domain.namespace("sess-A") + "root", "/MEMORY.md"), "the conversation's own draft")
+        assertNotNull(store.get(domain.namespace(null) + "memory", "/2026-10-05.md"), "the owner's ledger stays the owner's")
+        assertNull(store.get(domain.namespace("sess-A") + "memory", "/2026-10-05.md"))
+        assertNull(store.get(domain.namespace(null) + "root", "/MEMORY.md"))
+    }
 }
