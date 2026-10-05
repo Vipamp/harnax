@@ -10,6 +10,7 @@ import com.agnetix.harnax.admin.dto.SkillDraftResponse
 import com.agnetix.harnax.admin.dto.SkillDraftSubmitRequest
 import com.agnetix.harnax.admin.dto.mapRecords
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.service.SchedulerClient
 import com.agnetix.harnax.admin.service.SkillDraftService
 import com.agnetix.harnax.admin.skill.SkillContentScanner
 import com.agnetix.harnax.admin.skill.SkillDraftCodec
@@ -22,13 +23,13 @@ import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.common.session.TaskSessionId
 import com.agnetix.harnax.entity.SkillDraft
 import com.agnetix.harnax.entity.SkillReviewLog
-import com.agnetix.harnax.mapper.AgentMapper
 import com.agnetix.harnax.mapper.ChannelMapper
 import com.agnetix.harnax.mapper.SessionMapper
 import com.agnetix.harnax.mapper.SkillDraftMapper
 import com.agnetix.harnax.mapper.SkillMapper
 import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
+import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import tools.jackson.databind.ObjectMapper
@@ -43,14 +44,17 @@ import tools.jackson.databind.ObjectMapper
  * digest, a draft somebody already decided and a name that is taken come back as outcomes on a normal
  * response, with the information that lets the reviewer do something about them.
  *
- * What both halves hold to is that nothing reaches the `skill` table except through an approval here.
+ * What both halves hold to is that nothing reaches the `skill` table except through an approval here, and
+ * that an approval names a person: the review half answers only to a signed-in reviewer's own token and a
+ * request that says which workspace it acts within, because the bearer a proposal arrives on is the shared
+ * internal secret the proposing sandbox also holds — see [requireReviewer].
  */
 @Service
 class SkillDraftServiceImpl(
     private val skillDraftMapper: SkillDraftMapper,
     private val sessionMapper: SessionMapper,
     private val channelMapper: ChannelMapper,
-    private val agentMapper: AgentMapper,
+    private val schedulerClient: SchedulerClient,
     private val skillReviewRecorder: SkillReviewRecorder,
     private val skillMapper: SkillMapper,
     private val skillDraftPromoter: SkillDraftPromoter,
@@ -91,7 +95,7 @@ class SkillDraftServiceImpl(
             this.resources = SkillDraftCodec.resourcesJson(files)
             scriptPreviews = SkillDraftCodec.scriptPreviewsJson(files)
             scanVerdict = request.scanVerdict?.trim()?.uppercase()?.takeIf { it in SCAN_VERDICTS }
-            scanFindings = SkillDraftCodec.findingsJson(request.scanFindings)
+            scanFindings = SkillDraftCodec.findingsJson(validatedFindings(request.scanFindings))
             sourceSessionId = sessionId
             agentId = owner.agentId.takeIf { it > 0L }
         }
@@ -180,6 +184,26 @@ class SkillDraftServiceImpl(
             .toMap()
     }
 
+    /**
+     * The scan notes as they may be stored.
+     *
+     * Advisory text — the authoritative findings are the ones the rescan inside an approval produces — but
+     * it arrives over the same bearer as the proposal, and a `mediumtext` column is a ceiling on the row, not
+     * a bound on what a caller may send. Same shape as [validatedResources]: refuse, name both numbers, let
+     * the gate tell the model why nothing was queued.
+     */
+    private fun validatedFindings(findings: List<String>?): List<String> {
+        val kept = findings?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
+        if (kept.size > MAX_SCAN_FINDINGS) {
+            throw BizException("the scan reported ${kept.size} findings, over the $MAX_SCAN_FINDINGS the queue stores")
+        }
+        val total = kept.sumOf { it.toByteArray(Charsets.UTF_8).size }
+        if (total > MAX_SCAN_FINDINGS_BYTES) {
+            throw BizException("the scan findings total $total bytes, over the $MAX_SCAN_FINDINGS_BYTES the queue stores")
+        }
+        return kept
+    }
+
     /** The queue within this tenant, newest touched first. */
     override fun page(
         status: String?,
@@ -187,6 +211,7 @@ class SkillDraftServiceImpl(
         pageNum: Int,
         pageSize: Int,
     ): Page<SkillDraftResponse> {
+        requireReviewer()
         val state = status?.trim()?.uppercase()?.takeIf { it.isNotEmpty() }
         // Refused rather than passed through: an unknown status would answer with an empty queue and read as
         // "nothing to review" to the one person whose job is to notice that it is not.
@@ -202,6 +227,7 @@ class SkillDraftServiceImpl(
     }
 
     override fun detail(id: Long): SkillDraftDetailResponse {
+        requireReviewer()
         val draft = requireDraft(id)
         val resources = SkillDraftCodec.resourcesOf(draft)
         val findings = SkillContentScanner.scan(draft.skillmd, resources)
@@ -244,7 +270,7 @@ class SkillDraftServiceImpl(
         id: Long,
         request: SkillDraftApproveRequest,
     ): SkillDraftDecisionResponse {
-        val reviewer = UserContextUtil.getCurrentUsername(jwtUtil)
+        val reviewer = requireReviewer()
         val expected = request.expectedDigest?.trim().orEmpty()
         if (expected.isEmpty()) {
             throw BizException("expectedDigest is required: it is the only thing saying which content this approval covers")
@@ -340,7 +366,7 @@ class SkillDraftServiceImpl(
         id: Long,
         request: SkillDraftRejectRequest,
     ): SkillDraftDecisionResponse {
-        val reviewer = UserContextUtil.getCurrentUsername(jwtUtil)
+        val reviewer = requireReviewer()
         val reason = request.reason?.trim().orEmpty()
         if (reason.isEmpty()) throw BizException("a rejection needs a reason; REJECTED on its own teaches the proposer nothing")
         if (reason.length > MAX_REJECT_REASON_CHARS) {
@@ -399,7 +425,35 @@ class SkillDraftServiceImpl(
         return trimmed
     }
 
-    private fun currentTenantId(): Long = TenantResolver.resolve(jwtUtil)
+    /**
+     * The person on the other side of this call, or a refusal.
+     *
+     * This queue is the whole reason L3 is a gate rather than an autocommit: nothing an agent wrote reaches
+     * a runtime until a human says so. [com.agnetix.harnax.admin.config.JwtAuthenticationFilter] however
+     * authenticates the shared internal secret as a principal on *every* path it covers except `/internal`,
+     * and `application.yml` injects that same secret into each sandbox as `platform.internalToken` — the
+     * bearer a proposed skill's own author holds. Accepting it here would let the proposer approve itself,
+     * and `UserContextUtil` would even stamp the decision with the `SYSTEM` marker it answers for that
+     * principal. So the marker is refused by name, and a caller with neither a marker nor a token has no
+     * name to sign a decision with either.
+     */
+    private fun requireReviewer(): String {
+        val authentication = SecurityContextHolder.getContext().authentication
+        if (authentication?.principal == INTERNAL_SERVICE_PRINCIPAL) {
+            throw BizException(403, "the review queue answers to a signed-in reviewer, not to the internal service secret")
+        }
+        return UserContextUtil.getCurrentUsername(jwtUtil)
+    }
+
+    /**
+     * The workspace whose queue this is.
+     *
+     * Strict where [TenantResolver] is deliberately lenient: its last step files an unattributed call under
+     * tenant 1, which is right for a callback that has nobody to attribute it to and wrong for a decision
+     * that will be read back as somebody's. No header, no claim, no account row therefore has no queue.
+     */
+    private fun currentTenantId(): Long = TenantResolver.resolveOrNull(jwtUtil)
+        ?: throw BizException(403, "this request names no workspace, so it has no review queue to read or decide")
 
     private fun SkillDraft.toResponse() = SkillDraftResponse(
         id = id,
@@ -422,9 +476,9 @@ class SkillDraftServiceImpl(
      *
      * The same three shapes the agent-spec resolution answers, because a proposal arrives on a runtime path
      * that has a session id and nothing else: a web/mini-program run has a `session` row, a channel
-     * conversation has a `channel` row and no session row, and a scheduled-task run carries its agent id in
-     * the id itself (contract C1). The session's tenant wins over the agent's, which is what makes a draft
-     * land in the workspace that ran the session rather than the one that owns the agent.
+     * conversation has a `channel` row and no session row, and a scheduled run's row is the scheduler's, so
+     * [fromTask] reads it over HTTP rather than taking the agent id the id carries on trust. The tenant of
+     * the row that recorded the run is what a draft is filed under, never a tenant the caller names.
      */
     private fun resolveOwner(sessionId: String): Owner? = when {
         sessionId.startsWith(WEB_PREFIX) || sessionId.startsWith(MP_PREFIX) ->
@@ -435,12 +489,54 @@ class SkillDraftServiceImpl(
             channelMapper.selectOwnerBySessionId(sessionId)?.let { Owner(tenantId = it.tenantId, agentId = it.agentId) }
 
         sessionId.startsWith(TaskSessionId.PREFIX) ->
-            TaskSessionId.parse(sessionId)?.let { Owner(tenantId = tenantOfAgent(it.agentId), agentId = it.agentId) }
+            TaskSessionId.parse(sessionId)?.let { fromTask(it) }
 
         else -> null
     }
 
-    private fun tenantOfAgent(agentId: Long): Long = agentMapper.selectById(agentId)?.tenantId ?: 0L
+    /**
+     * A scheduled run's proposal, filed against the tenant the *task row* says, not the one the session id
+     * claims.
+     *
+     * Contract C1 puts the agent id in the id itself, and that is what lets admin resolve an agent spec
+     * without the task table — every message a task run sends has to be answered, so a cold read would not
+     * do. A draft is the other case: it is written into somebody's review queue, and the id arrived over
+     * the same bearer the agent runs with, so the claim in it is the caller's own. `agent_task` is the
+     * scheduler's table since release 2, so its answer is read over HTTP, the same [SchedulerClient.taskOwner]
+     * an OAuth MCP lookup uses — one proposal per draft makes this the cold path it was designed to be.
+     *
+     * Every way that read can fail refuses the proposal rather than falling back to the claimed id. A
+     * `task-…` session id exists only because the scheduler ran that task, so "the scheduler cannot tell me
+     * who owns it" already means the run cannot be attributed to a workspace — and an unattributable draft
+     * is the one thing intake refuses everywhere else.
+     */
+    private fun fromTask(parsed: TaskSessionId.Parsed): Owner? {
+        val answer = try {
+            schedulerClient.taskOwner(parsed.taskId)
+        } catch (e: Exception) {
+            log.warn("Task {} could not be read from the scheduler: {}", parsed.taskId, e.message)
+            return null
+        }
+        val taskOwner = answer.data
+        if (!answer.isSuccess() || taskOwner == null) {
+            log.warn(
+                "Task {} is not confirmed by the scheduler ({}), so its proposal has no tenant to enter",
+                parsed.taskId,
+                answer.message,
+            )
+            return null
+        }
+        if (taskOwner.agentId != parsed.agentId) {
+            log.warn(
+                "Session id claims agent {} but task {} runs agent {}, so the proposal is not from that agent",
+                parsed.agentId,
+                parsed.taskId,
+                taskOwner.agentId,
+            )
+            return null
+        }
+        return Owner(tenantId = taskOwner.tenantId, agentId = taskOwner.agentId)
+    }
 
     /** A proposal needs a tenant to be reviewable by anybody; an agent is recorded when the id names one. */
     private data class Owner(
@@ -463,6 +559,11 @@ class SkillDraftServiceImpl(
          * can read — it is a bound on size, not on volume, which is the risk the design records as accepted.
          */
         private const val MAX_RESOURCES_BYTES = 2_000_000
+
+        /** Ceiling on the caller-reported scan notes, same reasoning as [MAX_RESOURCES_BYTES]. */
+        private const val MAX_SCAN_FINDINGS = 200
+
+        private const val MAX_SCAN_FINDINGS_BYTES = 32_000
 
         /** Upstream `SkillSecurityScanner.Verdict`, and the only values worth echoing back to a reviewer. */
         private val SCAN_VERDICTS = setOf("SAFE", "CAUTION", "DANGEROUS")
@@ -493,5 +594,12 @@ class SkillDraftServiceImpl(
         private const val MP_PREFIX = "mp-"
         private const val CHANNEL_PREFIX = "chn-"
         private const val ACTIVE_SESSION_STATUS = 1
+
+        /**
+         * The principal [com.agnetix.harnax.admin.config.JwtAuthenticationFilter] installs for a bearer that
+         * is the internal shared secret rather than a token. `UserContextUtil` answers `SYSTEM` for it, which
+         * is what would otherwise become a decision's `reviewed_by`.
+         */
+        private const val INTERNAL_SERVICE_PRINCIPAL = "internal-service"
     }
 }

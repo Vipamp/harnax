@@ -77,6 +77,9 @@ class SkillDraftController(
                 pageSize = pageSize ?: DEFAULT_PAGE_SIZE,
             ),
         )
+    } catch (e: BizException) {
+        log.warn("Draft queue refused: {}", e.message)
+        ResultVo.error(e.code, e.message ?: "Failed to list skill drafts")
     } catch (e: Exception) {
         log.error("Failed to list skill drafts", e)
         ResultVo.error(ApiErrors.message(e, "Failed to list skill drafts"))

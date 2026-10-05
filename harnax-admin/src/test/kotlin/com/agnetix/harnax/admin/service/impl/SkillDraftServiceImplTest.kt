@@ -7,19 +7,20 @@ import com.agnetix.harnax.admin.dto.SkillDraftDecisionResponse
 import com.agnetix.harnax.admin.dto.SkillDraftRejectRequest
 import com.agnetix.harnax.admin.dto.SkillDraftSubmitRequest
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.service.SchedulerClient
 import com.agnetix.harnax.admin.skill.SkillDraftCodec
 import com.agnetix.harnax.admin.skill.SkillDraftPromoter
 import com.agnetix.harnax.admin.skill.SkillReviewRecorder
 import com.agnetix.harnax.admin.util.JwtUtil
+import com.agnetix.harnax.common.dto.AgentTaskOwner
+import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.common.session.TaskSessionId
-import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.Session
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.SkillDraft
 import com.agnetix.harnax.entity.SkillRepository
 import com.agnetix.harnax.entity.SkillReviewLog
 import com.agnetix.harnax.entity.dto.ChannelSessionOwner
-import com.agnetix.harnax.mapper.AgentMapper
 import com.agnetix.harnax.mapper.ChannelMapper
 import com.agnetix.harnax.mapper.SessionMapper
 import com.agnetix.harnax.mapper.SkillDraftMapper
@@ -47,6 +48,9 @@ import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.eq
 import org.mockito.quality.Strictness
 import org.springframework.mock.web.MockHttpServletRequest
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
+import org.springframework.security.core.authority.SimpleGrantedAuthority
+import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.context.request.ServletRequestAttributes
 import java.time.LocalDateTime
@@ -61,7 +65,9 @@ import java.time.LocalDateTime
  * that comparison describe a different skill than the one displayed.
  *
  * The decision tests then hold the other side of the same invariant: a draft that is not the caller's, or not
- * the content the reviewer read, or already decided, must not reach the skill table at all.
+ * the content the reviewer read, or already decided, must not reach the skill table at all. And the gate has
+ * to know who it is gating — a proposal's own author holds the same internal secret every sandbox runs with,
+ * so the tests below also assert that bearer gets nothing from the review half.
  *
  * @author agnetix
  * @since 2026-10-05
@@ -80,7 +86,7 @@ class SkillDraftServiceImplTest {
     private lateinit var channelMapper: ChannelMapper
 
     @Mock
-    private lateinit var agentMapper: AgentMapper
+    private lateinit var schedulerClient: SchedulerClient
 
     @Mock
     private lateinit var skillReviewRecorder: SkillReviewRecorder
@@ -102,7 +108,7 @@ class SkillDraftServiceImplTest {
             skillDraftMapper = skillDraftMapper,
             sessionMapper = sessionMapper,
             channelMapper = channelMapper,
-            agentMapper = agentMapper,
+            schedulerClient = schedulerClient,
             skillReviewRecorder = skillReviewRecorder,
             skillMapper = skillMapper,
             skillDraftPromoter = skillDraftPromoter,
@@ -125,6 +131,8 @@ class SkillDraftServiceImplTest {
     fun tearDown() {
         TenantContext.clear()
         RequestContextHolder.resetRequestAttributes()
+        // The principal is a static holder; a gate test that installs one would otherwise decide the next test
+        SecurityContextHolder.clearContext()
         // A paging call arms PageHelper's ThreadLocal and only a real query consumes it
         PageHelper.clearPage()
     }
@@ -238,21 +246,49 @@ class SkillDraftServiceImplTest {
     }
 
     @Test
-    @DisplayName("a scheduled-task run resolves its tenant from the agent id carried in the session id")
-    fun `task sessions resolve through contract C1`() {
+    @DisplayName("a scheduled run is filed against the tenant its task row says, not the agent id in the session id")
+    fun `task sessions resolve through the scheduler's own row`() {
         val sessionId = TaskSessionId.of(taskId = 11L, agentId = 4L)
-        `when`(agentMapper.selectById(4L)).thenReturn(
-            Agent().apply {
-                id = 4L
-                tenantId = 6L
-            },
-        )
+        stubTaskOwner(taskId = 11L, tenantId = 6L, agentId = 4L)
 
         submit(sessionId = sessionId)
 
         val stored = capturedInsert()
         assertEquals(6L, stored.tenantId)
-        assertEquals(4L, stored.agentId)
+        assertEquals(4L, stored.agentId, "the agent the task runs is what the reviewer is shown as the author")
+    }
+
+    @Test
+    @DisplayName("a task session naming an agent its task does not run is refused")
+    fun `a claimed agent that the task does not run is refused`() {
+        val sessionId = TaskSessionId.of(taskId = 11L, agentId = 4L)
+        stubTaskOwner(taskId = 11L, tenantId = 6L, agentId = 77L)
+
+        val refused = assertThrows(BizException::class.java) { submit(sessionId = sessionId) }
+
+        assertEquals(404, refused.code)
+        verify(skillDraftMapper, never()).insert(any())
+    }
+
+    @Test
+    @DisplayName("a scheduler that cannot confirm the task refuses the proposal instead of trusting the id")
+    fun `an unconfirmed task has no tenant to enter`() {
+        val sessionId = TaskSessionId.of(taskId = 11L, agentId = 4L)
+        `when`(schedulerClient.taskOwner(11L)).thenReturn(ResultVo.error("Scheduler service unavailable"))
+
+        assertThrows(BizException::class.java) { submit(sessionId = sessionId) }
+
+        verify(skillDraftMapper, never()).insert(any())
+    }
+
+    private fun stubTaskOwner(
+        taskId: Long,
+        tenantId: Long,
+        agentId: Long,
+    ) {
+        `when`(schedulerClient.taskOwner(taskId)).thenReturn(
+            ResultVo.success(AgentTaskOwner(creator = "alice", tenantId = tenantId, agentId = agentId)),
+        )
     }
 
     @Test
@@ -673,6 +709,55 @@ class SkillDraftServiceImplTest {
 
         assertEquals(404, refused.code)
         verify(skillDraftMapper, never()).markReviewed(any(), any(), any(), anyOrNull())
+    }
+
+    @Test
+    @DisplayName("the secret a sandbox runs with cannot read or decide its own queue")
+    fun `the internal service principal is refused at the gate`() {
+        val draft = storedDraft()
+        reviewerReads(draft)
+        // A workspace is resolved on purpose: the refusal below has to be about who is asking, not about a
+        // missing tenant the same caller would also trip.
+        authenticateInternalService()
+
+        listOf(
+            assertThrows(BizException::class.java) { service.page(status = null, name = null, pageNum = 1, pageSize = 20) },
+            assertThrows(BizException::class.java) { service.detail(DRAFT_ID) },
+            assertThrows(BizException::class.java) {
+                service.approve(DRAFT_ID, SkillDraftApproveRequest(expectedDigest = SkillDraftCodec.contentDigest(draft)))
+            },
+            assertThrows(BizException::class.java) { service.reject(DRAFT_ID, SkillDraftRejectRequest(reason = "self-approved")) },
+        ).forEach { refused ->
+            assertEquals(403, refused.code, "a proposal's author gets a refusal, not a queue: ${refused.message}")
+        }
+        verify(skillDraftMapper, never()).selectById(any())
+        verify(skillDraftMapper, never()).markReviewed(any(), any(), any(), anyOrNull())
+        verify(skillDraftPromoter, never()).promote(any(), any(), any(), any())
+    }
+
+    @Test
+    @DisplayName("a caller with no workspace of its own is not handed tenant 1's queue")
+    fun `an unattributed review request is refused`() {
+        TenantContext.clear()
+        // No header, no tenant claim, no account row: the lenient chain would file this under the default
+        // workspace, which is the one queue an unattributed call has no business reading.
+        `when`(skillDraftMapper.selectDraftList(eq(1L), anyOrNull(), anyOrNull(), anyOrNull())).thenReturn(emptyList())
+
+        val refused = assertThrows(BizException::class.java) {
+            service.page(status = null, name = null, pageNum = 1, pageSize = 20)
+        }
+
+        assertEquals(403, refused.code)
+        verify(skillDraftMapper, never()).selectDraftList(any(), anyOrNull(), anyOrNull(), anyOrNull())
+    }
+
+    /** The principal `JwtAuthenticationFilter` installs for a bearer that is the shared internal secret. */
+    private fun authenticateInternalService() {
+        SecurityContextHolder.getContext().authentication = UsernamePasswordAuthenticationToken(
+            "internal-service",
+            null,
+            listOf(SimpleGrantedAuthority("ROLE_INTERNAL")),
+        )
     }
 
     private companion object {
