@@ -148,6 +148,48 @@ final class ScriptedSandbox: SessionWorkspaceReading, @unchecked Sendable {
     }
 }
 
+/// The context-occupancy read behind the header's tag.
+///
+/// Same shape as `ScriptedSandbox`: a canned answer, a failure switch, and a park so the one question that
+/// cannot be asked any other way — what does a reply that lands after the user has moved on do — is a race
+/// rather than a sleep.
+final class ScriptedContextUsage: ContextUsageReading, @unchecked Sendable {
+    private(set) var requested: [String] = []
+    /// The leg's *answer*, not its request: a parked reply that was released and one that never left are only
+    /// tellable apart from here.
+    private(set) var answered: [String] = []
+    /// A readable reading by default, because that is what a conversation with a billed call has.
+    var reading = ContextUsage(
+        messageCount: 12,
+        estimatedTokens: 4_000,
+        lastCallInputTokens: 8_000,
+        contextWindow: 32_000,
+        ratio: 0.25
+    )
+    var fails = false
+    var gate = false
+    private var parked: [() -> Void] = []
+
+    func contextUsage(sessionId: String) async -> Result<ContextUsage, APIError> {
+        requested.append(sessionId)
+        guard gate else { return next(sessionId) }
+        return await withCheckedContinuation { continuation in
+            parked.append { continuation.resume(returning: self.next(sessionId)) }
+        }
+    }
+
+    func release() {
+        let waiting = parked
+        parked = []
+        for resume in waiting { resume() }
+    }
+
+    private func next(_ sessionId: String) -> Result<ContextUsage, APIError> {
+        answered.append(sessionId)
+        return fails ? .failure(.offline) : .success(reading)
+    }
+}
+
 /// One hand-driven stream.
 ///
 /// Frames are written as the wire JSON the router sends, because the payload structs behind `ChatEvent` keep

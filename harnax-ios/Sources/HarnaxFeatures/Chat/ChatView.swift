@@ -49,6 +49,7 @@ public struct ChatView: View {
         workspace: (any SessionWorkspaceReading)? = nil,
         confirming: (any ToolConfirming)? = nil,
         plan: (any PlanReading)? = nil,
+        contextUsage: (any ContextUsageReading)? = nil,
         conversation: ChatConversation
     ) {
         _vm = StateObject(wrappedValue: ChatViewModel(
@@ -59,6 +60,7 @@ public struct ChatView: View {
             config: config,
             workspace: workspace,
             plan: plan,
+            contextUsage: contextUsage,
             conversation: conversation
         ))
         self.conversation = conversation
@@ -79,6 +81,12 @@ public struct ChatView: View {
         .harnaxScreen()
         .navigationTitle(vm.conversation.title)
         .toolbar {
+            // Declared first so it sits left of the workspace entry, which is where the console keeps the
+            // readout — beside the title, ahead of the action buttons
+            // (`harnax-webui/src/pages/session/index.tsx:353-355`).
+            if vm.contextUsage != nil {
+                ToolbarItem(placement: .primaryAction) { contextUsageTag }
+            }
             // A deliberate fork from the console, which draws its Workspace button always and checks the status
             // when it is tapped (`harnax-webui/src/pages/session/index.tsx:280-292`): with no sandbox manager
             // running every workspace route is a 404 (`SandboxWorkspaceController.kt:398-416`), so this corner
@@ -111,6 +119,8 @@ public struct ChatView: View {
             await vm.loadComposerConfig()
             // And the one read that decides whether the workspace entry exists at all.
             await vm.refreshSandboxStatus()
+            // The occupancy tag is per-conversation as well, and `bind` cleared the previous one.
+            await vm.refreshContextUsage()
         }
         .onDisappear { vm.detach() }
     }
@@ -122,6 +132,47 @@ public struct ChatView: View {
             Image(systemName: "folder")
         }
         .accessibilityLabel(hx("chat.workspace.title"))
+    }
+
+    // MARK: - context occupancy
+
+    /// The header readout: how full the context the agent holds is, and which number that is.
+    ///
+    /// The console draws it as a tag with a hover tooltip (`harnax-webui/src/pages/session/index.tsx:31-77`);
+    /// a phone has no hover, so the same reading is a `Menu` — the chip for the headline, five static rows for
+    /// what the tooltip lists. Both halves come from `ContextUsageReadout`, so which number answers which
+    /// question is decided once and not in a view. The rows open and close nothing: the readout reports, it
+    /// decides no part of the context.
+    ///
+    /// Absent rather than `0%`, the way the console hides its tag
+    /// (`index.tsx:355`): `ChatViewModel.contextUsage` only ever holds a reading that passed
+    /// `ContextUsage.isReadable`, and both legs that answer without one — no instance holds the session, the
+    /// session was never bound — say the router cannot see this context, never that the context is empty.
+    @ViewBuilder
+    private var contextUsageTag: some View {
+        if let usage = vm.contextUsage {
+            Menu {
+                HXText("chat.context.usage")
+                Divider()
+                ForEach(ContextUsageReadout.rows(for: usage), id: \.label) { row in
+                    HStack(spacing: 10) {
+                        Text(verbatim: row.label)
+                        Spacer(minLength: 8)
+                        Text(verbatim: row.value)
+                    }
+                }
+            } label: {
+                // `orange` for a context that has reached the automatic trigger, neutral for one that has not
+                // (`index.tsx:68`): at that point the next turn compacts this context whether or not anyone
+                // asks, and a quiet pill would be the readout withholding the only news it has.
+                HXChip(
+                    ContextUsageReadout.headline(for: usage),
+                    tone: usage.isAtAutoTrigger ? .warning : nil
+                )
+            }
+            .accessibilityLabel(hx("chat.context.usage"))
+            .accessibilityValue(ContextUsageReadout.headline(for: usage))
+        }
     }
 
     // MARK: - transcript
@@ -448,6 +499,24 @@ private struct ChatComposerToolbar: View {
                     vm.togglePlan()
                 }
                 permissionChip
+                // The compaction entry, in the console's place in the row — after the permission mode, before
+                // the two that destroy things (`ChatWindow.tsx:3716-3765`). It asks for no confirmation: it is
+                // the one command here that leaves the conversation itself untouched, because the bubbles on
+                // screen come from the archive and keep every turn it folds away
+                // (`ChatViewModel.requestCompact`).
+                ChatComposerChip(
+                    titleKey: "chat.composer.compact",
+                    systemImage: "arrow.down.right.and.arrow.up.left",
+                    // `run(command:)` parks `isStreaming` for the length of the one request, which is what the
+                    // console's separate `compacting` flag does (`:3717`).
+                    isMuted: vm.isStreaming
+                ) {
+                    vm.requestCompact()
+                }
+                // The console carries what the entry does as the item's hover title
+                // (`ChatWindow.tsx:3718-3721`); a chip has no hover, so the sentence goes to the description a
+                // screen reader speaks after the chip's own name.
+                .accessibilityHint(hx("chat.context.compactTip"))
                 // Both go dead for the length of a run, the way the send button turns into a stop button:
                 // a command on a busy session gets refused server-side, so the chips have to say they are
                 // not available rather than look tappable (`ChatWindow.tsx:3679-3686`).

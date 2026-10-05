@@ -33,6 +33,8 @@ public struct HarnaxDependencies: Sendable {
     public let teamArtifacts: any TeamArtifactReading
     public let chatHistory: any ChatHistoryReading
     public let plan: any PlanReading
+    /// The conversation's context-occupancy read, behind the chat header's tag.
+    public let contextUsage: any ContextUsageReading
     public let commands: any AgentCommanding
     /// The one dependency that is not on the admin surface: a streamed answer cannot go through the
     /// transport every other client shares, which waits for a whole body.
@@ -67,6 +69,7 @@ public struct HarnaxDependencies: Sendable {
         teamArtifacts: any TeamArtifactReading,
         chatHistory: any ChatHistoryReading,
         plan: any PlanReading,
+        contextUsage: any ContextUsageReading,
         commands: any AgentCommanding,
         streaming: any AgentStreaming,
         toolConfirm: (any ToolConfirming)? = nil
@@ -95,6 +98,7 @@ public struct HarnaxDependencies: Sendable {
         self.teamArtifacts = teamArtifacts
         self.chatHistory = chatHistory
         self.plan = plan
+        self.contextUsage = contextUsage
         self.commands = commands
         self.streaming = streaming
         self.toolConfirm = toolConfirm
@@ -115,9 +119,9 @@ public struct HarnaxDependencies: Sendable {
             // next launch.
             language: { AcceptLanguage.current() }
         )
-        // One admin surface, twenty-five protocols: every `/api/admin/**` route family hangs off the same
+        // One admin surface, twenty-six protocols: every `/api/admin/**` route family hangs off the same
         // client, so the agent and team reads, their two detail reads, their two save surfaces, the task,
-        // refresh, five context domains, four system reads and the eight session reads and writes share its
+        // refresh, five context domains, four system reads and the nine session reads and writes share its
         // header injection.
         let admin = AdminClient(client: client)
         // One client for both legs: an answer to a parked run comes back as a stream of its own.
@@ -151,6 +155,7 @@ public struct HarnaxDependencies: Sendable {
             teamArtifacts: admin,
             chatHistory: admin,
             plan: admin,
+            contextUsage: admin,
             commands: admin,
             streaming: stream,
             toolConfirm: stream

@@ -13,6 +13,7 @@ final class ChatViewModelTests: XCTestCase {
         commands: (any AgentCommanding)? = nil,
         config: (any SessionConfiguring)? = nil,
         workspace: (any SessionWorkspaceReading)? = nil,
+        contextUsage: (any ContextUsageReading)? = nil,
         conversation: ChatConversation? = nil
     ) -> (ChatViewModel, ScriptedChatStream) {
         let stream = ScriptedChatStream()
@@ -21,6 +22,7 @@ final class ChatViewModelTests: XCTestCase {
             commands: commands,
             config: config,
             workspace: workspace,
+            contextUsage: contextUsage,
             conversation: conversation ?? self.conversation
         )
         return (vm, stream)
@@ -459,6 +461,7 @@ final class ChatViewModelTests: XCTestCase {
 
         vm.requestClear()
         vm.requestStopSandbox()
+        vm.requestCompact()
         vm.confirmPendingCommand()
 
         XCTAssertEqual(stream.ports.count, 1, "a chip must not open a second read")
@@ -581,8 +584,10 @@ final class ChatViewModelTests: XCTestCase {
         XCTAssertEqual(vm.transcript.turns.last?.segments.first?.text, hx("chat.command.done"))
     }
 
-    /// COMPACT is a stub on the server, so its refusal sentence is the only useful answer a bubble can carry
-    /// (`DefaultAgentRunner.kt:245-249`).
+    /// A command the server refused answers with its own words, which is the third leg of the console's reply
+    /// chain (`harnax-webui/src/pages/session/components/ChatWindow.tsx:1023`) and the only useful thing a
+    /// bubble can carry: a compaction refusal says why (a member's child session, a task session, a call
+    /// already running).
     func testACommandRefusedByTheServerAnswersWithItsOwnWords() async {
         let commands = ScriptedAgentCommands()
         commands.reply = .failure(.business(code: 500, message: "Compact not yet implemented"))
@@ -824,6 +829,183 @@ final class ChatViewModelTests: XCTestCase {
         await waitUntil("the entry to light after the turn") { vm.sandboxIsRunning }
 
         XCTAssertEqual(sandbox.statusRequested, ["s-1"])
+    }
+
+    // MARK: - the context occupancy reading
+
+    /// The tag is the latest answer and nothing else: the console's `loadContextUsage` overwrites on every
+    /// read, including with null, because a session the router cannot see must not keep a number on screen
+    /// (`harnax-webui/src/pages/session/index.tsx:136-148`).
+    func testTheOccupancyTagFollowsTheRead() async {
+        let reader = ScriptedContextUsage()
+        let (vm, _) = makeModel(contextUsage: reader)
+        XCTAssertNil(vm.contextUsage, "nothing has been asked yet")
+
+        await vm.refreshContextUsage()
+        XCTAssertEqual(vm.contextUsage, reader.reading)
+
+        // The `ResultVo.success(null)` leg — the session was never bound to an instance.
+        reader.reading = ContextUsage()
+        await vm.refreshContextUsage()
+        XCTAssertNil(vm.contextUsage, "a session the router cannot see is not a context that is empty")
+
+        // And the business-error leg (no instance holds this session) takes the tag down with it rather than
+        // leaving the previous reading up.
+        reader.reading = ContextUsage(
+            messageCount: 3,
+            estimatedTokens: 100,
+            contextWindow: 32_000,
+            ratio: 0.2
+        )
+        reader.fails = true
+        await vm.refreshContextUsage()
+        XCTAssertNil(vm.contextUsage, "an unreadable answer does not keep the old reading alive")
+        XCTAssertNil(vm.composerNotice, "the tag not being there is a state, not a refusal to explain")
+        XCTAssertEqual(reader.requested, ["s-1", "s-1", "s-1"])
+    }
+
+    /// A switch clears the reading — its denominator is another model's window — and the new conversation is
+    /// answered by its own read (`ChatView`'s `.task(id:)`).
+    func testAConversationSwitchTakesTheOldReadingWithIt() async {
+        let reader = ScriptedContextUsage()
+        let (vm, _) = makeModel(contextUsage: reader)
+        await vm.refreshContextUsage()
+        XCTAssertNotNil(vm.contextUsage)
+
+        vm.bind(ChatConversation(id: "s-2", title: "另一组"))
+
+        XCTAssertNil(vm.contextUsage)
+        XCTAssertEqual(reader.requested, ["s-1"], "a switch is not itself a read")
+    }
+
+    func testAnAnswerForTheConversationJustLeftDoesNotPutATagHere() async {
+        let reader = ScriptedContextUsage()
+        reader.gate = true
+        let (vm, _) = makeModel(contextUsage: reader)
+
+        let read = Task { await vm.refreshContextUsage() }
+        await waitUntil("the parked occupancy read") { reader.requested == ["s-1"] }
+
+        vm.bind(ChatConversation(id: "s-2", title: "另一组"))
+        reader.release()
+        await read.value
+
+        XCTAssertNil(vm.contextUsage, "the reading belongs to the conversation that was left")
+    }
+
+    /// The reading's numerator is the last billed call, so it only becomes worth asking again when a turn ends
+    /// (`harnax-webui/src/pages/session/components/ChatWindow.tsx:2503-2507`).
+    func testTheTurnsLastWordRereadsTheOccupancy() async throws {
+        let reader = ScriptedContextUsage()
+        let (vm, stream) = makeModel(contextUsage: reader)
+
+        await send("再跑一轮", on: vm, stream)
+        XCTAssertTrue(reader.requested.isEmpty, "a send asks nothing of its own")
+
+        try stream.latest.feed(ChatFrames.text("好了"), ChatFrames.end())
+        await waitUntil("the reading to land after the turn") { vm.contextUsage != nil }
+
+        XCTAssertEqual(reader.requested, ["s-1"])
+    }
+
+    func testAHostWithoutTheOccupancyReadAsksNothing() async {
+        let (vm, _) = makeModel()
+        await vm.refreshContextUsage()
+        XCTAssertNil(vm.contextUsage)
+    }
+
+    // MARK: - manual compaction
+
+    func testTheCompactEntrySendsTheCommandAndReportsTheCounts() async {
+        let commands = ScriptedAgentCommands()
+        commands.reply = .success(AgentCommandReply(success: true, result: .init(beforeMessages: 40, afterMessages: 12)))
+        let reader = ScriptedContextUsage()
+        let (vm, _) = makeModel(commands: commands, contextUsage: reader)
+
+        vm.requestCompact()
+        await waitUntil("the compaction answer") { vm.composerNotice != nil }
+
+        XCTAssertEqual(commands.requests.count, 1)
+        XCTAssertEqual(commands.requests.first?.command, .compact)
+        XCTAssertEqual(commands.requests.first?.args, "")
+        XCTAssertEqual(vm.composerNotice?.tone, .info)
+        XCTAssertEqual(vm.composerNotice?.text, hx("chat.context.compact.done", 40, 12))
+        XCTAssertNotEqual(
+            vm.composerNotice?.text,
+            hx("chat.context.compact.done", 12, 40),
+            "the counts go in the order the server sent them: before, then after"
+        )
+        XCTAssertEqual(reader.requested, ["s-1"], "the context the command rewrote is read again")
+    }
+
+    /// A too-short session answers `success` with both counts equal, and calling that a completed compaction
+    /// would be a false report (`CompactionOutcome`).
+    func testACompactionThatRemovedNothingSaysSo() async {
+        let commands = ScriptedAgentCommands()
+        commands.reply = .success(AgentCommandReply(success: true, result: .init(beforeMessages: 6, afterMessages: 6)))
+        let (vm, _) = makeModel(commands: commands)
+
+        vm.requestCompact()
+        await waitUntil("the no-op answer") { vm.composerNotice != nil }
+
+        XCTAssertEqual(vm.composerNotice?.tone, .info)
+        XCTAssertEqual(vm.composerNotice?.text, hx("chat.context.compact.noop"))
+    }
+
+    func testACompactionWithoutCountsSaysOnlyThatItRan() async {
+        let commands = ScriptedAgentCommands()
+        commands.reply = .success(AgentCommandReply(success: true))
+        let (vm, _) = makeModel(commands: commands)
+
+        vm.requestCompact()
+        await waitUntil("the answer") { vm.composerNotice != nil }
+
+        XCTAssertEqual(vm.composerNotice?.tone, .info)
+        XCTAssertEqual(vm.composerNotice?.text, hx("chat.context.compact.donePlain"))
+    }
+
+    /// A refusal carries why (a member's child session, a task session, a call already running), which beats a
+    /// local「压缩失败」— the console reads `reply?.message` first on that leg alone.
+    func testARefusedCompactionWarnsWithTheServersReason() async {
+        let commands = ScriptedAgentCommands()
+        commands.reply = .success(AgentCommandReply(success: false, message: "Task sessions cannot be compacted"))
+        let (vm, _) = makeModel(commands: commands)
+
+        vm.requestCompact()
+        await waitUntil("the refusal") { vm.composerNotice != nil }
+
+        XCTAssertEqual(vm.composerNotice?.tone, .warning)
+        XCTAssertEqual(vm.composerNotice?.text, "Task sessions cannot be compacted")
+    }
+
+    func testACompactionThatNeverGotThroughSaysWhy() async {
+        let commands = ScriptedAgentCommands()
+        commands.reply = .failure(.business(code: 500, message: "No context held for session s-1 on this instance"))
+        let (vm, _) = makeModel(commands: commands)
+
+        vm.requestCompact()
+        await waitUntil("the failed call") { vm.composerNotice != nil }
+
+        XCTAssertEqual(vm.composerNotice?.tone, .warning)
+        XCTAssertEqual(vm.composerNotice?.text, "No context held for session s-1 on this instance")
+    }
+
+    /// The typed form keeps the console's reply chain, whose first leg is the server's own sentence — the four
+    /// outcome strings are what the *tapped* entry answers with.
+    func testATypedCompactStillBubblesTheServersOwnSentence() async {
+        let commands = ScriptedAgentCommands()
+        commands.reply = .success(AgentCommandReply(
+            success: true,
+            message: "Compacted 40 messages into 12",
+            result: .init(beforeMessages: 40, afterMessages: 12)
+        ))
+        let (vm, _) = makeModel(commands: commands)
+
+        vm.send("/compact")
+        await waitUntil("the reply bubble") { vm.transcript.turns.count == 2 }
+
+        XCTAssertEqual(vm.transcript.turns.last?.segments.first?.text, "Compacted 40 messages into 12")
+        XCTAssertNil(vm.composerNotice, "a typed line answers in the transcript, not in the banner")
     }
 
     // MARK: - the capability switches

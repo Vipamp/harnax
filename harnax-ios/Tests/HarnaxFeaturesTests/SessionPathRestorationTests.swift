@@ -66,6 +66,7 @@ final class SessionPathRestorationTests: XCTestCase {
                 teamArtifacts: chat,
                 chatHistory: chat,
                 plan: chat,
+                contextUsage: chat,
                 commands: chat,
                 streaming: chat
             ),

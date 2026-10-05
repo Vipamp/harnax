@@ -2,7 +2,7 @@ import Foundation
 import HarnaxCore
 
 /// One double per tab a test never opens: `UnwiredCatalogs` for the five context catalogs and the scheduled
-/// tasks, `UnwiredChat` for the ten conversation dependencies, `UnwiredSystem` for the four system catalogs
+/// tasks, `UnwiredChat` for the eleven conversation dependencies, `UnwiredSystem` for the four system catalogs
 /// and `UnwiredSaving` for the two agent and team forms.
 ///
 /// `AppModelTests` builds a `HarnaxDependencies` to exercise restore, login and the tab bar; the catalogs
@@ -251,7 +251,8 @@ struct UnwiredCatalogs: ModelCataloging, ToolCataloging, SkillCataloging, McpCat
 /// Same rule as `UnwiredCatalogs`: every method fails, so a screen reaching this object in a test shows up as
 /// a failing call rather than as a list or a stream that quietly renders nothing.
 struct UnwiredChat: SessionCataloging, ChatHistoryReading, AgentCommanding, AgentStreaming, SessionCreating,
-    SessionConfiguring, SessionWorkspaceReading, TeamArtifactReading, PlanReading, ExecutorReading {
+    SessionConfiguring, SessionWorkspaceReading, TeamArtifactReading, PlanReading, ExecutorReading,
+    ContextUsageReading {
     private func unwired() -> APIError {
         .business(code: -1, message: "this test never wires the chat tab")
     }
@@ -351,6 +352,10 @@ struct UnwiredChat: SessionCataloging, ChatHistoryReading, AgentCommanding, Agen
     func planNotes(sessionId: String) async -> Result<[PlanNote], APIError> { .failure(unwired()) }
 
     func currentPlan(sessionId: String) async -> Result<CurrentPlan, APIError> { .failure(unwired()) }
+
+    // MARK: - context occupancy
+
+    func contextUsage(sessionId: String) async -> Result<ContextUsage, APIError> { .failure(unwired()) }
 }
 
 /// The four system-tab catalogs for tests that never open the tab.

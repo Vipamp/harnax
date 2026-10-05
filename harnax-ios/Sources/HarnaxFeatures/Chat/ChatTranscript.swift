@@ -460,7 +460,7 @@ public struct ChatTranscript: Equatable {
     }
 
     /// The reply to a command — one finished bubble of its own, never a stream
-    /// (`ChatWindow.tsx:1012-1017`, where the sentence goes in as a single text segment).
+    /// (`ChatWindow.tsx:1023-1028`, where the sentence goes in as a single text segment).
     ///
     /// It opens nothing, so `isTerminated` stays true and a late frame from an earlier read still cannot
     /// write into it.
