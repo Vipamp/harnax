@@ -436,13 +436,16 @@ class HarnessAgentWrapper(
         val defaultConfig = CompactionConfig.builder().build()
         val modelWindow = harnessAgent.model.contextWindowSize
         val (window, source) = resolveContextWindow(modelWindow)
+        // The ratio answers "how full is the window", so it goes on the real request size. [estimatedTokens]
+        // stays the trigger's own number, reported as-is rather than used here.
+        val numerator = (lastCallInputTokens ?: estimated).toDouble()
         return ContextUsageResponse(
             messageCount = context.size,
             estimatedTokens = estimated,
             lastCallInputTokens = lastCallInputTokens,
             contextWindow = window,
             windowSource = source,
-            ratio = if (window > 0) estimated.toDouble() / window else 0.0,
+            ratio = if (window > 0) numerator / window else 0.0,
             triggerTokens = triggerTokens(modelWindow, defaultConfig),
             triggerMessages = defaultConfig.triggerMessages,
         )

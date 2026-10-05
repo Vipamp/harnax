@@ -233,7 +233,7 @@ class AgentControllerIntegrationTest {
                     lastCallInputTokens = 9_000,
                     contextWindow = 131_072,
                     windowSource = ContextWindowSource.MODEL_FIELD,
-                    ratio = 0.305,
+                    ratio = 0.0687,
                     triggerTokens = 111_072,
                     triggerMessages = 50,
                 ),
@@ -247,7 +247,7 @@ class AgentControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.lastCallInputTokens").value(9000))
                 .andExpect(jsonPath("$.data.contextWindow").value(131072))
                 .andExpect(jsonPath("$.data.windowSource").value("MODEL_FIELD"))
-                .andExpect(jsonPath("$.data.ratio").value(0.305))
+                .andExpect(jsonPath("$.data.ratio").value(0.0687))
                 .andExpect(jsonPath("$.data.triggerTokens").value(111072))
         }
 
