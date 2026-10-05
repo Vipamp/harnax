@@ -44,10 +44,13 @@ harness:
   enable-memory-hooks: ${HARNESS_ENABLE_MEMORY_HOOKS:false}
   enable-session-persistence: ${HARNESS_ENABLE_SESSION_PERSISTENCE:true}
   # Cross-session long-term memory: a curated MEMORY.md plus one append-only ledger per day, bucketed by
-  # tenant x user x agent in MinIO. Off by default. `enabled=true` needs `harness.minio.enabled=true` and
+  # tenant x user x agent in MinIO. `enabled=true` needs `harness.minio.enabled=true` and
   # `enable-memory-hooks=true` — assembly refuses that agent instead of starting a memory domain that
   # silently writes nothing — and it forces the workspace-context injection on whatever the value above
   # says, because that middleware is the only place `<memory_context>` reaches the model.
+  # The false below is the shape of a run started without a store: harnax-deploy injects true for both
+  # switches, since refusing every agent would leave that runtime unable to hold a conversation at all.
+  # Which single agent stays out of the domain is the switch on its own row, delivered with its spec.
   memory:
     enabled: ${HARNAX_MEMORY_ENABLED:false}
     # Model-domain row that does the extraction and consolidation; 0 keeps each agent's own chat model.

@@ -530,13 +530,16 @@ services:
       # place the curated MEMORY.md reaches the model), so enabling memory brings that noise with it.
       HARNESS_ENABLE_WORKSPACE_CONTEXT: "false"
       # Long-term memory: an owner bucket per tenant x user x agent, a curated MEMORY.md in it plus one
-      # append-only ledger per day. Off by default. It is three switches that have to agree - the bucket,
-      # the hooks that extract and consolidate, and the reader above - and enabled=true with the hooks
-      # left off is the one combination that refuses the agent at assembly rather than starting a memory
-      # that silently writes nothing. So the two below flip together, in .env, and only there: every
-      # default here is the same value application.yml already has.
-      HARNESS_ENABLE_MEMORY_HOOKS: ${HARNESS_ENABLE_MEMORY_HOOKS:-false}
-      HARNAX_MEMORY_ENABLED: ${HARNAX_MEMORY_ENABLED:-false}
+      # append-only ledger per day. This deployment turns the domain on - it is three switches that have
+      # to agree, the bucket, the hooks that extract and consolidate, and the reader above, and
+      # enabled=true with the hooks left off is the one combination that refuses the agent at assembly
+      # rather than starting a memory that silently writes nothing, so the two below flip together and
+      # both default to true here. They are the one pair that no longer matches application.yml, which
+      # keeps false on purpose: an agent-service started outside this file has no MinIO, and a runtime
+      # that refused every agent would not start a conversation at all. Whether a single agent has
+      # memory is the wizard's switch on its own row, not a value in this file.
+      HARNESS_ENABLE_MEMORY_HOOKS: ${HARNESS_ENABLE_MEMORY_HOOKS:-true}
+      HARNAX_MEMORY_ENABLED: ${HARNAX_MEMORY_ENABLED:-true}
       # Model-domain row id doing the extraction and consolidation; 0 keeps each agent's own chat model.
       HARNAX_MEMORY_MODEL_ID: ${HARNAX_MEMORY_MODEL_ID:-0}
       # always = one extraction call per turn, throttled = at most one per the gap below (the store's

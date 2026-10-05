@@ -32,6 +32,8 @@ import com.agnetix.harnax.harness.memory.MemoryConfigFactory
 import com.agnetix.harnax.harness.memory.MemoryFilesystemRoutes
 import com.agnetix.harnax.harness.minio.MinioBaseStore
 import com.agnetix.harnax.harness.minio.MinioSnapshotClient
+import com.agnetix.harnax.harness.minio.ProcessLocalCoordinationStore
+import com.agnetix.harnax.harness.minio.StoreCasProbe
 import com.agnetix.harnax.harness.output.OutputFileDetector
 import com.agnetix.harnax.harness.output.OutputFileStore
 import com.agnetix.harnax.harness.sandbox.CliImageBuilder
@@ -63,6 +65,7 @@ import io.agentscope.core.state.AgentStateStore
 import io.agentscope.core.tool.mcp.McpClientWrapper
 import io.agentscope.harness.agent.DistributedStore
 import io.agentscope.harness.agent.IsolationScope
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor
 import io.agentscope.harness.agent.sandbox.impl.docker.DockerFilesystemSpec
@@ -135,6 +138,10 @@ class HarnessAgentLauncher(
 ) {
 
     private val log = LoggerFactory.getLogger(HarnessAgentLauncher::class.java)
+
+    /** This process's one CAS probe result, filled by [casSupport] on the first memory assembly. */
+    @Volatile
+    private var probedCasSupport: StoreCasProbe.StoreCasSupport? = null
 
     /**
      * Graceful shutdown hook — called by Spring when the application context closes.
@@ -632,6 +639,11 @@ class HarnessAgentLauncher(
         val minioStore = minioConfig?.let {
             MinioBaseStore(it.createMinioClient(), it.storeBucket, it.storePrefix)
         }
+        // Read here rather than in the memory block below: whether memory is wanted at all — by this
+        // deployment and by the agent being assembled — decides whether the store's compare-and-swap gets
+        // probed, and the probe picks the gate.
+        val memory = harnessConfig.memory
+        val wantsMemory = memory.enabled && !isLead && agentSpec.memoryEnabled
         if (!isLead && harnessConfig.sandbox.enabled && snapshotSpec != null) {
             // DockerFilesystemSpec moved to io.agentscope.harness.agent.sandbox.impl.docker in 2.0.0
             // .sandboxStateStore() is removed — sandbox state is now managed via DistributedStore
@@ -651,7 +663,9 @@ class HarnessAgentLauncher(
             val distributedStoreBuilder = DistributedStore.builder()
                 .agentStateStore(stateStore)
             if (minioStore != null) {
-                distributedStoreBuilder.baseStore(minioStore)
+                // Upstream builds the consolidation gate from this store alone, so this is the only place
+                // a store that cannot compare versions can be answered for.
+                distributedStoreBuilder.baseStore(if (wantsMemory) coordinationStore(minioStore) else minioStore)
             } else {
                 // Use a no-op base store when MinIO is not configured
                 distributedStoreBuilder.baseStore(
@@ -671,8 +685,7 @@ class HarnessAgentLauncher(
         // Half-open was the status quo: four tools advertised to every model while the hooks that fill
         // the bucket were never installed and nothing read it back. An agent with no workspace of its own
         // has no memory either, so a lead is out of this domain by construction.
-        val memory = harnessConfig.memory
-        var memoryEnabled = memory.enabled && !isLead
+        var memoryEnabled = wantsMemory
         if (memory.enabled && isLead) {
             log.info("Agent '{}' is a team lead, which has no workspace: memory stays off for it", agentSpec.name)
         }
@@ -722,6 +735,13 @@ class HarnessAgentLauncher(
                 // the owner, whose id is not part of either key.
                 val sharedGate = harnessConfig.sandbox.enabled && snapshotSpec != null
                 val gateScope = if (sharedGate) harnessConfig.sandbox.isolationScope else IsolationScope.SESSION
+                // Three states, and the last one is what an operator would otherwise read as healthy: the
+                // store-backed class, with this process answering its claims because the store cannot.
+                val dedup = when {
+                    !sharedGate -> "counted in this replica alone"
+                    casSupport(store).supported -> "shared by every replica"
+                    else -> "counted in this replica alone: the store cannot hold a slot"
+                }
                 log.info(
                     "Agent '{}' memory uses the {} consolidation gate: 'memory-flush:{}' and " +
                         "'memory-maintenance:{}' are two slots of it, {}",
@@ -729,7 +749,7 @@ class HarnessAgentLauncher(
                     if (sharedGate) "store-backed" else "local",
                     gateScope,
                     gateScope,
-                    if (sharedGate) "shared by every replica" else "counted in this replica alone",
+                    dedup,
                 )
             }
         }
@@ -1043,6 +1063,42 @@ class HarnessAgentLauncher(
         // PlanNotebookState was removed in 2.0.0; plan mode now uses markdown files.
         // Return null for now; plan notes are managed via the plan mode workspace files.
         return null
+    }
+
+    /**
+     * Whether [store] really compares versions before it writes. Memoised when the store answered: the
+     * verdict is a property of the object store this process talks to, not of the agent being assembled,
+     * and assembly runs per session.
+     *
+     * Two assemblies racing a cold cache both probe, which costs round trips and answers nothing wrong —
+     * each probe claims a slot named with its own uuid.
+     */
+    internal fun casSupport(store: BaseStore): StoreCasProbe.StoreCasSupport {
+        probedCasSupport?.let { return it }
+        val probed = StoreCasProbe.probe(store)
+        if (probed.definitive) probedCasSupport = probed
+        return probed
+    }
+
+    /**
+     * The store to hand upstream for the consolidation gate: [store] when it can compare versions, a
+     * [ProcessLocalCoordinationStore] over it when it cannot.
+     *
+     * There is no builder hook for the gate itself, so this is the only lever, and saying which one the
+     * deployment got is the point: the two ways a broken CAS shows up are a throttle that claims nothing
+     * and a throttle that claims everything, and both look like a memory that never consolidates.
+     */
+    internal fun coordinationStore(store: BaseStore): BaseStore {
+        val support = casSupport(store)
+        if (support.supported) return store
+        log.warn(
+            "[memory] the configured object store cannot serve as a coordination gate ({}), so the " +
+                "consolidation throttle is answered in this process instead. Memory objects still go to " +
+                "the store; what is lost is cross-replica deduplication, so every replica will flush and " +
+                "consolidate on its own. Repair the store's version precondition to get it back.",
+            support.detail,
+        )
+        return ProcessLocalCoordinationStore(store)
     }
 
     companion object {

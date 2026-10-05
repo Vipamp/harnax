@@ -40,6 +40,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
   const [models, setModels] = useState<API.ModelItem[]>([]);
   const [isPublic, setIsPublic] = useState(false);
   const [skillSelfWrite, setSkillSelfWrite] = useState(false);
+  const [memoryEnabled, setMemoryEnabled] = useState(true);
   const { isAdmin } = getCurrentUserInfo();
 
   const [mcpConfigs, setMcpConfigs] = useState<McpConfigState[]>([{}]);
@@ -160,6 +161,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
           status: 1,
           isPublic: isPublic ? 1 : 0,
           skillSelfWrite: skillSelfWrite ? 1 : 0,
+          memoryEnabled: memoryEnabled ? 1 : 0,
           mcpList: mcpConfigs.filter(c => c.mcpId).map(c => ({
             id: c.mcpId,
             envBindings: (c.envBindings || []).map(({ customInput, ...b }) => ({
@@ -274,6 +276,20 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
                 {intl.formatMessage({
                   id: 'pages.agent.skillSelfWriteHint',
                   defaultMessage: 'The agent may draft skills inside its own session. Nothing is published and no other agent sees it until a reviewer approves the draft on the draft review page.',
+                })}
+              </div>
+            </Form.Item>
+            <Form.Item label={intl.formatMessage({ id: 'pages.agent.memoryEnabled', defaultMessage: 'Long-term memory' })}>
+              <Switch
+                checked={memoryEnabled}
+                onChange={setMemoryEnabled}
+                checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
+                unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
+              />
+              <div style={{ marginTop: 4, color: 'var(--vip-text-secondary)', fontSize: '14px' }}>
+                {intl.formatMessage({
+                  id: 'pages.agent.memoryEnabledHint',
+                  defaultMessage: 'Off means this agent stops extracting memory from its sessions and stops carrying existing memory into its context. Memory already written is not deleted; clear it on the memory page.',
                 })}
               </div>
             </Form.Item>

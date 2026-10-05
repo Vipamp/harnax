@@ -3,10 +3,12 @@ package com.agnetix.harnax.harness.memory
 import com.agnetix.harnax.harness.minio.MinioBaseStore
 import io.agentscope.core.agent.RuntimeContext
 import io.minio.BucketExistsArgs
+import io.minio.GetObjectArgs
 import io.minio.ListObjectsArgs
 import io.minio.MakeBucketArgs
 import io.minio.MinioClient
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
@@ -14,6 +16,7 @@ import org.testcontainers.containers.GenericContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.utility.DockerImageName
+import java.nio.charset.StandardCharsets
 
 /**
  * The flat object key the runtime writes, read back from a live MinIO.
@@ -22,6 +25,13 @@ import org.testcontainers.utility.DockerImageName
  * (`MemoryObjectKeys`), so the two modules have to spell the same key while sharing no code and no test.
  * [MinioBaseStore] builds its key from the namespace the route factory returns, and only the server says
  * what that comes to — these are the literals `MemoryObjectKeysTest` answers with on the other side.
+ *
+ * The key is only half of that contract. The other half is the *body*: every memory file arrives wrapped in
+ * a `StoreWrapper` JSON envelope, and `MemoryRecordParser` digs the text out of `value.content`. Neither
+ * module can see the other's classes, so the bytes this class writes are recorded here as a literal, and
+ * `MemoryOwnerBucketMinioIT` in harnax-admin seeds its bucket with that same literal. If the writer's
+ * envelope ever changes shape, the envelope case below goes red and the reader's fixture is stale in the
+ * same commit — which is the only way a contract with no shared type can fail loudly.
  */
 @Testcontainers
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -32,6 +42,22 @@ class MemoryObjectKeyCrossCheckTest {
         private const val PREFIX = "store/"
         private const val ACCESS_KEY = "minioadmin"
         private const val SECRET_KEY = "minioadmin"
+
+        /**
+         * One written memory file, byte for byte, as [MinioBaseStore] wraps it: the item key, then the value
+         * map (`created_at`, `encoding`, `modified_at` and then `content` — the order the framework's
+         * `HashMap` serialises in, not the order the fields are declared), then the version, which is 1 for
+         * a first write. Only the two instants move, and [INSTANT] blanks them to `<timestamp>`.
+         *
+         * This is the shape `MemoryOwnerBucketMinioIT` in harnax-admin seeds its bucket from; changing one
+         * byte here is a contract change on both sides of the store at once.
+         */
+        private const val ENVELOPE =
+            "{\"key\":\"/MEMORY.md\",\"value\":{\"created_at\":\"<timestamp>\",\"encoding\":\"utf-8\"," +
+                "\"modified_at\":\"<timestamp>\",\"content\":\"- a line\"},\"version\":1}"
+
+        /** The ISO instant the writer stamps into `created_at` and `modified_at`. */
+        private val INSTANT = Regex("2\\d{3}-\\d{2}-\\d{2}T[0-9:.+-]+Z?")
 
         @Container
         @JvmStatic
@@ -85,6 +111,56 @@ class MemoryObjectKeyCrossCheckTest {
         .asSequence()
         .map { it.get().objectName() }
         .toList()
+
+    /** The whole body of one object, exactly as the server holds it — envelope and all. */
+    private fun rawBody(objectKey: String): String = client()
+        .getObject(GetObjectArgs.builder().bucket(BUCKET).`object`(objectKey).build())
+        .use { it.readBytes().toString(StandardCharsets.UTF_8) }
+
+    /**
+     * The envelope those bytes carry, which is the other half of the contract admin reads against.
+     *
+     * `MemoryRecordParser` digs the file text out of `value.content` and falls back to `value.modified_at`,
+     * so a body that moves either is a memory page that shows an owner nothing. Neither module can see the
+     * other's classes, so the shape is recorded here as one literal ([ENVELOPE]) and
+     * `MemoryOwnerBucketMinioIT` in harnax-admin seeds its bucket with that same string.
+     *
+     * The field order inside `value` is *not* a tidy declaration order: the framework builds the store value
+     * as a `HashMap` (`RemoteFilesystem.fileDataToStoreValue`), so `content` serialises last, after
+     * `created_at`, `encoding` and `modified_at`. That is why this has to be read off a live write rather
+     * than written down from the wrapper class.
+     */
+    @Test
+    fun `the wrapped body is the envelope admin's reader decodes`() {
+        writeMemoryMd(owner = "enveloped", tenantScoped = true)
+
+        val body = rawBody("store/tenants/4/users/enveloped/agents/Research/root/MEMORY.md")
+        println("[memory-envelope] $body")
+
+        assertTrue(
+            body.startsWith("""{"key":"/MEMORY.md","value":{"""),
+            "the wrapper has to open with the item key and then the value object, the way" +
+                "MemoryOwnerBucketMinioIT in harnax-admin spells its fixture; the body was: $body",
+        )
+        assertTrue(
+            body.contains("\"content\":\"- a line\""),
+            "the file text belongs at value.content — read the raw body and a caller sees JSON; the body was: $body",
+        )
+        assertTrue(
+            body.contains("\"encoding\":\"utf-8\""),
+            "the encoding field stays, or a base64 file would be shown as text; the body was: $body",
+        )
+        assertTrue(
+            body.contains("\"version\":1"),
+            "a first write has to answer version 1, or a reader replaying this body reads a stale object; the body was: $body",
+        )
+        assertEquals(
+            ENVELOPE,
+            body.replace(INSTANT, "<timestamp>"),
+            "the recorded envelope drifted, so harnax-admin's MemoryOwnerBucketMinioIT seeds a body this" +
+                " writer no longer produces; the raw body was: $body",
+        )
+    }
 
     @Test
     fun `the curated file lands at the key admin lists by`() {

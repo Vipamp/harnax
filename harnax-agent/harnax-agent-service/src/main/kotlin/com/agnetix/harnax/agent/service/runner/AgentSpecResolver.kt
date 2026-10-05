@@ -231,6 +231,9 @@ class AgentSpecResolver(
             // Granted only by the exact value admin writes: this one opens a capability rather than a
             // preference, so a stray value must not read as a grant.
             .skillSelfWrite(specInfo.skillSelfWrite == 1)
+            // The inverse of the grant above: memory is on unless the row says 0, so a value this runtime
+            // never expected still leaves the agent with the memory every agent gets by default.
+            .memoryEnabled(specInfo.memoryEnabled != 0)
 
         // Collect all env bindings for ToolEnvContext (flat map, merged across tools and MCPs)
         val allEnvBindings = mutableMapOf<String, String>()

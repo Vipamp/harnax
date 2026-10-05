@@ -710,6 +710,8 @@ message?: string;
     isPublic?: number;
     /** 0/1 — the agent may author skills in its own workspace; a human still has to approve them */
     skillSelfWrite?: number;
+    /** 0/1 — long-term memory; absent or 1 means on, only an explicit 0 turns it off */
+    memoryEnabled?: number;
     creator?: string;
     createTime?: string;
     updateTime?: string;
@@ -881,6 +883,7 @@ message?: string;
     status?: number;
     isPublic?: number;
     skillSelfWrite?: number;
+    memoryEnabled?: number;
   };
 
   /**
@@ -898,6 +901,7 @@ message?: string;
     status?: number;
     isPublic?: number;
     skillSelfWrite?: number;
+    memoryEnabled?: number;
   };
 
   /**

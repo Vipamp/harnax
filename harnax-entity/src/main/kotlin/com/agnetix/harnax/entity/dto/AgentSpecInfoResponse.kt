@@ -66,6 +66,13 @@ data class AgentSpecInfoResponse(
     )
     val skillSelfWrite: Int = 0,
 
+    @Schema(
+        description = "Agent has long-term memory (0:no, 1:yes), read from the agent row. " +
+            "On unless admin says otherwise, because every agent gets memory by default and the wizard " +
+            "is what turns it off for one",
+    )
+    val memoryEnabled: Int = 1,
+
     @Schema(description = "Permission mode (DEFAULT/ACCEPT_EDITS/EXPLORE/BYPASS/DONT_ASK)")
     val permissionMode: String = "DEFAULT",
 

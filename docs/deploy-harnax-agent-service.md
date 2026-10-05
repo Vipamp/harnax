@@ -127,8 +127,8 @@
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `HARNESS_ENABLE_WORKSPACE_CONTEXT` | `true`（compose 里置 `false`） | 是否把工作区 `AGENTS.md` 注入上下文。开着但沙箱仅在对话阶段激活时会刷出配置告警，故集群 compose 默认关掉。开启记忆域会把它强制打开（`<memory_context>` 只由这一条中间件注入），那行告警随之回来 |
-| `HARNESS_ENABLE_MEMORY_HOOKS` | `false` | 记忆抽取与合并两个钩子（配置项 `harness.enable-memory-hooks`）。现在由 compose 按 `${HARNESS_ENABLE_MEMORY_HOOKS:-false}` 注入，真值在 `harnax-deploy/.env` 里给 |
-| `HARNAX_MEMORY_ENABLED` | `false` | 长期记忆整域开关（配置项 `harness.memory.enabled`）。开启要求本服务连着 MinIO（compose 里 `MINIO_ENABLED` 已是 `true`）与上一项同时为 `true`：**只开这一项，装配会直接拒绝该智能体**（连普通对话一起起不来），而不是记忆页空着。团队主管没有工作区，这一域对它自动关闭；一次投递没带用户身份时同样自动关闭 |
+| `HARNESS_ENABLE_MEMORY_HOOKS` | `false`（compose 里默认 `true`） | 记忆抽取与合并两个钩子（配置项 `harness.enable-memory-hooks`）。由 compose 按 `${HARNESS_ENABLE_MEMORY_HOOKS:-true}` 注入，要关在 `harnax-deploy/.env` 里给 `false`；离开这套 compose 单跑本服务时仍是 `application.yml` 的 `false` |
+| `HARNAX_MEMORY_ENABLED` | `false`（compose 里默认 `true`） | 长期记忆整域开关（配置项 `harness.memory.enabled`），与上一项在 compose 里一起打开。开启要求本服务连着 MinIO（compose 里 `MINIO_ENABLED` 已是 `true`）：**只开这一项、钩子留关，装配会直接拒绝该智能体**（连普通对话一起起不来），而不是记忆页空着——所以两个值必须成对给。团队主管没有工作区，这一域对它自动关闭；一次投递没带用户身份时同样自动关闭；单个智能体不要记忆由智能体向导的「长期记忆」决定，随 spec 下发到装配，不在这里配 |
 | `HARNAX_MEMORY_MODEL_ID` | `0` | 做抽取与合并的模型，取模型域的行 id；`0` 沿用各智能体自己的主模型 |
 | `HARNAX_MEMORY_FLUSH_TRIGGER` | `throttled` | `always` 每轮多付一次模型调用；`throttled` 每 `HARNAX_MEMORY_FLUSH_MIN_GAP` 至多一次，靠 store 的比较并写保证不互相覆盖；`never` 台账不再增长 |
 | `HARNAX_MEMORY_FLUSH_MIN_GAP` | `5m` | 上一项的间隔 |
