@@ -343,10 +343,10 @@
 
 ### 后端行为差异（iOS 文案需知晓）
 
-- `INTERRUPT` 无活跃执行时返回 failure「No live execution for this session on this instance」。锚点 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:234-240`；`live` 判定 `subscription != null || activeCalls.contains(...)` `:325`。
-- `COMPACT` **后端未实现**，返回「Compact not yet implemented」。锚点 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:245-249`。iOS 可保留入口但预期得到该文案。
-- `CLEAR` `:241-244`；`APPROVE/DENY` → `handleApproveOrDeny` `:250-251`（实现 `:872-…`）；`STOP_SANDBOX` 销毁成员沙箱并失效缓存 `:252-268`；`ENABLE/DISABLE/PERMISSION` `:269-277`；`REFRESH` 失效 agent 缓存 `:278-295`。
-- `executeCommand` 总入口 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:228-297`。
+- `INTERRUPT` 无活跃执行时返回 failure「No live execution for this session on this instance」。锚点 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:253-259`；`live` 判定 `subscription != null || activeCalls.contains(...)` `:340`。
+- `COMPACT` 已实现，入口 `:264` → `handleCompact` `:917-…`。三种拒绝都带各自文案，iOS 直接显示返回值即可：`task-` 前缀会话「Compaction is not supported for task sessions」`:921-923`；团队成员自身会话「This is a team member's own session; compact the team session instead」`:924-929`；该会话正在应答「This session is answering right now; wait for the turn to end and compact again」`:930-935`。参数是一个可选的正整数 keepTokens（`:937`，非数字则按服务端默认）。成功回 `result` 里的 `beforeMessages` / `afterMessages` / `beforeTokens` / `afterTokens`（`:948-…`），文案 `Compacted N messages (M tokens) into …` `:980`。
+- `CLEAR` `:260-263`；`APPROVE/DENY` → `handleApproveOrDeny` `:265-266`（实现 `:998-…`）；`STOP_SANDBOX` 销毁成员沙箱并失效缓存 `:267-283`；`ENABLE/DISABLE/PERMISSION` `:284-292`；`REFRESH` 失效 agent 缓存 `:293-…`。
+- `executeCommand` 总入口 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:247`。
 
 ---
 
@@ -591,4 +591,4 @@
 5. `/api/router/agent/session/{sessionId}/plans` 与 `/current-plan` 返回体的 JSON 具体键名（`planId` 是否在响应顶层、`subtasks` 是否可能为 null）只由前端 TS 类型（`harnax-webui/src/pages/session/components/ChatWindow.tsx:110-132`）与前端消费代码推断，未核对后端 PlanNote DTO 的 Jackson 序列化配置（如字段名策略）。
 6. `listWorkspaceFiles` 对 `type === 'symlink' | 'unknown'` 的图标/交互在 `harnax-webui/src/pages/session/components/WorkspaceDrawer.tsx` 中的具体分支未逐行引用（只确认排序与目录优先）。
 7. webui 主管确认在「成员 run 也同时 pending」时是否存在两个确认 UI 竞争（`answerMemberConfirmRef` 单一引用，`harnax-webui/src/pages/session/components/ChatWindow.tsx:606`）：只从代码结构看是「成员内联卡不阻塞、主管弹窗阻塞」，但未实跑验证并发场景，iOS 需以实测为准。
-8. `COMPACT` 未实现（`harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:245-249`）、`REFRESH`/`DENY` 未在 webui slash 表（`harnax-webui/src/pages/session/components/ChatWindow.tsx:946-956`）：结论可靠；但 `handleApproveOrDeny`（`harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:872-…`）的完整分支本次只读了入口与行号范围，未逐行读完其内部实现细节（如是否写 alwaysAllow 缓存）。
+8. `REFRESH`/`DENY` 未在 webui slash 表（`harnax-webui/src/pages/session/components/ChatWindow.tsx:946-956`）：结论可靠。`handleApproveOrDeny`（`harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:998-…`）的完整分支本次只读了入口与行号范围，未逐行读完其内部实现细节（如是否写 alwaysAllow 缓存）。`COMPACT` 已在真栈跑通并落在上一节的 `handleCompact` 锚点，不再是未验证项。
