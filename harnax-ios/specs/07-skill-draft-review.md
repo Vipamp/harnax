@@ -26,7 +26,7 @@
 
 1. **谁都动不了的拒绝走错误信封**：未知草稿、`status` 传了不认识的值、批准不带 `expectedDigest`（`SkillDraftServiceImpl.kt:274-276`）、驳回不带理由或理由超长（`SkillDraftServiceImpl.kt:370-374`）。iOS 落到 `APIError.business`，按现有错误横幅渲染。
 2. **界面必须据以再动作的拒绝随 HTTP 200 + `code:200` 回来**，判据是 `data.outcome` 而不是状态码：`PROMOTED` / `REJECTED` / `DRAFT_CHANGED` / `ALREADY_REVIEWED` / `NAME_TAKEN`（`SkillDraftDecisionResponse.kt:20,51-65`，KDoc `:9-16` 说明了为什么不并进错误分支）。
-3. 唯一需要特判的非 2xx 是 **409**（`SkillDraftController.kt:115-117`）：批准跑完一半名字被别的发布者占了，整笔回滚、草稿仍 PENDING，重读即修复。iOS 的 `ResponseMapper` 已把它映射成 `APIError.business(code: 409)`（`harnax-ios/Sources/HarnaxAPI/Transport/ResponseMapper.swift:13-15`），详情 VM 按 code 分这一支。
+3. **名字抢占是唯一一个走错误信封但界面要按 code 分支的拒绝**：HTTP 仍是 200，信封里 `code` 是 409（`SkillDraftController.kt:115-117` 在 `DuplicateKeyException` 上 `ResultVo.error(409, …)`）。含义是批准跑完一半名字被别的发布者占了，整笔回滚、草稿仍 PENDING，重读即修复。iOS 的 `ResponseMapper` 在信封判 code 的那一步把它映射成 `APIError.business(code: 409)`（`harnax-ios/Sources/HarnaxAPI/Transport/ResponseMapper.swift:22-24`），详情 VM 按 code 分这一支。
 
 ## 3. 数据模型：`Sources/HarnaxCore/Contract/SkillDraft.swift`（新）
 
@@ -37,8 +37,8 @@
 | `id` | number | `Int64?` | `Identifiable.ID` 沿用可选 id 的既有约定 |
 | `name` | string | `String?` | |
 | `description` | 可缺 | `String?` | |
-| `status` | `PENDING`/`APPROVED`/`REJECTED`/`EXPIRED` | `String?` | 列上写着 EXPIRED 但**没有任何代码写入**，`STATUSES` 不含它（`SkillDraftServiceImpl.kt:570-577`） |
-| `scanVerdict` | `SAFE`/`CAUTION`/`DANGEROUS` | `String?` | 只有这三个值会被回显（`:564`） |
+| `status` | `PENDING`/`APPROVED`/`REJECTED`/`EXPIRED` | `String?` | 列上写着 EXPIRED 但**没有任何代码写入**，`STATUSES` 不含它（`SkillDraftServiceImpl.kt:578`，筛选项在 `:218-219` 校验） |
+| `scanVerdict` | `SAFE`/`CAUTION`/`DANGEROUS` | `String?` | 只有这三个值会被回显（`SCAN_VERDICTS`，`SkillDraftServiceImpl.kt:569`） |
 | `upstreamFindingCount` | **必带**，缺省 0 | `Int` | DTO 有非空默认值（`SkillDraftResponse.kt:33`） |
 | `sourceSessionId` | string | `String?` | |
 | `agentId` | 可缺 | `Int64?` | |
@@ -82,7 +82,7 @@
 
 ### 5.1 会话域入口
 
-`Chat/SessionListView.swift` 的列表容器顶部插一行（与既有 `HXBanner` 同层，`SessionListView.swift:186-202`），文案「技能草稿」，右侧待审计数。`Chat/ChatTab.swift` 持目的（它的 KDoc `:5-9` 就写着「只有目的住在这里」）：新增 `navigationDestination(isPresented:)` 指向队列页，队列页内部再 `navigationDestination(item:)` 指向详情，载体是 `SkillDraftRef(id: Int64)`——**行没有 id 就不给点**，与会话行没有业务键就不给开的既有规则一致。
+`Chat/SessionListView.swift` 把入口行挂在 `content` 的相态**之外**（`content` 的顶部 `VStack`，`phases` 在其下），文案「技能草稿」，右侧待审计数——它导航的是租户级队列、读的是草稿，挂进列表就会跟着会话空态一起消失。两级导航都是 value push：入口行 push `SkillDraftQueueRoute`，`Chat/ChatTab.swift` 注册这个目的（它的 KDoc 就写着「只有目的住在这里」）；队列页内部再 push `SkillDraftRef(id: Int64)` 到审核详情，**行没有 id 就不给链接**，与会话行没有业务键就不给开的既有规则一致。队列不是叶子，所以它由状态呈现（`navigationDestination(item:)`/`(isPresented:)`）会被更深的 push 重复推一次——`SkillNavigationTests.testNoDomainPresentsAScreenThatPushesDeeper` 把这条形状钉成闸门。
 
 装配缺失即撤入口：`drafts` 门面为 nil 时这一行不渲染，不给一个注定失败的按钮。计数读失败**只隐藏数字，不撤行**（入口是导航，不是计数）。计数随会话列表的下拉刷新一起重取。
 
@@ -152,5 +152,5 @@
 
 - 本会话级计数需要后端加 `sessionId` 过滤参数；那会让 iOS 比 webui 多一个能力，且要重编部署，已记为后端可选后续。
 - 无推送、无轮询：新草稿要下拉刷新才反映。webui 同样需要手动刷新，故不算偏离，但也不会更即时。
-- `EXPIRED` 不上筛选项：后端 `STATUSES` 不含它，按它筛会被拒（`SkillDraftServiceImpl.kt:570-577`）。
+- `EXPIRED` 不上筛选项：后端 `STATUSES` 不含它，按它筛会被拒（`SkillDraftServiceImpl.kt:578`，校验在 `:218-219`）。
 - 详情正文渲染复用 `HXMarkdownText`，其离线解析器对表格/代码块的覆盖不及 webui 的 `ReactMarkdown + remarkGfm`；这是既有约束，不在本轮扩。
