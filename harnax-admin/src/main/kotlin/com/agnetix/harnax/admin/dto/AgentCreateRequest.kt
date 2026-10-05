@@ -53,6 +53,9 @@ data class AgentCreateRequest(
 
     @Schema(description = "Long-term memory (0:false 1:true), on when omitted", example = "1")
     val memoryEnabled: Int? = null,
+
+    @Schema(description = "Session memory layer (0:false 1:true), off when omitted", example = "0")
+    val sessionMemoryEnabled: Int? = null,
 ) {
     /**
      * MCP configuration

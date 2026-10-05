@@ -128,6 +128,8 @@ class AgentServiceImpl(
         agent.skillSelfWrite = request.skillSelfWrite ?: 0
         // The inverse: memory is the default state, so only an explicit 0 takes it away.
         agent.memoryEnabled = request.memoryEnabled ?: 1
+        // And this one is off until the wizard turns it on: an omitted field means today's single layer.
+        agent.sessionMemoryEnabled = request.sessionMemoryEnabled ?: 0
         agent.tenantId = tenantId
         agent.creator = currentUsername
 
@@ -179,6 +181,7 @@ class AgentServiceImpl(
         request.isPublic?.let { agent.isPublic = it }
         request.skillSelfWrite?.let { agent.skillSelfWrite = it }
         request.memoryEnabled?.let { agent.memoryEnabled = it }
+        request.sessionMemoryEnabled?.let { agent.sessionMemoryEnabled = it }
 
         agent.updateTime = LocalDateTime.now()
         agentMapper.updateById(agent)
@@ -291,6 +294,7 @@ class AgentServiceImpl(
         response.isPublic = agent.isPublic
         response.skillSelfWrite = agent.skillSelfWrite
         response.memoryEnabled = agent.memoryEnabled
+        response.sessionMemoryEnabled = agent.sessionMemoryEnabled
         response.creator = agent.creator
         response.createTime = agent.createTime
         response.updateTime = agent.updateTime

@@ -44,4 +44,7 @@ data class AgentUpdateRequest(
 
     @Schema(description = "Long-term memory (0:false 1:true)", example = "1")
     val memoryEnabled: Int? = null,
+
+    @Schema(description = "Session memory layer (0:false 1:true), off until the wizard says otherwise", example = "0")
+    val sessionMemoryEnabled: Int? = null,
 )

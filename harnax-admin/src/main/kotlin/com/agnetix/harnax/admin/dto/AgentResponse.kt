@@ -60,6 +60,9 @@ data class AgentResponse(
     @Schema(description = "Long-term memory (0:no, 1:yes)", example = "1")
     var memoryEnabled: Int? = null,
 
+    @Schema(description = "Session memory layer (0:no, 1:yes)", example = "0")
+    var sessionMemoryEnabled: Int? = null,
+
     @Schema(description = "Creator", example = "admin")
     var creator: String? = null,
 
@@ -86,6 +89,7 @@ data class AgentResponse(
                 isPublic = agent.isPublic,
                 skillSelfWrite = agent.skillSelfWrite,
                 memoryEnabled = agent.memoryEnabled,
+                sessionMemoryEnabled = agent.sessionMemoryEnabled,
                 creator = agent.creator,
                 createTime = agent.createTime,
                 updateTime = agent.updateTime,

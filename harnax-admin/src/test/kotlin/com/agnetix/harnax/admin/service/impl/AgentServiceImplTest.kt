@@ -442,6 +442,11 @@ class AgentServiceImplTest {
             // Then
             verify(agentMapper).insert(captor.capture())
             assertEquals(1, captor.firstValue.memoryEnabled, "every agent gets memory by default")
+            assertEquals(
+                0,
+                captor.firstValue.sessionMemoryEnabled,
+                "and none gets the session layer until it asks, so one request answering neither still answers both",
+            )
         }
 
         @Test
@@ -464,6 +469,31 @@ class AgentServiceImplTest {
             // Then
             verify(agentMapper).insert(captor.capture())
             assertEquals(0, captor.firstValue.memoryEnabled)
+        }
+
+        @Test
+        @DisplayName("createAgent - Write the session layer answer the agent gave")
+        fun `createAgent should honour an agent that asked for a session layer`() {
+            // Two answers, one row: admin records what the wizard was told and leaves the combination to the
+            // assembly, so switching the session layer on here must not disturb the long-term answer.
+            val request = AgentCreateRequest(
+                name = "Layered Agent",
+                description = "Layered description",
+                systemPrompt = "Layered prompt",
+                modelId = 1L,
+                owner = "admin",
+                sessionMemoryEnabled = 1,
+            )
+            val captor = argumentCaptor<Agent>()
+            `when`(agentMapper.insert(any())).thenReturn(1)
+
+            // When
+            assertTrue(agentService.createAgent(request))
+
+            // Then
+            verify(agentMapper).insert(captor.capture())
+            assertEquals(1, captor.firstValue.sessionMemoryEnabled)
+            assertEquals(1, captor.firstValue.memoryEnabled, "and the layer it already had by default stays")
         }
 
         @Test
@@ -882,6 +912,7 @@ class AgentServiceImplTest {
             val request = AgentUpdateRequest(
                 name = "Updated Agent",
                 memoryEnabled = 0,
+                sessionMemoryEnabled = 1,
             )
             val captor = argumentCaptor<Agent>()
             `when`(agentMapper.selectById(1L)).thenReturn(testAgent)
@@ -893,6 +924,7 @@ class AgentServiceImplTest {
             // Then
             verify(agentMapper).updateById(captor.capture())
             assertEquals(0, captor.firstValue.memoryEnabled)
+            assertEquals(1, captor.firstValue.sessionMemoryEnabled)
         }
 
         @Test
@@ -905,6 +937,7 @@ class AgentServiceImplTest {
                 name = "Forgetful Agent"
                 modelId = 1L
                 memoryEnabled = 0
+                sessionMemoryEnabled = 1
             }
             val request = AgentUpdateRequest(name = "Renamed Forgetful Agent")
             val captor = argumentCaptor<Agent>()
@@ -917,6 +950,11 @@ class AgentServiceImplTest {
             // Then
             verify(agentMapper).updateById(captor.capture())
             assertEquals(0, captor.firstValue.memoryEnabled, "silence about memory is not an answer about memory")
+            assertEquals(
+                1,
+                captor.firstValue.sessionMemoryEnabled,
+                "and the same for the session layer: an edit that says nothing about it keeps the grant it had",
+            )
         }
 
         @Test
@@ -1438,6 +1476,10 @@ class AgentServiceImplTest {
         @DisplayName("convertToResponse - Convert agent with all associations")
         fun `convertToResponse should convert agent with all associations`() {
             // Given
+            // Both memory answers are set to values the other one does not share: a read path that dropped
+            // either would then show the wizard one switch on this screen and the other on the next.
+            testAgent.memoryEnabled = 0
+            testAgent.sessionMemoryEnabled = 1
             val model = Model().apply {
                 id = 1L
                 modelName = "gpt-4"
@@ -1481,6 +1523,11 @@ class AgentServiceImplTest {
             assertEquals(0.05, result.modelPrice)
             assertEquals(1, result.sessionCount)
             assertEquals(testAgent.memoryEnabled, result.memoryEnabled, "the wizard reads the switch state back from here")
+            assertEquals(
+                testAgent.sessionMemoryEnabled,
+                result.sessionMemoryEnabled,
+                "and the session layer's answer from the same place, or the edit screen shows one switch and not the other",
+            )
             assertNotNull(result.mcpList)
             assertEquals(1, result.mcpList?.size)
             verify(modelService).getVisibleModel(1L)
