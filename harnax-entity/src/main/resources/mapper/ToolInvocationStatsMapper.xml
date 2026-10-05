@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agnetix.harnax.mapper.ToolInvocationStatsMapper">
+
+    <!--
+        Buckets are half open on the low side, so a call of exactly 500 ms lands in le_500ms and one of
+        501 ms in le_2s. Closed intervals on both sides would claim a boundary call twice and the bucket
+        sum would stop equalling `calls` (I4).
+
+        `subject_id` and `tool_name` are written with a COALESCE rather than left null: the unique key
+        treats two NULLs as different rows, so a NULL subject would let the same day insert twice.
+        The subject is also part of the grouping key, because it is what an operator reads the row as: one
+        agent mounts several MCP servers, and a single `mcp` group per tenant would leave the highest server
+        id holding every call of that day. The same expression is selected and grouped, so the value is the
+        group's own key rather than an aggregate taken over it.
+        The update list covers every column the SELECT produces, including the counters, because this is a
+        recompute and not an increment.
+    -->
+    <insert id="upsertDay">
+        INSERT INTO tool_invocation_stats (
+        stat_date, tenant_id, kind, subject_id, tool_name,
+        calls, successes, errors, denials, interruptions,
+        sum_duration_ms, max_duration_ms,
+        le_100ms, le_500ms, le_2s, le_10s, le_30s, gt_30s
+        )
+        SELECT
+        #{statDate},
+        l.tenant_id,
+        l.kind,
+        CASE
+        WHEN l.kind = 'mcp' THEN COALESCE(l.mcp_id, 0)
+        WHEN l.kind = 'cli' THEN COALESCE(l.cli_id, 0)
+        ELSE 0
+        END,
+        CASE WHEN l.kind = 'cli' THEN l.tool_name ELSE '' END,
+        COUNT(*),
+        SUM(CASE WHEN l.outcome = 'SUCCESS' THEN 1 ELSE 0 END),
+        SUM(CASE WHEN l.outcome = 'ERROR' THEN 1 ELSE 0 END),
+        SUM(CASE WHEN l.outcome = 'DENIED' THEN 1 ELSE 0 END),
+        SUM(CASE WHEN l.outcome = 'INTERRUPTED' THEN 1 ELSE 0 END),
+        SUM(l.duration_ms),
+        MAX(l.duration_ms),
+        SUM(CASE WHEN l.duration_ms &lt;= 100 THEN 1 ELSE 0 END),
+        SUM(CASE WHEN l.duration_ms &gt; 100 AND l.duration_ms &lt;= 500 THEN 1 ELSE 0 END),
+        SUM(CASE WHEN l.duration_ms &gt; 500 AND l.duration_ms &lt;= 2000 THEN 1 ELSE 0 END),
+        SUM(CASE WHEN l.duration_ms &gt; 2000 AND l.duration_ms &lt;= 10000 THEN 1 ELSE 0 END),
+        SUM(CASE WHEN l.duration_ms &gt; 10000 AND l.duration_ms &lt;= 30000 THEN 1 ELSE 0 END),
+        SUM(CASE WHEN l.duration_ms &gt; 30000 THEN 1 ELSE 0 END)
+        FROM tool_invocation_log l
+        WHERE DATE(l.ts) = #{statDate}
+        AND l.tenant_id IS NOT NULL
+        GROUP BY l.tenant_id, l.kind,
+        CASE
+        WHEN l.kind = 'mcp' THEN COALESCE(l.mcp_id, 0)
+        WHEN l.kind = 'cli' THEN COALESCE(l.cli_id, 0)
+        ELSE 0
+        END,
+        CASE WHEN l.kind = 'cli' THEN l.tool_name ELSE '' END
+        ON DUPLICATE KEY UPDATE
+        calls = VALUES(calls),
+        successes = VALUES(successes),
+        errors = VALUES(errors),
+        denials = VALUES(denials),
+        interruptions = VALUES(interruptions),
+        sum_duration_ms = VALUES(sum_duration_ms),
+        max_duration_ms = VALUES(max_duration_ms),
+        le_100ms = VALUES(le_100ms),
+        le_500ms = VALUES(le_500ms),
+        le_2s = VALUES(le_2s),
+        le_10s = VALUES(le_10s),
+        le_30s = VALUES(le_30s),
+        gt_30s = VALUES(gt_30s)
+    </insert>
+
+</mapper>

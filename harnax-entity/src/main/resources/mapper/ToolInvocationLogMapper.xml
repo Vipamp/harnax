@@ -21,4 +21,35 @@
         </foreach>
     </insert>
 
+    <!--
+        The date set the rollup owes, oldest first. Grouping rather than a subquery against the aggregate
+        keeps this one pass over the index on (tenant_id, ts).
+    -->
+    <select id="selectUnrolledDates" resultType="string">
+        SELECT DATE_FORMAT(l.ts, '%Y-%m-%d') AS stat_date
+        FROM tool_invocation_log l
+        WHERE l.tenant_id IS NOT NULL
+        AND DATE(l.ts) &gt;= #{floor}
+        AND NOT EXISTS (
+            SELECT 1 FROM tool_invocation_stats s
+            WHERE s.stat_date = DATE(l.ts)
+            AND s.tenant_id = l.tenant_id
+        )
+        GROUP BY DATE_FORMAT(l.ts, '%Y-%m-%d')
+        ORDER BY stat_date ASC
+    </select>
+
+    <delete id="deleteRolledOut">
+        DELETE FROM tool_invocation_log
+        WHERE ts &lt; #{before}
+        AND (
+            tenant_id IS NULL
+            OR EXISTS (
+                SELECT 1 FROM tool_invocation_stats s
+                WHERE s.stat_date = DATE(tool_invocation_log.ts)
+                AND s.tenant_id = tool_invocation_log.tenant_id
+            )
+        )
+    </delete>
+
 </mapper>

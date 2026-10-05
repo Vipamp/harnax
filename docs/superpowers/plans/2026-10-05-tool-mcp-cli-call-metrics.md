@@ -900,7 +900,11 @@ interface ToolInvocationStatsMapper {
         #{statDate},
         l.tenant_id,
         l.kind,
-        COALESCE(MAX(l.mcp_id), MAX(l.cli_id), 0),
+        CASE
+        WHEN l.kind = 'mcp' THEN COALESCE(l.mcp_id, 0)
+        WHEN l.kind = 'cli' THEN COALESCE(l.cli_id, 0)
+        ELSE 0
+        END,
         CASE WHEN l.kind = 'cli' THEN l.tool_name ELSE '' END,
         COUNT(*),
         SUM(CASE WHEN l.outcome = 'SUCCESS' THEN 1 ELSE 0 END),
@@ -919,6 +923,11 @@ interface ToolInvocationStatsMapper {
         WHERE DATE(l.ts) = #{statDate}
         AND l.tenant_id IS NOT NULL
         GROUP BY l.tenant_id, l.kind,
+        CASE
+        WHEN l.kind = 'mcp' THEN COALESCE(l.mcp_id, 0)
+        WHEN l.kind = 'cli' THEN COALESCE(l.cli_id, 0)
+        ELSE 0
+        END,
         CASE WHEN l.kind = 'cli' THEN l.tool_name ELSE '' END
         ON DUPLICATE KEY UPDATE
         calls = VALUES(calls),
@@ -939,7 +948,7 @@ interface ToolInvocationStatsMapper {
 </mapper>
 ```
 
-> `GROUP BY` 里没有 `subject_id` 而 `SELECT` 里有，这是有意的：`kind = mcp` 的一组内 `mcp_id` 由分类器保证唯一（I1），`kind = cli` 的一组内 `tool_name` 就是分组键。若在此处发现同一 `kind` 组里出现多个 `mcp_id`，那是分类器的不变量破了，不该由这条 SQL 兜。跑 Step 5 时若 MySQL 以 `ONLY_FULL_GROUP_BY` 拒绝 `COALESCE(MAX(...))` 以外的列，按报错把 `subject_id` 表达式改成与分组键一致的确定形式，并在报告里写明改了什么。
+> `subject_id` 必须与 `GROUP BY` 用同一个确定表达式，不能写成 `MAX()`：一个智能体挂多个 MCP server，`kind = mcp` 的一组里本来就会有多个 `mcp_id`，折成一行等于把全天的调用记到 id 最大的那个 server 上。Task 11 的读侧按 `(kind, subject_id, tool_name)` 分组、Task 12 直接把 `subjectId` 当 `mcpId`/`cliId`，所以这一条是聚合表能不能答题的分界。（本行原文写的是「由分类器保证一组内 `mcp_id` 唯一」，那是错的；落地时按上述改法纠正。）
 
 - [ ] **Step 5: 跑测试确认绿**
 
@@ -1332,7 +1341,7 @@ data class InvocationAttribution(
     }
 ```
 
-`tokenize` / `commandHeads` 是 `private`，但 `cliCommandName` 的用例已经覆盖它们的全部行为；不给它们开可见性。
+`tokenize` 是 `private`，不给它开可见性；`commandHeads` 必须保持 `public`，Task 8 要用它从 `CliSpec.checkCommand` 取 CLI 别名表（写成 `private` 会让 Task 8 编译不过）。
 
 - [ ] **Step 4: 跑测试确认绿**
 
