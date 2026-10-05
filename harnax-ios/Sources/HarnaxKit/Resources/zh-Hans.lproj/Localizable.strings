@@ -1298,3 +1298,116 @@
 /* ---- MCP 工具入参：描述可以为空，而空本身是一句话 ---- */
 "mcp.tool.noDescription" = "暂无描述";
 
+/* ---- 技能草稿：自我进化的待审队列、审核页与两个决定 ---- */
+"skill.draft.entry" = "技能草稿";
+"skill.draft.entry.hint" = "智能体提出的技能改动，等人来审";
+"skill.draft.pendingCount" = "%d 条待审";
+"skill.draft.title" = "技能草稿";
+"skill.draft.detail.title" = "审核草稿";
+"skill.draft.search" = "按技能名搜索";
+"skill.draft.reload" = "重新读取";
+
+/* 三档筛选；EXPIRED 有意不列，因为按它筛会被服务端拒 */
+"skill.draft.status.PENDING" = "待审";
+"skill.draft.status.APPROVED" = "已批准";
+"skill.draft.status.REJECTED" = "已驳回";
+
+/* 队列的列名，以及两个一个词说不清的意思 */
+"skill.draft.column.name" = "技能";
+"skill.draft.column.proposed" = "提议于";
+"skill.draft.column.patched" = "补丁于";
+"skill.draft.column.findings" = "上报";
+"skill.draft.column.decidedBy" = "审核人";
+"skill.draft.patched" = "已打补丁";
+"skill.draft.hint.patched" = "智能体在提出之后又改过这份草稿";
+"skill.draft.hint.upstream" = "沙箱上报的，仅作展示";
+"skill.draft.row.findings" = "上报 %d 条命中";
+
+/* 两句空态，按当前是哪一档分开，外加队列自己的一行说明 */
+"skill.draft.empty.pending" = "没有等你审核的草稿";
+"skill.draft.empty.decided" = "这一档下还没有已决草稿";
+"skill.draft.queue.hint" = "批准一份草稿，就等于把这个技能发布给所有允许加载它的智能体。只有 harnax 自己的内容扫描能把它存成禁用。";
+
+/* 详情摘要与两个决定按钮 */
+"skill.draft.description.empty" = "没有描述";
+"skill.draft.digest.label" = "内容摘要";
+"skill.draft.digest.hint" = "批准时会把这份摘要原样送回，你批准的就是你现在看到的";
+"skill.draft.decided.hint" = "%@ 于 %@ 审核";
+"skill.draft.rejectReason" = "理由";
+"skill.draft.approve" = "批准";
+"skill.draft.reject" = "驳回";
+"skill.draft.decision.working" = "提交中…";
+"skill.draft.approve.confirm.title" = "发布这个技能？";
+"skill.draft.approve.confirm.body" = "一经批准，这份草稿就会成为智能体真能加载的技能。";
+
+/* 六个 Tab */
+"skill.draft.tab.body" = "正文";
+"skill.draft.tab.files" = "文件";
+"skill.draft.tab.scripts" = "脚本";
+"skill.draft.tab.scans" = "内容扫描";
+"skill.draft.tab.source" = "来源";
+"skill.draft.tab.history" = "轨迹";
+"skill.draft.body.empty" = "这份草稿没有正文";
+"skill.draft.files.empty" = "没有附属文件";
+"skill.draft.scripts.empty" = "没有脚本";
+"skill.draft.scripts.hint" = "这些行数与哈希由 harnax 对落库字节现算，不是沙箱上报的";
+"skill.draft.scripts.lines" = "%d 行";
+"skill.draft.scripts.preview" = "看开头几行";
+"skill.draft.scan.localTitle" = "harnax 内容扫描";
+"skill.draft.scan.decides" = "这一份决定启用与否：只要有命中就存成禁用";
+"skill.draft.scan.noLocal" = "无命中，批准后将启用";
+"skill.draft.scan.upstreamTitle" = "沙箱上报";
+"skill.draft.scan.upstreamHint" = "仅展示，永远不会因此把技能存成禁用";
+"skill.draft.scan.noUpstream" = "沙箱没有上报命中";
+"skill.draft.source.session" = "来源会话";
+"skill.draft.source.agent" = "智能体";
+"skill.draft.source.noAgent" = "没有记录智能体";
+"skill.draft.source.hint" = "来源是上下文不是条件——队列也没法按它筛";
+"skill.draft.history.action" = "动作";
+"skill.draft.history.actor" = "操作者";
+"skill.draft.history.at" = "时间";
+"skill.draft.history.detail" = "备注";
+"skill.draft.history.empty" = "没有记录到轨迹";
+
+/* 六种 outcome 各一句，按 §5.4 那张表分 */
+"skill.draft.outcome.promoted.title" = "已发布";
+"skill.draft.promoted.enabled" = "%@ 已成为技能并启用";
+"skill.draft.outcome.held.title" = "已存为禁用";
+"skill.draft.promoted.held" = "已存为 %@ 但被按住：内容扫描命中 %d 条";
+"skill.draft.promoted.openSkill" = "打开技能";
+"skill.draft.outcome.changed.title" = "草稿已变更";
+"skill.draft.changed.body" = "你加载之后智能体又改过这份草稿。请重读，再批准你真正看到的内容。";
+"skill.draft.outcome.reviewed.title" = "已被审核";
+"skill.draft.reviewed.body" = "%@ 已在 %@ 定过这份草稿";
+"skill.draft.reviewed.reason" = "理由：%@";
+"skill.draft.outcome.rejected.title" = "已驳回";
+"skill.draft.reject.done" = "草稿已按你写的理由驳回";
+"skill.draft.outcome.race.title" = "名字被占用";
+"skill.draft.nameRace" = "批准跑完一半时这个名字被别人占了。这次没有写入，草稿仍在待审。";
+"skill.draft.decision.failed" = "这次审核没有生效";
+"skill.draft.digest.missing" = "这份草稿没有可用于批准的摘要，已重新读取";
+
+/* 名字冲突框 */
+"skill.draft.conflict.title" = "这个名字已被占用";
+"skill.draft.conflict.hint" = "名为 %@ 的技能已经存在。给这份改个名字，或者覆盖那条已有记录。";
+"skill.draft.conflict.rename" = "用新名字发布";
+"skill.draft.conflict.replace" = "覆盖已有的技能";
+"skill.draft.conflict.submit" = "批准";
+"skill.draft.conflict.nameRequired" = "请填写名字";
+"skill.draft.conflict.nameTooLong" = "名字不能超过 %d 个字符";
+"skill.draft.conflict.openExisting" = "查看占用该名的技能";
+"skill.draft.conflict.choose" = "两个答案都会动到别人已经发布的内容";
+
+/* 驳回表单 */
+"skill.draft.reject.title" = "驳回这份草稿";
+"skill.draft.reject.placeholder" = "为什么要驳回？";
+"skill.draft.reject.hint" = "这是智能体再次提交同名技能时能看到的原话";
+"skill.draft.reject.reasonRequired" = "驳回必须写理由";
+"skill.draft.reject.tooLong" = "理由不能超过 %d 个字符";
+
+/* 出处：现在这条技能是谁写进来的 */
+"skill.origin.agent" = "智能体晋升";
+"skill.origin.human" = "人工安装";
+"agent.wizard.selfWrite" = "自我进化";
+"agent.wizard.selfWrite.hint" = "允许这个智能体自己提出技能草稿。每份草稿仍要人工批准才会成为技能。";
+

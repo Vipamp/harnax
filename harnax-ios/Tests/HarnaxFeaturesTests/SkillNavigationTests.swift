@@ -178,18 +178,24 @@ final class SkillNavigationTests: XCTestCase {
     }
 
     /// The same rule as a shape over the whole feature layer, so the next domain cannot rediscover it: a domain
-    /// may present by item only where nothing below it pushes by value.
+    /// may present by state only where nothing below it pushes by value.
+    ///
+    /// Both spellings of a state-presented destination are caught, because both are the same defect: the screen
+    /// SwiftUI is presenting is re-evaluated by the deeper push's own path update and lands on the stack a
+    /// second time. Gating only `item:` would leave `isPresented:` as the way through.
     func testNoDomainPresentsAScreenThatPushesDeeper() throws {
         let domains = try FeatureSources.contentsOfFeatureDomains()
         XCTAssertFalse(domains.isEmpty, "no domain directories under HarnaxFeatures")
         for domain in domains {
-            let presented = domain.files.filter { $0.text.contains("navigationDestination(item:") }
+            let presented = domain.files.filter {
+                $0.text.contains("navigationDestination(item:") || $0.text.contains("navigationDestination(isPresented:")
+            }
             let pushed = domain.files.filter { $0.text.contains("NavigationLink(value:") }
             guard !presented.isEmpty else { continue }
             XCTAssertTrue(
                 pushed.isEmpty,
-                "\(domain.name) presents \(presented.map { $0.path }) by item and pushes "
-                    + "\(pushed.map { $0.path }) by value: the item-presented screen is re-pushed by the deeper "
+                "\(domain.name) presents \(presented.map { $0.path }) by state and pushes "
+                    + "\(pushed.map { $0.path }) by value: the state-presented screen is re-pushed by the deeper "
                     + "push's own stack update"
             )
         }

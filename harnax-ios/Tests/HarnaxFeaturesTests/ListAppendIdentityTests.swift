@@ -11,7 +11,7 @@ import HarnaxKit
 /// `PagedState.append` advances `pageNum` and `total` from a reply that belongs to a query nobody is looking at
 /// any more — so the next scroll asks for a page number of that retired query.
 ///
-/// Two scenarios, run against all thirteen list models because all thirteen append:
+/// Two scenarios, run against all fourteen list models because all fourteen append:
 ///
 /// - a late page must not land at all: not its rows, not its total, not its page counter;
 /// - an append asked for *while a refresh is out* must be re-issued for the newer query once that refresh
@@ -23,7 +23,7 @@ import HarnaxKit
 /// scenarios are written once.
 @MainActor
 final class ListAppendIdentityTests: XCTestCase {
-    // MARK: - the thirteen screens
+    // MARK: - the fourteen screens
 
     func testTheAgentListDropsALateAppendPage() async throws {
         let agents = ParkedPageAgents()
@@ -342,6 +342,32 @@ final class ListAppendIdentityTests: XCTestCase {
         let vm = SessionListViewModel(sessions: sessions, pageSize: 1)
         await vm.refresh()
         try await assertAnAppendAskedForDuringARefreshIsReissued(on: sessionScreen(vm, sessions))
+    }
+
+    /// The queue narrows by arm rather than by a status column, so the query the reader changes to arrives
+    /// through `status` — and switching it throws away the accumulated pages before re-reading page 1.
+    func testTheDraftQueueDropsALateAppendPage() async throws {
+        let drafts = FakeSkillDrafts()
+        drafts.pageReplies = [
+            .success(try page(SkillDraftRow.self, .draft, [1], total: 4)),
+            .success(try page(SkillDraftRow.self, .draft, [2], num: 2, total: 4)),
+            .success(try page(SkillDraftRow.self, .draft, [5], total: 1)),
+        ]
+        let vm = SkillDraftListViewModel(drafts: drafts, pageSize: 1)
+        await vm.refresh()
+        try await assertALateAppendPageNeverLands(on: draftQueueScreen(vm, drafts))
+    }
+
+    func testTheDraftQueueReissuesAnAppendAskedForDuringARefresh() async throws {
+        let drafts = FakeSkillDrafts()
+        drafts.pageReplies = [
+            .success(try page(SkillDraftRow.self, .draft, [1], total: 4)),
+            .success(try page(SkillDraftRow.self, .draft, [5], total: 2)),
+            .success(try page(SkillDraftRow.self, .draft, [6], num: 2, total: 2)),
+        ]
+        let vm = SkillDraftListViewModel(drafts: drafts, pageSize: 1)
+        await vm.refresh()
+        try await assertAnAppendAskedForDuringARefreshIsReissued(on: draftQueueScreen(vm, drafts))
     }
 
     // MARK: - the two scenarios, written once
@@ -693,6 +719,23 @@ final class ListAppendIdentityTests: XCTestCase {
         )
     }
 
+    private func draftQueueScreen(_ vm: SkillDraftListViewModel, _ drafts: FakeSkillDrafts) -> LateAppend {
+        LateAppend(
+            label: "the draft review queue",
+            pageCalls: { drafts.pageRequests.count },
+            requestedNums: { drafts.pageRequests.map(\.num) },
+            rowIDs: { vm.items.compactMap { $0.id } },
+            total: { vm.total },
+            canLoadMore: { vm.canLoadMore },
+            loadMore: { await vm.loadMore() },
+            // The queue's filter is the arm itself rather than a status column (`drafts.tsx:193-205`), and
+            // switching it discards the accumulated pages before re-reading page 1.
+            changeQuery: { vm.status = .approved },
+            armGate: { drafts.pageGate.arm() },
+            releaseGate: { drafts.pageGate.release() }
+        )
+    }
+
     private func makeLogViewModel(_ tasks: FakeAgentTasks) -> TaskLogListViewModel {
         TaskLogListViewModel(
             taskID: 41,
@@ -705,11 +748,11 @@ final class ListAppendIdentityTests: XCTestCase {
 
     // MARK: - the page script
 
-    /// Which columns a row has to carry beyond its id, because four of these thirteen summaries have non-null
+    /// Which columns a row has to carry beyond its id, because five of these fourteen summaries have non-null
     /// columns the decoder insists on (`SkillSourceResponse.kt`, `ModelProviderResponse.kt`, `AgentTaskSummary`,
-    /// `AgentTaskLog`, `SessionResponse.kt`) and the rest are all-optional.
+    /// `AgentTaskLog`, `SessionResponse.kt`, `SkillDraftResponse.kt:33`) and the rest are all-optional.
     private enum RowKind {
-        case plain, provider, source, skillItem, task, taskLog, session
+        case plain, provider, source, skillItem, task, taskLog, session, draft
     }
 
     /// The three pages both scenarios run: a first page that promises more, the tail page the scroll asks for,
@@ -755,6 +798,9 @@ final class ListAppendIdentityTests: XCTestCase {
             ]
             case .session: [
                 "id": id, "title": "季度估值复核", "status": 1, "mcpList": [], "skillList": [],
+            ]
+            case .draft: [
+                "id": id, "name": "草稿 \(id)", "status": "PENDING", "upstreamFindingCount": 0,
             ]
             }
         }

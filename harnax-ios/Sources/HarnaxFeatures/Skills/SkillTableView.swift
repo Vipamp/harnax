@@ -123,6 +123,7 @@ public struct SkillTableView: View {
                         if skill.isShared {
                             HXBadge("state.badge.shared", tone: .teal)
                         }
+                        originChip(skill)
                     }
                     Text(verbatim: byline(skill))
                         .font(.caption2)
@@ -145,6 +146,20 @@ public struct SkillTableView: View {
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(Color.hx(.textPrimary))
             .lineLimit(1)
+    }
+
+    /// Provenance, and only provenance the server actually wrote.
+    ///
+    /// A row with **no** `origin` key at all gets neither chip: the column is newer than the rows
+    /// (`SkillResponse.kt:43`), so an absent value means「we never recorded this」rather than「a human
+    /// installed it」, and claiming the latter would put a false statement on every pre-column skill.
+    @ViewBuilder
+    private func originChip(_ skill: SkillItem) -> some View {
+        if skill.isAgentPromoted {
+            HXChip(hx("skill.origin.agent"), tone: .purple)
+        } else if hxPresented(skill.origin) != nil {
+            HXChip(hx("skill.origin.human"))
+        }
     }
 
     /// The table's one write. The disable direction is gated on the row's own binding counts, so the menu

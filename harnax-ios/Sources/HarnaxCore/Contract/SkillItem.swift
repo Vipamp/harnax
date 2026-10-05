@@ -33,6 +33,12 @@ public struct SkillItem: Decodable, Identifiable, Equatable, Sendable {
     public let boundTeamCount: Int
     public let isPublic: Int?
     public let creator: String?
+    /// Provenance: `human` or `agent_promoted` (`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/SkillResponse.kt:42-45`).
+    /// Optional because the DTO declares it `String? = null` and Jackson drops null keys, so a row written
+    /// before the column existed arrives with no key at all.
+    public let origin: String?
+    /// The session an agent proposed this skill in; absent on every human skill.
+    public let originRef: String?
     /// Serialised `LocalDateTime` in the server's `yyyy-MM-dd HH:mm:ss` pattern
     /// (`harnax-admin/src/main/resources/application.yml:23`).
     public let createTime: String?
@@ -41,6 +47,9 @@ public struct SkillItem: Decodable, Identifiable, Equatable, Sendable {
     /// A row with no status column reads as enabled, matching the source row's rule.
     public var isEnabled: Bool { status != 0 }
     public var isShared: Bool { isPublic == 1 }
+    /// A skill an agent wrote itself and a reviewer promoted, as opposed to one a human installed from a
+    /// source. The value is the server's own constant, spelled once in `SkillDraftRules`.
+    public var isAgentPromoted: Bool { origin == SkillDraftRules.agentPromotedOrigin }
     public var title: String? { hxPresented(name) }
     public var detail: String? { hxPresented(description) }
     public var source: String? { hxPresented(repositoryName) }

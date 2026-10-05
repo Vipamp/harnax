@@ -1297,3 +1297,116 @@
 /* ---- MCP tool parameter: the description column can be empty, and empty is a statement ---- */
 "mcp.tool.noDescription" = "No description";
 
+/* ---- skill drafts: the self-evolution queue, its review screen and the two decisions ---- */
+"skill.draft.entry" = "Skill drafts";
+"skill.draft.entry.hint" = "Skills the agents proposed, waiting for a human";
+"skill.draft.pendingCount" = "%d pending";
+"skill.draft.title" = "Skill drafts";
+"skill.draft.detail.title" = "Review draft";
+"skill.draft.search" = "Search by skill name";
+"skill.draft.reload" = "Reload";
+
+/* the three arms; EXPIRED is absent on purpose, because filtering by it is refused */
+"skill.draft.status.PENDING" = "Pending";
+"skill.draft.status.APPROVED" = "Approved";
+"skill.draft.status.REJECTED" = "Rejected";
+
+/* the queue's columns, and the two things a column means but cannot say in one word */
+"skill.draft.column.name" = "Skill";
+"skill.draft.column.proposed" = "Proposed";
+"skill.draft.column.patched" = "Patched";
+"skill.draft.column.findings" = "Reported";
+"skill.draft.column.decidedBy" = "Decided by";
+"skill.draft.patched" = "Patched";
+"skill.draft.hint.patched" = "The agent changed this draft after proposing it";
+"skill.draft.hint.upstream" = "Reported by the sandbox; display only";
+"skill.draft.row.findings" = "%d findings reported";
+
+/* the two empty sentences, split by which arm is on screen, and the queue's own footnote */
+"skill.draft.empty.pending" = "Nothing is waiting for review";
+"skill.draft.empty.decided" = "Nothing decided under this filter yet";
+"skill.draft.queue.hint" = "Approving a draft publishes the skill to every agent allowed to load it. Only harnax's own content scan can store it disabled.";
+
+/* detail summary and the two decision buttons */
+"skill.draft.description.empty" = "No description";
+"skill.draft.digest.label" = "Content digest";
+"skill.draft.digest.hint" = "An approval sends this back, so what you approve is what you are looking at";
+"skill.draft.decided.hint" = "Decided by %@ at %@";
+"skill.draft.rejectReason" = "Reason";
+"skill.draft.approve" = "Approve";
+"skill.draft.reject" = "Reject";
+"skill.draft.decision.working" = "Sending…";
+"skill.draft.approve.confirm.title" = "Publish this skill?";
+"skill.draft.approve.confirm.body" = "The draft becomes a real skill that agents can load as soon as it is approved.";
+
+/* the six panes */
+"skill.draft.tab.body" = "Body";
+"skill.draft.tab.files" = "Files";
+"skill.draft.tab.scripts" = "Scripts";
+"skill.draft.tab.scans" = "Scans";
+"skill.draft.tab.source" = "Origin";
+"skill.draft.tab.history" = "Trail";
+"skill.draft.body.empty" = "This draft has no body";
+"skill.draft.files.empty" = "No support files";
+"skill.draft.scripts.empty" = "No scripts";
+"skill.draft.scripts.hint" = "These counts and hashes are computed by harnax over the stored bytes, not reported by the sandbox";
+"skill.draft.scripts.lines" = "%d lines";
+"skill.draft.scripts.preview" = "Show the first lines";
+"skill.draft.scan.localTitle" = "harnax content scan";
+"skill.draft.scan.decides" = "This scan decides: any finding stores the skill disabled";
+"skill.draft.scan.noLocal" = "No findings — the skill will be enabled once approved";
+"skill.draft.scan.upstreamTitle" = "Sandbox report";
+"skill.draft.scan.upstreamHint" = "For display only: this never stores the skill disabled";
+"skill.draft.scan.noUpstream" = "The sandbox reported no findings";
+"skill.draft.source.session" = "Source session";
+"skill.draft.source.agent" = "Agent";
+"skill.draft.source.noAgent" = "No agent recorded";
+"skill.draft.source.hint" = "Where a draft came from is context, not a condition — the queue cannot be filtered by it";
+"skill.draft.history.action" = "Action";
+"skill.draft.history.actor" = "By";
+"skill.draft.history.at" = "When";
+"skill.draft.history.detail" = "Note";
+"skill.draft.history.empty" = "No history recorded";
+
+/* one sentence per outcome, as §5.4's table splits them */
+"skill.draft.outcome.promoted.title" = "Published";
+"skill.draft.promoted.enabled" = "%@ is now a skill and enabled";
+"skill.draft.outcome.held.title" = "Saved, held back";
+"skill.draft.promoted.held" = "Saved as %@ but held back: the content scan hit %d findings";
+"skill.draft.promoted.openSkill" = "Open the skill";
+"skill.draft.outcome.changed.title" = "Draft changed";
+"skill.draft.changed.body" = "The agent patched this draft after you loaded it. Reload and approve what you actually see.";
+"skill.draft.outcome.reviewed.title" = "Already decided";
+"skill.draft.reviewed.body" = "%@ decided this at %@";
+"skill.draft.reviewed.reason" = "Reason: %@";
+"skill.draft.outcome.rejected.title" = "Rejected";
+"skill.draft.reject.done" = "The draft is closed with your reason recorded";
+"skill.draft.outcome.race.title" = "Name taken";
+"skill.draft.nameRace" = "That name was claimed while the approval ran. Nothing was written and the draft is still pending.";
+"skill.draft.decision.failed" = "The decision was not applied";
+"skill.draft.digest.missing" = "This draft has no digest to approve against, so it was reloaded";
+
+/* the name-conflict dialog */
+"skill.draft.conflict.title" = "Name already taken";
+"skill.draft.conflict.hint" = "A skill named %@ already exists. Rename this one, or replace that row.";
+"skill.draft.conflict.rename" = "Publish under a new name";
+"skill.draft.conflict.replace" = "Replace the existing skill";
+"skill.draft.conflict.submit" = "Approve";
+"skill.draft.conflict.nameRequired" = "Enter a name";
+"skill.draft.conflict.nameTooLong" = "The name cannot exceed %d characters";
+"skill.draft.conflict.openExisting" = "Open the skill holding that name";
+"skill.draft.conflict.choose" = "Both answers overwrite something another publisher owns";
+
+/* the rejection form */
+"skill.draft.reject.title" = "Reject this draft";
+"skill.draft.reject.placeholder" = "Why are you rejecting it?";
+"skill.draft.reject.hint" = "This is the wording the agent sees when it proposes the same skill again";
+"skill.draft.reject.reasonRequired" = "A rejection needs a reason";
+"skill.draft.reject.tooLong" = "The reason cannot exceed %d characters";
+
+/* provenance: who wrote the skill that is now on file */
+"skill.origin.agent" = "Agent promoted";
+"skill.origin.human" = "Installed";
+"agent.wizard.selfWrite" = "Self-evolution";
+"agent.wizard.selfWrite.hint" = "Lets this agent propose skill drafts of its own. Every draft still needs a human approval before it becomes a skill.";
+
