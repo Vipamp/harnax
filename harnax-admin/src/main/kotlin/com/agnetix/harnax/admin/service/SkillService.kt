@@ -1,6 +1,7 @@
 package com.agnetix.harnax.admin.service
 
 import com.agnetix.harnax.admin.dto.Page
+import com.agnetix.harnax.admin.dto.ReviewHistoryItem
 import com.agnetix.harnax.admin.dto.SkillCreateRequest
 import com.agnetix.harnax.admin.dto.SkillInstallResponse
 import com.agnetix.harnax.admin.dto.SkillResponse
@@ -31,6 +32,14 @@ interface SkillService {
      * @return Skill entity
      */
     fun getSkill(id: Long): Skill?
+
+    /**
+     * The recorded state changes of one skill, newest first.
+     *
+     * @param id Skill ID
+     * @return Trail entries, empty when the skill has none recorded; null when the caller may not read the skill
+     */
+    fun reviewHistory(id: Long): List<ReviewHistoryItem>?
 
     /**
      * Create skill

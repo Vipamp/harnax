@@ -39,6 +39,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
   const [skills, setSkills] = useState<API.SkillItem[]>([]);
   const [models, setModels] = useState<API.ModelItem[]>([]);
   const [isPublic, setIsPublic] = useState(false);
+  const [skillSelfWrite, setSkillSelfWrite] = useState(false);
   const { isAdmin } = getCurrentUserInfo();
 
   const [mcpConfigs, setMcpConfigs] = useState<McpConfigState[]>([{}]);
@@ -158,6 +159,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
           name, description, systemPrompt, modelId,
           status: 1,
           isPublic: isPublic ? 1 : 0,
+          skillSelfWrite: skillSelfWrite ? 1 : 0,
           mcpList: mcpConfigs.filter(c => c.mcpId).map(c => ({
             id: c.mcpId,
             envBindings: (c.envBindings || []).map(({ customInput, ...b }) => ({
@@ -259,6 +261,20 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
               <Switch checked={isPublic} onChange={setIsPublic} checkedChildren={intl.formatMessage({ id: 'pages.common.public', defaultMessage: 'Public' })} unCheckedChildren={intl.formatMessage({ id: 'pages.common.private', defaultMessage: 'Private' })} />
               <div style={{ marginTop: 4, color: 'var(--vip-text-secondary)', fontSize: '14px' }}>
                 {intl.formatMessage({ id: 'pages.agent.publicHint', defaultMessage: 'Other users can view this agent after making it public' })}
+              </div>
+            </Form.Item>
+            <Form.Item label={intl.formatMessage({ id: 'pages.agent.skillSelfWrite', defaultMessage: 'Skill self-write' })}>
+              <Switch
+                checked={skillSelfWrite}
+                onChange={setSkillSelfWrite}
+                checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
+                unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
+              />
+              <div style={{ marginTop: 4, color: 'var(--vip-text-secondary)', fontSize: '14px' }}>
+                {intl.formatMessage({
+                  id: 'pages.agent.skillSelfWriteHint',
+                  defaultMessage: 'The agent may draft skills inside its own session. Nothing is published and no other agent sees it until a reviewer approves the draft on the draft review page.',
+                })}
               </div>
             </Form.Item>
           </>

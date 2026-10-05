@@ -3,6 +3,7 @@ package com.agnetix.harnax.admin.service.impl
 import com.agnetix.harnax.admin.constant.BuiltinRepository
 import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.Page
+import com.agnetix.harnax.admin.dto.ReviewHistoryItem
 import com.agnetix.harnax.admin.dto.SkillCreateRequest
 import com.agnetix.harnax.admin.dto.SkillInstallResponse
 import com.agnetix.harnax.admin.dto.SkillResponse
@@ -11,25 +12,31 @@ import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.SkillRepositoryService
 import com.agnetix.harnax.admin.service.SkillService
+import com.agnetix.harnax.admin.skill.SkillBindingResolver
 import com.agnetix.harnax.admin.skill.SkillInstaller
+import com.agnetix.harnax.admin.skill.SkillReviewRecorder
 import com.agnetix.harnax.admin.skill.SkillSourceConfigs
 import com.agnetix.harnax.admin.skill.SkillSourcePolicy
 import com.agnetix.harnax.admin.skill.SkillSyncRecorder
+import com.agnetix.harnax.admin.skill.SkillVisibilityCodec
 import com.agnetix.harnax.admin.skill.loader.SkillLoaderRegistry
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.TenantResolver
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.SkillRepository
+import com.agnetix.harnax.entity.SkillReviewLog
 import com.agnetix.harnax.mapper.AgentSkillBindingMapper
 import com.agnetix.harnax.mapper.CliMapper
 import com.agnetix.harnax.mapper.SkillMapper
+import com.agnetix.harnax.mapper.SkillVisibilityPolicyMapper
 import com.agnetix.harnax.mapper.TeamSkillBindingMapper
 import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import tools.jackson.databind.ObjectMapper
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -47,11 +54,15 @@ class SkillServiceImpl(
     private val skillLoaderRegistry: SkillLoaderRegistry,
     private val skillInstaller: SkillInstaller,
     private val skillSyncRecorder: SkillSyncRecorder,
+    private val skillReviewRecorder: SkillReviewRecorder,
+    private val skillVisibilityPolicyMapper: SkillVisibilityPolicyMapper,
+    private val skillBindingResolver: SkillBindingResolver,
     @Value($$"${local.tmp-dir}") private val localTmpDir: String,
     private val messageUtil: MessageUtil,
 ) : SkillService {
 
     private val log = LoggerFactory.getLogger(SkillServiceImpl::class.java)
+    private val objectMapper = ObjectMapper()
 
     override fun page(
         name: String?,
@@ -89,6 +100,28 @@ class SkillServiceImpl(
         // same nothing an unknown id does: refusing out loud confirmed the skill exists and whose
         // it is, and the controller turned that into a 500.
         return skillMapper.selectById(id)?.takeIf { readable(it) }
+    }
+
+    /**
+     * Who changed this skill, newest first.
+     *
+     * The same answer as [getSkill] gives for a row the caller may not read: an absent one. This trail names
+     * the person who approved an agent's proposal, so answering it across workspaces would disclose another
+     * tenant's reviewers from nothing but a guessed id.
+     *
+     * The tenant comes off the row rather than the request because every writer of these rows stamped them
+     * with `skill.tenantId` for exactly that reason, and an internal call reaches this service with no tenant.
+     */
+    override fun reviewHistory(id: Long): List<ReviewHistoryItem>? = getSkill(id)?.let { skill ->
+        skillReviewRecorder.history(SkillReviewLog.SUBJECT_SKILL, skill.id, skill.tenantId)
+            .map {
+                ReviewHistoryItem(
+                    action = it.action,
+                    actor = it.actor,
+                    detail = it.detail,
+                    createTime = it.createTime,
+                )
+            }
     }
 
     /**
@@ -198,7 +231,12 @@ class SkillServiceImpl(
             SkillSourcePolicy.requireStatus(newStatus)
             if (newStatus != skill.status) {
                 if (newStatus == 0) requireUnbound(skill, "disabled")
-                skillMapper.updateStatus(id, newStatus)
+                if (skillMapper.updateStatus(id, newStatus) > 0) {
+                    // The same trail PUT /skills/toggle/{id} writes: this entry point reaches the same
+                    // column, and a history that only covers one of the two would read as if nobody
+                    // switched this skill off.
+                    recordStatusChange(skill, newStatus)
+                }
                 skill.status = newStatus
             }
         }
@@ -219,7 +257,9 @@ class SkillServiceImpl(
         requireWritableRepo(skill.repositoryId)
         if (status == 0 && skill.status == 1) requireUnbound(skill, "disabled")
 
-        return skillMapper.updateStatus(id, status) > 0
+        val changed = skillMapper.updateStatus(id, status) > 0
+        if (changed) recordStatusChange(skill, status)
+        return changed
     }
 
     @Transactional(rollbackFor = [Exception::class])
@@ -236,9 +276,48 @@ class SkillServiceImpl(
 
         // Remove agent references so no dangling binding survives the delete
         agentSkillBindingMapper.deleteBySkillIds(listOf(id))
+        // Same reason as the bindings: the policy is keyed by skill id, and a row left behind would be
+        // the only trace of a rule nobody can read or clear any more
+        skillVisibilityPolicyMapper.deleteBySkillId(id)
 
-        return skillMapper.deleteById(id) > 0
+        val deleted = skillMapper.deleteById(id) > 0
+        if (deleted) {
+            // After the row, deliberately: a trail for a delete that did not happen would be worse than
+            // none, and this is the one entry that names a skill nobody can read any more
+            skillReviewRecorder.recordSkill(
+                skillId = id,
+                action = SkillReviewLog.ACTION_DELETE,
+                detail = identityDetail(skill),
+                tenantId = skill.tenantId,
+            )
+        }
+        return deleted
     }
+
+    /**
+     * The enable/disable trail, shared by both entry points that reach `updateStatus`.
+     *
+     * Both the tenant and the `detail` come from the row rather than from the request. The tenant because
+     * the trail is read per tenant and a CLI or internal call reaches this service with no tenant header at
+     * all, so the skill being changed is the only trustworthy answer. The name because this row can be
+     * deleted later: a history that only says "skill 17 was disabled" cannot be checked against anything
+     * once the skill is gone.
+     */
+    private fun recordStatusChange(
+        skill: Skill,
+        status: Int,
+    ) {
+        skillReviewRecorder.recordSkill(
+            skillId = skill.id,
+            action = if (status == 1) SkillReviewLog.ACTION_ENABLE else SkillReviewLog.ACTION_DISABLE,
+            detail = identityDetail(skill),
+            tenantId = skill.tenantId,
+        )
+    }
+
+    private fun identityDetail(skill: Skill): String = objectMapper.writeValueAsString(
+        mapOf("name" to skill.name, "repositoryId" to skill.repositoryId),
+    )
 
     /**
      * Refuses to take a skill out of circulation while something binds it.
@@ -369,6 +448,7 @@ class SkillServiceImpl(
             repository,
             boundAgentCount = boundAgentCounts(listOf(skill.id))[skill.id] ?: 0,
             boundTeamCount = boundTeamCounts(listOf(skill.id))[skill.id] ?: 0,
+            visibility = visibilitySummaries(listOf(skill.id))[skill.id],
         )
     }
 
@@ -379,14 +459,38 @@ class SkillServiceImpl(
         val ids = skills.map { it.id }
         val boundAgents = boundAgentCounts(ids)
         val boundTeams = boundTeamCounts(ids)
+        val visibility = visibilitySummaries(ids)
         return skills.map {
             SkillResponse.fromEntity(
                 it,
                 repositories[it.repositoryId],
                 boundAgentCount = boundAgents[it.id] ?: 0,
                 boundTeamCount = boundTeams[it.id] ?: 0,
+                visibility = visibility[it.id],
             )
         }
+    }
+
+    /**
+     * Stored rollout rules for [skillIds], as the list renders them.
+     *
+     * Asked for the ids the page already holds, so the tenant gate that produced those rows is the only
+     * filter needed here — a policy for a skill the caller cannot see is never looked up. One read per
+     * page, like [boundAgentCounts]: asked per row, a rollout column would cost a query per skill, and a
+     * page that shows nothing for a restricted skill tells the operator the opposite of the truth.
+     *
+     * [SkillBindingResolver.policiesOf] is reused rather than the mapper called directly, because it holds
+     * the empty-batch guard: an unfiltered `IN ()` is a MySQL syntax error, and a second copy of that
+     * guard is how one of the two call sites ends up without it.
+     */
+    private fun visibilitySummaries(skillIds: List<Long>): Map<Long, SkillResponse.VisibilitySummary> = skillBindingResolver.policiesOf(skillIds).mapValues { (_, policy) ->
+        val dto = SkillVisibilityCodec.toDto(policy)
+        SkillResponse.VisibilitySummary(
+            mode = dto.mode,
+            canaryPct = dto.canaryPct,
+            userCount = dto.userIds.size,
+            environments = dto.environments,
+        )
     }
 
     /**

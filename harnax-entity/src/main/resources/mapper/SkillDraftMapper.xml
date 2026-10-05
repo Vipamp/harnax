@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agnetix.harnax.mapper.SkillDraftMapper">
+
+    <resultMap id="SkillDraftResultMap" type="com.agnetix.harnax.entity.SkillDraft">
+        <id column="id" property="id"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="name" property="name"/>
+        <result column="description" property="description"/>
+        <result column="skillmd" property="skillmd"/>
+        <result column="resources" property="resources"/>
+        <result column="script_previews" property="scriptPreviews"/>
+        <result column="scan_verdict" property="scanVerdict"/>
+        <result column="scan_findings" property="scanFindings"/>
+        <result column="source_session_id" property="sourceSessionId"/>
+        <result column="agent_id" property="agentId"/>
+        <result column="status" property="status"/>
+        <result column="reviewed_by" property="reviewedBy"/>
+        <result column="reviewed_at" property="reviewedAt"/>
+        <result column="reject_reason" property="rejectReason"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <!-- insert -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO skill_draft (tenant_id, name, description, skillmd, resources, script_previews,
+                                 scan_verdict, scan_findings, source_session_id, agent_id, status)
+        VALUES (#{tenantId}, #{name}, #{description}, #{skillmd}, #{resources}, #{scriptPreviews},
+                #{scanVerdict}, #{scanFindings}, #{sourceSessionId}, #{agentId}, #{status})
+    </insert>
+
+    <!-- selectById -->
+    <select id="selectById" resultMap="SkillDraftResultMap">
+        SELECT * FROM skill_draft WHERE id = #{id}
+    </select>
+
+    <!-- selectPendingByTenantAndName: the merge target, newest touched first -->
+    <select id="selectPendingByTenantAndName" resultMap="SkillDraftResultMap">
+        SELECT * FROM skill_draft
+        WHERE tenant_id = #{tenantId} AND name = #{name} AND status = 'PENDING'
+        ORDER BY update_time DESC, id DESC
+        LIMIT 1
+    </select>
+
+    <!--
+        updateContent: every column a proposal carries is reassigned, because the gate submits the whole
+        candidate each time and leaving a stale script preview beside a new body would show a reviewer a
+        skill that is not the one they are approving. `status = 'PENDING'` is the guard: a draft someone has
+        already decided never accepts another patch.
+    -->
+    <update id="updateContent">
+        UPDATE skill_draft
+        SET description = #{description},
+            skillmd = #{skillmd},
+            resources = #{resources},
+            script_previews = #{scriptPreviews},
+            scan_verdict = #{scanVerdict},
+            scan_findings = #{scanFindings},
+            update_time = CURRENT_TIMESTAMP
+        WHERE id = #{id} AND status = 'PENDING'
+    </update>
+
+    <!-- markReviewed: the conditional state change, so the second reviewer gets 0 instead of an overwrite -->
+    <update id="markReviewed">
+        UPDATE skill_draft
+        SET status = #{status},
+            reviewed_by = #{reviewedBy},
+            reviewed_at = CURRENT_TIMESTAMP,
+            reject_reason = #{rejectReason},
+            update_time = CURRENT_TIMESTAMP
+        WHERE id = #{id} AND status = 'PENDING'
+    </update>
+
+    <!-- selectDraftList: PageHelper wraps this, so no LIMIT of its own -->
+    <select id="selectDraftList" resultMap="SkillDraftResultMap">
+        SELECT * FROM skill_draft
+        <where>
+            tenant_id = #{tenantId}
+            <if test="status != null and status != ''">
+                AND status = #{status}
+            </if>
+            <if test="name != null and name != ''">
+                AND name LIKE CONCAT('%', #{name}, '%')
+            </if>
+            <if test="sourceSessionId != null and sourceSessionId != ''">
+                AND source_session_id = #{sourceSessionId}
+            </if>
+        </where>
+        ORDER BY update_time DESC, id DESC
+    </select>
+
+</mapper>

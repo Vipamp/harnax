@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agnetix.harnax.mapper.SkillVisibilityPolicyMapper">
+
+    <resultMap id="SkillVisibilityPolicyResultMap" type="com.agnetix.harnax.entity.SkillVisibilityPolicy">
+        <id column="id" property="id"/>
+        <result column="skill_id" property="skillId"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="mode" property="mode"/>
+        <result column="canary_pct" property="canaryPct"/>
+        <result column="user_ids" property="userIds"/>
+        <result column="environments" property="environments"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <!-- selectBySkillId -->
+    <select id="selectBySkillId" resultMap="SkillVisibilityPolicyResultMap">
+        SELECT * FROM skill_visibility_policy WHERE skill_id = #{skillId}
+    </select>
+
+    <!-- selectBySkillIds: callers hold the non-empty precondition, `IN ()` is a syntax error in MySQL -->
+    <select id="selectBySkillIds" resultMap="SkillVisibilityPolicyResultMap">
+        SELECT * FROM skill_visibility_policy
+        WHERE skill_id IN
+        <foreach collection="skillIds" item="skillId" open="(" separator="," close=")">
+            #{skillId}
+        </foreach>
+    </select>
+
+    <!-- upsert -->
+    <insert id="upsert" useGeneratedKeys="true" keyProperty="id">
+        <!--
+            The conflicting columns are reassigned from the parameters rather than through VALUES(), which
+            MySQL 8 deprecates inside ON DUPLICATE KEY UPDATE. `update_time` is written explicitly: the
+            column auto-bumps on a real change, but an operator saving the same values back is still a
+            save, and the audit trail is dated from this row.
+        -->
+        INSERT INTO skill_visibility_policy (skill_id, tenant_id, mode, canary_pct, user_ids, environments)
+        VALUES (#{skillId}, #{tenantId}, #{mode}, #{canaryPct}, #{userIds}, #{environments})
+        ON DUPLICATE KEY UPDATE
+            tenant_id = #{tenantId},
+            mode = #{mode},
+            canary_pct = #{canaryPct},
+            user_ids = #{userIds},
+            environments = #{environments},
+            update_time = CURRENT_TIMESTAMP
+    </insert>
+
+    <!-- deleteBySkillId -->
+    <delete id="deleteBySkillId">
+        DELETE FROM skill_visibility_policy WHERE skill_id = #{skillId}
+    </delete>
+
+</mapper>

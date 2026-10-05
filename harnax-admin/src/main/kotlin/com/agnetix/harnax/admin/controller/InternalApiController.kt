@@ -1,11 +1,16 @@
 package com.agnetix.harnax.admin.controller
 
+import com.agnetix.harnax.admin.dto.SkillDraftSubmitRequest
+import com.agnetix.harnax.admin.dto.SkillUsageReportRequest
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.registrar.BuiltinToolAutoRegistrar
 import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.service.McpOAuthUserService
 import com.agnetix.harnax.admin.service.McpStdioPolicy
+import com.agnetix.harnax.admin.service.SkillDraftService
+import com.agnetix.harnax.admin.service.SkillUsageService
 import com.agnetix.harnax.admin.skill.SkillBindingResolver
+import com.agnetix.harnax.admin.skill.SkillVisibilityCodec
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.common.dto.ResultVo
@@ -17,6 +22,7 @@ import com.agnetix.harnax.entity.AgentToolBinding
 import com.agnetix.harnax.entity.Cli
 import com.agnetix.harnax.entity.Model
 import com.agnetix.harnax.entity.Skill
+import com.agnetix.harnax.entity.SkillVisibilityPolicy
 import com.agnetix.harnax.entity.Team
 import com.agnetix.harnax.entity.dto.AgentCliSetDto
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
@@ -76,6 +82,8 @@ class InternalApiController(
     private val teamSkillBindingMapper: TeamSkillBindingMapper,
     private val builtinToolAutoRegistrar: BuiltinToolAutoRegistrar,
     private val skillBindingResolver: SkillBindingResolver,
+    private val skillUsageService: SkillUsageService,
+    private val skillDraftService: SkillDraftService,
 ) {
 
     private val log = LoggerFactory.getLogger(InternalApiController::class.java)
@@ -271,6 +279,43 @@ class InternalApiController(
         }
     }
 
+    /**
+     * Stores what one runtime session loaded and used, for the skill analytics page (design section 3.4).
+     *
+     * The answer is a count, not a verdict: this runs inside a live conversation, so every way it can fail
+     * — an id this admin has no session for, a skill that no longer exists, a tenant that cannot see the
+     * skill it claims to have used — is logged and dropped rather than thrown back at the caller. A
+     * runtime that cannot record telemetry still has the conversation; a runtime that surfaces this error
+     * would turn an analytics table into a dependency of inference.
+     */
+    @PostMapping("/skills/usage")
+    fun reportSkillUsage(@RequestBody request: SkillUsageReportRequest): ResultVo<Int> = try {
+        ResultVo.success(skillUsageService.report(request))
+    } catch (e: Exception) {
+        log.error("Skill usage intake failed for session {}", request.sessionId, e)
+        ResultVo.error(500, "Skill usage intake failed")
+    }
+
+    /**
+     * Queues a skill an agent wrote during one session, for a human to decide on (design section 6.1).
+     *
+     * The opposite error policy from [reportSkillUsage] right above, on purpose. Usage is a counter, so a
+     * runtime must never learn about its failures; this is a draft that only exists if a reviewer is told
+     * about it, and a gate that swallowed the refusal would leave the model believing its proposal is
+     * waiting for approval when no queue holds it. So the reason comes back, and the gate turns it into a
+     * rejection the model reads.
+     */
+    @PostMapping("/skills/drafts")
+    fun submitSkillDraft(@RequestBody request: SkillDraftSubmitRequest): ResultVo<Long> = try {
+        ResultVo.success(skillDraftService.submit(request))
+    } catch (e: BizException) {
+        log.warn("Draft intake refused for session {}: {}", request.sessionId, e.message)
+        ResultVo.error(e.code, e.message ?: "Skill draft intake failed")
+    } catch (e: Exception) {
+        log.error("Skill draft intake failed for session {}", request.sessionId, e)
+        ResultVo.error(500, "Skill draft intake failed")
+    }
+
     // ========================================
     // Agent Spec (unified, for agent-service)
     // ========================================
@@ -394,6 +439,7 @@ class InternalApiController(
             enableSearch = session.enableSearch,
             enablePlan = session.enablePlan,
             permissionMode = session.permissionMode,
+            skillSelfWrite = agent.skillSelfWrite,
         )
     }
 
@@ -417,6 +463,7 @@ class InternalApiController(
             enableThink = channel.enableThink,
             enableSearch = channel.enableSearch,
             enablePlan = channel.enablePlan,
+            skillSelfWrite = agent.skillSelfWrite,
         )
     }
 
@@ -453,6 +500,7 @@ class InternalApiController(
             model = model,
             agentTenantId = agent.tenantId,
             permissionMode = "BYPASS",
+            skillSelfWrite = agent.skillSelfWrite,
         )
     }
 
@@ -549,6 +597,7 @@ class InternalApiController(
             enableSearch = enableSearch,
             enablePlan = enablePlan,
             permissionMode = permissionMode,
+            skillSelfWrite = agent.skillSelfWrite,
         )
     }
 
@@ -614,6 +663,9 @@ class InternalApiController(
         enableThink: Int = 0,
         enableSearch: Int = 0,
         enablePlan: Int = 0,
+        // Left at 0 for a team's lead: it has no workspace of its own, so there is nowhere to stage a draft
+        // even if a row asked for it.
+        skillSelfWrite: Int = 0,
         permissionMode: String = "DEFAULT",
         toolBindings: List<AgentToolBinding> = toolBindingMapper.selectByAgentId(agentId),
         mcpBindings: List<AgentMcpBinding> = mcpBindingMapper.selectByAgentId(agentId),
@@ -761,6 +813,9 @@ class InternalApiController(
         // has no tenant condition and an internal call carries no trustworthy tenant header, so a
         // cross-tenant binding row would otherwise hand over another tenant's SKILL.md and resources.
         val skillById = skillBindingResolver.deliverable(skillIdsToDeliver, agentTenantId).associateBy { it.id }
+        // One batched read for the whole delivery, keyed by the ids that actually resolved: skills with no
+        // policy row are absent here, and absent means visible
+        val skillPolicies = skillBindingResolver.policiesOf(skillById.keys.toList())
 
         val skillDetails = skillIdsToDeliver.mapNotNull { skillId ->
             val skill = skillById[skillId]
@@ -776,7 +831,7 @@ class InternalApiController(
                 log.info("Skill '{}' (id={}) is disabled, skipping", skill.name, skill.id)
                 null
             } else {
-                skillDetail(skill)
+                skillDetail(skill, skillPolicies[skill.id])
             }
         }
         // ── CLI bindings (full detail DTOs, each carrying the skill it ships) ──
@@ -790,6 +845,7 @@ class InternalApiController(
             // before the save-time guard existed must not carry another tenant's SKILL.md inside the
             // package that ships it.
             val cliSkillById = skillBindingResolver.deliverable(skillIds, agentTenantId).associateBy { it.id }
+            val cliSkillPolicies = skillBindingResolver.policiesOf(cliSkillById.keys.toList())
             cliBindings.mapNotNull { binding ->
                 val cli = clisById[binding.cliId]
                 if (cli == null) {
@@ -822,7 +878,7 @@ class InternalApiController(
                                     log.info("Skill '{}' (id={}) of CLI '{}' is disabled, skipping it", skill.name, skill.id, cli.name)
                                     null
                                 }
-                                else -> skillDetail(skill)
+                                else -> skillDetail(skill, cliSkillPolicies[skill.id])
                             }
                         },
                     )
@@ -867,6 +923,7 @@ class InternalApiController(
             enableThink = enableThink,
             enableSearch = enableSearch,
             enablePlan = enablePlan,
+            skillSelfWrite = skillSelfWrite,
             permissionMode = permissionMode,
             modelSupportInternet = model?.supportInternet ?: 0,
             modelSupportReasoning = model?.supportReasoning ?: 0,
@@ -970,13 +1027,19 @@ class InternalApiController(
         return perAgent + defaults
     }
 
-    private fun skillDetail(skill: Skill): SkillDetailDto = SkillDetailDto(
+    private fun skillDetail(
+        skill: Skill,
+        policy: SkillVisibilityPolicy?,
+    ): SkillDetailDto = SkillDetailDto(
         id = skill.id,
         name = skill.name,
         description = skill.description,
         skillmd = skill.skillmd,
         resources = skill.resources,
         version = skill.version,
+        // Null stays off the wire and the runtime reads its absence as visible; the policy has to travel
+        // with the spec because the filter runs per conversation, where no admin call can be made
+        visibility = policy?.let { SkillVisibilityCodec.toDto(it) },
     )
 
     /**

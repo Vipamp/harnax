@@ -1,6 +1,8 @@
 package com.agnetix.harnax.harness
 
 import com.agnetix.harnax.harness.permission.DangerousInputCheckingTool
+import com.agnetix.harnax.harness.skill.SkillDraftStaging
+import com.agnetix.harnax.harness.skill.SkillDraftSubmitMiddleware
 import com.agnetix.harnax.tools.sdk.ToolBox
 import io.agentscope.core.middleware.MiddlewareBase
 import io.agentscope.core.model.ChatModelBase
@@ -19,6 +21,9 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec
 import io.agentscope.harness.agent.memory.MemoryConfig
+import io.agentscope.harness.agent.skill.curator.SkillPromotionGate
+import io.agentscope.harness.agent.skill.curator.SkillVisibilityFilter
+import io.agentscope.harness.agent.tool.SkillManageConfig
 import org.slf4j.LoggerFactory
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
@@ -42,6 +47,10 @@ class HarnessAgentBuilder {
     private val builder: HarnessAgent.Builder = HarnessAgent.builder()
     private var toolkit: Toolkit = Toolkit()
     private val skills: MutableList<AgentSkill> = mutableListOf()
+    private var skillsReadListener: ((List<AgentSkill>) -> Unit)? = null
+    private var visibilityFilter: SkillVisibilityFilter? = null
+    private var promotionGate: SkillPromotionGate? = null
+    private var skillStaging: SkillDraftStaging? = null
 
     private val log = LoggerFactory.getLogger(HarnessAgentBuilder::class.java)
 
@@ -110,6 +119,53 @@ class HarnessAgentBuilder {
             skills.removeAt(shadowed)
         }
         this.skills.add(agentSkill)
+    }
+
+    /**
+     * Receives the delivered skills each time the harness reads them out of the repository.
+     *
+     * That read is where Admin's choice for this session becomes the model's context, so it is the one place
+     * a load count can be taken. Two consequences for the listener: the harness merges its repositories once
+     * per system-prompt composition — once per model call inside a single answer — so it must throttle or it
+     * counts prompt renders; and it must not throw, because the harness swallows an exception from a
+     * repository and skips that repository, which would drop every delivered skill from the prompt over a
+     * lost counter.
+     */
+    fun onSkillsRead(listener: (List<AgentSkill>) -> Unit): HarnessAgentBuilder = apply {
+        this.skillsReadListener = listener
+    }
+
+    /**
+     * Restricts which of the delivered skills reach the model on this session's calls.
+     *
+     * Upstream pairs this filter with the promotion gate in one setter, so the two are handed over together in
+     * [build] whichever of them is set; a null gate there is what keeps the filter usable on an agent that may
+     * not write skills.
+     */
+    fun skillVisibilityFilter(filter: SkillVisibilityFilter?): HarnessAgentBuilder = apply {
+        this.visibilityFilter = filter
+    }
+
+    /**
+     * Lets this agent author skills of its own, staged for a human to review.
+     *
+     * The grant has to be decided here, at assembly, and not filtered afterwards: `enableSkillManageTool`
+     * registers `skill_manage` and `propose_skill` into the framework's own toolkit, which runs past Harnax's
+     * tool configuration filter. So an agent that was not granted self-write simply never sees the tools.
+     *
+     * Two directories are redirected with it. Upstream's defaults are `skills/_drafts` and `skills`, and the
+     * writable repository it installs for the main directory joins the model's load sources — while `skills`
+     * is exactly where [com.agnetix.harnax.harness.skill.SandboxSkillProjector] writes the skills Admin
+     * delivered. [staging] therefore points both halves at their own tree, and nothing on this path ever moves
+     * a draft into it: [gate] files the draft with Admin and defers, which leaves the workspace directory as
+     * scratch space and Admin's row as the only thing a reviewer can act on.
+     */
+    fun skillSelfWrite(
+        staging: SkillDraftStaging,
+        gate: SkillPromotionGate,
+    ): HarnessAgentBuilder = apply {
+        this.skillStaging = staging
+        this.promotionGate = gate
     }
 
     /**
@@ -191,13 +247,38 @@ class HarnessAgentBuilder {
         builder.toolkit(toolkit)
         // The default workspace repository is merged on top of the ones installed below and wins on a
         // name clash, so an agent could override a skill the operator configured by writing a
-        // SKILL.md with the same name into its own sandbox. Admin is the only skill source here —
-        // `enableSkillManageTool` is never called and no skill directory is provisioned.
+        // SKILL.md with the same name into its own sandbox. Admin is the only skill source here. Where a
+        // self-write agent does get a writable repository, the directories below move it out of `skills`.
         builder.disableDefaultWorkspaceSkills()
         if (skills.isNotEmpty()) {
-            builder.skillRepository(InMemorySkillRepository(skills.toList()))
+            builder.skillRepository(InMemorySkillRepository(skills.toList(), skillsReadListener))
         }
-        return builder.build()
+        val staging = skillStaging
+        if (staging != null) {
+            // autoPromote stays off, so the only way an agent's own skill leaves the staging directory is the
+            // promotion pipeline — and securityScan stays on, because that scan is what the reviewer's
+            // verdict column is computed from; turning it off would leave the queue judging on nothing.
+            builder.enableSkillManageTool(
+                SkillManageConfig.builder()
+                    .autoPromote(false)
+                    .securityScan(true)
+                    .draftsDir(staging.draftsDir)
+                    .mainDir(staging.promotedDir)
+                    .build(),
+            )
+            builder.middleware(SkillDraftSubmitMiddleware(staging))
+        }
+        // Outside the skills block on purpose: a filter set with no skills delivered is a valid state and
+        // the harness installs its middleware from the composed repository list, not from this call
+        val gate = promotionGate
+        if (gate != null || visibilityFilter != null) {
+            builder.enableSkillPromotionGate(gate, visibilityFilter)
+        }
+        val agent = builder.build()
+        // Last, because everything the staging stands for — the workspace filesystem, the agent the
+        // promotion pipeline runs on — only exists once the framework has built it.
+        staging?.bind(agent)
+        return agent
     }
 
     fun registerAgentTool(resolvedTool: AgentTool): HarnessAgentBuilder {
@@ -235,15 +316,21 @@ class HarnessAgentBuilder {
 
     /**
      * Simple in-memory [AgentSkillRepository] that wraps a pre-loaded list of [AgentSkill]s.
+     *
+     * @param onRead invoked with the delivered list on every [getAllSkills] read; see [onSkillsRead]
      */
     private class InMemorySkillRepository(
         private val skills: List<AgentSkill>,
+        private val onRead: ((List<AgentSkill>) -> Unit)? = null,
     ) : AgentSkillRepository {
         override fun getSkill(name: String): AgentSkill = skills.first { it.name == name }
 
         override fun getAllSkillNames(): List<String> = skills.map { it.name }
 
-        override fun getAllSkills(): List<AgentSkill> = skills
+        override fun getAllSkills(): List<AgentSkill> {
+            onRead?.invoke(skills)
+            return skills
+        }
 
         override fun save(skills: List<AgentSkill>, force: Boolean): Boolean = false
 

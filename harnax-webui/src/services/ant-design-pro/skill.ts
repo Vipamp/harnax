@@ -30,6 +30,22 @@ export async function getSkillById(id: number, options?: { [key: string]: any })
   });
 }
 
+/**
+ * 技能审核轨迹 GET /api/admin/skills/${skillId}/review-history
+ *
+ * 后端对草稿与技能序列化同一个 ReviewHistoryItem，所以条目形状沿用草稿的类型。
+ * 读不到的技能答 404，而不是空的轨迹 —— 空表是「没人记过」，404 是「这条技能你不该看到」。
+ */
+export async function getSkillReviewHistory(skillId: number, options?: { [key: string]: any }) {
+  return request<API.Result<API.SkillDraftHistoryItem[]>>(
+    `/api/admin/skills/${skillId}/review-history`,
+    {
+      method: 'GET',
+      ...(options || {}),
+    },
+  );
+}
+
 /** 切换技能状态 PUT /api/skills/toggle/${skillId} */
 export async function toggleSkillStatus(
   skillId: number,
@@ -41,6 +57,30 @@ export async function toggleSkillStatus(
     params: {
       status,
     },
+    ...(options || {}),
+  });
+}
+
+/** 读取技能可见性策略 GET /api/admin/skill-visibility/${skillId} */
+export async function getSkillVisibility(skillId: number, options?: { [key: string]: any }) {
+  return request(`/api/admin/skill-visibility/${skillId}`, {
+    method: 'GET',
+    ...(options || {}),
+  });
+}
+
+/** 设置技能可见性策略 PUT /api/admin/skill-visibility/${skillId} */
+export async function updateSkillVisibility(
+  skillId: number,
+  data: API.SkillVisibilityUpdateRequest,
+  options?: { [key: string]: any },
+) {
+  return request(`/api/admin/skill-visibility/${skillId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    data: data,
     ...(options || {}),
   });
 }

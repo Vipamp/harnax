@@ -4,6 +4,8 @@ import com.agnetix.harnax.admin.registrar.BuiltinToolAutoRegistrar
 import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.service.McpOAuthUserService
 import com.agnetix.harnax.admin.service.McpStdioPolicy
+import com.agnetix.harnax.admin.service.SkillDraftService
+import com.agnetix.harnax.admin.service.SkillUsageService
 import com.agnetix.harnax.admin.skill.SkillBindingResolver
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.admin.util.SecretFieldEncryptor
@@ -138,6 +140,14 @@ class InternalApiTaskSpecTest {
      */
     @Mock
     private lateinit var skillBindingResolver: SkillBindingResolver
+
+    /** Stands in for the usage intake endpoint's collaborator; these cases deliver a spec, they report no event. */
+    @Mock
+    private lateinit var skillUsageService: SkillUsageService
+
+    /** Same reason for the draft intake endpoint: a spec delivery files no draft. */
+    @Mock
+    private lateinit var skillDraftService: SkillDraftService
 
     @InjectMocks
     private lateinit var controller: InternalApiController

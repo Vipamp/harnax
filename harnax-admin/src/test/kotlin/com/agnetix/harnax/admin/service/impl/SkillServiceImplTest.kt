@@ -2,12 +2,15 @@ package com.agnetix.harnax.admin.service.impl
 
 import com.agnetix.harnax.admin.constant.BuiltinRepository
 import com.agnetix.harnax.admin.context.TenantContext
+import com.agnetix.harnax.admin.dto.ReviewHistoryItem
 import com.agnetix.harnax.admin.dto.SkillCreateRequest
 import com.agnetix.harnax.admin.dto.SkillUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.service.SkillRepositoryService
+import com.agnetix.harnax.admin.skill.SkillBindingResolver
 import com.agnetix.harnax.admin.skill.SkillInstaller
+import com.agnetix.harnax.admin.skill.SkillReviewRecorder
 import com.agnetix.harnax.admin.skill.SkillSyncRecorder
 import com.agnetix.harnax.admin.skill.loader.SkillLoadFailure
 import com.agnetix.harnax.admin.skill.loader.SkillLoadResult
@@ -17,12 +20,16 @@ import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.entity.Cli
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.SkillRepository
+import com.agnetix.harnax.entity.SkillReviewLog
+import com.agnetix.harnax.entity.SkillVisibilityPolicy
 import com.agnetix.harnax.entity.dto.SkillAgentBindingCount
 import com.agnetix.harnax.entity.dto.SkillTeamBindingCount
 import com.agnetix.harnax.mapper.AgentSkillBindingMapper
 import com.agnetix.harnax.mapper.CliMapper
 import com.agnetix.harnax.mapper.SkillMapper
 import com.agnetix.harnax.mapper.SkillRepositoryMapper
+import com.agnetix.harnax.mapper.SkillReviewLogMapper
+import com.agnetix.harnax.mapper.SkillVisibilityPolicyMapper
 import com.agnetix.harnax.mapper.TeamSkillBindingMapper
 import io.agentscope.core.skill.AgentSkill
 import org.junit.jupiter.api.AfterEach
@@ -91,6 +98,18 @@ class SkillServiceImplTest {
     /** The installer and the recorder write the repository row; one mock keeps both observable. */
     @Mock
     private lateinit var syncRepositoryMapper: SkillRepositoryMapper
+
+    /** Every enable/disable/delete trail lands here, so the assertions read the rows themselves. */
+    @Mock
+    private lateinit var skillReviewLogMapper: SkillReviewLogMapper
+
+    /** The rollout policy of a skill goes with the skill, so a delete has to clear this too. */
+    @Mock
+    private lateinit var skillVisibilityPolicyMapper: SkillVisibilityPolicyMapper
+
+    /** Stands for the one batch read behind the list's rollout column; unstubbed means no skill is restricted. */
+    @Mock
+    private lateinit var skillBindingResolver: SkillBindingResolver
 
     @Mock
     private lateinit var messageUtil: MessageUtil
@@ -197,6 +216,11 @@ class SkillServiceImplTest {
         // describe what actually gets written
         skillInstaller = createInstaller(),
         skillSyncRecorder = SkillSyncRecorder(syncRepositoryMapper),
+        // The real recorder over the mocked log mapper: the assertions below are about which rows the
+        // service asked for, which a mocked recorder would answer with a call and no content
+        skillReviewRecorder = SkillReviewRecorder(skillReviewLogMapper, jwtUtil),
+        skillVisibilityPolicyMapper = skillVisibilityPolicyMapper,
+        skillBindingResolver = skillBindingResolver,
         localTmpDir = "/tmp/harnax-skill-test",
         messageUtil = messageUtil,
     )
@@ -334,6 +358,114 @@ class SkillServiceImplTest {
 
             // Then
             assertEquals("cli-skill", result?.name)
+        }
+    }
+
+    @Nested
+    @DisplayName("Review History Tests")
+    inner class ReviewHistoryTests {
+
+        private val trailTime: LocalDateTime = LocalDateTime.of(2026, 9, 30, 10, 0)
+
+        private fun logRow(
+            action: String,
+            actor: String,
+            subjectId: Long = 1L,
+            detail: String? = null,
+        ): SkillReviewLog = SkillReviewLog().apply {
+            subject = SkillReviewLog.SUBJECT_SKILL
+            this.subjectId = subjectId
+            this.action = action
+            this.actor = actor
+            this.detail = detail
+            createTime = trailTime
+        }
+
+        @Test
+        @DisplayName("reviewHistory - Return the trail newest first with the columns callers read")
+        fun `reviewHistory should map the recorded trail in the order the log gives it`() {
+            // Given - the log mapper answers ORDER BY id DESC, so the stub is in that order too
+            TenantContext.setTenantId(1L)
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillReviewLogMapper.selectBySubject(1L, SkillReviewLog.SUBJECT_SKILL, 1L)).thenReturn(
+                listOf(
+                    logRow(SkillReviewLog.ACTION_APPROVE, "admin", detail = "{\"findings\":[]}"),
+                    logRow(SkillReviewLog.ACTION_ENABLE, SkillReviewLog.ACTOR_SYSTEM),
+                ),
+            )
+
+            // When
+            val history = createService().reviewHistory(1L)
+
+            // Then
+            assertEquals(
+                listOf(
+                    ReviewHistoryItem(
+                        action = SkillReviewLog.ACTION_APPROVE,
+                        actor = "admin",
+                        detail = "{\"findings\":[]}",
+                        createTime = trailTime,
+                    ),
+                    ReviewHistoryItem(
+                        action = SkillReviewLog.ACTION_ENABLE,
+                        actor = SkillReviewLog.ACTOR_SYSTEM,
+                        createTime = trailTime,
+                    ),
+                ),
+                history,
+            )
+        }
+
+        @Test
+        @DisplayName("reviewHistory - Read the log under the skill's own tenant")
+        fun `reviewHistory should read the trail by the row tenant rather than the request tenant`() {
+            // Given - a builtin skill seen from another workspace is readable, and its rows live under
+            // the tenant stamped on them. Stubbed only for tenant 1: had this read asked for the
+            // request's tenant instead, the unstubbed lookup would answer empty and the assertion below
+            // would fail rather than quietly pass.
+            val builtinSkill = Skill().apply {
+                id = 7L
+                tenantId = 1L
+                name = "cli-skill"
+                repositoryId = 10L
+            }
+            TenantContext.setTenantId(2L)
+            `when`(skillMapper.selectById(7L)).thenReturn(builtinSkill)
+            `when`(skillRepositoryService.getBuiltinRepository()).thenReturn(builtinRepo)
+            `when`(skillReviewLogMapper.selectBySubject(1L, SkillReviewLog.SUBJECT_SKILL, 7L)).thenReturn(
+                listOf(logRow(SkillReviewLog.ACTION_APPROVE, "admin", subjectId = 7L)),
+            )
+
+            // When
+            val history = createService().reviewHistory(7L)
+
+            // Then
+            assertEquals(listOf(SkillReviewLog.ACTION_APPROVE), history?.map { it.action })
+        }
+
+        @Test
+        @DisplayName("reviewHistory - Answer absent for a skill the caller may not read")
+        fun `reviewHistory should not read the log for another tenant skill`() {
+            // Given - a guessed id must not disclose who reviewed another workspace's skill
+            TenantContext.setTenantId(2L)
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillRepositoryService.getBuiltinRepository()).thenReturn(null)
+
+            // When & Then
+            assertNull(createService().reviewHistory(1L))
+            verify(skillReviewLogMapper, never()).selectBySubject(any(), any(), any())
+        }
+
+        @Test
+        @DisplayName("reviewHistory - Distinguish a skill with no trail from no skill")
+        fun `reviewHistory should return empty for a skill with nothing recorded`() {
+            // Given
+            TenantContext.setTenantId(1L)
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillReviewLogMapper.selectBySubject(1L, SkillReviewLog.SUBJECT_SKILL, 1L)).thenReturn(emptyList())
+
+            // When & Then - empty means the controller answers a 200 with nothing to show; null means 404
+            assertEquals(emptyList<ReviewHistoryItem>(), createService().reviewHistory(1L))
         }
     }
 
@@ -1713,6 +1845,73 @@ class SkillServiceImplTest {
             // Then
             assertTrue(result.isEmpty())
         }
+
+        /**
+         * A restricted skill has to look restricted in the list. A row that says nothing about a 20%
+         * rollout tells the operator the skill is open to everybody — the opposite of what the guard does,
+         * and the one mistake a rollout column can make. Answered from one read for the whole page, like
+         * the binding counts.
+         */
+        @Test
+        @DisplayName("convertToResponses - carries the stored rollout rule of each skill")
+        fun `convertToResponses carries the rollout rule and leaves an open skill unmarked`() {
+            val skill2 = Skill().apply {
+                id = 2L
+                name = "doc-writer"
+                repositoryId = 5L
+            }
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(skillBindingResolver.policiesOf(listOf(1L, 2L))).thenReturn(
+                mapOf(1L to policy(SkillVisibilityPolicy.MODE_CANARY).apply { canaryPct = 20 }),
+            )
+
+            val result = createService().convertToResponses(listOf(testSkill, skill2))
+
+            assertEquals(SkillVisibilityPolicy.MODE_CANARY, result[0].visibility?.mode)
+            assertEquals(20, result[0].visibility?.canaryPct)
+            assertNull(result[1].visibility, "no policy row means open, the same answer the runtime filter gives")
+            verify(skillBindingResolver).policiesOf(listOf(1L, 2L))
+        }
+
+        /**
+         * The ids themselves belong to whoever opens the form, not to every row of a page: an allow-list of
+         * two hundred users repeated twenty times per page is a list page that cannot load.
+         */
+        @Test
+        @DisplayName("convertToResponses - answers an allow-list with a count")
+        fun `convertToResponses answers an allow-list with a count`() {
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(skillBindingResolver.policiesOf(listOf(1L)))
+                .thenReturn(mapOf(1L to policy(SkillVisibilityPolicy.MODE_ALLOW_LIST).apply { userIds = "[42,43]" }))
+
+            val visibility = createService().convertToResponses(listOf(testSkill)).single().visibility
+
+            assertEquals(SkillVisibilityPolicy.MODE_ALLOW_LIST, visibility?.mode)
+            assertEquals(2, visibility?.userCount)
+        }
+
+        /**
+         * The row decodes through the same codec the delivered spec uses. Shown the raw column instead,
+         * a stored `staging, canary ` would read as one environment named with a trailing space, and the
+         * list would disagree with the runtime about a rule that gates real traffic.
+         */
+        @Test
+        @DisplayName("convertToResponses - decodes environment labels")
+        fun `convertToResponses decodes the environment labels`() {
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(skillBindingResolver.policiesOf(listOf(1L)))
+                .thenReturn(mapOf(1L to policy(SkillVisibilityPolicy.MODE_ENV).apply { environments = "staging, canary " }))
+
+            val visibility = createService().convertToResponses(listOf(testSkill)).single().visibility
+
+            assertEquals(listOf("staging", "canary"), visibility?.environments)
+        }
+
+        private fun policy(mode: String): SkillVisibilityPolicy = SkillVisibilityPolicy().apply {
+            skillId = 1L
+            tenantId = 1L
+            this.mode = mode
+        }
     }
 
     /**
@@ -1901,6 +2100,108 @@ class SkillServiceImplTest {
             verify(skillMapper).insert(captor.capture())
             // A skill written into tenant 1 is one the list above never shows again
             assertEquals(3L, captor.firstValue.tenantId)
+        }
+    }
+
+    @Nested
+    @DisplayName("Review trail")
+    inner class ReviewTrailTests {
+
+        private fun capturedLog(): SkillReviewLog {
+            val captor = argumentCaptor<SkillReviewLog>()
+            verify(skillReviewLogMapper).insert(captor.capture())
+            return captor.firstValue
+        }
+
+        @Test
+        @DisplayName("toggleSkillStatus - a disable names the person and the skill's own tenant")
+        fun `toggleSkillStatus should record a disable with the row tenant and the logged-in actor`() {
+            // The tenant comes off the skill, not off the request: a CLI call carries no X-Tenant-ID, and an
+            // audit row filed under the default tenant is a history another tenant never sees.
+            val otherTenantSkill = testSkill.apply { tenantId = 3L }
+            `when`(skillMapper.selectById(1L)).thenReturn(otherTenantSkill)
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(skillMapper.updateStatus(1L, 0)).thenReturn(1)
+
+            assertTrue(createService().toggleSkillStatus(1L, 0))
+
+            val entry = capturedLog()
+            assertEquals(SkillReviewLog.ACTION_DISABLE, entry.action)
+            assertEquals(SkillReviewLog.SUBJECT_SKILL, entry.subject)
+            assertEquals(1L, entry.subjectId)
+            assertEquals(3L, entry.tenantId)
+            assertEquals("admin", entry.actor)
+            assertTrue(entry.detail!!.contains("code-review"))
+        }
+
+        @Test
+        @DisplayName("toggleSkillStatus - an enable records ENABLE")
+        fun `toggleSkillStatus should record an enable`() {
+            val disabled = testSkill.apply { status = 0 }
+            `when`(skillMapper.selectById(1L)).thenReturn(disabled)
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(skillMapper.updateStatus(1L, 1)).thenReturn(1)
+
+            assertTrue(createService().toggleSkillStatus(1L, 1))
+
+            assertEquals(SkillReviewLog.ACTION_ENABLE, capturedLog().action)
+        }
+
+        @Test
+        @DisplayName("updateSkill - a status change trails the same as the toggle does")
+        fun `updateSkill should record a status change it routes to the dedicated update`() {
+            // Two entry points reach the one column. Covering only the toggle would leave every CLI
+            // `skill update --status 0` out of the history the review page reads.
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(skillMapper.updateStatus(1L, 0)).thenReturn(1)
+            `when`(skillMapper.updateById(any())).thenReturn(1)
+
+            assertTrue(createService().updateSkill(1L, SkillUpdateRequest(status = 0)))
+
+            assertEquals(SkillReviewLog.ACTION_DISABLE, capturedLog().action)
+        }
+
+        @Test
+        @DisplayName("updateSkill - an edit that leaves status alone writes no trail")
+        fun `updateSkill should not trail an edit that changed no status`() {
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(skillMapper.updateById(any())).thenReturn(1)
+
+            assertTrue(createService().updateSkill(1L, SkillUpdateRequest(description = "Only a description")))
+
+            verify(skillReviewLogMapper, never()).insert(any())
+        }
+
+        @Test
+        @DisplayName("deleteSkill - the trail outlives the row because it carries the name")
+        fun `deleteSkill should record the delete with the name of the row it removed`() {
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(skillMapper.deleteById(1L)).thenReturn(1)
+
+            assertTrue(createService().deleteSkill(1L))
+
+            val entry = capturedLog()
+            assertEquals(SkillReviewLog.ACTION_DELETE, entry.action)
+            // After this the subject id resolves to nothing, so the row has to be readable on its own
+            assertTrue(entry.detail!!.contains("code-review"))
+            assertTrue(entry.detail!!.contains("5"))
+        }
+
+        @Test
+        @DisplayName("a refused transition leaves no trail")
+        fun `a refused disable should write nothing to the review trail`() {
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(agentSkillBindingMapper.selectAgentBindingCounts(listOf(1L))).thenReturn(listOf(agentBindingCount(1L, 2)))
+
+            assertThrows<BizException> { createService().toggleSkillStatus(1L, 0) }
+
+            // An audit row is a claim that something happened; a refusal is not
+            verify(skillMapper, never()).updateStatus(anyLong(), anyInt())
+            verify(skillReviewLogMapper, never()).insert(any())
         }
     }
 }

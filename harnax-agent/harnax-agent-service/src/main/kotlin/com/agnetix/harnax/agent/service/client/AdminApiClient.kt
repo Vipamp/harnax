@@ -1,5 +1,7 @@
 package com.agnetix.harnax.agent.service.client
 
+import com.agnetix.harnax.agent.adaptor.SkillDraftIntake
+import com.agnetix.harnax.agent.adaptor.SkillDraftProposal
 import com.agnetix.harnax.agent.adaptor.mcp.McpAuthRequiredException
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
@@ -232,6 +234,104 @@ class AdminApiClient(
             log.warn("[Agent←Admin] Update permission mode failed: sessionId={}, mode={}, msg={}", sessionId, mode, response?.message)
         }
         return success
+    }
+
+    /**
+     * File the skills this session had loaded into its context (design section 3.4).
+     *
+     * The session id is what decides the tenant: admin resolves it from that id rather than from anything
+     * the runtime claims, and stamps receipt time itself. The user id is reported because the runtime now
+     * knows it — the router authenticated the end user behind this run — and admin keeps the row with an
+     * empty user column if the id does not belong to the tenant the session resolved to. VIEW is the one
+     * event this caller can assert — the runtime knows a skill entered the context, not what the model did
+     * with it.
+     *
+     * @param sessionId the runtime session that read the skills
+     * @param skillIds Admin skill ids, never names
+     * @param userId the end user this run is attributed to, null when the conversation has none
+     * @return true if admin accepted the batch
+     */
+    fun reportSkillUsage(
+        sessionId: String,
+        skillIds: List<Long>,
+        userId: Long?,
+    ): Boolean {
+        val url = "$adminUrl/api/admin/internal/skills/usage"
+        log.debug("[Agent→Admin] POST {} - reporting {} VIEW event(s)", url, skillIds.size)
+
+        val body = mapOf(
+            "sessionId" to sessionId,
+            "userId" to userId,
+            "events" to skillIds.map { mapOf("skillId" to it, "event" to "VIEW") },
+        )
+        val responseType = object : ParameterizedTypeReference<ResultVo<Int>>() {}
+        val response = try {
+            restTemplate.exchange(url, HttpMethod.POST, HttpEntity(body), responseType).body
+        } catch (e: Exception) {
+            log.warn("[Agent←Admin] Failed to report skill usage: sessionId={}, {} skill(s): {}", sessionId, skillIds.size, e.message)
+            return false
+        }
+
+        val success = response != null && response.code == 200
+        if (!success) {
+            log.warn("[Agent←Admin] Report skill usage failed: sessionId={}, msg={}", sessionId, response?.message)
+        }
+        return success
+    }
+
+    /**
+     * File one agent-authored skill draft with Admin's review queue.
+     *
+     * The session id decides the tenant, exactly as it does for [reportSkillUsage]: admin resolves the owner
+     * from that id and refuses anything it cannot place, so a runtime cannot queue a draft on somebody
+     * else's queue by naming a skill it likes.
+     *
+     * Answers with three outcomes because the caller has to pick between two opposite mistakes. A draft the
+     * queue rejected for its content is finished — telling the model "deferred" would leave an agent
+     * proposing a skill nobody will ever install. A draft that never reached the queue is not, and calling
+     * that refused would delete a proposal over one network blip. Admin's business errors arrive as HTTP 200
+     * with an envelope code, so the code is what separates the two, not the status.
+     */
+    fun submitSkillDraft(proposal: SkillDraftProposal): SkillDraftIntake {
+        val url = "$adminUrl/api/admin/internal/skills/drafts"
+        log.debug("[Agent→Admin] POST {} - queuing draft skill '{}'", url, proposal.name)
+
+        val body = mapOf(
+            "sessionId" to proposal.sessionId,
+            "name" to proposal.name,
+            "description" to proposal.description,
+            "skillmd" to proposal.skillmd,
+            "resources" to proposal.resources,
+            "scanVerdict" to proposal.scanVerdict,
+            "scanFindings" to proposal.scanFindings,
+        )
+        val responseType = object : ParameterizedTypeReference<ResultVo<Long>>() {}
+        val response = try {
+            restTemplate.exchange(url, HttpMethod.POST, HttpEntity(body), responseType).body
+        } catch (e: Exception) {
+            log.warn("[Agent←Admin] Failed to queue draft '{}': sessionId={}, {}", proposal.name, proposal.sessionId, e.message)
+            return SkillDraftIntake.Unavailable(e.message ?: "admin internal API did not answer")
+        }
+
+        val code = response?.code
+        val draftId = response?.data
+        return when {
+            code == 200 && draftId != null && draftId > 0L -> SkillDraftIntake.Queued(draftId)
+
+            // 400 is a validation refusal, 404 a session admin cannot place in a tenant. Both answer the
+            // same way on retry, which is the definition of a refusal rather than of an outage.
+            code == 400 || code == 404 -> {
+                val reason = response?.message ?: "draft rejected by admin"
+                log.warn("[Agent←Admin] Draft '{}' refused: sessionId={}, {}", proposal.name, proposal.sessionId, reason)
+                SkillDraftIntake.Refused(reason)
+            }
+
+            else -> {
+                val reason = if (code == null) "no response from admin" else "admin returned code $code: ${response?.message}"
+                log.warn("[Agent←Admin] Draft '{}' was not queued: sessionId={}, {}", proposal.name, proposal.sessionId, reason)
+                SkillDraftIntake.Unavailable(reason)
+            }
+        }
     }
 
     /**

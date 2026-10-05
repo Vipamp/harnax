@@ -425,7 +425,56 @@ message?: string;
     boundTeamCount?: number;
     isPublic?: number;
     creator?: string;
+    /** Provenance: human (configured here) or agent_promoted (an agent wrote it) */
+    origin?: string;
+    /** The session an agent proposed the skill in; null for a human skill */
+    originRef?: string;
     createTime?: string;
+    updateTime?: string;
+    /** Compact rollout state of this skill; absent means everybody may load it (same as mode ALL) */
+    visibility?: SkillVisibilitySummary;
+  };
+
+  /**
+   * @zh-CN 技能运行时可见性的列表侧摘要
+   */
+  export type SkillVisibilitySummary = {
+    /** ALL / CANARY / ALLOW_LIST / ENV */
+    mode: string;
+    /** Rollout percentage, when mode is CANARY */
+    canaryPct?: number;
+    /** How many users are allowed, when mode is ALLOW_LIST; the ids themselves come from the detail read */
+    userCount?: number;
+    /** Environment labels, when mode is ENV */
+    environments?: string[];
+  };
+
+  /**
+   * @zh-CN 技能可见性整条规则（PUT 提交全部字段，所选模式用不到的字段由服务端清空）
+   */
+  export type SkillVisibilityUpdateRequest = {
+    mode: string;
+    canaryPct?: number;
+    userIds?: number[];
+    environments?: string[];
+  };
+
+  /**
+   * @zh-CN 技能可见性策略详情（GET 返回，含可编辑标记与白名单用户姓名）
+   */
+  export type SkillVisibilityInfo = {
+    skillId?: number;
+    skillName?: string;
+    mode?: string;
+    canaryPct?: number;
+    userIds?: number[];
+    /** The allowed users with their usernames; a missing username is an account that no longer exists */
+    users?: { id: number; username?: string }[];
+    environments?: string[];
+    /** Whether this caller's tenant may write this policy */
+    editable?: boolean;
+    /** Tenant owning the skill, which is the tenant the allow-list has to pick members of */
+    tenantId?: number;
     updateTime?: string;
   };
 
@@ -472,6 +521,139 @@ message?: string;
    */
   export type SkillResponse = {
     records: SkillSyncItem[];
+  };
+
+  /**
+   * @zh-CN 单条技能在统计窗口内的用量（对应后端 SkillUsageSummaryResponse.Row）
+   */
+  export type SkillUsageRow = {
+    skillId: number;
+    name: string;
+    repositoryId: number;
+    repositoryName?: string;
+    status: number;
+    origin?: string;
+    viewCount: number;
+    useCount: number;
+    lastUsedAt?: string;
+  };
+
+  /**
+   * @zh-CN 技能用量汇总：零使用的技能也在 rows 里，这张页要回答的正是哪条从没被装载过
+   */
+  export type SkillUsageSummary = {
+    days: number;
+    since?: string;
+    totalSkills: number;
+    zeroUseCount: number;
+    totalViews: number;
+    totalUses: number;
+    rows: SkillUsageRow[];
+  };
+
+  /**
+   * @zh-CN 草稿队列可按的状态过滤。EXPIRED 是后端列上写着而没有任何代码写入的值，接口按它过滤直接拒。
+   */
+  export type SkillDraftStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+  /**
+   * @zh-CN 队列的一行：不带正文，正文只在详情里
+   */
+  export type SkillDraftRow = {
+    id: number;
+    name: string;
+    description?: string;
+    status: string;
+    scanVerdict?: string;
+    upstreamFindingCount: number;
+    sourceSessionId: string;
+    agentId?: number;
+    createTime?: string;
+    updateTime?: string;
+    reviewedBy?: string;
+    reviewedAt?: string;
+    rejectReason?: string;
+  };
+
+  /**
+   * @zh-CN admin 的 Page 序列化出的就是这四个字段，与 PageResult 的 size/current 形状不同
+   */
+  export type SkillDraftPage = {
+    pageNum: number;
+    pageSize: number;
+    total: number;
+    records: SkillDraftRow[];
+  };
+
+  /**
+   * @zh-CN 脚本预览：头几行、行数与 sha256，全部由服务端对落库字节现算
+   */
+  export type SkillDraftScript = {
+    relPath: string;
+    headPreview: string;
+    totalLines: number;
+    sha256: string;
+  };
+
+  /**
+   * @zh-CN 草稿状态变化的一条痕迹
+   */
+  export type SkillDraftHistoryItem = {
+    action: string;
+    actor: string;
+    detail?: string;
+    createTime?: string;
+  };
+
+  /**
+   * @zh-CN 单条草稿的全文。localFindings 是决定禁用与否的那一份，scanFindings 只用于展示
+   */
+  export type SkillDraftDetail = {
+    id: number;
+    name: string;
+    description?: string;
+    status: string;
+    skillmd: string;
+    resources?: Record<string, string>;
+    scripts?: SkillDraftScript[];
+    scanVerdict?: string;
+    scanFindings?: string[];
+    localFindings?: string[];
+    contentDigest: string;
+    sourceSessionId: string;
+    agentId?: number;
+    createTime?: string;
+    updateTime?: string;
+    reviewedBy?: string;
+    reviewedAt?: string;
+    rejectReason?: string;
+    history?: SkillDraftHistoryItem[];
+  };
+
+  export type SkillDraftApproveRequest = {
+    expectedDigest: string;
+    conflictResolution?: 'replace' | 'rename';
+    newName?: string;
+  };
+
+  export type SkillDraftRejectRequest = {
+    reason: string;
+  };
+
+  /**
+   * @zh-CN 审核动作的结果。审核人能据以再动作的拒绝随 200 信封回来，判据是 outcome 而不是状态码。
+   */
+  export type SkillDraftDecision = {
+    outcome: 'PROMOTED' | 'REJECTED' | 'DRAFT_CHANGED' | 'ALREADY_REVIEWED' | 'NAME_TAKEN';
+    skillId?: number;
+    skillStatus?: number;
+    promotedName?: string;
+    findings?: string[];
+    reason?: string;
+    currentDigest?: string;
+    reviewedBy?: string;
+    reviewedAt?: string;
+    rejectReason?: string;
   };
 
   /**
@@ -526,6 +708,8 @@ message?: string;
     owner?: string;
     status: number;
     isPublic?: number;
+    /** 0/1 — the agent may author skills in its own workspace; a human still has to approve them */
+    skillSelfWrite?: number;
     creator?: string;
     createTime?: string;
     updateTime?: string;
@@ -696,6 +880,7 @@ message?: string;
     owner?: string;
     status?: number;
     isPublic?: number;
+    skillSelfWrite?: number;
   };
 
   /**
@@ -712,6 +897,7 @@ message?: string;
     cliList?: { id?: number; envBindings?: EnvBinding[] }[];
     status?: number;
     isPublic?: number;
+    skillSelfWrite?: number;
   };
 
   /**

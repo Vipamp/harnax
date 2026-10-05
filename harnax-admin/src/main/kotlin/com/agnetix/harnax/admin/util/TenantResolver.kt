@@ -47,10 +47,19 @@ object TenantResolver {
      * object rather than a bean every service has to wire
      * @return the tenant the request acts within
      */
-    fun resolve(jwtUtil: JwtUtil): Long = TenantContext.getTenantId()
+    fun resolve(jwtUtil: JwtUtil): Long = resolveOrNull(jwtUtil) ?: defaultTenantId()
+
+    /**
+     * The same chain without its last step: null when nothing about this request names a workspace.
+     *
+     * A caller acting on rows nobody would miss can default to [DEFAULT_TENANT_ID]; a caller whose every
+     * statement gets read back as *theirs* has to refuse instead. A default is precisely the answer that
+     * lets one workspace's rows be decided from another without either being named, so the review queue
+     * asks here rather than at [resolve].
+     */
+    fun resolveOrNull(jwtUtil: JwtUtil): Long? = TenantContext.getTenantId()
         ?: tenantFromToken(jwtUtil)
         ?: tenantFromUserRecord()
-        ?: defaultTenantId()
 
     /**
      * The tenant the request's own token claims.

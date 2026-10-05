@@ -1,10 +1,13 @@
 package com.agnetix.harnax.admin.controller
 
+import com.agnetix.harnax.admin.dto.SkillDraftSubmitRequest
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.registrar.BuiltinToolAutoRegistrar
 import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.service.McpOAuthUserService
 import com.agnetix.harnax.admin.service.McpStdioPolicy
+import com.agnetix.harnax.admin.service.SkillDraftService
+import com.agnetix.harnax.admin.service.SkillUsageService
 import com.agnetix.harnax.admin.skill.SkillBindingResolver
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.admin.util.SecretFieldEncryptor
@@ -61,6 +64,7 @@ import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
+import org.mockito.kotlin.any
 import org.mockito.quality.Strictness
 
 /**
@@ -159,6 +163,14 @@ class InternalApiControllerTest {
 
     @Mock
     private lateinit var skillBindingResolver: SkillBindingResolver
+
+    /** Stands in for the usage intake endpoint's collaborator; these cases deliver a spec, they report no event. */
+    @Mock
+    private lateinit var skillUsageService: SkillUsageService
+
+    /** Stands in for the draft intake endpoint's own collaborator, exercised in its nested cases below. */
+    @Mock
+    private lateinit var skillDraftService: SkillDraftService
 
     @InjectMocks
     private lateinit var controller: InternalApiController
@@ -1788,6 +1800,50 @@ class InternalApiControllerTest {
 
             assertEquals(400, result.code)
             verifyNoInteractions(mcpOAuthUserService)
+        }
+    }
+
+    @Nested
+    @DisplayName("技能草稿入库接口")
+    inner class SubmitSkillDraftTests {
+
+        private fun request(sessionId: String = "web-42") = SkillDraftSubmitRequest(
+            sessionId = sessionId,
+            name = "invoice-fill",
+            skillmd = "# invoice-fill",
+        )
+
+        @Test
+        @DisplayName("submitSkillDraft - 入库成功时回队列行 id")
+        fun `submitSkillDraft should return the queue row the reviewer will open`() {
+            `when`(skillDraftService.submit(any())).thenReturn(77L)
+
+            val result = controller.submitSkillDraft(request())
+
+            assertTrue(result.isSuccess())
+            assertEquals(77L, result.data)
+        }
+
+        @Test
+        @DisplayName("submitSkillDraft - 拒绝时保留原因，运行侧靠它区分驳回与故障")
+        fun `submitSkillDraft should keep the refusal reason the gate has to report`() {
+            `when`(skillDraftService.submit(any())).thenThrow(BizException(404, "session web-42 is not in any tenant"))
+
+            val result = controller.submitSkillDraft(request())
+
+            assertEquals(404, result.code)
+            assertNotNull(result.message)
+            assertTrue(result.message!!.contains("web-42"), result.message)
+        }
+
+        @Test
+        @DisplayName("submitSkillDraft - 未预期故障压成 500，运行侧按可重试处理")
+        fun `submitSkillDraft should turn an unexpected fault into a retryable code`() {
+            `when`(skillDraftService.submit(any())).thenThrow(RuntimeException("db is down"))
+
+            val result = controller.submitSkillDraft(request())
+
+            assertEquals(500, result.code)
         }
     }
 }

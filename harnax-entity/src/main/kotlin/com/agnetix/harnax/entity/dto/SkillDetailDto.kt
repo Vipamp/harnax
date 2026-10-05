@@ -25,4 +25,11 @@ data class SkillDetailDto(
 
     @Schema(description = "Skill version")
     val version: String = "",
+
+    /**
+     * Runtime visibility policy, carried so the harness enforces it without asking admin again.
+     * Null means no row, which reads as visible to everyone; Jackson drops the key entirely.
+     */
+    @Schema(description = "Runtime visibility policy; absent means visible")
+    val visibility: SkillVisibilityDto? = null,
 )

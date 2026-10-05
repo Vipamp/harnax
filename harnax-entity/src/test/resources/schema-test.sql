@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS `agent` (
   `owner` varchar(100) DEFAULT NULL,
   `status` tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
   `is_public` tinyint DEFAULT '0' COMMENT 'Public visibility (0: Private, 1: Public)',
+  `skill_self_write` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Whether the agent may author skills itself (0: no, 1: yes)',
   `creator` varchar(100) DEFAULT NULL,
   `active` tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
   `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
@@ -483,10 +484,37 @@ CREATE TABLE IF NOT EXISTS `skill` (
   `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
   `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `active_name` varchar(100) GENERATED ALWAYS AS (if((`active` = 1),`name`,NULL)) VIRTUAL,
+  `origin` varchar(16) NOT NULL DEFAULT 'human' COMMENT 'Provenance: human / agent_promoted',
+  `origin_ref` varchar(64) DEFAULT NULL COMMENT 'Session the agent proposed this skill in, NULL for human skills',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_skill_repo_active_name` (`repository_id`,`active_name`),
   KEY `idx_tenant_id` (`tenant_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Skill table';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `skill_draft` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Draft ID',
+  `tenant_id` bigint NOT NULL COMMENT 'Tenant resolved server-side from the session, never taken from the request body',
+  `name` varchar(100) NOT NULL COMMENT 'Proposed skill name; same-name proposals may coexist, dedup happens at promotion',
+  `description` text COMMENT 'Proposed description',
+  `skillmd` mediumtext NOT NULL COMMENT 'Proposed SKILL.md body',
+  `resources` mediumtext COMMENT 'path -> content JSON, the same shape as skill.resources',
+  `script_previews` mediumtext COMMENT 'relPath / headPreview / totalLines / sha256 per script, from SkillCandidate.scriptFiles',
+  `scan_verdict` varchar(16) DEFAULT NULL COMMENT 'Upstream SkillSecurityScanner verdict: SAFE / CAUTION / DANGEROUS',
+  `scan_findings` mediumtext COMMENT 'Upstream scan findings as JSON; the promotion rescan goes to skill_review_log',
+  `source_session_id` varchar(64) NOT NULL COMMENT 'Session the agent proposed the skill in',
+  `agent_id` bigint DEFAULT NULL COMMENT 'Agent that proposed it, resolved from the session',
+  `status` varchar(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING / APPROVED / REJECTED / EXPIRED',
+  `reviewed_by` varchar(100) DEFAULT NULL COMMENT 'Reviewer username, once decided',
+  `reviewed_at` datetime DEFAULT NULL COMMENT 'Review time, once decided',
+  `reject_reason` varchar(512) DEFAULT NULL COMMENT 'Why a reviewer rejected it',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_skill_draft_tenant_status` (`tenant_id`,`status`),
+  KEY `idx_skill_draft_session` (`source_session_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Agent-proposed skills awaiting human review';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
@@ -517,6 +545,53 @@ CREATE TABLE IF NOT EXISTS `skill_repository` (
   KEY `idx_tenant_id` (`tenant_id`),
   KEY `idx_skill_repository_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Skill Repository table';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `skill_review_log` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Log ID',
+  `tenant_id` bigint NOT NULL COMMENT 'Tenant ID',
+  `subject` varchar(16) NOT NULL COMMENT 'What the row is about: SKILL / DRAFT',
+  `subject_id` bigint NOT NULL COMMENT 'Row id of the subject',
+  `actor` varchar(64) NOT NULL COMMENT 'Real operator: a sys_user username, or the sentinel agent / system',
+  `action` varchar(32) NOT NULL COMMENT 'PROPOSE / SCAN / APPROVE / REJECT / ENABLE / DISABLE / DELETE / VISIBILITY_CHANGE',
+  `detail` mediumtext COMMENT 'Scan findings, reject reason, policy before and after, as JSON',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_skill_review_log_subject` (`subject`,`subject_id`),
+  KEY `idx_skill_review_log_tenant_time` (`tenant_id`,`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Audit trail for skill-domain state changes';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `skill_usage` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Event ID',
+  `tenant_id` bigint NOT NULL COMMENT 'Tenant ID',
+  `skill_id` bigint NOT NULL COMMENT 'Skill ID; never keyed by name, which is only unique inside one repository',
+  `user_id` bigint DEFAULT NULL COMMENT 'Owning user id, NULL until the runtime carries one; never a sentinel',
+  `event` varchar(16) NOT NULL COMMENT 'VIEW=loaded into the context, USE=its instructions were executed',
+  `session_id` varchar(64) NOT NULL COMMENT 'Session that produced the event',
+  `occurred_at` datetime NOT NULL COMMENT 'Event time',
+  PRIMARY KEY (`id`),
+  KEY `idx_skill_usage_skill_time` (`skill_id`,`occurred_at`),
+  KEY `idx_skill_usage_tenant_skill` (`tenant_id`,`skill_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Skill load and use stream';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `skill_visibility_policy` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Policy ID',
+  `skill_id` bigint NOT NULL COMMENT 'Skill the policy restricts, one row per skill',
+  `tenant_id` bigint NOT NULL COMMENT 'Tenant owning that skill',
+  `mode` varchar(16) NOT NULL COMMENT 'ALL / CANARY / ALLOW_LIST / ENV',
+  `canary_pct` int DEFAULT NULL COMMENT 'Rollout percentage 0-100, when mode = CANARY',
+  `user_ids` text COMMENT 'User id list as JSON, when mode = ALLOW_LIST',
+  `environments` varchar(255) DEFAULT NULL COMMENT 'Environment labels, comma separated, when mode = ENV',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_skill_visibility_policy_skill` (`skill_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Runtime visibility policy of one skill';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;

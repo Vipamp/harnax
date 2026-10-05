@@ -6,6 +6,8 @@ import com.agnetix.harnax.agent.adaptor.McpConfigAdaptor
 import com.agnetix.harnax.agent.adaptor.PlanNoteAdaptor
 import com.agnetix.harnax.agent.adaptor.ProcessLogAdaptor
 import com.agnetix.harnax.agent.adaptor.SkillAdaptor
+import com.agnetix.harnax.agent.adaptor.SkillDraftAdaptor
+import com.agnetix.harnax.agent.adaptor.SkillUsageAdaptor
 import com.agnetix.harnax.agent.adaptor.TokenStatAdaptor
 import com.agnetix.harnax.agent.session.SessionConfig
 import com.agnetix.harnax.common.mcp.McpConfigDecryptor
@@ -98,6 +100,13 @@ class HarnessProperties {
      * Bound from `harness.mcp-stdio-enabled`, and set from `HARNAX_MCP_STDIO_ENABLED`.
      */
     var mcpStdioEnabled: Boolean = false
+
+    /**
+     * This deployment's environment label, matched against a skill's ENV visibility policy. Bound from
+     * `harness.environment`, set from `HARNESS_ENVIRONMENT`. Defaults to the label upstream and Admin both
+     * read an unset policy against, so an operator who never configures it gets production behaviour.
+     */
+    var environment: String = "prod"
 }
 
 /**
@@ -284,6 +293,7 @@ class HarnessAutoConfiguration {
         ),
         turnTimeoutSeconds = harnessProps.turnTimeoutSeconds,
         mcpStdioEnabled = harnessProps.mcpStdioEnabled,
+        environment = harnessProps.environment,
         team = TeamConfig(
             maxDelegations = teamProps.maxDelegations,
             memberTurnTimeoutSeconds = teamProps.memberTurnTimeoutSeconds,
@@ -318,6 +328,8 @@ class HarnessAutoConfiguration {
         outputFileDetectorProvider: ObjectProvider<OutputFileDetector>,
         outputFileStoreProvider: ObjectProvider<OutputFileStore>,
         mcpTokenSourceFactoryProvider: ObjectProvider<McpAccessTokenSourceFactory>,
+        skillUsageAdaptorProvider: ObjectProvider<SkillUsageAdaptor>,
+        skillDraftAdaptorProvider: ObjectProvider<SkillDraftAdaptor>,
     ): HarnessAgentLauncher {
         val toolCallLogAdaptor = toolCallLogAdaptorProvider.ifAvailable
             ?: ToolCallLogAdaptor { /* no-op */ }
@@ -348,6 +360,12 @@ class HarnessAutoConfiguration {
             // Absent means an OAuth MCP server cannot be connected: this runtime then has no way to
             // present a user's authorization, which is a smaller lie than connecting unauthenticated.
             mcpTokenSourceFactory = mcpTokenSourceFactoryProvider.ifAvailable,
+            // Absent means the runtime reports no skill views: the delivery path is untouched, and a
+            // runtime that cannot reach Admin's intake endpoint is not one that should stall a turn.
+            skillUsageAdaptor = skillUsageAdaptorProvider.ifAvailable,
+            // Absent means nobody may author a skill: a draft with nowhere to be filed is unreviewed text
+            // sitting in a workspace, which is the one thing this feature exists to prevent.
+            skillDraftAdaptor = skillDraftAdaptorProvider.ifAvailable,
         )
     }
 }

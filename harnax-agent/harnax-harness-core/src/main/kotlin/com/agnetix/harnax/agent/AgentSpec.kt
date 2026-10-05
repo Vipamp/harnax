@@ -1,6 +1,7 @@
 package com.agnetix.harnax.agent
 
 import com.agnetix.harnax.entity.dto.CliDetailDto
+import com.agnetix.harnax.entity.dto.SkillVisibilityDto
 import com.agnetix.harnax.tools.sdk.ToolSpec
 
 /**
@@ -37,6 +38,16 @@ data class AgentSpec(
     val skills: List<SkillSpec>,
     val cliSpecs: List<CliSpec> = emptyList(),
     val planSpec: PlanSpec,
+
+    /**
+     * Whether this agent may author skills itself, as granted on admin's `agent` row.
+     *
+     * Decided at assembly time and not filterable afterwards: the framework registers `skill_manage` and
+     * `propose_skill` straight into its toolkit, past the tool configuration filter that governs every
+     * harnax tool. So an agent that was not granted the capability has to be built without those tools
+     * rather than have them taken away.
+     */
+    val skillSelfWrite: Boolean = false,
 ) {
 
     /**
@@ -76,6 +87,7 @@ class AgentSpecBuilder {
     private var skills: MutableList<SkillSpec> = mutableListOf()
     private var cliSpecs: MutableList<CliSpec> = mutableListOf()
     private var planSpec: PlanSpec = PlanSpec(false)
+    private var skillSelfWrite: Boolean = false
 
     fun id(id: Long) = apply { this.id = id }
     fun tenantId(tenantId: Long?) = apply { this.tenantId = tenantId }
@@ -93,6 +105,7 @@ class AgentSpecBuilder {
     fun addSkill(skill: SkillSpec) = apply { this.skills.add(skill) }
     fun addCliSpec(cliSpec: CliSpec) = apply { this.cliSpecs.add(cliSpec) }
     fun planSpec(planSpec: PlanSpec) = apply { this.planSpec = planSpec }
+    fun skillSelfWrite(skillSelfWrite: Boolean) = apply { this.skillSelfWrite = skillSelfWrite }
 
     fun build(): AgentSpec {
         // 0 is a team's lead: its configuration is the `team` row and no agent record stands behind it
@@ -115,6 +128,7 @@ class AgentSpecBuilder {
             skills = skills,
             cliSpecs = cliSpecs,
             planSpec = planSpec,
+            skillSelfWrite = skillSelfWrite,
         )
     }
 }
@@ -124,9 +138,18 @@ data class McpSpec(
     val isAsync: Boolean = true,
 )
 
+/**
+ * One skill bound to the agent, with the rollout rule Admin attached to it.
+ *
+ * [visibility] is the delivered copy of `skill_visibility_policy`, and the only reason the runtime can
+ * decide visibility at all: the filter runs once per composed prompt, on the inference path, where asking
+ * Admin would either add a round trip to every answer or fail open on every timeout. Null means Admin had
+ * no policy row, which reads as visible to everyone.
+ */
 data class SkillSpec(
     val skillId: Long,
     val skillName: String,
+    val visibility: SkillVisibilityDto? = null,
 )
 
 /**

@@ -47,6 +47,9 @@ data class AgentCreateRequest(
 
     @Schema(description = "Is public (0:false 1:true)", example = "0")
     val isPublic: Int? = null,
+
+    @Schema(description = "Skill self-write (0:false 1:true)", example = "0")
+    val skillSelfWrite: Int? = null,
 ) {
     /**
      * MCP configuration

@@ -100,6 +100,21 @@ export default [
         component: './skill',
       },
       {
+        name: 'skill.usage',
+        path: '/context/skill-usage',
+        component: './skill/usage',
+      },
+      {
+        name: 'skill.drafts',
+        path: '/context/skill-drafts',
+        component: './skill/drafts',
+      },
+      {
+        path: '/context/skill-draft/detail/:id',
+        component: './skill/draftDetail',
+        hideInMenu: true,
+      },
+      {
         path: '/context/skill/detail/:id',
         component: './skill/detail',
         hideInMenu: true,

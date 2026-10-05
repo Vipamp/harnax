@@ -30,6 +30,15 @@
         LIMIT 1
     </select>
 
+    <!-- Query by IDs: callers hold the non-empty precondition, `IN ()` is a syntax error in MySQL -->
+    <select id="selectByIds" resultMap="SysUserResultMap">
+        SELECT * FROM sys_user
+        WHERE active = 1 AND id IN
+        <foreach collection="ids" item="userId" open="(" separator="," close=")">
+            #{userId}
+        </foreach>
+    </select>
+
     <!-- Insert user -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO sys_user (

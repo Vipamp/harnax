@@ -40,6 +40,7 @@ import com.agnetix.harnax.mapper.CliMapper
 import com.agnetix.harnax.mapper.McpServerMapper
 import com.agnetix.harnax.mapper.SessionMapper
 import com.agnetix.harnax.mapper.SkillMapper
+import com.agnetix.harnax.mapper.SkillVisibilityPolicyMapper
 import com.agnetix.harnax.mapper.TeamMapper
 import com.agnetix.harnax.mapper.TeamMemberMapper
 import org.junit.jupiter.api.Assertions.*
@@ -224,7 +225,13 @@ class AgentServiceImplTest {
         // The skill guards now live in the shared SkillBindingResolver (a team's lead goes through the
         // same rules). Delegating keeps the guard assertions below honest about the real rules instead
         // of the stub's return value.
-        val realResolver = SkillBindingResolver(jwtUtil, skillMapper, skillRepositoryService)
+        val realResolver = SkillBindingResolver(
+            jwtUtil,
+            skillMapper,
+            skillRepositoryService,
+            // resolveBindable never reads policies; only the delivery path does
+            mock(SkillVisibilityPolicyMapper::class.java),
+        )
         `when`(skillBindingResolver.resolveBindable(any())).thenAnswer { invocation ->
             realResolver.resolveBindable(invocation.getArgument<List<Long>>(0))
         }

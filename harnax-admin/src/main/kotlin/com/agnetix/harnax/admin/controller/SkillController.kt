@@ -1,6 +1,7 @@
 package com.agnetix.harnax.admin.controller
 
 import com.agnetix.harnax.admin.dto.Page
+import com.agnetix.harnax.admin.dto.ReviewHistoryItem
 import com.agnetix.harnax.admin.dto.SkillCreateRequest
 import com.agnetix.harnax.admin.dto.SkillInstallResponse
 import com.agnetix.harnax.admin.dto.SkillResponse
@@ -73,6 +74,24 @@ class SkillController(
     } catch (e: Exception) {
         log.error("Failed to get skill details", e)
         ResultVo.error(ApiErrors.message(e, "Failed to get skill details"))
+    }
+
+    @GetMapping("/{id}/review-history")
+    @Operation(
+        summary = "Read a skill's review trail",
+        description = "Recorded state changes of one skill, newest first: who approved, enabled, disabled, re-scoped or deleted it",
+    )
+    fun reviewHistory(
+        @Parameter(description = "Skill ID") @PathVariable(name = "id") id: Long,
+    ): ResultVo<List<ReviewHistoryItem>> = try {
+        // An unreadable skill answers exactly as an unknown one does, the same way the detail read refuses to
+        // confirm that the row exists at all.
+        skillService.reviewHistory(id)
+            ?.let { ResultVo.success(it) }
+            ?: ResultVo.error(404, messageUtil.getMessage("error.skill.notfound"))
+    } catch (e: Exception) {
+        log.error("Failed to read review history of skill $id", e)
+        ResultVo.error(ApiErrors.message(e, "Failed to read skill review history"))
     }
 
     @PostMapping

@@ -38,15 +38,19 @@ object SkillSourcePolicy {
     }
 
     /**
-     * Trims a caller-supplied repository name and additionally rejects the platform-reserved
-     * builtin name, which [requireUsableText] knows nothing about.
+     * Trims a caller-supplied repository name and additionally rejects the platform-reserved names, which
+     * [requireUsableText] knows nothing about.
+     *
+     * `agent-skills` is reserved for the same reason the CLI row is: the promotion path resolves that name
+     * inside the tenant and writes into whatever it finds, so an operator who created a GIT source under it
+     * would have approved agent skills land in a repository a later sync can rewrite or empty.
      *
      * @param noun wording used in the blank-name message, so each API keeps its own vocabulary
      */
     fun requireUsableName(name: String?, noun: String): String {
         val trimmed = requireUsableText(name, "$noun name")
-        if (BuiltinRepository.isBuiltin(trimmed)) {
-            throw BizException("Repository name '${BuiltinRepository.CLI_SKILLS}' is reserved for the platform")
+        if (trimmed in BuiltinRepository.RESERVED_NAMES) {
+            throw BizException("Repository name '$trimmed' is reserved for the platform")
         }
         return trimmed
     }

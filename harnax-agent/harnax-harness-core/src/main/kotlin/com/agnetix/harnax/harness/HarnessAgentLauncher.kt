@@ -10,6 +10,8 @@ import com.agnetix.harnax.agent.adaptor.PlanNote
 import com.agnetix.harnax.agent.adaptor.PlanNoteAdaptor
 import com.agnetix.harnax.agent.adaptor.ProcessLogAdaptor
 import com.agnetix.harnax.agent.adaptor.SkillAdaptor
+import com.agnetix.harnax.agent.adaptor.SkillDraftAdaptor
+import com.agnetix.harnax.agent.adaptor.SkillUsageAdaptor
 import com.agnetix.harnax.agent.adaptor.TokenStatAdaptor
 import com.agnetix.harnax.agent.adaptor.mcp.McpHelper
 import com.agnetix.harnax.agent.adaptor.model.ModelErrorCode
@@ -22,6 +24,7 @@ import com.agnetix.harnax.agent.session.SessionConfig
 import com.agnetix.harnax.agent.session.SessionLoader
 import com.agnetix.harnax.common.mcp.McpConfigDecryptor
 import com.agnetix.harnax.entity.McpAuthTypes
+import com.agnetix.harnax.entity.dto.SkillVisibilityDto
 import com.agnetix.harnax.harness.config.HarnessConfig
 import com.agnetix.harnax.harness.config.Memory
 import com.agnetix.harnax.harness.config.MinioConfig
@@ -34,6 +37,9 @@ import com.agnetix.harnax.harness.output.OutputFileStore
 import com.agnetix.harnax.harness.sandbox.CliImageBuilder
 import com.agnetix.harnax.harness.sandbox.CliPackageStore
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
+import com.agnetix.harnax.harness.skill.AdminBackedPromotionGate
+import com.agnetix.harnax.harness.skill.SkillDraftStaging
+import com.agnetix.harnax.harness.skill.TenantSkillVisibilityFilter
 import com.agnetix.harnax.harness.team.TeamLeadToolBox
 import com.agnetix.harnax.harness.team.TeamMemberSpec
 import com.agnetix.harnax.harness.team.TeamMemberToolBox
@@ -84,6 +90,10 @@ import java.util.UUID
  * @param mcpConfigAdaptor adaptor for MCP service configuration
  * @param stateStore distributed [AgentStateStore] backend (replaces Session)
  * @param skillAdaptor adaptor for skill loading
+ * @param skillUsageAdaptor adaptor that counts the delivered skills entering a session's context; absent
+ * means the runtime reports no usage at all
+ * @param skillDraftAdaptor intake a staged draft is filed with for a human to review; absent means no agent
+ * may author skills, whatever its own grant says
  * @param tokenStatAdaptor adaptor for token stat persistence
  * @param processLogAdaptor adaptor for process logging
  * @param toolCallLogAdaptor adaptor for tool call logging (optional)
@@ -120,6 +130,8 @@ class HarnessAgentLauncher(
      * session database is not MySQL, which leaves history on [stateStore] alone.
      */
     val sessionMessageStore: MysqlSessionMessageStore? = null,
+    val skillUsageAdaptor: SkillUsageAdaptor? = null,
+    val skillDraftAdaptor: SkillDraftAdaptor? = null,
 ) {
 
     private val log = LoggerFactory.getLogger(HarnessAgentLauncher::class.java)
@@ -447,6 +459,18 @@ class HarnessAgentLauncher(
         // rather than dropped. Nothing strands the model on a `<files-root>` path the way a member can be:
         // `disableShellTool()` makes the harness resolve to ShellPathPolicy.noShell(), which never renders
         // that prefix.
+        // A fresh recorder per build, for the same reason as the middlewares below: it holds one session's
+        // attribution and one session's cooldown windows. Without an adaptor there is nowhere to send the
+        // count, and the delivery path is left exactly as it was.
+        val skillViewRecorder = skillUsageAdaptor?.let { SkillViewRecorder(sessionId, userIdentifier.userId, it) }
+        if (skillViewRecorder != null) {
+            agentBuilder.onSkillsRead(skillViewRecorder::onRead)
+        }
+        // Keyed by the name of the skill that was actually loaded, which is the only name the harness
+        // filter will later match on: a policy for a skill whose row vanished between delivery and build
+        // would be dead weight, and one keyed by the spec's copy of the name could disagree with the
+        // repository's for a skill Admin delivered under a different one.
+        val visibilityPolicies = mutableMapOf<String, SkillVisibilityDto>()
         agentSpec.skills.forEach {
             // A miss means the row was deleted between delivery and build, or it holds something
             // `AgentSkill` refuses (see SkillAdaptorImpl). Either way the loader has already logged
@@ -454,6 +478,10 @@ class HarnessAgentLauncher(
             val skill = skillAdaptor.getSkill(it.skillId)
             if (skill != null) {
                 agentBuilder.addSkill(skill)
+                // The delivered AgentSkill carries no id, so this is the only place the count can learn
+                // which row stands behind the name the repository reads back.
+                skillViewRecorder?.attribute(skill.name, it.skillId)
+                it.visibility?.let { policy -> visibilityPolicies[skill.name] = policy }
                 if (isLead && skill.resources.isNotEmpty()) {
                     log.warn(
                         "Skill '{}' (id={}) is loaded for lead '{}' and its {} file(s) {} are projected into the " +
@@ -468,6 +496,48 @@ class HarnessAgentLauncher(
             } else {
                 log.warn("Skill '{}' (id={}) is not loaded.", it.skillName, it.skillId)
             }
+        }
+        if (visibilityPolicies.isNotEmpty()) {
+            // The identity is this run's, taken from the same value every attribution of the run uses, and
+            // fixed here rather than read per call. `RuntimeContext.userId` is deliberately not the source:
+            // upstream derives the persisted agent-state slot from it (ReActAgent keys `agent_state` by
+            // user id and session id), and this deployment has always run with an empty one — filling it in
+            // now would move every existing session's state bucket and break clear/history replay for rows
+            // already stored (design section 4.1). A filter built per session needs no per-call identity.
+            agentBuilder.skillVisibilityFilter(
+                TenantSkillVisibilityFilter(
+                    policiesByName = visibilityPolicies,
+                    userId = userIdentifier.userId,
+                    environment = harnessConfig.environment,
+                ),
+            )
+        }
+
+        // ----- Skill self-write -----
+        // Decided here, at assembly, because the framework registers `skill_manage` and `propose_skill` into
+        // its own toolkit: the tool sweep above walks ToolBoxes known to the registry, so it cannot take an
+        // agent's own skills away from an agent that was never granted them. A lead is excluded on top of that
+        // — `disableFilesystemTools()` and `disableShellTool()` below leave it without a workspace to stage
+        // into, and `disableSubagents()` leaves it without anything that would write one.
+        val skillDraftIntake = skillDraftAdaptor?.takeIf { agentSpec.skillSelfWrite && !isLead }
+        if (agentSpec.skillSelfWrite && !isLead && skillDraftAdaptor == null) {
+            log.warn(
+                "Agent '{}' is granted skill self-write but no SkillDraftAdaptor is configured: the drafts " +
+                    "it stages would have nowhere to be reviewed, so the authoring tools are not installed.",
+                agentSpec.name,
+            )
+        }
+        if (skillDraftIntake != null) {
+            val staging = SkillDraftStaging()
+            agentBuilder.skillSelfWrite(
+                staging = staging,
+                gate = AdminBackedPromotionGate(sessionId, skillDraftIntake, staging),
+            )
+            log.info(
+                "Agent '{}' may author skills: drafts stage in '{}', every one of them waits for review",
+                agentSpec.name,
+                staging.draftsDir,
+            )
         }
 
         // ----- Team tools -----
@@ -707,6 +777,10 @@ class HarnessAgentLauncher(
             "todo_write",
             "agent_spawn", "agent_send", "agent_list",
             "task_output", "task_list",
+            // Registered by the framework itself when this agent may author skills. Left without a rule they
+            // would fall to the engine's DEFAULT ask, and a proposal that is about to sit in a reviewer's
+            // queue is not a decision the person chatting has any way to make — it installs nothing by itself.
+            "skill_manage", "propose_skill",
         ) + teamToolNames
         val permCtxBuilder = PermissionContextState.builder()
         frameworkAllowTools.forEach { toolName ->
@@ -1033,6 +1107,8 @@ class HarnessAgentLauncher(
             outputFileDetector: OutputFileDetector? = null,
             outputFileStore: OutputFileStore? = null,
             mcpTokenSourceFactory: McpAccessTokenSourceFactory? = null,
+            skillUsageAdaptor: SkillUsageAdaptor? = null,
+            skillDraftAdaptor: SkillDraftAdaptor? = null,
         ): HarnessAgentLauncher {
             minioConfig?.ensureBuckets()
 
@@ -1106,6 +1182,8 @@ class HarnessAgentLauncher(
                 outputFileStore = outputFileStore,
                 mcpTokenSourceFactory = mcpTokenSourceFactory,
                 sessionMessageStore = stores.messageStore,
+                skillUsageAdaptor = skillUsageAdaptor,
+                skillDraftAdaptor = skillDraftAdaptor,
             )
         }
 

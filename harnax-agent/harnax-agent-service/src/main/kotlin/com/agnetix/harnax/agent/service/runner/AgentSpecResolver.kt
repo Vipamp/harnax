@@ -228,6 +228,9 @@ class AgentSpecResolver(
             .description(specInfo.description)
             .systemPrompt(specInfo.systemPrompt)
             .chatModelId(specInfo.modelId)
+            // Granted only by the exact value admin writes: this one opens a capability rather than a
+            // preference, so a stray value must not read as a grant.
+            .skillSelfWrite(specInfo.skillSelfWrite == 1)
 
         // Collect all env bindings for ToolEnvContext (flat map, merged across tools and MCPs)
         val allEnvBindings = mutableMapOf<String, String>()
@@ -241,7 +244,7 @@ class AgentSpecResolver(
         // Note: the skills the selected CLIs ship are already merged in by `withCliSkills`, which reads
         // them off `cliDetails[].skill` — a package's skill has no existence apart from its CLI.
         for (skill in specInfo.skillDetails) {
-            builder.addSkill(SkillSpec(skillId = skill.id, skillName = skill.name))
+            builder.addSkill(SkillSpec(skillId = skill.id, skillName = skill.name, visibility = skill.visibility))
         }
 
         // ── CLI details (package coordinates for the sandbox image + env bindings) ──

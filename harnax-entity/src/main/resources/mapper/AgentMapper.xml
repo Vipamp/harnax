@@ -13,6 +13,7 @@
         <result column="owner" property="owner"/>
         <result column="status" property="status"/>
         <result column="is_public" property="isPublic"/>
+        <result column="skill_self_write" property="skillSelfWrite"/>
         <result column="creator" property="creator"/>
         <result column="active" property="active"/>
         <result column="create_time" property="createTime"/>
@@ -50,10 +51,10 @@
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO agent (
         tenant_id, name, description, system_prompt, model_id,
-        owner, status, is_public, creator, active, create_time, update_time
+        owner, status, is_public, skill_self_write, creator, active, create_time, update_time
         ) VALUES (
         #{tenantId}, #{name}, #{description}, #{systemPrompt}, #{modelId},
-        #{owner}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime}, #{updateTime}
+        #{owner}, #{status}, #{isPublic}, #{skillSelfWrite}, #{creator}, #{active}, #{createTime}, #{updateTime}
         )
     </insert>
 
@@ -66,6 +67,7 @@
         model_id = #{modelId},
         owner = #{owner},
         is_public = #{isPublic},
+        skill_self_write = #{skillSelfWrite},
         active = #{active},
         update_time = #{updateTime}
         WHERE id = #{id}
