@@ -68,6 +68,19 @@ interface SkillMapper {
     fun updateStatus(@Param("id") id: Long, @Param("status") status: Int): Int
 
     /**
+     * Rewrites where a skill came from, which [updateById] deliberately does not touch.
+     *
+     * One caller: promoting a draft over an existing row. That is the one moment provenance legitimately
+     * changes after creation — the body becomes an agent's while the row keeps its id — and keeping it a
+     * separate statement is what stops an ordinary content save from relabelling the row.
+     */
+    fun updateProvenance(
+        @Param("id") id: Long,
+        @Param("origin") origin: String,
+        @Param("originRef") originRef: String?,
+    ): Int
+
+    /**
      * How many skills are still enabled under each of [repositoryIds]. A source with none is absent
      * from the answer.
      *

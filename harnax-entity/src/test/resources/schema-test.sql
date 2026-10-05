@@ -501,7 +501,7 @@ CREATE TABLE IF NOT EXISTS `skill_draft` (
   `resources` mediumtext COMMENT 'path -> content JSON, the same shape as skill.resources',
   `script_previews` mediumtext COMMENT 'relPath / headPreview / totalLines / sha256 per script, from SkillCandidate.scriptFiles',
   `scan_verdict` varchar(16) DEFAULT NULL COMMENT 'Upstream SkillSecurityScanner verdict: SAFE / CAUTION / DANGEROUS',
-  `scan_findings` mediumtext COMMENT 'Upstream scan findings as JSON; rescanned and overwritten at promotion',
+  `scan_findings` mediumtext COMMENT 'Upstream scan findings as JSON; the promotion rescan goes to skill_review_log',
   `source_session_id` varchar(64) NOT NULL COMMENT 'Session the agent proposed the skill in',
   `agent_id` bigint DEFAULT NULL COMMENT 'Agent that proposed it, resolved from the session',
   `status` varchar(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING / APPROVED / REJECTED / EXPIRED',

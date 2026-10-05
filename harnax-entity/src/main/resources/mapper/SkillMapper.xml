@@ -57,6 +57,16 @@
         UPDATE skill SET status = #{status}, update_time = NOW() WHERE id = #{id} AND active = 1
     </update>
 
+    <!--
+        updateProvenance: the two columns updateById leaves alone, for the one write that legitimately
+        changes them — a draft promoted over an existing row keeps the row id and loses its authorship.
+        Kept separate so no ordinary content save can relabel an agent's skill as human-written.
+    -->
+    <update id="updateProvenance">
+        UPDATE skill SET origin = #{origin}, origin_ref = #{originRef}, update_time = NOW()
+        WHERE id = #{id} AND active = 1
+    </update>
+
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO skill (

@@ -62,7 +62,7 @@ class SkillDraft : Serializable {
     @Schema(description = "Upstream scan verdict: SAFE / CAUTION / DANGEROUS")
     var scanVerdict: String? = null
 
-    @Schema(description = "Upstream scan findings as JSON; rescanned and overwritten at promotion")
+    @Schema(description = "Upstream scan findings as JSON; the promotion rescan is recorded on skill_review_log instead")
     var scanFindings: String? = null
 
     @Schema(description = "Session the agent proposed the skill in")
