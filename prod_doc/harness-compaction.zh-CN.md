@@ -25,7 +25,7 @@
 
 1. **`/compact` 是真压缩。** 会话在跑过若干轮之后发 `/compact`，模型侧上下文被摘要替换，`token_stats` 里下一轮的 `input_token` 相应下降；发一条 `/compact` 就多付一次摘要用的模型调用，除此之外不多付。
 2. **页面永远看到全量原文气泡。** 无论压缩过一次还是十次，`GET /api/agent/chat/history/{sessionId}` 返回的气泡序列与压缩前逐字一致，且不出现任何"压缩摘要"气泡。这是本方案的主断言。
-3. **占用比例可查。** `GET /api/agent/context/{sessionId}` 一次返回估算占用、真实占用、窗口值与其来源，调用方能据此判断"还要不要手动压"以及"自动压缩还差多少触发"。比例按真实占用（`token_stats.input_token` 那一路）算，估算那两位继续回答触发那一问 —— 实测两者不成比例，所以两个数都给、各管各的判据。
+3. **占用比例可查。** `GET /api/agent/context/{sessionId}` 一次返回估算占用、真实占用、窗口值与其来源，调用方能据此判断"还要不要手动压"以及"自动压缩还差多少触发"。比例按真实占用（`token_stats.input_token` 那一路）算，估算那两位继续回答触发那一问 —— 实测两者不成比例，所以两个数都给、各管各的判据。这个数与一个按需压缩的入口都落在 webui 会话聊天页上（第 7 节），演示时不需要 curl；读不到数时标题栏整块不出现，而不是显示一个 `0%`。
 
 ---
 
@@ -40,7 +40,7 @@
 后果：压缩覆写 `context` 等于把用户的聊天记录一起裁掉。**这条不改，第 1 节第 2 条就无法成立，所以历史分离不是可选优化，是压缩落地的前置。**
 
 **事实三：`/compact` 的命令链路已经全通，只差服务端实现。**
-`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/AgentRequest.kt:67,90,199` 已把 `/compact 500` 解析为 `CommandType.COMPACT` + `args="500"`；`AgentController.kt:77-86` 的 `POST /api/agent/command` 已在收；webui `harnax-webui/src/pages/session/components/ChatWindow.tsx:950` 有关键词到命令的映射；iOS 侧只有契约枚举 `harnax-ios/Sources/HarnaxCore/Contract/AgentRequest.swift:9`，没有发它的入口。`CommandResponse`（`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/CommandResponse.kt:13`，`result: Any?` 在 `:16`）带一个 `result` 字段可直接承载结构化返回。
+`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/AgentRequest.kt:67,90,199` 已把 `/compact 500` 解析为 `CommandType.COMPACT` + `args="500"`；`AgentController.kt:77-86` 的 `POST /api/agent/command` 已在收；webui `harnax-webui/src/pages/session/components/ChatWindow.tsx:957` 有关键词到命令的映射；iOS 侧同样发得出去 —— 斜杠命令表 `harnax-ios/Sources/HarnaxFeatures/Chat/ChatSlashCommand.swift:33` 登记了 `compact`，`ChatViewModel.swift:1439` 的 `run(command:rawText:)` 把它装成 `CommandAgentRequest` 投递，契约枚举在 `harnax-ios/Sources/HarnaxCore/Contract/AgentRequest.swift:9`。`CommandResponse`（`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/CommandResponse.kt:13`，`result: Any?` 在 `:16`）带一个 `result` 字段可直接承载结构化返回。
 `DefaultAgentRunner.kt` 的 `executeCommand`（`:247`）当时在 COMPACT 那一支（`:264`）回 `Compact not yet implemented`。**命令形态不需要新造，客户端也不需要改 —— 缺的只有那一支的实现。**
 
 按需压缩所需的上游 API 在 2.0.4 全是 public，装配层就能做完，不改上游：`ConversationCompactor.compactIfNeeded(...)`（签名 `ConversationCompactor.java:92-96`）、`CompactionConfig`、`TokenCounterUtil.calculateToken(List<Msg>)`（`TokenCounterUtil.java:73`）、`HarnessAgent.getDelegate()/getModel()/getWorkspaceManager()/getStateStore()`（`HarnessAgent.java:492,496,246,504`）、`ReActAgent.getAgentState(userId, sessionId)` 与 `ReActAgent.saveAgentState(userId, sessionId)`（`ReActAgent.java:4447,4691`）。上游自己的溢出兜底 `forceCompactAndRetry`（`HarnessAgent.java:1058-1101`）就是同一个配方，可以照着写。
@@ -174,7 +174,7 @@ CREATE TABLE IF NOT EXISTS session_message (
 - **harnax-harness-core（team 侧）**：`team/TeamOrchestrator.kt` 的成员轮次以 `collectTurn` 的轮末 `finally` 归档该成员子会话 —— 成员会话没有别的收尾点，且它必须与委派成功与否无关：到达过 context 的就是页面已经给用户看过的内容。`team/TeamRuntimeSpec.kt` 的 `TeamSessions` 加成员子会话谓词（键的拼法只有这一个所有者，判定不能由调用方自己拼字符串），由 `HarnessAgentLauncher.isMemberChildSession` 转发给 runner 做 `/compact` 的前置拒绝。
 - **harnax-agent-service**：`DefaultAgentRunner.kt:264` 的 COMPACT 分支接 `handleCompact`（`:917`），替掉原来那句 `Compact not yet implemented`；归档挂在三条轮次收尾处 —— 阻塞轮的 `finally`（`:163`）、流式轮的 `doFinally`（`:195`）、HITL 确认续跑那轮的 `doFinally`（`:425`，它是 `confirm` 那条独立流，`:376-446`）。三处都排在 `drainPendingRelease`／`unregisterCall` 之前：deferred 的 `release()` 会清掉归档要读的那份 state cache，一前一后决定归档有没有内容可读。`AgentController.kt` 加 `GET /api/agent/context/{sessionId}`，其账单口径的分子由 `DefaultAgentRunner` 现读 `token_stats` 该会话最近一行 —— 这张表就在 agent-service 的主库里，不必经 admin；wrapper 只接受这个数，不自己碰库。`clearSession`（`:480-489`）连带删档。
 - **harnax-session-router**：新接口按会话绑定转发一条 —— 转发调用落在 `src/main/kotlin/com/agnetix/harnax/router/proxy/SessionRouterService.kt`（照 `:361` 的 `proxyLoadHistory` 同款，新增的 `proxyLoadContext` 在 `:397`），对外端点落在 `src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt`（照 `:105-113` 的 `/command` 代理形状，新端点 `GET /context/{sessionId}` 在 `:183`）。该端点同样是 `suspend fun`，所以它的路径 `/api/router/agent/context` 要登记进 `router/config/ApiCallLogFilter.kt` 的 `SUSPEND_ENDPOINTS`：漏了这一条，`ContentCachingResponseWrapper` 会在协程写响应体之前就把空 body 刷出去，调用方拿到一个成功但没有内容的读取。
-- **harnax-webui**：只有 admin 侧模型表单那一处。聊天页不改（它能发 `/compact` 这件事本来就是通的）。
+- **harnax-webui**：admin 侧模型表单那一处，加会话聊天页的两处。标题栏是一枚只读 Tag（`pages/session/index.tsx` 的 `ContextUsageTag`），走 `services/ant-design-pro/chat.ts` 新增的 `getContextUsage` —— 与聊天历史同一条 router 通道、同一份 `X-Api-Key`，因此不需要新的网关配置；输入区的压缩入口复用聊天页既有的命令通道（与 `sendSilentCommand` 同款 fetch 与 `getRouterHeaders`），团队子会话与 `task-` 会话被拒时把后端那句 `message` 原样显示，信封级失败（`data: null`）取信封自身的 `message`。三个真正需要判定的地方抽成纯函数模块 `pages/session/components/contextUsage.ts`，好让它们在渲染之外可断言：`isContextUsageReadable` 把第 8 节那两种报不出形状一律判成"没有读数"，于是标题栏整块不渲染而不是显示 0%；`contextUsageBasis` 按 `lastCallInputTokens` 是否为空决定读数后缀是"账单"还是"估算"，与第 6 节的分子同源；`isAtAutoTrigger` 用同一个分子比 `triggerTokens`，到线转橙。`formatContextPercent` 只管一位宽槽里的取位。`compactionOutcome` 把"成功但一条没裁"判成 no-op 而不是完成。刷新时机只有两个：一轮回答结束、一次压缩返回 —— 分子跟的是最近一次已计费的调用，轮内不会动。文案全部走 i18n，中英两份 key 同批加。
 - **harnax-ios**：不改。
 
 ---
@@ -184,7 +184,7 @@ CREATE TABLE IF NOT EXISTS session_message (
 | 情形 | 行为 |
 |---|---|
 | 会话太短，cutoff 留不出尾部 | 回成功但 `result.afterTokens == beforeTokens`，`message` 说明"没有可压缩的内容"；不覆写、不落库 |
-| `/command` 请求体缺多态判别属性 `type` | 在 session-router 的入站反序列化就被拒（`AgentProxyController.kt:105` 的形参类型是 `CommandAgentRequest`，router 自己的 `GlobalExceptionHandler` 回 `code: 500` 与 `missing type id property 'type'`），请求根本不落到 agent-service。webui 发的命令体一直带 `type`（`harnax-webui/src/pages/session/components/ChatWindow.tsx:1005`），所以这条只打在直连 router 的调用方身上 |
+| `/command` 请求体缺多态判别属性 `type` | 在 session-router 的入站反序列化就被拒（`AgentProxyController.kt:105` 的形参类型是 `CommandAgentRequest`，router 自己的 `GlobalExceptionHandler` 回 `code: 500` 与 `missing type id property 'type'`），请求根本不落到 agent-service。webui 发的命令体一直带 `type`（`harnax-webui/src/pages/session/components/ChatWindow.tsx:1020`），所以这条只打在直连 router 的调用方身上 |
 | 摘要模型调用失败 | 回 failure，`context` 与库都不动，用户可原样重试 |
 | 调用方在服务端完成前断开 | 已 `block()` 的那次覆写不回滚（服务端不知道连接断了）。用户重发 `/compact` 时，cutoff 判定会把已压过的会话判成"没有可压缩的内容"，因此不会二次摘要 —— 这条命令因此是幂等安全的 |
 | delegate 取不到 live state | 第 5 节第 2 步先拒：读不到 live context 就是归档写不进去，`message` 说明会话未被记录。服务内部那道 delegate 判定（第 3 步）因此是纵深防御，命令路径上不会先到它 |
@@ -239,6 +239,7 @@ CREATE TABLE IF NOT EXISTS session_message (
 8. **2.0.4 与 harnax 依赖树（Jackson 3、Kotlin 2.2.20、Spring Boot BOM）在真服务上共存。** 后端镜像清库重建后：六个业务容器 `compose ps` 全部 `(healthy)`，每容器日志各一条 `Tomcat started on port`，`harnax-deploy/dist` 里的 jar 与容器内 `/app/app.jar` 的字节数与 mtime 逐一对上。在这个前提下，第 2、3 条那些读数才是 2.0.4 真跑出来的 —— 自动压缩在真实模型端点上触发过，命令压缩也触发过。判据：部署级闸 + 真栈读数。
 9. **transcript 通道运行时没有写过对象。** 这几段会话跑完，对象存储侧与宿主 `user.dir` 子树都没有 `events/` 段对象；工作区里唯一的 `.jsonl` 属于 memory flush 那条路径（日报与记忆文件），键布局与 transcript 不同，不是这条通道的产物。第 9 节第 9 条要的正是这个运行时判据，装配链上的两层间接证据（`TranscriptMiddleware` 在装配后的中间件链上缺席、`disableTranscript()` 只有一个构造点）不能替代它。判据：产物级核对。
 10. **占用读数的两种报不出形状。** 同一个端点换两种会话各取到一次：绑定过但本实例不持有 agent 时 `code: 500` 加 `No context held for session ... - usage needs the live agent`；会话从未绑定过任何实例时 `code: 200` 且 `data: null`，因为 `proxyLoadContext` 在 `boundInstance(sessionId)` 缺失那一步直接回空信封。两种都不该读成"占用为 0"，第 8 节那两行就是对这两次读数的记录。判据：真栈读数。
+11. **第 7 节 webui 那两处在真浏览器里成立，且主断言在页面路径上重取到一次。** 浏览器对着部署栈（`harnax-deploy` 前端容器 + router 28080）登录并打开既有会话：标题栏读到 `11% · 账单`，同一份响应里 `ratio 0.1058807373046875 × contextWindow 131072 = 13878` 与 `lastCallInputTokens 13878` 逐字相等（`windowSource = UPSTREAM_TABLE`、`triggerTokens 111072`），分子走的确实是账单那一路；换到第 10 条那两种报不出的会话，标题栏整块不渲染，页面上没有出现 `0%`。输入点"压缩上下文"后落下"已压缩上下文：28 条 → 21 条"，随后按页面读路径重取历史仍是 28 条（USER 8 / ASSISTANT 14 / TOOL 6）、摘要气泡命中 0，而同一时刻 `/context` 报 `messageCount: 21` —— 第 1 节的主断言在 UI 这条链上又对上一次。压缩被后端拒掉的形状也取到了：会话行不在服务端 admin 库时，拒绝原因（`Failed to get agent spec: Session not found`）原样显示在提示里，而不是退化成一句本地"压缩失败"。判据：真栈读数 + 浏览器 DOM。
 
 ### 10.2 仍未验
 
@@ -250,7 +251,7 @@ CREATE TABLE IF NOT EXISTS session_message (
 6. **`clearSession` 连带删档**（含成员子会话递归）在真栈上的落点，目前只有单测与源码级判据。
 7. **渠道固定 UUID 会话与团队子会话的 `user_id` 分布**是否也只有 `__anon__`（10.1 第 6 条只覆盖到探针跑过的入口）。
 
-对外演示时的口径缺口：页面上看得到压缩效果（气泡仍全量、`/compact` 一直发得出去），看不到的是占用比例本身 —— 它只有 `GET /api/agent/context/{sessionId}` 一个读数入口，第 11 节把前端展示排在轮外。
+对外演示时的口径缺口：占用比例与压缩入口现在都在 webui 会话聊天页上（第 7 节，实机复核见 10.1 第 11 条），页面上看不到的是两处口径本身——一是那个分子跟的是最近一次**已计费**的调用，所以一次压缩不会当场把比例降下来，要等下一轮结束才动；二是读不到数时标题栏整块不出现，不是显示一个 `0%`（第 8 节那两种形状）。iOS 侧发得出 `/compact`（斜杠命令表 `ChatSlashCommand.swift:33` 已登记 `compact`），缺的只是同一个占用读数，见第 11 节。
 
 ---
 
@@ -258,7 +259,7 @@ CREATE TABLE IF NOT EXISTS session_message (
 
 - 自动压缩档位的显式化（给装配层钉 `triggerTokens`/`keepTokens`/`prune`），以及 `flushBeforeCompact` 在自动路径上的取舍。
 - `disableMemoryTools()` / `disableToolsConfig()` / `disableAtPathExpansion()` 三项收口。
-- 前端显示占用比例与压缩入口（webui 聊天页、iOS）。
+- iOS 上的上下文占用读数（压缩入口它本来就有：`/compact` 在其斜杠命令表内）。
 - 把 `session_message` 用于跨会话检索（`session_search` 那类能力）。
 - 用上游 transcript 或 `TranscriptStore` 承载用户可见历史 —— 第 3 节第 1 行已给出否决理由（截断常量不可配、且它记的是压缩后的 live context）。
 - mp 模块的 `mp_chat_message`（该模块已定废弃），不复用、不迁移。
