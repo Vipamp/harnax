@@ -144,6 +144,10 @@ public final class ChatViewModel: ObservableObject {
     /// since changed.
     @Published public private(set) var contextUsage: ContextUsage?
 
+    /// How many occupancy reads this screen has asked for. The class is `@MainActor`, so this counts asks in
+    /// order without a lock, and `refreshContextUsage` keeps only the newest one's answer.
+    private var contextUsageGeneration = 0
+
     private let streaming: any AgentStreaming
     private let commands: (any AgentCommanding)?
     private let history: (any ChatHistoryReading)?
@@ -1467,13 +1471,17 @@ public final class ChatViewModel: ObservableObject {
     public func refreshContextUsage() async {
         guard let reader = contextReader else { return }
         let sessionID = conversation.id
+        contextUsageGeneration += 1
+        let generation = contextUsageGeneration
         var reading: ContextUsage?
         if case let .success(usage) = await reader.contextUsage(sessionId: sessionID), usage.isReadable {
             reading = usage
         }
         // The id is the identity of the answer, same as the status read above: a reply about the conversation
-        // the user has already moved on from must not put a number under this one's title.
-        guard conversation.id == sessionID else { return }
+        // the user has already moved on from must not put a number under this one's title. The generation is
+        // its order: this read overwrites whatever it brings, so an older ask that lands after a newer one
+        // would put the number from before that newer one back on screen.
+        guard conversation.id == sessionID, generation == contextUsageGeneration else { return }
         contextUsage = reading
     }
 
@@ -1523,7 +1531,15 @@ public final class ChatViewModel: ObservableObject {
         commit { $0.scrollToBottomID += 1 }
         streamTask = Task { [weak self] in
             let result = await client.command(request)
-            guard let self, !Task.isCancelled else { return }
+            guard let self else { return }
+            if Task.isCancelled {
+                // A stop is the user letting the *answer* go: no banner, no bubble, and `abort()` has already
+                // put `isStreaming` back so the composer is free. The context is another matter — the server
+                // ran this command whatever this side does with its reply — so the re-read the compact leg owes
+                // is still taken, in the console's `finally` place (`ChatWindow.tsx:2497-2499`).
+                if command.command == .compact { await self.refreshContextUsage() }
+                return
+            }
             self.streamTask = nil
             self.isStreaming = false
             // A tapped compaction answers with the four outcome strings; a typed command line keeps the
@@ -1563,9 +1579,11 @@ public final class ChatViewModel: ObservableObject {
     /// the failure's own words (`ChatWindow.tsx:1023`).
     ///
     /// `AgentCommandReply` has no envelope message of its own — the client's `Result` carries the business
-    /// error — so the third leg is `ErrorMessage`'s reading of that failure. A reply with no `success` key at
-    /// all is the envelope's `ResultVo.success(null)`, which is a command that changed nothing and reported
-    /// nothing; the console's `json.data?.success ? 'Done' : …` calls that a failure, and this side does not.
+    /// error — so the third leg is `ErrorMessage`'s reading of that failure. The one difference from the
+    /// console is a reply with neither a sentence nor a flag, which is an envelope that carried no command body
+    /// (`AgentCommandReply: HarnaxVoid`): this chain answers with a local「完成」where the console's
+    /// `json.data?.success ? 'Done' : …` would answer「Failed」. That leg is only a word here; the compaction
+    /// banner has to say whether the context got shorter, so it requires the flag (`CompactionOutcome.compact`).
     static func commandSentence(for result: Result<AgentCommandReply, APIError>) -> String {
         switch result {
         case let .failure(error):

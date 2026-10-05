@@ -18,8 +18,11 @@ public protocol AgentCommanding: Sendable {
     func command(_ request: CommandAgentRequest) async -> Result<AgentCommandReply, APIError>
 }
 
-/// The server's own verdict on a command. Both fields are optional because the reply is a loose map on the
-/// Java side; `webui` reads `data.message`, then `data.success`, then falls back to the envelope message.
+/// The server's own verdict on a command. `success` is optional only because an envelope that answers with no
+/// body at all decodes into this empty value (`AgentCommandReply: HarnaxVoid`); a command body that *is* there
+/// carries the flag every time, since the protocol declares it non-null
+/// (`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/CommandResponse.kt:13-17`). `webui`
+/// reads `data.message`, then `data.success`, then falls back to the envelope message.
 ///
 /// `result` is the command's own payload, and only one command's answer is legible through it: `COMPACT`
 /// reports the message counts before and after, which is the difference between a context that got shorter and
@@ -68,14 +71,15 @@ public enum CompactionOutcome: Equatable, Sendable {
 }
 
 extension CompactionOutcome {
-    /// The console's reading of one reply, kept as close to the transport as the payload it reads.
+    /// The console's reading of one reply, kept as close to the transport as the payload it reads: the flag has
+    /// to say true before anything is reported
+    /// (`harnax-webui/src/pages/session/components/contextUsage.ts:61-68`).
     ///
-    /// One deliberate fork from `compactionOutcome`, which calls a reply with no `success` key a failure: the
-    /// envelope's `ResultVo.success(null)` is a command that reported nothing, and this side already declines
-    /// to read that as a refusal (`ChatViewModel.commandSentence`). A *counted* no-op is still a no-op here,
-    /// because that leg reads `result` rather than the missing key.
+    /// A body without it is a reply this side did not read rather than a compaction that ran, and the one thing
+    /// this reading must not do is put 「已压缩上下文」 under a call that never said so. The counted no-op needs
+    /// the same flag — the two counts describe the context, and the flag is what says they mean anything.
     public static func compact(_ result: Result<AgentCommandReply, APIError>) -> CompactionOutcome {
-        guard case let .success(reply) = result, reply.success != false else { return .failed }
+        guard case let .success(reply) = result, reply.success == true else { return .failed }
         guard let before = reply.result?.beforeMessages, let after = reply.result?.afterMessages else {
             return .done
         }

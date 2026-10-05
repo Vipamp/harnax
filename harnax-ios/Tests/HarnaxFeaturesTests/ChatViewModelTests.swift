@@ -893,6 +893,30 @@ final class ChatViewModelTests: XCTestCase {
         XCTAssertNil(vm.contextUsage, "the reading belongs to the conversation that was left")
     }
 
+    /// Two re-reads can overlap — a turn's last word and a command's reply each ask on their own — and the
+    /// answer that has to stay on screen is the one from the *later* ask. The read overwrites whatever it
+    /// brings, so a slow one that started before a compaction would otherwise put the pre-compaction number
+    /// back beside a context that has since been folded away.
+    func testTheLaterReadKeepsItsNumberWhenTwoOverlap() async {
+        let reader = ScriptedContextUsage()
+        reader.reading = ContextUsage(estimatedTokens: 8_000, contextWindow: 32_000, ratio: 0.25)
+        reader.gate = true
+        let (vm, _) = makeModel(contextUsage: reader)
+
+        let older = Task { await vm.refreshContextUsage() }
+        await waitUntil("the parked occupancy read") { reader.requested == ["s-1"] }
+
+        reader.gate = false
+        reader.reading = ContextUsage(estimatedTokens: 960, contextWindow: 32_000, ratio: 0.03)
+        await vm.refreshContextUsage()
+        XCTAssertEqual(vm.contextUsage?.ratio, 0.03)
+
+        reader.release()
+        await older.value
+
+        XCTAssertEqual(vm.contextUsage?.ratio, 0.03, "the reading from before the newer ask is stale")
+    }
+
     /// The reading's numerator is the last billed call, so it only becomes worth asking again when a turn ends
     /// (`harnax-webui/src/pages/session/components/ChatWindow.tsx:2503-2507`).
     func testTheTurnsLastWordRereadsTheOccupancy() async throws {
@@ -1006,6 +1030,40 @@ final class ChatViewModelTests: XCTestCase {
 
         XCTAssertEqual(vm.transcript.turns.last?.segments.first?.text, "Compacted 40 messages into 12")
         XCTAssertNil(vm.composerNotice, "a typed line answers in the transcript, not in the banner")
+    }
+
+    /// The flag is what the banner reports on. A body that carries neither it nor a refusal is a reply this
+    /// side did not read, and 「已压缩上下文」 under it would be a report of a compaction nobody confirmed.
+    func testACompactionReplyThatCarriesNoFlagWarnsRatherThanReportingADoneDeal() async {
+        let commands = ScriptedAgentCommands()
+        commands.reply = .success(AgentCommandReply())
+        let (vm, _) = makeModel(commands: commands)
+
+        vm.requestCompact()
+        await waitUntil("the answer") { vm.composerNotice != nil }
+
+        XCTAssertEqual(vm.composerNotice?.tone, .warning)
+        XCTAssertEqual(vm.composerNotice?.text, hx("chat.context.compact.failed"))
+    }
+
+    /// A stop suppresses the banner, not the state of the server's context: the compaction ran wherever this
+    /// side's answer went, so the reading the command rewrote is still taken — the console's re-read sits in a
+    /// `finally` (`ChatWindow.tsx:2497-2499`) for the same reason. The composer is already free, because a
+    /// stop is what puts `isStreaming` back.
+    func testAStoppedCompactionStillRereadsTheContext() async {
+        let commands = ScriptedAgentCommands()
+        commands.gate = true
+        commands.reply = .success(AgentCommandReply(success: true, result: .init(beforeMessages: 40, afterMessages: 12)))
+        let reader = ScriptedContextUsage()
+        let (vm, _) = makeModel(commands: commands, contextUsage: reader)
+
+        vm.requestCompact()
+        await waitUntil("the parked compaction") { commands.requests.contains { $0.command == .compact } }
+        vm.stop()
+        commands.release()
+
+        await waitUntil("the reading after the stop") { reader.requested == ["s-1"] }
+        XCTAssertNil(vm.composerNotice, "the banner is what the stop was for, not the re-read")
     }
 
     // MARK: - the capability switches

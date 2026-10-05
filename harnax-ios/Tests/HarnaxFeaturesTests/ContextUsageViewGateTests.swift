@@ -9,18 +9,23 @@ import XCTest
 final class ContextUsageViewGateTests: XCTestCase {
     private static let chatView = "HarnaxFeatures/Chat/ChatView.swift"
 
-    /// The chip is offered because the view model answered with a reading, and it is hidden because the view
-    /// model answered with nothing. The view re-decides neither.
+    /// The chip is offered because the view model answered with a reading and hidden because it answered with
+    /// nothing — one unwrap, in the toolbar, and the tag builder re-decides neither.
     func testTheOccupancyChipIsMountedAndHiddenByTheViewModelsOwnJudgement() throws {
         let text = try ToolbarSources.contents(of: Self.chatView)
         XCTAssertTrue(
-            text.contains("ToolbarItem(placement: .primaryAction) { contextUsageTag }"),
+            text.contains("ToolbarItem(placement: .primaryAction) { contextUsageTag(usage) }"),
             "contextUsageTag is declared but never put in the toolbar — the readout would exist only in the view model"
         )
-        let chip = try ToolbarSources.block(text, from: "private var contextUsageTag")
         XCTAssertTrue(
-            chip.contains("if let usage = vm.contextUsage"),
-            "the chip has to open on the view model's reading, not on a second gate of its own"
+            text.contains("if let usage = vm.contextUsage {"),
+            "…and it is mounted by the view model's own reading rather than by a second gate"
+        )
+        let chip = try ToolbarSources.block(text, from: "private func contextUsageTag")
+        XCTAssertFalse(
+            chip.contains("vm.contextUsage"),
+            "the view model's reading is opened once, in the toolbar: a second unwrap is a second reader of "
+                + "one state, and the two drift the day one of them is revised"
         )
         XCTAssertFalse(
             chip.contains("isReadable"),

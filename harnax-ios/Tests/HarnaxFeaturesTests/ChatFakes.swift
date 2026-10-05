@@ -48,10 +48,25 @@ final class ScriptedAgentCommands: AgentCommanding, @unchecked Sendable {
     /// Answers handed out in order before `reply` is used. A switch that goes optimistic and then has to come
     /// back needs the first command to land and the second to refuse.
     var replies: [Result<AgentCommandReply, APIError>] = []
+    /// Holds the answer back until `release()`, so what a stop pressed mid-request leaves behind is a race
+    /// rather than a sleep (`ScriptedContextUsage` does the same for the reading).
+    var gate = false
+    private var parked: [() -> Void] = []
 
     func command(_ request: CommandAgentRequest) async -> Result<AgentCommandReply, APIError> {
         requests.append(request)
-        return replies.isEmpty ? reply : replies.removeFirst()
+        let answer = replies.isEmpty ? reply : replies.removeFirst()
+        guard gate else { return answer }
+        return await withCheckedContinuation { continuation in
+            parked.append { continuation.resume(returning: answer) }
+        }
+    }
+
+    /// Answers every request that is parked.
+    func release() {
+        let waiting = parked
+        parked = []
+        for resume in waiting { resume() }
     }
 }
 
@@ -172,9 +187,18 @@ final class ScriptedContextUsage: ContextUsageReading, @unchecked Sendable {
 
     func contextUsage(sessionId: String) async -> Result<ContextUsage, APIError> {
         requested.append(sessionId)
-        guard gate else { return next(sessionId) }
+        // The payload belongs to the request: two reads parked one after the other have to carry different
+        // numbers, or the race between them says nothing.
+        let answer: Result<ContextUsage, APIError> = fails ? .failure(.offline) : .success(reading)
+        guard gate else {
+            answered.append(sessionId)
+            return answer
+        }
         return await withCheckedContinuation { continuation in
-            parked.append { continuation.resume(returning: self.next(sessionId)) }
+            parked.append {
+                self.answered.append(sessionId)
+                continuation.resume(returning: answer)
+            }
         }
     }
 
@@ -182,11 +206,6 @@ final class ScriptedContextUsage: ContextUsageReading, @unchecked Sendable {
         let waiting = parked
         parked = []
         for resume in waiting { resume() }
-    }
-
-    private func next(_ sessionId: String) -> Result<ContextUsage, APIError> {
-        answered.append(sessionId)
-        return fails ? .failure(.offline) : .success(reading)
     }
 }
 

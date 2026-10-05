@@ -83,9 +83,11 @@ public struct ChatView: View {
         .toolbar {
             // Declared first so it sits left of the workspace entry, which is where the console keeps the
             // readout — beside the title, ahead of the action buttons
-            // (`harnax-webui/src/pages/session/index.tsx:353-355`).
-            if vm.contextUsage != nil {
-                ToolbarItem(placement: .primaryAction) { contextUsageTag }
+            // (`harnax-webui/src/pages/session/index.tsx:353-355`). This is the one unwrap of the reading:
+            // the model keeps no reading for the legs that answer without one, so the absence here *is* the
+            // judgement (`ContextUsageReadout`).
+            if let usage = vm.contextUsage {
+                ToolbarItem(placement: .primaryAction) { contextUsageTag(usage) }
             }
             // A deliberate fork from the console, which draws its Workspace button always and checks the status
             // when it is tapped (`harnax-webui/src/pages/session/index.tsx:280-292`): with no sandbox manager
@@ -149,30 +151,28 @@ public struct ChatView: View {
     /// `ContextUsage.isReadable`, and both legs that answer without one — no instance holds the session, the
     /// session was never bound — say the router cannot see this context, never that the context is empty.
     @ViewBuilder
-    private var contextUsageTag: some View {
-        if let usage = vm.contextUsage {
-            Menu {
-                HXText("chat.context.usage")
-                Divider()
-                ForEach(ContextUsageReadout.rows(for: usage), id: \.label) { row in
-                    HStack(spacing: 10) {
-                        Text(verbatim: row.label)
-                        Spacer(minLength: 8)
-                        Text(verbatim: row.value)
-                    }
+    private func contextUsageTag(_ usage: ContextUsage) -> some View {
+        Menu {
+            HXText("chat.context.usage")
+            Divider()
+            ForEach(ContextUsageReadout.rows(for: usage), id: \.label) { row in
+                HStack(spacing: 10) {
+                    Text(verbatim: row.label)
+                    Spacer(minLength: 8)
+                    Text(verbatim: row.value)
                 }
-            } label: {
-                // `orange` for a context that has reached the automatic trigger, neutral for one that has not
-                // (`index.tsx:68`): at that point the next turn compacts this context whether or not anyone
-                // asks, and a quiet pill would be the readout withholding the only news it has.
-                HXChip(
-                    ContextUsageReadout.headline(for: usage),
-                    tone: usage.isAtAutoTrigger ? .warning : nil
-                )
             }
-            .accessibilityLabel(hx("chat.context.usage"))
-            .accessibilityValue(ContextUsageReadout.headline(for: usage))
+        } label: {
+            // `orange` for a context that has reached the automatic trigger, neutral for one that has not
+            // (`index.tsx:68`): at that point the next turn compacts this context whether or not anyone
+            // asks, and a quiet pill would be the readout withholding the only news it has.
+            HXChip(
+                ContextUsageReadout.headline(for: usage),
+                tone: usage.isAtAutoTrigger ? .warning : nil
+            )
         }
+        .accessibilityLabel(hx("chat.context.usage"))
+        .accessibilityValue(ContextUsageReadout.headline(for: usage))
     }
 
     // MARK: - transcript

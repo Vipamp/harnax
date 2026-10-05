@@ -58,16 +58,17 @@ final class CompactionOutcomeTests: XCTestCase {
         XCTAssertEqual(outcome(AgentCommandReply(success: true, result: .init(afterMessages: 9))), .done)
     }
 
-    /// The deliberate fork from the console, which calls a reply with no `success` key a failure: admin answers
-    /// `ResultVo.success(null)` for a command that reported nothing, and this side already declines to read that
-    /// as a refusal (`ChatViewModel.commandSentence`). A counted no-op is still a no-op here, because that leg
-    /// reads `result` rather than the missing key.
-    func testAReplyWithNoSuccessKeyIsNotReadAsARefusal() {
-        XCTAssertEqual(outcome(AgentCommandReply()), .done)
+    /// The flag has to say `true`, which is the console's rule (`contextUsage.ts:64`) and the safe one: the
+    /// command channel declares `success` non-null
+    /// (`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/CommandResponse.kt:13-17`), so a body
+    /// that does not carry it is one this side did not read rather than a compaction that ran. Reading it as a
+    /// completed compaction would put 「已压缩上下文」 under a call that never reported one.
+    func testAReplyThatCarriesNoSuccessFlagIsReadAsAFailure() {
+        XCTAssertEqual(outcome(AgentCommandReply()), .failed)
         XCTAssertEqual(
             outcome(AgentCommandReply(result: .init(beforeMessages: 4, afterMessages: 4))),
-            .noop,
-            "the counted no-op does not need the flag"
+            .failed,
+            "counts do not stand in for the flag"
         )
     }
 }

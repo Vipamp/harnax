@@ -119,7 +119,13 @@ public struct ContextUsage: Decodable, Equatable, Sendable {
     public static func percentText(_ ratio: Double) -> String {
         guard ratio.isFinite, ratio > 0 else { return "0%" }
         let percent = ratio * 100
-        if percent >= 10 { return "\(Int(percent.rounded()))%" }
+        if percent >= 10 {
+            // `Int(Double)` is a fatal error past its range, and a `ratio` divided out of a corrupt
+            // denominator can be anything the wire carries. `isFinite` does not cover it: multiplying by a
+            // hundred can overflow to infinity here.
+            let whole = percent.rounded()
+            return whole < Double(Int.max) ? "\(Int(whole))%" : "\(Int.max)%"
+        }
         if percent >= 1 { return String(format: "%.1f%%", percent) }
         var text = String(format: "%.2f", percent)
         while text.hasSuffix("0") { text.removeLast() }
@@ -129,11 +135,13 @@ public struct ContextUsage: Decodable, Equatable, Sendable {
 
     /// The catalogue key naming where the denominator came from. An unknown tier keeps its own wording rather
     /// than borrowing the fallback's, which would say "the runtime had no idea" when it said something else.
+    /// An empty tier is the fallback's answer, which is the console's own leg
+    /// (`harnax-webui/src/pages/session/index.tsx:42-43`, `usage.windowSource || 'FALLBACK'`).
     public var windowSourceTitleKey: String? {
         switch windowSource {
         case "MODEL_FIELD": return "chat.context.source.modelField"
         case "UPSTREAM_TABLE": return "chat.context.source.upstreamTable"
-        case "FALLBACK", .none: return "chat.context.source.fallback"
+        case "", "FALLBACK", .none: return "chat.context.source.fallback"
         default: return nil
         }
     }

@@ -55,12 +55,27 @@ final class ContextUsageTests: XCTestCase {
         XCTAssertTrue(decoded.isReadable)
     }
 
-    /// The bill is dropped from the payload rather than sent as `null`, since admin omits null keys on the way
-    /// out. Absence has to read as "no bill" — a `0` there would pull the headline to `0%`.
+    /// Absence reads as "no bill": a `0` there would pull the headline to `0%`, and the billed row would say
+    /// the session got a free call rather than no call at all.
     func testAnAbsentBillDecodesAsNoBill() throws {
         let decoded = try usage(payload(estimatedTokens: 900, contextWindow: 32_000, ratio: 0.028))
 
         XCTAssertNil(decoded.lastCallInputTokens)
+        XCTAssertEqual(decoded.basis, .estimated)
+        XCTAssertEqual(decoded.numeratorTokens, 900)
+    }
+
+    /// An explicit `null` is the shape this route really answers with: the two services on it (agent-service,
+    /// reached through session-router) leave Jackson's default inclusion alone, so null keys are written out.
+    /// Only admin and scheduler omit them, and a client that assumes omission would crash on this body.
+    func testAnExplicitNullDecodesTheSameWayAsAnAbsentKey() throws {
+        let decoded = try usage(#"""
+        {"messageCount":2,"estimatedTokens":900,"lastCallInputTokens":null,"contextWindow":32000,
+        "windowSource":null,"ratio":0.028,"triggerTokens":0,"triggerMessages":50}
+        """#)
+
+        XCTAssertNil(decoded.lastCallInputTokens)
+        XCTAssertNil(decoded.windowSource)
         XCTAssertEqual(decoded.basis, .estimated)
         XCTAssertEqual(decoded.numeratorTokens, 900)
     }
@@ -131,6 +146,16 @@ final class ContextUsageTests: XCTestCase {
         for ratio in [0.0, -0.1, Double.nan, Double.infinity] {
             XCTAssertEqual(ContextUsage.percentText(ratio), "0%", "\(ratio)")
         }
+    }
+
+    /// `Int(Double)` is a *fatal error* past its range, and `ratio` is a division the server did on numbers this
+    /// side cannot audit: a corrupt denominator can reach here as anything the wire carries. A header that
+    /// crashes is worse than a header that prints a silly number, so the whole-percent leg saturates. A ratio
+    /// still inside the range keeps its own digits, which is what the console prints too.
+    func testARatioBeyondTheRangeOfIntPrintsANumberInsteadOfTrapping() {
+        XCTAssertEqual(ContextUsage.percentText(1e14), "10000000000000000%")
+        XCTAssertEqual(ContextUsage.percentText(9.3e16), "9223372036854775807%")
+        XCTAssertEqual(ContextUsage.percentText(Double.greatestFiniteMagnitude), "9223372036854775807%")
     }
 
     // MARK: - where the numerator came from
@@ -206,12 +231,19 @@ final class ContextUsageTests: XCTestCase {
     }
 
     /// An absent tier is the fallback's answer, which is the server's own default
-    /// (`ContextUsageResponse.kt:46`).
+    /// (`ContextUsageResponse.kt:46`), and an empty string is the same answer — the console's leg is
+    /// `usage.windowSource || 'FALLBACK'`, and a tier that reaches the window row as nothing would leave the
+    /// label ending in a bare separator.
     func testAMissingTierReadsAsTheFallback() throws {
         let decoded = try usage(payload(contextWindow: 1000, ratio: 0.1))
 
         XCTAssertNil(decoded.windowSource)
         XCTAssertEqual(decoded.windowSourceTitleKey, "chat.context.source.fallback")
+        XCTAssertEqual(
+            ContextUsage(contextWindow: 1000, windowSource: "").windowSourceTitleKey,
+            "chat.context.source.fallback",
+            "an empty tier is the console's falsy leg, not an unknown tier"
+        )
     }
 
     /// A fourth tier added upstream keeps its own name instead of being reported as "the runtime had no idea" —
