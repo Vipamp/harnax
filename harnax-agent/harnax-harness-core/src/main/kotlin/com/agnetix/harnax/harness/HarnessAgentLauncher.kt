@@ -685,7 +685,7 @@ class HarnessAgentLauncher(
             minioConfig != null,
         )
 
-        return HarnessAgentWrapper(
+        val wrapper = HarnessAgentWrapper(
             harnessAgent = agent,
             mcpClients = mcpClients,
             dangerousTools = needConfirmedTools + dangerousInputTools,
@@ -711,6 +711,10 @@ class HarnessAgentLauncher(
             sessionMessageStore = sessionMessageStore,
             configuredContextWindow = chatModelConfig.contextWindow,
         )
+        // Automatic compaction trims inside a turn while the archive is written at its end, so a session that
+        // predates the archive has one turn where its head could be trimmed before it is ever recorded.
+        wrapper.backfillArchive()
+        return wrapper
     }
 
     /**

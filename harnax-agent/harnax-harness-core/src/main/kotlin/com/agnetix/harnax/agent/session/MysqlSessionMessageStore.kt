@@ -132,6 +132,27 @@ class MysqlSessionMessageStore(
     }
 
     /**
+     * Whether this session and owner bucket has anything archived yet.
+     *
+     * An existence probe, not a count: the automatic compaction asks this before a turn runs, and answering it
+     * with [load] would deserialize the session's whole archived history to say "yes".
+     */
+    fun hasArchive(
+        userId: String?,
+        sessionId: String,
+    ): Boolean {
+        val uid = normalizeUserId(userId)
+        val sql = "SELECT 1 FROM $tableName WHERE user_id = ? AND session_id = ? LIMIT 1"
+        return dataSource.connection.use { conn ->
+            conn.prepareStatement(sql).use { ps ->
+                ps.setString(1, uid)
+                ps.setString(2, sessionId)
+                ps.executeQuery().use { rs -> rs.next() }
+            }
+        }
+    }
+
+    /**
      * Reads a session's full history in the order it was first recorded.
      *
      * Ordered by this table's own auto-increment id rather than by any timestamp: the session database

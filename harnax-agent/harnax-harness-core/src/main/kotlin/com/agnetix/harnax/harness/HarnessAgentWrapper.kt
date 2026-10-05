@@ -307,11 +307,39 @@ class HarnessAgentWrapper(
     }
 
     /**
+     * Records a session's already-persisted context the first time this process touches it.
+     *
+     * [archiveContext] at the end of each turn is what keeps the page whole across automatic compaction, but it
+     * runs after the turn while the middleware trims inside it. A session that predates the archive therefore
+     * still has one turn whose head lives only in `agent_state`, and a session long enough to trip the
+     * compaction can do exactly that in that first turn. Writing what is already persisted before any turn runs
+     * closes the window.
+     *
+     * It belongs at assembly rather than per turn: once this bucket has a row, every later turn is covered by the
+     * whole-context write, and a restart finds the archive filled.
+     *
+     * Best-effort like the turn-end write — a failed seed leaves the next turn to heal it, and the trim that
+     * beats the turn-end write is the same loss the turn-end path already accepts.
+     */
+    fun backfillArchive() {
+        val store = sessionMessageStore ?: return
+        val alreadyRecorded = try {
+            store.hasArchive(userId, sessionId)
+        } catch (e: Exception) {
+            log.warn("[archive] Existence check for session={} failed: {}", sessionId, e.message)
+            return
+        }
+        if (alreadyRecorded) return
+        archiveContext()
+    }
+
+    /**
      * Records this turn's whole context into the chat history archive.
      *
      * Written as the full context rather than the turn's new messages, so a failed write is healed by the next
-     * turn and the automatic compaction needs no hook of its own: by the time the middleware trims a context,
-     * the previous turn already archived what it is about to trim. The on-demand command cannot rely on that,
+     * turn and the automatic compaction needs no in-turn hook: by the time the middleware trims a context,
+     * the previous turn already archived what it is about to trim, and [backfillArchive] covers the one turn
+     * before that first archive row exists. The on-demand command cannot rely on that,
      * so [compactManually] writes first.
      *
      * Best-effort by contract — one retry with a warning on each failure. A reply that landed must not be lost

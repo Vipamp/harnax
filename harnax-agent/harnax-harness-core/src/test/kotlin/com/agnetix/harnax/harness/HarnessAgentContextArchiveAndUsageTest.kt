@@ -152,6 +152,30 @@ class HarnessAgentContextArchiveAndUsageTest {
         }
 
         @Test
+        @DisplayName("a session the archive has nothing for is recorded before its next turn runs")
+        fun seedsAnEmptyArchive() {
+            // The automatic path trims inside the turn while the turn-end write happens after it, so the head of
+            // a session that predates the archive can be compacted away before it is ever recorded.
+            val (agent, _) = liveAgent(conversation(3))
+
+            wrapper(agent).backfillArchive()
+
+            assertEquals(listOf("m1", "m2", "m3"), archive.load("", SESSION_ID).map { it.id })
+        }
+
+        @Test
+        @DisplayName("a session that already has an archive costs the existence check and nothing else")
+        fun leavesAFilledArchiveAlone() {
+            archive.archive("", SESSION_ID, conversation(2))
+            val (agent, delegate) = liveAgent(conversation(3))
+
+            wrapper(agent).backfillArchive()
+
+            verify(delegate, never()).getAgentState(any(), any())
+            assertEquals(listOf("m1", "m2"), archive.load("", SESSION_ID).map { it.id })
+        }
+
+        @Test
         @DisplayName("the archive takes the live state, never the persisted copy")
         fun archivesLiveStateNotTheStoreCopy() {
             // The two differ the moment a turn is in flight: the row in `agent_state` is the previous turn's.

@@ -94,6 +94,20 @@ class MysqlSessionMessageStoreH2Test {
             assertEquals(1, store.load(null, "s1").size)
             assertEquals(1, store.load("__anon__", "s1").size)
         }
+
+        @Test
+        fun `an archive answers whether it holds anything for this bucket without reading the history`() {
+            // The automatic compaction asks this before a turn runs, and load() would pay a full deserialization
+            // of every archived message to answer a yes.
+            assertTrue(store.load("", "s1").isEmpty())
+            assertEquals(false, store.hasArchive("", "s1"))
+
+            store.archive("", "s1", listOf(msg("m1", MsgRole.USER, "user", "hello")))
+
+            assertEquals(true, store.hasArchive("", "s1"))
+            assertEquals(true, store.hasArchive(null, "s1"))
+            assertEquals(false, store.hasArchive("7", "s1"))
+        }
     }
 
     @Nested
