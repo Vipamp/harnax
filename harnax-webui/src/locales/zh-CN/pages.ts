@@ -587,6 +587,8 @@ export default {
   'pages.agent.skillSelfWriteHint': '允许 agent 在自己的会话里起草技能。在待审草稿页有人批准之前，它不会被发布，也不会被任何其他 agent 看到。',
   'pages.agent.memoryEnabled': '长期记忆',
   'pages.agent.memoryEnabledHint': '关闭后这个 agent 不再从会话里提炼记忆，也不会在装配上下文时带上已有记忆。已经落盘的记忆文件不会删除，需要清理请到记忆管理页。',
+  'pages.agent.sessionMemoryEnabled': '会话记忆',
+  'pages.agent.sessionMemoryEnabledHint': '打开后每个会话另外有一份只属于本次对话的记忆，隔一段时间自动并入长期记忆并清空本轮。需要先打开长期记忆；这里关掉就是只有长期记忆一层，与现在一致。',
   'pages.agent.toolConfig': '工具配置',
   'pages.agent.toolConfigOptional': '配置工具（可选，可跳过）',
   'pages.agent.modelNotSupportTool': '当前模型不支持工具调用，可切换支持的模型或直接跳过此步骤',

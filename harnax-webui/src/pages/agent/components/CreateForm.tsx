@@ -41,6 +41,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
   const [isPublic, setIsPublic] = useState(false);
   const [skillSelfWrite, setSkillSelfWrite] = useState(false);
   const [memoryEnabled, setMemoryEnabled] = useState(true);
+  const [sessionMemoryEnabled, setSessionMemoryEnabled] = useState(false);
   const { isAdmin } = getCurrentUserInfo();
 
   const [mcpConfigs, setMcpConfigs] = useState<McpConfigState[]>([{}]);
@@ -162,6 +163,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
           isPublic: isPublic ? 1 : 0,
           skillSelfWrite: skillSelfWrite ? 1 : 0,
           memoryEnabled: memoryEnabled ? 1 : 0,
+          sessionMemoryEnabled: sessionMemoryEnabled ? 1 : 0,
           mcpList: mcpConfigs.filter(c => c.mcpId).map(c => ({
             id: c.mcpId,
             envBindings: (c.envBindings || []).map(({ customInput, ...b }) => ({
@@ -290,6 +292,20 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
                 {intl.formatMessage({
                   id: 'pages.agent.memoryEnabledHint',
                   defaultMessage: 'Off means this agent stops extracting memory from its sessions and stops carrying existing memory into its context. Memory already written is not deleted; clear it on the memory page.',
+                })}
+              </div>
+            </Form.Item>
+            <Form.Item label={intl.formatMessage({ id: 'pages.agent.sessionMemoryEnabled', defaultMessage: 'Session memory' })}>
+              <Switch
+                checked={sessionMemoryEnabled}
+                onChange={setSessionMemoryEnabled}
+                checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
+                unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
+              />
+              <div style={{ marginTop: 4, color: 'var(--vip-text-secondary)', fontSize: '14px' }}>
+                {intl.formatMessage({
+                  id: 'pages.agent.sessionMemoryEnabledHint',
+                  defaultMessage: 'On gives each conversation its own memory as well, which is merged into long-term memory and cleared once enough time has passed. Needs long-term memory to be on; off here keeps the single long-term layer, as today.',
                 })}
               </div>
             </Form.Item>

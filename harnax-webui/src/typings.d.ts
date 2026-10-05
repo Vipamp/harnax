@@ -712,6 +712,8 @@ message?: string;
     skillSelfWrite?: number;
     /** 0/1 — long-term memory; absent or 1 means on, only an explicit 0 turns it off */
     memoryEnabled?: number;
+    /** 0/1 — per-session memory layer; absent or 0 means off, only an explicit 1 asks for two layers */
+    sessionMemoryEnabled?: number;
     creator?: string;
     createTime?: string;
     updateTime?: string;
@@ -884,6 +886,7 @@ message?: string;
     isPublic?: number;
     skillSelfWrite?: number;
     memoryEnabled?: number;
+    sessionMemoryEnabled?: number;
   };
 
   /**
@@ -902,6 +905,7 @@ message?: string;
     isPublic?: number;
     skillSelfWrite?: number;
     memoryEnabled?: number;
+    sessionMemoryEnabled?: number;
   };
 
   /**
