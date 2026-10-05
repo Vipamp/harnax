@@ -33,6 +33,12 @@ object MemoryFilesystemRoutes {
     private const val ROOT_SEGMENT = "root"
     private const val MEMORY_SEGMENT = "memory"
 
+    /**
+     * The segment a conversation's own layer nests under, inside the agent segment. Public because
+     * harnax-admin decodes the same keys and must spell this one identically.
+     */
+    const val SESSIONS_SEGMENT = "sessions"
+
     fun routes(
         store: BaseStore,
         tenantId: Long?,
@@ -42,6 +48,25 @@ object MemoryFilesystemRoutes {
     ): Map<String, AbstractFilesystem> = mapOf(
         MEMORY_MD_ROUTE to route(store, tenantId, userId, agentId, tenantScoped, ROOT_SEGMENT),
         MEMORY_DIR_ROUTE to route(store, tenantId, userId, agentId, tenantScoped, MEMORY_SEGMENT),
+    )
+
+    /**
+     * The conversation's own bucket, which is the two memory routes re-keyed one segment deeper.
+     *
+     * Nothing else about the pipeline moves: the flush appends to `memory/` and the consolidation pass
+     * curates `MEMORY.md` through whichever route answers, so swapping the tail of the namespace is what
+     * makes a conversation extract into its own layer instead of the owner's long-term one.
+     */
+    fun sessionRoutes(
+        store: BaseStore,
+        tenantId: Long?,
+        userId: String,
+        agentId: String,
+        sessionId: String,
+        tenantScoped: Boolean,
+    ): Map<String, AbstractFilesystem> = mapOf(
+        MEMORY_MD_ROUTE to sessionRoute(store, tenantId, userId, agentId, sessionId, tenantScoped, ROOT_SEGMENT),
+        MEMORY_DIR_ROUTE to sessionRoute(store, tenantId, userId, agentId, sessionId, tenantScoped, MEMORY_SEGMENT),
     )
 
     /**
@@ -71,6 +96,22 @@ object MemoryFilesystemRoutes {
         add(segment)
     }
 
+    /**
+     * The conversation's bucket tuple: the owner tuple, then `sessions/<sessionId>`, then the caller's
+     * [segment]. The session pair goes *inside* the agent segment on purpose, so listing or deleting
+     * `agents/<agentId>/` takes a conversation's layer along with the long-term one — the two whole-agent
+     * reclamation paths need no session-aware branch.
+     */
+    fun sessionNamespace(
+        tenantId: Long?,
+        userId: String,
+        agentId: String,
+        sessionId: String,
+        tenantScoped: Boolean,
+        segment: String,
+    ): List<String> = namespace(tenantId, userId, agentId, tenantScoped, SESSIONS_SEGMENT) +
+        listOf(sessionId, segment)
+
     private fun route(
         store: BaseStore,
         tenantId: Long?,
@@ -82,6 +123,21 @@ object MemoryFilesystemRoutes {
         store,
         NamespaceFactory {
             namespace(tenantId, userId, agentId, tenantScoped, segment)
+        },
+    )
+
+    private fun sessionRoute(
+        store: BaseStore,
+        tenantId: Long?,
+        userId: String,
+        agentId: String,
+        sessionId: String,
+        tenantScoped: Boolean,
+        segment: String,
+    ): AbstractFilesystem = RemoteFilesystem(
+        store,
+        NamespaceFactory {
+            sessionNamespace(tenantId, userId, agentId, sessionId, tenantScoped, segment)
         },
     )
 }

@@ -10,9 +10,12 @@ import java.time.format.DateTimeFormatter
  * key as `keyPrefix + namespace.joinToString("/") + "/" + itemKey.removePrefix("/")`, and
  * `MemoryFilesystemRoutes` builds the namespace as
  * `[tenants/<tenantId>/]users/<userId>/agents/<agentId>/<root|memory>` — the tenant pair only while its
- * `harness.memory.tenant-scoped` is on. Admin only ever reads and removes what that pair produced, so the
- * two rules are reproduced here verbatim rather than re-derived — a key that drifts by one character is a
- * memory file admin cannot see.
+ * `harness.memory.tenant-scoped` is on. A conversation's own layer is the same shape with the session pair
+ * inside the agent segment,
+ * `[tenants/<tenantId>/]users/<userId>/agents/<agentId>/sessions/<sessionId>/<root|memory>`, so the decoder
+ * below names which layer each listed object belongs to. Admin only ever reads and removes what that pair
+ * produced, so the two rules are reproduced here verbatim rather than re-derived — a key that drifts by one
+ * character is a memory file admin cannot see.
  *
  * Everything in this object is pure string work with no MinIO in sight, which is what makes the exact
  * key strings assertable in a unit test.
@@ -27,6 +30,9 @@ object MemoryObjectKeys {
 
     /** The route tail the runtime appends the daily ledgers under. */
     const val MEMORY_SEGMENT = "memory"
+
+    /** The segment a conversation's own layer nests under, inside the agent segment. */
+    const val SESSIONS_SEGMENT = "sessions"
 
     /** The item key of the curated layer inside the [ROOT_SEGMENT] route. */
     const val MEMORY_MD_ITEM_KEY = "/MEMORY.md"
@@ -148,6 +154,25 @@ object MemoryObjectKeys {
     ): String = buildKey(keyPrefix, memoryNamespace(tenantId, userId, agentId, tenantScoped), "/$date.md")
 
     /**
+     * One conversation's curated file: the owner tuple, then `sessions/<sid>`, then the `root` route tail.
+     *
+     * The session pair sits inside the agent prefix, so this key is covered by both [agentPrefix] and
+     * [ownerPrefix] and therefore by both whole-agent and whole-user deletes without a session-aware branch.
+     */
+    fun sessionMemoryMdKey(
+        keyPrefix: String,
+        tenantId: Long,
+        userId: String,
+        agentId: String,
+        sessionId: String,
+        tenantScoped: Boolean = true,
+    ): String = buildKey(
+        keyPrefix,
+        namespace(tenantId, userId, agentId, SESSIONS_SEGMENT, tenantScoped) + listOf(sessionId, ROOT_SEGMENT),
+        MEMORY_MD_ITEM_KEY,
+    )
+
+    /**
      * The narrowest prefix that still covers everything one owner wrote, used to enumerate their agents.
      * Always ends with `/`, so a listing cannot be widened by a prefix that is a prefix of a name.
      */
@@ -180,15 +205,24 @@ object MemoryObjectKeys {
      * @param agentId the `agents/<id>` segment as the store holds it
      * @param segment [ROOT_SEGMENT] or [MEMORY_SEGMENT]
      * @param itemKey the path below the route, always with a leading `/`
+     * @param sessionId the `sessions/<sid>` segment when the object is a conversation's own layer, and null
+     *   when it is the long-term layer this owner shares across conversations. The page shows only the null
+     *   rows; both layers go together when an agent or a user is deleted.
      */
     data class Location(
         val agentId: String,
         val segment: String,
         val itemKey: String,
+        val sessionId: String? = null,
     )
 
     /**
      * Decode an object key that was listed under [ownerPrefix].
+     *
+     * Two shapes come out of the runtime: the long-term layer at `agents/<id>/<root|memory>/…` and a
+     * conversation's own layer at `agents/<id>/sessions/<sid>/<root|memory>/…`. Both decode here, because
+     * both have to be deletable by the sweeps that address an agent or a user — a session-nested key this
+     * function refused would be left in the bucket after its owner was deleted.
      *
      * Returns null for anything that is not a memory object of this owner — a foreign key, an agent whose
      * own name contains a slash (which would shift the route segment out of place), or a directory marker.
@@ -203,11 +237,21 @@ object MemoryObjectKeys {
         val parts = objectKey.removePrefix(ownerPrefix).trimStart('/').split("/")
         if (parts.size < 3 || parts[0] != AGENTS_SEGMENT) return null
         val agentId = parts[1]
-        val segment = parts[2]
+        var index = 2
+        val sessionId = if (parts.getOrNull(index) == SESSIONS_SEGMENT) {
+            val sid = parts.getOrNull(index + 1)
+            if (sid.isNullOrBlank()) return null
+            index += 2
+            sid
+        } else {
+            null
+        }
+        if (index >= parts.size) return null
+        val segment = parts[index]
         if (agentId.isBlank() || segment !in ROUTE_SEGMENTS) return null
-        val itemKey = parts.drop(3).joinToString("/")
+        val itemKey = parts.drop(index + 1).joinToString("/")
         if (itemKey.isBlank()) return null
-        return Location(agentId, segment, "/$itemKey")
+        return Location(agentId, segment, "/$itemKey", sessionId)
     }
 
     /** The `YYYY-MM-DD` part of a daily ledger key, or null when the item key is not a dated markdown file. */

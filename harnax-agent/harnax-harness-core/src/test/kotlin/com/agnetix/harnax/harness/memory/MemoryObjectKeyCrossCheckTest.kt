@@ -217,4 +217,48 @@ class MemoryObjectKeyCrossCheckTest {
             keysUnder("store/tenants/4/users/punctuated/"),
         )
     }
+
+    /** The same write through the conversation's own bucket, which is the two routes keyed one layer deeper. */
+    private fun writeSessionMemoryMd(
+        owner: String,
+        sessionId: String,
+        tenantScoped: Boolean = true,
+    ) {
+        val routes = MemoryFilesystemRoutes.sessionRoutes(
+            MinioBaseStore(client(), BUCKET, PREFIX),
+            tenantId = 4L,
+            userId = owner,
+            agentId = "Research",
+            sessionId = sessionId,
+            tenantScoped = tenantScoped,
+        )
+        val written = routes.getValue(MemoryFilesystemRoutes.MEMORY_MD_ROUTE)
+            .write(RuntimeContext.builder().sessionId(sessionId).build(), "/MEMORY.md", "- a line")
+        assertEquals(true, written.isSuccess, "the write should have landed: ${written.error()}")
+    }
+
+    @Test
+    fun `the session layer lands inside its agent so one prefix covers both layers`() {
+        writeMemoryMd(owner = "layered", tenantScoped = true)
+        writeSessionMemoryMd(owner = "layered", sessionId = "sess-A")
+
+        assertEquals(
+            listOf(
+                "store/tenants/4/users/layered/agents/Research/root/MEMORY.md",
+                "store/tenants/4/users/layered/agents/Research/sessions/sess-A/root/MEMORY.md",
+            ),
+            keysUnder("store/tenants/4/users/layered/agents/Research/").sorted(),
+            "deleting this agent is what reclaims a conversation's memory, and that sweep lists by this prefix",
+        )
+    }
+
+    @Test
+    fun `the session key starts at users when the tenant segment is off`() {
+        writeSessionMemoryMd(owner = "free", sessionId = "sess-B", tenantScoped = false)
+
+        assertEquals(
+            listOf("store/users/free/agents/Research/sessions/sess-B/root/MEMORY.md"),
+            keysUnder("store/users/free/"),
+        )
+    }
 }
