@@ -261,4 +261,27 @@ class MemoryObjectKeyCrossCheckTest {
             keysUnder("store/users/free/"),
         )
     }
+
+    /**
+     * Both layers of one owner with the tenant segment off, in one listing.
+     *
+     * harnax-admin reads its page off the same switch (`harnax.memory.tenant-scoped`), so this is the case
+     * that says an unscoped deployment still finds a conversation's bucket: the switch moves the session
+     * layer exactly as it moves the long-term one, rather than leaving one keyed by a tenant that is not
+     * in the other's prefix.
+     */
+    @Test
+    fun `turning the tenant segment off moves both layers together`() {
+        writeMemoryMd(owner = "bothfree", tenantScoped = false)
+        writeSessionMemoryMd(owner = "bothfree", sessionId = "sess-C", tenantScoped = false)
+
+        assertEquals(
+            listOf(
+                "store/users/bothfree/agents/Research/root/MEMORY.md",
+                "store/users/bothfree/agents/Research/sessions/sess-C/root/MEMORY.md",
+            ),
+            keysUnder("store/users/bothfree/").sorted(),
+            "one owner, one key root, two layers under it",
+        )
+    }
 }
