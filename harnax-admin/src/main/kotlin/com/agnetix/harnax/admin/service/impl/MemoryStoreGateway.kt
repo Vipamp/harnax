@@ -71,7 +71,7 @@ class MemoryStoreGateway(
         userId: String,
     ): List<MemoryAgentResponse> {
         val ownerPrefix = ownerPrefix(tenantId, userId)
-        return groupByAgent(list(ownerPrefix)).map { (agentId, objects) ->
+        return groupByAgent(longTermOnly(list(ownerPrefix))).map { (agentId, objects) ->
             val curated = recordOf(objects, MemoryObjectKeys.ROOT_SEGMENT)
             MemoryAgentResponse(
                 agentId = agentId,
@@ -97,7 +97,7 @@ class MemoryStoreGateway(
         if (!MemoryObjectKeys.isValidAgentId(agentId)) {
             throw BizException("Invalid agent id")
         }
-        val objects = groupByAgent(list(ownerPrefix(tenantId, userId)))[agentId] ?: return null
+        val objects = groupByAgent(longTermOnly(list(ownerPrefix(tenantId, userId))))[agentId] ?: return null
         val curated = recordOf(objects, MemoryObjectKeys.ROOT_SEGMENT)
         val entries = objects
             .filter { it.location.segment == MemoryObjectKeys.MEMORY_SEGMENT }
@@ -170,6 +170,16 @@ class MemoryStoreGateway(
         val stored: Stored,
         val record: MemoryRecordParser.Record,
     )
+
+    /**
+     * The objects that are this owner's long-term layer, dropping every conversation's own bucket.
+     *
+     * A session's `root/MEMORY.md` is a draft that has not been merged yet, and its ledgers have not earned
+     * a place in the curated memory. Handled as long-term content they would make the page say a new
+     * conversation will be told something it will not. Both layers still go away together, because
+     * [deleteAgent] and [deleteUser] run on the unfiltered listing.
+     */
+    private fun longTermOnly(objects: List<Stored>): List<Stored> = objects.filter { it.location.sessionId == null }
 
     /** The curated layer of one agent's objects, read once. */
     private fun recordOf(
