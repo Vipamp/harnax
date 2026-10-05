@@ -23,7 +23,10 @@ interface SkillUsageService {
     fun report(request: SkillUsageReportRequest): Int
 
     /**
-     * Counts per skill for the caller's tenant across the last [days] days, including skills with no events.
+     * Counts per skill for the last [days] days, including skills with no events.
+     *
+     * Read as the caller: the rows are the skills that person's own skill list would show, so a private
+     * skill of somebody else in the same tenant is absent here too rather than listed at zero.
      */
     fun summary(days: Int): SkillUsageSummaryResponse
 }

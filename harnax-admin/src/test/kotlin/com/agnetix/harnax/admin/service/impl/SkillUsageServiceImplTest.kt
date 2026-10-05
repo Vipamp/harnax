@@ -43,6 +43,9 @@ import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.isNull
 import org.mockito.quality.Strictness
+import org.springframework.mock.web.MockHttpServletRequest
+import org.springframework.web.context.request.RequestContextHolder
+import org.springframework.web.context.request.ServletRequestAttributes
 import java.time.LocalDateTime
 
 /**
@@ -97,11 +100,19 @@ class SkillUsageServiceImplTest {
             userTenantService = userTenantService,
             jwtUtil = jwtUtil,
         )
+        // The summary asks whose page it is, and that comes off the request token the same way the
+        // skill list reads it.
+        val mockRequest = MockHttpServletRequest()
+        mockRequest.addHeader("Authorization", "Bearer mock-token")
+        RequestContextHolder.setRequestAttributes(ServletRequestAttributes(mockRequest))
+        `when`(jwtUtil.validateToken(anyString())).thenReturn(true)
+        `when`(jwtUtil.getUsernameFromToken(anyString())).thenReturn(VIEWER)
     }
 
     @AfterEach
     fun tearDown() {
         TenantContext.clear()
+        RequestContextHolder.resetRequestAttributes()
     }
 
     private fun stubInsertAcks() {
@@ -453,7 +464,7 @@ class SkillUsageServiceImplTest {
         @Test
         @DisplayName("summary - clamps a window outside the reportable range")
         fun `summary should clamp the window`() {
-            `when`(skillUsageMapper.selectUsageByTenant(any(), any(), anyOrNull())).thenReturn(emptyList())
+            `when`(skillUsageMapper.selectUsageByTenant(any(), any(), anyOrNull(), anyOrNull())).thenReturn(emptyList())
 
             assertEquals(1, service.summary(days = 0).days)
             assertEquals(1, service.summary(days = -5).days)
@@ -466,28 +477,28 @@ class SkillUsageServiceImplTest {
         fun `summary should read within the request tenant`() {
             TenantContext.setTenantId(7L)
             `when`(skillRepositoryService.getBuiltinRepository()).thenReturn(SkillRepository().apply { id = 100L })
-            `when`(skillUsageMapper.selectUsageByTenant(any(), any(), anyOrNull())).thenReturn(emptyList())
+            `when`(skillUsageMapper.selectUsageByTenant(any(), any(), anyOrNull(), anyOrNull())).thenReturn(emptyList())
 
             service.summary(days = 30)
 
-            verify(skillUsageMapper).selectUsageByTenant(eq(7L), any(), eq(100L))
+            verify(skillUsageMapper).selectUsageByTenant(eq(7L), any(), eq(100L), eq(VIEWER))
         }
 
         @Test
         @DisplayName("summary - reports no exemption when the deployment has no builtin repository")
         fun `summary should pass a null builtin id through`() {
             TenantContext.setTenantId(7L)
-            `when`(skillUsageMapper.selectUsageByTenant(any(), any(), anyOrNull())).thenReturn(emptyList())
+            `when`(skillUsageMapper.selectUsageByTenant(any(), any(), anyOrNull(), anyOrNull())).thenReturn(emptyList())
 
             service.summary(days = 30)
 
-            verify(skillUsageMapper).selectUsageByTenant(eq(7L), any(), isNull())
+            verify(skillUsageMapper).selectUsageByTenant(eq(7L), any(), isNull(), eq(VIEWER))
         }
 
         @Test
         @DisplayName("summary - the window it reports is the one it queried")
         fun `summary should report the window it queried`() {
-            `when`(skillUsageMapper.selectUsageByTenant(any(), any(), anyOrNull())).thenReturn(emptyList())
+            `when`(skillUsageMapper.selectUsageByTenant(any(), any(), anyOrNull(), anyOrNull())).thenReturn(emptyList())
 
             val since = requireNotNull(service.summary(days = 7).since)
 
@@ -500,7 +511,7 @@ class SkillUsageServiceImplTest {
         fun `summary should total the rows`() {
             val recent = LocalDateTime.now().minusHours(2)
             `when`(
-                skillUsageMapper.selectUsageByTenant(any(), any(), anyOrNull()),
+                skillUsageMapper.selectUsageByTenant(any(), any(), anyOrNull(), anyOrNull()),
             ).thenReturn(
                 listOf(
                     aggregate(1L, viewCount = 5, useCount = 2, lastUsedAt = recent),
@@ -528,7 +539,7 @@ class SkillUsageServiceImplTest {
                 repositoryId = 100L,
                 origin = Skill.ORIGIN_AGENT_PROMOTED,
             )
-            `when`(skillUsageMapper.selectUsageByTenant(any(), any(), anyOrNull())).thenReturn(listOf(promoted))
+            `when`(skillUsageMapper.selectUsageByTenant(any(), any(), anyOrNull(), anyOrNull())).thenReturn(listOf(promoted))
             `when`(skillRepositoryService.getSkillRepository(100L)).thenReturn(SkillRepository().apply { name = "agent-promoted" })
 
             val row = service.summary(days = 30).rows.first()
@@ -546,7 +557,7 @@ class SkillUsageServiceImplTest {
         @Test
         @DisplayName("summary - a repository that no longer resolves leaves the name unknown")
         fun `summary should tolerate a repository that does not resolve`() {
-            `when`(skillUsageMapper.selectUsageByTenant(any(), any(), anyOrNull())).thenReturn(listOf(aggregate(1L, repositoryId = 404L)))
+            `when`(skillUsageMapper.selectUsageByTenant(any(), any(), anyOrNull(), anyOrNull())).thenReturn(listOf(aggregate(1L, repositoryId = 404L)))
             `when`(skillRepositoryService.getSkillRepository(404L)).thenReturn(null)
 
             assertNull(service.summary(days = 30).rows.first().repositoryName)
@@ -556,7 +567,7 @@ class SkillUsageServiceImplTest {
         @DisplayName("summary - asks for each repository once, not once per row")
         fun `summary should resolve each repository once`() {
             `when`(
-                skillUsageMapper.selectUsageByTenant(any(), any(), anyOrNull()),
+                skillUsageMapper.selectUsageByTenant(any(), any(), anyOrNull(), anyOrNull()),
             ).thenReturn(
                 listOf(aggregate(1L, repositoryId = 5L), aggregate(2L, repositoryId = 5L), aggregate(3L, repositoryId = 6L)),
             )
@@ -570,5 +581,8 @@ class SkillUsageServiceImplTest {
 
     companion object {
         private const val ACTIVE_STATUS = 1
+
+        /** The user a stubbed request token resolves to; the summary now reads as one viewer. */
+        private const val VIEWER = "admin"
     }
 }

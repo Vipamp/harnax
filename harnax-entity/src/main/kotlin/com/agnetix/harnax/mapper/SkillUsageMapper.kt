@@ -27,10 +27,15 @@ interface SkillUsageMapper {
      *
      * [builtinRepositoryId] exempts the shared builtin repository from the tenant filter so a tenant can
      * see whether it uses the platform-shipped skills at all; pass null where no builtin row exists.
+     *
+     * [currentUsername] carries the visibility rule the skill list applies: a private skill belongs to its
+     * creator, so another user's summary leaves it out entirely rather than showing it at zero. Passing
+     * null restricts the read to public skills.
      */
     fun selectUsageByTenant(
         @Param("tenantId") tenantId: Long,
         @Param("since") since: LocalDateTime,
         @Param("builtinRepositoryId") builtinRepositoryId: Long? = null,
+        @Param("currentUsername") currentUsername: String?,
     ): List<SkillUsageAggregate>
 }

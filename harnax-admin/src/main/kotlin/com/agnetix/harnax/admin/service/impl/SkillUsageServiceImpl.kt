@@ -7,6 +7,7 @@ import com.agnetix.harnax.admin.service.SkillUsageService
 import com.agnetix.harnax.admin.service.UserTenantService
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.TenantResolver
+import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.common.session.TaskSessionId
 import com.agnetix.harnax.entity.SkillUsage
 import com.agnetix.harnax.mapper.AgentMapper
@@ -114,9 +115,12 @@ class SkillUsageServiceImpl(
             log.info("Usage window {} days clamped to {}", days, windowDays)
         }
         val tenantId = TenantResolver.resolve(jwtUtil)
+        // The same viewer rule the skill list applies, read the same way: a private skill belongs to its
+        // creator, so whose page this is decides which rows the aggregate may name.
+        val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         val since = LocalDateTime.now().minusDays(windowDays.toLong())
         val builtinRepositoryId = skillRepositoryService.getBuiltinRepository()?.id
-        val aggregates = skillUsageMapper.selectUsageByTenant(tenantId, since, builtinRepositoryId)
+        val aggregates = skillUsageMapper.selectUsageByTenant(tenantId, since, builtinRepositoryId, currentUsername)
 
         val repositoryNames = aggregates.map { it.repositoryId }.distinct()
             .associateWith { skillRepositoryService.getSkillRepository(it)?.name }

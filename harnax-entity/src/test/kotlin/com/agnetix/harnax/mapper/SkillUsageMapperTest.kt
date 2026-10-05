@@ -65,8 +65,13 @@ open class SkillUsageMapperTest {
     @Autowired
     private lateinit var skillRepositoryMapper: SkillRepositoryMapper
 
-    /** Tenant 1's seeded skills are ids 1 (web-search), 2 (code-review) and 3 (data-analysis). */
-    private fun rows(tenantId: Long, since: LocalDateTime, builtinRepositoryId: Long? = null) = skillUsageMapper.selectUsageByTenant(tenantId, since, builtinRepositoryId)
+    /** Tenant 1's seeded skills are ids 1 (web-search), 2 (code-review) and 3 (data-analysis), all public. */
+    private fun rows(
+        tenantId: Long,
+        since: LocalDateTime,
+        builtinRepositoryId: Long? = null,
+        viewer: String? = "admin",
+    ) = skillUsageMapper.selectUsageByTenant(tenantId, since, builtinRepositoryId, viewer)
 
     private fun rowOf(result: List<SkillUsageAggregate>, skillId: Long) = result.first { it.skillId == skillId }
 
@@ -118,6 +123,32 @@ open class SkillUsageMapperTest {
             creator = "user2"
             active = 1
             origin = Skill.ORIGIN_AGENT_PROMOTED
+            createTime = now
+            updateTime = now
+        }
+        skillMapper.insert(skill)
+        return skill
+    }
+
+    /**
+     * A private skill of tenant 1 belonging to [creator], which is the row the skill list shows to that
+     * user alone. The usage aggregate reads `skill` itself, so it has to reach the same answer.
+     */
+    private fun privateSkillOf(creator: String): Skill {
+        val now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
+        val skill = Skill().apply {
+            tenantId = 1L
+            name = "private-of-$creator"
+            repositoryId = 1L
+            description = "Belongs to one user of this tenant"
+            skillmd = "# Private"
+            resources = "{}"
+            version = "1.0.0"
+            status = 1
+            isPublic = 0
+            this.creator = creator
+            active = 1
+            origin = Skill.ORIGIN_HUMAN
             createTime = now
             updateTime = now
         }
@@ -207,6 +238,47 @@ open class SkillUsageMapperTest {
             val row = rowOf(rows(1L, LocalDateTime.now().minusDays(30), skill.repositoryId), skill.id)
 
             assertEquals(Skill.ORIGIN_AGENT_PROMOTED, row.origin)
+        }
+    }
+
+    @Nested
+    @DisplayName("Who the aggregate is read for")
+    inner class ViewerScopeTests {
+
+        @Test
+        @DisplayName("another user's private skill stays out even when it was loaded")
+        fun `a private skill of another user should stay out`() {
+            val skill = privateSkillOf(creator = "colleague")
+            val at = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
+            recordEvent(skill.id, tenantId = 1L, kind = SkillUsage.EVENT_VIEW, at = at)
+
+            val result = rows(1L, at.minusSeconds(1))
+
+            // The list hides this row from "admin", so the analytics page must not be the place where its
+            // name and its counts appear anyway; counts are not a reason to widen the read.
+            assertFalse(result.any { it.skillId == skill.id }, "a same-tenant private skill leaked: $result")
+        }
+
+        @Test
+        @DisplayName("its creator's own read lists the private skill, at zero when nothing was loaded")
+        fun `the creator should see their own private skill`() {
+            val skill = privateSkillOf(creator = "owner")
+
+            val row = rowOf(rows(1L, LocalDateTime.now().minusDays(30), viewer = "owner"), skill.id)
+
+            assertEquals(0, row.viewCount)
+            assertEquals(0, row.useCount)
+        }
+
+        @Test
+        @DisplayName("a read naming nobody reports only the public skills")
+        fun `a null viewer should read only public skills`() {
+            val skill = privateSkillOf(creator = "owner")
+
+            val result = rows(1L, LocalDateTime.now().minusDays(30), viewer = null)
+
+            assertTrue(result.all { it.skillId != skill.id })
+            assertEquals(3, result.size, "the seeded public skills are the whole answer: $result")
         }
     }
 

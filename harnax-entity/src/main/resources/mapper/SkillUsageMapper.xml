@@ -30,6 +30,11 @@
             The event-side tenant predicate goes in the same ON clause for the same reason, and it is
             what makes a shared skill answer per tenant: builtin rows are visible to every tenant, so
             without it one tenant's usage would inflate another tenant's numbers.
+
+            The visibility predicate is the opposite case and belongs in the WHERE. A private skill of
+            another user is not this reader's skill at all, so the answer is that it has no row rather
+            than a zero one; this is the same rule selectSkillList applies, and the two reads have to
+            agree or the analytics page would name skills the list hides.
         -->
         SELECT s.id AS skill_id,
                s.name,
@@ -45,6 +50,7 @@
             AND u.tenant_id = #{tenantId}
             AND u.occurred_at &gt;= #{since}
         WHERE s.active = 1
+        AND (s.is_public = 1 OR s.creator = #{currentUsername})
         <!-- Skills of the shared builtin repository are measured here too, but only on this tenant's events -->
         AND (s.tenant_id = #{tenantId}
         <if test="builtinRepositoryId != null">

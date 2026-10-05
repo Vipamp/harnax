@@ -118,7 +118,7 @@ class SkillUsageFlowIT : BaseAdminIT() {
     }
 
     private fun viewsOf(skillId: Long): Int = skillUsageMapper
-        .selectUsageByTenant(1L, LocalDateTime.now().minusDays(1), null)
+        .selectUsageByTenant(1L, LocalDateTime.now().minusDays(1), null, "admin")
         .first { it.skillId == skillId }
         .viewCount
 
@@ -199,5 +199,19 @@ class SkillUsageFlowIT : BaseAdminIT() {
         val skill = ensureSkill()
 
         assertEquals(1, report(ensureSession(), skill to "VIEW", userId = 9_999_999L))
+    }
+
+    @Test
+    @Order(8)
+    fun `the page names only what the caller's own skill list shows`() {
+        val skill = ensureSkill()
+        // The repository created above is private, so this skill belongs to admin alone — and a second user
+        // of the same tenant reads a page that must not name it. Asserting the colleague still gets rows
+        // keeps this from passing because the whole read collapsed.
+        val colleague = jwtUtil.generateToken(77L, "it_usage_colleague", 1L, 0)
+        val rows = assertOk(parseBody(exchange(HttpMethod.GET, "/api/admin/skill-usage/summary?days=30", token = colleague)))["rows"]
+
+        assertTrue(rows.none { it["skillId"].asLong() == skill }, "another user's private skill leaked: $rows")
+        assertTrue(rows.size() > 0, "the public skills should still be reported: $rows")
     }
 }
