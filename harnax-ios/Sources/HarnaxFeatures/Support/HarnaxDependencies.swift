@@ -21,6 +21,10 @@ public struct HarnaxDependencies: Sendable {
     public let tools: any ToolCataloging
     public let mcp: any McpCataloging
     public let skills: any SkillCataloging
+    /// The self-evolution queue: skill drafts and the two review actions. Optional because the entry row in the
+    /// session tab has nothing to show a host that carries no admin surface, and the same rule the chat screen
+    /// uses for `toolConfirm` keeps an unwired dependency from offering a control that can only fail.
+    public let drafts: (any SkillDraftCataloging)?
     public let clis: any CliCataloging
     public let envVars: any EnvVarCataloging
     public let apiKeys: any ApiKeyCataloging
@@ -55,6 +59,7 @@ public struct HarnaxDependencies: Sendable {
         tools: any ToolCataloging,
         mcp: any McpCataloging,
         skills: any SkillCataloging,
+        drafts: (any SkillDraftCataloging)? = nil,
         clis: any CliCataloging,
         envVars: any EnvVarCataloging,
         apiKeys: any ApiKeyCataloging,
@@ -83,6 +88,7 @@ public struct HarnaxDependencies: Sendable {
         self.tools = tools
         self.mcp = mcp
         self.skills = skills
+        self.drafts = drafts
         self.clis = clis
         self.envVars = envVars
         self.apiKeys = apiKeys
@@ -115,10 +121,10 @@ public struct HarnaxDependencies: Sendable {
             // next launch.
             language: { AcceptLanguage.current() }
         )
-        // One admin surface, twenty-five protocols: every `/api/admin/**` route family hangs off the same
+        // One admin surface, twenty-six protocols: every `/api/admin/**` route family hangs off the same
         // client, so the agent and team reads, their two detail reads, their two save surfaces, the task,
-        // refresh, five context domains, four system reads and the eight session reads and writes share its
-        // header injection.
+        // refresh, five context domains, four system reads, the skill draft queue and the eight session reads
+        // and writes share its header injection.
         let admin = AdminClient(client: client)
         // One client for both legs: an answer to a parked run comes back as a stream of its own.
         let stream = ChatStreamClient(
@@ -139,6 +145,7 @@ public struct HarnaxDependencies: Sendable {
             tools: admin,
             mcp: admin,
             skills: admin,
+            drafts: admin,
             clis: admin,
             envVars: admin,
             apiKeys: admin,

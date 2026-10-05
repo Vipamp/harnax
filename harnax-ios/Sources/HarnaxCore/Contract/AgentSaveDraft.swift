@@ -25,6 +25,9 @@ public struct AgentSaveDraft: Encodable, Equatable, Sendable {
     public var owner: String?
     public var status: Int?
     public var isPublic: Int?
+    /// The self-evolution switch. `nil` sends nothing and keeps what the row holds; the update route only
+    /// writes it when the key is present (`AgentServiceImpl.kt:180`).
+    public var skillSelfWrite: Int?
 
     public init(
         name: String? = nil,
@@ -37,7 +40,8 @@ public struct AgentSaveDraft: Encodable, Equatable, Sendable {
         clis: [AgentCliDraft]? = nil,
         owner: String? = nil,
         status: Int? = nil,
-        isPublic: Int? = nil
+        isPublic: Int? = nil,
+        skillSelfWrite: Int? = nil
     ) {
         self.name = name
         self.description = description
@@ -50,11 +54,12 @@ public struct AgentSaveDraft: Encodable, Equatable, Sendable {
         self.owner = owner
         self.status = status
         self.isPublic = isPublic
+        self.skillSelfWrite = skillSelfWrite
     }
 
     enum CodingKeys: String, CodingKey {
         case name, description, systemPrompt, modelId, skillList, toolList, mcpList, cliList, owner, status,
-            isPublic
+            isPublic, skillSelfWrite
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -72,6 +77,7 @@ public struct AgentSaveDraft: Encodable, Equatable, Sendable {
         try box.encodeIfPresent(owner, forKey: .owner)
         try box.encodeIfPresent(status, forKey: .status)
         try box.encodeIfPresent(isPublic, forKey: .isPublic)
+        try box.encodeIfPresent(skillSelfWrite, forKey: .skillSelfWrite)
     }
 }
 

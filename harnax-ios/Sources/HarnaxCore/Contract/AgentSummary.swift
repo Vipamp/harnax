@@ -21,6 +21,10 @@ public struct AgentSummary: Decodable, Identifiable, Equatable, Sendable {
     public let modelPrice: Double?
     public let status: Int?
     public let isPublic: Int?
+    /// The self-evolution switch: `1` means this agent may propose skill drafts of its own
+    /// (`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/AgentResponse.kt:57-58`). Absent reads as off,
+    /// which is the server's own default for the column.
+    public let skillSelfWrite: Int?
     public let owner: String?
     public let creator: String?
     public let createTime: String?
@@ -36,6 +40,8 @@ public struct AgentSummary: Decodable, Identifiable, Equatable, Sendable {
     /// (`harnax-webui/src/pages/agent/index.tsx:421-424`).
     public var isEnabled: Bool { status != 0 }
     public var isShared: Bool { isPublic == 1 }
+    /// Tested on exactly 1, the same shape as every other flag column on this DTO.
+    public var isSelfWriting: Bool { skillSelfWrite == 1 }
     public var title: String? { hxPresented(name) }
     public var mcpCount: Int { mcpList?.count ?? 0 }
     public var skillCount: Int { skillList?.count ?? 0 }
