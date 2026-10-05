@@ -207,6 +207,37 @@ final class ChatHistoryLoadTests: XCTestCase {
         XCTAssertEqual(history.calls, ["s-1", "s-2", "s-1"])
     }
 
+    // MARK: - what a compaction leaves on screen
+
+    /// The requirement this screen exists to keep: compaction rewrites the *model's* context, while the bubbles
+    /// here come from the append-only archive (`session_message`), so a compaction that worked has to leave
+    /// every original message exactly as it was — nothing dropped, nothing folded into a summary bubble. The
+    /// two counts in the reply describe the context, not the screen, and a transcript rebuilt from them would
+    /// be the summary view this screen does not show.
+    func testACompactionLeavesEveryStoredBubbleOnScreen() async {
+        let history = ScriptedHistory()
+        let commands = ScriptedAgentCommands()
+        commands.reply = .success(
+            AgentCommandReply(success: true, result: .init(beforeMessages: 40, afterMessages: 12))
+        )
+        let (vm, _) = makeModel(history: history, commands: commands)
+
+        await loadOnce(
+            vm,
+            history: history,
+            rows: [userRow("第一条"), assistantRow("答一"), userRow("第二条"), assistantRow("答二")]
+        )
+        let before = vm.transcript.turns.map { turn in turn.segments.map(\.text) }
+        XCTAssertEqual(before.count, 4)
+
+        vm.requestCompact()
+        await waitUntil("the compaction answer") { vm.composerNotice != nil }
+
+        XCTAssertEqual(vm.transcript.turns.count, 4, "the archive keeps what the context folded away")
+        XCTAssertEqual(vm.transcript.turns.map { turn in turn.segments.map(\.text) }, before)
+        XCTAssertEqual(vm.transcript.turns.map(\.role), [.user, .assistant, .user, .assistant])
+    }
+
     // MARK: - driving
 
     private func waitUntil(

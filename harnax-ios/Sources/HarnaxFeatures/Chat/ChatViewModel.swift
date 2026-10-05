@@ -131,6 +131,23 @@ public final class ChatViewModel: ObservableObject {
     /// explain.
     @Published public private(set) var sandboxIsRunning = false
 
+    // MARK: - context usage
+
+    /// How full this conversation's model context is, or `nil` when there is nothing to show.
+    ///
+    /// `nil` is not an empty context. The runtime answers two ways when it cannot see one — a session never
+    /// bound to an instance (`ResultVo.success(null)`) and a session bound elsewhere
+    /// (`ResultVo.error("No context held for session …")`) — and the console hides its tag for both rather
+    /// than drawing `0%` (`harnax-webui/src/pages/session/index.tsx:136-147`,
+    /// `harnax-webui/src/pages/session/components/contextUsage.ts:20-24`). A read therefore *overwrites*,
+    /// including with `nil`: the tag is the latest answer, and an old one belongs to a context the run has
+    /// since changed.
+    @Published public private(set) var contextUsage: ContextUsage?
+
+    /// How many occupancy reads this screen has asked for. The class is `@MainActor`, so this counts asks in
+    /// order without a lock, and `refreshContextUsage` keeps only the newest one's answer.
+    private var contextUsageGeneration = 0
+
     private let streaming: any AgentStreaming
     private let commands: (any AgentCommanding)?
     private let history: (any ChatHistoryReading)?
@@ -143,6 +160,9 @@ public final class ChatViewModel: ObservableObject {
     /// The plan's two reads, optional for the same reason as the five above: a host that wired none has no drawer
     /// to open, and its stream draws no plan card either.
     private let planReading: (any PlanReading)?
+    /// The context-occupancy read, optional for the same reason as the six above: a host that wired none shows
+    /// no readout, and the composer's compaction entry still works off the command channel alone.
+    private let contextReader: (any ContextUsageReading)?
     /// The one door a run's artifact bytes leave through, injected for the same reason the two drawers inject
     /// it: the macOS test host has no share sheet, and the question a test asks is which bytes under which name.
     private let share: @Sendable (HXSharedFile) -> Void
@@ -229,6 +249,10 @@ public final class ChatViewModel: ObservableObject {
     /// `share` is where a downloaded run artifact goes. Both drawers take the same closure for the same
     /// reason (`WorkspaceViewModel.swift:103-108`), and there is no way to test an artifact row without it.
     ///
+    /// `contextUsage` is the occupancy read behind the header's tag. Left unwired, the tag never appears —
+    /// unlike the console, which has no unwired case because one client object serves every route
+    /// (`harnax-webui/src/pages/session/index.tsx:136-147`).
+    ///
     /// Every screen a handset builds takes the platform's own background allowance; the initializer below is
     /// the one that takes it as an argument.
     public convenience init(
@@ -239,6 +263,7 @@ public final class ChatViewModel: ObservableObject {
         config: (any SessionConfiguring)? = nil,
         workspace: (any SessionWorkspaceReading)? = nil,
         plan: (any PlanReading)? = nil,
+        contextUsage: (any ContextUsageReading)? = nil,
         conversation: ChatConversation,
         share: @escaping @Sendable (HXSharedFile) -> Void = HXFileShare.share
     ) {
@@ -250,6 +275,7 @@ public final class ChatViewModel: ObservableObject {
             config: config,
             workspace: workspace,
             plan: plan,
+            contextUsage: contextUsage,
             background: ChatBackgroundAssertion(),
             conversation: conversation,
             share: share
@@ -275,6 +301,7 @@ public final class ChatViewModel: ObservableObject {
         config: (any SessionConfiguring)? = nil,
         workspace: (any SessionWorkspaceReading)? = nil,
         plan: (any PlanReading)? = nil,
+        contextUsage: (any ContextUsageReading)? = nil,
         background: ChatBackgroundAssertion,
         frameClock: (any ChatFrameClock)? = nil,
         conversation: ChatConversation,
@@ -287,6 +314,7 @@ public final class ChatViewModel: ObservableObject {
         self.configReader = config
         self.workspace = workspace
         self.planReading = plan
+        self.contextReader = contextUsage
         self.background = background
         // The nil default is Swift's, not this type's preference: a default argument is evaluated outside the
         // actor, and the ticker is `@MainActor`. Inside this body the isolation is the class's, so the
@@ -560,6 +588,9 @@ public final class ChatViewModel: ObservableObject {
         retireWorkspacePanel()
         adoptWorkspacePanel()
         sandboxIsRunning = false
+        // The occupancy reading is per-conversation too, and the old one's denominator is another model's
+        // window: the tag goes away until this conversation's own read answers.
+        contextUsage = nil
         images = []
         composerNotice = nil
         pendingCommand = nil
@@ -699,6 +730,7 @@ public final class ChatViewModel: ObservableObject {
         streamTask = nil
         isStreaming = false
         followUpSandboxStatus()
+        followUpContextUsage()
         // The socket opened, so the request left: a stream that goes quiet is the console's disconnect
         // (`ChatWindow.tsx:2361-2366`), not a send that failed to go out, and the box stays empty.
         consumedByOpenTurn = nil
@@ -728,6 +760,8 @@ public final class ChatViewModel: ObservableObject {
         guard !Task.isCancelled, !(error is CancellationError) else { return }
         // A run that threw can still have created the container before it failed, so the entry is asked again.
         followUpSandboxStatus()
+        // And the same for the reading: the calls a failed run did make are billed and counted.
+        followUpContextUsage()
         settled { $0.transcript.terminate(as: .interrupted) }
         let detail = transportSentence(error)
         if settleAnswerDelivery(reason: detail) { return }
@@ -1359,6 +1393,16 @@ public final class ChatViewModel: ObservableObject {
         checkSandbox(command: ChatSlashCommand(command: .stopSandbox), rawText: "")
     }
 
+    /// The compaction entry. It needs no confirmation: the console's menu item is wired straight to
+    /// `handleCompact` (`harnax-webui/src/pages/session/components/ChatWindow.tsx:3717-3726`), because
+    /// compaction is the one command that leaves the conversation itself untouched — the archive still holds
+    /// every original bubble. Dead while a run reads like the other two entries, since the backend refuses a
+    /// second command on a busy session and compacting mid-turn would rewrite the context the run is reading.
+    public func requestCompact() {
+        guard !isStreaming else { return }
+        run(command: ChatSlashCommand(command: .compact), rawText: "")
+    }
+
     /// Ask the runtime whether the sandbox is up, and only offer the confirmation when it answers yes
     /// (`ChatWindow.tsx:3639-3664`).
     ///
@@ -1417,6 +1461,40 @@ public final class ChatViewModel: ObservableObject {
         Task { [weak self] in await self?.refreshSandboxStatus() }
     }
 
+    /// Ask the runtime how full this conversation's context is, and let the header's tag follow the answer.
+    ///
+    /// The console's `loadContextUsage` (`harnax-webui/src/pages/session/index.tsx:136-148`) overwrites on
+    /// every read, including with null: a business failure means no instance holds this session, an absent
+    /// `data` means it was never bound, and both hide the tag rather than showing a `0%` for a context the
+    /// router cannot see. Nothing is said when the read fails — the tag not being there is a state, and the
+    /// user has not asked for anything.
+    public func refreshContextUsage() async {
+        guard let reader = contextReader else { return }
+        let sessionID = conversation.id
+        contextUsageGeneration += 1
+        let generation = contextUsageGeneration
+        var reading: ContextUsage?
+        if case let .success(usage) = await reader.contextUsage(sessionId: sessionID), usage.isReadable {
+            reading = usage
+        }
+        // The id is the identity of the answer, same as the status read above: a reply about the conversation
+        // the user has already moved on from must not put a number under this one's title. The generation is
+        // its order: this read overwrites whatever it brings, so an older ask that lands after a newer one
+        // would put the number from before that newer one back on screen.
+        guard conversation.id == sessionID, generation == contextUsageGeneration else { return }
+        contextUsage = reading
+    }
+
+    /// Re-read at a turn's last word.
+    ///
+    /// The reading's numerator is the *last billed call*, so mid-turn it is one answer behind; a turn is
+    /// exactly what changes it (`harnax-webui/src/pages/session/components/ChatWindow.tsx:2503-2507` re-reads
+    /// on the same edge).
+    private func followUpContextUsage() {
+        guard contextReader != nil else { return }
+        Task { [weak self] in await self?.refreshContextUsage() }
+    }
+
     /// The confirmation's confirm button.
     public func confirmPendingCommand() {
         guard let pending = pendingCommand else { return }
@@ -1453,12 +1531,34 @@ public final class ChatViewModel: ObservableObject {
         commit { $0.scrollToBottomID += 1 }
         streamTask = Task { [weak self] in
             let result = await client.command(request)
-            guard let self, !Task.isCancelled else { return }
+            guard let self else { return }
+            if Task.isCancelled {
+                // A stop is the user letting the *answer* go: no banner, no bubble, and `abort()` has already
+                // put `isStreaming` back so the composer is free. The context is another matter — the server
+                // ran this command whatever this side does with its reply — so the re-read the compact leg owes
+                // is still taken, in the console's `finally` place (`ChatWindow.tsx:2497-2499`).
+                if command.command == .compact { await self.refreshContextUsage() }
+                return
+            }
             self.streamTask = nil
             self.isStreaming = false
-            let sentence = Self.commandSentence(for: result)
+            // A tapped compaction answers with the four outcome strings; a typed command line keeps the
+            // console's reply chain, whose first leg is the server's own sentence.
+            let isTappedCompaction = rawText.isEmpty && command.command == .compact
+            let sentence = isTappedCompaction
+                ? Self.compactionSentence(for: result)
+                : Self.commandSentence(for: result)
             if rawText.isEmpty {
-                self.composerNotice = Self.commandSucceeded(result) ? .info(sentence) : .error(sentence)
+                if isTappedCompaction {
+                    // The console answers a completed compaction green and a too-short one blue; this banner
+                    // has one calm tone for both, and keeps `warning` — not `error` — for the refusal, because
+                    // a rejected command is the server saying no rather than a call that broke.
+                    self.composerNotice = CompactionOutcome.compact(result) == .failed
+                        ? .warning(sentence)
+                        : .info(sentence)
+                } else {
+                    self.composerNotice = Self.commandSucceeded(result) ? .info(sentence) : .error(sentence)
+                }
                 // Clearing a conversation's history really does empty it server-side
                 // (`DefaultAgentRunner.kt:241-244`), so the bubbles on screen go with it
                 // (`ChatWindow.tsx:2681`).
@@ -1468,17 +1568,22 @@ public final class ChatViewModel: ObservableObject {
             } else {
                 self.settled { $0.transcript.appendCommandReply(sentence) }
             }
+            // The reading is the context this command just rewrote, so it is asked again either way — the
+            // console re-reads in `handleCompact`'s `finally` (`:2497-2499`).
+            if command.command == .compact { await self.refreshContextUsage() }
             self.commit { $0.scrollToBottomID += 1 }
         }
     }
 
     /// The console's reply chain, in order: `data.message`, then `Done` for a success that said nothing, then
-    /// the failure's own words (`ChatWindow.tsx:1012`).
+    /// the failure's own words (`ChatWindow.tsx:1023`).
     ///
     /// `AgentCommandReply` has no envelope message of its own — the client's `Result` carries the business
-    /// error — so the third leg is `ErrorMessage`'s reading of that failure. A reply with no `success` key at
-    /// all is the envelope's `ResultVo.success(null)`, which is a command that changed nothing and reported
-    /// nothing; the console's `json.data?.success ? 'Done' : …` calls that a failure, and this side does not.
+    /// error — so the third leg is `ErrorMessage`'s reading of that failure. The one difference from the
+    /// console is a reply with neither a sentence nor a flag, which is an envelope that carried no command body
+    /// (`AgentCommandReply: HarnaxVoid`): this chain answers with a local「完成」where the console's
+    /// `json.data?.success ? 'Done' : …` would answer「Failed」. That leg is only a word here; the compaction
+    /// banner has to say whether the context got shorter, so it requires the flag (`CompactionOutcome.compact`).
     static func commandSentence(for result: Result<AgentCommandReply, APIError>) -> String {
         switch result {
         case let .failure(error):
@@ -1493,6 +1598,34 @@ public final class ChatViewModel: ObservableObject {
         switch result {
         case .failure: return false
         case let .success(reply): return reply.success != false
+        }
+    }
+
+    /// What a tapped compaction has to say, in the console's own four branches
+    /// (`harnax-webui/src/pages/session/components/ChatWindow.tsx:2443-2501`).
+    ///
+    /// A completed compaction names its two counts, because 「the context got shorter」 and 「this session was
+    /// too short to compact」 are otherwise the same sentence — and the second is a report the user has to be
+    /// able to tell apart (`CompactionOutcome`). The server's own words are used only on the refusal leg: a
+    /// rejection carries why (a member's child session, a task session, a call already running), which is more
+    /// actionable than a local 「压缩失败」, while a success carries an English summary no one on either client
+    /// shows on this path.
+    static func compactionSentence(for result: Result<AgentCommandReply, APIError>) -> String {
+        switch CompactionOutcome.compact(result) {
+        case .done:
+            guard case let .success(reply) = result,
+                  let before = reply.result?.beforeMessages,
+                  let after = reply.result?.afterMessages
+            else { return hx("chat.context.compact.donePlain") }
+            return hx("chat.context.compact.done", before, after)
+        case .noop:
+            return hx("chat.context.compact.noop")
+        case .failed:
+            if case let .success(reply) = result, let message = reply.message, !message.isEmpty {
+                return message
+            }
+            if case let .failure(error) = result { return ErrorMessage.text(for: error) }
+            return hx("chat.context.compact.failed")
         }
     }
 

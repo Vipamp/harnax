@@ -48,10 +48,25 @@ final class ScriptedAgentCommands: AgentCommanding, @unchecked Sendable {
     /// Answers handed out in order before `reply` is used. A switch that goes optimistic and then has to come
     /// back needs the first command to land and the second to refuse.
     var replies: [Result<AgentCommandReply, APIError>] = []
+    /// Holds the answer back until `release()`, so what a stop pressed mid-request leaves behind is a race
+    /// rather than a sleep (`ScriptedContextUsage` does the same for the reading).
+    var gate = false
+    private var parked: [() -> Void] = []
 
     func command(_ request: CommandAgentRequest) async -> Result<AgentCommandReply, APIError> {
         requests.append(request)
-        return replies.isEmpty ? reply : replies.removeFirst()
+        let answer = replies.isEmpty ? reply : replies.removeFirst()
+        guard gate else { return answer }
+        return await withCheckedContinuation { continuation in
+            parked.append { continuation.resume(returning: answer) }
+        }
+    }
+
+    /// Answers every request that is parked.
+    func release() {
+        let waiting = parked
+        parked = []
+        for resume in waiting { resume() }
     }
 }
 
@@ -145,6 +160,52 @@ final class ScriptedSandbox: SessionWorkspaceReading, @unchecked Sendable {
         sessionId: String
     ) async -> Result<WorkspaceDownload, APIError> {
         .failure(.offline)
+    }
+}
+
+/// The context-occupancy read behind the header's tag.
+///
+/// Same shape as `ScriptedSandbox`: a canned answer, a failure switch, and a park so the one question that
+/// cannot be asked any other way — what does a reply that lands after the user has moved on do — is a race
+/// rather than a sleep.
+final class ScriptedContextUsage: ContextUsageReading, @unchecked Sendable {
+    private(set) var requested: [String] = []
+    /// The leg's *answer*, not its request: a parked reply that was released and one that never left are only
+    /// tellable apart from here.
+    private(set) var answered: [String] = []
+    /// A readable reading by default, because that is what a conversation with a billed call has.
+    var reading = ContextUsage(
+        messageCount: 12,
+        estimatedTokens: 4_000,
+        lastCallInputTokens: 8_000,
+        contextWindow: 32_000,
+        ratio: 0.25
+    )
+    var fails = false
+    var gate = false
+    private var parked: [() -> Void] = []
+
+    func contextUsage(sessionId: String) async -> Result<ContextUsage, APIError> {
+        requested.append(sessionId)
+        // The payload belongs to the request: two reads parked one after the other have to carry different
+        // numbers, or the race between them says nothing.
+        let answer: Result<ContextUsage, APIError> = fails ? .failure(.offline) : .success(reading)
+        guard gate else {
+            answered.append(sessionId)
+            return answer
+        }
+        return await withCheckedContinuation { continuation in
+            parked.append {
+                self.answered.append(sessionId)
+                continuation.resume(returning: answer)
+            }
+        }
+    }
+
+    func release() {
+        let waiting = parked
+        parked = []
+        for resume in waiting { resume() }
     }
 }
 

@@ -42,6 +42,7 @@ final class AppModelTests: XCTestCase {
             teamArtifacts: chat,
             chatHistory: chat,
             plan: chat,
+            contextUsage: chat,
             commands: chat,
             streaming: chat
         ), biometrics: biometrics, gateEnabled: gateEnabled)

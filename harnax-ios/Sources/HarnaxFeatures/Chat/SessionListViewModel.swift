@@ -244,7 +244,7 @@ public final class SessionListViewModel: ObservableObject {
     }
 
     /// Throws away the history and leaves the row. The answer is the runtime's own copy
-    /// (`harnax-webui/src/pages/session/components/ChatWindow.tsx:1012` reads the same three fields), which
+    /// (`harnax-webui/src/pages/session/components/ChatWindow.tsx:1023` reads the same three fields), which
     /// is why the server's sentence is shown verbatim rather than replaced by local success text.
     ///
     /// A row whose `sessionId` is absent does nothing: the command is addressed by that string, and the

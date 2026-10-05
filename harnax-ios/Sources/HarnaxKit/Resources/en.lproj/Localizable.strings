@@ -1127,6 +1127,26 @@
 "chat.sandbox.stop.note" = "This stops and destroys the sandbox container; its workspace snapshot is kept.";
 "chat.sandbox.stop.action" = "Stop";
 
+/* ---- context occupancy and manual compaction ---- */
+"chat.context.usage" = "Context usage";
+"chat.context.billed" = "Last call input (billed)";
+"chat.context.estimated" = "Estimated";
+"chat.context.messages" = "Context messages";
+"chat.context.window" = "Model window";
+"chat.context.trigger" = "Auto-compaction at";
+"chat.context.noneYet" = "not recorded yet";
+"chat.context.source.modelField" = "model field";
+"chat.context.source.upstreamTable" = "upstream table";
+"chat.context.source.fallback" = "fallback";
+"chat.context.basis.billed" = "billed";
+"chat.context.basis.estimated" = "est.";
+"chat.context.compactTip" = "Summarize the older turns in the model context. The chat page keeps showing every original message.";
+"chat.context.compact.done" = "Context compacted: %d → %d messages";
+"chat.context.compact.donePlain" = "Context compacted";
+"chat.context.compact.noop" = "This session is still too short to compact";
+"chat.context.compact.failed" = "Compaction failed";
+"chat.composer.compact" = "Compact Context";
+
 /* ---- biometric unlock of a stored sign-in ---- */
 "login.biometric.reason" = "Unlock Harnax";
 "login.biometric.submit" = "Unlock with biometrics";

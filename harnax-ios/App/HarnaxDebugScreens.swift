@@ -324,6 +324,7 @@ struct HarnaxDebugView: View {
             teamArtifacts: HarnaxDebugSessionExtras(),
             chatHistory: HarnaxDebugHistory(),
             plan: HarnaxDebugSessionExtras(),
+            contextUsage: HarnaxDebugSessionExtras(),
             commands: HarnaxDebugCommands(),
             streaming: HarnaxDebugStreaming()
         ), biometrics: HarnaxDebugBiometrics(screen: screen), gateEnabled: screen == .loginGate)
@@ -1506,7 +1507,7 @@ struct HarnaxDebugSaving: AgentWriting, TeamWriting {
 /// the chat fixture, because that screen's composer and its plan loop both read it and a refusal there is a
 /// banner the conversation never shows.
 struct HarnaxDebugSessionExtras: SessionCreating, SessionConfiguring, SessionWorkspaceReading,
-    TeamArtifactReading, PlanReading, ExecutorReading {
+    TeamArtifactReading, PlanReading, ExecutorReading, ContextUsageReading {
     /// The fixture being captured, where the capture needs a read to answer rather than to refuse.
     var screen: HarnaxDebugScreen?
 
@@ -1721,6 +1722,23 @@ struct HarnaxDebugSessionExtras: SessionCreating, SessionConfiguring, SessionWor
                 status: .todo
             )
         ])
+    }
+
+    /// The header's occupancy reading, answered rather than refused: a readout that is absent cannot be
+    /// photographed, and the two no-reading legs are the contract type's own cases. The three numbers stay in
+    /// step — the ratio is the billed numerator over the window, so the headline, the basis suffix and the
+    /// detail rows cannot contradict each other on screen.
+    func contextUsage(sessionId: String) async -> Result<ContextUsage, APIError> {
+        .success(ContextUsage(
+            messageCount: 24,
+            estimatedTokens: 12_480,
+            lastCallInputTokens: 13_878,
+            contextWindow: 131_072,
+            windowSource: "UPSTREAM_TABLE",
+            ratio: 0.1058807373046875,
+            triggerTokens: 111_072,
+            triggerMessages: 50
+        ))
     }
 
     /// The card at the panel's head: a plan mid-run whose four subtasks cover all four `PlanState`s, so the

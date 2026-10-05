@@ -39,6 +39,7 @@ public struct ChatTabView: View {
                 workspace: dependencies.workspace,
                 confirming: dependencies.toolConfirm,
                 plan: dependencies.plan,
+                contextUsage: dependencies.contextUsage,
                 conversation: conversation
             )
         }
