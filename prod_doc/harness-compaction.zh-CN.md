@@ -15,7 +15,7 @@
 
 锚点约定：harnax 侧 `HarnessAgentLauncher.kt` / `HarnessAgentWrapper.kt` / `HarnessAgentBuilder.kt` 省略前缀 `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/`；`DefaultAgentRunner.kt` 省略 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/`，`TeamHistoryReplay.kt` 省略同文件的上一级 `.../agent/service/runner/`；`SessionConfig.kt` / `MysqlAgentStateStore.kt` 省略 `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/session/`，`TokenStatsMiddleware.kt` 省略 `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/provider/middleware/`，`MessageLogConverter.kt` 省略 `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/chat/`。上游侧省略 `io.agentscope.` 前缀。三个易踩点：`AgentController.kt` 在 agent-service 与 admin 各有一份，本篇提到的**一律指 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/controller/AgentController.kt`**；iOS 的 `AgentRequest.swift` 在 `harnax-ios/.build/` 与 `harnax-ios/tmp/` 下有多份快照副本，本篇只认 `harnax-ios/Sources/HarnaxCore/Contract/AgentRequest.swift`；`harnax-agent/harnax-agent-utils/src/main/kotlin/com/agnetix/harnax/agent/adaptor/model/ModelHelper.kt` 才是真正调上游 `DashScopeChatModel.builder()` / `OpenAIChatModel.builder()` 的地方（`:52,76`），它与 agent-service 下组装 harnax 自己的 `ChatModelConfig` 的 `ChatModelConfigAdaptorImpl.kt:60,97` 是模型构造链上的两处，本篇点到模型构造时按全路径区分。凡"现在跑成什么样"的断言以 2.0.4 源码为准。本篇的 harnax 行锚都对当前代码树逐条核过；`HarnessAgentLauncher.kt` / `HarnessAgentWrapper.kt` / `HarnessAgentBuilder.kt` 这三个文件同时吃两个域的改动，行号会随合入往后推，改过任一处就按符号名重定位再回核，别只信号。
 
-取证方式：源码静态阅读 + 配置比对，未启动任何 harnax 服务。标 **未验** 的条目需实跑或产物级核对后才能当事实用。
+取证方式：源码静态阅读 + 配置比对，另在 harnax-deploy 栈上做过一轮真栈复验（2026-10-05：清库重建到 2.0.4 的镜像、MySQL 8、真模型 6 轮批模式 + 1 轮流式 + 一次 `/compact`）。第 10 节按这一轮记哪些条目已成为事实、哪些仍未验。
 
 ---
 
@@ -25,7 +25,7 @@
 
 1. **`/compact` 是真压缩。** 会话在跑过若干轮之后发 `/compact`，模型侧上下文被摘要替换，`token_stats` 里下一轮的 `input_token` 相应下降；发一条 `/compact` 就多付一次摘要用的模型调用，除此之外不多付。
 2. **页面永远看到全量原文气泡。** 无论压缩过一次还是十次，`GET /api/agent/chat/history/{sessionId}` 返回的气泡序列与压缩前逐字一致，且不出现任何"压缩摘要"气泡。这是本方案的主断言。
-3. **占用比例可查。** `GET /api/agent/context/{sessionId}` 一次返回估算占用、真实占用、窗口值与其来源，调用方能据此判断"还要不要手动压"以及"自动压缩还差多少触发"。
+3. **占用比例可查。** `GET /api/agent/context/{sessionId}` 一次返回估算占用、真实占用、窗口值与其来源，调用方能据此判断"还要不要手动压"以及"自动压缩还差多少触发"。比例按真实占用（`token_stats.input_token` 那一路）算，估算那两位继续回答触发那一问 —— 实测两者不成比例，所以两个数都给、各管各的判据。
 
 ---
 
@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS session_message (
 | 设计点 | 取定 | 理由 |
 |---|---|---|
 | 唯一键 | `(user_id, session_id, msg_id)`，`msg_id` 取 `Msg.id` | core 的 `Msg` 自带 UUID 且随 JSON 序列化（`Msg.java:113,139`），同一条消息跨轮次、跨进程都是同一个 id。键的跨度必须等于读写的跨度：`load` 与 `delete` 都带 `user_id` 谓词，这条键是幂等写的落点，少一维就会让后写的桶撞进前一个桶的行 —— 实测形状是第二个桶 `load` 回空历史，页面在这个桶上什么都看不见。用例 `the same message id archived under two owner buckets keeps one row per bucket` 守这条。表由写入方 `CREATE TABLE IF NOT EXISTS` 自建，它不会给已存在的表重建键，所以跑过本分支旧版代码的开发机要 `DROP TABLE session_message` 让新键生效；这张表还没进任何部署环境，线上无此动作 |
-| 冲突处理 | `ON DUPLICATE KEY UPDATE`，正文只在**新版本更长**时才换，`role`/`msg_name` 随同一版本走 | 上游会用同一个 id 重建消息对象，而且两个方向都有：`Msg.java:668,687,704` 的 `withGenerateReason`/`withContent`/`withMetadata` 各把 `this.id` 原样交回构造器（`:672,689,706`），内容变长；而 `ConversationCompactor.pruneToolResults`（`ConversationCompactor.java:510-588`）在压缩时把长工具结果换成头尾拼起的预览并**保留原 id**（`:578`），内容变短。prune 在 2.0.4 是默认开的（`CompactionConfig.java:285` 取 `PruneConfig.defaults()`，阈值 `protectTokens=40_000`/`minimumTokens=20_000`/`maxOutputChars=2_000`，`:576-578`）。所以"后到的"不等于"更全的"，这张表按最长正文保，页面才不会因为一次压缩把气泡裁短 |
+| 冲突处理 | `ON DUPLICATE KEY UPDATE`，正文只在**新版本更长**时才换，`role`/`msg_name` 随同一版本走 | 上游会用同一个 id 重建消息对象，而且两个方向都有：`Msg.java:668,687,704` 的 `withGenerateReason`/`withContent`/`withMetadata` 各把 `this.id` 原样交回构造器（`:672,689,706`），内容变长；而 `ConversationCompactor.pruneToolResults`（`ConversationCompactor.java:510-588`）在压缩时把长工具结果换成头尾拼起的预览并**保留原 id**（`:578`），内容变短。prune 在 2.0.4 是默认开的（`CompactionConfig.java:285` 取 `PruneConfig.defaults()`，阈值 `protectTokens=40_000`/`minimumTokens=20_000`/`maxOutputChars=2_000`，`:576-578`）。所以"后到的"不等于"更全的"，这张表按最长正文保，页面才不会因为一次压缩把气泡裁短。三个 `SET` 子句的顺序是这条设计的承重墙：MySQL 8 按从左到右求值 `ON DUPLICATE KEY UPDATE` 的赋值，后面的子句读到的是**本条语句里已被更新过的列**，所以正文子句必须排在最后 —— 排在最前会让两次长度比较在两边已相等时进行，`role`/`msg_name` 因此钉在最旧那一版上而与正文不符。H2 的 `MODE=MySQL` 不这样求值，同一条 SQL 在它上面两种顺序都成立，所以这条判据只能由真库用例 `MysqlSessionMessageStoreMySQL8Test`（Testcontainers `mysql:8.0`）守，它断言正文、`role`、`msg_name` 三列一起跟随最长的那一版 |
 | 写点 | 每轮结束时读 live context 全量，逐条幂等落档；装配时若该会话该桶还没有档，先把已持久化的 context 落一次；`/compact` 额外在压缩之前补写一次 | 只增不改 + 每轮全量补写，使**自动压缩不需要轮内挂钩子**：中间件顺序决定 harnax 拿不到"压缩覆写之前那一刻"的上下文（`CompactionMiddleware` 在 `onReasoning` 内部就地把裁掉的 `input` 交给下游，`CompactionMiddleware.java:132-147`），所以"压缩前抓一份"这条路在它身上走不通。轮末补写覆盖的是"上一轮已经把要裁的内容落过档"，但对一个档案还是零行的老会话，它的第一条新消息那一轮正好是这个不变量的例外 —— 自动压缩在这一轮里裁走的头部从未落过档。补法是把落档点提到轮前一次：装配完成时（`HarnessAgentLauncher.kt:799`）问一句 `store.hasArchive(userId, sessionId)`（`LIMIT 1` 的存在性查询，不是 count，也不回读正文），没有就 `backfillArchive()` 把已持久化的 context 先写进去。一次装配一问，不是每轮一问，之后每轮由全量补写接住，重启时档案已非空又跳过。手动那条是自己按下的，能先写：老会话在档案里还是零行（下一行的回退分支正是为它们留的），此时手压会把头部消息同时从 `context` 和回退读数里抹掉，所以命令把"档案写得进去"当前置条件，写不进去就拒（第 5 节第 2 步） |
 | 排序 | 本地自增 `id` | 会话库连接参数是 `serverTimezone=UTC`（`SessionConfig.kt:44`），主库是 `Asia/Shanghai`，跨库时间列不可比。展示用的时间戳来自 `Msg.timestamp`，`MessageLogConverter.kt:44-66` 今天就在读它 |
 | 序列化 | `JsonUtils.getJsonCodec().toJson(msg)`，读回 `Msg` | 与 `MysqlAgentStateStore.kt:77` 同一把 codec，工具调用/工具结果/图片块的原样形状因此保住，`MessageLogConverter` 不动，客户端契约不动 |
@@ -135,9 +135,9 @@ CREATE TABLE IF NOT EXISTS session_message (
 | 字段 | 来源 | 口径说明 |
 |---|---|---|
 | `estimatedTokens` | `TokenCounterUtil.calculateToken(context)` | 上游那把尺：字符数 / 2.5 + 每条消息与每个工具块的结构开销（`TokenCounterUtil.java:49-58` 的常量与 `:73` 的方法），思考内容按正文同一把尺折算（`:132`）。**与自动压缩的触发判据完全同源**，所以它回答"压缩会不会触发" |
-| `lastCallInputTokens` | `token_stats.input_token` 该会话最近一行 | 账单真值，由 `TokenStatsMiddleware.kt:41-67` 每次模型调用写一行。**它含系统提示与工具清单而 `context` 不含，所以必然比估算大 —— 这是口径差不是 bug**；且它反映上一轮，压缩之后要到下一轮才降 |
+| `lastCallInputTokens` | `token_stats.input_token` 该会话最近一行 | 账单真值，由 `TokenStatsMiddleware.kt:41-67` 每次模型调用写一行。它含系统提示与工具清单而 `context` 不含，且它反映上一轮，压缩之后要到下一轮才降。**它与估算不成比例**：真栈同一会话同一轮并排取到的六组数是 669/4245、2330/4604、4974/4961、3770/4934、7573/4868、3807/5157，另一会话 3618/6278 与 447/4468 —— 估算最低只有账单的一成、最高略超账单，因为估算计入的思考内容并不会回放进后续轮次、而账单带着估算永远看不到的系统提示与工具清单。所以这两个数不能互相换算，只能各答各的问题 |
 | `contextWindow` | 三级回退：模型域新列 `model.context_window` → 上游 `getContextWindowSize()`（`ChatModelBase.java:38-40`；builder 没给值时由 `ModelContextWindows.lookup` 按模型名做最长前缀匹配，未命中返回 0，`ModelContextWindows.java:151`）→ `160_000` | `windowSource` 取 `MODEL_FIELD` / `UPSTREAM_TABLE` / `FALLBACK`，让调用方知道这个分母是配的还是猜的 |
-| `ratio` | `estimatedTokens / contextWindow` | 展示用 |
+| `ratio` | 有账单行时 `lastCallInputTokens / contextWindow`，该会话还没有账单行时回退 `estimatedTokens / contextWindow` | 展示用，也是"还要不要手动压"的判据 —— 它回答的是"真实请求把窗口占了多满"，所以分子必须用账单那个真数而不是自算的估算。回退只覆盖"装配完但一次模型都没调过"那一格，此时估算就是唯一可读的量。用例 `the ratio divides the billed number while the estimate keeps answering for the trigger` 守这一条；`estimatedTokens` 本身不动，继续与触发判据同数 |
 | `triggerTokens` | 用**模型自己报的窗口** `model.getContextWindowSize()` 走 `CompactionMiddleware.java:164-190` 那段算法：>0 时 `窗口 - reserved(20_000)`，该值 ≤0 时上游钳成 `max(1, 窗口/2)`；窗口报不出（≤0）时取 `160_000`。另带 `triggerMessages = 50` | "自动压缩还差多少兜底"。这里刻意不用上一行的三级回退值当被减数：中间件只看得到模型自己报的数，两者一旦分叉，三级都拿不到时就会报出一个 `160_000 - 20_000 = 140_000` 而实际兜底是 `160_000` —— 报错的阈值比报不了更糟 |
 | `messageCount` | `context.size` | 与 `triggerMessages` 同判据 |
 
@@ -184,18 +184,22 @@ CREATE TABLE IF NOT EXISTS session_message (
 | 情形 | 行为 |
 |---|---|
 | 会话太短，cutoff 留不出尾部 | 回成功但 `result.afterTokens == beforeTokens`，`message` 说明"没有可压缩的内容"；不覆写、不落库 |
+| `/command` 请求体缺多态判别属性 `type` | 在 session-router 的入站反序列化就被拒（`AgentProxyController.kt:105` 的形参类型是 `CommandAgentRequest`，router 自己的 `GlobalExceptionHandler` 回 `code: 500` 与 `missing type id property 'type'`），请求根本不落到 agent-service。webui 发的命令体一直带 `type`（`harnax-webui/src/pages/session/components/ChatWindow.tsx:1005`），所以这条只打在直连 router 的调用方身上 |
 | 摘要模型调用失败 | 回 failure，`context` 与库都不动，用户可原样重试 |
 | 调用方在服务端完成前断开 | 已 `block()` 的那次覆写不回滚（服务端不知道连接断了）。用户重发 `/compact` 时，cutoff 判定会把已压过的会话判成"没有可压缩的内容"，因此不会二次摘要 —— 这条命令因此是幂等安全的 |
 | delegate 取不到 live state | 第 5 节第 2 步先拒：读不到 live context 就是归档写不进去，`message` 说明会话未被记录。服务内部那道 delegate 判定（第 3 步）因此是纵深防御，命令路径上不会先到它 |
 | 该会话正有流/阻塞调用在跑 | 回 failure |
 | `task-` 会话 / 成员子会话收到命令 | 回 failure，说明只支持主管/普通会话 |
+| 流式轮里客户端提前挂断 | 那一轮已经进 `context` 的用户消息照常落档，没产出完的回答在两侧都不存在 —— live context 与档案同时只多那一条用户消息。下一次正常轮次由全量补写接着接住，压缩因此碰不到"页面没有副本"的内容 |
 | 归档写失败 | warn + 重试一次；不回滚回答。下一轮全量补写会自愈，只有在此之前被裁走的消息才真丢 |
 | 归档写不进去时收到 `/compact` | 回 failure，`context` 与两处库都不动（第 5 节第 2 步把它当前置条件）。这条命令不能裁掉页面没有副本的内容 |
 | 压缩里有超长工具结果 | 上游 prune 把 live context 里的工具结果换成头尾拼起的预览并保留原 id（第 4 节冲突处理行）；模型看到的是预览，页面读的那张表按最长正文保，气泡不缩短 |
 | 同一会话第二次 `/compact` | 前一次还在跑就回 failure（压缩自己占着 `activeCalls`），不会两次覆写抢同一份 context |
 | 窗口三级都拿不到 | `windowSource = FALLBACK`、`contextWindow = 160_000`，接口照常返回但 `ratio` 是估计值 |
 | 该实例没有这个会话的 agent（重启后、或会话绑在别的实例） | 读数报不出，不为此建 agent：`DefaultAgentRunner.loadContextUsage` 只查 `agentCache`，查不到就回 `ResultVo.error`，说明这个实例不持有该会话。窗口分母属于那个会话的模型，而只有装配过程知道是哪个模型 —— 为一个读数付一次 admin spec 往返加一整套工具装配不值，且这个数下一轮本来就会重算。上一行讲"装配了但模型报不出窗口"，这一行讲"根本没装配" |
-| `model.context_window` 填了个比真实窗口大的数 | 服务端不校验（无法校验），后果是自动压缩推迟、`ratio` 偏小。表单里按"留空则由运行时按模型名推断"提示 |
+| 占用读数的两种报不出形状 | 会话**绑定过但本实例不持有** agent：`code: 500` + `No context held for session <id> on this instance - usage needs the live agent`（重启后拿旧会话读到的就是这个）。会话**从未绑定过**（router 查不到绑定实例）：`code: 200`、`data: null`，因为 `proxyLoadContext` 在 `boundInstance(sessionId)` 缺失那一步直接回 `ResultVo.success(null)`（`SessionRouterService.kt:400`）。两种都不是"占用为 0"，调用方要按 `data` 是否为空与 `code` 分支，不能把 `null` 读成空会话 |
+| `model.context_window` 填了个比真实窗口大的数 | 服务端不校验（无法校验），后果是自动压缩推迟、`ratio` 偏小 —— 分母被填大了。表单里按"留空则由运行时按模型名推断"提示 |
+| `model.context_window` 填了个比真实窗口小的数 | 同一把尺的另一侧：自动压缩提前，而且**每一轮都触发** —— 每轮多付一次摘要调用，`ratio` 长期大于 1。实测形状：填 4000 时上游把 `triggerTokens` 钳成窗口的一半即 2000（`triggerMessages` 仍是 50，所以消息数那道闸不会先拦），跑六轮批模式后从第四轮起每轮都在压，live context 稳定只剩 3 条而页面一路涨到 14 条。这一侧不校验的理由与上一行同，但它咬的是钱包而不是记忆 |
 | 老会话（上线前建的） | 档案为空 → 读路径回退 `agent_state.context`，翻页行为与今天一致；发过新消息后开始建档案 |
 | 升到 2.0.4 但没调 `disableTranscript()` | 每轮往对象存储/宿主盘多写一批截断的 transcript 段，页面不受影响但清会话删不掉它们（第 3 节第 1 行）。这条属于装配缺陷而非运行时降级，测试第 9 条守 |
 
@@ -219,17 +223,34 @@ CREATE TABLE IF NOT EXISTS session_message (
 
 ---
 
-## 10. 未验（需要实跑或产物级核对）
+## 10. 真栈复验记录与仍未验条目
 
-1. `estimatedTokens` 与真实 `input_token` 的偏差幅度 —— 上游估算按字符数 / 2.5，中文与代码混合的偏差方向未知，2.0.4 起思考内容也计入（第 3 节第 2 行），需要在真栈上跑一段会话对两个数。这直接决定 `ratio` 该给用户看到几位有效数字。
-2. 关掉 offload 之后，压缩掉的早期内容是否有任何可追回路径 —— 按源码读是没有（`session_search` 这类工具在 harnax 当前装配下读不到东西），但没实测。
-3. 运行时是否真的全程用匿名桶 —— 第 4 节已在源码层证明空值两侧都归一成 `__anon__`（`ReActAgent.java:394-399`、`MysqlAgentStateStore.kt:70`），静态也只见到一个不传 userId 的 wrapper 构造点；但渠道固定 UUID 会话、团队子会话这些入口有没有带进非空 userId，要看实跑后 `agent_state.user_id` 的取值分布才能定。
-4. 归档在异常收尾路径上的覆盖面：三条轮次收尾都挂上了钩子、确认续跑那条也单独挂了（单测覆盖到调用与顺序），但客户端断连／上游取消时 `doFinally` 是否仍跑到并留下内容，要真栈验证。
-5. team 成员子会话在长时间 delegation 后自身被自动压缩，其成员气泡是否会因此变短 —— 归档写点已覆盖成员轮次（`collectTurn` 的轮末 `finally`），按第 4 节的读路径设计不会变短，但要看真栈上一段多轮 delegation 后的页面。
-6. 2.0.4 与 harnax 依赖树（Jackson 3、Kotlin 2.2.20、Spring Boot BOM）的共存只验到全量编译与单测；服务真起来跑一轮对话、并让上游的自动压缩在真实模型上触发一次，还没做过。
-7. `disableTranscript()` 之外的另一种选择（注入 harnax 自己的 `TranscriptStore`）有没有将来要用的场景 —— 本轮结论是不留，若后续要做"会话原文检索"要重开这条。
-8. 第 4 节"冲突保最长"的那条 upsert（`CASE WHEN CHAR_LENGTH(VALUES(json_value)) > CHAR_LENGTH(json_value)`）只在 H2 的 `MODE=MySQL` 上验过（`MysqlSessionMessageStoreH2Test`）。`VALUES()` 引用与"旧列在同一条语句里被读"这两点在 MySQL 8 上的语义没有实跑核对过，需要在真栈上把一条长工具结果被 prune 成预览的场景走一遍，看页面气泡有没有被截短。
-9. 第 9 节第 9 条的实跑断言（跑一轮对话后 store/工作区没有 transcript 产物）仍未做过。目前有的两层证据：`HarnessAgentBuilderTranscriptTest` 在装配后的中间件链上断言 `TranscriptMiddleware` 缺席，并且带一条"2.0.4 默认会装"的前提用例；`disableTranscript()` 在生产侧只有一个构造点（`HarnessAgentLauncher.kt:224` 建 builder，`:693` 无条件调用，位置在所有装配分支合流之后），所以没有分支能绕过它。这两层都不是"运行时真的没写过对象"的证据。
+复验环境：harnax-deploy 全栈（MySQL 8 + Redis + minio + 六个业务容器），后端镜像是清库重建后按 2.0.4 编出来的那一份，模型走真实 qwen 端点，`model.context_window` 由 admin 接口按需改写（4000 / 200000 两档），会话数据留在 `agentscope` 库与 `harnax_admin.token_stats` 里可回查。下面"已成立"的每条都注明判据取自哪一层：真栈读数、容器级测试，还是产物级核对。
+
+### 10.1 已成立
+
+1. **估算与账单不成比例，比例因此按账单算。** 同一会话同一轮并排取到 `estimatedTokens`/`lastCallInputTokens` 六组：669/4245、2330/4604、4974/4961、3770/4934、7573/4868、3807/5157；另一会话两组：3618/6278、447/4468。估算最低是账单的一成、最高略超账单，方向不固定，所以第 6 节把 `ratio` 的分子定成账单那个真数，估算只留作触发判据的同源读数。
+2. **主断言：压过之后页面仍是全量原文气泡。** 三个形状各验一次，判据都是"逐条正文长度对齐探针当轮记下的回答长度"，不是总量相等。自动压缩：窗口填 4000，六轮批模式 + 一流式，`agent_state` 里 `$.context` 最后剩 3 条且首条 `name = __compaction_summary__`，同一会话页面回 14 条，逐条正文 549/536/567/456/585/498/537 与探针当轮记录的 `answerChars` 逐字相同。命令压缩：窗口填 200000 让自动那道闸够不着，`/compact 1500` 把 context 从 8 条 5534 估算 token 压到 5 条 1476，页面仍 8 条，逐条 703/536/629/610。激进压缩：`/compact 1` 把 12 条压到 2 条（估算 3618→293），页面 12 条全在，逐条 616/650/634/666/665/49。三例的 `summaryHits` 都是 0，页面里没有任何摘要气泡。判据：真栈读数 + `agentscope.session_message` 与 `agentscope.agent_state` 直查。
+3. **压缩确实降下了账单，也就是第 1 节第 1 条的那一跳。** 对照形状：同一个会话先用未压缩状态问一句（`token_stats.input_token = 6278`，context 12 条），紧接着 `/compact 1` 压到 2 条，再用同长度问法问一句（`input_token = 4468`）—— 降 1810 token，约 29%。反向的形状也取到了：`/compact 1500` 那次 8 条压到 5 条，下一轮账单从 5467 涨到 5631，因为保留尾部 1500 token 加上摘要本身已经抵掉了裁掉的那三条 —— 压得少就省得少，这条命令的效果是按 `keepTokens` 连续变化的，不是"一压就降"。
+4. **`args` 语义与"留不出尾部"那条边界。** `/compact 1500` 落 `keepTokens=1500`（第 2、3 条那两个数就是它的结果）；`args` 传空串走默认档，8 条 3096 估算 token 的会话返回 `success=true`、`beforeTokens == afterTokens`、`message` 说明留不出尾部，`context` 与两处库都不动 —— 批模式之后和流式轮之后各撞一次，形状相同。判据：真栈读数。
+5. **归档在异常收尾路径上的覆盖面。** 三条轮次收尾（阻塞轮的 `finally`、流式轮的 `doFinally`、HITL 确认续跑那轮的 `doFinally`）的调用与顺序由单测覆盖；真栈上打到了流式轮客户端提前挂断那一形：挂断之后档案只多出那一条用户消息，未产出完的回答在档案与 live context 两侧都不存在，下一次正常轮次的全量补写接着接住 —— 就是第 8 节"流式轮里客户端提前挂断"那行讲的形状。上游取消（模型侧断流）不是同一个触发源，见 10.2 第 3 条。判据：真栈读数 + `agentscope.session_message` 直查。
+6. **归属桶与两张表的落点。** 探针跑过的会话（批模式、流式、命令压缩、窗口填小让自动压缩连发）在 `agent_state.user_id` 与 `session_message.user_id` 上的取值分布各自只有 `__anon__` 一个值，没有哪个入口带进非空 userId。两张表都落在 `agentscope` 库、同一条数据源；账单那行的 `token_stats` 在 `harnax_admin`，所以第 6 节那个分子是一次同库查询而不是跨库 join。渠道固定 UUID 会话与团队子会话的桶分布没在这轮取到，见 10.2 第 7 条。判据：真栈读数。
+7. **MySQL 8 上 `ON DUPLICATE KEY UPDATE` 的子句顺序。** 第 4 节冲突处理那行的承重墙在 `mysql:8.0` 容器上跑过三条用例（`MysqlSessionMessageStoreMySQL8Test`）：短预览覆盖不掉长正文、同一 `msg_id` 只留一行、同一 `msg_id` 落两个用户桶时各留一行。顺序错在哪一层测得出来：MySQL 8 按从左到右求值赋值列表，正文子句排在前时它先把新值写进 `json_value`，随后那条比对旧值的表达式读到的已是新值，两边相等于是判定不更新，"保最长"退化成"后写入者胜"。H2 的 `MODE=MySQL` 不求值成这样，所以这条不变量只能由真库用例守。线上那一份另在产物级核过：从容器 `/app/app.jar` 取出内层 `harnax-harness-core` jar，`javap -v` 的常量池里这条 SQL 的 `SET` 顺序是 `role`、`msg_name`、`json_value`。判据：容器级测试 + 产物级核对。真栈端到端那一形见 10.2 第 4 条。
+8. **2.0.4 与 harnax 依赖树（Jackson 3、Kotlin 2.2.20、Spring Boot BOM）在真服务上共存。** 后端镜像清库重建后：六个业务容器 `compose ps` 全部 `(healthy)`，每容器日志各一条 `Tomcat started on port`，`harnax-deploy/dist` 里的 jar 与容器内 `/app/app.jar` 的字节数与 mtime 逐一对上。在这个前提下，第 2、3 条那些读数才是 2.0.4 真跑出来的 —— 自动压缩在真实模型端点上触发过，命令压缩也触发过。判据：部署级闸 + 真栈读数。
+9. **transcript 通道运行时没有写过对象。** 这几段会话跑完，对象存储侧与宿主 `user.dir` 子树都没有 `events/` 段对象；工作区里唯一的 `.jsonl` 属于 memory flush 那条路径（日报与记忆文件），键布局与 transcript 不同，不是这条通道的产物。第 9 节第 9 条要的正是这个运行时判据，装配链上的两层间接证据（`TranscriptMiddleware` 在装配后的中间件链上缺席、`disableTranscript()` 只有一个构造点）不能替代它。判据：产物级核对。
+10. **占用读数的两种报不出形状。** 同一个端点换两种会话各取到一次：绑定过但本实例不持有 agent 时 `code: 500` 加 `No context held for session ... - usage needs the live agent`；会话从未绑定过任何实例时 `code: 200` 且 `data: null`，因为 `proxyLoadContext` 在 `boundInstance(sessionId)` 缺失那一步直接回空信封。两种都不该读成"占用为 0"，第 8 节那两行就是对这两次读数的记录。判据：真栈读数。
+
+### 10.2 仍未验
+
+1. **被裁掉的内容有没有可追回路径。** 档案是页面读路径上原文的唯一副本，但没有任何入口把它回灌进 `context`；`session_search` 这类工具在当前装配下能读到什么，仍未实测 —— 关 offload 的取舍（第 5 节 flush / offload 那行）因此是按"取不到就不算收益"定的，不是按"追不回"定的。
+2. **team 成员子会话在长时间 delegation 后自身被自动压缩，其成员气泡是否变短。** 归档写点覆盖成员轮次（`collectTurn` 的轮末 `finally`），按第 4 节的读路径设计不会变短，但要真栈上一段多轮 delegation 之后的页面才算。
+3. **上游取消时的收尾。** 模型侧断流（不是客户端挂断）时那条 `doFinally` 是否仍跑到并留下内容 —— 10.1 第 5 条打到的是挂断那一形。
+4. **长工具结果被 prune 成头尾预览后页面气泡不缩短的端到端形状。** 语义已由 10.1 第 7 条的容器级用例守住，缺的是一条真跑过的观察。
+5. **老会话（档案为空 → 读路径回退 `agent_state.context`）在真实既有会话上的翻页。** 清库重建后没有"上线前建的"会话可取，这条路径只有单测证据。
+6. **`clearSession` 连带删档**（含成员子会话递归）在真栈上的落点，目前只有单测与源码级判据。
+7. **渠道固定 UUID 会话与团队子会话的 `user_id` 分布**是否也只有 `__anon__`（10.1 第 6 条只覆盖到探针跑过的入口）。
+
+对外演示时的口径缺口：页面上看得到压缩效果（气泡仍全量、`/compact` 一直发得出去），看不到的是占用比例本身 —— 它只有 `GET /api/agent/context/{sessionId}` 一个读数入口，第 11 节把前端展示排在轮外。
 
 ---
 
