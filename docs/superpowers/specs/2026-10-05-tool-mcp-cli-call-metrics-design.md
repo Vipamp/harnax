@@ -90,7 +90,7 @@
 - I3 明细行的 `tenant_id` 与 `agent_id` 在写入时就定死，读侧不再猜。
 - I4 聚合表任一行的 `calls` 等于四个计数列之和，且等于六个桶之和。
 - I5 聚合可整体重算且不改变结果（幂等），因此重算与并发副本都无害。
-- I6 任一明细日在被折算进聚合之前不会被删除（删除语句以「该日已存在于聚合表」为条件）。
+- I6 任一明细日在被折算进聚合之前不会被删除（删除语句以「该 `(DATE(ts), tenant_id)` 已存在于聚合表」为条件）。唯一例外是 `tenant_id IS NULL` 的明细：聚合表那列 `NOT NULL` 让它们不进任何聚合，因此只看保留窗口。
 
 ## 3. 事件源与判定
 
@@ -157,9 +157,9 @@ ToolInvocationMiddleware → ToolInvocationAdaptor(harnax-tools-sdk 定义)
 
 每次运行按顺序做三件事：
 
-1. 取 `tool_invocation_log` 中出现过的全部 `DATE(ts)`，与 `tool_invocation_stats` 已有的 `stat_date` 相减，得到「该折算却没折算」的日期集合。
-2. 对这个集合逐日重算并 `INSERT ... ON DUPLICATE KEY UPDATE` 整行覆盖——今天也走这条路，所以聚合最多落后一个调度周期，且漏跑一天或首次上线都不需要额外的 backfill 入口。
-3. 删除 `ts < now - retentionDays` 且其 `DATE(ts)` 已存在于聚合表的明细。删除挂在「已折算」这个事实上的理由见 I6。
+1. 取明细里 `tenant_id IS NOT NULL` 的出现过的全部 `DATE(ts)`，减去 `tool_invocation_stats` 已有的 `stat_date`，得到「该折算却没折算」的日期集合。无租户明细排除在外，否则那一天每小时都被报成待折算而聚合永远不为它产生行。
+2. 对这个集合**加上今天**逐日重算，`INSERT INTO tool_invocation_stats SELECT ... WHERE DATE(ts) = ? GROUP BY ... ON DUPLICATE KEY UPDATE` 整行覆盖。今天无条件重算，否则当天第一次调度写下的行就成了那天的终值。漏跑一天由第 1 步的差集兜住，不需要 backfill 开关。
+3. 删除 `ts < now - retentionDays` 且（`(DATE(ts), tenant_id)` 已存在于聚合表 **或** `tenant_id IS NULL`）的明细。理由见 I6；无租户那半是唯一例外出口。
 
 `harnax.metrics.retention-days` 默认 90，`harnax.metrics.rollup-enabled` 默认 true，调度表达式每小时第 5 分。多副本同时跑由第 2 步的幂等性兜住。
 
