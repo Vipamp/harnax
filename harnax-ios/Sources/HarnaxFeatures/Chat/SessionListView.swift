@@ -26,6 +26,11 @@ public struct SessionListView: View {
     /// the panels the conversation's own row can answer for, and no line saying otherwise.
     private let executor: (any ExecutorReading)?
     private let onOpen: ((ChatConversation) -> Void)?
+    /// The review queue's read, and the only thing the entry row above the list needs. `nil` removes that row
+    /// entirely rather than offering a screen that could only report its own inability
+    /// (`specs/07-skill-draft-review.md` §5.1).
+    private let drafts: (any SkillDraftCataloging)?
+    private let onOpenDraftQueue: (() -> Void)?
 
     @State private var renameTarget: SessionSummary?
     @State private var detailTarget: SessionSummary?
@@ -34,6 +39,9 @@ public struct SessionListView: View {
     @State private var artifactsTarget: SessionSummary?
     @State private var pendingClear: SessionSummary?
     @State private var pendingDelete: SessionSummary?
+    /// Bumped by the pull-to-refresh so the draft entry row re-reads its pending count with this list rather
+    /// than on a timer of its own (§5.1: 计数随会话列表的下拉刷新一起重取).
+    @State private var draftCountToken = 0
     /// Set by the detail sheet when its config write landed, and spent by its dismissal. The row the sheet was
     /// built from is a snapshot of this list's own page, so a write through admin has moved four columns this
     /// screen still shows the old values of — invisible on the card, which draws none of them, and wrong the
@@ -53,7 +61,9 @@ public struct SessionListView: View {
         workspace: (any SessionWorkspaceReading)? = nil,
         teamArtifacts: (any TeamArtifactReading)? = nil,
         executor: (any ExecutorReading)? = nil,
-        onOpen: ((ChatConversation) -> Void)? = nil
+        drafts: (any SkillDraftCataloging)? = nil,
+        onOpen: ((ChatConversation) -> Void)? = nil,
+        onOpenDraftQueue: (() -> Void)? = nil
     ) {
         _vm = StateObject(wrappedValue: SessionListViewModel(sessions: sessions))
         self.creating = creating
@@ -61,7 +71,9 @@ public struct SessionListView: View {
         self.workspace = workspace
         self.teamArtifacts = teamArtifacts
         self.executor = executor
+        self.drafts = drafts
         self.onOpen = onOpen
+        self.onOpenDraftQueue = onOpenDraftQueue
     }
 
     public var body: some View {
@@ -77,7 +89,10 @@ public struct SessionListView: View {
             .task {
                 if vm.phase == .loading { await vm.refresh() }
             }
-            .refreshable { await vm.refresh() }
+            .refreshable {
+                draftCountToken += 1
+                await vm.refresh()
+            }
             .sheet(item: $renameTarget) { session in
                 SessionRenameSheet(vm: vm, session: session)
             }
@@ -186,6 +201,14 @@ public struct SessionListView: View {
     private var list: some View {
         ScrollView {
             LazyVStack(spacing: 12) {
+                // 自我进化的入口，与下面两条横幅同层：它属于这屏列表，不属于任何一个会话行。
+                if SkillDraftEntryRow.isAvailable(drafts) {
+                    SkillDraftEntryRow(
+                        drafts: drafts,
+                        onOpen: onOpenDraftQueue,
+                        reloadToken: draftCountToken
+                    )
+                }
                 if let inline = vm.inlineError {
                     HXBanner("state.error.title", message: inline, systemImage: "exclamationmark.triangle", tone: .danger)
                 }

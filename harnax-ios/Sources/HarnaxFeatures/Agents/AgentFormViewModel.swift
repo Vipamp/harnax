@@ -178,6 +178,10 @@ public final class AgentFormViewModel: ObservableObject {
     @Published public var systemPrompt: String = ""
     @Published public var modelID: Int64?
     @Published public var isPublic: Bool = false
+    /// The 自我进化 switch (`AgentSummary.skillSelfWrite`), and whether the operator has ever moved it. The
+    /// second half is the load-bearing one — see `buildDraft`.
+    @Published public var skillSelfWrite: Bool = false
+    @Published public private(set) var hasTouchedSelfWrite = false
 
     // MARK: - Steps 2–5
 
@@ -626,6 +630,13 @@ public final class AgentFormViewModel: ObservableObject {
         isPublic = value
     }
 
+    /// The 自我进化 switch. Turning it off is as much a decision as turning it on, so the two are told apart
+    /// by the touch rather than by the value — see `buildDraft`.
+    public func setSkillSelfWrite(_ value: Bool) {
+        hasTouchedSelfWrite = true
+        skillSelfWrite = value
+    }
+
     // MARK: - Step 2 edits
 
     public func addToolRow() {
@@ -1071,6 +1082,12 @@ public final class AgentFormViewModel: ObservableObject {
         draft.systemPrompt = systemPrompt
         draft.modelId = modelID
         draft.isPublic = isPublic.hxInt
+        // Absent means「不动」and only means that: the update route keeps the stored value when the key is
+        // missing (`AgentServiceImpl.kt:180`), so a form nobody touched must not send the value it merely
+        // read. Turning the switch off is sent explicitly as `0`, because that *is* a decision.
+        if hasTouchedSelfWrite {
+            draft.skillSelfWrite = skillSelfWrite.hxInt
+        }
         if isCreate { draft.status = 1 }
         draft.tools = toolRows.compactMap { row -> AgentToolDraft? in
             guard let toolID = row.toolID else { return nil }
@@ -1111,6 +1128,7 @@ public final class AgentFormViewModel: ObservableObject {
         systemPrompt = row.systemPrompt ?? ""
         modelID = row.modelId
         isPublic = row.isPublic == 1
+        skillSelfWrite = row.isSelfWriting
         toolRows = (row.toolList ?? []).map { binding in
             AgentToolRow(
                 toolID: binding.toolId,

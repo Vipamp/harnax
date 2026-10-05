@@ -212,6 +212,7 @@ public struct AgentFormView: View {
             modelRow
             ownerRow
             visibilityRow
+            selfWriteRow
         }
     }
 
@@ -322,6 +323,33 @@ public struct AgentFormView: View {
             Text(verbatim: hx(vm.canChangeVisibility ? "agent.wizard.public.hint" : "agent.wizard.noPermission"))
                 .font(.footnote)
                 .foregroundStyle(Color.hx(vm.canChangeVisibility ? .textTertiary : .warning))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// The 自我进化 switch: whether this agent may write skill drafts of its own
+    /// (`AgentResponse.kt:57-58`, `specs/07-skill-draft-review.md` §3).
+    ///
+    /// The switch is a *switch*, not a stored 0/1: an operator who opens the edit form and saves without
+    /// touching it must leave `skillSelfWrite` absent, because the update route keeps whatever the row already
+    /// holds when the key is missing (`AgentServiceImpl.kt:180`) and sending the seeded value back would turn
+    /// a read into a write the operator never asked for. `AgentFormViewModel.buildDraft` is what keeps that
+    /// promise; the view only ever calls `setSkillSelfWrite`.
+    private var selfWriteRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HXGroupCard {
+                HXRow(text: hx("agent.wizard.selfWrite"), subtitle: nil, divider: false) {
+                    Toggle(isOn: Binding(get: { vm.skillSelfWrite }, set: { vm.setSkillSelfWrite($0) })) {
+                        HXText("agent.wizard.selfWrite")
+                    }
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .tint(Color.hx(.brand))
+                }
+            }
+            Text(verbatim: hx("agent.wizard.selfWrite.hint"))
+                .font(.footnote)
+                .foregroundStyle(Color.hx(.textTertiary))
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
