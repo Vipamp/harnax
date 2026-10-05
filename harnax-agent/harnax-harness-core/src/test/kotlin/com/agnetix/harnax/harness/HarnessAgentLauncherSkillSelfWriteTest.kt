@@ -11,6 +11,7 @@ import com.agnetix.harnax.agent.adaptor.SkillDraftAdaptor
 import com.agnetix.harnax.agent.adaptor.SkillDraftIntake
 import com.agnetix.harnax.agent.adaptor.TokenStatAdaptor
 import com.agnetix.harnax.agent.adaptor.model.OpenAIChatModelConfig
+import com.agnetix.harnax.harness.skill.SkillDraftStaging
 import com.agnetix.harnax.harness.skill.SkillDraftSubmitMiddleware
 import com.agnetix.harnax.tools.sdk.UserIdentifier
 import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
@@ -18,6 +19,7 @@ import io.agentscope.core.middleware.MiddlewareBase
 import io.agentscope.core.skill.AgentSkill
 import io.agentscope.core.state.AgentStateStore
 import io.agentscope.harness.agent.middleware.HarnessSkillMiddleware
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -114,6 +116,32 @@ class HarnessAgentLauncherSkillSelfWriteTest {
             "granting self-write must not drop the skill delivery path",
         )
     }
+
+    @Test
+    fun `a granted agent reads back only what promotion put in the staging tree`(@TempDir workspace: Path) {
+        // Upstream swaps the default read-only `skills` repository for a writable one at mainDir and keeps the
+        // drafts repository for skill_manage alone, so a grant leaves exactly one filesystem load source. A
+        // draft therefore cannot come back to the model as a delivered skill, and what is installed instead
+        // is the staging directory rather than the one Admin's skills are projected into.
+        val locations = filesystemLocations(build(workspace, selfWrite = true, draftAdaptor = intake))
+
+        assertEquals(
+            listOf(SkillDraftStaging.PROMOTED_DIR),
+            locations,
+            "the promoted staging directory is the only filesystem load source a grant opens",
+        )
+    }
+
+    @Test
+    fun `an agent without the grant is given no writable skill directory`(@TempDir workspace: Path) {
+        val locations = filesystemLocations(build(workspace, selfWrite = false, draftAdaptor = intake))
+
+        assertTrue(locations.isEmpty(), "no grant means no filesystem repository at all: $locations")
+    }
+
+    private fun filesystemLocations(agent: HarnessAgentWrapper): List<String> = checkNotNull(agent.harnessAgent).skillRepositories
+        .filter { it.repositoryInfo.type == "filesystem" }
+        .map { it.repositoryInfo.location }
 
     private fun List<MiddlewareBase>.anySelfWrite(): Boolean = any { it is SkillDraftSubmitMiddleware }
 }
