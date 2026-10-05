@@ -2,6 +2,7 @@ package com.agnetix.harnax.admin.service.impl
 
 import com.agnetix.harnax.admin.constant.BuiltinRepository
 import com.agnetix.harnax.admin.context.TenantContext
+import com.agnetix.harnax.admin.dto.ReviewHistoryItem
 import com.agnetix.harnax.admin.dto.SkillCreateRequest
 import com.agnetix.harnax.admin.dto.SkillUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
@@ -357,6 +358,114 @@ class SkillServiceImplTest {
 
             // Then
             assertEquals("cli-skill", result?.name)
+        }
+    }
+
+    @Nested
+    @DisplayName("Review History Tests")
+    inner class ReviewHistoryTests {
+
+        private val trailTime: LocalDateTime = LocalDateTime.of(2026, 9, 30, 10, 0)
+
+        private fun logRow(
+            action: String,
+            actor: String,
+            subjectId: Long = 1L,
+            detail: String? = null,
+        ): SkillReviewLog = SkillReviewLog().apply {
+            subject = SkillReviewLog.SUBJECT_SKILL
+            this.subjectId = subjectId
+            this.action = action
+            this.actor = actor
+            this.detail = detail
+            createTime = trailTime
+        }
+
+        @Test
+        @DisplayName("reviewHistory - Return the trail newest first with the columns callers read")
+        fun `reviewHistory should map the recorded trail in the order the log gives it`() {
+            // Given - the log mapper answers ORDER BY id DESC, so the stub is in that order too
+            TenantContext.setTenantId(1L)
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillReviewLogMapper.selectBySubject(1L, SkillReviewLog.SUBJECT_SKILL, 1L)).thenReturn(
+                listOf(
+                    logRow(SkillReviewLog.ACTION_APPROVE, "admin", detail = "{\"findings\":[]}"),
+                    logRow(SkillReviewLog.ACTION_ENABLE, SkillReviewLog.ACTOR_SYSTEM),
+                ),
+            )
+
+            // When
+            val history = createService().reviewHistory(1L)
+
+            // Then
+            assertEquals(
+                listOf(
+                    ReviewHistoryItem(
+                        action = SkillReviewLog.ACTION_APPROVE,
+                        actor = "admin",
+                        detail = "{\"findings\":[]}",
+                        createTime = trailTime,
+                    ),
+                    ReviewHistoryItem(
+                        action = SkillReviewLog.ACTION_ENABLE,
+                        actor = SkillReviewLog.ACTOR_SYSTEM,
+                        createTime = trailTime,
+                    ),
+                ),
+                history,
+            )
+        }
+
+        @Test
+        @DisplayName("reviewHistory - Read the log under the skill's own tenant")
+        fun `reviewHistory should read the trail by the row tenant rather than the request tenant`() {
+            // Given - a builtin skill seen from another workspace is readable, and its rows live under
+            // the tenant stamped on them. Stubbed only for tenant 1: had this read asked for the
+            // request's tenant instead, the unstubbed lookup would answer empty and the assertion below
+            // would fail rather than quietly pass.
+            val builtinSkill = Skill().apply {
+                id = 7L
+                tenantId = 1L
+                name = "cli-skill"
+                repositoryId = 10L
+            }
+            TenantContext.setTenantId(2L)
+            `when`(skillMapper.selectById(7L)).thenReturn(builtinSkill)
+            `when`(skillRepositoryService.getBuiltinRepository()).thenReturn(builtinRepo)
+            `when`(skillReviewLogMapper.selectBySubject(1L, SkillReviewLog.SUBJECT_SKILL, 7L)).thenReturn(
+                listOf(logRow(SkillReviewLog.ACTION_APPROVE, "admin", subjectId = 7L)),
+            )
+
+            // When
+            val history = createService().reviewHistory(7L)
+
+            // Then
+            assertEquals(listOf(SkillReviewLog.ACTION_APPROVE), history?.map { it.action })
+        }
+
+        @Test
+        @DisplayName("reviewHistory - Answer absent for a skill the caller may not read")
+        fun `reviewHistory should not read the log for another tenant skill`() {
+            // Given - a guessed id must not disclose who reviewed another workspace's skill
+            TenantContext.setTenantId(2L)
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillRepositoryService.getBuiltinRepository()).thenReturn(null)
+
+            // When & Then
+            assertNull(createService().reviewHistory(1L))
+            verify(skillReviewLogMapper, never()).selectBySubject(any(), any(), any())
+        }
+
+        @Test
+        @DisplayName("reviewHistory - Distinguish a skill with no trail from no skill")
+        fun `reviewHistory should return empty for a skill with nothing recorded`() {
+            // Given
+            TenantContext.setTenantId(1L)
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillReviewLogMapper.selectBySubject(1L, SkillReviewLog.SUBJECT_SKILL, 1L)).thenReturn(emptyList())
+
+            // When & Then - empty means the controller answers a 200 with nothing to show; null means 404
+            assertEquals(emptyList<ReviewHistoryItem>(), createService().reviewHistory(1L))
         }
     }
 

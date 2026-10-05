@@ -3,6 +3,7 @@ package com.agnetix.harnax.admin.service.impl
 import com.agnetix.harnax.admin.constant.BuiltinRepository
 import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.Page
+import com.agnetix.harnax.admin.dto.ReviewHistoryItem
 import com.agnetix.harnax.admin.dto.SkillCreateRequest
 import com.agnetix.harnax.admin.dto.SkillInstallResponse
 import com.agnetix.harnax.admin.dto.SkillResponse
@@ -99,6 +100,28 @@ class SkillServiceImpl(
         // same nothing an unknown id does: refusing out loud confirmed the skill exists and whose
         // it is, and the controller turned that into a 500.
         return skillMapper.selectById(id)?.takeIf { readable(it) }
+    }
+
+    /**
+     * Who changed this skill, newest first.
+     *
+     * The same answer as [getSkill] gives for a row the caller may not read: an absent one. This trail names
+     * the person who approved an agent's proposal, so answering it across workspaces would disclose another
+     * tenant's reviewers from nothing but a guessed id.
+     *
+     * The tenant comes off the row rather than the request because every writer of these rows stamped them
+     * with `skill.tenantId` for exactly that reason, and an internal call reaches this service with no tenant.
+     */
+    override fun reviewHistory(id: Long): List<ReviewHistoryItem>? = getSkill(id)?.let { skill ->
+        skillReviewRecorder.history(SkillReviewLog.SUBJECT_SKILL, skill.id, skill.tenantId)
+            .map {
+                ReviewHistoryItem(
+                    action = it.action,
+                    actor = it.actor,
+                    detail = it.detail,
+                    createTime = it.createTime,
+                )
+            }
     }
 
     /**

@@ -127,10 +127,13 @@ data class SkillDraftDetailResponse(
     val history: List<ReviewHistoryItem> = emptyList(),
 )
 
-/** One entry of a draft's trail; the tenant and subject columns that identify the row to the database stay server-side. */
-@Schema(description = "One recorded state change of a draft")
+/**
+ * One entry of a recorded trail, shared by a draft's and a skill's; the tenant and subject columns that
+ * identify the row to the database stay server-side.
+ */
+@Schema(description = "One recorded state change of a draft or a skill")
 data class ReviewHistoryItem(
-    @Schema(description = "PROPOSE / APPROVE / REJECT", example = "PROPOSE")
+    @Schema(description = "PROPOSE / APPROVE / REJECT for a draft, ENABLE / DISABLE / DELETE / VISIBILITY_CHANGE for a skill", example = "APPROVE")
     val action: String = "",
 
     @Schema(description = "Username, or the sentinel agent / system", example = "agent")
