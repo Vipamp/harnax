@@ -1,9 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { PageContainer } from '@ant-design/pro-components';
-import { Button, Card, List, Typography, Empty, Spin, message, Tag } from 'antd';
+import { Button, Card, List, Typography, Empty, Spin, message, Tag, Tooltip } from 'antd';
 import { PlusOutlined, BulbOutlined, CloudServerOutlined, ArrowLeftOutlined, TeamOutlined, FolderOpenOutlined } from '@ant-design/icons';
 import { getSessionPage, deleteSession } from '@/services/ant-design-pro/session';
+import { getContextUsage } from '@/services/ant-design-pro/chat';
 import { getWorkspaceStatus } from '@/services/ant-design-pro/workspace';
+import {
+  contextUsageBasis,
+  formatContextPercent,
+  isAtAutoTrigger,
+  isContextUsageReadable,
+} from './components/contextUsage';
 import SettingsModal from './components/SettingsModal';
 import DetailModal from './components/DetailModal';
 import ChatWindow from './components/ChatWindow';
@@ -17,6 +24,58 @@ import { useModel, useLocation, useIntl } from '@umijs/max';
 
 const { Text, Title } = Typography;
 
+/**
+ * Read-only occupancy of the context the agent holds. The caller hides it when there is no reading — an
+ * absent reading means the router cannot see this context, not that the context is empty.
+ */
+const ContextUsageTag: React.FC<{ usage: API.ContextUsage }> = ({ usage }) => {
+  const intl = useIntl();
+  const rows: Array<[string, React.ReactNode]> = [
+    [
+      intl.formatMessage({ id: 'pages.session.context.billed', defaultMessage: 'Billed input' }),
+      usage.lastCallInputTokens ?? intl.formatMessage({ id: 'pages.session.context.noneYet', defaultMessage: 'not recorded yet' }),
+    ],
+    [intl.formatMessage({ id: 'pages.session.context.estimated', defaultMessage: 'Estimated' }), usage.estimatedTokens],
+    [intl.formatMessage({ id: 'pages.session.context.messages', defaultMessage: 'Messages' }), usage.messageCount],
+    [
+      `${intl.formatMessage({ id: 'pages.session.context.window', defaultMessage: 'Window' })} · ${intl.formatMessage({
+        id: `pages.session.context.windowSource.${usage.windowSource || 'FALLBACK'}`,
+        defaultMessage: usage.windowSource || 'FALLBACK',
+      })}`,
+      usage.contextWindow,
+    ],
+    [
+      intl.formatMessage({ id: 'pages.session.context.trigger', defaultMessage: 'Auto-compaction at' }),
+      usage.triggerTokens ?? '-',
+    ],
+  ];
+  return (
+    <Tooltip
+      title={
+        <div style={{ minWidth: 190 }}>
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>
+            {intl.formatMessage({ id: 'pages.session.context.usage', defaultMessage: 'Context usage' })}
+          </div>
+          {rows.map(([label, value]) => (
+            <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+              <span style={{ opacity: 0.75 }}>{label}</span>
+              <span>{value}</span>
+            </div>
+          ))}
+        </div>
+      }
+    >
+      <Tag color={isAtAutoTrigger(usage) ? 'orange' : 'default'} style={{ margin: 0, flexShrink: 0 }}>
+        {formatContextPercent(usage.ratio)} ·{' '}
+        {intl.formatMessage({
+          id: `pages.session.context.basis.${contextUsageBasis(usage)}`,
+          defaultMessage: contextUsageBasis(usage),
+        })}
+      </Tag>
+    </Tooltip>
+  );
+};
+
 const SessionPage: React.FC = () => {
   const intl = useIntl();
   const location = useLocation();
@@ -29,6 +88,8 @@ const SessionPage: React.FC = () => {
   const [detailSession, setDetailSession] = useState<API.SessionItem | null>(null);
   const [workspaceDrawerVisible, setWorkspaceDrawerVisible] = useState(false);
   const [artifactsDrawerVisible, setArtifactsDrawerVisible] = useState(false);
+  /** Null means the router has no reading for this session, and then the header shows nothing at all. */
+  const [contextUsage, setContextUsage] = useState<API.ContextUsage | null>(null);
   const { initialState } = useModel('@@initialState');
   const currentUser = initialState?.currentUser;
 
@@ -70,6 +131,25 @@ const SessionPage: React.FC = () => {
       loadSessions();
     }
   }, []);
+
+  /** A business failure comes back without data (code 500 when no instance holds the session, code 200 with null data when it was never bound). */
+  const loadContextUsage = useCallback(async (sessionId?: string) => {
+    if (!sessionId) {
+      setContextUsage(null);
+      return;
+    }
+    try {
+      const res = await getContextUsage(sessionId);
+      const usage = res?.data;
+      setContextUsage(usage && isContextUsageReadable(res) ? usage : null);
+    } catch {
+      setContextUsage(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadContextUsage(selectedSession?.sessionId);
+  }, [selectedSession?.sessionId, loadContextUsage]);
 
   // 处理创建新会话
   const handleCreateSession = () => {
@@ -272,6 +352,7 @@ const SessionPage: React.FC = () => {
                 <Title level={5} style={{ margin: 0, fontSize: isMobile ? 14 : 15, fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {selectedSession.title}
                 </Title>
+                {contextUsage && <ContextUsageTag usage={contextUsage} />}
                 {!isMobile && <div style={{ flex: 1 }} />}
                 <Button
                   type="text"
@@ -306,7 +387,10 @@ const SessionPage: React.FC = () => {
               </div>
               
               {/* 聊天窗口 */}
-              <ChatWindow sessionId={selectedSession.sessionId} />
+              <ChatWindow
+                sessionId={selectedSession.sessionId}
+                onContextChanged={() => loadContextUsage(selectedSession.sessionId)}
+              />
             </>
           ) : (
             <div style={{ 
