@@ -1,19 +1,22 @@
 import { useIntl } from '@umijs/max';
 import { PageContainer } from '@ant-design/pro-components';
-import { Card, Descriptions, Tag, Typography, Spin, Empty, Tabs, Tree, Breadcrumb, message } from 'antd';
+import { Card, Descriptions, Tag, Typography, Spin, Empty, Tabs, Tree, Breadcrumb, Table, message } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 import { 
   ThunderboltOutlined, 
   FileOutlined, 
   FolderOutlined, 
   LinkOutlined,
+  HistoryOutlined,
   FileMarkdownOutlined
 } from '@ant-design/icons';
 import React, { useEffect, useState } from 'react';
+import dayjs from 'dayjs';
 // @ts-ignore
 import { useModel, useLocation, history } from '@umijs/max';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { getSkillById } from '@/services/ant-design-pro/skill';
+import { getSkillById, getSkillReviewHistory } from '@/services/ant-design-pro/skill';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import BackButton from '@/components/BackButton';
@@ -178,6 +181,9 @@ const SkillDetail: React.FC = () => {
   const [skillInfo, setSkillInfo] = useState<API.SkillItem | null>(null);
   const [selectedFile, setSelectedFile] = useState<string>('');
   const [fileContents, setFileContents] = useState<Record<string, string>>({});
+  // null is the read having failed, not the trail being empty: a store error must not render as
+  // "nobody has touched this skill".
+  const [trail, setTrail] = useState<API.SkillDraftHistoryItem[] | null>(null);
 
   // 从 URL 中获取 Skill ID
   const pathParts = location.pathname.split('/');
@@ -186,8 +192,19 @@ const SkillDetail: React.FC = () => {
   useEffect(() => {
     if (skillId) {
       loadSkillDetail(parseInt(skillId, 10));
+      loadTrail(parseInt(skillId, 10));
     }
   }, [skillId]);
+
+  const loadTrail = async (id: number) => {
+    try {
+      const res = await getSkillReviewHistory(id, { skipErrorHandler: true });
+      setTrail(res.code === 200 ? res.data || [] : null);
+    } catch {
+      // A failed read is not an empty trail; the tab renders this state as a refusal with a retry.
+      setTrail(null);
+    }
+  };
 
   const loadSkillDetail = async (id: number) => {
     setLoading(true);
@@ -287,6 +304,35 @@ const SkillDetail: React.FC = () => {
   };
 
   const treeData = buildTree();
+
+  const trailColumns: ColumnsType<API.SkillDraftHistoryItem> = [
+    {
+      title: intl.formatMessage({ id: 'pages.skill.draft.history.action', defaultMessage: 'Action' }),
+      dataIndex: 'action',
+      key: 'action',
+      width: 160,
+    },
+    {
+      title: intl.formatMessage({ id: 'pages.skill.draft.history.actor', defaultMessage: 'Who' }),
+      dataIndex: 'actor',
+      key: 'actor',
+      width: 140,
+    },
+    {
+      title: intl.formatMessage({ id: 'pages.skill.draft.history.at', defaultMessage: 'When' }),
+      dataIndex: 'createTime',
+      key: 'createTime',
+      width: 170,
+      render: (time?: string) => (time ? dayjs(time).format('YYYY-MM-DD HH:mm') : '-'),
+    },
+    {
+      title: intl.formatMessage({ id: 'pages.skill.draft.history.detail', defaultMessage: 'Note' }),
+      dataIndex: 'detail',
+      key: 'detail',
+      ellipsis: true,
+      render: (detail?: string) => detail || '-',
+    },
+  ];
 
   const tabItems = [
     {
@@ -518,6 +564,61 @@ const SkillDetail: React.FC = () => {
               </div>
             </div>
           </div>
+        </div>
+      ),
+    },
+    {
+      key: 'trail',
+      label: (
+        <span>
+          <HistoryOutlined />
+          {intl.formatMessage({ id: 'pages.skill.detail.tab.trail', defaultMessage: 'Review trail' })}
+        </span>
+      ),
+      children: (
+        <div style={{ padding: 16, height: '100%', overflow: 'auto' }}>
+          <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
+            {intl.formatMessage({
+              id: 'pages.skill.detail.trail.hint',
+              defaultMessage: 'The status changes recorded for this skill — enabled, disabled, re-scoped, deleted, and the approval that promoted it — newest first. The note carries what that action stored: an approval names the repository it landed in and what the scan said. Editing the skill itself leaves no entry.',
+            })}
+          </Typography.Paragraph>
+          <Table<API.SkillDraftHistoryItem>
+            rowKey={(record) => `${record.action}-${record.createTime}`}
+            columns={trailColumns}
+            dataSource={trail || []}
+            size="small"
+            pagination={false}
+            locale={{
+              emptyText:
+                trail === null ? (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description={
+                      <>
+                        <div>
+                          {intl.formatMessage({
+                            id: 'pages.skill.detail.trail.failed',
+                            defaultMessage: 'The trail could not be read',
+                          })}
+                        </div>
+                        <Typography.Link onClick={() => loadTrail(parseInt(skillId, 10))}>
+                          {intl.formatMessage({ id: 'pages.common.retry', defaultMessage: 'Retry' })}
+                        </Typography.Link>
+                      </>
+                    }
+                  />
+                ) : (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description={intl.formatMessage({
+                      id: 'pages.skill.detail.trail.empty',
+                      defaultMessage: 'No change recorded yet',
+                    })}
+                  />
+                ),
+            }}
+          />
         </div>
       ),
     },

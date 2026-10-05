@@ -44,6 +44,9 @@ const STATUS_COLORS: Record<string, string> = {
 
 const MAX_REJECT_REASON = 512;
 
+/** SkillInstaller.MAX_SKILL_NAME_LENGTH: the rename has to fit the column the promoted row grows into. */
+const MAX_SKILL_NAME = 100;
+
 /**
  * One draft, as the reviewer reads it, plus the two decisions (design section 6.2 / 7).
  *
@@ -60,7 +63,7 @@ const SkillDraftDetail: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [acting, setActing] = useState<boolean>(false);
   const [rejectOpen, setRejectOpen] = useState<boolean>(false);
-  const [conflict, setConflict] = useState<{ name: string } | null>(null);
+  const [conflict, setConflict] = useState<{ name: string; skillId?: number } | null>(null);
   const [rejectForm] = Form.useForm<{ reason: string }>();
   const [conflictForm] = Form.useForm<{ resolution: 'replace' | 'rename'; newName?: string }>();
 
@@ -68,6 +71,11 @@ const SkillDraftDetail: React.FC = () => {
     setLoading(true);
     try {
       const response = await getSkillDraft(draftId, { skipErrorHandler: true });
+      // A refusal arrives on HTTP 200 with the code in the envelope, so umi's errorThrower never fires here;
+      // without this check a draft belonging to another workspace would render as an empty screen.
+      if (response.code !== 200) {
+        throw new Error(response.message || '');
+      }
       setDraft(response.data ?? null);
     } catch (error: any) {
       setDraft(null);
@@ -137,7 +145,7 @@ const SkillDraftDetail: React.FC = () => {
     });
   };
 
-  const handleDecision = (decision: API.SkillDraftDecision) => {
+  const handleDecision = (decision: API.SkillDraftDecision, askedName: string = '') => {
     switch (decision.outcome) {
       case 'PROMOTED':
         showPromoted(decision);
@@ -149,17 +157,29 @@ const SkillDraftDetail: React.FC = () => {
         // The content moved under the reviewer; forcing a reload beats a silent retry on the old digest.
         Modal.warning({
           title: intl.formatMessage({ id: 'pages.skill.draft.refused.changedTitle', defaultMessage: 'Draft changed' }),
-          content: intl.formatMessage({
-            id: 'pages.skill.draft.refused.changed',
-            defaultMessage: 'The agent patched this draft after you opened it. Read the new content, then approve it again.',
-          }),
+          content: (
+            <Space direction="vertical" size={8} style={{ display: 'flex' }}>
+              <span>
+                {intl.formatMessage({
+                  id: 'pages.skill.draft.refused.changed',
+                  defaultMessage: 'The agent patched this draft after you opened it. Read the new content, then approve it again.',
+                })}
+              </span>
+              {decision.currentDigest ? (
+                <Typography.Text code copyable={{ text: decision.currentDigest }}>
+                  {`${decision.currentDigest.slice(0, 16)}…`}
+                </Typography.Text>
+              ) : null}
+            </Space>
+          ),
         });
         break;
       case 'ALREADY_REVIEWED':
         showAlreadyReviewed(decision);
         break;
       case 'NAME_TAKEN':
-        setConflict({ name: draft?.name || '' });
+        // The backend reports the name that collided, so the dialog has to show what this attempt asked for.
+        setConflict({ name: askedName || draft?.name || '', skillId: decision.skillId });
         return;
       default:
         message.error(
@@ -171,11 +191,24 @@ const SkillDraftDetail: React.FC = () => {
   };
 
   const sendApprove = async (body: API.SkillDraftApproveRequest) => {
+    const askedName = body.conflictResolution === 'rename' ? body.newName || '' : draft?.name || '';
     setActing(true);
     try {
       const response = await approveSkillDraft(draftId, body, { skipErrorHandler: true });
       if (response.data) {
-        handleDecision(response.data);
+        handleDecision(response.data, askedName);
+      } else if (response.code === 409) {
+        // The one refusal that is not an outcome: somebody published this name between the conflict probe
+        // and the write, so the whole approval rolled back. The draft is still pending, which is why the
+        // page reloads it — "decision refused" would read as a closed review.
+        message.warning(
+          intl.formatMessage({
+            id: 'pages.skill.draft.conflict.race',
+            defaultMessage:
+              'That name was taken while this approval ran, so nothing was written. The draft is still pending — reload it and decide again.',
+          }),
+        );
+        load();
       } else {
         message.error(response.message || intl.formatMessage({ id: 'pages.skill.draft.decisionFailed', defaultMessage: 'The decision was refused' }));
       }
@@ -465,6 +498,16 @@ const SkillDraftDetail: React.FC = () => {
             { name: conflict?.name || draft?.name || '' },
           )}
         </Typography.Paragraph>
+        {conflict?.skillId ? (
+          <Typography.Paragraph style={{ marginBottom: 16 }}>
+            <a onClick={() => history.push(`/context/skill/detail/${conflict.skillId}`)}>
+              {intl.formatMessage({
+                id: 'pages.skill.draft.conflict.openExisting',
+                defaultMessage: 'View the skill that holds the name',
+              })}
+            </a>
+          </Typography.Paragraph>
+        ) : null}
         <Form form={conflictForm} layout="vertical" initialValues={{ resolution: 'rename' }}>
           <Form.Item name="resolution" label={intl.formatMessage({ id: 'pages.skill.draft.conflict.choose', defaultMessage: 'Resolution' })}>
             <Radio.Group>
@@ -490,11 +533,19 @@ const SkillDraftDetail: React.FC = () => {
                   rules={[
                     {
                       required: true,
+                      whitespace: true,
                       message: intl.formatMessage({ id: 'pages.skill.draft.conflict.newNameRequired', defaultMessage: 'Type the name to promote under' }),
+                    },
+                    {
+                      max: MAX_SKILL_NAME,
+                      message: intl.formatMessage(
+                        { id: 'pages.skill.draft.conflict.newNameTooLong', defaultMessage: 'Keep the name under {count} characters' },
+                        { count: MAX_SKILL_NAME },
+                      ),
                     },
                   ]}
                 >
-                  <Input placeholder={draft?.name} />
+                  <Input placeholder={draft?.name} maxLength={MAX_SKILL_NAME} />
                 </Form.Item>
               ) : null
             }
@@ -656,7 +707,7 @@ const SourceTab: React.FC<{ draft: API.SkillDraftDetail }> = ({ draft }) => {
     <div style={{ padding: 16, maxHeight: 'calc(100vh - 420px)', overflow: 'auto' }}>
       <Descriptions column={2} size="small" style={{ marginBottom: 16 }}>
         <Descriptions.Item label={intl.formatMessage({ id: 'pages.skill.draft.source.session', defaultMessage: 'Session' })}>
-          <Typography.Text code copyable={draft.agentId ? { text: draft.sourceSessionId } : false}>
+          <Typography.Text code copyable={{ text: draft.sourceSessionId || '' }}>
             {draft.sourceSessionId || '-'}
           </Typography.Text>
         </Descriptions.Item>
@@ -665,7 +716,10 @@ const SourceTab: React.FC<{ draft: API.SkillDraftDetail }> = ({ draft }) => {
             <Typography.Text code>{draft.agentId}</Typography.Text>
           ) : (
             <Typography.Text type="secondary">
-              {intl.formatMessage({ id: 'pages.skill.draft.source.cleaned', defaultMessage: 'The source session has been cleaned up' })}
+              {intl.formatMessage({
+                id: 'pages.skill.draft.source.noAgent',
+                defaultMessage: 'The run that proposed it recorded no agent',
+              })}
             </Typography.Text>
           )}
         </Descriptions.Item>
@@ -673,7 +727,7 @@ const SourceTab: React.FC<{ draft: API.SkillDraftDetail }> = ({ draft }) => {
       <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
         {intl.formatMessage({
           id: 'pages.skill.draft.source.hint',
-          defaultMessage: 'A cleaned-up session does not change what the draft contains; decide on the content.',
+          defaultMessage: 'The origin is what the runtime recorded when the draft was proposed. It is context, not a condition: decide on the content.',
         })}
       </Typography.Paragraph>
       <Table<API.SkillDraftHistoryItem>

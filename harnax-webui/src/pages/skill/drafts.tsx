@@ -38,6 +38,10 @@ const SkillDrafts: React.FC = () => {
         { status, name: name || undefined, pageNum, pageSize },
         { skipErrorHandler: true },
       );
+      // A refusal arrives on HTTP 200 with the code in the envelope, so umi's errorThrower never fires here.
+      if (response.code !== 200) {
+        throw new Error(response.message || '');
+      }
       setRows(response.data?.records ?? []);
       setTotal(response.data?.total ?? 0);
     } catch (error: any) {
