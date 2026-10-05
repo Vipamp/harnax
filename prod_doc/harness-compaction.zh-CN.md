@@ -76,14 +76,14 @@ CREATE TABLE IF NOT EXISTS session_message (
     msg_name VARCHAR(128) NULL,
     json_value LONGTEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uk_session_msg (session_id, msg_id),
+    UNIQUE KEY uk_session_msg (user_id, session_id, msg_id),
     KEY idx_session_order (session_id, id)
 )
 ```
 
 | 设计点 | 取定 | 理由 |
 |---|---|---|
-| 唯一键 | `(session_id, msg_id)`，`msg_id` 取 `Msg.id` | core 的 `Msg` 自带 UUID 且随 JSON 序列化（`Msg.java:113,139`），同一条消息跨轮次、跨进程都是同一个 id |
+| 唯一键 | `(user_id, session_id, msg_id)`，`msg_id` 取 `Msg.id` | core 的 `Msg` 自带 UUID 且随 JSON 序列化（`Msg.java:113,139`），同一条消息跨轮次、跨进程都是同一个 id。键的跨度必须等于读写的跨度：`load` 与 `delete` 都带 `user_id` 谓词，这条键是幂等写的落点，少一维就会让后写的桶撞进前一个桶的行 —— 实测形状是第二个桶 `load` 回空历史，页面在这个桶上什么都看不见。用例 `the same message id archived under two owner buckets keeps one row per bucket` 守这条。表由写入方 `CREATE TABLE IF NOT EXISTS` 自建，它不会给已存在的表重建键，所以跑过本分支旧版代码的开发机要 `DROP TABLE session_message` 让新键生效；这张表还没进任何部署环境，线上无此动作 |
 | 冲突处理 | `ON DUPLICATE KEY UPDATE`，正文只在**新版本更长**时才换，`role`/`msg_name` 随同一版本走 | 上游会用同一个 id 重建消息对象，而且两个方向都有：`Msg.java:668,687,704` 的 `withGenerateReason`/`withContent`/`withMetadata` 各把 `this.id` 原样交回构造器（`:672,689,706`），内容变长；而 `ConversationCompactor.pruneToolResults`（`ConversationCompactor.java:510-588`）在压缩时把长工具结果换成头尾拼起的预览并**保留原 id**（`:578`），内容变短。prune 在 2.0.4 是默认开的（`CompactionConfig.java:285` 取 `PruneConfig.defaults()`，阈值 `protectTokens=40_000`/`minimumTokens=20_000`/`maxOutputChars=2_000`，`:576-578`）。所以"后到的"不等于"更全的"，这张表按最长正文保，页面才不会因为一次压缩把气泡裁短 |
 | 写点 | 每轮结束时读 live context 全量，逐条幂等落档；`/compact` 额外在压缩之前补写一次 | 只增不改 + 每轮全量补写，使**自动压缩不需要挂钩子**：中间件顺序决定 harnax 拿不到"压缩覆写之前那一刻"的上下文（`CompactionMiddleware` 在 `onReasoning` 内部就地把裁掉的 `input` 交给下游，`CompactionMiddleware.java:132-147`），所以"压缩前抓一份"这条路在它身上走不通。手动那条是自己按下的，能先写：老会话在档案里还是零行（下一行的回退分支正是为它们留的），此时手压会把头部消息同时从 `context` 和回退读数里抹掉，所以命令把"档案写得进去"当前置条件，写不进去就拒（第 5 节第 2 步） |
 | 排序 | 本地自增 `id` | 会话库连接参数是 `serverTimezone=UTC`（`SessionConfig.kt:44`），主库是 `Asia/Shanghai`，跨库时间列不可比。展示用的时间戳来自 `Msg.timestamp`，`MessageLogConverter.kt:44-66` 今天就在读它 |
@@ -207,7 +207,7 @@ CREATE TABLE IF NOT EXISTS session_message (
 
 1. **压缩不改历史**：构造一个 context 消息数 > `keepMessages` 的会话，先取 `loadHistory` 快照 → 调 `COMPACT` 命令 → 再取快照，断言两次的逐条正文与条数完全一致，且新列表里不出现任何含 `__compaction_summary__` 或其摘要正文的气泡。用替身 model 桩摘要调用，避免测试真打模型。同一条判据再走一遍**档案为空**的会话（用例里不许自己先调 `archiveContext()`，否则正好绕过第 5 节第 2 步要守的那条路径）：命令自己先把要裁的头部写进档案，页面才仍然全量。
 2. **压缩确实降下了模型侧上下文**：同一用例里断言 `agent_state.context` 的消息数在压缩后变小、且首条是 `name = __compaction_summary__`（`AgentState.context` 与历史读的是两份数据，这条正是分离的证据）。
-3. **归档幂等与补写**：连续两轮写入同一 `msg_id` 的更大版本，断言只有一行且内容是后者；再写入一个**更短**的版本（上游 prune 那种带原 id 的预览），断言正文仍是最长那份 —— 页面缩短就是第 1 节破防；断言跨轮不会重复插行。
+3. **归档幂等与补写**：连续两轮写入同一 `msg_id` 的更大版本，断言只有一行且内容是后者；再写入一个**更短**的版本（上游 prune 那种带原 id 的预览），断言正文仍是最长那份 —— 页面缩短就是第 1 节破防；断言跨轮不会重复插行。最后断言同一 `msg_id` 落在两个用户桶时各留一行、各读各的正文（唯一键跨度与 `load`/`delete` 的谓词跨度一致，第 4 节第一行）。
 4. **失败不覆写**：把摘要桩成抛异常，断言 `context` 未变、`agent_state` 未重写、命令回 failure。
 5. **并发闸**：`activeCalls` 里放了该会话时发压缩命令，断言 failure 且 `context` 未变；反向断言压缩在跑的整个跨度里该会话确实在 `activeCalls` 中、命令返回后又被摘掉（第二次压缩因此被同一条闸拒）。
 6. **占用比例**：窗口三级各一条用例（配了列 / 列为空但模型名命中上游表 / 两者都没有），断言 `windowSource` 与 `ratio` 的算法；再一条断言 `estimatedTokens` 与 `TokenCounterUtil.calculateToken(同一份 context)` 逐字相等（防止自己另写一套估算）；最后一条断言该实例没有这个会话的 agent 时读数直接报不出且 `createSingleAgent` 零调用（第 8 节那行的判据）。

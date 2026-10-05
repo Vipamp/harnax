@@ -110,6 +110,18 @@ class MysqlSessionMessageStoreH2Test {
         }
 
         @Test
+        fun `the same message id archived under two owner buckets keeps one row per bucket`() {
+            // The unique key is what makes the whole-context write idempotent, so its scope has to be the
+            // same scope load and delete read by. Keyed on (session_id, msg_id) alone, the second bucket's
+            // write collides with the first bucket's row and that bucket then reads back an empty history.
+            store.archive("", "s1", listOf(msg("m1", MsgRole.USER, "user", "a body owned by the anon bucket")))
+            store.archive("7", "s1", listOf(msg("m1", MsgRole.USER, "user", "a body owned by user 7")))
+
+            assertEquals(listOf("a body owned by the anon bucket"), store.load("", "s1").map { it.textContent })
+            assertEquals(listOf("a body owned by user 7"), store.load("7", "s1").map { it.textContent })
+        }
+
+        @Test
         fun `a rebuild that trims the body keeps the archived original`() {
             // Upstream's prune step rewrites the SAME Msg.id with a short preview of a long tool result, so
             // the newer version is not automatically the fuller one. The page reads this table, so a preview

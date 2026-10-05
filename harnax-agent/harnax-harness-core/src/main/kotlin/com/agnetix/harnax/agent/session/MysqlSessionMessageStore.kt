@@ -7,7 +7,8 @@ import org.slf4j.LoggerFactory
 import javax.sql.DataSource
 
 /**
- * Append-only archive of every message a session has ever shown, keyed by [Msg.getId].
+ * Append-only archive of every message a session has ever shown, one row per owner bucket, session and
+ * [Msg.getId].
  *
  * The model context (`AgentState.context`) is a living buffer that compaction rewrites in place, while
  * the chat page has to keep showing the full original conversation. Those two readers cannot share one
@@ -25,7 +26,7 @@ import javax.sql.DataSource
  *     msg_name VARCHAR(128) NULL,
  *     json_value LONGTEXT NOT NULL,
  *     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
- *     UNIQUE KEY uk_session_msg (session_id, msg_id),
+ *     UNIQUE KEY uk_session_msg (user_id, session_id, msg_id),
  *     KEY idx_session_order (session_id, id)
  * );
  * ```
@@ -59,7 +60,7 @@ class MysqlSessionMessageStore(
                 msg_name VARCHAR(128) NULL,
                 json_value LONGTEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE KEY uk_session_msg (session_id, msg_id),
+                UNIQUE KEY uk_session_msg (user_id, session_id, msg_id),
                 KEY idx_session_order (session_id, id)
             )
         """.trimIndent()
@@ -75,9 +76,10 @@ class MysqlSessionMessageStore(
      *
      * Called with the whole live context each turn rather than with a per-turn delta, so a write that
      * fails is healed by the next turn and neither compaction path needs a hook of its own. A message
-     * whose id already exists is compared, not replaced: upstream rebuilds the same `Msg.id` in both
-     * directions — `withContent` / `withMetadata` / `withGenerateReason` append, while the compactor's
-     * prune step replaces a long tool result with a preview — and the page must keep the fullest body.
+     * whose id already exists in this session and owner bucket is compared, not replaced. Upstream
+     * rebuilds the same `Msg.id` in both directions — `withContent` / `withMetadata` /
+     * `withGenerateReason` append, while the compactor's prune step replaces a long tool result with a
+     * preview — and the page must keep the fullest body.
      *
      * Compaction summaries are skipped on purpose — they are built as `USER` messages, so archiving one
      * would put a bubble of summary text on a page that must show only the original conversation.
