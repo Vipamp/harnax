@@ -8,6 +8,7 @@ export default {
   'menu.context.mcp': 'MCP 服务',
   'menu.context.skill': '技能管理',
   'menu.context.skill.usage': '技能用量',
+  'menu.context.skill.drafts': '待审草稿',
   'menu.context.cli': 'CLI 工具',
   'menu.context.tool': '工具管理',
 

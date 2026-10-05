@@ -552,6 +552,111 @@ message?: string;
   };
 
   /**
+   * @zh-CN 草稿队列可按的状态过滤。EXPIRED 是后端列上写着而没有任何代码写入的值，接口按它过滤直接拒。
+   */
+  export type SkillDraftStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+  /**
+   * @zh-CN 队列的一行：不带正文，正文只在详情里
+   */
+  export type SkillDraftRow = {
+    id: number;
+    name: string;
+    description?: string;
+    status: string;
+    scanVerdict?: string;
+    upstreamFindingCount: number;
+    sourceSessionId: string;
+    agentId?: number;
+    createTime?: string;
+    updateTime?: string;
+    reviewedBy?: string;
+    reviewedAt?: string;
+    rejectReason?: string;
+  };
+
+  /**
+   * @zh-CN admin 的 Page 序列化出的就是这四个字段，与 PageResult 的 size/current 形状不同
+   */
+  export type SkillDraftPage = {
+    pageNum: number;
+    pageSize: number;
+    total: number;
+    records: SkillDraftRow[];
+  };
+
+  /**
+   * @zh-CN 脚本预览：头几行、行数与 sha256，全部由服务端对落库字节现算
+   */
+  export type SkillDraftScript = {
+    relPath: string;
+    headPreview: string;
+    totalLines: number;
+    sha256: string;
+  };
+
+  /**
+   * @zh-CN 草稿状态变化的一条痕迹
+   */
+  export type SkillDraftHistoryItem = {
+    action: string;
+    actor: string;
+    detail?: string;
+    createTime?: string;
+  };
+
+  /**
+   * @zh-CN 单条草稿的全文。localFindings 是决定禁用与否的那一份，scanFindings 只用于展示
+   */
+  export type SkillDraftDetail = {
+    id: number;
+    name: string;
+    description?: string;
+    status: string;
+    skillmd: string;
+    resources?: Record<string, string>;
+    scripts?: SkillDraftScript[];
+    scanVerdict?: string;
+    scanFindings?: string[];
+    localFindings?: string[];
+    contentDigest: string;
+    sourceSessionId: string;
+    agentId?: number;
+    createTime?: string;
+    updateTime?: string;
+    reviewedBy?: string;
+    reviewedAt?: string;
+    rejectReason?: string;
+    history?: SkillDraftHistoryItem[];
+  };
+
+  export type SkillDraftApproveRequest = {
+    expectedDigest: string;
+    conflictResolution?: 'replace' | 'rename';
+    newName?: string;
+  };
+
+  export type SkillDraftRejectRequest = {
+    reason: string;
+  };
+
+  /**
+   * @zh-CN 审核动作的结果。审核人能据以再动作的拒绝随 200 信封回来，判据是 outcome 而不是状态码。
+   */
+  export type SkillDraftDecision = {
+    outcome: 'PROMOTED' | 'REJECTED' | 'DRAFT_CHANGED' | 'ALREADY_REVIEWED' | 'NAME_TAKEN';
+    skillId?: number;
+    skillStatus?: number;
+    promotedName?: string;
+    findings?: string[];
+    reason?: string;
+    currentDigest?: string;
+    reviewedBy?: string;
+    reviewedAt?: string;
+    rejectReason?: string;
+  };
+
+  /**
    * @zh-CN 技能安装结果（对应后端 SkillInstallResponse）
    *
    * 安装是「部分成功」语义：接口返回 200 也可能有技能没落库（源里已删除、内容为空、
@@ -603,6 +708,8 @@ message?: string;
     owner?: string;
     status: number;
     isPublic?: number;
+    /** 0/1 — the agent may author skills in its own workspace; a human still has to approve them */
+    skillSelfWrite?: number;
     creator?: string;
     createTime?: string;
     updateTime?: string;
@@ -732,6 +839,7 @@ message?: string;
     owner?: string;
     status?: number;
     isPublic?: number;
+    skillSelfWrite?: number;
   };
 
   /**
@@ -748,6 +856,7 @@ message?: string;
     cliList?: { id?: number; envBindings?: EnvBinding[] }[];
     status?: number;
     isPublic?: number;
+    skillSelfWrite?: number;
   };
 
   /**

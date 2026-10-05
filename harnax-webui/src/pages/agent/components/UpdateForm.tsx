@@ -40,6 +40,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
   const [skills, setSkills] = useState<API.SkillItem[]>([]);
   const [models, setModels] = useState<API.ModelItem[]>([]);
   const [isPublic, setIsPublic] = useState(values?.isPublic === 1);
+  const [skillSelfWrite, setSkillSelfWrite] = useState(values?.skillSelfWrite === 1);
   const { username, isAdmin } = getCurrentUserInfo();
 
   const [mcpConfigs, setMcpConfigs] = useState<McpConfigState[]>([{}]);
@@ -72,6 +73,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
       });
       setSelectedModelId(values.modelId);
       setIsPublic(values.isPublic === 1);
+      setSkillSelfWrite(values.skillSelfWrite === 1);
 
       // Initialize MCP configs
       if (values.mcpList && values.mcpList.length > 0) {
@@ -260,6 +262,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
           systemPrompt: formValues.systemPrompt,
           modelId: formValues.modelId,
           isPublic: isPublic ? 1 : 0,
+          skillSelfWrite: skillSelfWrite ? 1 : 0,
           mcpList: mcpConfigs.filter(c => c.mcpId).map(c => ({
             id: c.mcpId,
             envBindings: (c.envBindings || []).map(({ customInput, ...b }) => ({
@@ -362,6 +365,20 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
             <Form.Item label={intl.formatMessage({ id: 'pages.agent.isPublic', defaultMessage: 'Is Public' })}
               extra={isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, false) ? intl.formatMessage({ id: 'pages.agent.noPermission', defaultMessage: 'You do not have permission to modify this setting' }) : intl.formatMessage({ id: 'pages.agent.publicHint', defaultMessage: 'Other users can view this agent after making it public' })}>
               <Switch checked={isPublic} onChange={setIsPublic} checkedChildren={intl.formatMessage({ id: 'pages.common.public', defaultMessage: 'Public' })} unCheckedChildren={intl.formatMessage({ id: 'pages.common.private', defaultMessage: 'Private' })} disabled={isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, false)} />
+            </Form.Item>
+            <Form.Item
+              label={intl.formatMessage({ id: 'pages.agent.skillSelfWrite', defaultMessage: 'Skill self-write' })}
+              extra={intl.formatMessage({
+                id: 'pages.agent.skillSelfWriteHint',
+                defaultMessage: 'The agent may draft skills inside its own session. Nothing is published and no other agent sees it until a reviewer approves the draft on the draft review page.',
+              })}
+            >
+              <Switch
+                checked={skillSelfWrite}
+                onChange={setSkillSelfWrite}
+                checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
+                unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
+              />
             </Form.Item>
           </>
         )}
