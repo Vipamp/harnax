@@ -14,8 +14,10 @@ import HarnaxKit
 ///   to land, and a reload would overwrite the draft the reviewer is mid-decision on
 ///   (`draftDetail.tsx:179-184`). Every other outcome branch reloads, because the row it describes moved.
 /// - An error envelope does not reload. It is the server's sentence about a row that has not changed; a
-///   re-read would replace a refusal still being read with a row that says nothing. The single named
-///   exception is `code: 409` (`SkillDraftController.kt:115-117`).
+///   re-read would replace a refusal still being read with a row that says nothing. The one exception is the
+///   promote-name race — an error envelope too, `code: 409` inside HTTP 200
+///   (`SkillDraftController.kt:113-117`) — where the write rolled back and the pending row has to be re-read
+///   before it can be decided again.
 /// - `expectedDigest` is read off the freshly loaded detail rather than mirrored into its own property, so
 ///   "re-read refreshes the digest" (`draftDetail.tsx:70-91`) cannot be broken by a forgotten assignment.
 @MainActor
@@ -104,7 +106,10 @@ public final class SkillDraftDetailViewModel: ObservableObject {
             statusKey: SkillDraftCopy.statusKey(draft.status),
             by: SkillDraftCopy.dashOr(draft.reviewedBy),
             at: SkillDraftCopy.stamp(draft.reviewedAt),
-            reason: hxPresented(draft.rejectReason)
+            // The console prints the reason for a rejection and for nothing else (`draftDetail.tsx:413`).
+            // Approval does blank the column server-side, but the row is what it is once it arrives here:
+            // a stale reason must not turn an approved draft's banner into a rejection's.
+            reason: draft.status == SkillDraftStatus.rejected.rawValue ? hxPresented(draft.rejectReason) : nil
         )
     }
 
@@ -118,8 +123,17 @@ public final class SkillDraftDetailViewModel: ObservableObject {
     // MARK: - Approval
 
     /// Opens the confirmation. Nothing is sent here: an approval writes a skill every agent can then load.
-    public func approve() {
+    ///
+    /// The digest is checked **before** the confirmation opens, not after it (`draftDetail.tsx:222-232`): a
+    /// draft with no digest cannot be approved at all, and asking the reviewer to confirm one and then
+    /// refusing them the answer to their yes is worse than refusing them the question.
+    public func approve() async {
         notice = nil
+        guard expectedDigest != nil else {
+            notice = .refused(message: hx("skill.draft.digest.missing"))
+            await load()
+            return
+        }
         isConfirmingApprove = true
     }
 
@@ -164,15 +178,17 @@ public final class SkillDraftDetailViewModel: ObservableObject {
                 : hx("skill.draft.reject.tooLong", SkillDraftRules.maxRejectReasonLength)
             return
         }
-        isRejectOpen = false
         rejectRefusal = nil
         isActing = true
         defer { isActing = false }
         switch await drafts.reject(id: id, SkillDraftRejectPayload(reason: trimmed)) {
         case let .success(decision):
+            isRejectOpen = false
             await apply(decision, askedName: draft?.name ?? "")
         case let .failure(error):
-            await handleFailure(error)
+            // The sheet stays open holding what the reviewer typed, and the server's sentence goes inside it
+            // rather than on the screen behind (`draftDetail.tsx:253-259` leaves the modal up on a refusal).
+            rejectRefusal = ErrorMessage.text(for: error)
         }
     }
 
@@ -228,7 +244,7 @@ public final class SkillDraftDetailViewModel: ObservableObject {
         defer { isActing = false }
         let payload = SkillDraftApprovePayload(
             expectedDigest: digest,
-            conflictResolution: resolution?.wireValue,
+            conflictResolution: resolution?.rawValue,
             newName: resolution == .rename ? newName : nil
         )
         switch await drafts.approve(id: id, payload) {
@@ -259,8 +275,15 @@ public final class SkillDraftDetailViewModel: ObservableObject {
             return
         }
         // Anything else keeps the dialog and the form exactly as they are: the reviewer has a server sentence
-        // to read and a name they may want to change and retry.
-        notice = .refused(message: ErrorMessage.text(for: error))
+        // to read and a name they may want to change and retry. Where that sentence lands depends on what is
+        // on top — the conflict sheet covers the notice banner, so writing to the banner alone would report a
+        // refusal the reviewer never sees.
+        let text = ErrorMessage.text(for: error)
+        if conflict != nil {
+            conflictRefusal = text
+        } else {
+            notice = .refused(message: text)
+        }
     }
 
     /// §5.4's table, applied to both decision calls: a reject can answer `REJECTED`, and an approve can answer
@@ -268,7 +291,7 @@ public final class SkillDraftDetailViewModel: ObservableObject {
     private func apply(_ decision: SkillDraftDecision, askedName: String) async {
         switch decision.kind {
         case .promoted:
-            let name = decision.promotedName ?? draft?.name ?? SkillDraftCopy.dash
+            let name = hxPresented(decision.promotedName) ?? hxPresented(draft?.name) ?? SkillDraftCopy.dash
             if SkillDraftRules.isPromotedEnabled(decision.skillStatus) {
                 notice = .promotedEnabled(name: name, skillID: decision.skillId, canOpenSkill: skills != nil)
             } else {
@@ -283,7 +306,7 @@ public final class SkillDraftDetailViewModel: ObservableObject {
             notice = .draftChanged(digest: decision.currentDigest)
         case .alreadyReviewed:
             notice = .alreadyReviewed(
-                by: decision.reviewedBy ?? SkillDraftCopy.dash,
+                by: SkillDraftCopy.dashOr(decision.reviewedBy),
                 at: SkillDraftCopy.stamp(decision.reviewedAt),
                 reason: hxPresented(decision.rejectReason)
             )

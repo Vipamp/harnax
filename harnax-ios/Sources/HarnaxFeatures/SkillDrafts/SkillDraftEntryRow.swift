@@ -13,9 +13,12 @@ import HarnaxKit
 ///
 /// The count is the whole tenant's queue, not this conversation's: the endpoint has no session filter at all
 /// (`SkillDraftController.kt:55-68`), which is why the copy says「待审」rather than「本会话」.
+///
+/// The row pushes `SkillDraftQueueRoute` by value and `ChatTabView` answers it, so the facade is the only
+/// availability question left: the destination is registered by this row's single host, and a link that has a
+/// destination has nothing to be disabled for.
 public struct SkillDraftEntryRow: View {
     private let drafts: (any SkillDraftCataloging)?
-    private let onOpen: (() -> Void)?
     /// Bumped by the conversation list's pull-to-refresh. `Equatable` so `.task(id:)` re-runs the read on a
     /// new value and does nothing when the row merely re-renders.
     private let reloadToken: Int
@@ -24,21 +27,19 @@ public struct SkillDraftEntryRow: View {
 
     public init(
         drafts: (any SkillDraftCataloging)?,
-        onOpen: (() -> Void)? = nil,
         reloadToken: Int = 0
     ) {
         self.drafts = drafts
-        self.onOpen = onOpen
         self.reloadToken = reloadToken
     }
 
-    /// `drafts == nil`撤入口: the caller asks before building the row so the list's spacing does not reserve
+    /// No facade, no entry: the caller asks before building the row so the list's spacing does not reserve
     /// a slot for something that is not there.
     public static func isAvailable(_ drafts: (any SkillDraftCataloging)?) -> Bool { drafts != nil }
 
     public var body: some View {
         if let drafts {
-            Button(action: open) {
+            NavigationLink(value: SkillDraftQueueRoute()) {
                 HXCard {
                     HStack(spacing: 12) {
                         Image(systemName: "checklist")
@@ -66,16 +67,11 @@ public struct SkillDraftEntryRow: View {
                 }
             }
             .buttonStyle(.plain)
-            .disabled(onOpen == nil)
             .task(id: reloadToken) {
                 // The read failure path is `pendingCount = nil`, which is the same value as「nothing pending」
                 // and is exactly the point: neither removes the row.
                 pendingCount = await drafts.pendingCount()
             }
         }
-    }
-
-    private func open() {
-        onOpen?()
     }
 }

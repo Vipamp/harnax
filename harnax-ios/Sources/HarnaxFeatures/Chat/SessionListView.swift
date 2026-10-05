@@ -30,7 +30,6 @@ public struct SessionListView: View {
     /// entirely rather than offering a screen that could only report its own inability
     /// (`specs/07-skill-draft-review.md` §5.1).
     private let drafts: (any SkillDraftCataloging)?
-    private let onOpenDraftQueue: (() -> Void)?
 
     @State private var renameTarget: SessionSummary?
     @State private var detailTarget: SessionSummary?
@@ -62,8 +61,7 @@ public struct SessionListView: View {
         teamArtifacts: (any TeamArtifactReading)? = nil,
         executor: (any ExecutorReading)? = nil,
         drafts: (any SkillDraftCataloging)? = nil,
-        onOpen: ((ChatConversation) -> Void)? = nil,
-        onOpenDraftQueue: (() -> Void)? = nil
+        onOpen: ((ChatConversation) -> Void)? = nil
     ) {
         _vm = StateObject(wrappedValue: SessionListViewModel(sessions: sessions))
         self.creating = creating
@@ -73,7 +71,6 @@ public struct SessionListView: View {
         self.executor = executor
         self.drafts = drafts
         self.onOpen = onOpen
-        self.onOpenDraftQueue = onOpenDraftQueue
     }
 
     public var body: some View {
@@ -181,6 +178,21 @@ public struct SessionListView: View {
 
     @ViewBuilder
     private var content: some View {
+        VStack(spacing: 0) {
+            // The self-write entry sits outside the conversation phases on purpose: it navigates the tenant's
+            // queue and reads drafts, not sessions. Hung inside the list it would disappear with an empty state,
+            // and「自己一条会话都没有、别人的会话里却提议了草稿」is exactly the reviewer who needs the entry.
+            if SkillDraftEntryRow.isAvailable(drafts) {
+                SkillDraftEntryRow(drafts: drafts, reloadToken: draftCountToken)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+            }
+            phases
+        }
+    }
+
+    @ViewBuilder
+    private var phases: some View {
         switch vm.phase {
         case .loading:
             HXStateView(.loading)
@@ -201,14 +213,6 @@ public struct SessionListView: View {
     private var list: some View {
         ScrollView {
             LazyVStack(spacing: 12) {
-                // 自我进化的入口，与下面两条横幅同层：它属于这屏列表，不属于任何一个会话行。
-                if SkillDraftEntryRow.isAvailable(drafts) {
-                    SkillDraftEntryRow(
-                        drafts: drafts,
-                        onOpen: onOpenDraftQueue,
-                        reloadToken: draftCountToken
-                    )
-                }
                 if let inline = vm.inlineError {
                     HXBanner("state.error.title", message: inline, systemImage: "exclamationmark.triangle", tone: .danger)
                 }

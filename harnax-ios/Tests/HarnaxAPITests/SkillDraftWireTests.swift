@@ -131,7 +131,7 @@ final class SkillDraftWireTests: XCTestCase {
                 id: 17,
                 SkillDraftApprovePayload(
                     expectedDigest: "d-1",
-                    conflictResolution: SkillDraftApprovePayload.renameName,
+                    conflictResolution: SkillDraftResolution.rename.rawValue,
                     newName: "invoice-pdf-v2"
                 )
             )
@@ -154,7 +154,7 @@ final class SkillDraftWireTests: XCTestCase {
                 id: 17,
                 SkillDraftApprovePayload(
                     expectedDigest: "d-1",
-                    conflictResolution: SkillDraftApprovePayload.replaceName
+                    conflictResolution: SkillDraftResolution.replace.rawValue
                 )
             )
         )
@@ -162,10 +162,10 @@ final class SkillDraftWireTests: XCTestCase {
         XCTAssertEqual(body["conflictResolution"], .string("replace"))
     }
 
-    /// Both resolution words are the service's own vocabulary (`SkillDraftServiceImpl.kt:580-585`), lowercase.
+    /// Both resolution words are the service's own vocabulary (`SkillDraftServiceImpl.kt:583-585`), lowercase.
     func testTheTwoResolutionWords() {
-        XCTAssertEqual(SkillDraftApprovePayload.replaceName, "replace")
-        XCTAssertEqual(SkillDraftApprovePayload.renameName, "rename")
+        XCTAssertEqual(SkillDraftResolution.replace.rawValue, "replace")
+        XCTAssertEqual(SkillDraftResolution.rename.rawValue, "rename")
     }
 
     /// The rejection reason is required and reaches the service as the operator's own words; the trimming is
@@ -275,13 +275,13 @@ final class SkillDraftWireTests: XCTestCase {
         )
     }
 
-    /// The one refusal shape a screen cannot reach through the envelope: a `DuplicateKeyException` on the
-    /// promote name comes back as HTTP 409 with a business code, and the transport maps non-2xx to
-    /// `APIError.business(code: 409)` (`SkillDraftController.kt:115-117`, `ResponseMapper.swift:13-15`).
+    /// The race arrives the way every other admin refusal does: **HTTP 200** with `code: 409` inside the
+    /// envelope (`SkillDraftController.kt:113-117` returns `ResultVo.error(409, …)`), and `ResponseMapper`
+    /// turns a non-200 envelope code into `APIError.business(code:)` (`ResponseMapper.swift:22-24`).
     func testTheNameRaceArrivesAsAFortyNine() async throws {
         let harness = APIHarness()
         try? await harness.signIn()
-        harness.transport.enqueue(409, Wire.business(409, "That name was taken while the approval ran"))
+        harness.transport.enqueue(200, Wire.business(409, "That name was taken while the approval ran"))
         let result = await harness.agents.approve(
             id: 17, SkillDraftApprovePayload(expectedDigest: "d-1")
         )
@@ -289,8 +289,9 @@ final class SkillDraftWireTests: XCTestCase {
         guard case .failure(let error) = result else {
             return XCTFail("a 409 must not decode as a decision: \(result)")
         }
-        if case .business(let code, _) = error {
+        if case .business(let code, let message) = error {
             XCTAssertEqual(code, 409, "the detail screen has one branch keyed on this code")
+            XCTAssertEqual(message, "That name was taken while the approval ran")
         } else {
             XCTFail("409 should map to a business error, got \(error)")
         }

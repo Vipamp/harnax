@@ -119,8 +119,6 @@ final class SkillDraftCopyTests: XCTestCase {
     /// the thumb.
     func testTheConflictDialogListsRenameBeforeReplace() {
         XCTAssertEqual(SkillDraftResolution.allCases, [.rename, .replace])
-        XCTAssertEqual(SkillDraftResolution.rename.wireValue, "rename")
-        XCTAssertEqual(SkillDraftResolution.replace.wireValue, "replace")
         XCTAssertEqual(SkillDraftResolution.rename.titleKey, "skill.draft.conflict.rename")
         XCTAssertEqual(SkillDraftResolution.replace.titleKey, "skill.draft.conflict.replace")
     }

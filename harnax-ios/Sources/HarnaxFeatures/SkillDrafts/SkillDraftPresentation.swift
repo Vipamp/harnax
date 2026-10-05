@@ -17,6 +17,18 @@ public struct SkillDraftRef: Identifiable, Hashable, Sendable {
     public static func forRow(_ row: SkillDraftRow) -> SkillDraftRef? { row.id.map(SkillDraftRef.init(id:)) }
 }
 
+/// The queue's own push value, carried by the session list's entry row.
+///
+/// A value rather than a `Bool` flag on the chat tab, because the queue is not a leaf: its rows push a detail
+/// one level deeper. An item- or `isPresented`-presented screen is re-evaluated by the path change its own
+/// deeper push causes, and while the binding still reads true it gets pushed a second time on top of the
+/// screen it just opened — the defect `SkillNavigationTests` records for 2026-10-03, where tapping a skill left
+/// a second copy of the table over the detail. Pushing by value puts this flow on the same shape as
+/// `ModelProviderListView` and the skill flow: value at every level.
+public struct SkillDraftQueueRoute: Hashable, Sendable {
+    public init() {}
+}
+
 /// Which of the six panes the detail screen shows.
 ///
 /// The console's own split (`harnax-webui/src/pages/skill/draftDetail.tsx:275-333`), with the trail pulled out
@@ -40,27 +52,6 @@ public enum SkillDraftTab: Int, CaseIterable, Identifiable, Sendable {
         case .scans: return "skill.draft.tab.scans"
         case .source: return "skill.draft.tab.source"
         case .history: return "skill.draft.tab.history"
-        }
-    }
-}
-
-/// The two answers the name-conflict dialog offers, **in the order the dialog lists them**.
-///
-/// `rename` first and `replace` second, preselected (`draftDetail.tsx:511-520`): both overwrite or duplicate
-/// something somebody else published, and the console decided the reader should start on the arm that leaves
-/// the existing row alone. The raw values are the wire spellings the service matches
-/// (`SkillDraftServiceImpl.kt:580-585`).
-public enum SkillDraftResolution: String, CaseIterable, Identifiable, Sendable {
-    case rename
-    case replace
-
-    public var id: String { rawValue }
-    public var wireValue: String { rawValue }
-
-    public var titleKey: String {
-        switch self {
-        case .rename: return "skill.draft.conflict.rename"
-        case .replace: return "skill.draft.conflict.replace"
         }
     }
 }
@@ -99,7 +90,8 @@ public enum SkillDraftNotice: Equatable, Sendable {
     case alreadyReviewed(by: String, at: String, reason: String?)
     /// The rejection landed — the `REJECTED` outcome, which is a success for the reject button.
     case rejectionRecorded
-    /// HTTP 409: the name was taken mid-approval, the write rolled back and the draft is still pending.
+    /// Envelope `code: 409` on HTTP 200: the name was taken mid-approval, the write rolled back and the draft
+    /// is still pending.
     case nameRace
     /// Anything the screen cannot act on, already rendered — the server's sentence, or the local fallback.
     case refused(message: String)
@@ -148,10 +140,11 @@ public struct SkillDraftConflict: Equatable, Sendable {
 
 /// The queue's and the detail screen's shared read of a row: stamps, labels, colours.
 ///
-/// Slicing rather than re-formatting: the server's stamps are already in the shape both screens ask for
-/// (`application.yml:23`), and a `DateFormatter` round trip would drag the device's locale and calendar into a
-/// table that has to read identically in both languages. Anything unreadable keeps its own text rather than
-/// being guessed at — a wrong timestamp on a review screen is worse than a raw one.
+/// Slicing rather than re-formatting: a `DateFormatter` round trip would drag the device's locale and calendar
+/// into a table that has to read identically in both languages. So the stamp is cut at its own separator, and
+/// both serialisations admin answers with — the space form and the `T` form — are accepted, which is what
+/// `Support/RowMeta.swift` establishes for every other screen's dates. Anything unreadable keeps its own text
+/// rather than being guessed at — a wrong timestamp on a review screen is worse than a raw one.
 public enum SkillDraftCopy {
     /// The console's empty cell (`drafts.tsx:86,155`).
     public static let dash = "-"
@@ -197,7 +190,7 @@ public enum SkillDraftCopy {
     }
 
     /// The verdict tag is the server's own word, kept verbatim (`drafts.tsx:128`) — but the three values it
-    /// echoes back (`SkillDraftServiceImpl.kt:564`) each get their own colour, and an unrecognised fourth reads
+    /// echoes back (`SkillDraftServiceImpl.kt:569`) each get their own colour, and an unrecognised fourth reads
     /// neutral instead of claiming a verdict.
     public static func verdictTone(_ verdict: String?) -> PaletteSlot {
         switch verdict {

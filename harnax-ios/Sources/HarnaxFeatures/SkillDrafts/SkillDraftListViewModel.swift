@@ -97,10 +97,6 @@ public final class SkillDraftListViewModel: ObservableObject {
         await refresh()
     }
 
-    /// Whether the term in force has rows to show less than the arm's whole contents — the sentence under the
-    /// empty state has to say which of the two is on screen.
-    public var isFiltered: Bool { name != nil }
-
     // MARK: - Paging
 
     public func refresh() async {

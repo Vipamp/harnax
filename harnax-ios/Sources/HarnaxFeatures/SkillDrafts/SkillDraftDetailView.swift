@@ -192,7 +192,7 @@ public struct SkillDraftDetailView: View {
                     )
                 }
                 Button {
-                    vm.approve()
+                    Task { await vm.approve() }
                 } label: {
                     HXText("skill.draft.approve")
                         .frame(maxWidth: .infinity)
@@ -517,7 +517,7 @@ public struct SkillDraftDetailView: View {
                     } label: {
                         HXText("skill.draft.reject")
                     }
-                    .disabled(vm.isActing || hxPresented(vm.rejectReason) == nil)
+                    .disabled(vm.isActing)
                 }
             }
         }

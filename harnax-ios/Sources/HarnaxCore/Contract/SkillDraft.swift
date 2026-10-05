@@ -14,11 +14,11 @@ public struct SkillDraftRow: Decodable, Identifiable, Equatable, Sendable {
     public let name: String?
     public let description: String?
     /// `PENDING` / `APPROVED` / `REJECTED`. `EXPIRED` is written on the column's documentation but by no code,
-    /// and filtering by it is refused outright (`SkillDraftServiceImpl.kt:570-577`), so it is not one of the
+    /// and filtering by it is refused outright (`SkillDraftServiceImpl.kt:578`), so it is not one of the
     /// statuses this app can ask for.
     public let status: String?
     /// Upstream `SkillSecurityScanner.Verdict`, and only `SAFE` / `CAUTION` / `DANGEROUS` are echoed back
-    /// (`SkillDraftServiceImpl.kt:564`). Kept as text: an unrecognised verdict still has to be readable.
+    /// (`SkillDraftServiceImpl.kt:569`). Kept as text: an unrecognised verdict still has to be readable.
     public let scanVerdict: String?
     public let upstreamFindingCount: Int
     /// The conversation the agent proposed this skill in. Display and copy only — the console never links it
@@ -52,6 +52,25 @@ public enum SkillDraftStatus: String, CaseIterable, Identifiable, Sendable {
 
     public var id: String { rawValue }
     public var titleKey: String { "skill.draft.status.\(rawValue)" }
+}
+
+/// The two answers to a name clash, spelled as the service matches them
+/// (`SkillDraftServiceImpl.kt:583-585`). These raw values go on the wire as `conflictResolution`.
+///
+/// `allCases` is the dialog's display order: `rename` first and `replace` second, preselected
+/// (`harnax-webui/src/pages/skill/draftDetail.tsx:511-520`) — both overwrite or duplicate something somebody
+/// else published, and the console decided the reader should start on the arm that leaves the existing row alone.
+public enum SkillDraftResolution: String, CaseIterable, Identifiable, Sendable {
+    case rename
+    case replace
+
+    public var id: String { rawValue }
+    public var titleKey: String {
+        switch self {
+        case .rename: return "skill.draft.conflict.rename"
+        case .replace: return "skill.draft.conflict.replace"
+        }
+    }
 }
 
 /// The full content of one proposal, with the trail of how it got here:
@@ -183,7 +202,7 @@ public enum SkillDraftOutcome: Equatable, Sendable {
 /// (`:12-20`). It only goes out after a `NAME_TAKEN`.
 public struct SkillDraftApprovePayload: Encodable, Equatable, Sendable {
     public let expectedDigest: String
-    /// `replace` or `rename`, spelled by `SkillDraftServiceImpl.kt:580-585`.
+    /// `replace` or `rename` — the raw value of a `SkillDraftResolution`.
     public var conflictResolution: String?
     public var newName: String?
 
@@ -203,9 +222,6 @@ public struct SkillDraftApprovePayload: Encodable, Equatable, Sendable {
     enum CodingKeys: String, CodingKey {
         case expectedDigest, conflictResolution, newName
     }
-
-    public static let replaceName = "replace"
-    public static let renameName = "rename"
 }
 
 /// Body of `POST /api/admin/skill-drafts/{id}/reject` (`SkillDraftRejectRequest.kt:13-20`).
@@ -240,15 +256,15 @@ public enum SkillDraftRules {
     /// A rejection reason is admissible when it is not blank and its trimmed length is at most 512. Exactly
     /// 512 is legal: the service compares with `>` (`SkillDraftServiceImpl.kt:372`).
     public static func isRejectReasonAdmissible(_ raw: String) -> Bool {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !trimmed.isEmpty && wireLength(trimmed) <= maxRejectReasonLength
+        let length = trimmedWireLength(raw)
+        return length > 0 && length <= maxRejectReasonLength
     }
 
     /// A rename target is admissible when it is not blank and its trimmed length is at most 100
     /// (`SkillDraftServiceImpl.kt:415-424`). Validated untrimmed, submitted trimmed — the console's order.
     public static func isRenameAdmissible(_ raw: String) -> Bool {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !trimmed.isEmpty && wireLength(trimmed) <= maxSkillNameLength
+        let length = trimmedWireLength(raw)
+        return length > 0 && length <= maxSkillNameLength
     }
 
     /// Strictly after. Two equal stamps mean nothing moved, and a missing `createTime` means nothing can be

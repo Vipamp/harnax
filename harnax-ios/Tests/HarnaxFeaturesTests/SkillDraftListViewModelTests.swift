@@ -153,7 +153,6 @@ final class SkillDraftListViewModelTests: XCTestCase {
         XCTAssertEqual(drafts.pageRequests.count, 2)
         XCTAssertEqual(drafts.pageRequests.last?.name, "周报")
         XCTAssertEqual(vm.name, "周报")
-        XCTAssertTrue(vm.isFiltered)
     }
 
     func testAnUntrimmedTermIsSentTrimmedAndAnEmptiedFieldLeavesTheKeyOff() async throws {
@@ -166,7 +165,6 @@ final class SkillDraftListViewModelTests: XCTestCase {
         vm.keyword = "   "
         await vm.search()
         XCTAssertNil(drafts.pageRequests.last?.name, "a field of only spaces is no term at all")
-        XCTAssertFalse(vm.isFiltered, "and the empty card may then say the arm has no rows")
     }
 
     func testCommittingTheTermAlreadyInForceSendsNothing() async throws {
@@ -194,7 +192,6 @@ final class SkillDraftListViewModelTests: XCTestCase {
         XCTAssertEqual(vm.name, nil)
         XCTAssertEqual(vm.keyword, "")
         XCTAssertNil(drafts.pageRequests.last?.name)
-        XCTAssertFalse(vm.isFiltered)
 
         let before = drafts.pageRequests.count
         await vm.clearSearch()

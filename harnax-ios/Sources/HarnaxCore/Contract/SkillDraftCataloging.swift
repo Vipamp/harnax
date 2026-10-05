@@ -22,9 +22,11 @@ public protocol SkillDraftCataloging: Sendable {
     func detail(id: Int64) async -> Result<SkillDraftDetail, APIError>
 
     /// Refusals the screen can act on come back inside a successful envelope as `outcome`, so a `.success`
-    /// here does **not** mean the draft was promoted (`SkillDraftDecisionResponse.kt:9-16`). The one
-    /// non-2xx branch worth naming is `code: 409` — the race where another publisher won the name
-    /// (`SkillDraftController.kt:115-117`), where the draft is still pending and re-reading is the fix.
+    /// here does **not** mean the draft was promoted (`SkillDraftDecisionResponse.kt:9-16`).
+    /// The one refusal keyed on an envelope **code** rather than on `data.outcome` is `409` — the race where
+    /// another publisher won the name (`SkillDraftController.kt:113-117` answers `ResultVo.error(409, …)`,
+    /// which is HTTP 200 with the code inside the envelope), and where the draft is still pending and
+    /// re-reading is the fix.
     func approve(id: Int64, _ payload: SkillDraftApprovePayload) async -> Result<SkillDraftDecision, APIError>
 
     /// A rejection with no reason is refused by the service (`SkillDraftServiceImpl.kt:370-371`), so callers

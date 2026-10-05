@@ -72,6 +72,21 @@ final class SkillDraftDetailViewModelTests: XCTestCase {
         XCTAssertEqual(summary.reason, "与既有技能重复")
     }
 
+    /// The reason line is a rejection's alone (`draftDetail.tsx:413`). Approval blanks the column server-side,
+    /// but the report reads the row it was handed — a stale reason must not turn an approved draft's banner
+    /// into a rejection's.
+    func testAnApprovedDraftPrintsNoReasonEvenWhenTheRowCarriesOne() async throws {
+        let (vm, _) = try await loaded([
+            "status": SkillDraftStatus.approved.rawValue,
+            "reviewedBy": "admin",
+            "reviewedAt": "2026-10-04 18:22:07",
+            "rejectReason": "与既有技能重复",
+        ])
+        let summary = try XCTUnwrap(vm.decidedSummary)
+        XCTAssertEqual(summary.statusKey, "skill.draft.status.APPROVED")
+        XCTAssertNil(summary.reason)
+    }
+
     func testARefusedReReadKeepsTheRowAndSaysSo() async throws {
         let (vm, drafts) = try await loaded()
         drafts.detailReplies = [.failure(.timeout)]
@@ -94,7 +109,7 @@ final class SkillDraftDetailViewModelTests: XCTestCase {
 
     func testApprovalAsksBeforeItSendsAndSendsOneKey() async throws {
         let (vm, drafts) = try await loaded()
-        vm.approve()
+        await vm.approve()
         XCTAssertTrue(vm.isConfirmingApprove, "approval is a publish, so it is confirmed before it is sent (§5.4)")
         XCTAssertTrue(drafts.approveRequests.isEmpty)
 
@@ -341,7 +356,12 @@ final class SkillDraftDetailViewModelTests: XCTestCase {
         vm.newName = "周报 v2"
         await vm.resolveConflict()
 
-        XCTAssertEqual(vm.notice, .refused(message: "只有待审草稿可以被批准"))
+        XCTAssertEqual(
+            vm.conflictRefusal,
+            "只有待审草稿可以被批准",
+            "the sheet is on top of the screen, so the sentence has to land inside it or nowhere the reviewer sees"
+        )
+        XCTAssertNil(vm.notice, "the banner behind the sheet stays as the last decision left it")
         XCTAssertEqual(vm.conflict?.name, "周报汇总", "the reviewer has a server sentence to read and a name to fix")
         XCTAssertEqual(vm.newName, "周报 v2")
         XCTAssertEqual(
@@ -377,22 +397,37 @@ final class SkillDraftDetailViewModelTests: XCTestCase {
 
         // The arm the closed dialog left behind is `.replace`, and nothing can read it again: a collision
         // always re-opens on the safe arm, which is what makes clearing it here unnecessary.
-        vm.approve()
+        await vm.approve()
         await vm.confirmApprove()
         XCTAssertEqual(vm.conflict?.name, "周报汇总")
         XCTAssertEqual(vm.resolution, .rename, "preselected on the arm that leaves the existing row alone (§5.5)")
     }
 
-    func testApprovingWithoutADigestSendsNoRequest() async throws {
+    func testApprovingWithoutADigestRefusesBeforeTheConfirmationOpens() async throws {
         let (vm, drafts) = try await loaded(skills: FakeSkills(), ["contentDigest": ""])
         XCTAssertNil(vm.expectedDigest)
         XCTAssertNil(vm.digestPreview)
 
         try queueReload(drafts)
-        await vm.confirmApprove()
+        await vm.approve()
+        XCTAssertFalse(
+            vm.isConfirmingApprove,
+            "a question the reviewer cannot answer is not worth asking (`draftDetail.tsx:222-232`)"
+        )
         XCTAssertTrue(drafts.approveRequests.isEmpty, "nothing to approve against, so nothing goes on the wire")
         XCTAssertEqual(vm.notice, .refused(message: hx("skill.draft.digest.missing")))
-        XCTAssertEqual(drafts.detailRequests.count, 2, "…but the row still gets re-read (`draftDetail.tsx:222-232`)")
+        XCTAssertEqual(drafts.detailRequests.count, 2, "…but the row still gets re-read")
+
+        // The send keeps the same guard for the path that opens the dialog before the digest goes away: a
+        // re-read that lands while the confirmation is up replaces the row on screen, and a row with no digest
+        // cannot put a key on the wire.
+        try queueReload(drafts, ["contentDigest": ""])
+        await vm.load()
+        XCTAssertNil(vm.expectedDigest, "the row that replaced this one carries nothing to approve against")
+        try queueReload(drafts, ["contentDigest": ""])
+        await vm.confirmApprove()
+        XCTAssertTrue(drafts.approveRequests.isEmpty)
+        XCTAssertEqual(vm.notice, .refused(message: hx("skill.draft.digest.missing")))
     }
 
     func testTheSecondTapOnApproveSendsNothingWhileTheFirstIsOnTheWire() async throws {
@@ -442,9 +477,33 @@ final class SkillDraftDetailViewModelTests: XCTestCase {
         XCTAssertTrue(drafts.rejectRequests.isEmpty, "the service would only say「write something」back (`SkillDraftServiceImpl.kt:370-371`)")
         XCTAssertTrue(vm.isRejectOpen, "the sheet stays up with what the reviewer typed in it")
 
+        drafts.rejectReplies = [.success(try SkillDraftDecision.stub(["outcome": "REJECTED"]))]
+        try queueReload(drafts)
         vm.rejectReason = "重复"
         await vm.submitRejection()
         XCTAssertNil(vm.rejectRefusal, "an accepted reason retires the sentence about the refused one")
+        XCTAssertFalse(vm.isRejectOpen, "and a decision that landed is the only thing that closes the sheet")
+    }
+
+    /// A refused rejection keeps the sheet: the reason is still worth sending and the server's sentence is
+    /// still worth reading, and both live inside it (`draftDetail.tsx:246-260` closes the modal only once a
+    /// decision landed).
+    func testARefusedRejectionKeepsTheSheetAndItsReason() async throws {
+        let (vm, drafts) = try await loaded()
+        vm.startRejection()
+        vm.rejectReason = "与既有技能重复"
+        drafts.rejectReplies = [.failure(.business(code: 400, message: "只有待审草稿可以被驳回"))]
+        await vm.submitRejection()
+
+        XCTAssertTrue(vm.isRejectOpen, "a sheet that closed on a failure would throw the typed reason away")
+        XCTAssertEqual(vm.rejectReason, "与既有技能重复")
+        XCTAssertEqual(vm.rejectRefusal, "只有待审草稿可以被驳回")
+        XCTAssertNil(vm.notice, "the banner sits behind the sheet, so writing there reports nothing")
+        XCTAssertEqual(
+            drafts.detailRequests.count,
+            1,
+            "an error envelope is a verdict about a row that has not changed"
+        )
     }
 
     func testTheRejectionCeilingIsCountedInTheServersOwnUnits() async throws {
@@ -482,7 +541,7 @@ final class SkillDraftDetailViewModelTests: XCTestCase {
         await vm.confirmApprove()
         XCTAssertNotNil(vm.notice)
 
-        vm.approve()
+        await vm.approve()
         XCTAssertNil(vm.notice, "a fresh question must not arrive wearing the last answer")
 
         vm.cancelApproval()
