@@ -128,6 +128,18 @@ class MemoryOwnerBucketMinioIT : BaseAdminIT() {
         /** A day no long-term ledger of this class is written for, so a leaked session date is visible. */
         private const val SESSION_DATE = "2026-10-06"
 
+        /**
+         * How far one bucket's ledgers have been merged, which the runtime keeps as one object beside them.
+         *
+         * Upstream stores that progress at an address with no owner in it, so every bucket of a deployment
+         * shares it; the runtime therefore relocates it into the bucket it counts (§11.7 of the memory
+         * design). Living inside the ledger namespace buys its reclamation, and costs the page one object that
+         * is not a day of anybody's memory — so [envelope] does not describe it: `MinioBaseStore` writes the
+         * value map as it came, and that map holds a timestamp, not file text.
+         */
+        private const val PROGRESS_ITEM_KEY = "watermark"
+        private const val PROGRESS_BODY = "{\"key\":\"/watermark\",\"value\":{\"ts\":1759670400000},\"version\":1}"
+
         @JvmStatic
         val minio: GenericContainer<*> = GenericContainer(DockerImageName.parse("minio/minio:latest"))
             .withCommand("server", "/data")
@@ -229,6 +241,11 @@ class MemoryOwnerBucketMinioIT : BaseAdminIT() {
         sessionId: String = SESSION_ID,
     ): String = "${agentPrefix(agent)}sessions/$sessionId/memory/$date.md"
 
+    /** The one object that says how far [agent]'s ledgers have been merged for this owner. */
+    private fun progressKey(
+        agent: String,
+    ): String = "${agentPrefix(agent)}memory/$PROGRESS_ITEM_KEY"
+
     private fun agentPrefix(
         agent: String,
         ownerPrefix: String = ADMIN_OWNER_PREFIX,
@@ -292,6 +309,11 @@ class MemoryOwnerBucketMinioIT : BaseAdminIT() {
         put(sessionCuratedKey(DELETABLE_AGENT), envelope("/MEMORY.md", SESSION_DRAFT))
         put(sessionLedgerKey(SESSION_DATE, DELETABLE_AGENT), envelope("/$SESSION_DATE.md", SESSION_LEDGER))
 
+        // And the object each bucket keeps beside its ledgers to say how far they have been merged: same
+        // route as the daily entries, so the same sweep takes it, and no date, so the page never shows it.
+        put(progressKey(LISTED_AGENT), PROGRESS_BODY)
+        put(progressKey(DELETABLE_AGENT), PROGRESS_BODY)
+
         // Two neighbours that must survive every call this class makes: another owner in the same tenant,
         // and this same owner's copy in another workspace.
         put(curatedKey(PEER_AGENT, peerOwnerPrefix()), envelope("/MEMORY.md", PEER_CURATED))
@@ -306,9 +328,10 @@ class MemoryOwnerBucketMinioIT : BaseAdminIT() {
 
         assertEquals(DELETABLE_AGENT, data["agentId"].asText())
         assertEquals(
-            4,
+            5,
             data["deletedObjects"].asInt(),
-            "the curated layer, its ledger and the one conversation's two objects went; the count is what an operator reads",
+            "the curated layer, its ledger, the one conversation's two objects and the progress object beside " +
+                "the ledgers went; the count is what an operator reads",
         )
         assertEquals(
             emptyList<String>(),
@@ -317,7 +340,7 @@ class MemoryOwnerBucketMinioIT : BaseAdminIT() {
         )
         // Everything else in the shared bucket stays: this caller's other agent, the other owner in this
         // tenant, and this caller's copy under another tenant.
-        assertEquals(5, keysUnder(ADMIN_OWNER_PREFIX).size, "only the named agent's prefix went empty")
+        assertEquals(6, keysUnder(ADMIN_OWNER_PREFIX).size, "only the named agent's prefix went empty")
         assertEquals(2, keysUnder(peerOwnerPrefix()).size, "another owner's memory is never in scope")
         assertEquals(1, keysUnder("store/tenants/2/users/1/").size, "another workspace's copy is never in scope")
     }
@@ -424,7 +447,7 @@ class MemoryOwnerBucketMinioIT : BaseAdminIT() {
             )
         }
         assertEquals(
-            5,
+            6,
             keysUnder(agentPrefix(LISTED_AGENT)).size,
             "and nothing left the bucket either, neither the long-term layer nor the conversation under it",
         )
@@ -469,9 +492,9 @@ class MemoryOwnerBucketMinioIT : BaseAdminIT() {
         val removed = assertOk(parseBody(exchange(HttpMethod.DELETE, "/api/admin/memory/$LISTED_AGENT", token = freshToken)))
         assertEquals(0, removed["deletedObjects"].asInt(), "and a sweep of an empty prefix removes nothing")
         assertEquals(
-            5,
+            6,
             keysUnder(agentPrefix(LISTED_AGENT)).size,
-            "not even somebody else's objects of the same agent name went, long-term or session",
+            "not even somebody else's objects of the same agent name went, long-term, session or bookkeeping",
         )
     }
 
@@ -509,6 +532,30 @@ class MemoryOwnerBucketMinioIT : BaseAdminIT() {
         assertTrue(
             !body.contains(SESSION_DRAFT_MARKER) && !body.contains(SESSION_LEDGER_MARKER),
             "neither object of the conversation bucket is in the response: $body",
+        )
+    }
+
+    @Test
+    @Order(12)
+    fun `the bookkeeping object a bucket keeps beside its ledgers is never shown as memory`() {
+        // The runtime moved the consolidation progress into the ledger namespace so the agent and user sweeps
+        // reclaim it (§11.7). That means the listing this page starts from hands it back, so the read side has
+        // to answer what an object that is not a day of anybody's memory is worth: nothing.
+        assertTrue(
+            keysUnder(agentPrefix(LISTED_AGENT)).contains(progressKey(LISTED_AGENT)),
+            "the progress object is really in the prefix both responses are built from",
+        )
+
+        val agents = assertOk(getJson("/api/admin/memory"))
+        val detail = assertOk(getJson("/api/admin/memory/$LISTED_AGENT"))
+
+        assertTrue(
+            !agents.toString().contains(PROGRESS_ITEM_KEY),
+            "no row of the listing carries it, and no date is offered for it: $agents",
+        )
+        assertTrue(
+            !detail.toString().contains(PROGRESS_ITEM_KEY) && !detail.toString().contains("1759670400000"),
+            "nor does the detail read its timestamp as a day of the owner's memory: $detail",
         )
     }
 

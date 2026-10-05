@@ -16,6 +16,7 @@ import com.agnetix.harnax.harness.config.HarnessConfig
 import com.agnetix.harnax.harness.config.Memory
 import com.agnetix.harnax.harness.config.MinioConfig
 import com.agnetix.harnax.harness.config.SandboxConfig
+import com.agnetix.harnax.harness.memory.BucketScopedWatermarkStore
 import com.agnetix.harnax.harness.minio.MinioBaseStore
 import com.agnetix.harnax.harness.minio.ProcessLocalCoordinationStore
 import com.agnetix.harnax.tools.sdk.UserIdentifier
@@ -89,9 +90,9 @@ class HarnessAgentLauncherMemoryTest {
         secretKey = "minioadmin",
     )
 
-    private fun spec(memoryEnabled: Boolean = true) = AgentSpec.builder()
+    private fun spec(memoryEnabled: Boolean = true, tenantId: Long? = 4L) = AgentSpec.builder()
         .id(1L)
-        .tenantId(4L)
+        .tenantId(tenantId)
         .name("Research")
         .description("a research agent")
         .systemPrompt("answer")
@@ -273,11 +274,83 @@ class HarnessAgentLauncherMemoryTest {
         assertNotNull(store, "the sandbox branch is the one that gets a distributed store")
         assertInstanceOf(
             ProcessLocalCoordinationStore::class.java,
-            store.baseStore(),
+            privateField(requireNotNull(store).baseStore(), "delegate"),
             "upstream builds the gate from this store alone, so a store that never answered has to be " +
-                "answered for: with no distributed store at all it would fall back to LocalPeriodicGate",
+                "answered for: with no distributed store at all it would fall back to LocalPeriodicGate. " +
+                "The bucket wrapper that relocates the consolidation progress sits in front of that answer.",
         )
     }
+
+    @Test
+    fun `the consolidation progress of one agent is keyed to that agent's own bucket`(@TempDir workspace: Path) {
+        // How far an owner's daily ledgers have been merged is one object upstream keeps at an address with no
+        // tenant, user, agent or session in it. Left there, one owner's pass decides which of another owner's
+        // ledgers count as already handled — and the entries it skips go silently. The relocation has to be on
+        // the store handed to the distributed builder because that is the only store upstream reads.
+        val agent = build(workspace, Memory(enabled = true), enableMemoryHooks = true, sandboxEnabled = true)
+
+        val base = requireNotNull(agent.harnessAgent.distributedStore).baseStore()
+        assertInstanceOf(
+            BucketScopedWatermarkStore::class.java,
+            base,
+            "a bucket that consolidates advances its own progress and nobody else's",
+        )
+        assertEquals(
+            listOf("tenants", "4", "users", "1", "agents", "Research", "memory"),
+            privateField(base, "watermarkNamespace"),
+            "beside the ledgers it counts, so the two whole-bucket reclamation paths take it along",
+        )
+    }
+
+    @Test
+    fun `an ownerless delivery gets no progress relocation because it has no bucket`(@TempDir workspace: Path) {
+        // Memory was asked for and this delivery could not bind an owner, so no routes are mounted and nothing
+        // is written to a bucket. The gate fallback still applies — the hooks' throttle is a separate question —
+        // but relocating the progress would need a bucket to relocate it into.
+        val agent = build(
+            workspace,
+            Memory(enabled = true),
+            enableMemoryHooks = true,
+            sandboxEnabled = true,
+            userId = null,
+        )
+
+        val base = requireNotNull(agent.harnessAgent.distributedStore).baseStore()
+        assertInstanceOf(
+            ProcessLocalCoordinationStore::class.java,
+            base,
+            "the gate answer stays, and nothing wraps it",
+        )
+    }
+
+    @Test
+    fun `a tenant-scoped bucket on an agent that carries no tenant is refused`(@TempDir workspace: Path) {
+        val failure = assertThrows(IllegalStateException::class.java) {
+            launcher(workspace, Memory(enabled = true), enableMemoryHooks = true)
+                .memoryDomainOf(bucketStore(), spec(tenantId = null), UserIdentifier(userId = 1L), false, Memory(enabled = true))
+        }
+
+        assertTrue(failure.message!!.contains("carries no tenant"), failure.message!!)
+    }
+
+    @Test
+    fun `with the tenant segment off the whole bucket keys on the owner alone`(@TempDir workspace: Path) {
+        // One key root for both layers and the progress between them, so a deployment that switches the tenant
+        // off does not leave the consolidation progress keyed by a tenant the routes no longer read.
+        val memory = Memory(enabled = true, tenantScoped = false)
+
+        val domain = launcher(workspace, memory, enableMemoryHooks = true)
+            .memoryDomainOf(bucketStore(), spec(tenantId = null), UserIdentifier(userId = 1L), false, memory)
+
+        assertEquals(
+            listOf("users", "1", "agents", "Research"),
+            requireNotNull(domain).namespace(null),
+            "an unscoped agent still gets a bucket of its own, and no `tenants/null` segment",
+        )
+    }
+
+    /** A store that is never contacted: resolving a domain only binds the bucket to it. */
+    private fun bucketStore() = MinioBaseStore(minio().createMinioClient(), "harnax-store", "store/")
 
     /** [block] with every INFO and WARN the launcher emits while it runs. */
     private fun reporting(block: () -> Unit): List<String> {

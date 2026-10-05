@@ -284,4 +284,78 @@ class MemoryObjectKeyCrossCheckTest {
             "one owner, one key root, two layers under it",
         )
     }
+
+    /** A bucket bound to one owner, on the same store the routes above write through. */
+    private fun memoryDomain(owner: String) = MemoryDomain(
+        store = MinioBaseStore(client(), BUCKET, PREFIX),
+        tenantId = 4L,
+        owner = owner,
+        agentId = "Research",
+        tenantScoped = true,
+    )
+
+    /** The store handed upstream for [owner], with its progress relocated into that owner's bucket. */
+    private fun progressStore(owner: String): BucketScopedWatermarkStore = memoryDomain(owner)
+        .let { BucketScopedWatermarkStore(it.store, it.namespace(null)) }
+
+    /** What upstream keeps as that progress: one epoch-millis under `ts`. */
+    private fun ts(
+        millis: Long,
+    ): Map<String, Any> = mapOf("ts" to millis)
+
+    /**
+     * The progress of a consolidation pass, at the address upstream gives it.
+     *
+     * `MemoryConsolidator` keeps this at one namespace for the whole deployment, so two owners sharing a
+     * store share the number that decides which of each one's daily ledgers count as already merged — and an
+     * entry skipped for that reason produces no error and no log line. Only the server says where the
+     * relocated address really lands.
+     */
+    @Test
+    fun `each owner's consolidation progress is an object in its own bucket`() {
+        val ns = BucketScopedWatermarkStore.UPSTREAM_NAMESPACE
+        val key = BucketScopedWatermarkStore.UPSTREAM_KEY
+
+        progressStore("progress-a").put(ns, key, ts(1_000L))
+        progressStore("progress-b").put(ns, key, ts(2_000L))
+
+        assertEquals(
+            listOf("store/tenants/4/users/progress-a/agents/Research/memory/watermark"),
+            keysUnder("store/tenants/4/users/progress-a/"),
+            "beside the ledgers it counts, so the sweep that deletes this agent's memory takes it too",
+        )
+        assertEquals(
+            listOf("store/tenants/4/users/progress-b/agents/Research/memory/watermark"),
+            keysUnder("store/tenants/4/users/progress-b/"),
+        )
+        assertEquals(
+            emptyList<String>(),
+            keysUnder("store/memory/"),
+            "the address upstream would have used stays empty, or one owner still advances another's progress",
+        )
+    }
+
+    @Test
+    fun `the relocated progress still compares versions on this store`() {
+        // Advancing the progress is a compare-and-set, because two replicas of one bucket may consolidate at
+        // the same moment. Relocation must not cost that: a progress object every pass writes blind is worse
+        // than the shared address it replaced.
+        val ns = BucketScopedWatermarkStore.UPSTREAM_NAMESPACE
+        val key = BucketScopedWatermarkStore.UPSTREAM_KEY
+        val store = progressStore("progress-cas")
+
+        store.put(ns, key, ts(1_000L))
+
+        assertEquals(1L, store.get(ns, key)?.version, "a first write answers version 1, the way the routes' own writes do")
+        assertEquals(
+            true,
+            store.putIfVersion(ns, key, ts(2_000L), 1L),
+            "the pass that read version 1 has to be able to claim it",
+        )
+        assertEquals(
+            false,
+            store.putIfVersion(ns, key, ts(3_000L), 1L),
+            "and a pass still holding version 1 has to lose, on this address of this bucket",
+        )
+    }
 }

@@ -31,7 +31,9 @@ object MemoryFilesystemRoutes {
 
     /** Matches the framework's own segment for an exact-file route, so both layers sit under comparable keys. */
     private const val ROOT_SEGMENT = "root"
-    private const val MEMORY_SEGMENT = "memory"
+
+    /** Public because [BucketScopedWatermarkStore] keeps a bucket's progress beside the ledgers it counts. */
+    const val MEMORY_SEGMENT = "memory"
 
     /**
      * The segment a conversation's own layer nests under, inside the agent segment. Public because
@@ -82,6 +84,23 @@ object MemoryFilesystemRoutes {
         agentId: String,
         tenantScoped: Boolean,
         segment: String,
+    ): List<String> = bucketNamespace(tenantId, userId, agentId, null, tenantScoped) + listOf(segment)
+
+    /**
+     * The bucket tuple on its own, with no route tail: `tenants/<id>/users/<uid>/agents/<agentId>`, plus
+     * `sessions/<sessionId>` when the bucket is a conversation's.
+     *
+     * Both layers come from here, one with a route segment appended and the other with a progress object
+     * beside it, so a deployment that switches the tenant segment off moves every key of both layers at once
+     * rather than leaving one keyed by a tenant the other does not read. A null [sessionId] is the owner's
+     * long-term bucket.
+     */
+    fun bucketNamespace(
+        tenantId: Long?,
+        userId: String,
+        agentId: String,
+        sessionId: String?,
+        tenantScoped: Boolean,
     ): List<String> = buildList {
         if (tenantScoped) {
             // The launcher refuses a tenant-scoped agent with no tenant before it reaches this factory, so
@@ -93,7 +112,10 @@ object MemoryFilesystemRoutes {
         add(userId)
         add("agents")
         add(agentId)
-        add(segment)
+        if (sessionId != null) {
+            add(SESSIONS_SEGMENT)
+            add(sessionId)
+        }
     }
 
     /**
@@ -109,8 +131,7 @@ object MemoryFilesystemRoutes {
         sessionId: String,
         tenantScoped: Boolean,
         segment: String,
-    ): List<String> = namespace(tenantId, userId, agentId, tenantScoped, SESSIONS_SEGMENT) +
-        listOf(sessionId, segment)
+    ): List<String> = bucketNamespace(tenantId, userId, agentId, sessionId, tenantScoped) + listOf(segment)
 
     private fun route(
         store: BaseStore,
