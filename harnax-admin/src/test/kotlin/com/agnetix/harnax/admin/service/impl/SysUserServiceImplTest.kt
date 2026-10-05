@@ -63,6 +63,9 @@ class SysUserServiceImplTest {
     @Mock
     private lateinit var mcpUserCredentialMapper: McpUserCredentialMapper
 
+    @Mock
+    private lateinit var userMemoryCleaner: UserMemoryCleaner
+
     @InjectMocks
     private lateinit var sysUserService: SysUserServiceImpl
 
@@ -854,6 +857,97 @@ class SysUserServiceImplTest {
             // there, so its grants are still someone's.
             assertFalse(result)
             verify(mcpUserCredentialMapper, never()).deleteByUserId(anyLong())
+        }
+
+        /**
+         * Long-term memory is not a row: the agent runtime wrote into this owner's bucket in the store, and
+         * nothing but this sweep can find those objects once the account is gone.
+         */
+        @Test
+        @DisplayName("deleteUser - sweeps the memory of a tenant-owning account")
+        fun `deleteUser should sweep the deleted account's memory`() {
+            val owned = testUser.apply { tenantId = 4L }
+            `when`(sysUserMapper.selectById(1L)).thenReturn(owned)
+            `when`(sysUserMapper.deleteById(1L)).thenReturn(1)
+            `when`(userMemoryCleaner.deleteForUser(owned, emptyList())).thenReturn(3)
+
+            assertTrue(sysUserService.deleteUser(1L))
+
+            verify(userMemoryCleaner).deleteForUser(owned, emptyList())
+        }
+
+        /**
+         * The memory bucket is keyed on the tenant of the agent that was talked to, so the memberships this
+         * method already read decide where the owner's objects are. Handing the sweep only the row's home
+         * tenant leaves memory of another workspace behind while reporting the account as cleaned.
+         */
+        @Test
+        @DisplayName("deleteUser - sweeps memory in every tenant the account belonged to")
+        fun `deleteUser should sweep memory in every tenant the user was a member of`() {
+            val owned = testUser.apply { tenantId = 4L }
+            `when`(sysUserMapper.selectById(1L)).thenReturn(owned)
+            `when`(sysUserMapper.deleteById(1L)).thenReturn(1)
+            `when`(userTenantMapper.selectByUserId(1L)).thenReturn(
+                listOf(
+                    UserTenantEntity().apply {
+                        userId = 1L
+                        tenantId = 5L
+                        role = "member"
+                        status = 1
+                    },
+                ),
+            )
+
+            assertTrue(sysUserService.deleteUser(1L))
+
+            verify(userMemoryCleaner).deleteForUser(owned, listOf(5L))
+        }
+
+        /** The order is the safety property: the row first, so a store failure rolls back a retryable state. */
+        @Test
+        @DisplayName("deleteUser - sweeps memory only after the row went")
+        fun `deleteUser should sweep memory after the row is deleted`() {
+            val owned = testUser.apply { tenantId = 4L }
+            `when`(sysUserMapper.selectById(1L)).thenReturn(owned)
+            `when`(sysUserMapper.deleteById(1L)).thenReturn(1)
+
+            sysUserService.deleteUser(1L)
+
+            inOrder(sysUserMapper, userMemoryCleaner).apply {
+                verify(sysUserMapper).deleteById(1L)
+                verify(userMemoryCleaner).deleteForUser(owned, emptyList())
+            }
+        }
+
+        @Test
+        @DisplayName("deleteUser - leaves memory alone when the user row was not deleted")
+        fun `deleteUser should leave memory alone when the user row was not deleted`() {
+            val owned = testUser.apply { tenantId = 4L }
+            `when`(sysUserMapper.selectById(1L)).thenReturn(owned)
+            `when`(sysUserMapper.deleteById(1L)).thenReturn(0)
+
+            assertFalse(sysUserService.deleteUser(1L))
+
+            verify(userMemoryCleaner, never()).deleteForUser(any(), anyList())
+        }
+
+        /**
+         * A store that cannot delete is not logged and forgotten: the sweep throws, the transaction rolls the
+         * account back, and the admin retries. Reporting success here would leave a "deleted" user whose
+         * memory is still in the bucket.
+         */
+        @Test
+        @DisplayName("deleteUser - fails the deletion when the memory sweep fails")
+        fun `deleteUser should fail when the memory sweep fails`() {
+            val owned = testUser.apply { tenantId = 4L }
+            `when`(sysUserMapper.selectById(1L)).thenReturn(owned)
+            `when`(sysUserMapper.deleteById(1L)).thenReturn(1)
+            `when`(userMemoryCleaner.deleteForUser(owned, emptyList()))
+                .thenThrow(BizException(503, "Memory could not be fully deleted for user 1 in tenant 4"))
+
+            val failure = assertThrows<BizException> { sysUserService.deleteUser(1L) }
+
+            assertEquals(503, failure.code)
         }
 
         @Test

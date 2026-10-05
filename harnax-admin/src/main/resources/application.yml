@@ -91,13 +91,18 @@ session:
 local:
   tmp-dir: ${LOCAL_TMP_DIR:/home/harnax/skills}
 
-# MinIO configuration (for output file download proxy)
+# MinIO configuration (output file download proxy, CLI package archives, agent memory store)
 minio:
   enabled: ${MINIO_ENABLED:false}
   endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
   access-key: ${MINIO_ACCESS_KEY:minioadmin}
   secret-key: ${MINIO_SECRET_KEY:minioadmin}
   output-bucket: ${MINIO_OUTPUT_BUCKET:harnax-output}
+  # The KV store bucket the agent runtime's MinioBaseStore writes long-term memory into. Must match
+  # agent-service's harness.minio.store-bucket and harness.minio.store-prefix: MinioBaseStore is the
+  # writer, admin only lists, reads and removes the caller's own keys inside it.
+  store-bucket: ${MINIO_STORE_BUCKET:harnax-store}
+  store-prefix: ${MINIO_STORE_PREFIX:store/}
   # CLI plugin packages. Must match agent-service's harness.minio.cli-package-bucket, which is the
   # reader: admin only writes here.
   cli-package-bucket: ${MINIO_CLI_PACKAGE_BUCKET:harnax-cli-packages}
@@ -149,6 +154,11 @@ harnax:
     # runtime has the same switch (`harness.mcp-stdio-enabled`) and one env var sets both. Turning it
     # on means accepting arbitrary command execution in whichever container runs the agent.
     stdio-enabled: ${HARNAX_MCP_STDIO_ENABLED:false}
+  memory:
+    # Whether the tenant is part of a memory object key. The agent runtime writes those keys
+    # (`harness.memory.tenant-scoped`) and admin only reads them back, so the two must agree: with one value
+    # here out of step with the writer, a whole owner's memory lists as empty. One env var sets both sides.
+    tenant-scoped: ${HARNAX_MEMORY_TENANT_SCOPED:true}
   cli:
     # Directory holding `<name>-<version>.harnaxcli.zip` plugin packages. Read once at startup by
     # `CliPackageAutoRegistrar`, which registers what it finds, uploads the archives to MinIO and

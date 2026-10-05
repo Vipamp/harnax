@@ -16,6 +16,7 @@ export default {
   'menu.agent.team': '多智能体团队',
   'menu.agent.session': '会话',
   'menu.agent.task': '定时任务',
+  'menu.agent.memory': '我的智能体记忆',
 
   // 定时任务
 

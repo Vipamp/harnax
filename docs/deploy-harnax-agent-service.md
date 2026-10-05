@@ -126,8 +126,14 @@
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `HARNESS_ENABLE_WORKSPACE_CONTEXT` | `true`（compose 里置 `false`） | 是否把工作区 `AGENTS.md` 注入上下文。开着但沙箱仅在对话阶段激活时会刷出配置告警，故集群 compose 默认关掉 |
-| `HARNESS_ENABLE_MEMORY_HOOKS` | `false` | 记忆钩子 |
+| `HARNESS_ENABLE_WORKSPACE_CONTEXT` | `true`（compose 里置 `false`） | 是否把工作区 `AGENTS.md` 注入上下文。开着但沙箱仅在对话阶段激活时会刷出配置告警，故集群 compose 默认关掉。开启记忆域会把它强制打开（`<memory_context>` 只由这一条中间件注入），那行告警随之回来 |
+| `HARNESS_ENABLE_MEMORY_HOOKS` | `false` | 记忆抽取与合并两个钩子（配置项 `harness.enable-memory-hooks`）。现在由 compose 按 `${HARNESS_ENABLE_MEMORY_HOOKS:-false}` 注入，真值在 `harnax-deploy/.env` 里给 |
+| `HARNAX_MEMORY_ENABLED` | `false` | 长期记忆整域开关（配置项 `harness.memory.enabled`）。开启要求本服务连着 MinIO（compose 里 `MINIO_ENABLED` 已是 `true`）与上一项同时为 `true`：**只开这一项，装配会直接拒绝该智能体**（连普通对话一起起不来），而不是记忆页空着。团队主管没有工作区，这一域对它自动关闭；一次投递没带用户身份时同样自动关闭 |
+| `HARNAX_MEMORY_MODEL_ID` | `0` | 做抽取与合并的模型，取模型域的行 id；`0` 沿用各智能体自己的主模型 |
+| `HARNAX_MEMORY_FLUSH_TRIGGER` | `throttled` | `always` 每轮多付一次模型调用；`throttled` 每 `HARNAX_MEMORY_FLUSH_MIN_GAP` 至多一次，靠 store 的比较并写保证不互相覆盖；`never` 台账不再增长 |
+| `HARNAX_MEMORY_FLUSH_MIN_GAP` | `5m` | 上一项的间隔 |
+| `HARNAX_MEMORY_TOOLS_ENABLED` | `true` | 要不要把 `memory_search` / `memory_get` / `memory_save` 给模型；关掉后模型只读注入的那一份 |
+| `HARNAX_MEMORY_TENANT_SCOPED` | `true` | 桶键 `store/tenants/<tenantId>/users/<userId>/agents/<智能体名>/…` 是否含租户对（配置项 `harness.memory.tenant-scoped`）。**同一个变量也决定 admin 的 `harnax.memory.tenant-scoped`**，两侧不同值读到的是一个空前缀——整桶记忆表现为空，不会串到别人的桶 |
 | `HARNESS_ENABLE_SESSION_PERSISTENCE` | `true` | 会话持久化 |
 | `HARNAX_MCP_STDIO_ENABLED` | `false` | **stdio 类型 MCP 服务的开关**，同一个变量同时决定 admin 的 `harnax.mcp.stdio-enabled`。详见下一节 |
 | `HARNAX_TURN_TIMEOUT_SECONDS` | `300` | 单个回合预算（秒），批量与流式共用，只作用于单体智能体。团队回合改用下一项 |

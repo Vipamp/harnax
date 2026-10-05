@@ -81,6 +81,13 @@ class HarnessAgentWrapper(
     val mcpClients: List<McpClientWrapper> = emptyList(),
     val dangerousTools: Set<String>,
     val sessionId: String,
+    /**
+     * Unset on purpose. This feeds the `RuntimeContext` userId, and upstream keys the persisted agent
+     * state on it (`ReActAgent.slotKey(ctx.getUserId(), sessionId)`) while the launcher's history readers
+     * address the store with a blank user — naming an owner here would orphan every row already stored.
+     * Long-term memory gets its owner at assembly time, see
+     * [com.agnetix.harnax.harness.memory.MemoryFilesystemRoutes].
+     */
     val userId: String? = null,
     /**
      * Timeout value shared by the batch and streaming paths; see

@@ -62,7 +62,9 @@ class AgentNameUniqueIT : BaseAdminIT() {
     private fun createAgent(
         name: String,
         tenantId: Long? = null,
-    ): JsonNode = parseBody(exchange(HttpMethod.POST, "/api/admin/agents", agentCreateBody(name), tenantId = tenantId))
+    ): JsonNode = parseBody(
+        exchange(HttpMethod.POST, "/api/admin/agents", agentCreateBody(name, tenantId = tenantId), tenantId = tenantId),
+    )
 
     @Test
     @Order(1)

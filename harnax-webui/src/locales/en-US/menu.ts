@@ -16,6 +16,7 @@ export default {
   'menu.agent.team': 'Agent Teams',
   'menu.agent.session': 'Session',
   'menu.agent.task': 'Scheduled Tasks',
+  'menu.agent.memory': 'My Agent Memory',
 
   // Job
 

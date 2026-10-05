@@ -11,6 +11,7 @@ import com.agnetix.harnax.agent.session.SessionConfig
 import com.agnetix.harnax.common.mcp.McpConfigDecryptor
 import com.agnetix.harnax.harness.HarnessAgentLauncher
 import com.agnetix.harnax.harness.config.HarnessConfig
+import com.agnetix.harnax.harness.config.Memory
 import com.agnetix.harnax.harness.config.MinioConfig
 import com.agnetix.harnax.harness.config.SandboxConfig
 import com.agnetix.harnax.harness.config.TeamConfig
@@ -33,6 +34,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
+import java.time.Duration
 
 // ===== Configuration Properties =====
 
@@ -99,6 +101,31 @@ class HarnessProperties {
 }
 
 /**
+ * Cross-session long-term memory, bound from `harness.memory.*`.
+ *
+ * @param enabled mount the owner-bucket memory routes, install the extraction hooks and offer the memory
+ *   tools. Off by default: turning it on also turns on the workspace-context injection, which is the
+ *   only place `<memory_context>` reaches the model.
+ * @param modelId model-domain row used for extraction and consolidation; `0` keeps the agent's own model.
+ * @param flushTrigger `always`, `throttled` or `never`. The throttle window is what keeps a long
+ *   conversation from paying one extraction call per turn, and it is only honest on a store that can
+ *   compare-and-swap — which `MinioBaseStore` now does.
+ * @param flushMinGap how recently another flush of the same key must have run to skip this one.
+ * @param toolsEnabled offer `memory_search` / `memory_get` / `memory_save` to the model.
+ * @param tenantScoped put the tenant in the bucket key; off means one `userId` shares a bucket across
+ *   tenants, which is what the framework's own default routes do.
+ */
+@ConfigurationProperties(prefix = "harness.memory")
+class MemoryProperties {
+    var enabled: Boolean = false
+    var modelId: Long = 0
+    var flushTrigger: String = "throttled"
+    var flushMinGap: Duration = Duration.ofMinutes(5)
+    var toolsEnabled: Boolean = true
+    var tenantScoped: Boolean = true
+}
+
+/**
  * Budgets of one team run, bound from `harness.team.*`. Defaults mirror `TeamConfig`; the runtime
  * enforces them, so raising one is an operator decision rather than a lead-agent argument (design
  * section 9.3).
@@ -137,7 +164,7 @@ class OutputDetectionProperties {
 // ===== Auto-Configuration =====
 
 @AutoConfiguration
-@EnableConfigurationProperties(MinioProperties::class, SandboxProperties::class, HarnessProperties::class, TeamProperties::class, OutputDetectionProperties::class)
+@EnableConfigurationProperties(MinioProperties::class, SandboxProperties::class, HarnessProperties::class, MemoryProperties::class, TeamProperties::class, OutputDetectionProperties::class)
 class HarnessAutoConfiguration {
 
     /**
@@ -226,6 +253,7 @@ class HarnessAutoConfiguration {
     @Bean
     fun harnessConfig(
         harnessProps: HarnessProperties,
+        memoryProps: MemoryProperties,
         sandboxProps: SandboxProperties,
         teamProps: TeamProperties,
     ): HarnessConfig = HarnessConfig(
@@ -246,6 +274,14 @@ class HarnessAutoConfiguration {
         enableWorkspaceContext = harnessProps.enableWorkspaceContext,
         enableMemoryHooks = harnessProps.enableMemoryHooks,
         enableSessionPersistence = harnessProps.enableSessionPersistence,
+        memory = Memory(
+            enabled = memoryProps.enabled,
+            modelId = memoryProps.modelId,
+            flushTrigger = memoryProps.flushTrigger,
+            flushMinGap = memoryProps.flushMinGap,
+            toolsEnabled = memoryProps.toolsEnabled,
+            tenantScoped = memoryProps.tenantScoped,
+        ),
         turnTimeoutSeconds = harnessProps.turnTimeoutSeconds,
         mcpStdioEnabled = harnessProps.mcpStdioEnabled,
         team = TeamConfig(
