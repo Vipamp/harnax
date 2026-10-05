@@ -525,6 +525,11 @@ services:
       # Second line of defence for stdio MCP servers: this is the runtime that would spawn the
       # process. Admin holds such rows back from delivery as well; both have to be on to run one.
       HARNAX_MCP_STDIO_ENABLED: ${HARNAX_MCP_STDIO_ENABLED:-false}
+      # This deployment's environment label, which is what a skill's ENV visibility policy is matched
+      # against. The default is the label an unconfigured policy is read against everywhere else, so
+      # leaving this alone is production behaviour; set it only to run a second stack against the same
+      # Admin data and have the ENV grey-release rule pick it out.
+      HARNESS_ENVIRONMENT: ${HARNESS_ENVIRONMENT:-prod}
       # Budget of one agent turn, batch and streaming alike. A turn inside a team is not bound by this,
       # it gets the key below.
       HARNAX_TURN_TIMEOUT_SECONDS: ${HARNAX_TURN_TIMEOUT_SECONDS:-300}
