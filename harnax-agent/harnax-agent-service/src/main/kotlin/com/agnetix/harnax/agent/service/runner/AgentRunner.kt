@@ -64,7 +64,8 @@ interface AgentRunner {
      * How full one session's model context is, as the runtime that owns it sees it.
      *
      * @param sessionId Session identifier
-     * @return The usage reading, or null when no context can be read for that session at all
+     * @return The usage reading, or null when no agent is held here for that session - the reading needs the
+     *   live agent, and an implementation does not build one in order to answer
      */
     fun loadContextUsage(sessionId: String): ContextUsageResponse?
 

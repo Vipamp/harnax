@@ -1081,10 +1081,22 @@ class DefaultAgentRunnerTest {
             triggerMessages = 50,
         )
 
+        /**
+         * A session this process answers from its own cache: one turn has run here, so the wrapper is live.
+         * Every reading assertion needs that now, because a session nobody holds is no longer assembled just
+         * to be read.
+         */
+        private fun liveSession(billed: Long?) {
+            stubAgentCreation()
+            `when`(agentWrapper.call(any<String>(), any()))
+                .thenReturn(ChatResponse(sessionId = "session-1", content = "hi"))
+            `when`(tokenStatsMapper.selectLatestInputTokenBySession("session-1")).thenReturn(billed)
+            runner.process(ChatAgentRequest(sessionId = "session-1", message = "hello", userId = 7L))
+        }
+
         @Test
         fun `the reading carries this session's last billed call into the wrapper`() {
-            stubAgentCreation()
-            `when`(tokenStatsMapper.selectLatestInputTokenBySession("session-1")).thenReturn(9_000L)
+            liveSession(billed = 9_000L)
             val expected = usage()
             `when`(agentWrapper.contextUsage(9_000)).thenReturn(expected)
 
@@ -1094,9 +1106,8 @@ class DefaultAgentRunnerTest {
 
         @Test
         fun `a session nothing has billed for reads as unbilled, not as zero`() {
-            stubAgentCreation()
+            liveSession(billed = null)
             // What the store answers when the session has no row at all, asserted in TokenStatsMapperTest.
-            `when`(tokenStatsMapper.selectLatestInputTokenBySession("session-1")).thenReturn(null)
             val expected = usage().copy(lastCallInputTokens = null)
             `when`(agentWrapper.contextUsage(null)).thenReturn(expected)
 
@@ -1106,10 +1117,7 @@ class DefaultAgentRunnerTest {
 
         @Test
         fun `an agent this process still holds answers, even one built for another user`() {
-            stubAgentCreation()
-            `when`(agentWrapper.call(any<String>(), any()))
-                .thenReturn(ChatResponse(sessionId = "session-1", content = "hi"))
-            runner.process(ChatAgentRequest(sessionId = "session-1", message = "hello", userId = 7L))
+            liveSession(billed = null)
             val expected = usage()
             `when`(agentWrapper.contextUsage(anyOrNull())).thenReturn(expected)
 
@@ -1118,9 +1126,25 @@ class DefaultAgentRunnerTest {
             verify(launcher, times(1)).createSingleAgent(any(), any(), any<Boolean>(), any(), any())
         }
 
+        /**
+         * The window denominator is this session's model's, and only an assembly can say which model that is.
+         * Paying a spec round trip to Admin plus a toolkit/sandbox assembly for a read — and evicting a running
+         * turn's agent to do it — is not worth a number the next turn recomputes anyway, so an instance that no
+         * longer holds the agent says so instead. The router is what makes that answerable: it sends the read
+         * to the instance bound to the session.
+         */
+        @Test
+        fun `a session this instance does not hold is reported as unknown, not assembled to be answered`() {
+            stubAgentCreation()
+
+            assertNull(runner.loadContextUsage("session-1"))
+            verify(launcher, never()).createSingleAgent(any(), any(), any<Boolean>(), any(), any())
+            verify(agentWrapper, never()).contextUsage(anyOrNull())
+        }
+
         @Test
         fun `no context at all reports no usage`() {
-            stubAgentCreation()
+            liveSession(billed = null)
             `when`(agentWrapper.contextUsage(anyOrNull())).thenReturn(null)
 
             assertNull(runner.loadContextUsage("session-1"))

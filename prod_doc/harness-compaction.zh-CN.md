@@ -146,7 +146,7 @@ CREATE TABLE IF NOT EXISTS session_message (
 配套改动：
 
 - `TokenStatsMapper` 今天只有 insert 与租户维聚合读（`harnax-entity/src/main/resources/mapper/TokenStatsMapper.xml:21-27`），要加一条"按 sessionId 取最近一行 `input_token`"的 select。agent-service 的主数据源就是 `harnax_admin`（`application.yml:10`），就地能读，不需要经 admin。
-- session-router 要加一条绑定转发。会话的上下文在哪个实例上，只有 router 知道；`SessionRouterService.kt:365` 已有 `loadHistory` 的同款调用，照它加。
+- session-router 要加一条绑定转发。会话的上下文在哪个实例上，只有 router 知道；`SessionRouterService.kt:365` 已有 `loadHistory` 的同款调用，照它加。这条转发不是优化而是前提：占用读数只由持有该会话 agent 的实例给（第 8 节"该实例没有这个会话的 agent"一行）。
 
 `model.context_window` 的落法：
 
@@ -194,6 +194,7 @@ CREATE TABLE IF NOT EXISTS session_message (
 | 压缩里有超长工具结果 | 上游 prune 把 live context 里的工具结果换成头尾拼起的预览并保留原 id（第 4 节冲突处理行）；模型看到的是预览，页面读的那张表按最长正文保，气泡不缩短 |
 | 同一会话第二次 `/compact` | 前一次还在跑就回 failure（压缩自己占着 `activeCalls`），不会两次覆写抢同一份 context |
 | 窗口三级都拿不到 | `windowSource = FALLBACK`、`contextWindow = 160_000`，接口照常返回但 `ratio` 是估计值 |
+| 该实例没有这个会话的 agent（重启后、或会话绑在别的实例） | 读数报不出，不为此建 agent：`DefaultAgentRunner.loadContextUsage` 只查 `agentCache`，查不到就回 `ResultVo.error`，说明这个实例不持有该会话。窗口分母属于那个会话的模型，而只有装配过程知道是哪个模型 —— 为一个读数付一次 admin spec 往返加一整套工具装配不值，且这个数下一轮本来就会重算。上一行讲"装配了但模型报不出窗口"，这一行讲"根本没装配" |
 | `model.context_window` 填了个比真实窗口大的数 | 服务端不校验（无法校验），后果是自动压缩推迟、`ratio` 偏小。表单里按"留空则由运行时按模型名推断"提示 |
 | 老会话（上线前建的） | 档案为空 → 读路径回退 `agent_state.context`，翻页行为与今天一致；发过新消息后开始建档案 |
 | 升到 2.0.4 但没调 `disableTranscript()` | 每轮往对象存储/宿主盘多写一批截断的 transcript 段，页面不受影响但清会话删不掉它们（第 3 节第 1 行）。这条属于装配缺陷而非运行时降级，测试第 9 条守 |
@@ -209,7 +210,7 @@ CREATE TABLE IF NOT EXISTS session_message (
 3. **归档幂等与补写**：连续两轮写入同一 `msg_id` 的更大版本，断言只有一行且内容是后者；再写入一个**更短**的版本（上游 prune 那种带原 id 的预览），断言正文仍是最长那份 —— 页面缩短就是第 1 节破防；断言跨轮不会重复插行。
 4. **失败不覆写**：把摘要桩成抛异常，断言 `context` 未变、`agent_state` 未重写、命令回 failure。
 5. **并发闸**：`activeCalls` 里放了该会话时发压缩命令，断言 failure 且 `context` 未变；反向断言压缩在跑的整个跨度里该会话确实在 `activeCalls` 中、命令返回后又被摘掉（第二次压缩因此被同一条闸拒）。
-6. **占用比例**：窗口三级各一条用例（配了列 / 列为空但模型名命中上游表 / 两者都没有），断言 `windowSource` 与 `ratio` 的算法；再一条断言 `estimatedTokens` 与 `TokenCounterUtil.calculateToken(同一份 context)` 逐字相等（防止自己另写一套估算）。
+6. **占用比例**：窗口三级各一条用例（配了列 / 列为空但模型名命中上游表 / 两者都没有），断言 `windowSource` 与 `ratio` 的算法；再一条断言 `estimatedTokens` 与 `TokenCounterUtil.calculateToken(同一份 context)` 逐字相等（防止自己另写一套估算）；最后一条断言该实例没有这个会话的 agent 时读数直接报不出且 `createSingleAgent` 零调用（第 8 节那行的判据）。
 7. **`args` 语义**：`/compact 500` 落 `keepTokens=500`、`/compact abc` 被忽略并走默认档。
 8. **删会话连带删档**：`clearSession` 之后 `session_message` 该会话零行，成员子会话同样。
 9. **transcript 没被装上**：跑一轮对话后断言工作区与 store 里没有任何 `events/` 段对象（键布局 `TranscriptStore.java:30-33`），即第 3 节第 1 行那条默认开启的通道确实被 `disableTranscript()` 关掉。

@@ -116,9 +116,9 @@ class AgentController(
     /**
      * Report how full one session's model context is.
      *
-     * A read that rewrites nothing. The numbers come from the same state the session's next turn loads, so a
-     * session this process no longer holds an agent for costs one rebuild to answer — the window denominator
-     * is that session's model's, and nothing else can supply it.
+     * A read that rewrites nothing and assembles nothing: only the instance holding the session's agent can
+     * name that session's model window, so any other instance answers as unknown rather than paying for a
+     * rebuild. The router forwards this to the bound instance, which is where the agent lives.
      */
     @GetMapping("/context/{sessionId}")
     @Operation(summary = "Load context usage", description = "How full a session's model context is, with both token readings")
@@ -131,7 +131,7 @@ class AgentController(
         }
         // The same miss shape as /chat/interrupt: nothing to report, no invented status code.
         return usage?.let { ResultVo.success(it) }
-            ?: ResultVo.error("No context can be read for session $sessionId")
+            ?: ResultVo.error("No context held for session $sessionId on this instance - usage needs the live agent")
     }
 
     /**

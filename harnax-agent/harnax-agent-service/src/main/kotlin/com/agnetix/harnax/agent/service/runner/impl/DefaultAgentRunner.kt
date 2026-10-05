@@ -356,17 +356,20 @@ class DefaultAgentRunner(
     )
 
     /**
-     * How full one session's model context is, read through the wrapper that owns it.
+     * How full one session's model context is, answered only by the instance that already holds its agent.
      *
      * A live agent is reused whatever user it was built for: it holds the conversation this reading is about,
      * and going through [cachedAgent] instead would evict an agent owned by another bucket — a rebuild that
-     * displaces a running turn for the price of a read. A cold session is built to be answered, because the
-     * window denominator comes from that session's model and nothing else can say what it is.
+     * displaces a running turn for the price of a read.
+     *
+     * A session this process no longer holds is not assembled in order to be read. The window denominator
+     * belongs to that session's model and only an assembly can say which model that is, so the honest answer
+     * is none rather than an Admin spec round trip plus a toolkit build for a number the next turn recomputes
+     * anyway. The router is what keeps this answerable: it sends the read to the instance bound to the session.
      */
     override fun loadContextUsage(sessionId: String): ContextUsageResponse? {
+        val agent = agentCache.getIfPresent(sessionId)?.agent ?: return null
         val billed = tokenStatsMapper.selectLatestInputTokenBySession(sessionId)?.toInt()
-        val agent = agentCache.getIfPresent(sessionId)?.agent
-            ?: getOrCreateAgent(sessionId, UserIdentifier(null))
         return agent.contextUsage(billed)
     }
 
