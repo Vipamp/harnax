@@ -64,7 +64,9 @@
 
 索引：`(tenant_id, ts)`、`(tenant_id, kind, ts)`、`(mcp_id, ts)`、`(cli_id, ts)`、`(session_id)`、`(tool_name)`。
 
-### 2.2 `tool_invocation_daily`（日聚合，永久）
+### 2.2 `tool_invocation_stats`（日聚合，永久）
+
+命名跟 `docs/database-design-conventions.md:30`：日志/统计表用 `_log` / `_stats` 后缀，`_daily` 两个都不沾。
 
 键：`UNIQUE (stat_date, tenant_id, kind, subject_id, tool_name)`。
 
@@ -92,7 +94,9 @@
 
 ## 3. 事件源与判定
 
-新增 `ToolInvocationMiddleware`，与 `ProcessLogMiddleware` 同包同目录：`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/provider/middleware/ToolInvocationMiddleware.kt`。
+新增 `ToolInvocationMiddleware`，与 `ProcessLogMiddleware` 同包同目录：`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/provider/middleware/ToolInvocationMiddleware.kt`，挂载沿用 `agentBuilder.addMiddleware(...)`（`HarnessAgentLauncher.kt:587`、`:601` 那两行是同一家族）。
+
+上游形状已核过，实现时不必再猜：`ActingInput` 是 `record ActingInput(List<ToolUseBlock> toolCalls)`，`ToolUseBlock` 给 `getId()` / `getName()` / `getInput(): Map<String, Object>`；`ToolResultEndEvent` 同时带 `getToolCallId()`、`getToolCallName()` 和 `getState()`，所以按 id 关联成立且名字可作二次校验；`ToolResultState` 五个值就是 §3 映射表那五个。
 
 `onActing` 内为本次 acting 批次建一张 `toolCallId → 起点` 的表，从 `input.toolCalls` 起表（记录 `name`、`input`、开始时刻），在 `next.apply(input)` 的事件流上：
 
@@ -122,7 +126,7 @@ shell 工具名有两个上游来源，都认：harness 的 `ShellExecuteTool.NA
 
 都在 `HarnessAgentLauncher` 建 agent 时组好，交给中间件构造器，与 `SkillViewRecorder` 现在的归因方式同形（`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt:472`、`:490`）。
 
-- **MCP**：全部 `addMcp` 做完之后枚举已组装好的 `Toolkit`——`getToolNames()` 逐个 `getTool(name)`，命中 `McpTool` 的取其 `getClientName()`（上游实现返回 `clientWrapper.getName()`，而本项目的 `McpHelper` 就是用 `mcpServer.name` 建 wrapper 的），再与本会话下发的 `mcpSpecs` 的 name→id 对上。走这条路而不是 `client.listTools()` 有两个理由：它反映同名工具被覆盖之后的真实结果（上游 `ToolRegistry` 是 `tools.put(name, tool)`，后者胜出），且不再对每个 server 发一次网络请求。装载循环与 `McpSpec` 的来源见 `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt:285-342`。
+- **MCP**：全部 `addMcp` 做完之后枚举已组装好的 `Toolkit`——`getToolNames()` 逐个 `getTool(name)`，命中 `McpTool` 的取其 `getClientName()`（上游实现返回 `clientWrapper.getName()`，而本项目的 `McpHelper` 就是用 `mcpServer.name` 建 wrapper 的），再与本会话下发的 `mcpSpecs` 的 name→id 对上。走这条路而不是 `client.listTools()` 有两个理由：它反映同名工具被覆盖之后的真实结果（上游 `ToolRegistry` 是 `tools.put(name, tool)`，后者胜出），且不再对每个 server 发一次网络请求。装载循环与 `McpSpec` 的来源见 `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt:285-342`。可行性已核：`HarnessAgentBuilder.addMcp` 是 `registerMcpClient(...).block()`（`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentBuilder.kt:76-80`，同步），注册当场生效；`toolkit` 是它的私有字段，要新增一个只读访问器；`HarnessAgent.Builder.build()` 会把这份 toolkit 深拷贝再往上挂 harness 自带工具，所以枚举看到的是「MCP + `addTool` 注册的那一半」，不含 `execute` / `read_file` 等自带工具——本节要的只是 MCP 归属，不含也够用。
 - **CLI**：`agentSpec.cliSpecs` 每条给两个键——`name` 与 `checkCommand` 的首个词（`CliSpec` 字段见 `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/AgentSpec.kt:175-186`）。若本会话的 CLI payload 树已在本地物化（`CliPackageStore.materialize` 的产物），再并进去向 `/bin`、`/usr/local/bin` 下的文件名。
 - **技能**：沿用 `SkillViewRecorder.attribute(skillName, skillId)` 那条映射，再并上 `AgentSkill.getSkillId()`（上游实现为 `name + "_" + source`）→ `skill.id`，供 `load_skill_through_path` 的 `skillId` 参数反解。
 
@@ -153,7 +157,7 @@ ToolInvocationMiddleware → ToolInvocationAdaptor(harnax-tools-sdk 定义)
 
 每次运行按顺序做三件事：
 
-1. 取 `tool_invocation_log` 中出现过的全部 `DATE(ts)`，与 `tool_invocation_daily` 已有的 `stat_date` 相减，得到「该折算却没折算」的日期集合。
+1. 取 `tool_invocation_log` 中出现过的全部 `DATE(ts)`，与 `tool_invocation_stats` 已有的 `stat_date` 相减，得到「该折算却没折算」的日期集合。
 2. 对这个集合逐日重算并 `INSERT ... ON DUPLICATE KEY UPDATE` 整行覆盖——今天也走这条路，所以聚合最多落后一个调度周期，且漏跑一天或首次上线都不需要额外的 backfill 入口。
 3. 删除 `ts < now - retentionDays` 且其 `DATE(ts)` 已存在于聚合表的明细。删除挂在「已折算」这个事实上的理由见 I6。
 
@@ -195,26 +199,35 @@ ToolInvocationMiddleware → ToolInvocationAdaptor(harnax-tools-sdk 定义)
 
 ## 10. 删除清单
 
-`tool_call_log` 这条链整体移除（D8）：
+`tool_call_log` 这条链整体移除（D8）。以下清单是对着源码数出来的，不是按符号名推的：
 
-- 基线里的 `tool_call_log` 建表语句 + `schema-test.sql` 的对应段
-- `harnax-entity`：`ToolCallLogEntity`、`ToolCallLogMapper`（.kt + .xml）、`ToolCallLogMapperTest`
-- `harnax-tools-sdk`：`adaptor/ToolCallLogAdaptor.kt`、`ToolCallInfo`、`ToolBox` 的 `init` / `execute` / `logToolCall` / `logToolCallError` / `userIdentifier()`、`SessionMetaContext`
-- `harnax-agent-service`：`ToolCallLogAdaptorImpl` 及其测试
-- `harnax-harness-core`：`HarnessAgentLauncher` 里的 `toolCallLogAdaptor` 形参与 `toolBox.init(...)` 调用、`HarnessAutoConfiguration` 的对应 bean 注入
-- 工具实现：`EmailToolBox`（`harnax-tools-external/harnax-tools-buildin/.../EmailToolBox.kt:64`）与 `TeamToolBoxes`（`harnax-agent/harnax-harness-core/.../team/TeamToolBoxes.kt:43`、`:90`、`:104`）去掉 `execute(...) { }` 包裹，方法体直接返回；`ToolBox` 只剩抽象 `name()`
-- 测试夹具：引用 `toolCallLogAdaptor` 的 launcher 测试去掉该形参（`HarnessAgentLauncherMemoryTest`、`HarnessAgentTokenRecordingTest`、`HarnessAgentTurnBudgetTest`、`MemoryBucketPipelineTest`）
+- 基线里的 `tool_call_log` 建表块（`harnax-admin/src/main/resources/db/migration/V1__init_schema.sql:757-779`，含它上下的 `/*!40101 SET character_set_client ... */` 守卫行）+ `schema-test.sql` 的同一建表块（`:741-765`）与它的三条夹具（`:870-873`）
+- `harnax-entity`：`entity/ToolCallLogEntity.kt`、`mapper/ToolCallLogMapper.kt`、`resources/mapper/ToolCallLogMapper.xml`、`test/.../mapper/ToolCallLogMapperTest.kt`。**`.kt` 与 `.xml` 必须同一次提交删掉**：XML 靠 `mapper-locations: classpath*:mapper/*.xml` 通配绑定，没有任何配置按名字引用它，只删接口会让一份孤立的 XML 继续被 `SqlSessionFactory` 解析
+- `harnax-tools-sdk`：`adaptor/ToolCallLogAdaptor.kt` 整文件——`ToolCallInfo`（`:13-30`）与接口同文件，一次删除带走两者；`ToolBox` 的 `init` / 两个 `execute` / `executeInternal` / `logToolCall` / `logToolCallError` / `userIdentifier()` / `userIdentifierValue` / `sessionMetaContextValue` / `toolCallLogAdaptorValue` / `lateinit var name` / `log`；`ToolCallContext.kt` 里的 `SessionMetaContext`
+- `ToolBox` 只剩 `abstract fun name(): String`。`userIdentifier()` 在 main 里除自身声明外零调用方（`grep -rn "userIdentifier()" --include=*.kt` 只命中 `ToolBox.kt:41`；`DefaultAgentRunner` 用的是 `UserIdentifier` 类型不是这个访问器），所以 `init(...)` 整体消失而不是瘦身为 `init(userIdentifier)`
+- `harnax-agent-service`：`adaptor/ToolCallLogAdaptorImpl.kt` 与 `adaptor/ToolCallLogAdaptorImplTest.kt`（两个整文件）
+- `harnax-harness-core`：`HarnessAgentLauncher` 的 `toolCallLogAdaptor` 形参（`:117`）、KDoc `:102`、`toolBox.init(...)` 三处（`:390-394`、`:559`、`:566`）与 `:553-555` 的 `teamSessionMeta`、`initLauncher` 形参（`:1155`）与透传（`:1226`）；`HarnessAutoConfiguration` 的 import `:27`、provider 形参 `:320`、no-op 兜底 `:334-335`、注入 `:350`；`LauncherBean.kt:35-62` 那段注释掉的 `createLauncher` 里两处 `toolCallLogAdaptor`
+- 工具实现去掉 `execute(...) { }` 包裹：`EmailToolBox.kt:64`（闭合在 `:124`）、`TimeToolBox.kt:23`、`TimeToolBox.kt:27`、`TeamToolBoxes.kt:26`、`:43`、`:58`、`:90`、`:104`、`:114`。后四个与被删的 `execute(vararg Pair, action)` 之外的三个是无参重载 `execute { }`，同样直接返回方法体；`:43` 与 `:90`、`:104` 里有 `return@execute`，拆包裹时改成普通 `return`
+- 测试夹具：引用 `toolCallLogAdaptor` 形参的 harness-core 测试共 14 个（`HarnessAgentLauncherMemoryTest:22/:72`、`HarnessAgentTokenRecordingTest:14/:44`、`HarnessAgentTurnBudgetTest:20/:48`、`memory/MemoryBucketPipelineTest:19/:126`、`HarnessAgentLauncherLeadSkillTest:21/:74`、`HarnessAgentLauncherSkillSelfWriteTest:17/:65`、`HarnessAgentLauncherCliEnvTest:15/:44`、`HarnessAgentLauncherSkillVisibilityTest:16/:72`、`HarnessAgentLauncherSkillUsageTest:15/:74`、`HarnessAgentRunAttributionTest:18/:49`、`HarnessAgentProcessLogAttributionTest:19/:57`、`HarnessAgentSessionHistoryReadTest:12/:89`、`HarnessAgentLauncherCoordinationTest:15/:46`、`memory/MemoryGateFalsificationTest:20/:186`）；另需改 `tools-sdk` 的 `ToolBoxTest.kt`（`:26` 的 `TestableToolBox`、`:29/:31/:33` 的 `execute`、`:40/:47` 与 `:73-157` 那批断言日志的用例）与 `ToolCallContextTest.kt`（删 `SessionMetaContextTests` 内层类 `:19-64`，保留 `UserIdentifierTests` `:66-93`）、`EmailToolBoxTest.kt:3/:56` 与 `:121-131`/`:341-347`、`EmailToolBoxIntegrationTest.kt:3/:62`、`TimeToolBoxTest.kt:3/:39` 与 `:73-116`、`team/TeamToolBoxesTest.kt:3/:39` 与 `:29-36` 的 `leadCalls`/`memberCalls`/`wiredInto`
+- 文档：`docs/architecture.md:263`、`:289`，`docs/tools-sdk-architecture.md:58-64`、`:176`，`docs/harnax-harness-core.md:331`，`docs/database-design-conventions.md:30`、`:78`，`docs/backend-code-conventions.md:595`，`docs/session-classification-design.md:121`，`harnax-agent/HARNESS_CORE_DOC.md:42`、`:93`、`:213`、`:262-263`、`:274-290`，`harnax-agent/harnax-tools-sdk/TOOL-DEV-GUIDE.md:25`、`:28`，`harnax-agent/harnax-agent-service/docs/conversation-flow.md:265-266`、`:720`，`harnax-admin/TOOL_INTEGRATION_DESIGN.md`（§2.4 整节与 `:352` 那条「保留不删」），`AgentSpec.kt:63-72` 的 KDoc 三件套，以及 `prod_doc/` 里 `tool-capability` / `tool-integration-design` / `multi-agent-team-design` / `product-overview` / `skill-management` 五个中英成对文件的对应段落
 
-`ToolCallContext.kt` 里的 `UserIdentifier` 保留（launcher 与 MCP 授权链路都在用），删的是 `SessionMetaContext`。`mcp_call_log` 一行不动，但它的 DDL 注释与文档要写明它是授权账本、不是指标源。
+`ToolCallContext.kt` 里的 `UserIdentifier` 与 marker 接口 `ToolCallContext` 都保留（launcher 与 MCP 授权链路在用），删的只有 `SessionMetaContext`。`mcp_call_log` 一行不动，但它的 DDL 注释与文档要写明它是授权账本、不是指标源。
+
+一处删不干净的地方要写进部署文档：改了基线不会 DROP 已在跑的库里的 `tool_call_log`（Flyway 没有后续迁移，清库重建才会没）。留着它只占一张空表；要真删得手工 `DROP TABLE`，文档给命令并标明它是有损动作。
 
 ## 11. 测试与验收
 
 - 单测：`kind` 判定纯函数穷举五种输入形状与优先级冲突；CLI 命令解析（管道、`&&`、绝对路径、带空格的引号）；`ToolResultState` 到 `outcome` 的映射；未终态补 `INTERRUPTED`；截断与关闭开关；丢弃计数。
-- 集成测（真实 MySQL 8，testcontainers）：
-  - 写侧：同一会话三次调用必须落三行、且三个不同的时刻（`start_time` 毫秒精度，夹具显式隔秒），断言行数＝调用数——照 `TokenStatsTurnRowsIT` 那条闸门的做法。
-  - 聚合：六桶之和与 `calls` 相等；`ON DUPLICATE KEY UPDATE` 重算两次结果不变。
-  - 读侧：租户谓词必须把自己的数据滤出来（用一个私有租户 + 与其它 IT 不重叠的时间窗）；窗口边界那天不能出现在另一个租户的行里。
-  - 清理：`retention-days=0` 且该日尚未折算时，删除必须不动它；折算过之后同一批行被删掉。把聚合表里某一天删掉再跑一次，那一天必须被补齐。
+- 持久层测（`harnax-entity`，真实 MySQL 8 容器）：`harnax-entity` 没有 failsafe，也没有 `integration-test` profile，所以这一层的容器测就叫 `*MapperTest`，形状照 `TokenStatsMapperTest.kt:33-61`（`@Testcontainers @MybatisTest @AutoConfigureTestDatabase(NONE) @ActiveProfiles("test")` + companion 里每类一个 `MySQLContainer("mysql:8.0").withInitScript("schema-test.sql")`）。闸门：
+  - 同一会话三次调用必须落三行、且三个不同的时刻（`start_time` 是 `datetime(3)`，夹具仍显式给出相隔的毫秒戳），断言行数＝调用数。
+  - `batchInsert` 一批 N 行返回 N；空批不调用（`foreach` 会生成非法 SQL）。
+  - upsert 重算两次结果不变；六桶之和与 `calls` 相等；`calls` 与四个终态计数之和相等。
+- 端到端持久化测（`harnax-admin/src/test/kotlin/com/agnetix/harnax/admin/it/`，继承 `BaseAdminIT`）：聚合、读侧租户谓词与清理三条闸门放在这里，因为只有 admin 侧的 IT 跑真实 Flyway 基线（共享一个容器、schema 由迁移建，夹具用 `931_931` 那种自造私有租户号，不碰 tenant 1）。
+  - 读侧：租户谓词必须把自己的数据滤出来，窗口边界那天不能出现在另一个租户的行里。
+  - 聚合与清理：`retention-days=0` 且该日尚未折算时删除必须不动它；折算过之后同一批行被删掉；把聚合表里某一天删掉再跑一次，那一天必须被补齐。
+  - `SchemaBaselineDriftIT` 是这张页的隐形闸门：新表只进 `V1__init_schema.sql` 而不进 `schema-test.sql` 会让它的六条断言全红（它逐字对比两侧表、列、索引名）。
+  - 时区陷阱：Testcontainers 的 MySQL 是 UTC，Java 侧 `LocalDateTime` 按 JVM 时区写 `datetime`，按 `DATE(ts)` 分桶的用例要么固定 UTC 要么用相对当天而不是绝对日期。
+- 跑法：`mvn -o test -pl harnax-entity`；admin 侧 `mvn -o verify -pl harnax-admin -am -Pintegration-test -Dit.test=<类名> -Dtest=<类名> -Dsurefire.failIfNoSpecifiedTests=false -Dfailsafe.failIfNoSpecifiedTests=false`（`-am` 与两个 `failIfNoSpecifiedTests` 都不能少，`docs/unit-test-cases.md:799-810`）。
 - 前端：`max build` + `biome lint` 过（本仓 webui 的可用闸门，`tsc` 全是既有噪声）。
 - 端到端（harnax-deploy 真栈）：一个装了 MCP、勾了一个 CLI 和一个技能的 agent 跑一轮，页面上 `mcp` tab 有非零调用、`cli` tab 记到该命令、技能用量的 USE 从 0 变正。
 
@@ -230,6 +243,6 @@ ToolInvocationMiddleware → ToolInvocationAdaptor(harnax-tools-sdk 定义)
 
 | 动作 | 位置 |
 |---|---|
-| 新增 | 中间件 `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/provider/middleware/ToolInvocationMiddleware.kt` + 同目录的 `kind` 判定与 CLI 归因纯函数；写入契约 `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/adaptor/ToolInvocationAdaptor.kt`；实现 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/ToolInvocationAdaptorImpl.kt`；两张表 `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/{ToolInvocationLogEntity,ToolInvocationDailyEntity}.kt` + `.../mapper/{ToolInvocationLogMapper,ToolInvocationDailyMapper}.kt` + `harnax-entity/src/main/resources/mapper/*.xml`；读端 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/ToolMetricsController.kt` + `.../service/ToolMetricsService(.kt/Impl.kt)` + `.../service/ToolInvocationRollupService.kt`；前端 `harnax-webui/src/pages/monitor/callMetrics.tsx` + `harnax-webui/src/services/ant-design-pro/toolMetrics.ts` + 两份 locale |
+| 新增 | 中间件 `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/provider/middleware/ToolInvocationMiddleware.kt` + 同目录的 `kind` 判定与 CLI 归因纯函数；写入契约 `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/adaptor/ToolInvocationAdaptor.kt`；实现 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/ToolInvocationAdaptorImpl.kt`；两张表 `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/{ToolInvocationLog,ToolInvocationStats}.kt`（新表跟 `TokenStats.kt`、`SkillUsage.kt` 不带 `Entity` 后缀）+ `.../mapper/{ToolInvocationLogMapper,ToolInvocationStatsMapper}.kt` + `harnax-entity/src/main/resources/mapper/*.xml`；读端 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/ToolMetricsController.kt` + `.../service/ToolMetricsService.kt` + `.../service/impl/ToolMetricsServiceImpl.kt` + `.../service/ToolInvocationRollupService.kt`，IT 落 `harnax-admin/src/test/kotlin/com/agnetix/harnax/admin/it/`；前端 `harnax-webui/src/pages/call-metrics/index.tsx` + `harnax-webui/src/services/ant-design-pro/toolMetrics.ts` + `src/typings.d.ts` 的类型 + 两份 locale |
 | 修改 | Flyway 基线 + `schema-test.sql`、`HarnessAgentLauncher`、`HarnessAutoConfiguration`、`SkillUsageAdaptor` / `SkillUsageAdaptorImpl` / `AdminApiClient`、`HarnaxAdminApplication`（`@EnableScheduling`）、`config/routes.ts`、技能用量页文案、`prod_doc` 双语包（工具能力 / MCP 管理 / CLI 包 / 技能）与 `docs/deploy-harnax-admin.md`（保留窗口与重建库） |
 | 删除 | §10 清单 |
