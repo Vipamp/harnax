@@ -257,6 +257,41 @@ open class AgentMapperTest {
         }
 
         @Test
+        @DisplayName("memory answer - Round-trips on the agent row")
+        fun `the memory answer round-trips through the agent row`() {
+            // Given - delivery reads this column back, so both statements have to carry it: a 0 written here
+            // must not come back as the column default, and switching it on has to survive updateById.
+            val now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
+            val agent = Agent().apply {
+                name = "Forgetful Agent"
+                description = "不开记忆的 agent"
+                modelId = 1L
+                owner = "testuser1"
+                status = 1
+                isPublic = 0
+                memoryEnabled = 0
+                creator = "testuser1"
+                active = 1
+                tenantId = 1L
+                createTime = now
+                updateTime = now
+            }
+            assertEquals(1, agentMapper.insert(agent))
+
+            assertEquals(0, requireNotNull(agentMapper.selectById(agent.id)).memoryEnabled, "an agent that declined memory comes back as declined")
+
+            // When
+            val stored = requireNotNull(agentMapper.selectById(agent.id)).apply {
+                memoryEnabled = 1
+                updateTime = now
+            }
+            assertEquals(1, agentMapper.updateById(stored))
+
+            // Then
+            assertEquals(1, requireNotNull(agentMapper.selectById(agent.id)).memoryEnabled)
+        }
+
+        @Test
         @DisplayName("insert - Persist tenant id")
         fun `insert should persist tenant id`() {
             // Given - tenant_id 之前不在 insert 列里，行永远落在缺省租户

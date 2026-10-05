@@ -79,6 +79,12 @@ class Agent : Serializable {
     var skillSelfWrite: Int = 0
 
     /**
+     * Whether this agent has long-term memory (0: no, 1: yes). On by default: the wizard is what answers
+     * "no" for one agent, and a row written before the switch existed has to keep the memory it had.
+     */
+    var memoryEnabled: Int = 1
+
+    /**
      * Creator
      */
     @Schema(description = "Creator")

@@ -37,6 +37,7 @@ class AgentSpecResolverTest {
         enableThink: Int = 0,
         enableSearch: Int = 0,
         enablePlan: Int = 0,
+        memoryEnabled: Int = 1,
         modelSupportInternet: Int = 0,
         modelSupportReasoning: Int = 0,
         permissionMode: String = "DEFAULT",
@@ -58,6 +59,7 @@ class AgentSpecResolverTest {
         enableThink = enableThink,
         enableSearch = enableSearch,
         enablePlan = enablePlan,
+        memoryEnabled = memoryEnabled,
         permissionMode = permissionMode,
         modelSupportInternet = modelSupportInternet,
         modelSupportReasoning = modelSupportReasoning,
@@ -84,6 +86,31 @@ class AgentSpecResolverTest {
             assertEquals("You are a test assistant", agentSpec.systemPrompt)
             assertEquals(100L, agentSpec.chatModelId)
             verify(adminApiClient).getAgentSpec("web-123")
+        }
+
+        @Test
+        fun `an agent that turned memory off arrives turned off`() {
+            val specResponse = buildSpecResponse(memoryEnabled = 0)
+            `when`(adminApiClient.getAgentSpec("web-123")).thenReturn(specResponse)
+
+            val (agentSpec, _) = resolver.resolve("web-123")
+
+            assertFalse(
+                agentSpec.memoryEnabled,
+                "the wizard asked this agent whether it should remember anything, and the delivery carries that answer",
+            )
+        }
+
+        @Test
+        fun `memory arrives on for a delivery that never names the switch`() {
+            // The column's default is on, and the wire default is its twin: a delivery from an admin that has
+            // never heard of the key must not read as every agent having opted out.
+            val specResponse = buildSpecResponse()
+            `when`(adminApiClient.getAgentSpec("web-123")).thenReturn(specResponse)
+
+            val (agentSpec, _) = resolver.resolve("web-123")
+
+            assertTrue(agentSpec.memoryEnabled)
         }
 
         @Test

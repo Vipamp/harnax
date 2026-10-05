@@ -126,6 +126,8 @@ class AgentServiceImpl(
         agent.isPublic = request.isPublic ?: 0
         // Off unless the form says otherwise: this is a grant, and an omitted field must not read as one.
         agent.skillSelfWrite = request.skillSelfWrite ?: 0
+        // The inverse: memory is the default state, so only an explicit 0 takes it away.
+        agent.memoryEnabled = request.memoryEnabled ?: 1
         agent.tenantId = tenantId
         agent.creator = currentUsername
 
@@ -176,6 +178,7 @@ class AgentServiceImpl(
         }
         request.isPublic?.let { agent.isPublic = it }
         request.skillSelfWrite?.let { agent.skillSelfWrite = it }
+        request.memoryEnabled?.let { agent.memoryEnabled = it }
 
         agent.updateTime = LocalDateTime.now()
         agentMapper.updateById(agent)
@@ -287,6 +290,7 @@ class AgentServiceImpl(
         response.status = agent.status
         response.isPublic = agent.isPublic
         response.skillSelfWrite = agent.skillSelfWrite
+        response.memoryEnabled = agent.memoryEnabled
         response.creator = agent.creator
         response.createTime = agent.createTime
         response.updateTime = agent.updateTime

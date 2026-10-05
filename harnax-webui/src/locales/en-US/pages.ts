@@ -586,6 +586,8 @@ export default {
   'pages.agent.isPublic': 'Is Public',
   'pages.agent.skillSelfWrite': 'Skill self-write',
   'pages.agent.skillSelfWriteHint': 'The agent may draft skills inside its own session. Nothing is published and no other agent sees it until a reviewer approves the draft on the draft review page.',
+  'pages.agent.memoryEnabled': 'Long-term memory',
+  'pages.agent.memoryEnabledHint': 'Off means this agent stops extracting memory from its sessions and stops carrying existing memory into its context. Memory already written is not deleted; clear it on the memory page.',
   'pages.agent.toolConfig': 'Tool Config',
   'pages.agent.toolConfigOptional': 'Configure tools (optional, can be skipped)',
   'pages.agent.modelNotSupportTool': 'Current model does not support tool calling. Switch to a supported model or skip this step',

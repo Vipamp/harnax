@@ -422,6 +422,51 @@ class AgentServiceImplTest {
         }
 
         @Test
+        @DisplayName("createAgent - Every new agent gets memory unless it says otherwise")
+        fun `createAgent should default memory on when the request is silent about it`() {
+            // Given - the default is decided here rather than left to the column: the same service writes the
+            // entity that goes out over the internal API, so a null would put the answer in the driver.
+            val request = AgentCreateRequest(
+                name = "Silent Memory Agent",
+                description = "Silent memory description",
+                systemPrompt = "Silent memory prompt",
+                modelId = 1L,
+                owner = "admin",
+            )
+            val captor = argumentCaptor<Agent>()
+            `when`(agentMapper.insert(any())).thenReturn(1)
+
+            // When
+            assertTrue(agentService.createAgent(request))
+
+            // Then
+            verify(agentMapper).insert(captor.capture())
+            assertEquals(1, captor.firstValue.memoryEnabled, "every agent gets memory by default")
+        }
+
+        @Test
+        @DisplayName("createAgent - Write the memory answer the agent gave")
+        fun `createAgent should honour an agent that asked for no memory`() {
+            val request = AgentCreateRequest(
+                name = "Forgetful Agent",
+                description = "Forgetful description",
+                systemPrompt = "Forgetful prompt",
+                modelId = 1L,
+                owner = "admin",
+                memoryEnabled = 0,
+            )
+            val captor = argumentCaptor<Agent>()
+            `when`(agentMapper.insert(any())).thenReturn(1)
+
+            // When
+            assertTrue(agentService.createAgent(request))
+
+            // Then
+            verify(agentMapper).insert(captor.capture())
+            assertEquals(0, captor.firstValue.memoryEnabled)
+        }
+
+        @Test
         @DisplayName("createAgent - Create agent without MCP list")
         fun `createAgent should create agent without mcp list`() {
             // Given
@@ -829,6 +874,49 @@ class AgentServiceImplTest {
             // Then
             assertTrue(result)
             verify(agentMapper).updateById(any())
+        }
+
+        @Test
+        @DisplayName("updateAgent - Write the memory answer the request gives")
+        fun `updateAgent should write the memory answer it is given`() {
+            val request = AgentUpdateRequest(
+                name = "Updated Agent",
+                memoryEnabled = 0,
+            )
+            val captor = argumentCaptor<Agent>()
+            `when`(agentMapper.selectById(1L)).thenReturn(testAgent)
+            `when`(agentMapper.updateById(any())).thenReturn(1)
+
+            // When
+            assertTrue(agentService.updateAgent(1L, request))
+
+            // Then
+            verify(agentMapper).updateById(captor.capture())
+            assertEquals(0, captor.firstValue.memoryEnabled)
+        }
+
+        @Test
+        @DisplayName("updateAgent - An omitted memory answer leaves the row alone")
+        fun `updateAgent should leave memory untouched when the request omits it`() {
+            // Given - a wizard edit that only touches the prompt must not read as "turn memory back on" for an
+            // agent that had it off; the same null also arrives from a client that predates the switch.
+            val withoutMemory = Agent().apply {
+                id = 1L
+                name = "Forgetful Agent"
+                modelId = 1L
+                memoryEnabled = 0
+            }
+            val request = AgentUpdateRequest(name = "Renamed Forgetful Agent")
+            val captor = argumentCaptor<Agent>()
+            `when`(agentMapper.selectById(1L)).thenReturn(withoutMemory)
+            `when`(agentMapper.updateById(any())).thenReturn(1)
+
+            // When
+            assertTrue(agentService.updateAgent(1L, request))
+
+            // Then
+            verify(agentMapper).updateById(captor.capture())
+            assertEquals(0, captor.firstValue.memoryEnabled, "silence about memory is not an answer about memory")
         }
 
         @Test
@@ -1392,6 +1480,7 @@ class AgentServiceImplTest {
             assertEquals("gpt-4", result.modelName)
             assertEquals(0.05, result.modelPrice)
             assertEquals(1, result.sessionCount)
+            assertEquals(testAgent.memoryEnabled, result.memoryEnabled, "the wizard reads the switch state back from here")
             assertNotNull(result.mcpList)
             assertEquals(1, result.mcpList?.size)
             verify(modelService).getVisibleModel(1L)

@@ -17,6 +17,7 @@ import com.agnetix.harnax.harness.config.Memory
 import com.agnetix.harnax.harness.config.MinioConfig
 import com.agnetix.harnax.harness.config.SandboxConfig
 import com.agnetix.harnax.harness.minio.MinioBaseStore
+import com.agnetix.harnax.harness.minio.ProcessLocalCoordinationStore
 import com.agnetix.harnax.tools.sdk.UserIdentifier
 import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import io.agentscope.core.state.AgentStateStore
@@ -88,13 +89,14 @@ class HarnessAgentLauncherMemoryTest {
         secretKey = "minioadmin",
     )
 
-    private fun spec() = AgentSpec.builder()
+    private fun spec(memoryEnabled: Boolean = true) = AgentSpec.builder()
         .id(1L)
         .tenantId(4L)
         .name("Research")
         .description("a research agent")
         .systemPrompt("answer")
         .chatModelId(100L)
+        .memoryEnabled(memoryEnabled)
         .build()
 
     private fun build(
@@ -105,6 +107,7 @@ class HarnessAgentLauncherMemoryTest {
         sandboxEnabled: Boolean = false,
         minioConfig: MinioConfig? = minio(),
         userId: Long? = 1L,
+        memoryEnabled: Boolean = true,
     ): HarnessAgentWrapper = launcher(
         workspaceRoot = workspaceRoot,
         memory = memory,
@@ -113,7 +116,7 @@ class HarnessAgentLauncherMemoryTest {
         sandboxEnabled = sandboxEnabled,
         minioConfig = minioConfig,
     ).createSingleAgent(
-        agentSpec = spec(),
+        agentSpec = spec(memoryEnabled),
         sessionId = "sess-1",
         chatSpec = ChatSpec.builder().build(),
         userIdentifier = UserIdentifier(userId = userId),
@@ -163,6 +166,42 @@ class HarnessAgentLauncherMemoryTest {
         val agent = build(workspace, Memory(enabled = true), enableMemoryHooks = true, enableWorkspaceContext = false)
 
         assertTrue(middlewares(agent).any { it is WorkspaceContextMiddleware }, "memory on with no reader is half-open")
+    }
+
+    @Test
+    fun `an agent that turned memory off gets no hooks no tools and no borrowed reader`(@TempDir workspace: Path) {
+        // The deployment flag and the agent's own configuration are two different asks, and the wizard answers
+        // the second one per agent. Leaving any one of these mounted for an agent that declined memory is the
+        // half-open row again with a per-agent cause: extraction into a bucket nothing reads, a tool that only
+        // ever answers empty, or AGENTS.md injected because some other agent wanted memory.
+        val agent = build(workspace, Memory(enabled = true), enableMemoryHooks = true, memoryEnabled = false)
+
+        assertTrue(memoryTools(agent).isEmpty(), "an agent that declined memory must not be offered it: ${memoryTools(agent)}")
+        assertTrue(middlewares(agent).none { it is MemoryFlushMiddleware }, "an agent that declined memory must not run extraction")
+        assertTrue(middlewares(agent).none { it is MemoryMaintenanceMiddleware }, "an agent that declined memory must not run consolidation")
+        assertTrue(
+            middlewares(agent).none { it is WorkspaceContextMiddleware },
+            "the reader comes with memory, not with a deployment that has it somewhere",
+        )
+    }
+
+    @Test
+    fun `an agent that turned memory off does not get the store probed for a gate`(@TempDir workspace: Path) {
+        // The probe claims a coordination slot, and those round trips only pay for the throttle this agent will
+        // never run. The store itself still backs the sandbox filesystem, so this is about the gate alone.
+        val agent = build(
+            workspace,
+            Memory(enabled = true),
+            enableMemoryHooks = true,
+            sandboxEnabled = true,
+            memoryEnabled = false,
+        )
+
+        assertInstanceOf(
+            MinioBaseStore::class.java,
+            requireNotNull(agent.harnessAgent.distributedStore).baseStore(),
+            "with memory off for this agent the raw store goes upstream: no slot is claimed and nothing is wrapped",
+        )
     }
 
     @Test
@@ -224,16 +263,19 @@ class HarnessAgentLauncherMemoryTest {
     }
 
     @Test
-    fun `the consolidation gate is driven by the store that can compare-and-swap`(@TempDir workspace: Path) {
+    fun `a store that cannot be reached is not handed the consolidation claims`(@TempDir workspace: Path) {
+        // The MinIO coordinates of this harness point at nothing, so the probe gets no answer at all and the
+        // honest verdict is "unusable as a gate". The bucket itself still goes to that store — a memory that
+        // cannot be written has to fail loudly — but the throttle that decides who consolidates does not.
         val agent = build(workspace, Memory(enabled = true), enableMemoryHooks = true, sandboxEnabled = true)
 
         val store = agent.harnessAgent.distributedStore
         assertNotNull(store, "the sandbox branch is the one that gets a distributed store")
         assertInstanceOf(
-            MinioBaseStore::class.java,
+            ProcessLocalCoordinationStore::class.java,
             store.baseStore(),
-            "with no distributed store upstream picks LocalPeriodicGate, so the 30-minute consolidation bound " +
-                "would be per replica rather than per owner bucket",
+            "upstream builds the gate from this store alone, so a store that never answered has to be " +
+                "answered for: with no distributed store at all it would fall back to LocalPeriodicGate",
         )
     }
 
@@ -328,7 +370,8 @@ class HarnessAgentLauncherMemoryTest {
             assertInstanceOf(
                 StoreBackedPeriodicGate::class.java,
                 privateField(it, "periodicGate"),
-                "the sandbox branch has a distributed store, so the throttle is shared by every replica: ${sharedLines.single()}",
+                "the sandbox branch has a distributed store, so upstream picks the store-backed class; whether " +
+                    "a claim is really shared is the store's to answer, which the row above covers: ${sharedLines.single()}",
             )
             assertEquals(IsolationScope.SESSION, privateField(it, "isolationScope"))
         }
@@ -340,7 +383,11 @@ class HarnessAgentLauncherMemoryTest {
             assertTrue(line.contains("memory-maintenance"), "the consolidation slot key has to be named, got: $line")
             assertTrue(line.contains("SESSION"), "the scope in the key has to be named, got: $line")
         }
-        assertTrue(perReplica.single().contains("replica"), "the non-sandbox branch has no distributed store: ${perReplica.single()}")
-        assertTrue(sharedLines.single().contains("replica"), "the sandbox branch is the shared one: ${sharedLines.single()}")
+        assertTrue(perReplica.single().contains("this replica alone"), "the non-sandbox branch has no distributed store: ${perReplica.single()}")
+        assertTrue(
+            sharedLines.single().contains("the store cannot hold a slot"),
+            "this harness points at an unreachable store, so the log must not promise cross-replica deduplication: " +
+                sharedLines.single(),
+        )
     }
 }

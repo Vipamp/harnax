@@ -57,6 +57,9 @@ data class AgentResponse(
     @Schema(description = "Skill self-write (0:no, 1:yes)", example = "0")
     var skillSelfWrite: Int? = null,
 
+    @Schema(description = "Long-term memory (0:no, 1:yes)", example = "1")
+    var memoryEnabled: Int? = null,
+
     @Schema(description = "Creator", example = "admin")
     var creator: String? = null,
 
@@ -82,6 +85,7 @@ data class AgentResponse(
                 status = agent.status,
                 isPublic = agent.isPublic,
                 skillSelfWrite = agent.skillSelfWrite,
+                memoryEnabled = agent.memoryEnabled,
                 creator = agent.creator,
                 createTime = agent.createTime,
                 updateTime = agent.updateTime,

@@ -48,6 +48,16 @@ data class AgentSpec(
      * rather than have them taken away.
      */
     val skillSelfWrite: Boolean = false,
+
+    /**
+     * Whether this agent gets long-term memory, as granted on admin's `agent` row.
+     *
+     * Two different asks stand behind the memory domain: the deployment says a shared store and the two hooks
+     * are available here, this flag says whether the agent at hand wants them. Both have to hold before a
+     * bucket, an extraction hook or one of the four memory tools shows up — a tool offered against a memory
+     * nobody fills is the half-open shape this domain keeps falling into.
+     */
+    val memoryEnabled: Boolean = true,
 ) {
 
     /**
@@ -88,6 +98,7 @@ class AgentSpecBuilder {
     private var cliSpecs: MutableList<CliSpec> = mutableListOf()
     private var planSpec: PlanSpec = PlanSpec(false)
     private var skillSelfWrite: Boolean = false
+    private var memoryEnabled: Boolean = true
 
     fun id(id: Long) = apply { this.id = id }
     fun tenantId(tenantId: Long?) = apply { this.tenantId = tenantId }
@@ -106,6 +117,7 @@ class AgentSpecBuilder {
     fun addCliSpec(cliSpec: CliSpec) = apply { this.cliSpecs.add(cliSpec) }
     fun planSpec(planSpec: PlanSpec) = apply { this.planSpec = planSpec }
     fun skillSelfWrite(skillSelfWrite: Boolean) = apply { this.skillSelfWrite = skillSelfWrite }
+    fun memoryEnabled(memoryEnabled: Boolean) = apply { this.memoryEnabled = memoryEnabled }
 
     fun build(): AgentSpec {
         // 0 is a team's lead: its configuration is the `team` row and no agent record stands behind it
@@ -129,6 +141,7 @@ class AgentSpecBuilder {
             cliSpecs = cliSpecs,
             planSpec = planSpec,
             skillSelfWrite = skillSelfWrite,
+            memoryEnabled = memoryEnabled,
         )
     }
 }

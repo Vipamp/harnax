@@ -440,6 +440,7 @@ class InternalApiController(
             enablePlan = session.enablePlan,
             permissionMode = session.permissionMode,
             skillSelfWrite = agent.skillSelfWrite,
+            memoryEnabled = agent.memoryEnabled,
         )
     }
 
@@ -464,6 +465,7 @@ class InternalApiController(
             enableSearch = channel.enableSearch,
             enablePlan = channel.enablePlan,
             skillSelfWrite = agent.skillSelfWrite,
+            memoryEnabled = agent.memoryEnabled,
         )
     }
 
@@ -501,6 +503,7 @@ class InternalApiController(
             agentTenantId = agent.tenantId,
             permissionMode = "BYPASS",
             skillSelfWrite = agent.skillSelfWrite,
+            memoryEnabled = agent.memoryEnabled,
         )
     }
 
@@ -598,6 +601,7 @@ class InternalApiController(
             enablePlan = enablePlan,
             permissionMode = permissionMode,
             skillSelfWrite = agent.skillSelfWrite,
+            memoryEnabled = agent.memoryEnabled,
         )
     }
 
@@ -630,6 +634,9 @@ class InternalApiController(
             enableSearch = enableSearch,
             enablePlan = enablePlan,
             permissionMode = permissionMode,
+            // No agent row stands behind a lead, so there is no switch to read and nothing to turn off here:
+            // what keeps a lead out of the memory domain is the runtime's own `!isLead` guard.
+            memoryEnabled = 1,
             toolBindings = emptyList(),
             mcpBindings = emptyList(),
             skillIds = teamSkillBindingMapper.selectByTeamId(team.id).map { it.skillId },
@@ -666,6 +673,9 @@ class InternalApiController(
         // Left at 0 for a team's lead: it has no workspace of its own, so there is nowhere to stage a draft
         // even if a row asked for it.
         skillSelfWrite: Int = 0,
+        // Required rather than defaulted: a new call site that never names it would otherwise deliver the
+        // default to every agent and the wizard's "no memory" answer would die silently at that site.
+        memoryEnabled: Int,
         permissionMode: String = "DEFAULT",
         toolBindings: List<AgentToolBinding> = toolBindingMapper.selectByAgentId(agentId),
         mcpBindings: List<AgentMcpBinding> = mcpBindingMapper.selectByAgentId(agentId),
@@ -924,6 +934,7 @@ class InternalApiController(
             enableSearch = enableSearch,
             enablePlan = enablePlan,
             skillSelfWrite = skillSelfWrite,
+            memoryEnabled = memoryEnabled,
             permissionMode = permissionMode,
             modelSupportInternet = model?.supportInternet ?: 0,
             modelSupportReasoning = model?.supportReasoning ?: 0,

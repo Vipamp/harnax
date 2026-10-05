@@ -556,6 +556,31 @@ class InternalApiControllerTest {
         }
 
         @Test
+        @DisplayName("getAgentSpec - the memory answer travels on the agent row")
+        fun `getAgentSpec delivers the memory answer written on the agent row`() {
+            // Both halves in one go: the column default says every agent remembers, and the wizard is what
+            // answers for one of them. A delivery that lost the key would hand memory back to an agent that
+            // turned it off, which is the half this domain cannot see from its own side.
+            val off = Session().apply {
+                sessionId = "web-off"
+                agentId = 100L
+            }
+            val on = Session().apply {
+                sessionId = "web-on"
+                agentId = 100L
+            }
+            `when`(sessionMapper.selectBySessionIdAndStatus("web-off", 1)).thenReturn(off)
+            `when`(sessionMapper.selectBySessionIdAndStatus("web-on", 1)).thenReturn(on)
+            `when`(agentMapper.selectById(100L)).thenReturn(
+                stubAgent().apply { memoryEnabled = 0 },
+                stubAgent(),
+            )
+
+            assertEquals(0, requireNotNull(controller.getAgentSpec("web-off").data).memoryEnabled)
+            assertEquals(1, requireNotNull(controller.getAgentSpec("web-on").data).memoryEnabled)
+        }
+
+        @Test
         @DisplayName("getAgentSpec - chn session 返回 AgentSpec")
         fun `getAgentSpec should resolve from channel for chn prefix`() {
             val channel = Channel().apply {

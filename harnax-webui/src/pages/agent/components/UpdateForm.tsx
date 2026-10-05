@@ -41,6 +41,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
   const [models, setModels] = useState<API.ModelItem[]>([]);
   const [isPublic, setIsPublic] = useState(values?.isPublic === 1);
   const [skillSelfWrite, setSkillSelfWrite] = useState(values?.skillSelfWrite === 1);
+  const [memoryEnabled, setMemoryEnabled] = useState(values?.memoryEnabled !== 0);
   const { username, isAdmin } = getCurrentUserInfo();
 
   const [mcpConfigs, setMcpConfigs] = useState<McpConfigState[]>([{}]);
@@ -74,6 +75,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
       setSelectedModelId(values.modelId);
       setIsPublic(values.isPublic === 1);
       setSkillSelfWrite(values.skillSelfWrite === 1);
+      setMemoryEnabled(values.memoryEnabled !== 0);
 
       // Initialize MCP configs
       if (values.mcpList && values.mcpList.length > 0) {
@@ -263,6 +265,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
           modelId: formValues.modelId,
           isPublic: isPublic ? 1 : 0,
           skillSelfWrite: skillSelfWrite ? 1 : 0,
+          memoryEnabled: memoryEnabled ? 1 : 0,
           mcpList: mcpConfigs.filter(c => c.mcpId).map(c => ({
             id: c.mcpId,
             envBindings: (c.envBindings || []).map(({ customInput, ...b }) => ({
@@ -376,6 +379,20 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
               <Switch
                 checked={skillSelfWrite}
                 onChange={setSkillSelfWrite}
+                checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
+                unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
+              />
+            </Form.Item>
+            <Form.Item
+              label={intl.formatMessage({ id: 'pages.agent.memoryEnabled', defaultMessage: 'Long-term memory' })}
+              extra={intl.formatMessage({
+                id: 'pages.agent.memoryEnabledHint',
+                defaultMessage: 'Off means this agent stops extracting memory from its sessions and stops carrying existing memory into its context. Memory already written is not deleted; clear it on the memory page.',
+              })}
+            >
+              <Switch
+                checked={memoryEnabled}
+                onChange={setMemoryEnabled}
                 checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
                 unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
               />

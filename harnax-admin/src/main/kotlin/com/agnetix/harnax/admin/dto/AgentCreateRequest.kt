@@ -50,6 +50,9 @@ data class AgentCreateRequest(
 
     @Schema(description = "Skill self-write (0:false 1:true)", example = "0")
     val skillSelfWrite: Int? = null,
+
+    @Schema(description = "Long-term memory (0:false 1:true), on when omitted", example = "1")
+    val memoryEnabled: Int? = null,
 ) {
     /**
      * MCP configuration

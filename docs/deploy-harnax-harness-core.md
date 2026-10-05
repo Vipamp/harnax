@@ -90,9 +90,9 @@ harness:
     snapshotPrefix: snapshots/      # 快照对象前缀
     storePrefix: store/             # KV 对象前缀
 
-  # === 长期记忆（整域默认关闭）===
+  # === 长期记忆（代码缺省关闭；harnax-deploy 的 compose 把 enabled 与 enableMemoryHooks 一起注入 true）===
   memory:
-    enabled: false                  # 桶挂与否。要求 minio.enabled=true 且 enableMemoryHooks=true，并强制打开 enableWorkspaceContext（注入 MEMORY.md 的只有那一条中间件）
+    enabled: false                  # 桶挂与否。要求 minio.enabled=true 且 enableMemoryHooks=true，并强制打开 enableWorkspaceContext（注入 MEMORY.md 的只有那一条中间件）。离开那套 compose 单跑本服务时这一项仍是 false，因为那时没有 MinIO；单个智能体是否要记忆由智能体行上的开关随 spec 下发，不看这里
     modelId: 0                      # 抽取与合并用的模型，取模型域行 id；0 沿用各智能体自己的主模型
     flushTrigger: throttled         # always=每轮一次抽取调用，throttled=每 flushMinGap 至多一次，never=台账不再增长
     flushMinGap: 5m
