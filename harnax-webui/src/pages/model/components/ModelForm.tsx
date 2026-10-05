@@ -192,7 +192,7 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
             type="number"
             step="1"
             min={1}
-            placeholder={intl.formatMessage({ id: 'pages.placeholder.example', defaultMessage: 'e.g.: ' }) + '128000'}
+            placeholder={`${intl.formatMessage({ id: 'pages.placeholder.example', defaultMessage: 'e.g.: ' })}128000`}
           />
         </Form.Item>
 
