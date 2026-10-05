@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agnetix.harnax.mapper.ToolInvocationLogMapper">
+
+    <!--
+        One statement per batch, not one per call: a turn that runs six tools writes six rows in one
+        round trip. `ts` is written by the caller rather than by NOW() because the duration and the
+        aggregation bucket are both computed from the runtime's own clock, and a database-side default
+        would make the two disagree by the insert latency.
+    -->
+    <insert id="batchInsert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO tool_invocation_log (
+        tenant_id, agent_id, session_id, user_id, kind, tool_name, mcp_id, cli_id,
+        outcome, error_message, args_json, result_excerpt, duration_ms, start_time, end_time, ts
+        ) VALUES
+        <foreach collection="list" item="row" separator=",">
+            (#{row.tenantId}, #{row.agentId}, #{row.sessionId}, #{row.userId}, #{row.kind},
+             #{row.toolName}, #{row.mcpId}, #{row.cliId}, #{row.outcome}, #{row.errorMessage},
+             #{row.argsJson}, #{row.resultExcerpt}, #{row.durationMs}, #{row.startTime},
+             #{row.endTime}, #{row.ts})
+        </foreach>
+    </insert>
+
+</mapper>
