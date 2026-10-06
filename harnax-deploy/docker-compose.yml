@@ -546,6 +546,9 @@ services:
       # compare-and-swap is what makes that safe), never = the ledger stops growing.
       HARNAX_MEMORY_FLUSH_TRIGGER: ${HARNAX_MEMORY_FLUSH_TRIGGER:-throttled}
       HARNAX_MEMORY_FLUSH_MIN_GAP: ${HARNAX_MEMORY_FLUSH_MIN_GAP:-5m}
+      # One window for both background passes over a bucket: curating the daily ledgers into MEMORY.md, and
+      # promoting a conversation's own layer into its owner's (only when that agent has session memory on).
+      HARNAX_MEMORY_CONSOLIDATION_MIN_GAP: ${HARNAX_MEMORY_CONSOLIDATION_MIN_GAP:-30m}
       # Whether the model gets memory_search / memory_get / memory_save.
       HARNAX_MEMORY_TOOLS_ENABLED: ${HARNAX_MEMORY_TOOLS_ENABLED:-true}
       # Bucket key: on = store/tenants/<tenantId>/users/<userId>/agents/<agent>/..., off = the same

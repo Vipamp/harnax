@@ -32,6 +32,8 @@ import com.agnetix.harnax.harness.memory.BucketScopedWatermarkStore
 import com.agnetix.harnax.harness.memory.LongTermMemoryContextMiddleware
 import com.agnetix.harnax.harness.memory.MemoryConfigFactory
 import com.agnetix.harnax.harness.memory.MemoryDomain
+import com.agnetix.harnax.harness.memory.MemoryPromoter
+import com.agnetix.harnax.harness.memory.MemoryPromotionMiddleware
 import com.agnetix.harnax.harness.minio.MinioBaseStore
 import com.agnetix.harnax.harness.minio.MinioSnapshotClient
 import com.agnetix.harnax.harness.minio.ProcessLocalCoordinationStore
@@ -67,6 +69,7 @@ import io.agentscope.core.state.AgentStateStore
 import io.agentscope.core.tool.mcp.McpClientWrapper
 import io.agentscope.harness.agent.DistributedStore
 import io.agentscope.harness.agent.IsolationScope
+import io.agentscope.harness.agent.coordination.StoreBackedPeriodicGate
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor
@@ -705,6 +708,9 @@ class HarnessAgentLauncher(
         // that refuse assembly outright are checked — before the store got handed to the distributed builder.
         val memoryEnabled = memoryDomain != null
         if (memoryDomain != null) {
+            // Resolved once: the harness consolidates with it and the promotion pass merges with the same
+            // model, so loading it per consumer would build a second client for one configured row.
+            val extractionModel = memoryModel(memory)
             // The same tuple on both assembly branches, so moving a deployment between them does not
             // read as "the memory disappeared" for the same owner.
             val mounted = if (sessionLayer) memoryDomain.routes(sessionId) else memoryDomain.routes()
@@ -715,8 +721,21 @@ class HarnessAgentLauncher(
                 // curated layer cannot share those prefixes without becoming writable by the model, so it
                 // arrives as its own read-only block.
                 agentBuilder.addMiddleware(LongTermMemoryContextMiddleware(memoryDomain))
+                // The other half of the layer: what that block writes has to reach the owner's text again, or
+                // a conversation that keeps its own memory simply loses it. An agent on one layer needs no
+                // promoter at all, because its extraction already lands in the owner's bucket.
+                agentBuilder.addMiddleware(
+                    MemoryPromotionMiddleware(
+                        MemoryPromoter(memoryDomain, sessionId, extractionModel ?: chatModel),
+                        // The same store upstream's two gates get, so a store that cannot hold a slot degrades
+                        // this throttle the way it degrades those: one replica per clock rather than none.
+                        StoreBackedPeriodicGate(coordinationStore(memoryDomain.store)),
+                        memory.consolidationMinGap,
+                        sessionId,
+                    ),
+                )
             }
-            agentBuilder.memory(MemoryConfigFactory.build(memory, memoryModel(memory)))
+            agentBuilder.memory(MemoryConfigFactory.build(memory, extractionModel))
             // Upstream chooses the gate from the distributed store alone, so say which one this agent got:
             // a deployment where consolidation never fires otherwise reads exactly like a broken bucket.
             // The two hooks share that gate under two slot keys, each prefixed with its own name and keyed

@@ -59,6 +59,10 @@ harness:
     # store's compare-and-swap makes safe. never = the ledger stops growing.
     flush-trigger: ${HARNAX_MEMORY_FLUSH_TRIGGER:throttled}
     flush-min-gap: ${HARNAX_MEMORY_FLUSH_MIN_GAP:5m}
+    # One window for both background passes over a bucket: how often a ledger is curated into MEMORY.md, and
+    # how often a conversation's own layer is promoted into its owner's when session memory is on. Raise it to
+    # spend fewer model calls, at the cost of a conversation keeping its draft longer.
+    consolidation-min-gap: ${HARNAX_MEMORY_CONSOLIDATION_MIN_GAP:30m}
     # Offers memory_search / memory_get / memory_save to the model. `session_search` is not part of this
     # batch: it greps transcripts on one replica's host disk, not in the owner's bucket.
     tools-enabled: ${HARNAX_MEMORY_TOOLS_ENABLED:true}

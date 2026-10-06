@@ -120,6 +120,8 @@ class HarnessProperties {
  *   conversation from paying one extraction call per turn, and it is only honest on a store that can
  *   compare-and-swap — which `MinioBaseStore` now does.
  * @param flushMinGap how recently another flush of the same key must have run to skip this one.
+ * @param consolidationMinGap how recently a whole `MEMORY.md` of this bucket was last rewritten — the
+ *   window both the long-layer curation and a conversation's promotion into it share.
  * @param toolsEnabled offer `memory_search` / `memory_get` / `memory_save` to the model.
  * @param tenantScoped put the tenant in the bucket key; off means one `userId` shares a bucket across
  *   tenants, which is what the framework's own default routes do.
@@ -130,6 +132,7 @@ class MemoryProperties {
     var modelId: Long = 0
     var flushTrigger: String = "throttled"
     var flushMinGap: Duration = Duration.ofMinutes(5)
+    var consolidationMinGap: Duration = Duration.ofMinutes(30)
     var toolsEnabled: Boolean = true
     var tenantScoped: Boolean = true
 }
@@ -288,6 +291,7 @@ class HarnessAutoConfiguration {
             modelId = memoryProps.modelId,
             flushTrigger = memoryProps.flushTrigger,
             flushMinGap = memoryProps.flushMinGap,
+            consolidationMinGap = memoryProps.consolidationMinGap,
             toolsEnabled = memoryProps.toolsEnabled,
             tenantScoped = memoryProps.tenantScoped,
         ),

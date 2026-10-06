@@ -50,6 +50,9 @@ data class HarnessConfig(
  *   nothing, so it has to be switchable by configuration alone.
  * @param flushMinGap window of `throttled`: the first flush in a conversation runs immediately and
  *   the window only holds later ones back
+ * @param consolidationMinGap window shared by the two passes that rewrite a whole `MEMORY.md` — the
+ *   long-layer curation upstream runs and the promotion that merges a conversation's layer into the
+ *   owner's. One knob for both because both are the same kind of background merge of one bucket.
  * @param toolsEnabled advertise `memory_search` / `memory_get` / `memory_save` / `session_search` to
  *   the model. With `enabled` off these four are advertised against a memory domain that is never
  *   read or written, so they come off with it.
@@ -61,6 +64,7 @@ data class Memory(
     val modelId: Long = 0L,
     val flushTrigger: String = "throttled",
     val flushMinGap: Duration = Duration.ofMinutes(5),
+    val consolidationMinGap: Duration = Duration.ofMinutes(30),
     val toolsEnabled: Boolean = true,
     val tenantScoped: Boolean = true,
 )

@@ -18,6 +18,8 @@ import com.agnetix.harnax.harness.config.MinioConfig
 import com.agnetix.harnax.harness.config.SandboxConfig
 import com.agnetix.harnax.harness.memory.BucketScopedWatermarkStore
 import com.agnetix.harnax.harness.memory.LongTermMemoryContextMiddleware
+import com.agnetix.harnax.harness.memory.MemoryPromoter
+import com.agnetix.harnax.harness.memory.MemoryPromotionMiddleware
 import com.agnetix.harnax.harness.minio.MinioBaseStore
 import com.agnetix.harnax.harness.minio.ProcessLocalCoordinationStore
 import com.agnetix.harnax.tools.sdk.UserIdentifier
@@ -48,6 +50,7 @@ import org.junit.jupiter.api.io.TempDir
 import org.mockito.Mockito.mock
 import org.slf4j.LoggerFactory
 import java.nio.file.Path
+import java.time.Duration
 import ch.qos.logback.classic.Logger as LogbackLogger
 
 /**
@@ -299,6 +302,10 @@ class HarnessAgentLauncherMemoryTest {
             middlewares(agent).none { it is LongTermMemoryContextMiddleware },
             "one layer needs no second block: the reader already injects it",
         )
+        assertTrue(
+            middlewares(agent).none { it is MemoryPromotionMiddleware },
+            "one layer writes the owner's bucket directly, so there is nothing to promote out of",
+        )
     }
 
     @Test
@@ -306,7 +313,12 @@ class HarnessAgentLauncherMemoryTest {
         // The session layer takes the two canonical routes because the flush, the consolidation and the four
         // tools all key off those prefixes; the long-term layer cannot also sit there, so it is injected by
         // its own middleware instead. The tools stay offered — they now archive into this conversation.
-        val agent = build(workspace, Memory(enabled = true), enableMemoryHooks = true, sessionMemoryEnabled = true)
+        val agent = build(
+            workspace,
+            Memory(enabled = true, consolidationMinGap = Duration.ofMinutes(11)),
+            enableMemoryHooks = true,
+            sessionMemoryEnabled = true,
+        )
 
         assertEquals(
             listOf("tenants", "4", "users", "1", "agents", "Research", "sessions", "sess-1", "root"),
@@ -322,6 +334,17 @@ class HarnessAgentLauncherMemoryTest {
             "the owner's curated layer has to reach a conversation that has none of its own yet",
         )
         assertTrue(memoryTools(agent).containsAll(listOf("memory_search", "memory_get", "memory_save")), "got ${memoryTools(agent)}")
+
+        // A conversation layer nobody drains is a memory that quietly stops existing once the conversation is
+        // gone, so the promotion path is part of what the switch buys rather than an optional extra.
+        val promotion = middlewares(agent).filterIsInstance<MemoryPromotionMiddleware>()
+        assertEquals(1, promotion.size, "the second half of the session layer: got $promotion")
+        assertEquals(Duration.ofMinutes(11), privateField(promotion.single(), "minGap"))
+        assertEquals("sess-1", privateField(promotion.single(), "sessionId"))
+        assertInstanceOf(
+            MemoryPromoter::class.java,
+            privateField(promotion.single(), "promoter"),
+        )
     }
 
     @Test

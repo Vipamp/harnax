@@ -29,8 +29,23 @@ object MemoryFilesystemRoutes {
     /** The append-only daily ledgers, owned by the per-call flush. */
     const val MEMORY_DIR_ROUTE = "memory/"
 
-    /** Matches the framework's own segment for an exact-file route, so both layers sit under comparable keys. */
-    private const val ROOT_SEGMENT = "root"
+    /**
+     * The route tail an exact-file route gets, matching the framework's own spelling so both layers sit under
+     * comparable keys.
+     *
+     * Public because a caller that addresses the bucket through the store rather than through a route — the
+     * promotion pass, which compares versions — needs the same tail to name the same namespace.
+     */
+    const val ROOT_SEGMENT = "root"
+
+    /**
+     * How the store keys the curated layer inside a bucket's [ROOT_SEGMENT] namespace.
+     *
+     * The routed write paths hand this form down: [io.agentscope.harness.agent.filesystem.CompositeFilesystem]
+     * canonicalizes a matched path to a leading slash before it reaches the backend, so the object exists at
+     * `/MEMORY.md` whether the flush wrote it as `MEMORY.md` or the model did as `/MEMORY.md`.
+     */
+    const val CURATED_ITEM_KEY = "/MEMORY.md"
 
     /** Public because [BucketScopedWatermarkStore] keeps a bucket's progress beside the ledgers it counts. */
     const val MEMORY_SEGMENT = "memory"

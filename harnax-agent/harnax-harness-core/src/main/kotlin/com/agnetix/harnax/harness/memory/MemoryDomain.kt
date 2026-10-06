@@ -44,9 +44,21 @@ class MemoryDomain(
      * call: the read happens on the conversation path, once per model call.
      */
     fun longTermCurated(): String? {
-        val result = longTermCuratedRoute.read(RuntimeContext.empty(), CURATED_KEY, 0, 0)
+        val result = longTermCuratedRoute.read(RuntimeContext.empty(), MemoryFilesystemRoutes.CURATED_ITEM_KEY, 0, 0)
         return if (result.isSuccess) result.fileData()?.content() else null
     }
+
+    /**
+     * The namespace one bucket's curated file lives in: its [namespace] plus the `root` route tail.
+     *
+     * The promotion pass reads and compare-and-swaps this object through the store rather than through a
+     * route, because a route hands back content and nothing else while the write it has to make carries a
+     * version precondition.
+     */
+    fun curatedNamespace(sessionId: String?): List<String> = namespace(sessionId) + MemoryFilesystemRoutes.ROOT_SEGMENT
+
+    /** The namespace one bucket's daily ledgers live in: its [namespace] plus the `memory` route tail. */
+    fun ledgerNamespace(sessionId: String?): List<String> = namespace(sessionId) + MemoryFilesystemRoutes.MEMORY_SEGMENT
 
     /**
      * The bucket tuple with no route tail: `tenants/<id>/users/<uid>/agents/<agentId>`, plus
@@ -56,10 +68,4 @@ class MemoryDomain(
     fun namespace(sessionId: String?): List<String> = MemoryFilesystemRoutes.bucketNamespace(tenantId, owner, agentId, sessionId, tenantScoped)
 
     private val longTermCuratedRoute by lazy { routes().getValue(MemoryFilesystemRoutes.MEMORY_MD_ROUTE) }
-
-    private companion object {
-
-        /** How the store keys the curated layer inside the root route's namespace. */
-        const val CURATED_KEY = "/MEMORY.md"
-    }
 }
