@@ -60,6 +60,8 @@
 | 权限模式切换（5 档） | 同上 | v1 | `COMMAND` + `PERMISSION` | M |
 | 图片输入（拍照 / 相册） | 同上 | v1 | `imageUrls` | M |
 | 停止生成 / 清空会话 / 停止沙箱 | 同上 | v1 | `COMMAND`（`INTERRUPT`/`CLEAR`/`STOP_SANDBOX`） | M |
+| 上下文占用读数（标题栏一枚只读芯片，点开五行明细；两种报不出来的形状整块不显示，绝不显示 `0%`） | 会话页标题栏（`pages/session/index.tsx` 的 `ContextUsageTag`） | v1 | router `GET /api/router/agent/context/{sessionId}` | M |
+| 压缩上下文入口（输入区，无二次确认；应答四支、成败只认 `success` 旗标；画面仍全量原文气泡） | `ChatWindow.tsx` 输入区 | v1 | `POST /agent/command` + `COMPACT` | S |
 | 附件收取与下载（iOS 超出 Web 的一项：后端已下发，webui 全仓零处引用 `attachments`） | 无 | v1 | `EndEvent.attachments` + `GET /api/output-files/{sessionType}/{sessionId}/{fileId}`，该路由整控制器受 `minio.enabled=true` 开关控制：裸配置默认关（`${MINIO_ENABLED:false}`）、标准部署 compose 显式开启，未开启时整条路由不注册即 404（O8） | M |
 | 模型能力门控（推理 / 思考模式 / 联网 / 视觉） | 同上 | v1 | 会话配置字段 | M |
 | 联网搜索开关 | 同上 | v1 | `ENABLE`/`DISABLE` | S |
@@ -180,7 +182,7 @@
 
 ## 14. 计数与口径
 
-本清单分 12 个功能域，逐条枚举 **99 项**能力：v1 **91 项**（其中 2 项在档位后附了口径说明）、v1.1 **2 项**、不做 **6 项**。O1 定案后租户切换计入 v1。复杂度分布 S 20 / M 43 / L 25 / XL 5，合计 93——不做的 6 项不计复杂度。
+本清单分 12 个功能域，逐条枚举 **101 项**能力：v1 **93 项**（其中 2 项在档位后附了口径说明）、v1.1 **2 项**、不做 **6 项**。O1 定案后租户切换计入 v1。复杂度分布 S 21 / M 44 / L 25 / XL 5，合计 95——不做的 6 项不计复杂度。
 
 5 个 XL 分别是：智能体 5 步向导、发消息与流式接收、五类可见分段渲染、团队成员多路合并与气泡归属、渠道的条件字段表单。这五项加在 L 档的 25 项之前构成工期主体——L 档集中在跨实体流程（关联拦截、刷新会话、OAuth 回跳、Workspace、扫码绑定）与多接口表单矩阵。
 

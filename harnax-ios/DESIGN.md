@@ -2,7 +2,7 @@
 
 ## 1. 目的与结论摘要
 
-本方案由三层文档构成，互不重复：本文件（`DESIGN.md`）定义产品范围、信息架构、接口契约、模块划分、里程碑与验收标准，并给出横切口径；同目录 `FEATURES.md` 是逐条能力清单，承担范围界定与验收对账；同目录 `specs/` 的五份文件是各页面的逐字段全量清单，每条结论都带 `路径:行号` 锚点指向 Web 侧与后端源码。同目录 `ui-mockup/index.html` 是 24 屏界面草图（浏览器直接打开），只定信息架构、控件形态与状态表现，不是视觉终稿。
+本方案由三层文档构成，互不重复：本文件（`DESIGN.md`）定义产品范围、信息架构、接口契约、模块划分、里程碑与验收标准，并给出横切口径；同目录 `FEATURES.md` 是逐条能力清单，承担范围界定与验收对账；同目录 `specs/` 的七份文件是各页面与交付物的逐字段全量清单，每条结论都带 `路径:行号` 锚点指向 Web 侧与后端源码。同目录 `ui-mockup/index.html` 是 24 屏界面草图（浏览器直接打开），只定信息架构、控件形态与状态表现，不是视觉终稿。
 
 读法：拍范围与优先级看 `FEATURES.md`，写某个页面前看 `specs/` 对应那一份，两者有冲突时以本文件的横切约定为准、以代码为最终事实。
 
@@ -259,16 +259,19 @@ M3 与 M4 可并行拆分给不同人。开工前必须先落 §14 的 R1：开�
 
 ## 13. 各页面字段级规格
 
-逐字段的全量清单落在同目录 `specs/` 的五份文件里，每份都带 `路径:行号` 锚点。计数口径是「形如 `文件名.扩展名:行号` 的出现次数，同一处写多个行号算多条」：`specs/` 五份合计 1479 条（01 为 404、02 为 382、03 为 160、04 为 334、05 为 199），本文件 70 条，`FEATURES.md` 0 条。其中带目录的全路径锚点 1546 条（同样按 `specs/` 与本文件的行内代码逐个取出）已用脚本逐条核过「文件存在 + 行号在文件行数内」，无一条指向不存在的文件或越界的行号；只写裸文件名的锚点不在这条判据里，它们靠仓库内同名文件唯一来定位。另有 5 处本文件指向 `specs/` 各份文档的相对链接，那是文档对文档的引用，已手工确认文件在位。本章给的是写码时要对照的口径摘要；两者冲突以代码为准，代码与 `specs/` 冲突时以 `specs/` 里更细的锚点为准。
+逐字段的全量清单落在同目录 `specs/` 的七份文件里，每份都带 `路径:行号` 锚点。计数口径是「行内代码里形如 `文件名.扩展名:行号` 的出现次数，同一处写多个行号算多条」：`specs/` 七份合计 1618 条（01 为 404、02 为 432、03 为 160、04 为 358、05 为 199、06 为 2、07 为 63），本文件 73 条，`FEATURES.md` 与 `FUNCTIONS.md` 各 0 条——后两份按各自的写作约定不带行号锚点。其中带目录的全路径锚点 1632 条（按 `specs/` 与本文件的行内代码逐个取出）已用脚本逐条核过「文件存在 + 行号在文件行数内」，无一条指向不存在的文件或越界的行号；只写裸文件名的锚点有 59 处（其中 07 那一份占 52 处），不在这条判据里，它们靠仓库内同名文件唯一来定位（`CompactionConfig.java` 那处指向上游 sources jar，本来就不在仓库里）。本文件另有 9 处点到 `specs/` 各份文档的文件名（覆盖全部七份），那是文档对文档的引用，已手工确认文件在位。本章给的是写码时要对照的口径摘要；两者冲突以代码为准，代码与 `specs/` 冲突时以 `specs/` 里更细的锚点为准。
 
 | 文件 | 覆盖页面 | 「未确认」条数 / 其中已回代码核实 |
 |---|---|---|
 | `specs/01-agent-team.md` | 智能体列表与 5 步向导、团队列表与 3 步向导、四类绑定与刷新会话弹窗 | 10 / 4 |
-| `specs/02-session-chat.md` | 会话列表与外壳、新建与详情、Workspace 与产物抽屉、五类可见分段、工具确认、计划与权限、slash | 8 / 3 |
+| `specs/02-session-chat.md` | 会话列表与外壳、新建与详情、Workspace 与产物抽屉、五类可见分段、工具确认、计划与权限、slash、上下文占用读数与压缩 | 8 / 3 |
 | `specs/03-system-domain.md` | 渠道与微信扫码、API Key、环境变量、Token 监控、租户切换 | 8 / 6 |
 | `specs/04-context-domains.md` | 模型两级、工具、MCP 与 OAuth、技能仓库与技能、技能详情、CLI | 11 / 4 |
+| `specs/05-task-domain.md` | 任务列表、新建与编辑表单、写侧拒绝语义、执行日志 | 5 / 0 |
+| `specs/06-app-icon.md` | App 图标母题与构图、配色、交付物与工程接线、小尺寸实测 | 无「未确认」章节 |
+| `specs/07-skill-draft-review.md` | 技能草稿列表与详情、审核决策、后端契约与本地化 | 无「未确认」章节（第 8 节是记账清单） |
 
-「已核实」只统计各文件「未确认」章节里显式标了「已定案／已核实／已查实／已裁定」的条目，合计 37 条中已收口 17 条（八项产品问题已全部拍板，剩余 20 条是写码前实测项）；其余条目是写码前需要实测或产品拍板的开口，没有一条可以当作已验证前提。
+「已核实」只统计各文件「未确认」章节里显式标了「已定案／已核实／已查实／已裁定」的条目，五份带该章节的文件合计 42 条中已收口 17 条（八项产品问题已全部拍板，剩余 25 条是写码前实测项）；其余条目是写码前需要实测或产品拍板的开口，没有一条可以当作已验证前提。
 
 ### 13.1 智能体
 
@@ -296,7 +299,7 @@ M3 与 M4 可并行拆分给不同人。开工前必须先落 §14 的 R1：开�
 - 收附件是 iOS 超出 Web 的一项：`EndEvent.attachments` 七个字段（`fileId`/`fileName`/`filePath`/`fileSize`/`mimeType`/`url`/`objectKey`，`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/FileAttachment.kt:14`-`:22`），webui 全仓零处引用 `attachments`。下载口 `GET /api/output-files/{sessionType}/{sessionId}/{fileId}` 整个控制器受 `@ConditionalOnProperty(minio.enabled=true)` 控制（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/OutputFileController.kt:38`），未开启时该路由不存在（默认值 `${MINIO_ENABLED:false}` 关，标准部署 compose 显式开），iOS 要按 404 降级而不是当业务失败报错，是否留 v1 见 O8；`sessionType` 只接受 `web`/`task`/`channel`，`fileId` 必须是 UUID。
 - 分段类型 6 个、实际渲染 5 类：`tool_result` 类型的渲染分支直接返回 `null`，结果写进 `tool_call` 段的 `toolResult` 由合并卡展示（`harnax-webui/src/pages/session/components/ChatWindow.tsx:2771`-`:2773`）；`isLast === true` 的帧要丢内容；`KeepAliveEvent` 无分支即忽略，但成员 KeepAlive 带 `childRunId` 时会画出空气泡。
 - 主管确认是整批允许／拒绝，成员确认靠 `childRunId` 整轮一次性；`alwaysAllow` 与 `toolResults` 前端零使用、服务端也忽略（`harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:366`-`:371`）。
-- slash 只映射 9 个 keyword 到 8 个 `CommandType`，缺 `deny` 与 `refresh`，`COMPACT` 后端未实现。
+- slash 只映射 9 个 keyword 到 8 个 `CommandType`，缺 `deny` 与 `refresh`。`COMPACT` 后端已实现：入口 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:264` → `handleCompact` `:917`，三种拒绝各自的文案与成功回包的四个计数见 `specs/02-session-chat.md` 的「后端行为差异」。
 - Web 侧主管确认期间 `await` 会阻塞整个 SSE 读循环，且切会话不 abort 旧流——这两条都是缺陷，iOS 不复刻。
 - 权限模式五个字符串值 `DEFAULT`／`BYPASS`／`ACCEPT_EDITS`／`EXPLORE`／`DONT_ASK`，后端只 `@Size(20)` 不做枚举校验，iOS 侧要自己收敛取值。
 

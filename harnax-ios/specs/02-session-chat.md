@@ -1,6 +1,6 @@
 # iOS 实现规格 02：会话与 ChatWindow（全量对齐 harnax-webui）
 
-取证范围：`harnax-webui/src/pages/session/**`（含 `harnax-webui/src/pages/session/components/ChatWindow.tsx` 3705 行，已完整读完）、`harnax-webui/src/services/ant-design-pro/{session,chat,workspace,team,agent}.ts`、`harnax-webui/src/requestErrorConfig.ts`、以及 `harnax-protocol` / `harnax-session-router` / `harnax-admin` / `harnax-agent` 相应 Kotlin 源。所有行号均为实际读到的行。
+取证范围：`harnax-webui/src/pages/session/**`（含 `harnax-webui/src/pages/session/components/ChatWindow.tsx` 3792 行，已完整读完）、`harnax-webui/src/services/ant-design-pro/{session,chat,workspace,team,agent}.ts`、`harnax-webui/src/requestErrorConfig.ts`、以及 `harnax-protocol` / `harnax-session-router` / `harnax-admin` / `harnax-agent` 相应 Kotlin 源。所有行号均为实际读到的行。
 
 约定：下文「锚点」路径相对仓库根 `/Users/heqingsong/code/my_project/harnax`。iOS 侧要求「行为等价」而非「像素等价」；凡 webui 存在但后端不支持（或反之）的能力，均在条目上标注 **webui 死 UI** / **后端未消费**，iOS 应照 webui 行为实现以保持视觉一致，同时在「未确认」中记录取舍。
 
@@ -91,8 +91,8 @@
 - 行图标/大小来自 `WorkspaceFile{type:'file'|'directory'|'symlink'|'unknown', name, size, modified}`。锚点 `harnax-webui/src/services/ant-design-pro/typings.d.ts:344-349`。
 - 点击文件 → `readWorkspaceFile(sessionId, path)`，取 `res.data.content` 展示；失败时把 `Error: ...` 文本写进预览区（**不弹错误框**）。锚点 `harnax-webui/src/pages/session/components/WorkspaceDrawer.tsx:88-107`；类型 `WorkspaceFileContent{content,truncated,size}` 锚点 `harnax-webui/src/services/ant-design-pro/typings.d.ts:351-355`。
 - 面包屑 + 上一级导航：锚点 `harnax-webui/src/pages/session/components/WorkspaceDrawer.tsx:118-133`、`:203-219`。
-- 上传：`uploadWorkspaceFile(sessionId, file, currentPath)`，FormData 字段名 `file` 与 `path`；`beforeUpload` 返回 `false` 由前端自行发起（**不依赖 antd 的自动上传**）。锚点 `harnax-webui/src/pages/session/components/WorkspaceDrawer.tsx:153-174`；service `harnax-webui/src/services/ant-design-pro/workspace.ts:115-138`；后端 `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:248-260`（`@RequestParam path` + `file`）。
-- 下载：行内下载按钮 → `downloadWorkspaceFile(sessionId, filePath)` → 生成 blob → `<a download>` 触发。锚点 `harnax-webui/src/pages/session/components/WorkspaceDrawer.tsx:279-304`；service `harnax-webui/src/services/ant-design-pro/workspace.ts:143-165`（**裸 fetch，只带 `X-Api-Key`，不带 Bearer/Tenant**）；后端 `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:278-302`（`safeFileName` 过滤控制字符/引号/目录部分并截断 128 字符 `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:268-273`；超 50MB（`harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:41` `MAX_DOWNLOAD_SIZE`）返回 413；不存在 404；正常时带 `Content-Disposition`）。
+- 上传：`uploadWorkspaceFile(sessionId, file, currentPath)`，FormData 字段名 `file` 与 `path`；`beforeUpload` 返回 `false` 由前端自行发起（**不依赖 antd 的自动上传**）。锚点 `harnax-webui/src/pages/session/components/WorkspaceDrawer.tsx:153-174`；service `harnax-webui/src/services/ant-design-pro/workspace.ts:115-138`；后端 `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:261-273`（`@RequestParam path` + `file`）。
+- 下载：行内下载按钮 → `downloadWorkspaceFile(sessionId, filePath)` → 生成 blob → `<a download>` 触发。锚点 `harnax-webui/src/pages/session/components/WorkspaceDrawer.tsx:279-304`；service `harnax-webui/src/services/ant-design-pro/workspace.ts:143-165`（**裸 fetch，只带 `X-Api-Key`，不带 Bearer/Tenant**）；后端 `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:291-315`（`safeFileName` 过滤控制字符/引号/目录部分并截断 128 字符 `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:281-286`；超 50MB（`harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:41` `MAX_DOWNLOAD_SIZE`）返回 413；不存在 404；正常时带 `Content-Disposition`）。
 - iOS 已落地的形状（`Sources/HarnaxFeatures/Chat/WorkspaceSheet.swift`、`WorkspaceViewModel.swift`）：
   - 抽屉 → `sheet`；下载 → `URLSession` 取 `Data` 后交系统分享面板（`HXFileShare`），不落 `<a download>`。
   - 上传 → `.fileImporter` 选一个文档，落到**屏上当前那一层目录**（`WorkspaceSheet.swift:53-59`、`:285-302`）；上传中禁用按钮，失败在行上方一条红 banner 说原因，列表不动。
@@ -350,6 +350,59 @@
 
 ---
 
+## 上下文占用读数与压缩
+
+### 读通道（四跳）
+
+| 跳 | 锚点 | 这一跳说什么 |
+|---|---|---|
+| 客户端 → router | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:183-191` | `GET /api/router/agent/context/{sessionId}`，响应原样透传 |
+| router 选实例 | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/proxy/SessionRouterService.kt:397-407` | `boundInstance(sessionId)` 为空 → **`ResultVo.success(null)`**（会话从未绑定过实例） |
+| router → agent | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/service/AgentServiceClient.kt:190-199` | 转发 `GET /api/agent/context/{sessionId}` |
+| agent 侧 | `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/controller/AgentController.kt:123-136` | 本实例不持有该会话的 agent → `ResultVo.error("No context held for session … on this instance - usage needs the live agent")` `:134-135`，**HTTP 仍是 200，业务码是失败** |
+
+载荷 `ContextUsageResponse`（`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/ContextUsageResponse.kt:40-49`）与分母档位 `ContextWindowSource`（同文件 `:7-16`）。键名即 data class 属性名，camelCase，无命名策略参与。
+
+### 两种「报不出来」的形状
+
+`code 200 + data:null`（从未绑定）与 `code 500`（实例不持有 agent）都不是「上下文是空的」：两端在这两种形状下整块不显示读数，**绝不显示 `0%`**。
+
+- webui 判据 `harnax-webui/src/pages/session/components/contextUsage.ts:20-24`，挂载点 `harnax-webui/src/pages/session/index.tsx:136-147`。
+- iOS 判据 `Sources/HarnaxCore/Contract/ContextUsage.swift:86-88`（`contextWindow > 0 && ratio.isFinite`）；空 `data` 靠 `ContextUsage: HarnaxVoid` 解成空值（`Sources/HarnaxAPI/ContextUsageClient.swift`），业务失败落进 `Result.failure`，调用侧两条同处理。
+
+### 分子与分母的口径
+
+- `ratio` 由服务端算好下发：分子优先 `lastCallInputTokens`（账单真值），没有账单时取 `estimatedTokens`（上游估算），分母 `contextWindow`（`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/ContextUsageResponse.kt:21-38` 写明两个数为什么并存）。客户端不重算，只按 `lastCallInputTokens` 是否为 null 标口径。
+- 分子跟的是最近一次**已计费**调用，所以一次压缩不当场改变 `ratio`，要等下一轮结束后的重读才动。
+- 分母三档：`MODEL_FIELD`（模型域 `context_window` 列）→ `UPSTREAM_TABLE` → `FALLBACK`；未知档位的新名字保留服务端原词，不并入 `FALLBACK` 的说法。
+- 自动压缩触发线由 harnax 按上游算法现算：`triggerTokens = contextWindow - reserved`，`reserved` 取上游默认 20,000，`contextWindow <= 0` 时用上游 `FALLBACK_TRIGGER_TOKENS = 160_000`，算出非正数时钳到 `max(1, contextWindow / 2)`（`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentWrapper.kt:459-480`）；`triggerMessages` 用上游默认 50（`CompactionConfig.java:273-275`，harnax 读路径不覆写）。
+
+### 压缩命令
+
+入口与三种拒绝见上一节「后端行为差异」的 `COMPACT` 条。两条客户端共同的判据：
+
+- 成败**只认 `success` 旗标**。协议里 `CommandResponse.success: Boolean` 是非空（`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/CommandResponse.kt:13-17`），所以「读到命令体却没有旗标」不可能是线上形状，只能读本端没读到——webui `harnax-webui/src/pages/session/components/contextUsage.ts:61-68` 与 iOS `CompactionOutcome.compact`（`Sources/HarnaxCore/Contract/AgentStreaming.swift:81-87`）同判据，一律读成失败，绝不说「已压缩上下文」。
+- 计数只区分「压成」与「没得压」：`beforeMessages == afterMessages` 时报告还太短；计数缺失但旗标为真时只报告压成、不给数字。
+
+### iOS 落点
+
+| 位置 | 文件与行 | 要点 |
+|---|---|---|
+| 契约判据 | `Sources/HarnaxCore/Contract/ContextUsage.swift:86-147` | `isReadable`／`basis`／`isAtAutoTrigger`／`percentText` 四条与 `contextUsage.ts` 一一对应；`percentText` 在比值越出整数范围时钳到 `Int.max` 而不是 `Int(Double)` 崩溃（`:119-134`） |
+| 读端点 | `Sources/HarnaxAPI/ContextUsageClient.swift` | 独立协议 `ContextUsageReading`，不与历史/计划共用；`sessionId` 先按路径段编码 |
+| 读数组装 | `Sources/HarnaxFeatures/Chat/ContextUsageReadout.swift:24-53` | 芯片两句 + 五行明细；账单行缺失时写「尚未记录」而不是 `0` |
+| 标题栏 | `Sources/HarnaxFeatures/Chat/ChatView.swift:89-90`、`:154` | 单点 unwrap `vm.contextUsage`——模型里不留读不到的读数，缺席本身就是判据；`Menu` 承载 webui 的 hover Tooltip；排在 workspace 入口之前 |
+| 输入区 | `Sources/HarnaxFeatures/Chat/ChatView.swift:507-519` | `chat.composer.compact` 芯片，排在权限芯片之后、停沙箱与清空之前（对齐 `harnax-webui/src/pages/session/components/ChatWindow.tsx:3716-3765`）；无二次确认；`isMuted: vm.isStreaming`；hover 文案换成读屏提示 `chat.context.compactTip` |
+| 定序 | `Sources/HarnaxFeatures/Chat/ChatViewModel.swift:1471-1486`、计数器 `:149` | 每次询问递增代数，落地时同时校验会话 id 与代数：后问先答的旧读数丢弃，切走后的答复不挂到新会话标题下 |
+| 补读时机 | 进入会话 `Sources/HarnaxFeatures/Chat/ChatView.swift:115`（`.task(id: conversation)`）；本轮结束 `Sources/HarnaxFeatures/Chat/ChatViewModel.swift:733`、`:764`；压缩返回 `:1573`；**压缩被取消也补读** `:1540` | 取消丢掉的只是横幅与气泡：命令已在服务端跑过 |
+| 应答文案 | `Sources/HarnaxFeatures/Chat/ChatViewModel.swift:1613-1630`（点按四支）；手敲走通用链 `:1587-1595` | 点按以横幅呈现（压成与「还太短」平静色、被拒警示色），手敲作为一行助手说明进气泡 |
+
+### 画面不变量
+
+压缩只重写 `AgentState.context`；页面气泡读逐条追加的归档，因此压缩后屏幕仍是全部原始消息，且不出现摘要气泡。iOS 侧由 `Tests/HarnaxFeaturesTests/ChatHistoryLoadTests.swift:217`（`testACompactionLeavesEveryStoredBubbleOnScreen`）钉住，其余判据的承载：旗标与计数 `Tests/HarnaxCoreTests/CompactionOutcomeTests.swift`、比值格式与钳位 `Tests/HarnaxCoreTests/ContextUsageTests.swift`、线上形状 `Tests/HarnaxAPITests/ContextUsageEndpointTests.swift`、明细行 `Tests/HarnaxFeaturesTests/ContextUsageReadoutTests.swift`、文案分支与定序 `Tests/HarnaxFeaturesTests/ChatViewModelTests.swift`、标题栏只 unwrap 一次 `Tests/HarnaxFeaturesTests/ContextUsageViewGateTests.swift`。
+
+---
+
 ## 图片与附件
 
 ### imageUrls 是 base64 data URL，不是上传后的 URL
@@ -545,11 +598,12 @@
 | GET | `/api/router/agent/session/{sessionId}/plans` | — | `ResultVo<List<PlanNote>>` | `harnax-webui/src/pages/session/components/ChatWindow.tsx:2603-2648`（fetch 于 `:2610` 附近）、`harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:157-165` |
 | GET | `/api/router/agent/session/{sessionId}/current-plan` | — | `ResultVo<PlanNote?>` | `harnax-webui/src/pages/session/components/ChatWindow.tsx:2479-2600`（fetch `:2485`）、`harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:170-178` |
 | DELETE | `/api/router/agent/session/{sessionId}` | — | `ResultVo` | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:131-139`（webui session 页未用） |
-| GET | `/api/router/agent/workspace/{sessionId}/files?path=` | path 默认 `/workspace` | `ResultVo<List<WorkspaceFile>>` | `harnax-webui/src/services/ant-design-pro/workspace.ts:38-51`、`harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:185-194` |
-| GET | `/api/router/agent/workspace/{sessionId}/read?path=` | — | `ResultVo<WorkspaceFileContent{content,truncated,size}>` | `harnax-webui/src/services/ant-design-pro/workspace.ts:56-69`、`harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:199-208`、`harnax-webui/src/services/ant-design-pro/typings.d.ts:351-355` |
-| GET | `/api/router/agent/workspace/status?sessionIds=<id>` | 逗号拼接可批量 | `ResultVo<Map<String,WorkspaceStatus>>`（前端取单值） | `harnax-webui/src/services/ant-design-pro/workspace.ts:74-92`、`:98-110`、`harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:213-228`（空 sessionIds → error）、`:233-243`（单会话）、`harnax-webui/src/services/ant-design-pro/typings.d.ts:357-364` |
-| POST | `/api/router/agent/workspace/{sessionId}/upload` | FormData `file` + `path`，headers 仅 `X-Api-Key` + skipAuthorization | `ResultVo` | `harnax-webui/src/services/ant-design-pro/workspace.ts:115-138`、`harnax-webui/src/pages/session/components/WorkspaceDrawer.tsx:153-174`、`harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:248-260` |
-| GET | `/api/router/agent/workspace/{sessionId}/download?path=` | **裸 fetch，仅 `X-Api-Key`** | 二进制 + `Content-Disposition`；>50MB→413；不存在→404 | `harnax-webui/src/services/ant-design-pro/workspace.ts:143-165`、`harnax-webui/src/pages/session/components/WorkspaceDrawer.tsx:279-304`、`harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:278-302`、`:41`、`:268-273` |
+| GET | `/api/router/agent/context/{sessionId}` | — | `ResultVo<ContextUsageResponse>`，从未绑定实例时 `data:null` | `harnax-webui/src/services/ant-design-pro/chat.ts:49-60`、`harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:183-191` |
+| GET | `/api/router/agent/workspace/{sessionId}/files?path=` | path 默认 `/workspace` | `ResultVo<List<WorkspaceFile>>` | `harnax-webui/src/services/ant-design-pro/workspace.ts:38-51`、`harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:198-207` |
+| GET | `/api/router/agent/workspace/{sessionId}/read?path=` | — | `ResultVo<WorkspaceFileContent{content,truncated,size}>` | `harnax-webui/src/services/ant-design-pro/workspace.ts:56-69`、`harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:212-221`、`harnax-webui/src/services/ant-design-pro/typings.d.ts:351-355` |
+| GET | `/api/router/agent/workspace/status?sessionIds=<id>` | 逗号拼接可批量 | `ResultVo<Map<String,WorkspaceStatus>>`（前端取单值） | `harnax-webui/src/services/ant-design-pro/workspace.ts:74-92`、`:98-110`、`harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:226-241`（空 sessionIds → error）、`harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:246-256`（单会话）、`harnax-webui/src/services/ant-design-pro/typings.d.ts:357-364` |
+| POST | `/api/router/agent/workspace/{sessionId}/upload` | FormData `file` + `path`，headers 仅 `X-Api-Key` + skipAuthorization | `ResultVo` | `harnax-webui/src/services/ant-design-pro/workspace.ts:115-138`、`harnax-webui/src/pages/session/components/WorkspaceDrawer.tsx:153-174`、`harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:261-273` |
+| GET | `/api/router/agent/workspace/{sessionId}/download?path=` | **裸 fetch，仅 `X-Api-Key`** | 二进制 + `Content-Disposition`；>50MB→413；不存在→404 | `harnax-webui/src/services/ant-design-pro/workspace.ts:143-165`、`harnax-webui/src/pages/session/components/WorkspaceDrawer.tsx:279-304`、`harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:291-315`、`harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:41`、`:281-286` |
 
 ### userId 语义
 
