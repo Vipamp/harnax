@@ -58,6 +58,10 @@ class ToolInvocationMiddleware(
         val startMillis: Long,
     )
 
+    /**
+     * Assembled eagerly: the start table and the returned `Flux` are built when this is called, so
+     * `Start.startMillis` is the moment the middleware saw the batch, not the moment somebody subscribed.
+     */
     override fun onActing(
         agent: Agent,
         ctx: RuntimeContext,
@@ -75,12 +79,19 @@ class ToolInvocationMiddleware(
             // would never be counted, so a colliding key gets a private suffix and every open key stays
             // reachable by name in issue order. That queue is also how an end event finds its start when
             // the id is present on one side only.
-            val base = key(call.id, call.name)
+
+            // A nameless call is dropped here rather than registered: `ToolUseBlock.name` is deserialised from
+            // the model's JSON and validated by nothing upstream, and without a name there is no key to compute,
+            // no kind to decide and no `tool_name` to write into a NOT NULL column, so the row could not have
+            // been filed anyway. That costs one row; registering it would throw out of this method and cost
+            // the turn, which D9 forbids.
+            val name = call.name ?: return@forEach
+            val base = key(call.id, name)
             var k = base
-            while (started.putIfAbsent(k, Start(call.name, call.input ?: emptyMap(), System.currentTimeMillis())) != null) {
+            while (started.putIfAbsent(k, Start(name, call.input ?: emptyMap(), System.currentTimeMillis())) != null) {
                 k = "$base#${++suffix}"
             }
-            openByName.computeIfAbsent(call.name) { ConcurrentLinkedDeque() }.addLast(k)
+            openByName.computeIfAbsent(name) { ConcurrentLinkedDeque() }.addLast(k)
         }
         return next.apply(input)
             .doOnNext { event -> onEvent(event, started, results, openByName) }
@@ -139,9 +150,16 @@ class ToolInvocationMiddleware(
             else -> return
         }
         started.remove(startKey)
-        // Deltas of a call that never carried an id accumulate under its name, so two same-name calls that
-        // both lack an id share one buffer. Their output is not separable upstream; the row count still is.
-        val resultText = results.remove(startKey)?.toString()
+        // The queue mirrors the table one key to one start: registered under `call.name`, spent under
+        // `Start.name`, which is that same value. So a key peeked here is always a live start, and there is
+        // nothing to skip.
+        openByName[start.name]?.remove(startKey)
+        // Deltas accumulate under the key their own frame carries, so a start keyed by name and an end keyed by
+        // id is one buffer read by two keys: the second lookup is what keeps the body of such a call. The first
+        // hit short-circuits, and where both keys are the same the second lookup never runs. Only two calls that
+        // are both nameless and of one name truly share a buffer — their keys were never distinguishable, and
+        // what survives there is the row count, with merged text as the documented concession.
+        val resultText = (results.remove(startKey) ?: results.remove(key))?.toString()
         if (end.toolCallName != null && end.toolCallName != start.name) {
             log.warn(
                 "Tool call {} in session {} ended under name '{}' but was recorded as '{}'",
@@ -156,10 +174,16 @@ class ToolInvocationMiddleware(
     }
 
     /**
-     * Which accumulator this end event owns: the exact key when it is still open, otherwise the oldest call
-     * still open under this tool name. A model gets its own calls answered in the order it asked for them,
-     * so FIFO is the only defensible guess, and a wrong guess costs a duration measured against the wrong
-     * start rather than a lost row.
+     * Which start this end event owns: the exact key while it is still open, otherwise the oldest key still
+     * open under the frame's name. A model gets its own calls answered in the order it asked for them, so FIFO
+     * is the only defensible guess, and a wrong guess costs a duration measured against the wrong start rather
+     * than a lost row.
+     *
+     * A lookup only: nothing here changes the queue. The key leaves it where the start itself is dropped, and
+     * located by the name recorded at the start — the queue is named after that, so taking a key out under the
+     * frame's name (which a renamed frame differs in) would spend nothing where it looked and leave an
+     * already-consumed key in the queue where the start actually sits. The next frame of that name without an
+     * id would then pair with that ghost, find no start behind it and lose a call that had succeeded.
      */
     private fun matchKey(
         key: String,
@@ -167,10 +191,9 @@ class ToolInvocationMiddleware(
         started: ConcurrentHashMap<String, Start>,
         openByName: ConcurrentHashMap<String, ConcurrentLinkedDeque<String>>,
     ): String? {
-        val open = name?.let { openByName[it] }
-        val matched = if (started.containsKey(key)) key else open?.pollFirst() ?: return null
-        open?.remove(matched)
-        return matched
+        if (started.containsKey(key)) return key
+        val open = name?.let { openByName[it] } ?: return null
+        return open.peekFirst()
     }
 
     /** Non-success rows carry a reason: the tool's own output is the reason when it produced one. */
@@ -192,7 +215,11 @@ class ToolInvocationMiddleware(
             // is filed rather than dropped: the reason goes to `errorMessage`, the partial output to
             // `resultText`, and the writer truncates it like any other.
             val text = failure?.let { "${it.javaClass.simpleName}: ${it.message ?: ""}" } ?: "stream ended before the tool returned"
-            emit(start, start.name, ToolInvocationLog.OUTCOME_INTERRUPTED, results.remove(key)?.toString(), text, System.currentTimeMillis())
+            // The same two keys as the resolved path, other order: this start's own key first, then the name it
+            // was recorded under, because a frame that carries no id streams its text there. An identifiable
+            // start met exactly that, and would otherwise lose what it had managed to stream.
+            val resultText = (results.remove(key) ?: results.remove(start.name))?.toString()
+            emit(start, start.name, ToolInvocationLog.OUTCOME_INTERRUPTED, resultText, text, System.currentTimeMillis())
         }
     }
 

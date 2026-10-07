@@ -88,10 +88,16 @@ class ToolInvocationMiddlewareTest {
         return event
     }
 
-    private fun delta(id: String, name: String, text: String): ToolResultTextDeltaEvent {
+    private fun delta(
+        id: String?,
+        name: String,
+        text: String,
+    ): ToolResultTextDeltaEvent {
         val event = mock(ToolResultTextDeltaEvent::class.java)
         `when`(event.type).thenReturn(AgentEventType.TOOL_RESULT_TEXT_DELTA)
-        `when`(event.toolCallId).thenReturn(id)
+        // Same shape as `end`: an id-less delta is left unstubbed, since Mockito already answers null and
+        // that is what such an event carries.
+        if (id != null) `when`(event.toolCallId).thenReturn(id)
         `when`(event.toolCallName).thenReturn(name)
         `when`(event.delta).thenReturn(text)
         return event
@@ -118,6 +124,9 @@ class ToolInvocationMiddlewareTest {
             assertEquals(7L, event.agentId)
             assertEquals("web-1", event.sessionId)
             assertEquals(9L, event.userId)
+            // A success has no reason to state: `failureText` special-cases this outcome, and nothing else
+            // in the suite reads that branch.
+            assertNull(event.errorMessage)
             assertTrue(event.endEpochMilli >= event.startEpochMilli)
         }
 
@@ -144,13 +153,41 @@ class ToolInvocationMiddlewareTest {
             val call = ToolUseBlock("t1", "now", emptyMap())
             val mw = middleware()
 
-            StepVerifier.create(mw.onActing(agent, ctx, actingInput(call), Function { Flux.just(end("t1", "now", ToolResultState.RUNNING)) }))
-                .expectNextCount(1)
-                .verifyComplete()
+            // I2: RUNNING never reaches the table. The count has to be read while the stream is still open,
+            // because a call left unterminal is owed the stream-end interrupted row: `then` runs between this
+            // frame passing through the middleware and the cancel below, so the batch it sees is the in-flight
+            // state, not the fallback.
+            StepVerifier.create(
+                mw.onActing(
+                    agent,
+                    ctx,
+                    actingInput(call),
+                    Function { Flux.just<AgentEvent>(end("t1", "now", ToolResultState.RUNNING)).concatWith(Flux.never()) },
+                ),
+            ).expectNextCount(1).then { assertTrue(events.isEmpty()) }.thenCancel().verify()
+        }
 
-            // I2: RUNNING never reaches the table. Nothing is filed here, and the start is kept rather than
-            // dropped, so a later terminal event for the same id still gets its row.
-            assertTrue(events.none { it.outcome == "RUNNING" })
+        @Test
+        fun `a running end event leaves the start open for its terminal frame`() {
+            val call = ToolUseBlock("t1", "now", emptyMap())
+            val mw = middleware()
+
+            StepVerifier.create(
+                mw.onActing(
+                    agent,
+                    ctx,
+                    actingInput(call),
+                    Function {
+                        Flux.just(end("t1", "now", ToolResultState.RUNNING), end("t1", "now", ToolResultState.SUCCESS))
+                    },
+                ),
+            ).expectNextCount(2).verifyComplete()
+
+            // One row, and its outcome is the second frame's: the RUNNING frame filed nothing and consumed
+            // nothing, so the start it left behind is still there to be timed. The count holds the dedupe and
+            // the one-row rule at the same time.
+            assertEquals(1, events.size)
+            assertEquals(ToolInvocationLog.OUTCOME_SUCCESS, events.single().outcome)
         }
     }
 
@@ -290,6 +327,31 @@ class ToolInvocationMiddlewareTest {
         }
 
         @Test
+        fun `a renamed end event does not strand the next call of the same name`() {
+            // The frame above renames itself; here that rename is the hazard rather than the curiosity. Pairing
+            // may only look at the name queue: taking a key out of it under the frame's own name leaves the
+            // queue the start actually sits in holding an already-spent key, and the next nameless frame of
+            // that name pairs with the ghost, gives up when the table has it no more and loses the row.
+            val mw = middleware()
+
+            StepVerifier.create(
+                mw.onActing(
+                    agent,
+                    ctx,
+                    actingInput(ToolUseBlock("t1", "github_search", emptyMap()), ToolUseBlock("t2", "github_search", emptyMap())),
+                    Function {
+                        Flux.just(end("t1", "renamed_by_upstream", ToolResultState.SUCCESS), end(null, "github_search", ToolResultState.SUCCESS))
+                    },
+                ),
+            ).expectNextCount(2).verifyComplete()
+
+            assertEquals(2, events.size)
+            assertEquals(listOf("github_search", "github_search"), events.map { it.toolName })
+            assertEquals(ToolInvocationLog.OUTCOME_SUCCESS, events[0].outcome)
+            assertEquals(ToolInvocationLog.OUTCOME_SUCCESS, events[1].outcome)
+        }
+
+        @Test
         fun `an end event for an unknown id files nothing`() {
             val mw = middleware()
 
@@ -320,15 +382,45 @@ class ToolInvocationMiddlewareTest {
         }
 
         @Test
-        fun `a nameless start matched by an id-bearing end still files one row`() {
+        fun `a nameless start matched by an id-bearing end files one row with its text`() {
             val mw = middleware()
 
             StepVerifier.create(
-                mw.onActing(agent, ctx, actingInput(ToolUseBlock(null, "now", emptyMap())), Function { Flux.just(end("t1", "now", ToolResultState.SUCCESS)) }),
+                mw.onActing(
+                    agent,
+                    ctx,
+                    actingInput(ToolUseBlock(null, "now", emptyMap())),
+                    // The explicit type argument stays: in a SAM position the left end of a chain inherits no
+                    // expected element type, so the mixed frames would be inferred as their common supertype.
+                    Function { Flux.just<AgentEvent>(delta("t1", "now", "partial"), end("t1", "now", ToolResultState.SUCCESS)) },
+                ),
+            ).expectNextCount(2).verifyComplete()
+
+            // The keys never match, so only a fallback by name files this call at all — and the text streamed
+            // under the frame's id, not under the start's name, so reading the body is the second half of the
+            // pairing and the row is not owed only a count.
+            assertEquals(1, events.size)
+            assertEquals("partial", events.single().resultText)
+        }
+
+        @Test
+        fun `an unresolved start with an id files the text streamed under its name`() {
+            val mw = middleware()
+
+            // The mirror image: an identifiable start, frames that carry only a name, and no terminal frame, so
+            // the row is filed by the stream-end sweep and looks its text up by the start key then the name.
+            StepVerifier.create(
+                mw.onActing(
+                    agent,
+                    ctx,
+                    actingInput(ToolUseBlock("t1", "now", emptyMap())),
+                    Function { Flux.just<AgentEvent>(delta(null, "now", "half a sentence")) },
+                ),
             ).expectNextCount(1).verifyComplete()
 
-            // The keys never match, so only a fallback by name files this call at all.
-            assertEquals(1, events.size)
+            val event = events.single()
+            assertEquals(ToolInvocationLog.OUTCOME_INTERRUPTED, event.outcome)
+            assertEquals("half a sentence", event.resultText)
         }
 
         @Test
@@ -351,6 +443,28 @@ class ToolInvocationMiddlewareTest {
             assertEquals(ToolInvocationLog.OUTCOME_INTERRUPTED, event.outcome)
             assertEquals("half an answer", event.resultText)
             assertTrue(event.errorMessage!!.contains("sandbox died"))
+        }
+
+        @Test
+        fun `a cancelled stream files the open call as interrupted`() {
+            val mw = middleware()
+
+            // The third way a stream ends: nobody failed it and it did not complete, the subscriber just walked
+            // away. Design section 3 lists cancel beside error, so the sweep has to run here too.
+            StepVerifier.create(
+                mw.onActing(
+                    agent,
+                    ctx,
+                    actingInput(ToolUseBlock("t1", "now", emptyMap())),
+                    Function { Flux.just<AgentEvent>(delta("t1", "now", "half an answer")).concatWith(Flux.never<AgentEvent>()) },
+                ),
+            ).expectNextCount(1).thenCancel().verify()
+
+            val event = events.single()
+            assertEquals(ToolInvocationLog.OUTCOME_INTERRUPTED, event.outcome)
+            assertEquals("half an answer", event.resultText)
+            // No throwable came through, so the reason is the bare fact that the stream stopped first.
+            assertEquals("stream ended before the tool returned", event.errorMessage)
         }
     }
 
@@ -434,6 +548,25 @@ class ToolInvocationMiddlewareTest {
 
             assertTrue(uses.isEmpty())
         }
+
+        @Test
+        fun `reading a skill body through another tool reports no use`() {
+            val mw = middleware(adminSkillIdsBySkillId = mapOf("s1" to 44L))
+
+            // Every argument says skill body, but this is a plain file read. The loader's own name is what
+            // makes a use, so reading a skill's instructions through some other tool must not report one.
+            StepVerifier.create(
+                mw.onActing(
+                    agent,
+                    ctx,
+                    actingInput(ToolUseBlock("t1", "read_file", mapOf("skillId" to "s1", "path" to "SKILL.md"))),
+                    Function { Flux.just(end("t1", "read_file", ToolResultState.SUCCESS)) },
+                ),
+            ).expectNextCount(1).verifyComplete()
+
+            assertTrue(uses.isEmpty())
+            assertEquals(1, events.size)
+        }
     }
 
     @Nested
@@ -470,6 +603,22 @@ class ToolInvocationMiddlewareTest {
             StepVerifier.create(throwing.onActing(agent, ctx, actingInput(call), Function { Flux.just(end("t1", "now", ToolResultState.SUCCESS)) }))
                 .expectNextCount(1)
                 .verifyComplete()
+        }
+
+        @Test
+        fun `a call without a name files nothing and does not break the turn`() {
+            // `ToolUseBlock.name` comes out of the model's JSON and upstream validates nothing, so it can be
+            // null. A nameless call has no key to register under, no kind to decide and no writable
+            // `tool_name`, so its row could not have been written anyway: the cost is one row, never the turn.
+            val mw = middleware()
+
+            // The stream running to completion is the point; an empty batch alone would also be true had
+            // onActing thrown before it ever subscribed.
+            StepVerifier.create(
+                mw.onActing(agent, ctx, actingInput(ToolUseBlock("t1", null, emptyMap())), Function { Flux.just(end("t1", "now", ToolResultState.SUCCESS)) }),
+            ).expectNextCount(1).verifyComplete()
+
+            assertTrue(events.isEmpty())
         }
     }
 }
