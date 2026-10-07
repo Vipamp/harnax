@@ -98,15 +98,15 @@
 
 上游形状已核过，实现时不必再猜：`ActingInput` 是 `record ActingInput(List<ToolUseBlock> toolCalls)`，`ToolUseBlock` 给 `getId()` / `getName()` / `getInput(): Map<String, Object>`；`ToolResultEndEvent` 同时带 `getToolCallId()`、`getToolCallName()` 和 `getState()`，所以按 id 关联成立且名字可作二次校验（`ToolUseBlock.getId()` 上游可空，缺 id 与键冲突时的退路见下）；`ToolResultState` 五个值就是 §3 映射表那五个。
 
-`onActing` 内为本次 acting 批次建一张起点表，键取 `toolCallId`、缺 id 时退到 `toolCallName`，从 `input.toolCalls` 起表（记录 `name`、`input`、开始时刻）；同一批次算出同一个键的调用在键尾加序号，另按 `name` 保存一组未终态键的先进先出队列，于是每个起点都可寻址。在 `next.apply(input)` 的事件流上：
+`onActing` 内为本次 acting 批次建一张起点表，键取 `toolCallId`、缺 id 时退到 `toolCallName`，从 `input.toolCalls` 起表（记录 `name`、`input`、开始时刻）；同一批次算出同一个键的调用在键尾加序号，另按 `name` 保存一组未终态键的先进先出队列，于是每个起点都可寻址。`ToolUseBlock` 的名字上游可空（由模型给的 JSON 反序列化而来，上游构造器不校验）：无名的调用既算不出键、也没有可写的 `tool_name`（该列 `NOT NULL`），因此不进起点表、不落库；登记本身绝不把异常抛出 `onActing`，D9 的「绝不抛」在事件流开始之前同样成立。在 `next.apply(input)` 的事件流上：
 
 | 事件 | 动作 |
 |---|---|
-| `TOOL_RESULT_END`（带 `toolCallId`、`state`） | 按 `key(toolCallId, toolCallName)` 找到起点，未命中时取该名字下最早的一个；起点在投递前摘除，所以重复的终态帧不会再落第二行 |
+| `TOOL_RESULT_END`（带 `toolCallId`、`state`） | 按 `key(toolCallId, toolCallName)` 找到起点，未命中时取该名字队列里最早的、且仍在起点表里的一个（匹配只 peek）；起点在投递前从表里摘除，同一个键在名字队列里按起点记录的 `name` 摘除而不是按帧名，所以改名的终态帧不会留下顶掉后续调用的幽灵键；重复的终态帧找不到起点，不会再落第二行 |
 | 流 `onComplete` 时仍有未终态 id | 补一行 `INTERRUPTED`，时长到完成时刻，`error_message` 写 `stream ended before the tool returned` |
 | 流 `onError` / `onCancel` 时同理 | 同上，`error_message` 取异常文本；已经流出的增量文本仍进 `result_excerpt`（按写入侧截断）|
 
-无 id 的两个同名调用共享同一份增量文本缓冲——上游没给出可分辨的键，能保住的是行数，文本归并是已知让步。
+增量文本按事件自带的键累积（有 `toolCallId` 用 id，缺 id 用名字），投递时先按起点键取、取不到再按终态帧自己的键取，未投递的起点在收流结束时同样先按自己的键、再按记录的 `name` 取。真正共享同一份缓冲的只有无 id 的两个同名调用——它们的键本就相同，上游没给出可分辨的键，能保住的是行数，文本归并是已知让步。
 
 `ToolResultState` 映射：`SUCCESS→SUCCESS`、`ERROR→ERROR`、`DENIED→DENIED`、`INTERRUPTED→INTERRUPTED`、`RUNNING→不落库`。
 

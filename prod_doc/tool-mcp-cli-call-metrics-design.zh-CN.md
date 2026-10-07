@@ -125,15 +125,15 @@ CREATE TABLE IF NOT EXISTS `tool_invocation_stats` (
 
 新增 `ToolInvocationMiddleware`，与 `ProcessLogMiddleware` 同包同目录：`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/provider/middleware/ToolInvocationMiddleware.kt`；挂载沿用 `agentBuilder.addMiddleware(...)`（现例 `HarnessAgentLauncher.kt:587`、`:601`）。中间件每次装配新建一个实例，与 `ProcessLogMiddleware` 的 `initial()` 教训同因（同文件 `:585-592` 的注释记录了共享实例如何把两 Sessions 的归属写串）。
 
-`onActing` 内为本次 acting 批次建一张起点表，键取 `toolCallId`、缺 id 时退到 `toolCallName`，从 `input.toolCalls` 起表（记 `name`、`input`、开始时刻）；同一批次算出同一个键的调用（同名的无 id 调用）在键尾加序号，另按 `name` 保存一组未终态键的先进先出队列，于是每个起点都可寻址。在 `next.apply(input)` 的事件流上：
+`onActing` 内为本次 acting 批次建一张起点表，键取 `toolCallId`、缺 id 时退到 `toolCallName`，从 `input.toolCalls` 起表（记 `name`、`input`、开始时刻）；同一批次算出同一个键的调用（同名的无 id 调用）在键尾加序号，另按 `name` 保存一组未终态键的先进先出队列，于是每个起点都可寻址。`ToolUseBlock` 的名字上游可空（它由模型给的 JSON 反序列化而来，上游构造器不校验）：无名的调用既算不出键、也没有可写的 `tool_name`（该列 `NOT NULL`），因此不进起点表、不落库；登记这一步本身绝不把异常抛出 `onActing`，D9 的「绝不抛」在事件流开始之前同样成立。在 `next.apply(input)` 的事件流上：
 
 | 事件 | 动作 |
 |---|---|
-| `TOOL_RESULT_END` | 先按 `key(toolCallId, toolCallName)` 命中未终态起点，未命中时取该 `toolCallName` 队列里最早的一个（一轮之内模型按发出的顺序收到自己的答复，FIFO 是唯一站得住的猜测，猜错的代价是时长对错了起点，不是丢一行），出 `outcome` 与 `duration_ms`，投递适配器；`toolCallName` 与起点名字不符时以起点记录的 `name` 为准并 warn。起点在投递之前从表里摘除，所以同一个 id 重复的终态帧找不到起点，不会再落第二行 |
+| `TOOL_RESULT_END` | 先按 `key(toolCallId, toolCallName)` 命中未终态起点，未命中时取该 `toolCallName` 队列里最早的、且仍在起点表里的一个（一轮之内模型按发出的顺序收到自己的答复，FIFO 是唯一站得住的猜测，猜错的代价是时长对错了起点，不是丢一行；匹配过程只 peek，不在队列里摘键），出 `outcome` 与 `duration_ms`，投递适配器；`toolCallName` 与起点名字不符时以起点记录的 `name` 为准并 warn。起点在投递之前从表里摘除，队列里的同一个键按起点记录的 `name` 定位摘除，而不是按终态帧的 `toolCallName`——按帧名摘除会在队列里留下一个已经消费过的键，下一个同名调用会被这个幽灵键顶掉而丢一行。同一个 id 重复的终态帧因此找不到起点，不会再落第二行 |
 | 流 `onComplete` 仍有未终态 id | 补一行 `INTERRUPTED`，时长到完成时刻，`error_message` 写 `stream ended before the tool returned` |
 | 流 `onError` / `onCancel` | 同上，`error_message` 取异常文本；该调用此前已经流出的增量文本仍进 `result_excerpt`（按写入侧截断），因为一次中断最有用的信息就是它停下来之前说了什么 |
 
-无 id 的两个同名调用共享同一份增量文本缓冲——上游没给出可分辨的键，能保住的是行数，文本归并是已知让步。
+增量文本按事件自带的键累积（有 `toolCallId` 用 id，缺 id 用名字），投递时先按起点键取、取不到再按终态帧自己的键取，因此一侧带 id、另一侧缺 id 的配对不会把已经流出的正文丢掉；未投递的起点在收流结束时同样先按自己的键取、再按记录的 `name` 取。真正共享一份缓冲的只有无 id 的两个同名调用：它们的键本就相同，上游没给出可分辨的键，能保住的是行数，文本归并是已知让步。
 
 `ToolResultState` 映射：`SUCCESS→SUCCESS`、`ERROR→ERROR`、`DENIED→DENIED`、`INTERRUPTED→INTERRUPTED`、`RUNNING→不落库`。
 
