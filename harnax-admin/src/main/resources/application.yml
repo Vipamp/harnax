@@ -170,3 +170,11 @@ harnax:
     # that reclaimable rather than dangerous: an instance started before the upgrade may still be fetching
     # the old key.
     archive-retention-days: ${HARNAX_CLI_ARCHIVE_RETENTION_DAYS:7}
+  metrics:
+    # How long a call stays readable as a single row before only its daily aggregate survives. The window is
+    # what keeps the detail table a bounded size on a shared database; days are rolled up before anything is
+    # deleted, so a shorter window only costs drill-down depth.
+    retention-days: ${HARNAX_METRICS_RETENTION_DAYS:90}
+    # One kill switch for the hourly rollup. Off, the aggregate table stops growing and every page that reads
+    # it answers for a window that ends at the last run — the detail table still fills.
+    rollup-enabled: ${HARNAX_METRICS_ROLLUP_ENABLED:true}
