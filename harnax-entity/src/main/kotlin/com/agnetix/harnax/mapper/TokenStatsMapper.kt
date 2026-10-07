@@ -259,4 +259,45 @@ interface TokenStatsMapper {
         @Param("endTime") endTime: String?,
         @Param("tenantId") tenantId: Long,
     ): MutableList<MutableMap<String?, Any?>?>?
+
+    /**
+     * The landing page's window question: how much ran inside one time window, in how many
+     * conversations and on how many agents.
+     *
+     * Answers one row whatever the window holds, because COUNT over no rows is 0 and the token sum is
+     * COALESCEd — a workspace with no consumption reads as zeros rather than as an absent row.
+     *
+     * Sits here rather than in `DashboardMapper` so the predicate comes from `tenantAndTimeWindow` like
+     * every other aggregation over this table, instead of becoming a second copy of the tenant filter.
+     *
+     * @param startTime Window start, inclusive, `yyyy-MM-dd HH:mm:ss`
+     * @param endTime   Window end, inclusive, `yyyy-MM-dd HH:mm:ss`
+     * @param tenantId  Owning tenant, required — see the interface comment
+     * @return One row with `calls`, `tokens`, `sessions`, `agents`
+     */
+    fun getDashboardWindowStats(
+        @Param("startTime") startTime: String?,
+        @Param("endTime") endTime: String?,
+        @Param("tenantId") tenantId: Long,
+    ): MutableMap<String?, Any?>?
+
+    /**
+     * Daily consumption over a window, for the landing page's trend.
+     *
+     * Same bucket as [getTimeSeriesByDay] but with a call count next to the token total — the series the
+     * token-monitor draws never needed to know how many requests a day held, the overview does.
+     *
+     * Days without consumption answer no row at all; padding the series to one point per day is the
+     * service's job, not this statement's.
+     *
+     * @param startTime Window start, inclusive, `yyyy-MM-dd HH:mm:ss`
+     * @param endTime   Window end, inclusive, `yyyy-MM-dd HH:mm:ss`
+     * @param tenantId  Owning tenant, required — see the interface comment
+     * @return One row per day holding consumption, with `timePoint`, `calls`, `tokens`
+     */
+    fun getDashboardDailyTrend(
+        @Param("startTime") startTime: String?,
+        @Param("endTime") endTime: String?,
+        @Param("tenantId") tenantId: Long,
+    ): MutableList<MutableMap<String?, Any?>?>?
 }

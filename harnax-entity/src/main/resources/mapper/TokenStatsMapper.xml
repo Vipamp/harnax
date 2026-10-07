@@ -462,4 +462,51 @@
         ORDER BY timePoint, grandTotalToken DESC
     </select>
 
+    <!-- ==================== Landing page overview ==================== -->
+
+    <!--
+      The dashboard's window question: how much ran, in how many conversations and on how many agents.
+      Both dashboard reads below live in this mapper rather than in DashboardMapper so their tenant
+      predicate comes from tenantAndTimeWindow like every other aggregation here, instead of being
+      written a second time next to the one that already exists.
+
+      COUNT over an empty window is 0 and the token sum is COALESCEd, so the statement always answers one
+      row and a workspace without consumption reads as zeros instead of as a missing row.
+    -->
+    <select id="getDashboardWindowStats" resultType="map">
+        SELECT COUNT(*) AS calls,
+        COALESCE(SUM(total_token), 0) AS tokens,
+        COUNT(DISTINCT session_id) AS sessions,
+        COUNT(DISTINCT agent_id) AS agents
+        FROM token_stats t
+        WHERE 1 = 1
+        <include refid="tenantAndTimeWindow">
+            <property name="alias" value="t"/>
+        </include>
+    </select>
+
+    <!--
+      Day buckets carry a call count too, which the token-only series never had.
+
+      The bucket is the shared dayBucket fragment, CAST to DATETIME: the overview service keys its
+      zero-filled series by `row["timePoint"] as? LocalDateTime`, so a DATE or a formatted string would
+      silently drop the row and leave the trend all zeros. Days without consumption answer no row;
+      padding the series to one point per day is the service's job.
+    -->
+    <select id="getDashboardDailyTrend" resultType="map">
+        SELECT
+        <include refid="dayBucket">
+            <property name="alias" value="t"/>
+        </include> AS timePoint,
+        COUNT(*) AS calls,
+        COALESCE(SUM(total_token), 0) AS tokens
+        FROM token_stats t
+        WHERE 1 = 1
+        <include refid="tenantAndTimeWindow">
+            <property name="alias" value="t"/>
+        </include>
+        GROUP BY timePoint
+        ORDER BY timePoint
+    </select>
+
 </mapper>

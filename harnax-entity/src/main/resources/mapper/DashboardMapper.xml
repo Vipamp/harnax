@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agnetix.harnax.mapper.DashboardMapper">
+
+    <!--
+      The column labels are the wire contract: DashboardServiceImpl reads this row by these exact
+      camelCase keys, so nothing here may rely on the driver's own case or on map-underscore-to-camel-case.
+
+      Every cell is a scalar subquery over one row of the outer SELECT, the shape ModelMapper.xml's
+      selectUsageByModelId already uses: the statement always answers exactly one row, so a tenant with
+      nothing to report reads as a row of zeros rather than as no row at all.
+    -->
+
+    <!--
+      The one tenant predicate in this file, and it carries no `<if>`: a missing tenant has to read as
+      nothing, not as everything. `tenantId` is a non-null parameter, so a caller that cannot resolve one
+      gets no rows rather than the whole platform.
+    -->
+    <sql id="tenantActive">WHERE 1 = 1 AND tenant_id = #{tenantId} AND active = 1</sql>
+
+    <!--
+      One row for the whole asset strip. Every cell includes tenantActive, so a new cell written without
+      it shows up in the diff as the only subquery missing the fragment.
+
+      skill_draft is the deliberate exception: the table has no `active` column, its soft delete lives in
+      `status`, so that cell filters on tenant and PENDING instead of on the shared fragment.
+    -->
+    <select id="getTenantAssetCounts" resultType="map">
+        SELECT (SELECT COUNT(*) FROM agent <include refid="tenantActive"/>) AS agents,
+               (SELECT COUNT(*) FROM skill <include refid="tenantActive"/>) AS skills,
+               (SELECT COUNT(*) FROM `model` <include refid="tenantActive"/>) AS models,
+               (SELECT COUNT(*) FROM mcp_server <include refid="tenantActive"/>) AS mcpServers,
+               (SELECT COUNT(*) FROM channel <include refid="tenantActive"/>) AS channels,
+               (SELECT COUNT(*) FROM team <include refid="tenantActive"/>) AS teams,
+               (SELECT COUNT(*) FROM session <include refid="tenantActive"/>) AS sessions,
+               (SELECT COUNT(*) FROM sys_user <include refid="tenantActive"/>) AS users,
+               (SELECT COUNT(*) FROM sys_user <include refid="tenantActive"/>
+                  AND last_login_time &gt;= #{activeUserSince}) AS activeUsers,
+               (SELECT COUNT(*) FROM skill_draft WHERE 1 = 1 AND tenant_id = #{tenantId}
+                  AND status = 'PENDING') AS pendingSkillDrafts
+    </select>
+
+    <!-- No tenant column on either table, so this one legitimately has no tenant predicate. -->
+    <select id="getPlatformCounts" resultType="map">
+        SELECT (SELECT COUNT(*) FROM agent_tool WHERE active = 1) AS tools,
+               (SELECT COUNT(*) FROM cli WHERE active = 1) AS cliPackages
+    </select>
+
+</mapper>
