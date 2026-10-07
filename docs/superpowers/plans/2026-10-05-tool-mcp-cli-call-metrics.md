@@ -2931,13 +2931,14 @@ git commit -m "feat(metrics): 工具调用事件的批量写入适配器"
 
 **Files:**
 - Modify: `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentBuilder.kt`（在 `:293` 的 `getTool` 之后加一个只读枚举）
-- Modify: `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt`（构造器参数 `:117` 一带、MCP 循环 `:267-344`、技能循环 `:481-506`、挂载点 `:601` 之后、`initLauncher` `:1155`/`:1226`）
-- Modify: `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/spring/HarnessAutoConfiguration.kt`（`:313-369`）
+- Modify: `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt`（构造器参数在 `:136` 的 `skillUsageAdaptor` 之后、MCP 起于 `:264` 的 `mcpClients` 而终于 `:356` 的聚合告警、技能循环 `:481-506`、挂载点 `:601` 之后、`initLauncher` 的形参 `:1166` 与透传 `:1241`）
+- Modify: `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/spring/HarnessAutoConfiguration.kt`（`fun harnessAgentLauncher` 在 `:313`，`ObjectProvider` 先例 `:331`，透传 `:365`，闭括号 `:370`）
 - Modify: `harnax-agent/harnax-agent-service/src/main/resources/application.yml`（`harness:` 块内，与 `harness.memory:` 同级）
 
 **Interfaces:**
-- Consumes: Task 6 的中间件构造器、Task 3 的 `commandHeads`、Task 7 的 bean（由 Spring 按 `ToolInvocationAdaptor` 类型找到）、`McpTool.getClientName()`、`AgentSkill.getSkillId()`（2.0.4 里确有三个访问器，`javap` 已核）。
-- Produces: `HarnessAgentLauncher.toolInvocationAdaptor: ToolInvocationAdaptor? = null` 与 `HarnessAgentLauncher.invocationMetricsEnabled: Boolean = true` 两个构造器参数；`HarnessAgentBuilder.mcpToolClientNames(): Map<String, String>`。Task 9 删除旧链时不再回来改这里。
+- Consumes: Task 6 的中间件构造器、Task 3 的 `commandHeads`、Task 7 的 bean（由 Spring 按 `ToolInvocationAdaptor` 类型找到）、`McpTool.getClientName()`、`AgentSkill.getSkillId()`（2.0.4 里这两个访问器都在，`javap` 已核）。
+- Produces: `HarnessAgentLauncher.toolInvocationAdaptor: ToolInvocationAdaptor? = null` 一个构造器参数（**开关只有一个落点**：`enabled` 在 bean 装配处把 provider 变成 null，launcher 不再持第二个布尔，否则两处判断互为影子、单行变异谁都杀不死）；`HarnessAgentBuilder.mcpToolClientNames(): Map<String, String>`。Task 9 删除旧链时不再回来改这里。
+- 需要的 import（`HarnessAgentLauncher.kt` 现在三个都没有）：`com.agnetix.harnax.agent.provider.middleware.ToolInvocationMiddleware`、`com.agnetix.harnax.agent.provider.middleware.ToolInvocationClassifier`（在 harness-core 自己里面，不在 tools-sdk）、`com.agnetix.harnax.tools.sdk.adaptor.ToolInvocationAdaptor`。
 
 - [ ] **Step 1: builder 的只读枚举**
 
@@ -3019,9 +3020,10 @@ CLI 别名表（放在挂载点之前即可，`agentSpec.cliSpecs` 此刻已在�
 ```kotlin
         // ----- Tool invocation metrics -----
         // Third fresh instance per build for the same reason as the two above: the run's attribution lives in
-        // its fields. No adaptor means no middleware at all — the recording path is then exactly as it was,
-        // rather than a per-turn cost for a counter with nowhere to go.
-        if (invocationMetricsEnabled && toolInvocationAdaptor != null) {
+        // its fields. One guard only: `enabled=false` has already turned the adaptor into null where the bean
+        // is wired (Step 4), so absence here means "nothing to write to" and the recording path is exactly as
+        // it was, rather than a per-turn cost for a counter with nowhere to go.
+        if (toolInvocationAdaptor != null) {
             agentBuilder.addMiddleware(
                 ToolInvocationMiddleware(
                     adaptor = toolInvocationAdaptor,
@@ -3039,11 +3041,10 @@ CLI 别名表（放在挂载点之前即可，`agentSpec.cliSpecs` 此刻已在�
         }
 ```
 
-构造器参数（`:117` 一带，紧跟 `skillUsageAdaptor`）与 `initLauncher` 的形参（`:1155` 一带）与透传（`:1226` 一带）各加两条：
+构造器参数（`:136`，紧跟 `skillUsageAdaptor: SkillUsageAdaptor? = null,`）与 `initLauncher` 的形参（`:1166`，同一句位置关系）与透传（`:1241` 的 `skillUsageAdaptor = skillUsageAdaptor,` 之后）各加**一条**：
 
 ```kotlin
     val toolInvocationAdaptor: ToolInvocationAdaptor? = null,
-    val invocationMetricsEnabled: Boolean = true,
 ```
 
 - [ ] **Step 4: bean 与开关**
@@ -3057,9 +3058,8 @@ CLI 别名表（放在挂载点之前即可，`agentSpec.cliSpecs` 此刻已在�
 ```kotlin
             // Absent means no tool call is filed: a runtime with nowhere to write must not pay for a recorder.
             toolInvocationAdaptor = toolInvocationAdaptorProvider.ifAvailable?.takeIf { invocationMetricsEnabled },
-            invocationMetricsEnabled = invocationMetricsEnabled,
 ```
-补 import `com.agnetix.harnax.tools.sdk.adaptor.ToolInvocationAdaptor`。`enabled=false` 时 `takeIf` 把适配器变成 null，于是挂载条件自己就不成立——两处判断不需要各写一遍。
+补 import `com.agnetix.harnax.tools.sdk.adaptor.ToolInvocationAdaptor`。`enabled=false` 时 `takeIf` 把适配器变成 null，于是 Step 3 的挂载条件自己就不成立——**开关只有这一个落点**，launcher 不持第二个布尔。
 
 `harnax-agent-service/src/main/resources/application.yml` 在 `harness:` 块内、与 `memory:` 同级插入：
 
