@@ -242,6 +242,34 @@ class ToolInvocationMiddlewareTest {
         }
 
         @Test
+        fun `a delta carrying an empty string leaves the result text null`() {
+            // Not the helper: it deliberately folds an empty text into "no stub at all", so Mockito answers
+            // null and that case pins only the null half of the guard. The isNullOrEmpty half needs a frame
+            // whose delta really is the empty string — the shape a keep-alive carries when it reports an empty
+            // chunk rather than nothing. Appending it would open a buffer with nothing in it, and `emit` hands
+            // that straight through: "this call produced no body" filed as "this call produced a body that is
+            // empty", which the read side's blank check cannot tell apart from a body worth showing.
+            val call = ToolUseBlock("t1", "read_file", emptyMap())
+            val mw = middleware()
+            val emptyDelta = mock(ToolResultTextDeltaEvent::class.java)
+            `when`(emptyDelta.type).thenReturn(AgentEventType.TOOL_RESULT_TEXT_DELTA)
+            `when`(emptyDelta.toolCallId).thenReturn("t1")
+            `when`(emptyDelta.toolCallName).thenReturn("read_file")
+            `when`(emptyDelta.delta).thenReturn("")
+
+            StepVerifier.create(
+                mw.onActing(
+                    agent,
+                    ctx,
+                    actingInput(call),
+                    Function { Flux.just<AgentEvent>(emptyDelta, end("t1", "read_file", ToolResultState.SUCCESS)) },
+                ),
+            ).expectNextCount(2).verifyComplete()
+
+            assertNull(events.single().resultText)
+        }
+
+        @Test
         fun `deltas of another call never mix in`() {
             val one = ToolUseBlock("t1", "a", emptyMap())
             val two = ToolUseBlock("t2", "b", emptyMap())
