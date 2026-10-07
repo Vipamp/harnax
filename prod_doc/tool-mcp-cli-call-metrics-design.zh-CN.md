@@ -27,7 +27,7 @@
 | # | 决策 | 理由 |
 |---|---|---|
 | D1 | 唯一事件源 = 实现 `MiddlewareBase.onActing` 的中间件，装配期挂在 agent 上 | agentscope 2.0.4 的 `onActing` 收到 `record ActingInput(List<ToolUseBlock> toolCalls)`，`ToolUseBlock` 带 `getId()` / `getName()` / `getInput(): Map<String,Object>`；`ProcessLogMiddleware.kt:86` 已经在用同一个钩子。这是唯一能同时覆盖内置工具、MCP 工具与沙箱 shell 的位置 |
-| D2 | 一次工具调用一行，落库时必须是终态 | `ToolResultEndEvent` 同时带 `getToolCallId()`、`getToolCallName()`、`getState()`，按 id 关联成立；`ToolResultState.RUNNING` 表示外部执行还没回传，等终态再来。半途的行既进不了成功率也进不了耗时 |
+| D2 | 一次工具调用一行，落库时必须是终态 | `ToolResultEndEvent` 同时带 `getToolCallId()`、`getToolCallName()`、`getState()`，按 id 关联成立（`ToolUseBlock.getId()` 可空，退路见 §3）；`ToolResultState.RUNNING` 表示外部执行还没回传，等终态再来。半途的行既进不了成功率也进不了耗时 |
 | D3 | 一张明细 + 一张日聚合；默认口径读聚合，按 agent / session 的维度与单次下钻读明细 | 分表才既能删明细（体积）又答得出跨保留期的趋势。agent / session 不进聚合，它们的基数不受控 |
 | D4 | `kind` 只用装配期已知事实判定，不回查数据库 | 运行侧没有 admin 的表；一次回查把计数器变成每个工具调用一次 admin 往返 |
 | D5 | CLI 口径 = 解析 shell 工具的 `command` 参数归因，不新增 `run_cli` 工具 | 新增工具会改模型可见的工具面与每个包 `SKILL.md` 的写法，属产品级重构；shell 归因零侵入且反映真实使用 |
@@ -125,13 +125,15 @@ CREATE TABLE IF NOT EXISTS `tool_invocation_stats` (
 
 新增 `ToolInvocationMiddleware`，与 `ProcessLogMiddleware` 同包同目录：`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/provider/middleware/ToolInvocationMiddleware.kt`；挂载沿用 `agentBuilder.addMiddleware(...)`（现例 `HarnessAgentLauncher.kt:587`、`:601`）。中间件每次装配新建一个实例，与 `ProcessLogMiddleware` 的 `initial()` 教训同因（同文件 `:585-592` 的注释记录了共享实例如何把两 Sessions 的归属写串）。
 
-`onActing` 内为本次 acting 批次建一张 `toolCallId → 起点` 的表，从 `input.toolCalls` 起表（记 `name`、`input`、开始时刻），在 `next.apply(input)` 的事件流上：
+`onActing` 内为本次 acting 批次建一张起点表，键取 `toolCallId`、缺 id 时退到 `toolCallName`，从 `input.toolCalls` 起表（记 `name`、`input`、开始时刻）；同一批次算出同一个键的调用（同名的无 id 调用）在键尾加序号，另按 `name` 保存一组未终态键的先进先出队列，于是每个起点都可寻址。在 `next.apply(input)` 的事件流上：
 
 | 事件 | 动作 |
 |---|---|
-| `TOOL_RESULT_END` | 按 `toolCallId` 找起点，出 `outcome` 与 `duration_ms`，投递适配器；`toolCallName` 与起点名字不符时以起点记录的 `name` 为准并 warn |
-| 流 `onComplete` 仍有未终态 id | 补一行 `INTERRUPTED`，时长到完成时刻 |
-| 流 `onError` / `onCancel` | 同上，`error_message` 取异常文本 |
+| `TOOL_RESULT_END` | 先按 `key(toolCallId, toolCallName)` 命中未终态起点，未命中时取该 `toolCallName` 队列里最早的一个（一轮之内模型按发出的顺序收到自己的答复，FIFO 是唯一站得住的猜测，猜错的代价是时长对错了起点，不是丢一行），出 `outcome` 与 `duration_ms`，投递适配器；`toolCallName` 与起点名字不符时以起点记录的 `name` 为准并 warn。起点在投递之前从表里摘除，所以同一个 id 重复的终态帧找不到起点，不会再落第二行 |
+| 流 `onComplete` 仍有未终态 id | 补一行 `INTERRUPTED`，时长到完成时刻，`error_message` 写 `stream ended before the tool returned` |
+| 流 `onError` / `onCancel` | 同上，`error_message` 取异常文本；该调用此前已经流出的增量文本仍进 `result_excerpt`（按写入侧截断），因为一次中断最有用的信息就是它停下来之前说了什么 |
+
+无 id 的两个同名调用共享同一份增量文本缓冲——上游没给出可分辨的键，能保住的是行数，文本归并是已知让步。
 
 `ToolResultState` 映射：`SUCCESS→SUCCESS`、`ERROR→ERROR`、`DENIED→DENIED`、`INTERRUPTED→INTERRUPTED`、`RUNNING→不落库`。
 

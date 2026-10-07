@@ -96,15 +96,17 @@
 
 新增 `ToolInvocationMiddleware`，与 `ProcessLogMiddleware` 同包同目录：`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/provider/middleware/ToolInvocationMiddleware.kt`，挂载沿用 `agentBuilder.addMiddleware(...)`（`HarnessAgentLauncher.kt:587`、`:601` 那两行是同一家族）。
 
-上游形状已核过，实现时不必再猜：`ActingInput` 是 `record ActingInput(List<ToolUseBlock> toolCalls)`，`ToolUseBlock` 给 `getId()` / `getName()` / `getInput(): Map<String, Object>`；`ToolResultEndEvent` 同时带 `getToolCallId()`、`getToolCallName()` 和 `getState()`，所以按 id 关联成立且名字可作二次校验；`ToolResultState` 五个值就是 §3 映射表那五个。
+上游形状已核过，实现时不必再猜：`ActingInput` 是 `record ActingInput(List<ToolUseBlock> toolCalls)`，`ToolUseBlock` 给 `getId()` / `getName()` / `getInput(): Map<String, Object>`；`ToolResultEndEvent` 同时带 `getToolCallId()`、`getToolCallName()` 和 `getState()`，所以按 id 关联成立且名字可作二次校验（`ToolUseBlock.getId()` 上游可空，缺 id 与键冲突时的退路见下）；`ToolResultState` 五个值就是 §3 映射表那五个。
 
-`onActing` 内为本次 acting 批次建一张 `toolCallId → 起点` 的表，从 `input.toolCalls` 起表（记录 `name`、`input`、开始时刻），在 `next.apply(input)` 的事件流上：
+`onActing` 内为本次 acting 批次建一张起点表，键取 `toolCallId`、缺 id 时退到 `toolCallName`，从 `input.toolCalls` 起表（记录 `name`、`input`、开始时刻）；同一批次算出同一个键的调用在键尾加序号，另按 `name` 保存一组未终态键的先进先出队列，于是每个起点都可寻址。在 `next.apply(input)` 的事件流上：
 
 | 事件 | 动作 |
 |---|---|
-| `TOOL_RESULT_END`（带 `toolCallId`、`state`） | 按 id 找到起点，出 `outcome`、`duration_ms`，投递适配器 |
-| 流 `onComplete` 时仍有未终态 id | 补一行 `INTERRUPTED`，时长到完成时刻 |
-| 流 `onError` / `onCancel` 时同理 | 同上，`error_message` 取异常文本 |
+| `TOOL_RESULT_END`（带 `toolCallId`、`state`） | 按 `key(toolCallId, toolCallName)` 找到起点，未命中时取该名字下最早的一个；起点在投递前摘除，所以重复的终态帧不会再落第二行 |
+| 流 `onComplete` 时仍有未终态 id | 补一行 `INTERRUPTED`，时长到完成时刻，`error_message` 写 `stream ended before the tool returned` |
+| 流 `onError` / `onCancel` 时同理 | 同上，`error_message` 取异常文本；已经流出的增量文本仍进 `result_excerpt`（按写入侧截断）|
+
+无 id 的两个同名调用共享同一份增量文本缓冲——上游没给出可分辨的键，能保住的是行数，文本归并是已知让步。
 
 `ToolResultState` 映射：`SUCCESS→SUCCESS`、`ERROR→ERROR`、`DENIED→DENIED`、`INTERRUPTED→INTERRUPTED`、`RUNNING→不落库`。
 

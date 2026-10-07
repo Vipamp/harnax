@@ -1464,7 +1464,7 @@ git commit -m "feat(metrics): 工具调用事件的写入契约"
 - Modify: `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/adaptor/SkillUsageAdaptor.kt`
 - Modify: `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/SkillUsageAdaptorImpl.kt`
 - Modify: `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/client/AdminApiClient.kt:254-280`
-- Test: `harnax-agent/harnax-agent-service/src/test/kotlin/com/agnetix/harnax/agent/service/adaptor/SkillUsageAdaptorImplTest.kt`（新增用例 + 改 5 处既有桩）
+- Test: `harnax-agent/harnax-agent-service/src/test/kotlin/com/agnetix/harnax/agent/service/adaptor/SkillUsageAdaptorImplTest.kt`（新增用例 + 改 9 处既有实参 + 补两处排空断言）
 - Modify: `harnax-agent/harnax-harness-core/src/test/kotlin/com/agnetix/harnax/harness/SkillViewRecorderTest.kt:19`（`FakeAdaptor`）
 - Modify: `harnax-agent/harnax-harness-core/src/test/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncherSkillUsageTest.kt:35`（`FakeUsage`）
 
@@ -1493,6 +1493,9 @@ git commit -m "feat(metrics): 工具调用事件的写入契约"
     fun `an empty use asks Admin nothing`() {
         adaptor.reportUses("web-1", emptyList(), 1L)
 
+        // Same drain as `an empty read asks Admin nothing`, for the same reason.
+        adaptor.shutdown()
+
         verifyNoInteractions(client)
     }
 ```
@@ -1504,6 +1507,7 @@ git commit -m "feat(metrics): 工具调用事件的写入契约"
         verify(client, timeout(5_000)).reportSkillUsage("web-1", listOf(9L), 1L, "VIEW")
 ```
 
+`an empty read asks Admin nothing` 与上面新加的空批用例还得各补一行：两者都用 `verifyNoInteractions`，而 `submit` 只做入队，断言跑在 worker 之前，把 `if (skillIds.isEmpty()) return` 整行删掉两条用例照样绿（变异实测 4/4 存活）。断言前先 `adaptor.shutdown()` 把队列排空——本类 `a batch queued before shutdown is still sent` 已经是这个形状，该文件 `:81-82` 的注释也已经在说同一件事：不排空的验证「worker 抢到就跑赢、没抢到就失败」。
 - [ ] **Step 2: 跑测试确认红**
 
 ```bash
@@ -1566,7 +1570,7 @@ interface SkillUsageAdaptor {
 
 - [ ] **Step 4: 实现与客户端**
 
-`SkillUsageAdaptorImpl.kt`：把 `reportViews` 的函数体抽成私有 `submit(...)`，两个 override 各传自己的事件词，并把 `companion object` 补上两个常量。整段替换 `:45-95`：
+`SkillUsageAdaptorImpl.kt`：把 `reportViews` 的函数体抽成私有 `submit(...)`，两个 override 各传自己的事件词，并把 `companion object` 补上两个常量。整段替换 `:45-95`。类 KDoc 一并改口径：它写的是「Posts skill VIEW events」且只说 VIEW，现在两类都从这里出去；而「溢出丢弃只亏一个冷却窗口」那句只对装载成立——USE 没有冷却、一轮只用一次，丢了就没了，照实把两类写成分开的两句。
 
 ```kotlin
     override fun reportViews(
@@ -1812,10 +1816,12 @@ class ToolInvocationMiddlewareTest {
         return input
     }
 
-    private fun end(id: String, name: String, state: ToolResultState): ToolResultEndEvent {
+    private fun end(id: String?, name: String, state: ToolResultState): ToolResultEndEvent {
         val event = mock(ToolResultEndEvent::class.java)
         `when`(event.type).thenReturn(AgentEventType.TOOL_RESULT_END)
-        `when`(event.toolCallId).thenReturn(id)
+        // An id-less end event is left unstubbed rather than stubbed with null: Mockito already answers
+        // null for that getter, and that is what such an event carries.
+        if (id != null) `when`(event.toolCallId).thenReturn(id)
         `when`(event.toolCallName).thenReturn(name)
         `when`(event.state).thenReturn(state)
         return event
@@ -1980,9 +1986,16 @@ class ToolInvocationMiddlewareTest {
             val call = ToolUseBlock("t1", "now", emptyMap())
             val mw = middleware()
 
-            StepVerifier.create(mw.onActing(agent, ctx, actingInput(call), Function { Flux.just(end("t1", "now", ToolResultState.SUCCESS)) }))
-                .expectNextCount(1)
-                .verifyComplete()
+            // A repeated terminal frame for one id is the shape this pins: the accumulator is dropped as the
+            // first END is handled, so the second has nothing left to time and files nothing.
+            StepVerifier.create(
+                mw.onActing(
+                    agent,
+                    ctx,
+                    actingInput(call),
+                    Function { Flux.just(end("t1", "now", ToolResultState.SUCCESS), end("t1", "now", ToolResultState.SUCCESS)) },
+                ),
+            ).expectNextCount(2).verifyComplete()
 
             assertEquals(1, events.size)
         }
@@ -2010,6 +2023,53 @@ class ToolInvocationMiddlewareTest {
 
             // Nothing was timed for this id, so a row would carry a duration invented here rather than measured.
             assertTrue(events.isEmpty())
+        }
+
+        @Test
+        fun `two nameless calls of one name file two rows`() {
+            // No id gives nothing to tell the two apart, but the count is still owed to both: the second
+            // start must not erase the first accumulator, and the two ENDs are answered in issue order.
+            val mw = middleware()
+
+            StepVerifier.create(
+                mw.onActing(
+                    agent,
+                    ctx,
+                    actingInput(ToolUseBlock(null, "now", emptyMap()), ToolUseBlock(null, "now", emptyMap())),
+                    Function { Flux.just(end(null, "now", ToolResultState.SUCCESS), end(null, "now", ToolResultState.SUCCESS)) },
+                ),
+            ).expectNextCount(2).verifyComplete()
+
+            assertEquals(2, events.size)
+        }
+
+        @Test
+        fun `a nameless start matched by an id-bearing end still files one row`() {
+            val mw = middleware()
+
+            StepVerifier.create(
+                mw.onActing(agent, ctx, actingInput(ToolUseBlock(null, "now", emptyMap())), Function { Flux.just(end("t1", "now", ToolResultState.SUCCESS)) }),
+            ).expectNextCount(1).verifyComplete()
+
+            // The keys never match, so only a fallback by name files this call at all.
+            assertEquals(1, events.size)
+        }
+
+        @Test
+        fun `an interrupted call keeps the output it had already streamed`() {
+            val call = ToolUseBlock("t1", "now", emptyMap())
+            val mw = middleware()
+
+            StepVerifier.create(
+                mw.onActing(agent, ctx, actingInput(call), Function {
+                    Flux.just(delta("t1", "now", "half an answer")).concatWith(Flux.error(RuntimeException("sandbox died")))
+                }),
+            ).expectNextCount(1).verifyError()
+
+            val event = events.single()
+            assertEquals(ToolInvocationLog.OUTCOME_INTERRUPTED, event.outcome)
+            assertEquals("half an answer", event.resultText)
+            assertTrue(event.errorMessage!!.contains("sandbox died"))
         }
     }
 
@@ -2145,6 +2205,7 @@ import reactor.core.publisher.Flux
 import tools.jackson.databind.ObjectMapper
 import tools.jackson.module.kotlin.jacksonObjectMapper
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.atomic.AtomicReference
 import java.util.function.Function
 
@@ -2192,17 +2253,33 @@ class ToolInvocationMiddleware(
     ): Flux<AgentEvent> {
         val started = ConcurrentHashMap<String, Start>()
         val results = ConcurrentHashMap<String, StringBuffer>()
+        val openByName = ConcurrentHashMap<String, ConcurrentLinkedDeque<String>>()
         val failure = AtomicReference<Throwable?>()
+        var suffix = 0
         input.toolCalls.forEach { call ->
-            started[key(call.id, call.name)] = Start(call.name, call.input ?: emptyMap(), System.currentTimeMillis())
+            // One turn can ask twice for the same tool, and `ToolUseBlock.id` is nullable upstream, so two
+            // calls can compute the same key. A plain put would drop the first accumulator and that call
+            // would never be counted, so a colliding key gets a private suffix and every open key stays
+            // reachable by name in issue order. That queue is also how an end event finds its start when
+            // the id is present on one side only.
+            val base = key(call.id, call.name)
+            var k = base
+            while (started.putIfAbsent(k, Start(call.name, call.input ?: emptyMap(), System.currentTimeMillis())) != null) {
+                k = "$base#${++suffix}"
+            }
+            openByName.computeIfAbsent(call.name) { ConcurrentLinkedDeque() }.addLast(k)
         }
         return next.apply(input)
-            .doOnNext { event -> onEvent(event, started, results) }
+            .doOnNext { event -> onEvent(event, started, results, openByName) }
             .doOnError { error -> failure.set(error) }
-            .doFinally { emitUnresolved(started, failure.get()) }
+            .doFinally { emitUnresolved(started, results, openByName, failure.get()) }
     }
 
-    /** A call is matched by its id; an id-less block falls back to its name so a single call is not lost. */
+    /**
+     * The accumulator key: the call's id when the runtime gave one, otherwise its name. The name fallback
+     * is unique only while a single call of that name is open, which is why `onActing` suffixes a collision
+     * and `matchKey` falls back to issue order.
+     */
     private fun key(
         id: String?,
         name: String?,
@@ -2212,6 +2289,7 @@ class ToolInvocationMiddleware(
         event: AgentEvent,
         started: ConcurrentHashMap<String, Start>,
         results: ConcurrentHashMap<String, StringBuffer>,
+        openByName: ConcurrentHashMap<String, ConcurrentLinkedDeque<String>>,
     ) {
         runCatching {
             when (event.type) {
@@ -2221,7 +2299,7 @@ class ToolInvocationMiddleware(
                     if (!text.isNullOrEmpty()) results.computeIfAbsent(key(delta.toolCallId, delta.toolCallName)) { StringBuffer() }.append(text)
                 }
 
-                AgentEventType.TOOL_RESULT_END -> resolve(event as ToolResultEndEvent, started, results)
+                AgentEventType.TOOL_RESULT_END -> resolve(event as ToolResultEndEvent, started, results, openByName)
                 else -> {}
             }
         }.exceptionOrNull()?.let {
@@ -2233,9 +2311,11 @@ class ToolInvocationMiddleware(
         end: ToolResultEndEvent,
         started: ConcurrentHashMap<String, Start>,
         results: ConcurrentHashMap<String, StringBuffer>,
+        openByName: ConcurrentHashMap<String, ConcurrentLinkedDeque<String>>,
     ) {
         val key = key(end.toolCallId, end.toolCallName)
-        val start = started[key] ?: return
+        val startKey = matchKey(key, end.toolCallName, started, openByName) ?: return
+        val start = started[startKey] ?: return
         val outcome = when (end.state) {
             ToolResultState.SUCCESS -> ToolInvocationLog.OUTCOME_SUCCESS
             ToolResultState.ERROR -> ToolInvocationLog.OUTCOME_ERROR
@@ -2245,12 +2325,14 @@ class ToolInvocationMiddleware(
             // follows can still time it.
             else -> return
         }
-        started.remove(key)
-        val resultText = results.remove(key)?.toString()
+        started.remove(startKey)
+        // Deltas of a call that never carried an id accumulate under its name, so two same-name calls that
+        // both lack an id share one buffer. Their output is not separable upstream; the row count still is.
+        val resultText = results.remove(startKey)?.toString()
         if (end.toolCallName != null && end.toolCallName != start.name) {
             log.warn(
                 "Tool call {} in session {} ended under name '{}' but was recorded as '{}'",
-                key,
+                startKey,
                 sessionId,
                 end.toolCallName,
                 start.name,
@@ -2258,6 +2340,24 @@ class ToolInvocationMiddleware(
         }
         emit(start, start.name, outcome, resultText, failureText(outcome, resultText), System.currentTimeMillis())
         if (outcome == ToolInvocationLog.OUTCOME_SUCCESS) reportSkillUse(start)
+    }
+
+    /**
+     * Which accumulator this end event owns: the exact key when it is still open, otherwise the oldest call
+     * still open under this tool name. A model gets its own calls answered in the order it asked for them,
+     * so FIFO is the only defensible guess, and a wrong guess costs a duration measured against the wrong
+     * start rather than a lost row.
+     */
+    private fun matchKey(
+        key: String,
+        name: String?,
+        started: ConcurrentHashMap<String, Start>,
+        openByName: ConcurrentHashMap<String, ConcurrentLinkedDeque<String>>,
+    ): String? {
+        val open = name?.let { openByName[it] }
+        val matched = if (started.containsKey(key)) key else open?.pollFirst() ?: return null
+        open?.remove(matched)
+        return matched
     }
 
     /** Non-success rows carry a reason: the tool's own output is the reason when it produced one. */
@@ -2268,12 +2368,18 @@ class ToolInvocationMiddleware(
 
     private fun emitUnresolved(
         started: ConcurrentHashMap<String, Start>,
+        results: ConcurrentHashMap<String, StringBuffer>,
+        openByName: ConcurrentHashMap<String, ConcurrentLinkedDeque<String>>,
         failure: Throwable?,
     ) {
         started.keys.toList().forEach { key ->
             val start = started.remove(key) ?: return@forEach
+            openByName[start.name]?.remove(key)
+            // Whatever the tool streamed before the stream died is the most readable part of the row, so it
+            // is filed rather than dropped: the reason goes to `errorMessage`, the partial output to
+            // `resultText`, and the writer truncates it like any other.
             val text = failure?.let { "${it.javaClass.simpleName}: ${it.message ?: ""}" } ?: "stream ended before the tool returned"
-            emit(start, start.name, ToolInvocationLog.OUTCOME_INTERRUPTED, null, text, System.currentTimeMillis())
+            emit(start, start.name, ToolInvocationLog.OUTCOME_INTERRUPTED, results.remove(key)?.toString(), text, System.currentTimeMillis())
         }
     }
 
@@ -2344,9 +2450,9 @@ class ToolInvocationMiddleware(
 ```bash
 $MVN -q spotless:apply -pl harnax-agent/harnax-harness-core
 $MVN -o -am test -pl harnax-agent/harnax-harness-core -Dtest=ToolInvocationMiddlewareTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t6.log 2>&1; echo EXIT=$?
-grep -E "Tests run|BUILD" /tmp/t6.log | tail -3
+grep -E "ToolInvocationMiddlewareTest|BUILD" /tmp/t6.log | tail -6
 ```
-预期：`Tests run: 18, Failures: 0, Errors: 0`。若 `an adaptor that throws does not fail the turn` 红了，说明 `runCatching` 没盖住投递点——不许改成「让适配器自己吞」，中间件这一层的契约就是不把任何记录故障带上流。
+预期：`ToolInvocationMiddlewareTest` 那一行 `Tests run: 21, Failures: 0, Errors: 0`。以该步文件里的 `@Test` 数为准，改了用例就同时改这个数；`-am` 会带上游模块进 reactor，它们在 `-Dtest` 点名下跑 0 个，别把 reactor 汇总行当成本任务的数。若 `an adaptor that throws does not fail the turn` 红了，说明 `runCatching` 没盖住投递点——不许改成「让适配器自己吞」，中间件这一层的契约就是不把任何记录故障带上流。
 
 - [ ] **Step 5: 提交**
 
