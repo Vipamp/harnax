@@ -51,10 +51,11 @@ class ToolRegistry {
     fun getToolBox(beanName: String): ToolBox? = registry[beanName]
 
     /**
-     * Create a new per-session instance of the ToolBox registered under [beanName].
+     * Create a fresh instance of the ToolBox registered under [beanName].
      *
-     * This avoids the singleton ToolBox being shared across concurrent sessions.
-     * The caller is responsible for calling init() on the returned instance.
+     * A `ToolBox` carries no per-session state: which session, agent and tenant a call belongs to is
+     * decided by `ToolInvocationMiddleware`, which the assembly mounts with this run's attribution.
+     * So nothing has to be handed to the instance after it is created.
      *
      * @return a fresh ToolBox instance, or null if beanName is not registered
      */

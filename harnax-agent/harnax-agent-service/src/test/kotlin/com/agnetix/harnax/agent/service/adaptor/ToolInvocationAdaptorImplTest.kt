@@ -35,13 +35,14 @@ class ToolInvocationAdaptorImplTest {
     private fun adaptor(
         queueCapacity: Int = 512,
         batchSize: Int = 64,
+        flushIntervalMs: Long = 200L,
         capturePayload: Boolean = true,
         captureMaxChars: Int = 2000,
     ) = ToolInvocationAdaptorImpl(
         toolInvocationLogMapper = mapper,
         queueCapacity = queueCapacity,
         batchSize = batchSize,
-        flushIntervalMs = 200L,
+        flushIntervalMs = flushIntervalMs,
         capturePayload = capturePayload,
         captureMaxChars = captureMaxChars,
     )
@@ -210,6 +211,26 @@ class ToolInvocationAdaptorImplTest {
             // error_message is varchar(512): letting the payload limit decide it would fail the whole insert.
             assertTrue(capturedRows().single().errorMessage!!.length <= 512)
         }
+
+        @Test
+        fun `a negative capture limit is clamped so the row it would have lost is still written`() {
+            // `text.length <= -1` is never true, so `take(-1)` throws inside `toRow()` and the drain's catch
+            // swallows it: the batch is discarded while the caller is still told how many events it held. The
+            // falsifier is therefore the statement the mapper never saw, not the return count.
+            val writer = adaptor(captureMaxChars = -1)
+            writer.emit(event(argsJson = "{\"to\":\"a@b.c\"}", resultText = "sent"))
+
+            writer.drainAndFlush()
+
+            val row = capturedRows().single()
+            // Clamped to the band's floor of 1 character, and the marker still rides along: the body is
+            // shortened, not silently dropped, so a reader can tell a limit was hit.
+            assertEquals("{…(truncated)", row.argsJson)
+            assertEquals("s…(truncated)", row.resultExcerpt)
+            // The measurement never depended on the limit and must not lose the row either.
+            assertEquals(250L, row.durationMs)
+            assertEquals("send_email", row.toolName)
+        }
     }
 
     @Nested
@@ -261,6 +282,40 @@ class ToolInvocationAdaptorImplTest {
             assertTrue(writer.droppedCount >= 2)
             assertEquals(1, writer.drainAndFlush())
             assertEquals("first", capturedRows().single().toolName)
+        }
+
+        @Test
+        fun `a queue capacity of zero is clamped to one event that still gets queued`() {
+            // `ArrayBlockingQueue` rejects a capacity below 1 with its own IAE, so an env that lost a digit
+            // would stop agent-service from starting over a counter. Clamped, the queue is one deep, and that
+            // is asserted on what the queue does: the first event is accepted and reaches the mapper, the next
+            // lands on the counted-drop path instead of on an exception or a silent block.
+            val writer = adaptor(queueCapacity = 0)
+            writer.emit(event(toolName = "first"))
+            writer.emit(event(toolName = "second"))
+
+            assertEquals(1, writer.drainAndFlush())
+            assertEquals(1L, writer.droppedCount)
+            assertEquals("first", capturedRows().single().toolName)
+        }
+
+        @Test
+        fun `a negative batch size is clamped to a drain that still takes a row`() {
+            // `ArrayList(-1)` throws, and that allocation sits outside `pump`'s try block: the worker dies on
+            // its first pass and every event then queues up behind a dead thread until the capacity drops them.
+            // Clamped to the band's floor of 1, progress is what the drain reports: one row per pass, both
+            // events written, and a third pass that finds the queue empty rather than throwing.
+            val writer = adaptor(batchSize = -1)
+            writer.emit(event(toolName = "first"))
+            writer.emit(event(toolName = "second"))
+
+            assertEquals(1, writer.drainAndFlush())
+            assertEquals(1, writer.drainAndFlush())
+            assertEquals(0, writer.drainAndFlush())
+
+            // Two statements of one row each: the floor is a batch size of 1, and a drain that silently took
+            // nothing would leave this mock untouched while still returning a plausible number.
+            verify(mapper, times(2)).batchInsert(anyList())
         }
 
         @Test
@@ -361,6 +416,27 @@ class ToolInvocationAdaptorImplTest {
 
             assertFalse(writer.shouldFlush(size = 0, timedOut = true))
             assertFalse(writer.shouldFlush(size = 0, timedOut = false))
+        }
+
+        @Test
+        fun `a flush interval of zero is clamped so an idle pass blocks instead of spinning`() {
+            // A timeout of 0 makes `queue.poll` return at once, so the pass finds an empty batch, commits
+            // nothing and loops again: a daemon thread burning a core for the life of the process, invisible
+            // because nothing is ever written wrong. The number worth pinning is the one handed to the poll.
+            val writer = adaptor(flushIntervalMs = 0)
+
+            // 10 ms is the band's floor, asserted as a literal so widening the band has to be a decision.
+            assertEquals(10L, writer.idleWaitMillis)
+
+            val startedNanos = System.nanoTime()
+            assertNull(writer.awaitFirstEvent())
+            val waitedMillis = (System.nanoTime() - startedNanos) / 1_000_000L
+            // One-sided on purpose: a pass that waits its full interval can only read slower, never faster, so
+            // half the floor is a bound no loaded machine can miss, while an instant return cannot hide.
+            assertTrue(waitedMillis >= 5L, "idle pass returned after ${waitedMillis}ms — it spun instead of blocking")
+
+            // And the spin is not throughput: with nothing queued, no commit reason holds.
+            assertFalse(writer.shouldFlush(size = 0, timedOut = true))
         }
     }
 }

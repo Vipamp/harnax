@@ -23,11 +23,26 @@ import java.time.format.DateTimeFormatter
 class ToolInvocationRollupService(
     private val toolInvocationLogMapper: ToolInvocationLogMapper,
     private val toolInvocationStatsMapper: ToolInvocationStatsMapper,
-    @Value("\${harnax.metrics.retention-days:90}") private val retentionDays: Long,
+    @Value("\${harnax.metrics.retention-days:90}") retentionDays: Long,
     @Value("\${harnax.metrics.rollup-enabled:true}") private val rollupEnabled: Boolean,
 ) {
 
     private val log = LoggerFactory.getLogger(ToolInvocationRollupService::class.java)
+
+    /**
+     * The retention window in days, clamped into [MIN_RETENTION_DAYS]..[MAX_RETENTION_DAYS] here rather than
+     * refused at startup, for the same two reasons the writer gives on its own knobs: refusing to start is the
+     * wrong trade for a tuning value this service reads once, and an out-of-band window fails silently rather
+     * than loudly — with `retention-days: 0` the cutoff is the running instant, so the next :05 releases every
+     * detail row whose day has been folded, which is every row in the table, while the aggregate keeps
+     * answering by tool and the agent and session dimensions quietly go empty. A window of zero is the one
+     * misconfiguration here that destroys data rather than merely stopping the count.
+     *
+     * The ceiling is not a column width but a horizon: the aggregate is permanent and the detail rows only
+     * extend the answerable window by tool, so ten years of single-call rows is already past anything a reader
+     * can ask, and keeping more would only grow the table the sweep exists to bound.
+     */
+    private val retentionWindowDays: Long = clampToWindow(retentionDays)
 
     /** Hourly at :05 so the run does not collide with anything that writes the top of the hour. */
     @Scheduled(cron = "0 5 * * * ?")
@@ -75,14 +90,39 @@ class ToolInvocationRollupService(
             rolled++
         }
 
-        val before = LocalDateTime.now().minusDays(retentionDays).format(TIMESTAMP)
+        val before = LocalDateTime.now().minusDays(retentionWindowDays).format(TIMESTAMP)
         val deleted = toolInvocationLogMapper.deleteRolledOut(before)
         log.info("Tool invocation rollup: {} day(s) recomputed, {} detail row(s) older than {} released", rolled, deleted, before)
         return rolled
     }
 
+    /**
+     * Move [retentionDays] into the legal window and log the move: a clamp that said nothing would leave the
+     * operator reading an env value that is not the window in effect, which is the same blindness the
+     * out-of-band value caused, only quieter.
+     */
+    private fun clampToWindow(retentionDays: Long): Long {
+        val clamped = retentionDays.coerceIn(MIN_RETENTION_DAYS, MAX_RETENTION_DAYS)
+        if (clamped != retentionDays) {
+            log.warn(
+                "harnax.metrics.retention-days is set to {}, outside the legal band {}..{}; using {} - detail rows older than that are still released only once their day has been folded",
+                retentionDays,
+                MIN_RETENTION_DAYS,
+                MAX_RETENTION_DAYS,
+                clamped,
+            )
+        }
+        return clamped
+    }
+
     companion object {
         private val TIMESTAMP: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+
+        /** A window of 0 would make the sweep's cutoff the running instant and release the whole table. */
+        private const val MIN_RETENTION_DAYS = 1L
+
+        /** Ten years of detail rows: beyond that the permanent aggregate is the only honest answer anyway. */
+        private const val MAX_RETENTION_DAYS = 3650L
 
         /**
          * Unbounded on purpose: the detail table is already bounded by the retention window, so scanning all
