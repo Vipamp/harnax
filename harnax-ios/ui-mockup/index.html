@@ -307,7 +307,7 @@ svg.line{position:absolute;inset:10px 10px auto 10px;width:calc(100% - 20px);hei
       </div>
       <div class="tabbar"><i class="on"><b>◠</b>对话</i><i><b>◎</b>智能体</i><i><b>▤</b>上下文</i><i><b>⚙</b>系统</i><i><b>☺</b>我的</i></div>
     </div></div>
-    <figcaption><b>A2 对话列表（tab 1）</b>13 个列表页共用一套游标式分页封装（内部仍是 <code>pageNum/pageSize</code>）。状态徽标取自会话真实状态，不自行推断。</figcaption>
+    <figcaption><b>A2 对话列表（tab 1）</b>15 个分页列表共用一套游标式分页封装（内部仍是 <code>pageNum/pageSize</code>）。状态徽标取自会话真实状态，不自行推断。</figcaption>
   </figure>
 
   <figure class="unit">
@@ -737,7 +737,7 @@ svg.line{position:absolute;inset:10px 10px auto 10px;width:calc(100% - 20px);hei
       </div>
       <div class="home"></div>
     </div></div>
-    <figcaption><b>E2 渠道条件字段表单（XL）</b>矩阵按 Web 复刻：飞书 webhook 才多出 <code>token</code>/<code>encodingAesKey</code>/<code>callbackUrl</code>，微信隐藏全部凭证，<code>configJson</code> 掩码回传＝不修改；HTTP 灰显不可提交（O7）；模式选择器在微信隐藏、编辑态对非微信类型显示——完全按 Web 矩阵复刻。三开关与类型无关，因此放通用段而不是条件段（O6：v1 就做，后端同步把三列补进渠道 DTO）。</figcaption>
+    <figcaption><b>E2 渠道条件字段表单（XL）</b>矩阵按 Web 复刻：飞书 webhook 才多出 <code>token</code>/<code>encodingAesKey</code>/<code>callbackUrl</code>，微信隐藏全部凭证，<code>configJson</code> 掩码回传＝不修改；HTTP 灰显不可提交（O7）；模式选择器在微信隐藏、编辑态对非微信类型显示——完全按 Web 矩阵复刻。三开关与类型无关，因此放通用段而不是条件段（O6 已落地：渠道 DTO 已带三列，Web 表单没有入口）。</figcaption>
   </figure>
 
   <figure class="unit">
