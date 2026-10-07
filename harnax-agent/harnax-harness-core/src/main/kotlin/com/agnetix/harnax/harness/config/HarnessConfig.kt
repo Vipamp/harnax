@@ -49,10 +49,13 @@ data class HarnessConfig(
  *   store now compares-and-swaps; on a deployment whose store cannot, `throttled` silently runs
  *   nothing, so it has to be switchable by configuration alone.
  * @param flushMinGap window of `throttled`: the first flush in a conversation runs immediately and
- *   the window only holds later ones back
+ *   the window only holds later ones back. `0` is accepted and means no window at all — every turn
+ *   flushes.
  * @param consolidationMinGap window shared by the two passes that rewrite a whole `MEMORY.md` — the
  *   long-layer curation upstream runs and the promotion that merges a conversation's layer into the
  *   owner's. One knob for both because both are the same kind of background merge of one bucket.
+ *   A negative value is refused by the upstream builder; `0` is accepted and means every turn
+ *   attempts a merge, i.e. one extra model call per turn on top of the turn's own.
  * @param toolsEnabled advertise `memory_search` / `memory_get` / `memory_save` / `session_search` to
  *   the model. With `enabled` off these four are advertised against a memory domain that is never
  *   read or written, so they come off with it.
