@@ -921,7 +921,7 @@ class InternalApiController(
             agentId = agentId,
             // The holder's own tenant (agent row, or the team row for a lead) — same rule as the env
             // bindings below: taken from the database, never from the request, which carries none. The
-            // runtime stamps it onto `token_stats` / `tool_call_log` / `process_log` so consumption
+            // runtime stamps it onto `token_stats` / `process_log` so consumption
             // lands in the workspace that paid for it.
             tenantId = agentTenantId,
             agentName = agentName,

@@ -18,7 +18,6 @@ import com.agnetix.harnax.harness.sandbox.VirtualSandbox
 import com.agnetix.harnax.harness.team.TeamOrchestrator
 import com.agnetix.harnax.harness.team.TeamRuntimeSpec
 import com.agnetix.harnax.tools.sdk.UserIdentifier
-import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import io.agentscope.core.skill.AgentSkill
 import io.agentscope.core.state.AgentStateStore
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -71,7 +70,6 @@ class HarnessAgentLauncherLeadSkillTest {
         skillAdaptor = skillAdaptor,
         tokenStatAdaptor = mock(TokenStatAdaptor::class.java),
         processLogAdaptor = mock(ProcessLogAdaptor::class.java),
-        toolCallLogAdaptor = mock(ToolCallLogAdaptor::class.java),
         planNoteAdaptor = mock(PlanNoteAdaptor::class.java),
         workspaceRoot = Path.of(System.getProperty("java.io.tmpdir")),
     )

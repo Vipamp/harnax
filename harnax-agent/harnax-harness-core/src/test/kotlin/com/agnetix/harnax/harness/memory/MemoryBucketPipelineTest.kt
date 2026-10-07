@@ -16,7 +16,6 @@ import com.agnetix.harnax.harness.config.Memory
 import com.agnetix.harnax.harness.config.MinioConfig
 import com.agnetix.harnax.harness.config.SandboxConfig
 import com.agnetix.harnax.tools.sdk.UserIdentifier
-import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import io.agentscope.core.agent.RuntimeContext
 import io.agentscope.core.message.ContentBlock
 import io.agentscope.core.message.Msg
@@ -123,7 +122,6 @@ class MemoryBucketPipelineTest {
             skillAdaptor = mock(SkillAdaptor::class.java),
             tokenStatAdaptor = mock(TokenStatAdaptor::class.java),
             processLogAdaptor = mock(ProcessLogAdaptor::class.java),
-            toolCallLogAdaptor = mock(ToolCallLogAdaptor::class.java),
             planNoteAdaptor = mock(PlanNoteAdaptor::class.java),
             workspaceRoot = workspace,
             harnessConfig = HarnessConfig(

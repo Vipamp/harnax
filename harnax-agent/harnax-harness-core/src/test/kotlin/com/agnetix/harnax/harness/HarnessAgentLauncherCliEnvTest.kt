@@ -12,7 +12,6 @@ import com.agnetix.harnax.agent.adaptor.SkillAdaptor
 import com.agnetix.harnax.agent.adaptor.TokenStatAdaptor
 import com.agnetix.harnax.harness.config.HarnessConfig
 import com.agnetix.harnax.harness.config.SandboxConfig
-import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import io.agentscope.core.state.AgentStateStore
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -41,7 +40,6 @@ class HarnessAgentLauncherCliEnvTest {
         skillAdaptor = mock(SkillAdaptor::class.java),
         tokenStatAdaptor = mock(TokenStatAdaptor::class.java),
         processLogAdaptor = mock(ProcessLogAdaptor::class.java),
-        toolCallLogAdaptor = mock(ToolCallLogAdaptor::class.java),
         planNoteAdaptor = mock(PlanNoteAdaptor::class.java),
         workspaceRoot = Path.of(System.getProperty("java.io.tmpdir")),
         harnessConfig = HarnessConfig(

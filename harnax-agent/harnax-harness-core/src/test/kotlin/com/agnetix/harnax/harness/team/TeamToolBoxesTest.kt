@@ -1,9 +1,5 @@
 package com.agnetix.harnax.harness.team
 
-import com.agnetix.harnax.tools.sdk.SessionMetaContext
-import com.agnetix.harnax.tools.sdk.ToolBox
-import com.agnetix.harnax.tools.sdk.UserIdentifier
-import com.agnetix.harnax.tools.sdk.adaptor.ToolCallInfo
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Nested
@@ -26,20 +22,9 @@ class TeamToolBoxesTest {
 
     private val orchestrator = mock<TeamOrchestrator>()
     private val delegation = mock<TeamChildRun>()
-    private val leadCalls = mutableListOf<ToolCallInfo>()
-    private val memberCalls = mutableListOf<ToolCallInfo>()
 
-    private val lead = TeamLeadToolBox(orchestrator).wiredInto(leadCalls)
-    private val member = TeamMemberToolBox(orchestrator, memberAgentId = 2L).wiredInto(memberCalls)
-
-    /** The framework initializes every toolbox it registers; a refusal has to be logged like any result. */
-    private fun <T : ToolBox> T.wiredInto(emitted: MutableList<ToolCallInfo>): T = also {
-        init(
-            { emitted += it },
-            SessionMetaContext(agentId = 1L, sessionId = "web-root"),
-            UserIdentifier(userId = 9L),
-        )
-    }
+    private val lead = TeamLeadToolBox(orchestrator)
+    private val member = TeamMemberToolBox(orchestrator, memberAgentId = 2L)
 
     @Nested
     inner class Lead {
@@ -104,15 +89,6 @@ class TeamToolBoxesTest {
             whenever(orchestrator.describeArtifacts()).thenReturn("- fileId=f-1 report.csv")
 
             assertTrue(lead.teamArtifacts().contains("fileId=f-1"))
-        }
-
-        @Test
-        fun `a refusal is logged as a tool call like any other result`() {
-            lead.teamDelegate("not-an-id", "analyze", null)
-
-            // The log key is the Kotlin method, as ToolBox takes it off the stack; the model sees it as team_delegate.
-            assertEquals(listOf("team-lead-tool-box::teamDelegate"), leadCalls.map { it.toolName })
-            assertTrue(leadCalls.single().success)
         }
     }
 

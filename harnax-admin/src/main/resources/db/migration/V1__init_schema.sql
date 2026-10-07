@@ -812,29 +812,6 @@ CREATE TABLE IF NOT EXISTS `tool_invocation_stats` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
-CREATE TABLE IF NOT EXISTS `tool_call_log` (
-  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Log ID',
-  `agent_id` bigint DEFAULT NULL COMMENT 'Agent ID',
-  `session_id` varchar(255) DEFAULT NULL COMMENT 'Session ID',
-  `tool_name` varchar(255) DEFAULT NULL,
-  `args` text COMMENT 'Tool arguments (JSON format)',
-  `result` text,
-  `success` tinyint(1) DEFAULT '1' COMMENT 'Execution result (1: Success, 0: Failed)',
-  `start_time` datetime DEFAULT NULL,
-  `end_time` datetime DEFAULT NULL,
-  `duration` bigint DEFAULT '0',
-  `ts` datetime DEFAULT NULL,
-  `tenant_id` bigint DEFAULT NULL COMMENT 'Tenant ID',
-  PRIMARY KEY (`id`),
-  KEY `idx_agent_id` (`agent_id`),
-  KEY `idx_session_id` (`session_id`),
-  KEY `idx_tool_name` (`tool_name`),
-  KEY `idx_ts` (`ts`),
-  KEY `idx_tenant_ts` (`tenant_id`,`ts`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Tool Call Log table';
-/*!40101 SET character_set_client = @saved_cs_client */;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE IF NOT EXISTS `user_tenant` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Relationship ID',
   `user_id` bigint NOT NULL COMMENT 'User ID',

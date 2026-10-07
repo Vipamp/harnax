@@ -51,10 +51,8 @@ import com.agnetix.harnax.harness.team.TeamOrchestrator
 import com.agnetix.harnax.harness.team.TeamRole
 import com.agnetix.harnax.harness.team.TeamSessions
 import com.agnetix.harnax.harness.team.leadOrchestrationPrompt
-import com.agnetix.harnax.tools.sdk.SessionMetaContext
 import com.agnetix.harnax.tools.sdk.ToolMeta
 import com.agnetix.harnax.tools.sdk.UserIdentifier
-import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import com.agnetix.harnax.tools.sdk.adaptor.ToolConfigAdaptor
 import com.agnetix.harnax.tools.sdk.adaptor.ToolInvocationAdaptor
 import com.agnetix.harnax.tools.sdk.registry.ToolRegistry
@@ -102,7 +100,6 @@ import java.util.UUID
  * may author skills, whatever its own grant says
  * @param tokenStatAdaptor adaptor for token stat persistence
  * @param processLogAdaptor adaptor for process logging
- * @param toolCallLogAdaptor adaptor for tool call logging (optional)
  * @param planNoteAdaptor adaptor for plan note persistence
  * @param workspaceRoot local workspace root directory
  * @param harnessConfig harness runtime configuration
@@ -117,7 +114,6 @@ class HarnessAgentLauncher(
     val skillAdaptor: SkillAdaptor,
     val tokenStatAdaptor: TokenStatAdaptor,
     val processLogAdaptor: ProcessLogAdaptor,
-    val toolCallLogAdaptor: ToolCallLogAdaptor,
     val planNoteAdaptor: PlanNoteAdaptor,
     val workspaceRoot: Path,
     val harnessConfig: HarnessConfig = HarnessConfig(),
@@ -420,11 +416,6 @@ class HarnessAgentLauncher(
                     val resolvedTool: Any? = if (beanName.isNotEmpty() && beanName !in addedToolBoxBeans) {
                         val toolBox = toolRegistry?.createToolBoxInstance(beanName)
                         if (toolBox != null) {
-                            toolBox.init(
-                                toolCallLogAdaptor,
-                                SessionMetaContext(agentSpec.attributableAgentId, sessionId, agentSpec.tenantId),
-                                userIdentifier,
-                            )
                             agentBuilder.addTool(toolBox)
                             addedToolBoxBeans.add(beanName)
                         }
@@ -590,20 +581,15 @@ class HarnessAgentLauncher(
         // ----- Team tools -----
         // Registered after the tool sweep, so nothing on the ordinary path removes them: that sweep only
         // walks ToolBoxes known to the registry, and these are built here.
-        // One context for both roles: what a box logs is this run's attribution, and the spec it came
-        // from already carries the run's own tenant.
-        val teamSessionMeta = SessionMetaContext(agentSpec.attributableAgentId, sessionId, agentSpec.tenantId)
         val teamToolNames: Set<String> = when (teamRole) {
             is TeamRole.Lead -> {
                 val toolBox = TeamLeadToolBox(teamRole.orchestrator)
-                toolBox.init(toolCallLogAdaptor, teamSessionMeta, userIdentifier)
                 agentBuilder.addTool(toolBox)
                 TeamLeadToolBox.TOOL_NAMES
             }
 
             is TeamRole.Member -> {
                 val toolBox = TeamMemberToolBox(teamRole.orchestrator, teamRole.member.memberAgentId)
-                toolBox.init(toolCallLogAdaptor, teamSessionMeta, userIdentifier)
                 agentBuilder.addTool(toolBox)
                 TeamMemberToolBox.TOOL_NAMES
             }
@@ -1224,7 +1210,6 @@ class HarnessAgentLauncher(
             tokenStatAdaptor: TokenStatAdaptor,
             sessionConfig: SessionConfig?,
             processLogAdaptor: ProcessLogAdaptor,
-            toolCallLogAdaptor: ToolCallLogAdaptor,
             planNoteAdaptor: PlanNoteAdaptor,
             workspaceRoot: Path = Files.createTempDirectory("harness-workspace"),
             harnessConfig: HarnessConfig = HarnessConfig(),
@@ -1296,7 +1281,6 @@ class HarnessAgentLauncher(
                 skillAdaptor = skillAdaptor,
                 tokenStatAdaptor = tokenStatAdaptor,
                 processLogAdaptor = processLogAdaptor,
-                toolCallLogAdaptor = toolCallLogAdaptor,
                 planNoteAdaptor = planNoteAdaptor,
                 workspaceRoot = workspaceRoot,
                 harnessConfig = harnessConfig,

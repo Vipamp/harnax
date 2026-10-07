@@ -21,7 +21,7 @@ package com.agnetix.harnax.tools.sdk
  *     ],
  *     needConfirm = true,
  * )
- * fun sendEmail(to: String, subject: String, body: String): String = execute { ... }
+ * fun sendEmail(to: String, subject: String, body: String): String { ... }
  * ```
  */
 @Target(AnnotationTarget.FUNCTION)

@@ -61,7 +61,7 @@ class EmailToolBox : ToolBox() {
         @ToolParam(name = "is_html", description = "Whether the body is HTML format (default: true)", required = false)
         isHtml: Boolean? = true,
         envContext: ToolEnvContext,
-    ): String = execute("to" to to, "subject" to subject) {
+    ): String {
         val log = LoggerFactory.getLogger(EmailToolBox::class.java)
         log.info("[env-debug] sendEmail called, envContext bindings keys: {}", envContext.bindings.keys)
 
@@ -120,7 +120,7 @@ class EmailToolBox : ToolBox() {
         }
 
         Transport.send(message)
-        "Email sent successfully to $to"
+        return "Email sent successfully to $to"
     }
 
     override fun name(): String = NAME

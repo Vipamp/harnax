@@ -12,7 +12,6 @@ import com.agnetix.harnax.agent.adaptor.TokenStatAdaptor
 import com.agnetix.harnax.agent.adaptor.model.OpenAIChatModelConfig
 import com.agnetix.harnax.harness.config.HarnessConfig
 import com.agnetix.harnax.harness.minio.ProcessLocalCoordinationStore
-import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import io.agentscope.core.state.AgentStateStore
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem
@@ -43,7 +42,6 @@ class HarnessAgentLauncherCoordinationTest {
         skillAdaptor = mock(SkillAdaptor::class.java),
         tokenStatAdaptor = mock(TokenStatAdaptor::class.java),
         processLogAdaptor = mock(ProcessLogAdaptor::class.java),
-        toolCallLogAdaptor = mock(ToolCallLogAdaptor::class.java),
         planNoteAdaptor = mock(PlanNoteAdaptor::class.java),
         workspaceRoot = workspaceRoot,
         harnessConfig = HarnessConfig(),

@@ -24,7 +24,6 @@ import com.agnetix.harnax.harness.output.OutputFileStore
 import com.agnetix.harnax.harness.team.MinioTeamArtifactGateway
 import com.agnetix.harnax.harness.team.TeamArtifactGateway
 import com.agnetix.harnax.mapper.TeamArtifactMapper
-import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import com.agnetix.harnax.tools.sdk.adaptor.ToolConfigAdaptor
 import com.agnetix.harnax.tools.sdk.adaptor.ToolInvocationAdaptor
 import com.agnetix.harnax.tools.sdk.registry.ToolRegistry
@@ -318,7 +317,6 @@ class HarnessAutoConfiguration {
         tokenStatAdaptor: TokenStatAdaptor,
         sessionConfig: SessionConfig,
         processLogAdaptor: ProcessLogAdaptor,
-        toolCallLogAdaptorProvider: ObjectProvider<ToolCallLogAdaptor>,
         mcpConfigDecryptorProvider: ObjectProvider<McpConfigDecryptor>,
         toolConfigAdaptorProvider: ObjectProvider<ToolConfigAdaptor>,
         toolRegistryProvider: ObjectProvider<ToolRegistry>,
@@ -334,8 +332,6 @@ class HarnessAutoConfiguration {
         toolInvocationAdaptorProvider: ObjectProvider<ToolInvocationAdaptor>,
         @Value("\${harness.metrics.invocation.enabled:true}") invocationMetricsEnabled: Boolean,
     ): HarnessAgentLauncher {
-        val toolCallLogAdaptor = toolCallLogAdaptorProvider.ifAvailable
-            ?: ToolCallLogAdaptor { /* no-op */ }
         // Never null: a missing bean used to leave headers and stdio env params silently empty.
         // agent-service has no AES key — admin delivers those fields decrypted — so the fallback
         // parses plain text rather than decrypting. A real decryptor elsewhere still wins.
@@ -350,7 +346,6 @@ class HarnessAutoConfiguration {
             tokenStatAdaptor = tokenStatAdaptor,
             sessionConfig = sessionConfig,
             processLogAdaptor = processLogAdaptor,
-            toolCallLogAdaptor = toolCallLogAdaptor,
             planNoteAdaptor = planNoteAdaptor,
             workspaceRoot = java.nio.file.Path.of(tmpDir),
             harnessConfig = harnessConfig,

@@ -15,7 +15,6 @@ import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
 import com.agnetix.harnax.harness.team.TeamOrchestrator
 import com.agnetix.harnax.harness.team.TeamRuntimeSpec
 import com.agnetix.harnax.tools.sdk.UserIdentifier
-import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import io.agentscope.core.state.AgentStateStore
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -46,7 +45,6 @@ class HarnessAgentRunAttributionTest {
         skillAdaptor = SkillAdaptor { null },
         tokenStatAdaptor = mock(TokenStatAdaptor::class.java),
         processLogAdaptor = mock(ProcessLogAdaptor::class.java),
-        toolCallLogAdaptor = mock(ToolCallLogAdaptor::class.java),
         planNoteAdaptor = mock(PlanNoteAdaptor::class.java),
         workspaceRoot = Path.of(System.getProperty("java.io.tmpdir")),
     )

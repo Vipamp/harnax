@@ -27,9 +27,8 @@ import java.util.function.Function
  *
  * `onActing` is handed the calls the model asked for before any of them run, and it watches the same
  * stream's result events afterwards, so both halves of a call — what was asked and how it ended — are
- * available here with no per-tool cooperation. That is why the previous `tool_call_log`, which recorded
- * from inside a tool base class, held nothing but built-in tools: an MCP tool or a shell command never
- * passed through the class that wrote the row.
+ * available here with no per-tool cooperation. Recording from inside a tool base class would see only
+ * built-in tools: an MCP tool or a shell command never passes through such a class.
  *
  * A fresh instance per assembled agent, for the reason [ProcessLogMiddleware]'s comment records: this holds
  * the run's attribution in fields, and a shared instance lets the last build decide whose rows everybody's

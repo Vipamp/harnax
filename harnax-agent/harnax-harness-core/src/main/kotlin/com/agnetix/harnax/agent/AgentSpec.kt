@@ -65,7 +65,7 @@ data class AgentSpec(
      * it.
      *
      * A team's lead is configured by the `team` row (design D1), so it carries [LEAD_ID] as its [id]
-     * just to give the runtime something to key on. `token_stats`, `tool_call_log` and `process_log`
+     * just to give the runtime something to key on. `token_stats` and `process_log`
      * all keep a nullable `agent_id`, and a 0 there reads back as an agent no id resolves — so a lead
      * is recorded as having none rather than as being agent 0.
      */

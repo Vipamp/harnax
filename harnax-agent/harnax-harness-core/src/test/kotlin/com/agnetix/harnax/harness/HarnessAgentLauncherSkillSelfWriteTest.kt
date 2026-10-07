@@ -14,7 +14,6 @@ import com.agnetix.harnax.agent.adaptor.model.OpenAIChatModelConfig
 import com.agnetix.harnax.harness.skill.SkillDraftStaging
 import com.agnetix.harnax.harness.skill.SkillDraftSubmitMiddleware
 import com.agnetix.harnax.tools.sdk.UserIdentifier
-import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import io.agentscope.core.middleware.MiddlewareBase
 import io.agentscope.core.skill.AgentSkill
 import io.agentscope.core.state.AgentStateStore
@@ -62,7 +61,6 @@ class HarnessAgentLauncherSkillSelfWriteTest {
         },
         tokenStatAdaptor = mock(TokenStatAdaptor::class.java),
         processLogAdaptor = mock(ProcessLogAdaptor::class.java),
-        toolCallLogAdaptor = mock(ToolCallLogAdaptor::class.java),
         planNoteAdaptor = mock(PlanNoteAdaptor::class.java),
         workspaceRoot = workspace,
         skillDraftAdaptor = draftAdaptor,
