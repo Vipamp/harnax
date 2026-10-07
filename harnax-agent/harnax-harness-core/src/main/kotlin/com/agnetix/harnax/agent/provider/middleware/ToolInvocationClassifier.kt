@@ -6,13 +6,13 @@ import com.agnetix.harnax.entity.ToolInvocationLog
  * Where a tool call came from, decided from what assembly already knew.
  *
  * No database read here (design D4): the runtime holds none of Admin's tables, and a lookup per call
- * would turn a counter into a round trip on the inference path. The three maps below are built once per
- * agent build and are the only facts this needs.
+ * would turn a counter into a round trip on the inference path. The three collections below — two maps and a
+ * set — are built once per agent build and are the only facts this needs.
  *
- * The order is the contract, not an implementation detail. The registry is what the model could actually
- * call, so an MCP answer beats a name that also appears in the delivered tool list; the shell is checked
- * before the delivered list because a CLI runs *through* it, and a name that is neither lands as
- * `framework` — a harness built-in nothing in Admin's tables names.
+ * The order is the contract, not an implementation detail. The registry is what the model could actually call,
+ * so an MCP answer beats a name that also appears in the delivered tool list. The shell is checked before the
+ * delivered tool list because a delivered CLI runs *through* the shell tool, not beside it. A name that is
+ * none of these lands as `framework`: it is a harness built-in that nothing in Admin's tables names.
  */
 object ToolInvocationClassifier {
 
