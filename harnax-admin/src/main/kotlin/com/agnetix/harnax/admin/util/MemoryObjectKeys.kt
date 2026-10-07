@@ -268,4 +268,20 @@ object MemoryObjectKeys {
             null
         }
     }
+
+    /**
+     * Whether one conversation's object is memory its owner has not been told yet.
+     *
+     * The two shapes the merge reads, and nothing else: the conversation's own `MEMORY.md` draft and its
+     * dated ledgers. The rest of that bucket is bookkeeping the passes leave behind — the consolidation
+     * progress object, and the days upstream retired into `archive/`, which are history the long-term layer
+     * already curates and which the merge (harnax-harness-core's `MemoryPromoter`) deliberately neither
+     * re-promotes nor deletes. Counting either would leave an agent whose every conversation has been merged
+     * still owing its owner a pending merge, forever.
+     */
+    fun hasUnmergedContent(location: Location): Boolean = when (location.segment) {
+        ROOT_SEGMENT -> location.itemKey == MEMORY_MD_ITEM_KEY
+        MEMORY_SEGMENT -> dateOf(location.itemKey) != null
+        else -> false
+    }
 }

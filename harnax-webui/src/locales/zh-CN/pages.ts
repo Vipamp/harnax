@@ -1326,12 +1326,19 @@ export default {
   'pages.memory.curated': '整理记忆',
   'pages.memory.noCurated': '尚未整理',
   'pages.memory.dailyCount': '每日记录',
+  'pages.memory.pendingCount': '待并入',
+  'pages.memory.pendingTooltip': '还有 {count} 个会话的记忆尚未并入长期层',
+  'pages.memory.sessionLayerStopped':
+    '该智能体按会话单独记忆，所以长期层的每日记录停在 {date}，之后的记录要等并入后才会出现在这里',
+  'pages.memory.sessionLayerNoNotes': '该智能体按会话单独记忆，长期层还没有并入任何每日记录',
   'pages.memory.updatedAt': '最近更新',
   'pages.memory.noData': '你的智能体还没有长期记忆',
   'pages.memory.loadFailed': '记忆加载失败，请重试',
-  'pages.memory.deleteWarning': '删除不可撤销：该智能体的整理记忆与全部每日记录会被一并删除，本账号无法恢复。',
+  'pages.memory.deleteWarning':
+    '删除不可撤销：该智能体的整理记忆、全部每日记录，以及尚未并入的会话记忆，会被一并删除，本账号无法恢复。',
   'pages.memory.deleteTooltip': '删除该智能体的记忆',
-  'pages.memory.deleteConfirm': '删除「{name}」的记忆？整理记忆与全部每日记录会一并删除，且无法恢复。',
+  'pages.memory.deleteConfirm':
+    '删除「{name}」的记忆？整理记忆、全部每日记录，以及尚未并入的会话记忆会一并删除，且无法恢复。',
   'pages.memory.deletedObjects': '删除成功，共移除 {count} 个记忆对象',
   'pages.memory.deleteNothingFound': '未找到该智能体可删除的记忆，没有删除任何内容',
   'pages.memory.detail.empty': '暂无记忆详情',

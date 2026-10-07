@@ -304,6 +304,65 @@ class MemoryStoreGatewayTest {
             assertEquals(listOf("2026-10-05"), row.dates, "the draft's day does not join the owner's ledger dates")
         }
 
+        /**
+         * How many conversations of this agent still hold memory that has not been merged.
+         *
+         * The long-term layer is the only thing a new conversation is told, so an owner who has just switched
+         * an agent to two layers sees one row per agent and concludes the recent conversations were forgotten.
+         * The count is the other half of that answer, and it counts conversations rather than objects: one
+         * conversation's draft and its ledger are the one merge that is pending, and reporting them as two
+         * would make the same agent look twice as far behind.
+         */
+        @Test
+        fun `the pending count is the conversations whose own layer still holds memory`() {
+            bucket(
+                stored("${ownerPrefix}agents/Research/root/MEMORY.md"),
+                stored("${ownerPrefix}agents/Research/sessions/sess-A/root/MEMORY.md"),
+                stored("${ownerPrefix}agents/Research/sessions/sess-A/memory/2026-10-06.md"),
+                stored("${ownerPrefix}agents/Research/sessions/sess-B/memory/2026-10-07.md"),
+                stored("${ownerPrefix}agents/Research/sessions/sess-C/root/MEMORY.md"),
+            )
+            serveWrapper("- the curated layer")
+
+            val row = gateway.listAgents(tenantId, userId).single()
+
+            assertEquals(3, row.pendingSessionLayers, "the draft and the ledger of sess-A are one pending merge")
+        }
+
+        /**
+         * What a conversation layer looks like once its memory has been merged is not "nothing pending".
+         *
+         * The consolidation pass leaves its own state object behind and upstream retires an old day into
+         * `archive/`; neither is material waiting for the long-term layer, and the merge deliberately reads
+         * neither. Counting them would keep an agent's pending figure above zero forever, which is the answer
+         * an owner cannot do anything with.
+         */
+        @Test
+        fun `the passes state object and an archived day are not counted as unmerged memory`() {
+            bucket(
+                stored("${ownerPrefix}agents/Research/root/MEMORY.md"),
+                stored("${ownerPrefix}agents/Research/sessions/sess-A/memory/.consolidation_state"),
+                stored("${ownerPrefix}agents/Research/sessions/sess-A/memory/archive/2026-08-01.md"),
+            )
+            serveWrapper("- the curated layer")
+
+            assertEquals(0, gateway.listAgents(tenantId, userId).single().pendingSessionLayers)
+        }
+
+        @Test
+        fun `each agent's pending count covers only its own conversations`() {
+            bucket(
+                stored("${ownerPrefix}agents/Research/sessions/sess-A/root/MEMORY.md"),
+                stored("${ownerPrefix}agents/Ops/sessions/sess-B/root/MEMORY.md"),
+                stored("${ownerPrefix}agents/Ops/sessions/sess-C/memory/2026-10-08.md"),
+            )
+            serveWrapper("- anything")
+
+            val pending = gateway.listAgents(tenantId, userId).associate { it.agentId to it.pendingSessionLayers }
+
+            assertEquals(mapOf("Research" to 1, "Ops" to 2), pending)
+        }
+
         /** "No memory" and "the store did not answer" are different answers, and only one of them is a 200. */
         @Test
         fun `a store that cannot list is thrown at rather than reported as empty`() {

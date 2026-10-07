@@ -23,6 +23,7 @@ import java.nio.charset.StandardCharsets
 import kotlin.random.Random
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -515,6 +516,16 @@ class MemoryOwnerBucketMinioIT : BaseAdminIT() {
             !agents.toString().contains(SESSION_DRAFT_MARKER),
             "a draft nobody merged yet must not reach any row: $agents",
         )
+        assertEquals(
+            1,
+            row["pendingSessionLayers"].asInt(),
+            "one conversation holds a draft and a ledger, and the page counts the merge that is waiting, not " +
+                "the objects that make it up: $row",
+        )
+        // No agent row answers for this name — the seed wrote memory, not an agent — so the switch is unknown
+        // rather than off. Admin's mapper drops the null key, and the page has to read that absence as
+        // "nothing to explain" instead of telling the owner this agent never had a conversation layer.
+        assertNull(row["sessionMemory"], "an unknown layer switch is not reported as a single-layer agent: $row")
     }
 
     @Test

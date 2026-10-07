@@ -75,19 +75,24 @@ class MemoryStoreGateway(
         userId: String,
     ): List<MemoryAgentResponse> {
         val ownerPrefix = ownerPrefix(tenantId, userId)
-        return groupByAgent(longTermOnly(list(ownerPrefix))).map { (agentId, objects) ->
-            val curated = recordOf(objects, MemoryObjectKeys.ROOT_SEGMENT)
+        // Grouped over both layers, so an agent that has so far only written conversation layers still gets a
+        // row: on the page that is the difference between "these conversations are not merged yet" and
+        // "this agent has no memory at all", and the second would be a lie.
+        return groupByAgent(list(ownerPrefix)).map { (agentId, objects) ->
+            val longTerm = longTermOnly(objects)
+            val curated = recordOf(longTerm, MemoryObjectKeys.ROOT_SEGMENT)
             MemoryAgentResponse(
                 agentId = agentId,
                 content = curated?.record?.content ?: "",
                 lastModified = curated?.let { storageTime(it.stored.lastModified, it.record.modifiedAt) },
                 // Dates only here: a list that read every ledger of every agent would fetch the owner's
                 // whole memory history to show one line per agent.
-                dates = objects
+                dates = longTerm
                     .filter { it.location.segment == MemoryObjectKeys.MEMORY_SEGMENT }
                     .mapNotNull { MemoryObjectKeys.dateOf(it.location.itemKey) }
                     .distinct()
                     .sorted(),
+                pendingSessionLayers = pendingLayers(objects),
             )
         }
     }
@@ -192,6 +197,20 @@ class MemoryStoreGateway(
      * [deleteAgent] and [deleteUser] address prefixes rather than decoded objects.
      */
     private fun longTermOnly(objects: List<Stored>): List<Stored> = objects.filter { it.location.sessionId == null }
+
+    /**
+     * How many of this agent's conversations still hold memory of their own.
+     *
+     * Conversations, not objects: one conversation's draft and its ledgers are the one merge that is waiting,
+     * and a page that counted objects would show an agent as twice as far behind for a conversation that
+     * wrote on two days. Which objects mean "not merged yet" is the writer's answer, not this one, so the
+     * shape rule lives in [MemoryObjectKeys.hasUnmergedContent] beside the keys it reads.
+     */
+    private fun pendingLayers(objects: List<Stored>): Int = objects
+        .filter { it.location.sessionId != null && MemoryObjectKeys.hasUnmergedContent(it.location) }
+        .mapNotNull { it.location.sessionId }
+        .distinct()
+        .size
 
     /** The curated layer of one agent's objects, read once. */
     private fun recordOf(

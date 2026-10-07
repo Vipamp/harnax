@@ -840,6 +840,13 @@ message?: string;
     lastModified?: string;
     /** Days that have a daily note, e.g. `2026-10-05`, oldest first */
     dates: string[];
+    /** Conversations whose own memory has not been merged in yet; absent when there are none */
+    pendingSessionLayers?: number;
+    /**
+     * Whether this agent also remembers per conversation. Absent means admin could not tell — that is not the
+     * same as `false`, which means the agent has only ever had the long-term layer.
+     */
+    sessionMemory?: boolean;
   };
 
   /**

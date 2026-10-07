@@ -1,7 +1,9 @@
 package com.agnetix.harnax.admin.util
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
@@ -114,5 +116,38 @@ class MemorySessionLayerDecodeTest {
                 tenantScoped = false,
             ),
         )
+    }
+
+    /**
+     * Which conversation objects still mean "not merged into the long-term layer yet".
+     *
+     * The pending figure is the owner's only hint that the long-term listing is not the whole story, so it has
+     * to count exactly what the merge takes. The consolidation pass's own state object and a day upstream
+     * retired into `archive/` are still there after a merge that went well, and counting either would leave
+     * every fully merged agent permanently behind.
+     */
+    @Test
+    fun `a conversation draft and its dated ledgers are unmerged memory`() {
+        assertTrue(unmerged("agents/Research/sessions/sess-A/root/MEMORY.md"))
+        assertTrue(unmerged("agents/Research/sessions/sess-A/memory/2026-10-05.md"))
+    }
+
+    @Test
+    fun `the passes state object and an archived day are not unmerged memory`() {
+        assertFalse(
+            unmerged("agents/Research/sessions/sess-A/memory/.consolidation_state"),
+            "the pass keeps this object whether or not there is memory waiting",
+        )
+        assertFalse(
+            unmerged("agents/Research/sessions/sess-A/memory/archive/2026-08-01.md"),
+            "an archived day is history the long-term layer already curates",
+        )
+    }
+
+    /** One of this owner's keys, decoded and then asked the question the listing asks. */
+    private fun unmerged(relativeKey: String): Boolean {
+        val location = MemoryObjectKeys.locationOf(ownerPrefix, "$ownerPrefix$relativeKey")
+            ?: error("$relativeKey should decode as a memory object of this owner")
+        return MemoryObjectKeys.hasUnmergedContent(location)
     }
 }

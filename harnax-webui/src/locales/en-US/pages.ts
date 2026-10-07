@@ -1327,14 +1327,21 @@ export default {
   'pages.memory.curated': 'Curated Memory',
   'pages.memory.noCurated': 'Nothing curated yet',
   'pages.memory.dailyCount': 'Daily Notes',
+  'pages.memory.pendingCount': 'Unmerged',
+  'pages.memory.pendingTooltip':
+    'The memory of {count} conversation(s) has not been merged into the long-term layer yet',
+  'pages.memory.sessionLayerStopped':
+    'This agent also remembers per conversation, so its long-term notes stop at {date} until a merge runs',
+  'pages.memory.sessionLayerNoNotes':
+    'This agent also remembers per conversation, so nothing has reached its long-term notes yet',
   'pages.memory.updatedAt': 'Last Updated',
   'pages.memory.noData': 'None of your agents has long-term memory',
   'pages.memory.loadFailed': 'Failed to load your agent memory, please retry',
   'pages.memory.deleteWarning':
-    'Deleting is final: the curated memory and every daily note of that agent are removed together and cannot be restored.',
+    'Deleting is final: the curated memory, every daily note and any conversation memory that has not been merged yet are removed together and cannot be restored.',
   'pages.memory.deleteTooltip': 'Delete this memory',
   'pages.memory.deleteConfirm':
-    'Delete the memory of {name}? Its curated memory and all daily notes go with it, and nothing can be restored.',
+    'Delete the memory of {name}? Its curated memory, all daily notes and any conversation memory that has not been merged yet go with it, and nothing can be restored.',
   'pages.memory.deletedObjects':
     'Deleted successfully, {count} object(s) removed',
   'pages.memory.deleteNothingFound':
