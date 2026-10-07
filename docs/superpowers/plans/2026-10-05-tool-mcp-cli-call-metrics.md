@@ -2062,7 +2062,7 @@ class ToolInvocationMiddlewareTest {
 
             StepVerifier.create(
                 mw.onActing(agent, ctx, actingInput(call), Function {
-                    Flux.just(delta("t1", "now", "half an answer")).concatWith(Flux.error(RuntimeException("sandbox died")))
+                    Flux.just<AgentEvent>(delta("t1", "now", "half an answer")).concatWith(Flux.error(RuntimeException("sandbox died")))
                 }),
             ).expectNextCount(1).verifyError()
 
@@ -2083,7 +2083,7 @@ class ToolInvocationMiddlewareTest {
         )
 
         @Test
-        fun `reading SKILL.md successfully reports one use for the delivered skill`() {
+        fun `reading the skill body successfully reports one use for the delivered skill`() {
             val mw = middleware(adminSkillIdsBySkillId = mapOf("web-search_custom" to 44L))
 
             StepVerifier.create(
