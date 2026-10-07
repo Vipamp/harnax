@@ -34,7 +34,7 @@ MVN=/Users/heqingsong/software/apache-maven-3.9.12/bin/mvn
 docker version > /dev/null 2>&1; echo "DOCKER=$?"   # 决定要不要排除容器测
 ```
 
-- 模块单测：`$MVN -o -q spotless:apply -pl <模块>` 然后 `$MVN -o test -pl <模块> > /tmp/t.log 2>&1; echo EXIT=$?`，再看 `/tmp/t.log` 里的 `Tests run:` 行。
+- 模块单测：`$MVN -o -q spotless:apply -pl <模块>` 然后 `$MVN -o test -pl <模块> > /tmp/t.log 2>&1; echo EXIT=$?`，再看 `/tmp/t.log` 里的 `Tests run:` 行。凡 `-pl harnax-agent/**` 的 `test` 与 `test-compile` 必须带 `-am`：本地仓库里的 harnax-entity 构件是旧的，不带时表现为 `Unresolved reference 'ToolInvocationLog'` 一类的假红。`spotless:apply` 不带 `-am`，否则会顺手改到上游模块的文件，在共享工作树里留下与本任务无关的改动。
 - admin 定向 IT（命令串里**不能出现字面 `*IT`**，且 `-Dtest` 要给一个故意不匹配的值，否则同一批 IT 在 surefire 与 failsafe 各跑一遍）：
   ```bash
   $MVN -o -pl harnax-admin -am -Pintegration-test \
@@ -1159,7 +1159,7 @@ class ToolInvocationClassifierTest {
 - [ ] **Step 2: 跑测试确认失败**
 
 ```bash
-$MVN -o test -pl harnax-agent/harnax-harness-core -Dtest=ToolInvocationClassifierTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t3-red.log 2>&1; echo EXIT=$?
+$MVN -o -am test -pl harnax-agent/harnax-harness-core -Dtest=ToolInvocationClassifierTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t3-red.log 2>&1; echo EXIT=$?
 ```
 预期：`test-compile` 报 `unresolved reference: ToolInvocationClassifier`。
 
@@ -1357,7 +1357,7 @@ data class InvocationAttribution(
 
 ```bash
 $MVN -o -q spotless:apply -pl harnax-agent/harnax-harness-core
-$MVN -o test -pl harnax-agent/harnax-harness-core -Dtest=ToolInvocationClassifierTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t3.log 2>&1; echo EXIT=$?
+$MVN -o -am test -pl harnax-agent/harnax-harness-core -Dtest=ToolInvocationClassifierTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t3.log 2>&1; echo EXIT=$?
 grep -E "Tests run|BUILD" /tmp/t3.log
 ```
 预期：`Failures: 0, Errors: 0`。`Tests run` 等于这一步测试文件里 `@Test` 的条数，不在此处钉死（落地时实跑为 13）。
@@ -1445,7 +1445,7 @@ data class ToolInvocationEvent(
 
 ```bash
 $MVN -o -q spotless:apply -pl harnax-agent/harnax-tools-sdk
-$MVN -o -q test-compile -pl harnax-agent/harnax-tools-sdk > /tmp/t4.log 2>&1; echo EXIT=$?
+$MVN -o -am -q test-compile -pl harnax-agent/harnax-tools-sdk > /tmp/t4.log 2>&1; echo EXIT=$?
 ```
 预期：EXIT=0，日志无 `[ERROR]`。
 
@@ -1509,7 +1509,7 @@ git commit -m "feat(metrics): 工具调用事件的写入契约"
 ```bash
 export JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home
 MVN=/Users/heqingsong/software/apache-maven-3.9.12/bin/mvn
-$MVN -o test -pl harnax-agent/harnax-agent-service -Dtest=SkillUsageAdaptorImplTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t5-red.log 2>&1; echo EXIT=$?
+$MVN -o -am test -pl harnax-agent/harnax-agent-service -Dtest=SkillUsageAdaptorImplTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t5-red.log 2>&1; echo EXIT=$?
 grep -E "unresolved reference|Tests run" /tmp/t5-red.log | head
 ```
 预期：`EXIT != 0`，先以 `unresolved reference: reportUses` / `No value passed for parameter` 形式的**编译失败**出现——这就是红，不必等断言失败。
@@ -1693,8 +1693,8 @@ interface SkillUsageAdaptor {
 
 ```bash
 $MVN -q spotless:apply -pl harnax-agent/harnax-harness-core,harnax-agent/harnax-agent-service
-$MVN -o test -pl harnax-agent/harnax-agent-service -Dtest=SkillUsageAdaptorImplTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t5.log 2>&1; echo EXIT=$?
-$MVN -o test -pl harnax-agent/harnax-harness-core -Dtest='SkillViewRecorderTest,HarnessAgentLauncherSkillUsageTest' -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t5b.log 2>&1; echo EXIT=$?
+$MVN -o -am test -pl harnax-agent/harnax-agent-service -Dtest=SkillUsageAdaptorImplTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t5.log 2>&1; echo EXIT=$?
+$MVN -o -am test -pl harnax-agent/harnax-harness-core -Dtest='SkillViewRecorderTest,HarnessAgentLauncherSkillUsageTest' -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t5b.log 2>&1; echo EXIT=$?
 grep -E "Tests run:.*Failures" /tmp/t5.log /tmp/t5b.log | tail -4
 ```
 预期：两份日志都有 `Tests run:` 行且 `Failures: 0, Errors: 0`（`SkillViewRecorderTest` 用 `-Dtest` 点名时**不会**触发容器测，`Memory*Test` 那两个类不在名单里）。
@@ -2117,7 +2117,7 @@ class ToolInvocationMiddlewareTest {
 - [ ] **Step 2: 跑测试确认红**
 
 ```bash
-$MVN -o test -pl harnax-agent/harnax-harness-core -Dtest=ToolInvocationMiddlewareTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t6-red.log 2>&1; echo EXIT=$?
+$MVN -o -am test -pl harnax-agent/harnax-harness-core -Dtest=ToolInvocationMiddlewareTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t6-red.log 2>&1; echo EXIT=$?
 grep -E "unresolved reference|Tests run" /tmp/t6-red.log | head -3
 ```
 预期：编译失败 `unresolved reference: ToolInvocationMiddleware`。
@@ -2343,7 +2343,7 @@ class ToolInvocationMiddleware(
 
 ```bash
 $MVN -q spotless:apply -pl harnax-agent/harnax-harness-core
-$MVN -o test -pl harnax-agent/harnax-harness-core -Dtest=ToolInvocationMiddlewareTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t6.log 2>&1; echo EXIT=$?
+$MVN -o -am test -pl harnax-agent/harnax-harness-core -Dtest=ToolInvocationMiddlewareTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t6.log 2>&1; echo EXIT=$?
 grep -E "Tests run|BUILD" /tmp/t6.log | tail -3
 ```
 预期：`Tests run: 18, Failures: 0, Errors: 0`。若 `an adaptor that throws does not fail the turn` 红了，说明 `runCatching` 没盖住投递点——不许改成「让适配器自己吞」，中间件这一层的契约就是不把任何记录故障带上流。
@@ -2619,7 +2619,7 @@ class ToolInvocationAdaptorImplTest {
 - [ ] **Step 2: 跑测试确认红**
 
 ```bash
-$MVN -o test -pl harnax-agent/harnax-agent-service -Dtest=ToolInvocationAdaptorImplTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t7-red.log 2>&1; echo EXIT=$?
+$MVN -o -am test -pl harnax-agent/harnax-agent-service -Dtest=ToolInvocationAdaptorImplTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t7-red.log 2>&1; echo EXIT=$?
 grep -E "unresolved reference|Tests run" /tmp/t7-red.log | head -3
 ```
 预期：`unresolved reference: ToolInvocationAdaptorImpl`。
@@ -2806,7 +2806,7 @@ class ToolInvocationAdaptorImpl(
 
 ```bash
 $MVN -q spotless:apply -pl harnax-agent/harnax-agent-service
-$MVN -o test -pl harnax-agent/harnax-agent-service -Dtest=ToolInvocationAdaptorImplTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t7.log 2>&1; echo EXIT=$?
+$MVN -o -am test -pl harnax-agent/harnax-agent-service -Dtest=ToolInvocationAdaptorImplTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t7.log 2>&1; echo EXIT=$?
 grep -E "Tests run|BUILD" /tmp/t7.log | tail -3
 ```
 预期：`Tests run: 11, Failures: 0, Errors: 0`。
@@ -2975,8 +2975,8 @@ CLI 别名表（放在挂载点之前即可，`agentSpec.cliSpecs` 此刻已在�
 
 ```bash
 $MVN -q spotless:apply -pl harnax-agent/harnax-harness-core,harnax-agent/harnax-agent-service
-$MVN -o -q test-compile -pl harnax-agent/harnax-harness-core > /tmp/t8-compile.log 2>&1; echo EXIT=$?
-$MVN -o test -pl harnax-agent/harnax-harness-core -Dtest='HarnessAgentLauncher*Test,ToolInvocation*Test' -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t8.log 2>&1; echo EXIT=$?
+$MVN -o -am -q test-compile -pl harnax-agent/harnax-harness-core > /tmp/t8-compile.log 2>&1; echo EXIT=$?
+$MVN -o -am test -pl harnax-agent/harnax-harness-core -Dtest='HarnessAgentLauncher*Test,ToolInvocation*Test' -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t8.log 2>&1; echo EXIT=$?
 grep -E "Tests run:.*Failures|BUILD" /tmp/t8.log | tail -3
 ```
 预期：`EXIT=0` 且 `Tests run:` 非零。新增的两个具名参数都带默认值，所以 14 个 harness-core 夹具**不需要**在这一跳改——它们用具名实参调 `initLauncher`，多出来的参数取默认。若这里红了，是默认值没给或具名实参写错，不是夹具的问题。
@@ -3243,7 +3243,7 @@ memory/MemoryBucketPipelineTest.kt:126       memory/MemoryGateFalsificationTest.
 export JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home
 MVN=/Users/heqingsong/software/apache-maven-3.9.12/bin/mvn
 $MVN -q spotless:apply -pl harnax-entity,harnax-agent/harnax-tools-sdk,harnax-agent/harnax-harness-core,harnax-agent/harnax-agent-service,harnax-tools-external/harnax-tools-buildin
-$MVN -o test -pl harnax-agent/harnax-tools-sdk,harnax-agent/harnax-harness-core,harnax-tools-external/harnax-tools-buildin,harnax-agent/harnax-agent-service > /tmp/t9.log 2>&1; echo EXIT=$?
+$MVN -o -am test -pl harnax-agent/harnax-tools-sdk,harnax-agent/harnax-harness-core,harnax-tools-external/harnax-tools-buildin,harnax-agent/harnax-agent-service > /tmp/t9.log 2>&1; echo EXIT=$?
 grep -E "Tests run:.*Failures|unresolved reference|BUILD" /tmp/t9.log | tail -8
 ```
 预期：`EXIT=0`，且 `unresolved reference: ToolCallLogAdaptor` / `SessionMetaContext` / `execute` 一条都不出现。
