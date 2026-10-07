@@ -102,11 +102,11 @@
 
 | 事件 | 动作 |
 |---|---|
-| `TOOL_RESULT_END`（带 `toolCallId`、`state`） | 按 `key(toolCallId, toolCallName)` 找到起点，未命中时取该名字队列里最早的、且仍在起点表里的一个（匹配只 peek）；起点在投递前从表里摘除，同一个键在名字队列里按起点记录的 `name` 摘除而不是按帧名，所以改名的终态帧不会留下顶掉后续调用的幽灵键；重复的终态帧找不到起点，不会再落第二行 |
+| `TOOL_RESULT_END`（带 `toolCallId`、`state`） | 按 `key(toolCallId, toolCallName)` 找到起点，未命中时取该名字队列里最早的一个（匹配只 peek）；队列与起点表按键一一对应——登记时同处加入，投递与收流两条路径都按起点记录的 `name` 同处摘除，所以 peek 到的必是一个未终态起点；起点在投递前从表里摘除，同一个键在名字队列里按起点记录的 `name` 摘除而不是按帧名，所以改名的终态帧不会留下顶掉后续调用的幽灵键；重复的终态帧找不到起点，不会再落第二行 |
 | 流 `onComplete` 时仍有未终态 id | 补一行 `INTERRUPTED`，时长到完成时刻，`error_message` 写 `stream ended before the tool returned` |
 | 流 `onError` / `onCancel` 时同理 | 同上，`error_message` 取异常文本；已经流出的增量文本仍进 `result_excerpt`（按写入侧截断）|
 
-增量文本按事件自带的键累积（有 `toolCallId` 用 id，缺 id 用名字），投递时先按起点键取、取不到再按终态帧自己的键取，未投递的起点在收流结束时同样先按自己的键、再按记录的 `name` 取。真正共享同一份缓冲的只有无 id 的两个同名调用——它们的键本就相同，上游没给出可分辨的键，能保住的是行数，文本归并是已知让步。
+增量文本按事件自带的键累积（有 `toolCallId` 用 id，缺 id 用名字），投递时先按起点键取、取不到再按终态帧自己的键取，未投递的起点在收流结束时同样先按自己的键、再按记录的 `name` 取。真正共享同一份缓冲的是帧侧无可分辨键的同名调用：delta 不带 id 时两侧的增量都落进同一个名字键缓冲，与那两个起点自己有没有 id 无关。这种情况下能保住的是行数，文本归并是已知让步，而归并后的正文落在哪一行取决于收流时的遍历顺序，不保证稳定。另一侧的损失同样已知：一帧终态既不带 id、其 `toolCallName` 又撞不到任何名字队列时配不上起点，那一次调用由收流兜底记成 `INTERRUPTED`。这里不引入「本轮只剩一个未终态起点就把它配上」的回退——那已经是猜，而猜错会把一次真正中断的调用记成成功，按 I4 那一行就从聚合表的 `interruptions` 挪进 `successes`，两个计数同时错位；记成中断至少是一个可数的损失。
 
 `ToolResultState` 映射：`SUCCESS→SUCCESS`、`ERROR→ERROR`、`DENIED→DENIED`、`INTERRUPTED→INTERRUPTED`、`RUNNING→不落库`。
 
