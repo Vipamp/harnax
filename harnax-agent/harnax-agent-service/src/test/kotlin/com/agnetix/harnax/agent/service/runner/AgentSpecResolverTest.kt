@@ -261,6 +261,8 @@ class AgentSpecResolverTest {
             assertTrue(agentSpec.toolSpecs[0].needConfirm)
             assertEquals(20L, agentSpec.toolSpecs[1].toolId)
             assertFalse(agentSpec.toolSpecs[1].needConfirm)
+            assertEquals("file-read", agentSpec.toolSpecs[0].toolName)
+            assertEquals("shell-exec", agentSpec.toolSpecs[1].toolName)
         }
 
         @Test

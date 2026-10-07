@@ -260,6 +260,7 @@ class AgentSpecResolver(
             builder.addToolSpec(
                 ToolSpec(
                     toolId = tool.id,
+                    toolName = tool.name,
                     needConfirm = tool.bindingNeedConfirm,
                 ),
             )
