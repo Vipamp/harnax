@@ -137,19 +137,32 @@ class BucketScopedWatermarkStoreTest {
     }
 
     @Test
-    fun `every other namespace goes through untouched`() {
+    fun `every other namespace goes through to the address it was handed`() {
         val delegate = InMemoryStore()
         val store = scoped(delegate, ownerA)
-        val ledger = ownerA + listOf(MemoryFilesystemRoutes.MEMORY_SEGMENT)
+        // Deliberately not the bucket this wrapper answers for: an interception that widened past the progress
+        // address would move this ledger into ownerA/memory, which is exactly where the wrapper puts the
+        // watermark. Reading the two addresses back is the only way "untouched" can be falsified, because
+        // search() answers with StoreItem — a key and no namespace — so a listing cannot tell the two apart.
+        val ledger = sessionA + listOf(MemoryFilesystemRoutes.MEMORY_SEGMENT)
 
         store.put(ledger, "/2026-10-05.md", mapOf("content" to "- entry"))
         store.put(StoreCasProbe.COORDINATION, "memory-flush:SESSION:sess-A", mapOf("lastClaimAt" to 9L))
         store.delete(BucketScopedWatermarkStore.UPSTREAM_NAMESPACE, BucketScopedWatermarkStore.UPSTREAM_KEY)
+
+        assertNotNull(delegate.get(ledger, "/2026-10-05.md"), "the ledgers keep the namespace they were handed")
+        assertNull(
+            delegate.get(ownerA + listOf(MemoryFilesystemRoutes.MEMORY_SEGMENT), "/2026-10-05.md"),
+            "and a wrapper that owns one bucket does not speak for the writes of another",
+        )
+        assertNotNull(
+            delegate.get(StoreCasProbe.COORDINATION, "memory-flush:SESSION:sess-A"),
+            "and so do the throttle slots keep their own address",
+        )
         assertEquals(
             listOf("/2026-10-05.md", "memory-flush:SESSION:sess-A"),
             keysOf(delegate).sorted(),
-            "the memory files and the throttle slots keep their own addresses, and deleting a progress that " +
-                "was never written leaves nothing behind",
+            "and deleting a progress that was never written leaves nothing behind",
         )
     }
 

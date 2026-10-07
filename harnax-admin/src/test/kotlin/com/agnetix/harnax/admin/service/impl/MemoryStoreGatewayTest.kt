@@ -278,6 +278,32 @@ class MemoryStoreGatewayTest {
             assertTrue(gateway.listAgents(tenantId, userId).isEmpty())
         }
 
+        /**
+         * The page answers for the long-term layer only.
+         *
+         * A conversation's `root/MEMORY.md` is a draft that has not been merged yet and its ledger has not
+         * earned a place in the curated memory, so counting either would tell the owner that a new
+         * conversation will be told something it will not. The dates carry this case rather than the text:
+         * the listing reads only one curated object, and which one that is depends on the filter. That the
+         * same session keys still go on a delete is the case in [Deleting], which is also what proves they
+         * decoded here at all instead of being dropped as unparseable.
+         */
+        @Test
+        fun `a conversation's own layer is not shown as the owner's memory`() {
+            bucket(
+                stored("${ownerPrefix}agents/Research/root/MEMORY.md"),
+                stored("${ownerPrefix}agents/Research/memory/2026-10-05.md"),
+                stored("${ownerPrefix}agents/Research/sessions/sess-A/root/MEMORY.md"),
+                stored("${ownerPrefix}agents/Research/sessions/sess-A/memory/2026-10-06.md"),
+            )
+            serveWrapper("- the curated layer")
+
+            val row = gateway.listAgents(tenantId, userId).single()
+
+            assertEquals("- the curated layer", row.content)
+            assertEquals(listOf("2026-10-05"), row.dates, "the draft's day does not join the owner's ledger dates")
+        }
+
         /** "No memory" and "the store did not answer" are different answers, and only one of them is a 200. */
         @Test
         fun `a store that cannot list is thrown at rather than reported as empty`() {
@@ -426,6 +452,36 @@ class MemoryStoreGatewayTest {
                     "harnax-store" to "${ownerPrefix}agents/Research/memory/2026-10-04.md",
                 ),
                 deletedKeys(),
+            )
+        }
+
+        /**
+         * The half the page does not show, the delete still has to take.
+         *
+         * The listing hides a conversation's own layer, so an agent deleted from that page would otherwise
+         * leave its draft and its ledgers in the bucket under a name the owner can no longer see. The delete
+         * runs on the unfiltered listing for exactly this reason, and the two session keys going here is also
+         * what proves they decoded at all — the page case above leans on that, since an unparseable key would
+         * vanish for the wrong reason.
+         */
+        @Test
+        fun `a conversation's own layer goes with the agent although the page hides it`() {
+            bucket(
+                stored("${ownerPrefix}agents/Research/root/MEMORY.md"),
+                stored("${ownerPrefix}agents/Research/memory/2026-10-04.md"),
+                stored("${ownerPrefix}agents/Research/sessions/sess-A/root/MEMORY.md"),
+                stored("${ownerPrefix}agents/Research/sessions/sess-A/memory/2026-10-06.md"),
+            )
+
+            assertEquals(4, gateway.deleteAgent(tenantId, userId, "Research"))
+            assertEquals(
+                listOf(
+                    "${ownerPrefix}agents/Research/root/MEMORY.md",
+                    "${ownerPrefix}agents/Research/memory/2026-10-04.md",
+                    "${ownerPrefix}agents/Research/sessions/sess-A/root/MEMORY.md",
+                    "${ownerPrefix}agents/Research/sessions/sess-A/memory/2026-10-06.md",
+                ),
+                deletedKeys().map { it.second },
             )
         }
 

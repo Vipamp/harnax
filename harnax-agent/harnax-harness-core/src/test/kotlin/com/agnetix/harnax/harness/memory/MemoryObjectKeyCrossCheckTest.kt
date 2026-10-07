@@ -135,7 +135,6 @@ class MemoryObjectKeyCrossCheckTest {
         writeMemoryMd(owner = "enveloped", tenantScoped = true)
 
         val body = rawBody("store/tenants/4/users/enveloped/agents/Research/root/MEMORY.md")
-        println("[memory-envelope] $body")
 
         assertTrue(
             body.startsWith("""{"key":"/MEMORY.md","value":{"""),
