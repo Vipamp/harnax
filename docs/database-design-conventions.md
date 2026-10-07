@@ -27,7 +27,7 @@
 - 系统表使用 `sys_` 前缀：`sys_user`、`sys_token_blacklist`
 - 移动端表使用 `mp_` 前缀：`mp_session`、`mp_chat_message`
 - 关联表使用 `A_B_binding` / `user_tenant` 风格：`agent_tool_binding`、`agent_mcp_binding`
-- 日志/统计表使用 `_log` / `_stats` 后缀：`process_log`、`tool_call_log`、`token_stats`
+- 日志/统计表使用 `_log` / `_stats` 后缀：`process_log`、`tool_invocation_log`、`token_stats`、`tool_invocation_stats`
 
 ### 2.2 字段命名
 
@@ -75,7 +75,7 @@
 
 ### 3.2 日志/流水表的精简字段
 
-只增不改的日志、统计表（`process_log`、`tool_call_log`、`token_stats`、`agent_task_log`）可省略 `status`、`active`、`update_time`，但必须保留：
+只增不改的日志、统计表（`process_log`、`tool_invocation_log`、`token_stats`、`agent_task_log`）可省略 `status`、`active`、`update_time`，但必须保留：
 
 - `id` 自增主键
 - 关联检索字段（`agent_id`、`session_id` 等）并建索引

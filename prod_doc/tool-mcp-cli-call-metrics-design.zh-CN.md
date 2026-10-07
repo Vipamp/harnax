@@ -206,13 +206,15 @@ ToolInvocationMiddleware → ToolInvocationAdaptor(harnax-tools-sdk 定义)
 
 | 端点 | 参数 | 返回 |
 |---|---|---|
-| `GET /summary` | `days`（1..365，默认 30）、`kind`、`groupBy`=`tool`（默认）\| `agent` \| `session` | 卡片计数 + 主体行列表（`calls` / `successRate` / `avgDurationMs` / `p95Bucket` / `lastSeenAt` / 按 kind 的 `mcpId` \| `cliId` / `toolName` / 名称） |
+| `GET /summary` | `days`（1..365，默认 30）、`kind`、`groupBy`=`tool`（默认）\| `agent` \| `session` | 卡片计数 + 主体行列表（`kind` / `subjectId` / `toolName` / 名称 / `calls` / `successRate` / `avgDurationMs` / `p95Operator`（`<=` 或 `>`）/ `p95Ms`（Long）/ `lastSeenAt`）。P95 给「算符 + 数值」两个字段而不是一个显示串：文案由前端 `pages.callMetrics.*` 造，服务端只给数，排序与画条要的是数值 |
 | `GET /time-series` | `days`、`granularity`=`day`\|`week`\|`month`、`kind`、`subjectId` | 按桶补零的时间序列（`timePoint` × 维度，行内带 `dimensionId` / `dimensionName`） |
 | `GET /invocations` | `days`、`kind`、`toolName`、`mcpId`、`cliId`、`agentId`、`sessionId`、`outcome`、`pageNum` / `pageSize` | 明细分页 `ResultVo<Page<...>>`，含 `error_message` / `args_json` / `result_excerpt` |
 
 `groupBy=agent|session` 走明细表（聚合表不带这两个维度），因此受保留窗口限制；`/summary` 默认口径走聚合表，可答超过 90 天的窗口。分页沿用 `PageHelper.startPage` + `admin/dto/Page.fromPageInfo`（现例 `AgentToolController.kt:26-39` 与 `AgentToolServiceImpl.kt:26-31`）。
 
 响应形状受 admin 既有出参约定约束：`application.yml` 的 `default-property-inclusion: non_null` 让 Jackson 3 丢掉值为 null 的键，DTO 一律给非空默认值；业务错误是 HTTP 200 带 `code`。
+
+`subjectId` 的 0 就落在这条约定上。聚合表里 `subject_id` 的定义是「`kind=mcp` 时是 `mcp_id`、`kind=cli` 时是 `cli_id`、其余为 `0`」（DDL `V1__init_schema.sql:793`），三个来源共用一个字段承载同一个值；服务侧出参前把 `0` 折成 null（`ToolMetricsServiceImpl.kt:293`），配上 `non_null`，所以 builtin / shell / framework 那一档的 JSON 里**没有 `subjectId` 这个键**，而不是它等于 `null`。
 
 ## 8. 前端
 
@@ -238,6 +240,8 @@ ToolInvocationMiddleware → ToolInvocationAdaptor(harnax-tools-sdk 定义)
 ## 10. 删除清单
 
 `tool_call_log` 整链移除（D8）。以下是对着源码数出来的，不是按符号名推的：
+
+本节与 §1 差距表里的行号都指**改造前**的基线；落地后同一位置上是 `tool_invocation_log`（`V1__init_schema.sql:759-784`），旧表名在基线里已不存在。
 
 - 基线里的 `tool_call_log` 建表块（`V1__init_schema.sql:757-779`，含上下的 `/*!40101 ... */` 守卫行）+ `schema-test.sql` 的同一建表块（`:741-765`）与它的三条夹具（`:870-873`）
 - `harnax-entity`：`entity/ToolCallLogEntity.kt`、`mapper/ToolCallLogMapper.kt`、`resources/mapper/ToolCallLogMapper.xml`、`test/.../mapper/ToolCallLogMapperTest.kt`。**`.kt` 与 `.xml` 必须同一次提交删**：XML 靠 `mapper-locations: classpath*:mapper/*.xml` 通配绑定，没有任何配置按名字引用它，只删接口会让一份孤立 XML 继续被解析
@@ -269,11 +273,13 @@ ToolInvocationMiddleware → ToolInvocationAdaptor(harnax-tools-sdk 定义)
 ## 12. 已知边界与不做
 
 - 一条 shell 命令串里出现两个已下发 CLI 时只记最左命中的那个（复合命令拆行会破坏 I1，代价是漏记；`args_json` 里有完整命令串可复核）。
-- CLI 命令别名只来自 `name` + `checkCommand` 首词（payload 未物化时）：包内二进制若与包名不同且 `checkCommand` 里不出现它，就归因不到，落 `kind=shell`。
+- CLI 命令别名只来自 `name` + `checkCommand` 的首词：别名集在装配期算出（`HarnessAgentLauncher.kt:619-620`），包物化在同一个方法的更后面（同文件 `:686` 的 `resolveImage`），所以不存在「按未物化的别名集先判一次」这条分支。包内二进制若既不在包名里也不在 `checkCommand` 的首词里，就归因不到，落 `kind=shell`。`checkCommand` 是清单必填项（缺它直接判解析失败，`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/registrar/CliPackageParser.kt:252-253`）且在镜像内执行，它的首词按构造就在 PATH 上——这也是当初否掉「扫 `/bin` 目录补别名」的理由。
 - 两个 MCP server 暴露同名工具时，上游注册表按名覆盖（`ToolRegistry` 用 `tools.put(name, tool)`），模型侧本来就只能看见后注册的那一个；归因跟着枚举结果走，因此记给活下来的那个 server，与运行时实际调用的是谁一致。
 - harness 自带的 `execute` / `read_file` / `memory_*` 不进 MCP 枚举（build 时才挂上），因此落 `kind=framework` 而不是 `builtin`；这两个词的区别就是「admin 下发的」与「运行时自带的」。
 - 不做按小时聚合（窗口超过保留期就没有小时粒度）；不做 OTel / 分布式 trace；不做工具级成本核算；不给 `mcp_call_log` 加指标读端；不引入 ClickHouse 之类外部指标存储；不给 admin 引分布式锁。
 - 明细里的 `args_json` 可能含敏感字面值，默认截断 + 可用 `capture-payload=false` 整体关闭；本设计不做字段级脱敏。
+- 读侧：`/summary` 的 `agent` / `session` 两档行取自明细表，`days` 超过保留窗口（默认 90）时这两档必然答不全；同一份响应里的卡片合计走 `selectWindowTotals`（聚合表），是这两档唯一不受窗口影响的数，下钻抽屉同样受窗口限制。页面的提示按**维度**给而不是按天数给（`groupBy` 不是 `tool` 即显示，`harnax-webui/src/pages/call-metrics/index.tsx:377-384`）——90 天窗口内的 agent/session 也只看得到明细，这条口径不该被读成「窗口 ≤ 90 就完整」。
+- 折算：`rollUp()` 只重算「聚合表里还没有的那天」加上今天与昨天，`deleteRolledOut` 只看窗口，所以一个**已经折算过的日子后来才迟到的明细行会被直接释放、永不计入聚合**。这是有意付的代价：要造出迟到行得有时钟回拨超过一天，而为了它重开每个已折的日子等于每小时重读整张明细表（取舍写在 `ToolInvocationRollupService.kt:67-71`）。集成测试看不见这条——清理永远够不到还在窗口内的行。
 
 ## 13. 落点
 

@@ -260,7 +260,7 @@ fun chat(@RequestBody request: ChatRequest): Flux<ChatEvent>
    - `PlanNoteAdaptorImpl`: 计划存储
    - `ProcessLogAdaptorImpl`: 过程日志
    - `TokenStatAdaptorImpl`: Token 统计
-   - `ToolCallLogAdaptorImpl`: 工具调用日志
+   - `ToolInvocationAdaptorImpl`: 工具调用指标写入
    - `ReActAgentAdaptor`: 通道 Agent 适配器
 
 **流式输出流程**:
@@ -286,7 +286,8 @@ fun chat(@RequestBody request: ChatRequest): Flux<ChatEvent>
    - PlanNoteEntity: 计划实体
    - ProcessLogEntity: 过程日志实体
    - TokenStats: Token 统计实体
-   - ToolCallLogEntity: 工具调用日志实体
+   - ToolInvocationLog: 工具调用明细实体
+   - ToolInvocationStats: 工具调用日聚合实体
    - SysUser: 用户实体
    - SysTokenBlacklist: Token 黑名单实体
    - Tenant: 租户实体

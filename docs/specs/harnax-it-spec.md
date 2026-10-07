@@ -523,7 +523,7 @@ abstract class BaseIntegrationTest {
 | 编号 | 服务 | 场景 | 优先级 |
 |------|------|------|--------|
 | AGT-01 | agent-service | 启动后自动向 Router 注册并心跳（经 RTR-07 环境断言实例存在） | P0 |
-| AGT-02 | agent-service | chat 请求经 Router 转发后由 agent-service 调 Mock LLM，ToolCallLog/ProcessLog 落库 | P1 |
+| AGT-02 | agent-service | chat 请求经 Router 转发后由 agent-service 调 Mock LLM，ToolInvocationLog/ProcessLog 落库 | P1 |
 | CHN-01 | channel-service | 健康检查 + 渠道 webhook 入站消息触发会话创建（WireMock 模拟渠道方） | P1 |
 | SCH-01 | scheduler | 健康检查 + 一个代表性定时任务触发后的可观测结果（Awaitility 轮询 DB） | P1 |
 | E2E-01 | 全链路 | Admin 创建 Agent+ApiKey → Router chatStream 完成对话 → history 可查 → Admin 会话列表可见 | P0 |

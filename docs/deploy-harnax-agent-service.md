@@ -136,6 +136,10 @@
 | `HARNAX_MEMORY_TENANT_SCOPED` | `true` | 桶键 `store/tenants/<tenantId>/users/<userId>/agents/<智能体名>/…` 是否含租户对（配置项 `harness.memory.tenant-scoped`）。**同一个变量也决定 admin 的 `harnax.memory.tenant-scoped`**，两侧不同值读到的是一个空前缀——整桶记忆表现为空，不会串到别人的桶 |
 | `HARNESS_ENABLE_SESSION_PERSISTENCE` | `true` | 会话持久化 |
 | `HARNAX_MCP_STDIO_ENABLED` | `false` | **stdio 类型 MCP 服务的开关**，同一个变量同时决定 admin 的 `harnax.mcp.stdio-enabled`。详见下一节 |
+| `HARNESS_METRICS_INVOCATION_ENABLED` | `true` | 工具调用指标总开关（配置项 `harness.metrics.invocation.enabled`）。关掉**不装中间件**，`tool_invocation_log` 停止增长，页面三个 tab 从此没有新数据；不影响工具本身执行 |
+| `HARNESS_METRICS_INVOCATION_CAPTURE_PAYLOAD` | `true` | 是否把入参与结果正文写进明细的 `args_json` / `result_excerpt`（配置项 `harness.metrics.invocation.capture-payload`）。这两列可能含明文凭据，只想要计数与耗时就关掉：两列留 NULL，成功率、P95、时长一个不少 |
+| `HARNESS_METRICS_INVOCATION_CAPTURE_MAX_CHARS` | `2000` | 上述两列的截断长度。超限部分丢弃并带截断标记 |
+| `HARNESS_METRICS_INVOCATION_BATCH_SIZE` / `_FLUSH_INTERVAL_MS` / `_QUEUE_CAPACITY` | `64` / `200` / `512` | 后台写线程的批量、刷新间隔与队列上限。队列满时丢事件并计数，不阻塞回合——指标记录不许拖慢对话 |
 | `HARNAX_TURN_TIMEOUT_SECONDS` | `300` | 单个回合预算（秒），批量与流式共用，只作用于单体智能体。团队回合改用下一项 |
 | `HARNAX_TEAM_TURN_TIMEOUT_SECONDS` | `1800` | 团队一个回合的预算（秒），主管与成员都用它。必须高于 `harness.team.member-turn-timeout-seconds`（默认 900）与 `confirm-timeout-seconds`（默认 600）：低于它们时，先触发的就是这一项，一个只是跑得久的成员会连整条会话一起被切断，而不是把「这次委派失败」交回主管处理。装配时若发现配反了会打一条 WARN |
 | `ROUTER_SERVICE_URL` | `http://localhost:8081` | router 地址 |
@@ -149,6 +153,8 @@
 | `HARNAX_AUTH_SKIP_PATHS` | `[]` | 免鉴权路径前缀列表。默认只跳过 `/health` 与 `/actuator`，因此 `curl /api/agent/health` 不带凭据会拿到 **401** |
 | `HARNAX_AUTH_TOKEN_TTL_SECONDS` | `300` | 出向服务间 token 有效期 |
 | `JAVA_OPTS` | compose 里 `-Xms256m -Xmx1g …` | 只作用于容器（Dockerfile 的 ENTRYPOINT 引用它）；注意 compose 同时给该容器 2048M 内存上限，堆外还要留余量 |
+
+上面四行覆盖六个变量，它们在 `application.yml` 里都有默认值，compose 只注入前两行那两枚开关；其余四项要覆盖就直接设同名环境变量——yml 侧本来就写成了 `${HARNESS_METRICS_INVOCATION_QUEUE_CAPACITY:512}` 这种占位形状，宽松绑定认它们。明细行由 `harnax-admin` 侧的每小时任务折进日聚合，保留窗口与折算开关都在对面，见 `docs/deploy-harnax-admin.md` 的「调用指标折算」。
 
 ---
 

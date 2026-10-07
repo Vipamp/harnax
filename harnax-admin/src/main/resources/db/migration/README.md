@@ -50,10 +50,10 @@ A database whose ledger already carries rows cannot simply switch to this baseli
 scripts that are no longer on the classpath, and the recorded checksum no longer matches the file on
 disk. Drop the schema and let the baseline rebuild it.
 
-`harnax-admin` alone runs Flyway with `repair-on-migrate: true`, so it would realign the checksum and
-clear the unresolved history rows instead of failing — but that leaves the schema unverified against
-the baseline by anything other than the drift guard, so a rebuild is still the required action.
-`harnax-scheduler` and `harnax-session-router` have no repair configured and fail outright.
+`repair-on-migrate: true` in `harnax-admin/src/main/resources/application.yml` is not an escape hatch: Spring Boot 4.0.1's
+`FlywayProperties` declares no such field, so the binder drops the key and admin fails validation the same way
+`harnax-scheduler` and `harnax-session-router` do. Never plan an upgrade around that setting — editing the baseline and
+rebuilding the database stay one action for every module.
 
 ## Configuration
 

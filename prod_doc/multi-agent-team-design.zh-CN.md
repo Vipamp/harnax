@@ -60,7 +60,7 @@
 
 `team_artifact` 的 `team_id` 与 `child_session_id` 由发布时写入，读取归属与授权一律用 `tenant_id` + `session_id`，这两列留作排查线索。
 
-一次团队运行的归属取自各自的 spec：主管那份的 `AgentSpec.attributableAgentId` 为空（`id` 为团队主管哨兵值 0，属性把它读成 null），成员那份是成员自己的 `agent.id`。因此 `token_stats`、`tool_call_log`、`process_log` 里主管的运行行不带 Agent 归属，成员的运行行按成员归属；`process_log` 的归属在一次装配时写入该实例自己的中间件，成员构建不会改写主管后续运行行的归属。
+一次团队运行的归属取自各自的 spec：主管那份的 `AgentSpec.attributableAgentId` 为空（`id` 为团队主管哨兵值 0，属性把它读成 null），成员那份是成员自己的 `agent.id`。因此 `token_stats`、`tool_invocation_log`、`process_log` 里主管的运行行不带 Agent 归属，成员的运行行按成员归属；`process_log` 的归属在一次装配时写入该实例自己的中间件，成员构建不会改写主管后续运行行的归属。
 
 ### 3.3 会话分型与团队入口
 

@@ -382,7 +382,7 @@ AND (tenant_id = #{tenantId} OR repository_id = #{builtinRepositoryId})
 - `skillDetails: List<SkillDetailDto>` —— 该 agent 或 lead 自己绑定的技能；
 - `cliDetails[].skill: SkillDetailDto?` —— 每个被选 CLI 包自带的技能。
 
-`SkillDetailDto` 是六元组：`id`、`name`、`description`、`skillmd`、`resources`、`version`，由 `InternalApiController.skillDetail(skill)` 从实体逐列映射。`tenant_id`、`creator`、`is_public`、`status`、`active` 不过界——它们已经在下发判定里被消费掉了。响应的 `tenantId` 是持有者行自己的租户，agent-service 把它落到 `token_stats` / `tool_call_log` / `process_log` 上。
+`SkillDetailDto` 是六元组：`id`、`name`、`description`、`skillmd`、`resources`、`version`，由 `InternalApiController.skillDetail(skill)` 从实体逐列映射。`tenant_id`、`creator`、`is_public`、`status`、`active` 不过界——它们已经在下发判定里被消费掉了。响应的 `tenantId` 是持有者行自己的租户，agent-service 把它落到 `token_stats` / `tool_invocation_log` / `process_log` 上。
 
 ### 8.2 下发解析
 

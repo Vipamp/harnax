@@ -16,7 +16,7 @@ Every externally visible property of a tool is decided by annotations in the cod
 | `harnax-tools-external/harnax-tools-buildin` | `harnax-tools-buildin` | Built-in tool implementations; today two groups: time and email |
 | `harnax-agent/harnax-harness-core` | `harnax-harness-core` | Runtime assembly: `HarnessAgentLauncher`, `HarnessAgentBuilder`, `DangerousInputCheckingTool`, team tool groups |
 | `harnax-admin` | `harnax-admin` | Startup sync `BuiltinToolAutoRegistrar`, read-only management API, spec delivery |
-| `harnax-agent/harnax-agent-service` | `harnax-agent-service` | `ToolConfigAdaptorImpl`, `ToolCallLogAdaptorImpl`, `AgentSpecResolver` |
+| `harnax-agent/harnax-agent-service` | `harnax-agent-service` | `ToolConfigAdaptorImpl`, `ToolInvocationAdaptorImpl`, `AgentSpecResolver` |
 
 Dependency directions (taken from each module's `pom.xml`):
 
@@ -56,13 +56,9 @@ For a team lead, `requiredToolIds` is empty: a lead is configured by the `team` 
 
 `ToolBox` (`harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolBox.kt`) is the base class of a tool group:
 
-- `abstract fun name(): String`: the group name, used as the prefix of `tool_call_log.tool_name` and as `ToolMetaDescriptor.toolName`.
-- `init(toolCallLogAdaptor, sessionMetaContext, userIdentifier)`: called by the assembly side before handing the instance to the `Toolkit`; pins the internal `name` field to the result of `name()`.
-- `userIdentifier()`: throws `IllegalStateException("ToolBox not initialized: userIdentifier is null")` when `init` has not run.
-- `protected fun <T> execute(vararg args: Pair<String, Any?>, action: () -> T)` and `execute(action: () -> T)`: wrap the method body. The method name comes from `Throwable().stackTrace[1].methodName`, so `execute` must be the direct expression of the tool method; a nested call records the enclosing method name instead.
-- On success it logs `ToolCallInfo(success = true, result = the action's return value via toString, null as an empty string)`; on an exception it logs `success = false, result = "ERROR: ${message}"` and rethrows unchanged.
-- The logged name format is `"<group>::<method>"`, e.g. `email-tool-box::sendEmail`.
-- Without `init` (null `sessionMetaContext` or adaptor) it logs one WARN and skips recording; an exception from the adaptor itself is swallowed and logged at ERROR, leaving the tool result untouched.
+- `abstract fun name(): String`: the group name, used as `ToolMetaDescriptor.toolName`.
+- That is the whole class: it carries no state, and measuring and recording the call belong to `ToolInvocationMiddleware`, which sees every call - including an MCP tool or a shell command, neither of which is a `ToolBox`.
+- A tool that needs to act as the end user takes that value as its own argument, rather than through a base-class seam.
 
 ### 3.2 The annotation set
 
@@ -119,18 +115,18 @@ Public methods: `getToolBox(beanName)`, `getAllToolBoxes()`, `getToolBoxNames()`
 
 | Interface | Declared in | harnax implementation | Purpose |
 | --- | --- | --- | --- |
-| `ToolCallLogAdaptor` (`fun interface`, `emit(ToolCallInfo)`) | tools-sdk `adaptor` package | `ToolCallLogAdaptorImpl` in `harnax-agent-service`, converting to `ToolCallLogEntity` then `ToolCallLogMapper.insert` | Persists the call into `tool_call_log`; falls back to `{}` when args serialisation fails; swallows every exception into a log line |
+| `ToolInvocationAdaptor` (`fun interface`, `emit(ToolInvocationEvent)`) | tools-sdk `adaptor` package | `ToolInvocationAdaptorImpl` in `harnax-agent-service`, a bounded queue plus batched inserts into `tool_invocation_log` | Records one invocation as one metric row |
 | `ToolConfigAdaptor` (`getToolConfig(toolId): AgentTool?`) | tools-sdk `adaptor` package | `ToolConfigAdaptorImpl` in `harnax-agent-service` | Resolves a tool by id: first the delivered `toolDetails` in `AgentSpecContextHolder` (a `ToolDetailDto` converted to the entity), otherwise `AgentToolMapper.selectById`; `toolId <= 0` returns null |
 
-On the harness side, `HarnessAutoConfiguration` obtains the `ToolCallLogAdaptor` through an `ObjectProvider` and uses a no-op when absent - running the harness embedded simply loses the call records, and assembly is unaffected.
+`HarnessAutoConfiguration` obtains the `ToolInvocationAdaptor` through an `ObjectProvider` (`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/spring/HarnessAutoConfiguration.kt:332`, `:368` - `toolInvocationAdaptorProvider.ifAvailable?.takeIf { invocationMetricsEnabled }`), and `harness.metrics.invocation.enabled=false` folds it to null; a null adaptor means the middleware is never mounted - that is the one landing point of the switch (mount guard `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt:647`, the invariant recorded in that file's KDoc at `:140`). Running the harness embedded simply records nothing.
 
 ### 3.7 Descriptors and remaining data classes
 
 - `ToolMetaDescriptor(beanName, toolName, methods)`: everything one ToolBox declares; the sync's input.
 - `ToolMethodDescriptor(methodName, toolName, displayName, displayNameZh, description, readOnly, needConfirm, envParamDescriptors, isRequired)`: one `@Tool` method, i.e. one `agent_tool` row.
 - `ToolEnvParamDescriptor(key, description, required, secret, defaultValue)`: one env parameter definition.
-- `SessionMetaContext(agentId: Long?, sessionId, tenantId: Long? = null)` and `UserIdentifier(userId: Long? = null)`: both implement the marker interface `ToolCallContext`. A null `agentId` means no `agent` row stands behind the run (a team lead); a null `tenantId` means the delivery named no tenant. Both are written as-is into `tool_call_log`, never guessed.
-- `ToolSpec(toolId, toolName = "", needConfirm = false)`: assembly input. `toolName` is unused on the assembly path; the confirmation bit travels in `needConfirm`.
+- `UserIdentifier(userId: Long? = null)`: the only implementation of the empty marker interface `ToolCallContext`, which declares no members. The session, agent, tenant and user attribution of one call is carried into `ToolInvocationMiddleware` by its constructor parameters (`tenantId`, `agentId`, `sessionId`, `userId`), never read from the tool side.
+- `ToolSpec(toolId, toolName = "", needConfirm = false)`: assembly input. `toolName` is the name list behind `kind = builtin` - assembly gathers it into `builtinToolNames` and hands it to `ToolInvocationMiddleware` (`HarnessAgentLauncher.kt:657`); the confirmation bit travels in `needConfirm`.
 
 ## 4. Built-in Tools Today (harnax-tools-buildin)
 
@@ -196,7 +192,7 @@ Search the logs for `[BuiltinToolAutoRegistrar]`. The lines in order are: `Synci
 
 ### 6.2 Resolution: the agent-service side
 
-`AgentSpecResolver` folds `toolDetails` into `ToolSpec(toolId, needConfirm = bindingNeedConfirm)` entries, merges the `env_bindings` found in `toolList` and `mcpList` into one flat map, and registers that map as a `ToolEnvContext` in `AgentSpec.contextForTools`.
+`AgentSpecResolver` folds `toolDetails` into `ToolSpec(toolId, toolName = tool.name, needConfirm = bindingNeedConfirm)` entries, merges the `env_bindings` found in `toolList` and `mcpList` into one flat map, and registers that map as a `ToolEnvContext` in `AgentSpec.contextForTools`.
 
 ### 6.3 Assembly: the harness-core side
 
@@ -204,7 +200,7 @@ The tool section of `HarnessAgentLauncher.createAgentBase` does, in order:
 
 1. Assembly runs only for a non-lead with a non-empty `agentSpec.toolSpecs` and a present `toolConfigAdaptor`; a missing `ToolConfigAdaptor` is the one case that logs a WARN and installs no tools at all.
 2. Each `toolSpec` is resolved with `toolConfigAdaptor.getToolConfig(toolSpec.toolId)`; `status == 0` logs INFO and skips.
-3. De-duplicated by `beanName`: a ToolBox is instantiated once. `toolRegistry.createToolBoxInstance(beanName)` builds a session-level instance, `init(toolCallLogAdaptor, SessionMetaContext(agentSpec.attributableAgentId, sessionId, agentSpec.tenantId), userIdentifier)` primes it, and `agentBuilder.addTool(toolBox)` registers the group.
+3. De-duplicated by `beanName`: a ToolBox is instantiated once. `toolRegistry.createToolBoxInstance(beanName)` builds a session-level instance, and `agentBuilder.addTool(toolBox)` registers the group; nothing on the instance tells the runtime whose calls these are, since that attribution is handed to the `ToolInvocationMiddleware` mounted below.
 4. `Toolkit.registerTool` registers the whole group, so a sweep follows: every tool name in `getToolMeta(bean).methods` that this agent was not granted is withdrawn with `agentBuilder.removeTool(name)`. Two sources produce ungranted names - unselected siblings inside the same group, and disabled methods.
 5. Confirmation is a union: `toolConfig.needConfirm == 1 || toolSpec.needConfirm`. The binding level can only tighten. Hits go into `needConfirmedTools`.
 6. Each ToolBox class is reflected once for `@ToolMeta(dangerousInput = true)`; hits go into `dangerousInputTools`.
@@ -233,13 +229,21 @@ Both ASK reasons start with `safety:`, which the PermissionEngine contract treat
 
 Timeout is an assembly-side property, not a tool property. `HarnessAgentWrapper`'s constructor parameter `turnTimeoutSeconds` (default 300) puts `.timeout(Duration.ofSeconds(...))` on the whole turn, and a non-positive value skips it. The value comes from `harness.turn-timeout-seconds` (`harnax-agent/harnax-agent-service/src/main/resources/application.yml`, default 300); team turns go through `turnBudget(teamRole)` and use `harness.team.turn-timeout-seconds` (default 1800), with a WARN when that budget is not above the member-turn budget. A single tool has no timeout budget of its own; a slow tool is bounded by the turn budget.
 
-### 6.7 Call logging
+### 6.7 Call metrics
 
-`ToolBox.execute` produces the `ToolCallInfo` and `ToolCallLogAdaptorImpl` stores it: `toolName` is `<group>::<method>`, `args` is the map serialised to JSON (each value via `toString`, null as the string `"null"`), `result` is the return value as a string or `ERROR: <message>`, `success` is 0/1, timestamps are converted from milliseconds in the system time zone, and `ts` takes the end time.
+One invocation is recorded by `ToolInvocationMiddleware` in `harnax-harness-core` (`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/provider/middleware/ToolInvocationMiddleware.kt`): it notes the start in `onActing` and, as `TOOL_RESULT_END` closes the call, assembles one `ToolInvocationEvent` - origin `kind`, `tool_name`, terminal `outcome`, the start and end milliseconds, the truncated arguments and result - and hands it to `ToolInvocationAdaptor`; the two body columns can be switched off as a whole through `capture-payload`, and a full queue drops events with a counter. The middleware is a fresh instance per assembly, and its mount point is `HarnessAgentLauncher.kt:647-662` behind a single outer guard, `if (toolInvocationAdaptor != null)`: the attribution (tenant / agent / session / user) and the three classification inputs (`mcpIdsByTool`, `cliIdsByCommand`, `builtinToolNames`) all go into its constructor parameters, which is why it is per-run private state rather than a shared singleton.
+
+`kind` takes the five values `builtin` / `mcp` / `cli` / `shell` / `framework`, and the decision order is the contract (`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/provider/middleware/ToolInvocationClassifier.kt:40-63`): a hit in the MCP registry, then a shell tool name (`execute` / `execute_shell_command`, split once more into `cli` when the command is a delivered CLI package and `shell` otherwise), then a name present in the delivered tool list, which is `builtin`, and only a name that is none of the three becomes `framework`.
+
+`outcome` takes the four terminals `SUCCESS` / `ERROR` / `DENIED` / `INTERRUPTED` and nothing else: a non-terminal state emits no event, and when the result stream ends early - by an exception or a cancellation - every start still open is filed as `INTERRUPTED`.
+
+Writing never occupies the turn: `ToolInvocationAdaptorImpl` puts events into a bounded queue (`harness.metrics.invocation.queue-capacity`, default 512) and lands them in batches, one pass every `flush-interval-ms` (default 200 milliseconds) of at most `batch-size` rows (default 64); an event met by a full queue, or by a writer thread that has already stopped, is dropped and counted. The argument and result bodies are truncated on the write side at `harness.metrics.invocation.capture-max-chars` (default 2000), and `harness.metrics.invocation.capture-payload=false` leaves the `args_json` and `result_excerpt` columns NULL; the landing point of the master switch `harness.metrics.invocation.enabled` is given under "Adaptor interfaces (SPI)".
+
+Rollup and cleanup run on the admin side: `ToolInvocationRollupService` folds, every hour at :05 (`@Scheduled(cron = "0 5 * * * ?")`, `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/ToolInvocationRollupService.kt:48`), each day the detail table still owes - always yesterday and today as well - into `tool_invocation_stats` through `upsertDay` (`:89`), then releases the rows past the retention window whose day has been folded with `deleteRolledOut` (`:94`). The window is `harnax.metrics.retention-days` (default 90 days), clamped into its legal band at construction; inside `harnax-entity/src/main/resources/mapper/ToolInvocationLogMapper.xml:45-56` the rows with `tenant_id IS NULL` are released by the window alone.
 
 ## 7. Data Model
 
-Columns and indexes come from admin's schema baseline `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql`: that one script holds every table and column definition, with no later version to stack on top of it. `agent_tool` is platform-scoped, identified by name (`uk_agent_tool_name`) and additive; `tool_call_log`'s `tenant_id` is a nullable column declared, together with the `idx_tenant_ts (tenant_id, ts)` index, inside that table's own create statement.
+Columns and indexes come from admin's schema baseline `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql`: that one script holds every table and column definition, with no later version to stack on top of it. `agent_tool` is platform-scoped, identified by name (`uk_agent_tool_name`) and additive, and the two call-metrics tables are written into this same baseline as well: the detail table `tool_invocation_log` (from `:759`) and the daily aggregate `tool_invocation_stats` (from `:788`). Each declares its index names inside its own create statement, and the detail table's tenant-composite index is `idx_tool_invocation_log_tenant_ts`.
 
 ### 7.1 agent_tool
 
@@ -277,9 +281,13 @@ There is no tenant column, no type column, no HTTP columns, no schema columns an
 
 The tool's env parameter definition table: `tool_id` points at `agent_tool.id`, `(tool_id, env_param_name)` is unique, and `description`, `required`, `secret`, `default_value` complete it. It describes what a tool needs; the values live on the binding row.
 
-### 7.4 tool_call_log
+### 7.4 tool_invocation_log and tool_invocation_stats
 
-`agent_id` (nullable; NULL for a lead run), `tenant_id` (nullable; NULL when unattributed), `session_id`, `tool_name` (`<group>::<method>`), `args` (JSON), `result`, `success`, `start_time`, `end_time`, `duration`, `ts`. `ToolCallLogMapper` has `insert` only: a row is written once, never read back, and never pruned together with its session or agent. Indexes: `idx_agent_id`, `idx_session_id`, `idx_tool_name`, `idx_ts` and `idx_tenant_ts (tenant_id, ts)`.
+The detail table holds one row per invocation and is kept for `harnax.metrics.retention-days` days: `tenant_id` (nullable; NULL when the delivered spec named no tenant), `agent_id` (nullable; a team lead has no `agent` row), `session_id`, `user_id`, `kind`, `tool_name`, `mcp_id` / `cli_id` (set only on the matching origin), `outcome`, `error_message`, `args_json` / `result_excerpt` (the payload columns can be switched off as a whole), `duration_ms`, `start_time` / `end_time` / `ts` (all three `datetime(3)`). Six indexes cover the read shapes: tenant + time, tenant + origin + time, mcp_id + time, cli_id + time, session and tool_name.
+
+The daily aggregate is kept forever, under the unique key `(stat_date, tenant_id, kind, subject_id, tool_name)`: `subject_id` is the MCP server row when `kind=mcp`, the CLI package row when `kind=cli`, and `0` otherwise (never NULL - a unique index does not treat NULLs as equal, so NULL would let the same day insert two rows); counters are `calls`, one per terminal state, `sum_duration_ms` and `max_duration_ms`; the six duration buckets are **half-open** (`le_100ms`, `le_500ms` = `(100,500]`, `le_2s`, `le_10s`, `le_30s`, `gt_30s`), right-closed and left-open so that "exactly 500 ms" is claimed by one bucket only and the bucket sum always equals `calls`.
+
+One invariant decides how the two tables are read: `tenant_id` is `NOT NULL` on the aggregate, so unattributed detail rows enter no aggregate and are governed by the retention window alone. Statistics by tool read the aggregate (answerable beyond the retention period); statistics by agent / session read the detail table (bounded by the retention window).
 
 ### 7.5 Relation to env_variable
 
@@ -309,6 +317,12 @@ Responses are `AgentToolResponse`, carrying `envParams` (a `ToolEnvParamEntry` l
 
 `harnax-webui/src/pages/agent/components/ToolConfigPanel.tsx` is where tools are actually selected and configured: each entry can toggle `needConfirm` (written to the binding row) and produces `envBindings` through the env editor. The service layer is `harnax-webui/src/services/ant-design-pro/tool.ts`: `getAvailableTools()` and `getBuiltinTools()`.
 
+### 8.4 Call-metrics API and page
+
+The read side is `ToolMetricsController` (`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/ToolMetricsController.kt:27` declares the base path `/api/admin/tool-metrics`, `:29` is the class), three read-only GETs: `/summary` (`:35`), `/time-series` (`:54`), `/invocations` (`:75`). None of the three takes a tenant parameter — the tenant comes from the caller's own token — and all three take `days`, clamped to 1..365. On `summary`, `groupBy` is `tool` (default) / `agent` / `session`; on `time-series`, `granularity` is `day` (default) / `week` / `month`, with empty buckets filled in so a quiet day does not make the line jump. The `tool` dimension reads `tool_invocation_stats`, while `agent` and `session` read `tool_invocation_log`, so those two only cover what falls inside the retention window.
+
+The page is "Call Metrics" under the "Monitoring & Governance" group of `harnax-webui`, routed at `/monitor/call-metrics` (`harnax-webui/config/routes.ts:143`, page `harnax-webui/src/pages/call-metrics/index.tsx`): three tabs (tools / MCP / CLI) sharing one shape, with `shell` and `framework` reachable by `kind` inside the tools tab, and a drawer giving the outcome, duration, failure reason, arguments and result excerpt of a single call.
+
 ## 9. Developing a New Tool, Step by Step
 
 ### Step 1: pick the module
@@ -329,9 +343,9 @@ class OrderToolBox : ToolBox() {
     )
     fun queryOrder(
         @ToolParam(name = "order_no", description = "订单号") orderNo: String?,
-    ): String = execute("order_no" to orderNo) {
+    ): String {
         require(!orderNo.isNullOrBlank()) { "Parameter 'order_no' is required" }
-        "order $orderNo: PAID"
+        return "order $orderNo: PAID"
     }
 
     override fun name(): String = NAME
@@ -342,7 +356,7 @@ class OrderToolBox : ToolBox() {
 }
 ```
 
-Points: extend `ToolBox` and implement `name()`; keep a no-argument constructor (session-level instances come from `getDeclaredConstructor()`); wrap the body in `execute`, otherwise there is no call log; one method, one globally unique tool name.
+Points: extend `ToolBox` and implement `name()`; keep a no-argument constructor (session-level instances come from `getDeclaredConstructor()`); the method body is an ordinary body - the call is timed and filed by `ToolInvocationMiddleware`, so a tool records nothing itself; one method, one globally unique tool name.
 
 ### Step 3: expose parameters to the model
 
@@ -368,7 +382,7 @@ No manual insert, no page action, no SQL script: when admin finishes starting, t
 
 ### Step 8: bind and verify
 
-Select the tool in the agent panel, fill the env values, run one turn, and check that `tool_call_log` contains a `<group>::<method>` row. If the agent cannot see the tool, check in order: whether the bean is on the admin and agent-service classpaths (the `[ToolRegistry] Registered ToolBox bean` line), whether `declaredNames` contains the name (visible on the page but missing for the agent usually means the bean is absent from agent-service), whether the binding row exists, whether `status` is 1, and whether a name clash failed the startup.
+Select the tool in the agent panel, fill the env values, run one turn, and check that the tool tab of the Call Metrics page lists this tool name. If the agent cannot see the tool, check in order: whether the bean is on the admin and agent-service classpaths (the `[ToolRegistry] Registered ToolBox bean` line), whether `declaredNames` contains the name (visible on the page but missing for the agent usually means the bean is absent from agent-service), whether the binding row exists, whether `status` is 1, and whether a name clash failed the startup.
 
 ### Quick pitfall reference
 
@@ -380,7 +394,7 @@ Select the tool in the agent panel, fill the env values, run one turn, and check
 | A parameter's default differs from its description | The `@ToolParam` description takes no part in evaluation; the fallback expression in the method body decides it: `EmailToolBox.sendEmail`'s `is_html` is described as `Whether the body is HTML format (default: true)` while the body computes `val htmlMode = isHtml ?: false`, so an omitted argument sends `text/plain` |
 | An env parameter always reports unconfigured | The value sits in `agent_tool_env_param.default_value` (unused at runtime); or a required tool tries to carry parameters (no binding row) |
 | Unselected sibling methods are available | The assembly sweep keeps exactly the granted names, so check the binding rows really hold one `tool_id` each |
-| Wrong method name in the log | `execute` is not the tool method's direct expression, so the stack-frame walk picked up the outer method |
+| Wrong `kind` or wrong tool name on the Call Metrics page | The classifier (`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/provider/middleware/ToolInvocationClassifier.kt`) decides in a fixed order: an MCP registry hit, then the shell tool names (`execute` / `execute_shell_command`, split again by whether the command belongs to a delivered CLI package), then the delivered tool list, and everything left is `framework`; a `cli` row carries the matched command name, not the shell tool name |
 | `@ToolMeta` seems to have no effect | It was written on the class; its target is `FUNCTION` |
 
 ## 10. Explicit Non-goals and Known Boundaries
@@ -391,7 +405,6 @@ Select the tool in the agent panel, fill the env values, run one turn, and check
 - No configuration slot for per-tool timeout, retry or concurrency limits: the turn timeout is applied by the assembly side, and concurrency serialisation is the code attribute `@Tool.concurrencySafe`, neither stored nor adjustable per agent.
 - Required tools and required env parameters are mutually exclusive; the sync only warns, it does not refuse to start.
 - Tools have no permission model of their own: visibility equals "bound to this agent", and behaviour under the permission engine comes from `readOnly` / `needConfirm` / `dangerousInput` plus the session's permission mode.
-- Call logs are write-only: the product has no tool-call statistics page, and `tool_call_log` needs a direct database query.
 - A team lead assembles no business or required tools, only the team tool group; its meta tool, filesystem tools and shell tool are explicitly disabled.
 - A secret env parameter's `defaultValue` is decrypted and then masked in the response (first 3 and last 4 characters, fully masked below length 7), and shows `******` when decryption fails, so the rendered length is not the plaintext length.
 
@@ -403,7 +416,7 @@ Select the tool in the agent panel, fill the env values, run one turn, and check
 | `@ToolMeta` and `@ToolEnvParamDef` | `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolMeta.kt`, `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolEnvParamDef.kt` |
 | Descriptors | `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolMetaDescriptor.kt` |
 | Env and call contexts | `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolEnvContext.kt`, `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolCallContext.kt` |
-| SPI | `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/adaptor/ToolCallLogAdaptor.kt`, `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/adaptor/ToolConfigAdaptor.kt` |
+| SPI | `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/adaptor/ToolInvocationAdaptor.kt`, `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/adaptor/ToolConfigAdaptor.kt` |
 | Registry | `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/registry/ToolRegistry.kt` |
 | Assembly input | `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolSpec.kt` |
 | Built-in tools | `harnax-tools-external/harnax-tools-buildin/src/main/kotlin/com/agnetix/harnax/tools/buildin/TimeToolBox.kt`, `harnax-tools-external/harnax-tools-buildin/src/main/kotlin/com/agnetix/harnax/tools/buildin/EmailToolBox.kt` |
@@ -412,12 +425,13 @@ Select the tool in the agent panel, fill the env values, run one turn, and check
 | Binding save | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AgentServiceImpl.kt` |
 | Spec delivery | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt` |
 | Spec resolution | `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/AgentSpecResolver.kt` |
-| SPI implementations | `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/ToolConfigAdaptorImpl.kt`, `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/ToolCallLogAdaptorImpl.kt` |
+| SPI implementations | `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/ToolConfigAdaptorImpl.kt`, `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/ToolInvocationAdaptorImpl.kt` |
 | Runtime assembly | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt`, `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentBuilder.kt` |
 | Dangerous-input decorator | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/permission/DangerousInputCheckingTool.kt` |
 | Team tool groups | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/team/TeamToolBoxes.kt` |
 | Turn timeout | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentWrapper.kt`, `harnax-agent/harnax-agent-service/src/main/resources/application.yml` |
-| Entities and mappers | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentTool.kt`, `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentToolBinding.kt`, `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentToolEnvParam.kt`, `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/ToolCallLogEntity.kt`, `harnax-entity/src/main/resources/mapper/AgentToolMapper.xml`, `harnax-entity/src/main/resources/mapper/ToolCallLogMapper.xml` |
-| DDL | `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` (the columns, keys and defaults of `agent_tool`, `agent_tool_binding`, `agent_tool_env_param` and `tool_call_log` are all written in this one baseline) |
+| Call metrics | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/provider/middleware/ToolInvocationMiddleware.kt`, `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/provider/middleware/ToolInvocationClassifier.kt`, `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/ToolInvocationRollupService.kt`, `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/ToolMetricsController.kt`, `harnax-webui/src/pages/call-metrics/index.tsx` |
+| Entities and mappers | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentTool.kt`, `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentToolBinding.kt`, `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentToolEnvParam.kt`, `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/ToolInvocationLog.kt`, `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/ToolInvocationStats.kt`, `harnax-entity/src/main/resources/mapper/AgentToolMapper.xml`, `harnax-entity/src/main/resources/mapper/ToolInvocationLogMapper.xml`, `harnax-entity/src/main/resources/mapper/ToolInvocationStatsMapper.xml` |
+| DDL | `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` (the columns, keys and defaults of `agent_tool`, `agent_tool_binding`, `agent_tool_env_param`, `tool_invocation_log` and `tool_invocation_stats` are all written in this one baseline) |
 | Frontend | `harnax-webui/src/pages/tool/index.tsx`, `harnax-webui/src/pages/agent/components/ToolConfigPanel.tsx`, `harnax-webui/src/services/ant-design-pro/tool.ts` |
 | Process wiring | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/HarnaxAdminApplication.kt`, `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/AgentServiceApplication.kt` |

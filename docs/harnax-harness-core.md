@@ -328,7 +328,6 @@ harnax-harness-core/src/main/kotlin/com/agnetix/harnax/
 │   │   ├── ProcessLogAdaptor.kt              # 过程日志适配器接口
 │   │   ├── SkillAdaptor.kt                   # 技能加载适配器接口
 │   │   ├── TokenStatAdaptor.kt               # Token 统计适配器接口
-│   │   ├── ToolCallLogAdaptor.kt             # 工具调用日志适配器接口
 │   │   └── token/TokenStat.kt                # Token 统计模型
 │   ├── chat/
 │   │   ├── MessageLog.kt                     # 消息日志模型
@@ -337,7 +336,9 @@ harnax-harness-core/src/main/kotlin/com/agnetix/harnax/
 │   ├── provider/
 │   │   └── middleware/
 │   │       ├── ProcessLogMiddleware.kt       # 过程日志中间件（每次装配新建）
-│   │       └── TokenStatsMiddleware.kt       # Token 统计中间件（每次装配新建）
+│   │       ├── TokenStatsMiddleware.kt       # Token 统计中间件（每次装配新建）
+│   │       ├── ToolInvocationMiddleware.kt   # 工具调用指标中间件（每次装配新建）
+│   │       └── ToolInvocationClassifier.kt   # 来源 kind 与 CLI 归因的纯函数
 │   └── session/
 │       ├── SessionConfig.kt                  # Session 配置（MysqlSessionConfig）
 │       └── SessionLoader.kt                  # Session 加载器

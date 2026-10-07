@@ -263,7 +263,6 @@ for each ToolSpec in agentSpec.toolSpecs:                 // 工具按 agent 绑
     toolConfigAdaptor.getToolConfig(toolId) -> ToolConfig
     ToolConfig.status == 0 -> 跳过（管理员已停用）
     toolRegistry.createToolBoxInstance(beanName) -> ToolBox  // 同一 beanName 只注册一次
-    toolBox.init(toolCallLogAdaptor, SessionMetaContext(agentId, sessionId, tenantId), userIdentifier)
     agentBuilder.addTool(toolBox)                          // addTool 装载该 ToolBox 的全部 @Tool 方法
     if toolConfig.needConfirm == 1 || toolSpec.needConfirm:
         needConfirmedTools.add(toolConfig.name)            // 用 @Tool.name，PermissionEngine 按名字匹配
@@ -288,7 +287,24 @@ for each SkillSpec in agentSpec.skills:
 
 agentBuilder.addMiddleware(TokenStatsMiddleware(tokenStatAdaptor, tokenStatBuilder))
 agentBuilder.addMiddleware(ProcessLogMiddleware())
-    // 两次 addMiddleware 都是每次 build 新建实例：中间件把本轮归因（agent/session/tenant）
+if (toolInvocationAdaptor != null) {
+    agentBuilder.addMiddleware(
+        ToolInvocationMiddleware(
+            adaptor = toolInvocationAdaptor,
+            tenantId = agentSpec.tenantId,
+            agentId = agentSpec.attributableAgentId,
+            sessionId = sessionId,
+            userId = userIdentifier.userId,
+            mcpIdsByTool = mcpIdsByTool,
+            cliIdsByCommand = cliIdsByCommand,
+            builtinToolNames = agentSpec.toolSpecs.map { it.toolName }.toSet(),
+            skillUsageAdaptor = skillUsageAdaptor,
+            adminSkillIdsBySkillId = adminSkillIdsBySkillId,
+        ),
+    )
+}
+    // unattributed tool names fall back to framework/shell; mcpIdsByTool is the snapshot taken after every tool is registered
+    // 三次 addMiddleware 都是每次 build 新建实例：中间件把本轮归因（agent/session/tenant）
     // 存在字段里，共享实例会让并发会话互相改写对方的记账。
 
 PermissionContextState 规则：
@@ -301,6 +317,9 @@ PermissionContextState 规则：
 在 checkPermissions() 里扫描字符串入参中的危险命令与路径；
 已有 ASK 规则的工具跳过包装——ASK 在 checkPermissions 之前触发，包装是冗余的。
 ```
+
+`tool_name` 归不出来源时按 framework/shell 记账；`mcpIdsByTool` 是全部工具注册完之后的快照，早取会把 MCP 工具记成 framework。
+挂载判据 `if (toolInvocationAdaptor != null)` 是 `harness.metrics.invocation.enabled` 的唯一落点：关掉后适配器为 null，这条中间件根本不装配。
 
 ### 第 7 步：配置计划（Plan）
 
@@ -721,6 +740,7 @@ Session Router (port 8081)
               |         |    .addSkill(AgentSkill)     -- from SkillAdaptor
               |         |    .addMiddleware(ProcessLogMiddleware)
               |         |    .addMiddleware(TokenStatsMiddleware)
+              |         |    .addMiddleware(ToolInvocationMiddleware)  -- only if toolInvocationAdaptor != null
               |         |    .permissionContext(...)   -- ALLOW framework tools, ASK needConfirm tools
               |         |    .enablePlan(true)         -- if chatSpec.enablePlan
               |         |    .filesystem(DockerFilesystemSpec) -- if sandbox enabled

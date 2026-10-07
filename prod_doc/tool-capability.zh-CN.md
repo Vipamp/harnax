@@ -16,7 +16,7 @@
 | `harnax-tools-external/harnax-tools-buildin` | `harnax-tools-buildin` | 内置工具实现，当前是时间工具与邮件工具两组 |
 | `harnax-agent/harnax-harness-core` | `harnax-harness-core` | 运行时装配：`HarnessAgentLauncher`、`HarnessAgentBuilder`、`DangerousInputCheckingTool`、团队工具组 |
 | `harnax-admin` | `harnax-admin` | 启动同步 `BuiltinToolAutoRegistrar`、只读管理 API、spec 下发 |
-| `harnax-agent/harnax-agent-service` | `harnax-agent-service` | `ToolConfigAdaptorImpl`、`ToolCallLogAdaptorImpl`、`AgentSpecResolver` |
+| `harnax-agent/harnax-agent-service` | `harnax-agent-service` | `ToolConfigAdaptorImpl`、`ToolInvocationAdaptorImpl`、`AgentSpecResolver` |
 
 依赖方向（取自各模块 `pom.xml`）：
 
@@ -48,21 +48,17 @@
 
 ### 2.3 装配期直接构造的工具组
 
-`harnax-harness-core` 里的 `TeamLeadToolBox` / `TeamMemberToolBox` 是普通类而非 Spring bean（构造函数需要 `TeamOrchestrator`），由 `HarnessAgentLauncher` 在装配团队角色时直接构造并 `init`。它们不在 `ToolRegistry` 的 bean 扫描结果里，因此不出现在 `agent_tool` 表、不出现在工具页面、也不参与 agent 绑定；它们的名字由 `TeamLeadToolBox.TOOL_NAMES` 这类常量给出，并被加进权限引擎的框架 ALLOW 集合。lead 的装配还会显式关闭 meta tool、文件系统工具与 shell 工具。
+`harnax-harness-core` 里的 `TeamLeadToolBox` / `TeamMemberToolBox` 是普通类而非 Spring bean（构造函数需要 `TeamOrchestrator`），由 `HarnessAgentLauncher` 在装配团队角色时直接构造并注册进 builder。它们不在 `ToolRegistry` 的 bean 扫描结果里，因此不出现在 `agent_tool` 表、不出现在工具页面、也不参与 agent 绑定；它们的名字由 `TeamLeadToolBox.TOOL_NAMES` 这类常量给出，并被加进权限引擎的框架 ALLOW 集合。lead 的装配还会显式关闭 meta tool、文件系统工具与 shell 工具。
 
 ## 3. SDK 核心概念（harnax-tools-sdk）
 
 ### 3.1 ToolBox 抽象基类
 
-`ToolBox`（`harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolBox.kt`）是工具组的基类：
+`ToolBox`（`harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolBox.kt`）是工具组的基类，成员只有一个：
 
-- `abstract fun name(): String`：组名，用作 `tool_call_log.tool_name` 的前缀，以及 `ToolMetaDescriptor.toolName`。
-- `init(toolCallLogAdaptor, sessionMetaContext, userIdentifier)`：装配侧在把实例交给 `Toolkit` 前调用；把内部 `name` 字段固定为 `name()` 的返回值。
-- `userIdentifier()`：未 `init` 时抛 `IllegalStateException("ToolBox not initialized: userIdentifier is null")`。
-- `protected fun <T> execute(vararg args: Pair<String, Any?>, action: () -> T)` 与 `execute(action: () -> T)`：业务方法体包在里面。方法名从 `Throwable().stackTrace[1].methodName` 取，因此 `execute` 必须是工具方法的直接表达式，嵌套调用会把外层方法名记进去。
-- 成功时记 `ToolCallInfo(success = true, result = action 返回值的 toString，null 记空串)`；抛异常时记 `success = false, result = "ERROR: ${message}"` 后把异常原样抛出。
-- 日志名格式是 `"$组名::$方法名"`，例如 `email-tool-box::sendEmail`。
-- 未 `init`（`sessionMetaContext` 或 adaptor 为 null）时只打一条 WARN 并跳过记录；adaptor 自身抛异常也被吞掉并记 ERROR，工具结果不受影响。
+- `abstract fun name(): String`：组名，用作 `ToolMetaDescriptor.toolName`。
+
+基类不携带状态：没有会话上下文，也没有留给装配侧的初始化缝隙。一次调用的计时、来源判定与落库都由 `harnax-harness-core` 的 `ToolInvocationMiddleware` 在 acting 步骤外围完成（见「调用指标」），它看得见模型能调的每一个工具——MCP 服务的工具与 shell 命令也算在内，两者都不是 `ToolBox`。需要以终端用户身份行动的工具，把那个值作为自己的参数取。
 
 ### 3.2 注解体系
 
@@ -119,18 +115,18 @@
 
 | 接口 | 定义 | harnax 实现 | 作用 |
 | --- | --- | --- | --- |
-| `ToolCallLogAdaptor`（`fun interface`，`emit(ToolCallInfo)`） | tools-sdk `adaptor` 包 | `harnax-agent-service` 的 `ToolCallLogAdaptorImpl`，转成 `ToolCallLogEntity` 后 `ToolCallLogMapper.insert` | 把调用记录落到 `tool_call_log`；序列化 args 失败时落 `{}`；任何异常只记日志 |
+| `ToolInvocationAdaptor`（`fun interface`，`emit(ToolInvocationEvent)`） | tools-sdk `adaptor` 包 | `harnax-agent-service` 的 `ToolInvocationAdaptorImpl`，带界队列 + 批量落 `tool_invocation_log` | 把一次调用记成指标行 |
 | `ToolConfigAdaptor`（`getToolConfig(toolId): AgentTool?`） | tools-sdk `adaptor` 包 | `harnax-agent-service` 的 `ToolConfigAdaptorImpl` | 按 toolId 取工具配置：先查 `AgentSpecContextHolder` 里已下发的 `toolDetails`，命中则 `ToolDetailDto` 转实体；否则回落到 `AgentToolMapper.selectById`。`toolId <= 0` 直接返回 null |
 
-harness 侧的 `ToolCallLogAdaptor` 由 `HarnessAutoConfiguration` 通过 `ObjectProvider` 注入，缺省时用空实现——纯嵌入式跑 harness 时调用记录自然消失，装配不受影响。
+harness 侧的 `ToolInvocationAdaptor` 由 `HarnessAutoConfiguration` 经 `ObjectProvider` 注入（`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/spring/HarnessAutoConfiguration.kt:332` 是形参，`:368` 是 `toolInvocationAdaptorProvider.ifAvailable?.takeIf { invocationMetricsEnabled }`），`harness.metrics.invocation.enabled=false` 把它折成 null；null 即不装中间件——这是那枚开关的唯一落点（挂载判据见 `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt:647`，同一文件 `:140` 的 KDoc 记的就是这条不变量）。纯嵌入式跑 harness 时没有适配器，调用指标自然不记。
 
 ### 3.7 描述符与其他数据类
 
 - `ToolMetaDescriptor(beanName, toolName, methods)`：一个 ToolBox 的全部声明，同步的输入。
 - `ToolMethodDescriptor(methodName, toolName, displayName, displayNameZh, description, readOnly, needConfirm, envParamDescriptors, isRequired)`：一个 `@Tool` 方法，等于一行 `agent_tool`。
 - `ToolEnvParamDescriptor(key, description, required, secret, defaultValue)`：一个环境参数定义。
-- `SessionMetaContext(agentId: Long?, sessionId, tenantId: Long? = null)`、`UserIdentifier(userId: Long? = null)`：都实现空标记接口 `ToolCallContext`。`agentId` 为 null 表示这次运行背后没有 `agent` 行（团队 lead），`tenantId` 为 null 表示交付未指名租户；两者按原样写进 `tool_call_log`，不做猜测回填。
-- `ToolSpec(toolId, toolName = "", needConfirm = false)`：装配输入，`toolName` 在装配路径上未被使用，确认位由 `needConfirm` 承载。
+- `UserIdentifier(userId: Long? = null)`：空标记接口 `ToolCallContext` 的唯一实现，`ToolCallContext` 不声明任何成员。一次调用的会话 / 智能体 / 租户归属由 `ToolInvocationMiddleware` 的构造参数带进来（`tenantId`、`agentId`、`sessionId`、`userId`），不从工具侧取。
+- `ToolSpec(toolId, toolName = "", needConfirm = false)`：装配输入。`toolName` 是 `kind = builtin` 的判定名单来源——装配把它收进 `builtinToolNames` 交给 `ToolInvocationMiddleware`（`HarnessAgentLauncher.kt:657`）；确认位由 `needConfirm` 承载。
 
 ## 4. 内置工具现状（harnax-tools-buildin）
 
@@ -196,7 +192,7 @@ harness 侧的 `ToolCallLogAdaptor` 由 `HarnessAutoConfiguration` 通过 `Objec
 
 ### 6.2 解析：agent-service 侧
 
-`AgentSpecResolver` 把 `toolDetails` 折成 `ToolSpec(toolId, needConfirm = bindingNeedConfirm)` 列表，把 `toolList` 与 `mcpList` 里的 `env_bindings` 合并成一个扁平 map，作为 `ToolEnvContext` 注册进 `AgentSpec.contextForTools`。
+`AgentSpecResolver` 把 `toolDetails` 折成 `ToolSpec(toolId, toolName = tool.name, needConfirm = bindingNeedConfirm)` 列表，把 `toolList` 与 `mcpList` 里的 `env_bindings` 合并成一个扁平 map，作为 `ToolEnvContext` 注册进 `AgentSpec.contextForTools`。
 
 ### 6.3 装配：harness-core 侧
 
@@ -204,7 +200,7 @@ harness 侧的 `ToolCallLogAdaptor` 由 `HarnessAutoConfiguration` 通过 `Objec
 
 1. 非 lead 且 `agentSpec.toolSpecs` 非空且 `toolConfigAdaptor` 存在才进入装配；只有 `ToolConfigAdaptor` 缺失时会有那条 WARN，工具整体不装。
 2. 逐个 `toolSpec` 用 `toolConfigAdaptor.getToolConfig(toolSpec.toolId)` 取配置；`status == 0` 记 INFO 跳过。
-3. 按 `beanName` 去重：一个 ToolBox 只实例化一次。`toolRegistry.createToolBoxInstance(beanName)` 造会话级实例，`init(toolCallLogAdaptor, SessionMetaContext(agentSpec.attributableAgentId, sessionId, agentSpec.tenantId), userIdentifier)`，然后 `agentBuilder.addTool(toolBox)`。
+3. 按 `beanName` 去重：一个 ToolBox 只实例化一次。`toolRegistry.createToolBoxInstance(beanName)` 造会话级实例，随后 `agentBuilder.addTool(toolBox)`。实例不带会话态：一次调用的会话 / 智能体 / 租户归属由 `ToolInvocationMiddleware` 的构造参数携带（见「调用指标」）。
 4. `Toolkit.registerTool` 是整组注册的，所以随后做一次收敛：把该 bean 在 `getToolMeta(bean).methods` 里、但未被本 agent 授予的工具名逐个 `agentBuilder.removeTool(name)` 撤下。未授予的来源有两个——同组里未选中的兄弟方法，和被停用的方法。
 5. 确认位取并集：`toolConfig.needConfirm == 1 || toolSpec.needConfirm`。绑定级只能加严。命中的工具名进 `needConfirmedTools`。
 6. 每个 ToolBox 类只反射扫描一次 `@ToolMeta(dangerousInput = true)`，命中名进 `dangerousInputTools`。
@@ -233,13 +229,21 @@ harness 侧的 `ToolCallLogAdaptor` 由 `HarnessAutoConfiguration` 通过 `Objec
 
 超时是装配侧属性，不是工具属性。`HarnessAgentWrapper` 的构造参数 `turnTimeoutSeconds`（默认 300）在整轮调用上施加 `.timeout(Duration.ofSeconds(...))`，非正值表示不加超时。取值来自 `harness.turn-timeout-seconds`（`harnax-agent/harnax-agent-service/src/main/resources/application.yml`，默认 300）；团队轮次走 `turnBudget(teamRole)`，改用 `harness.team.turn-timeout-seconds`（默认 1800），并在 team 预算不大于成员轮次预算时记 WARN。单个工具没有独立超时预算，慢工具由整轮预算兜住。
 
-### 6.7 调用日志
+### 6.7 调用指标
 
-`ToolBox.execute` 产出 `ToolCallInfo`，`ToolCallLogAdaptorImpl` 落库：`toolName` 是 `组名::方法名`，`args` 是 map 序列化的 JSON（每个值先 `toString`，null 写成字符串 `"null"`），`result` 是返回值字符串或 `ERROR: <message>`，`success` 0/1，时间戳按系统时区从毫秒转换，`ts` 取结束时间。
+一次调用由 `harnax-harness-core` 的 `ToolInvocationMiddleware`（`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/provider/middleware/ToolInvocationMiddleware.kt`）记录——它在 `onActing` 记下起点，在 `TOOL_RESULT_END` 收尾时组一行 `ToolInvocationEvent`（来源 `kind`、`tool_name`、终态 `outcome`、起止毫秒、截断后的入参与结果），交 `ToolInvocationAdaptor`；正文两列可由 `capture-payload` 整体关闭，队列满则丢弃并计数。中间件每次装配新建一个实例，挂载点是 `HarnessAgentLauncher.kt:647-662`，外层判据只有 `if (toolInvocationAdaptor != null)`：归属（租户 / 智能体 / 会话 / 用户）与三份判定输入（`mcpIdsByTool`、`cliIdsByCommand`、`builtinToolNames`）都装进它的构造参数，所以它是运行时的私有状态而不是共享单例。
+
+`kind` 取五个值 `builtin` / `mcp` / `cli` / `shell` / `framework`，判定顺序是契约（`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/provider/middleware/ToolInvocationClassifier.kt:40-63`）：MCP 注册表命中 → shell 工具名（`execute` / `execute_shell_command`，命中后再分「命令是已下发 CLI 包」→ `cli`，否则 `shell`）→ 在下发工具名单里 → `builtin` → 三者都不是才 `framework`。
+
+`outcome` 只取四个终态 `SUCCESS` / `ERROR` / `DENIED` / `INTERRUPTED`：非终态不产生事件，结果流提前结束（异常或取消）时还开着的起点一律记成 `INTERRUPTED`。
+
+写入不占用回合：`ToolInvocationAdaptorImpl` 把事件放进带界队列（`harness.metrics.invocation.queue-capacity` 默认 512），每 `flush-interval-ms`（默认 200 毫秒）一趟、每批 `batch-size`（默认 64）行批量落库；队列满或写线程已停即丢弃并计数。入参与结果正文在写入侧按 `harness.metrics.invocation.capture-max-chars`（默认 2000）截断，`harness.metrics.invocation.capture-payload=false` 时 `args_json` 与 `result_excerpt` 两列留 NULL；总开关 `harness.metrics.invocation.enabled` 的落点见「适配器接口（SPI）」。
+
+折算与清理在 admin 侧：`ToolInvocationRollupService` 每小时第 5 分钟（`@Scheduled(cron = "0 5 * * * ?")`，`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/ToolInvocationRollupService.kt:48`）把过完的那天 `upsertDay`（`:89`）进 `tool_invocation_stats`，再 `deleteRolledOut`（`:94`）释放保留窗口之外且该天已折算的行。窗口是 `harnax.metrics.retention-days`（默认 90 天），构造期夹进合法区间；`harnax-entity/src/main/resources/mapper/ToolInvocationLogMapper.xml:45-56` 里 `tenant_id IS NULL` 的行只按窗口释放。
 
 ## 7. 数据模型
 
-列集合与索引以 admin 的 schema 基线 `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` 为准：这一个脚本就是全部建表与列定义，没有需要往上叠加的后续版本。`agent_tool` 的形态是平台作用域、按名字标识（`uk_agent_tool_name`）、只增不删；`tool_call_log` 的 `tenant_id` 是一个可空列，与 `idx_tenant_ts (tenant_id, ts)` 一起写在这张表自己的建表语句里。
+列集合与索引以 admin 的 schema 基线 `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` 为准：这一个脚本就是全部建表与列定义，没有需要往上叠加的后续版本。`agent_tool` 的形态是平台作用域、按名字标识（`uk_agent_tool_name`）、只增不删；调用指标的两张表也写在这同一个基线里——明细表 `tool_invocation_log`（`:759` 起）与日聚合 `tool_invocation_stats`（`:788` 起），各自的索引名写在自己的建表语句里，明细表那条租户组合索引叫 `idx_tool_invocation_log_tenant_ts`。
 
 ### 7.1 agent_tool
 
@@ -277,9 +281,13 @@ harness 侧的 `ToolCallLogAdaptor` 由 `HarnessAutoConfiguration` 通过 `Objec
 
 工具环境参数定义表：`tool_id` 指向 `agent_tool.id`，`(tool_id, env_param_name)` 唯一，另有 `description`、`required`、`secret`、`default_value`。它描述「这个工具要什么」，具体值在绑定行里。
 
-### 7.4 tool_call_log
+### 7.4 tool_invocation_log 与 tool_invocation_stats
 
-`agent_id`（可空，lead 运行为 NULL）、`tenant_id`（可空，未归属即 NULL）、`session_id`、`tool_name`（`组名::方法名`）、`args`（JSON）、`result`、`success`、`start_time`、`end_time`、`duration`、`ts`。`ToolCallLogMapper` 只有 `insert`：行写一次，永不读回，也不随 session 或 agent 清理。索引有 `idx_agent_id`、`idx_session_id`、`idx_tool_name`、`idx_ts` 与 `idx_tenant_ts (tenant_id, ts)`。
+明细表一次调用一行，保留 `harnax.metrics.retention-days` 天：`tenant_id`（可空，spec 未命名归属即 NULL）、`agent_id`（可空，团队主管无 `agent` 行）、`session_id`、`user_id`、`kind`、`tool_name`、`mcp_id` / `cli_id`（只在对应来源上填）、`outcome`、`error_message`、`args_json` / `result_excerpt`（正文可整体关闭）、`duration_ms`、`start_time` / `end_time` / `ts`（三者都是 `datetime(3)`）。索引按「租户 + 时间」「租户 + 来源 + 时间」「mcp_id + 时间」「cli_id + 时间」「session」「tool_name」六条铺。
+
+日聚合永久保留，唯一键 `(stat_date, tenant_id, kind, subject_id, tool_name)`：`subject_id` 在 `kind=mcp` 时是 MCP 服务行、`kind=cli` 时是 CLI 包行、其余为 `0`（不能留 NULL，唯一索引不把 NULL 视为相等，NULL 会让同一天插进两行）；计数列 `calls` / 四终态 / `sum_duration_ms` / `max_duration_ms`；六个**半开区间**的耗时桶（`le_100ms`、`le_500ms` = `(100,500]`、`le_2s`、`le_10s`、`le_30s`、`gt_30s`），闭右开左是为了让「正好 500ms」只被一个桶认领，桶和与 `calls` 才恒等。
+
+一条不变量决定了两张表的读法：`tenant_id` 在聚合表上是 `NOT NULL`，所以无归属的明细行不进任何聚合，它们只看保留窗口。按工具统计读聚合（可答超过保留期），按智能体 / 会话统计读明细（受保留窗口限制）。
 
 ### 7.5 与 env_variable 的关系
 
@@ -309,6 +317,12 @@ harness 侧的 `ToolCallLogAdaptor` 由 `HarnessAutoConfiguration` 通过 `Objec
 
 `harnax-webui/src/pages/agent/components/ToolConfigPanel.tsx` 是工具真正被选择与配置的地方：每项可切 `needConfirm` 开关（写进绑定行），并通过环境变量编辑器产出 `envBindings`。服务层入口在 `harnax-webui/src/services/ant-design-pro/tool.ts`：`getAvailableTools()` 与 `getBuiltinTools()`。
 
+### 8.4 调用指标 API 与页面
+
+读侧是 `ToolMetricsController`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/ToolMetricsController.kt:27` 声明基路径 `/api/admin/tool-metrics`，`:29` 是类），三个只读 GET：`/summary`（`:35`）、`/time-series`（`:54`）、`/invocations`（`:75`）。三个端点都没有租户形参，租户取自调用方自己的令牌；窗口长度都是 `days`，取值 1..365。`summary` 的 `groupBy` 取 `tool`（默认）/ `agent` / `session`，`time-series` 的 `granularity` 取 `day`（默认）/ `week` / `month`，空档补零，安静的一天不会让折线跳格。`tool` 维度读 `tool_invocation_stats`，`agent` 与 `session` 两个维度读 `tool_invocation_log`，因此后两者只覆盖保留窗口之内。
+
+页面是 `harnax-webui`「监控与治理」分组下的「调用监控」，路由 `/monitor/call-metrics`（`harnax-webui/config/routes.ts:143`，页面 `harnax-webui/src/pages/call-metrics/index.tsx`）：三个 tab（工具 / MCP / CLI）共用一套形状，`shell` 与 `framework` 在工具 tab 里按 `kind` 可达，单次调用明细在抽屉里给出终态、耗时、失败原因、入参与结果摘要。
+
 ## 9. 新工具开发：一步一步
 
 ### 步骤 1：确定承载模块
@@ -329,9 +343,9 @@ class OrderToolBox : ToolBox() {
     )
     fun queryOrder(
         @ToolParam(name = "order_no", description = "订单号") orderNo: String?,
-    ): String = execute("order_no" to orderNo) {
+    ): String {
         require(!orderNo.isNullOrBlank()) { "Parameter 'order_no' is required" }
-        "order $orderNo: PAID"
+        return "order $orderNo: PAID"
     }
 
     override fun name(): String = NAME
@@ -342,7 +356,7 @@ class OrderToolBox : ToolBox() {
 }
 ```
 
-要点：继承 `ToolBox` 并实现 `name()`；保留无参构造（会话级实例靠 `getDeclaredConstructor()`）；方法体包在 `execute` 里，才有调用日志；一个方法一个工具名，名字全局唯一。
+要点：继承 `ToolBox` 并实现 `name()`；保留无参构造（会话级实例靠 `getDeclaredConstructor()`）；方法体是普通代码，工具侧没有记录钩子——调用指标由装配侧挂上的 `ToolInvocationMiddleware` 记录（见「调用指标」）；一个方法一个工具名，名字全局唯一。
 
 ### 步骤 3：把参数暴露给模型
 
@@ -368,7 +382,7 @@ class OrderToolBox : ToolBox() {
 
 ### 步骤 8：绑定与验证
 
-在 agent 配置面板勾选工具、填环境变量值，保存后走一次会话，看 `tool_call_log` 是否出现 `组名::方法名` 的行。若 agent 看不到这个工具，按顺序核对：bean 是否在 admin 与 agent-service 的 classpath 上（`[ToolRegistry] Registered ToolBox bean` 日志）、`declaredNames` 是否包含该名字（工具页面能看到但 agent 拿不到，通常是 agent-service 一侧缺 bean）、绑定行是否存在、`status` 是否为 1、工具名是否与他人冲突导致启动失败。
+在 agent 配置面板勾选工具、填环境变量值，保存后走一次会话，看「调用监控」页的工具 tab 是否出现这个工具名。若 agent 看不到这个工具，按顺序核对：bean 是否在 admin 与 agent-service 的 classpath 上（`[ToolRegistry] Registered ToolBox bean` 日志）、`declaredNames` 是否包含该名字（工具页面能看到但 agent 拿不到，通常是 agent-service 一侧缺 bean）、绑定行是否存在、`status` 是否为 1、工具名是否与他人冲突导致启动失败。
 
 ### 常见陷阱速查
 
@@ -380,7 +394,7 @@ class OrderToolBox : ToolBox() {
 | 参数缺省行为与描述不符 | `@ToolParam` 的描述文本不参与求值，缺省行为只看方法体的兜底表达式：`EmailToolBox.sendEmail` 的 `is_html` 描述写着 `Whether the body is HTML format (default: true)`，实现是 `val htmlMode = isHtml ?: false`，模型省略时发 `text/plain` |
 | 环境参数永远报未配置 | 值写在 `agent_tool_env_param.default_value`（运行时不使用）；或必须工具想带参数（无绑定行） |
 | 同组兄弟方法意外可用 | 装配收敛按「本 agent 授予的名字」保留，检查绑定行是否真只有那一个 `tool_id` |
-| 日志里方法名不对 | `execute` 不在工具方法的直接表达式里，栈帧回溯取到了外层方法名 |
+| 调用指标里的工具名与预期不符 | `tool_name` 记的是模型看到的名字：`builtin` 那行是 `@Tool.name`，`cli` 那行是命中的那段命令名，`mcp` 那行是 MCP 服务的工具名——与 bean 名、方法名都无关 |
 | `@ToolMeta` 写了没效果 | 写在了类上；注解目标是 `FUNCTION` |
 
 ## 10. 明确不做与已知边界
@@ -391,7 +405,6 @@ class OrderToolBox : ToolBox() {
 - 工具级超时、重试、并发上限没有配置位：整轮超时由装配侧施加，并发序列化是 `@Tool.concurrencySafe` 的代码属性，不落库、不可按 agent 配。
 - 必须工具与必填环境参数互斥，同步只 WARN 不拒绝启动。
 - 工具没有独立的权限模型：可见性等于「被这个 agent 绑定」，读写性质与确认由 `readOnly` / `needConfirm` / `dangerousInput` 三个声明加会话权限模式决定。
-- 调用日志只写不读：平台没有工具调用统计页面，`tool_call_log` 需要直连数据库查。
 - 团队 lead 不装配业务工具与必须工具，只有团队工具组；lead 的 meta tool、文件系统工具、shell 工具被显式关闭。
 - 密文环境参数的 `defaultValue` 在响应里先解密再掩码（前 3 后 4，长度不足 7 全掩），解密失败统一显示 `******`，因此页面看到的长度不代表明文长度。
 
@@ -403,7 +416,7 @@ class OrderToolBox : ToolBox() {
 | `@ToolMeta` 与 `@ToolEnvParamDef` | `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolMeta.kt`、`harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolEnvParamDef.kt` |
 | 描述符 | `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolMetaDescriptor.kt` |
 | 环境上下文与调用上下文 | `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolEnvContext.kt`、`harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolCallContext.kt` |
-| SPI | `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/adaptor/ToolCallLogAdaptor.kt`、`harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/adaptor/ToolConfigAdaptor.kt` |
+| SPI | `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/adaptor/ToolInvocationAdaptor.kt`、`harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/adaptor/ToolConfigAdaptor.kt` |
 | 注册中心 | `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/registry/ToolRegistry.kt` |
 | 装配输入 | `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolSpec.kt` |
 | 内置工具 | `harnax-tools-external/harnax-tools-buildin/src/main/kotlin/com/agnetix/harnax/tools/buildin/TimeToolBox.kt`、`harnax-tools-external/harnax-tools-buildin/src/main/kotlin/com/agnetix/harnax/tools/buildin/EmailToolBox.kt` |
@@ -412,12 +425,13 @@ class OrderToolBox : ToolBox() {
 | 绑定保存 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AgentServiceImpl.kt` |
 | spec 交付 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt` |
 | spec 解析 | `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/AgentSpecResolver.kt` |
-| SPI 实现 | `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/ToolConfigAdaptorImpl.kt`、`harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/ToolCallLogAdaptorImpl.kt` |
+| SPI 实现 | `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/ToolConfigAdaptorImpl.kt`、`harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/ToolInvocationAdaptorImpl.kt` |
 | 运行时装配 | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt`、`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentBuilder.kt` |
 | 危险输入装饰器 | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/permission/DangerousInputCheckingTool.kt` |
 | 团队工具组 | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/team/TeamToolBoxes.kt` |
 | 整轮超时 | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentWrapper.kt`、`harnax-agent/harnax-agent-service/src/main/resources/application.yml` |
-| 实体与 Mapper | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentTool.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentToolBinding.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentToolEnvParam.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/ToolCallLogEntity.kt`、`harnax-entity/src/main/resources/mapper/AgentToolMapper.xml`、`harnax-entity/src/main/resources/mapper/ToolCallLogMapper.xml` |
-| DDL | `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql`（`agent_tool`、`agent_tool_binding`、`agent_tool_env_param`、`tool_call_log` 的列、键与缺省都写在这一个基线里） |
+| 调用指标 | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/provider/middleware/ToolInvocationMiddleware.kt`、`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/provider/middleware/ToolInvocationClassifier.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/ToolInvocationRollupService.kt`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/ToolMetricsController.kt`、`harnax-webui/src/pages/call-metrics/index.tsx` |
+| 实体与 Mapper | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentTool.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentToolBinding.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/AgentToolEnvParam.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/ToolInvocationLog.kt`、`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/ToolInvocationStats.kt`、`harnax-entity/src/main/resources/mapper/AgentToolMapper.xml`、`harnax-entity/src/main/resources/mapper/ToolInvocationLogMapper.xml`、`harnax-entity/src/main/resources/mapper/ToolInvocationStatsMapper.xml` |
+| DDL | `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql`（`agent_tool`、`agent_tool_binding`、`agent_tool_env_param`、`tool_invocation_log`、`tool_invocation_stats` 的列、键与缺省都写在这一个基线里） |
 | 前端 | `harnax-webui/src/pages/tool/index.tsx`、`harnax-webui/src/pages/agent/components/ToolConfigPanel.tsx`、`harnax-webui/src/services/ant-design-pro/tool.ts` |
 | 进程装配 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/HarnaxAdminApplication.kt`、`harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/AgentServiceApplication.kt` |

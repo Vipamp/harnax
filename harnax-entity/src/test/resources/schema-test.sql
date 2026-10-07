@@ -243,7 +243,7 @@ CREATE TABLE IF NOT EXISTS `mcp_call_log` (
   PRIMARY KEY (`id`),
   KEY `idx_mcp_call_log_tenant_mcp_time` (`tenant_id`,`mcp_id`,`create_time`),
   KEY `idx_mcp_call_log_session` (`session_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='MCP authorization and call audit';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='MCP authorization ledger (ISSUE/REFRESH/REVOKE/CALL), not a tool-call metrics source';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;

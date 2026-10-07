@@ -118,7 +118,7 @@ router 侧的前缀规则是权限规则而不是解析规则：`harnax-session-
 
 渠道会话的配置来自 `channel` 行，agent-service 不需要任何渠道侧的查询能力：admin 的 `resolveFromChannel`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt:401`）先用 `channelMapper.selectBySessionId` 拿到 `agent_id`，再读 `agent` 行组装 `AgentSpecInfoResponse`，能力位取 `channel` 行上的 `enable_think`/`enable_search`/`enable_plan`/`permission_mode` 四列。
 
-`harnax-agent-service` 的主代码里既不出现 `SessionMapper`，也不出现 `ChannelMapper`：它自己连库只服务日志与模型配置这类旁路读取（例如 `ToolCallLogAdaptorImpl`、`ChatModelConfigAdaptorImpl`），会话与渠道的配置一律从 admin 内部 API 拿。
+`harnax-agent-service` 的主代码里既不出现 `SessionMapper`，也不出现 `ChannelMapper`：它自己连库只服务日志与模型配置这类旁路读取（例如 `ToolInvocationAdaptorImpl`、`ChatModelConfigAdaptorImpl`），会话与渠道的配置一律从 admin 内部 API 拿。
 
 ### Task 8: Scheduler 侧的生成与回收（harnax-scheduler）
 

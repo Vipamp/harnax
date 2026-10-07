@@ -22,10 +22,10 @@ harnax-agent/
 │       ├── ToolEnvParamDef.kt      # 环境参数定义注解
 │       ├── ToolMetaDescriptor.kt   # 运行时元数据模型
 │       ├── ToolSpec.kt             # 下发给运行时的工具规格
-│       ├── ToolCallContext.kt      # 调用上下文（含 SessionMetaContext、UserIdentifier）
+│       ├── ToolCallContext.kt      # 调用上下文（UserIdentifier）
 │       ├── ToolEnvContext.kt       # 环境参数读取（require / get）
 │       ├── adaptor/
-│       │   ├── ToolCallLogAdaptor.kt   # 调用日志出口（含 ToolCallInfo）
+│       │   ├── ToolInvocationAdaptor.kt  # 调用指标出口（含 ToolInvocationEvent）
 │       │   └── ToolConfigAdaptor.kt    # 工具配置读取出口
 │       └── registry/
 │           └── ToolRegistry.kt     # Spring 自动发现注册中心
@@ -84,9 +84,9 @@ class WeatherToolBox : ToolBox() {
         @ToolParam(name = "city", description = "城市名称")
         city: String,
         envContext: ToolEnvContext,
-    ): String = execute("city" to city) {
+    ): String {
         val apiKey = envContext.require("WEATHER_API_KEY")
-        "$city 当前天气：晴，25°C"
+        return "$city 当前天气：晴，25°C"
     }
 
     @Tool(name = "getForecast", description = "获取未来 N 天天气预报", readOnly = true)
@@ -104,9 +104,9 @@ class WeatherToolBox : ToolBox() {
         @ToolParam(name = "days", description = "预报天数")
         days: Int,
         envContext: ToolEnvContext,
-    ): String = execute("city" to city, "days" to days) {
+    ): String {
         val apiKey = envContext.require("WEATHER_API_KEY")
-        "$city 未来 $days 天预报：持续晴好"
+        return "$city 未来 $days 天预报：持续晴好"
     }
 
     override fun name(): String = "weather-tool-box"
@@ -187,26 +187,24 @@ Bean 名称**必须**显式指定，遵循 `{name}-tool-box` 命名模式：
 @Component                      // 错误 - 没有 bean 名称
 ```
 
-## execute() 方法
+## 调用记录
 
-所有工具逻辑**必须**用 `execute { ... }` 包装，以启用自动调用日志：
+工具方法不需要为留痕做任何包装：一次调用的入参、结果、耗时与终态由 `harnax-harness-core` 的 `ToolInvocationMiddleware` 记录。它在 `onActing` 里先拿到模型请求的调用，再在同一条结果流上等到终态事件，两半都在手边，不需要工具配合。终态到达时组一行 `ToolInvocationEvent` 交 `ToolInvocationAdaptor`，落到明细 `tool_invocation_log`，再由 admin 每小时把过完的那天折进日聚合 `tool_invocation_stats`；页面「调用监控」的汇总与趋势读聚合表，下钻单次调用读明细表。工具正常返回结果即可；方法抛出的异常由框架收敛成 `ERROR` 终态，那一行照样记下来，终态只取 `SUCCESS` / `ERROR` / `DENIED` / `INTERRUPTED` 四个。
 
 ```kotlin
-// 带参数（推荐，便于追踪）
+// 有入参的工具：入参由中间件从调用请求里取，不需要方法自己交出去
 fun sendEmail(
     @ToolParam(name = "to", description = "收件人邮箱")
     to: String,
     @ToolParam(name = "subject", description = "邮件主题")
     subject: String,
-): String = execute("to" to to, "subject" to subject) {
+): String {
     // 实现
+    return "sent"
 }
 
 // 不带参数
-fun getCurrentTime(): String = execute {
-    // 实现
-    System.currentTimeMillis().toString()
-}
+fun getCurrentTime(): String = System.currentTimeMillis().toString()
 ```
 
 ## 命名规范
@@ -242,7 +240,7 @@ fun getCurrentTime(): String = execute {
 fun searchProducts(
     @ToolParam(name = "query", description = "搜索关键词")
     query: String,
-): String = execute { ... }
+): String { ... }
 
 // 写操作 - 需要确认
 @Tool(description = "为商品下单")
@@ -252,7 +250,7 @@ fun placeOrder(
     productId: String,
     @ToolParam(name = "quantity", description = "购买数量")
     quantity: Int,
-): String = execute { ... }
+): String { ... }
 ```
 
 ### 3. 声明环境参数
@@ -273,7 +271,7 @@ fun getWeather(
     @ToolParam(name = "city", description = "城市名称")
     city: String,
     envContext: ToolEnvContext,
-): String = execute { ... }
+): String { ... }
 ```
 
 ### 4. 保持工具职责单一
@@ -307,21 +305,11 @@ class MyToolBox : ToolBox() { ... }
 class MyToolBox : ToolBox() { ... }
 ```
 
-### 陷阱 2：忘记用 execute() 包装
+### 陷阱 2：在工具里再写一份调用记录
 
-```kotlin
-// 错误 - 没有调用日志，没有错误追踪
-@Tool(description = "做某件事")
-fun doSomething(): String {
-    return "result"
-}
+调用记录只有一个来源：`ToolInvocationMiddleware`。工具方法里自己再落一行、再打一份「谁调了什么」的日志，就会得到两套互相说不清的数——中间件那一行带终态、耗时、来源 `kind` 与租户归属，工具自己那一行只有它看得见的那半截。
 
-// 正确
-@Tool(description = "做某件事")
-fun doSomething(): String = execute {
-    "result"
-}
-```
+需要按最终用户身份去调外部服务时，把这个值做成方法参数（`@ToolParam` 或环境参数），不要往基类找会话上下文：`ToolBox` 只声明 `abstract fun name(): String`，一次调用属于哪个会话、哪个智能体、哪个租户由装配时挂上的中间件决定。
 
 ### 陷阱 3：name() 返回值与 Bean 名称不一致
 
@@ -345,14 +333,14 @@ class EmailToolBox : ToolBox() {
 ```kotlin
 // 错误 - city 没有 @ToolParam，不会出现在 JSON Schema 中，LLM 无法传值
 @Tool(description = "查询天气")
-fun getWeather(city: String): String = execute { ... }
+fun getWeather(city: String): String { ... }
 
 // 正确 - city 有 @ToolParam，LLM 能看到并传入该参数
 @Tool(description = "查询天气")
 fun getWeather(
     @ToolParam(name = "city", description = "城市名称")
     city: String,
-): String = execute { ... }
+): String { ... }
 ```
 
 > 框架注入参数（如 `ToolEnvContext`）**不加** `@ToolParam`，它们由框架自动注入。
@@ -376,14 +364,13 @@ class CalculatorToolBox : ToolBox() {
     fun calculate(
         @ToolParam(name = "expression", description = "数学表达式，如 '2 + 3 * 4'")
         expression: String,
-    ): String = execute("expression" to expression) {
+    ): String =
         try {
             val result = evaluateExpression(expression)
             "$expression = $result"
         } catch (e: Exception) {
             "计算错误：${e.message}"
         }
-    }
 
     @Tool(name = "convertUnit", description = "单位换算，例如 100 公里转英里", readOnly = true)
     @ToolMeta(displayName = "Convert Unit", displayNameZh = "单位换算")
@@ -394,9 +381,9 @@ class CalculatorToolBox : ToolBox() {
         fromUnit: String,
         @ToolParam(name = "to_unit", description = "目标单位，如 'mile'")
         toUnit: String,
-    ): String = execute("value" to value, "fromUnit" to fromUnit, "toUnit" to toUnit) {
+    ): String {
         val result = performConversion(value, fromUnit, toUnit)
-        "$value $fromUnit = $result $toUnit"
+        return "$value $fromUnit = $result $toUnit"
     }
 
     override fun name(): String = NAME
@@ -425,7 +412,7 @@ class CalculatorToolBox : ToolBox() {
 - [ ] 所有需要 LLM 传入的参数都加了 `@ToolParam(name, description)` 注解
 - [ ] 框架注入参数（如 `ToolEnvContext`）没有加 `@ToolParam`
 - [ ] `override fun name()` 返回值与 bean 名称一致
-- [ ] 所有工具方法都用 `execute { ... }` 包装
+- [ ] 工具方法直接返回结果，调用记录由 `ToolInvocationMiddleware` 写，方法内不自行落库
 - [ ] 修改状态的方法设置了 `needConfirm = true`
 - [ ] 需要外部 API 密钥时声明了 `envParamDefs`
 - [ ] 外部依赖已添加到 `harnax-tools-buildin/pom.xml`
