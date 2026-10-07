@@ -31,16 +31,16 @@
 ### 1.2 形状由三条事实决定
 
 - **压缩本来就在跑。** `HarnessAgent.Builder` 的初值是 `compactionConfig = CompactionConfig.builder().build()`、`disableCompaction = false`（`HarnessAgent.java:1227,1230`），默认装配下 `CompactionMiddleware` 一定装上（`HarnessAgent.java:2600-2609`），默认档 `triggerMessages=50`、`keepMessages=20`、动态 token 档与 flush/offload 全开（`CompactionConfig.java:273-286`、`:67`）。所以这一域不是引入新机制，而是给一个已在跑的机制补上受控入口与可见度。
-- **用户可见历史原本就是模型上下文本身。** `loadSessionMessages()`（`HarnessAgentLauncher.kt:1009-1022`）读的是 `AgentState.context`，读它的只有 `DefaultAgentRunner.kt:353` 的聊天历史与 `TeamHistoryReplay.kt:44` 的成员气泡合并。压缩覆写 `context` 等于把聊天记录一起裁掉，所以**历史与模型上下文分离是压缩落地的前置**，见 1.3。
+- **用户可见历史原本就是模型上下文本身。** `loadSessionMessages()`（`HarnessAgentLauncher.kt:1035-1048`）读的是 `AgentState.context`，读它的只有 `DefaultAgentRunner.kt:353` 的聊天历史与 `TeamHistoryReplay.kt:44` 的成员气泡合并。压缩覆写 `context` 等于把聊天记录一起裁掉，所以**历史与模型上下文分离是压缩落地的前置**，见 1.3。
 - **`/compact` 的命令链路一直是通的。** `/compact 500` 解析为 `CommandType.COMPACT` + `args="500"`（`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/AgentRequest.kt:67,90,199`），`POST /api/agent/command` 在收（`AgentController.kt:77`），webui 与 iOS 的斜杠命令表各登记一处（`harnax-webui/src/pages/session/components/ChatWindow.tsx:957`、`harnax-ios/Sources/HarnaxFeatures/Chat/ChatSlashCommand.swift:33`）。缺的只有服务端那一支。
 
 ### 1.3 全量历史与模型上下文分离
 
 逐条归档会话消息到一张只增不改的表 `session_message`，与 `agent_state` 同库，由写入方在初始化时 `CREATE TABLE IF NOT EXISTS` 自建（`MysqlSessionMessageStore.kt:63`），不进 admin 的 Flyway 基线，因此这张表不需要清库重建。唯一键 `(user_id, session_id, msg_id)`，`msg_id` 取 core `Msg` 自带的 UUID；`ON DUPLICATE KEY UPDATE` 按**最长正文**保，因为上游既会用同一 id 交付内容更全的消息，也会在 prune 时用同一 id 交付更短的预览。模型上下文仍由 `AgentState.context` 承担，压缩随便它怎么覆写。
 
-写点三处：三条轮次收尾（`DefaultAgentRunner.kt:163` 阻塞轮、`:195` 流式轮、`:425` HITL 确认续跑轮）各一次全量补写；装配时该桶还没有档就先落一次（`HarnessAgentLauncher.kt:893` → `HarnessAgentWrapper.kt:331`）；`/compact` 额外在压缩之前补写一次（写不进去就拒这条命令）。读路径先查归档，该会话零行时回退 `agentState.context`，再回退 legacy `memory_messages`，并滤掉 `name == __compaction_summary__` 的摘要消息 —— 摘要以 USER 角色构造，收进档就会在页面上多出一坨装摘要全文的用户气泡。
+写点三处：三条轮次收尾（`DefaultAgentRunner.kt:163` 阻塞轮、`:195` 流式轮、`:425` HITL 确认续跑轮）各一次全量补写；装配时该桶还没有档就先落一次（`HarnessAgentLauncher.kt:919` → `HarnessAgentWrapper.kt:331`）；`/compact` 额外在压缩之前补写一次（写不进去就拒这条命令）。读路径先查归档，该会话零行时回退 `agentState.context`，再回退 legacy `memory_messages`，并滤掉 `name == __compaction_summary__` 的摘要消息 —— 摘要以 USER 角色构造，收进档就会在页面上多出一坨装摘要全文的用户气泡。
 
-一条隐藏不变量：压缩写回、归档读写、历史读路径必须落在同一个 user 桶。三侧都把空值归一成 `__anon__`（`MysqlAgentStateStore.kt:70`、`ReActAgent.java:394-399`），harnax 唯一的 wrapper 构造点不传 userId（`HarnessAgentLauncher.kt:865-890`，字段默认 `null`，见 `HarnessAgentWrapper.kt:91`），历史读路径写死 `""`（`:1010`）—— 两侧同桶。任何一方单独开始传真实用户 id，写死的 `""` 就会与 live slot 分叉，表现成"压了但历史读回旧的"。命令路径因此把三个键一律取自 wrapper 自身（`HarnessAgentWrapper.compactManually`），调用方传不进第二个 userId。
+一条隐藏不变量：压缩写回、归档读写、历史读路径必须落在同一个 user 桶。三侧都把空值归一成 `__anon__`（`MysqlAgentStateStore.kt:70`、`ReActAgent.java:394-399`），harnax 唯一的 wrapper 构造点不传 userId（`HarnessAgentLauncher.kt:891-916`，字段默认 `null`，见 `HarnessAgentWrapper.kt:91`），历史读路径写死 `""`（`:1036`）—— 两侧同桶。任何一方单独开始传真实用户 id，写死的 `""` 就会与 live slot 分叉，表现成"压了但历史读回旧的"。命令路径因此把三个键一律取自 wrapper 自身（`HarnessAgentWrapper.compactManually`），调用方传不进第二个 userId。
 
 ### 1.4 命令压缩落在哪
 
@@ -61,7 +61,7 @@ webui 会话聊天页（`harnax-webui/src/pages/session/index.tsx` 的 `ContextU
 | 项 | 现状 | 判据落点 |
 |---|---|---|
 | 自动压缩档位显式化 | 装配层不钉 `triggerTokens` / `keepTokens` / `prune`，全走上游默认档 | `CompactionConfig.java:273-286`；动它会把"命令压缩上线"的回归面变得没法判定 |
-| 中间件开关收口 | `disableTranscript()` 已在三条装配分支合流后无条件调用一次（`HarnessAgentLauncher.kt:783`，透传在 `HarnessAgentBuilder.kt:242`）；`disableMemoryTools()` / `disableToolsConfig()` / `disableAtPathExpansion()` 三项未收口 | disable 一族在 `HarnessAgentBuilder.kt:224-242` |
+| 中间件开关收口 | `disableTranscript()` 已在三条装配分支合流后无条件调用一次（`HarnessAgentLauncher.kt:809`，透传在 `HarnessAgentBuilder.kt:242`）；`disableMemoryTools()` / `disableToolsConfig()` / `disableAtPathExpansion()` 三项未收口 | disable 一族在 `HarnessAgentBuilder.kt:224-242` |
 | 并发闸的反方向 | 压缩在跑时用户发一条聊天不拒（忙判据只在压缩侧被读，`DefaultAgentRunner.kt:87`/`:96`）。受损的是模型侧，页面侧因档案只增不改且保最长而不丢 | 要三方互斥得把忙判据铺到聊天的三个入口 |
 | 归档表的检索面 | `session_message` 只服务聊天历史，不用于跨会话检索（`session_search` 那类能力） | 键布局与读点见 `MysqlSessionMessageStore.kt:63` |
 | 被裁内容的追回 | 关 offload 之后没有任何入口把档案回灌进 `context`，可追回路径未实测 | 按"取不到就不算收益"处理，与 flush/offload 同源 |
