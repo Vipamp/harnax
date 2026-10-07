@@ -64,7 +64,10 @@ class ToolInvocationAdaptorImpl(
     private val payloadMaxChars: Int = clampToBand("harness.metrics.invocation.capture-max-chars", captureMaxChars, MIN_CAPTURE_MAX_CHARS, MAX_CAPTURE_MAX_CHARS)
     private val queue = ArrayBlockingQueue<ToolInvocationEvent>(capacity)
 
-    /** Counted rather than silently discarded: "the page is empty" needs a number proving the queue overflowed. */
+    /**
+     * Counted rather than silently discarded: "the page is empty" needs a number proving rows were lost, whether
+     * the queue overflowed or a batch left it and the database refused the statement.
+     */
     private val dropped = AtomicLong()
     internal val droppedCount: Long get() = dropped.get()
 
@@ -121,7 +124,31 @@ class ToolInvocationAdaptorImpl(
                 batch.clear()
             }
         }
-        if (batch.isNotEmpty()) write(batch)
+        flushBatch(batch)
+    }
+
+    /**
+     * Write a batch that has already left the queue, and absorb a failure: the loss is logged and counted and
+     * never leaves as an exception. The return value is the number of events the batch held, whatever happened
+     * to them, so a caller looping on it still drains to empty.
+     *
+     * This is the one guarded flush, shared by `pump()`'s terminal flush and [drainAndFlush] rather than a
+     * second policy next to the first. The terminal case is why it has to be guarded: `pump()` breaks out of its
+     * loop on an interrupt with a partial batch in its own locals, so those rows have left the queue and
+     * `shutdown()`'s drain can no longer reach them — this flush is the last place their loss can be stated, and
+     * unguarded it threw out of the worker thread instead, silently. Counted rather than retried, for the reason
+     * the loop's own catch records: a writer that retried a broken statement would spin against a database that
+     * is down, and the events behind it are counters.
+     */
+    internal fun flushBatch(batch: List<ToolInvocationEvent>): Int {
+        if (batch.isEmpty()) return 0
+        return try {
+            write(batch)
+        } catch (e: Exception) {
+            log.warn("Tool invocation batch of {} row(s) was not written", batch.size, e)
+            dropped.addAndGet(batch.size.toLong())
+            batch.size
+        }
     }
 
     /**
@@ -155,13 +182,7 @@ class ToolInvocationAdaptorImpl(
     internal fun drainAndFlush(): Int {
         val batch = ArrayList<ToolInvocationEvent>(batchLimit)
         queue.drainTo(batch, batchLimit)
-        if (batch.isEmpty()) return 0
-        return try {
-            write(batch)
-        } catch (e: Exception) {
-            log.warn("Tool invocation batch of {} row(s) was not written", batch.size, e)
-            batch.size
-        }
+        return flushBatch(batch)
     }
 
     private fun write(batch: List<ToolInvocationEvent>): Int {

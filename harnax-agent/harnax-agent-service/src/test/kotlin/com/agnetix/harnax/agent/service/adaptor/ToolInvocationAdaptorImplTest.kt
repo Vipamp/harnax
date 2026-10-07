@@ -377,6 +377,37 @@ class ToolInvocationAdaptorImplTest {
 
             assertDoesNotThrow { writer.drainAndFlush() }
         }
+
+        @Test
+        fun `the writer's terminal flush reports its loss instead of escaping as an exception`() {
+            // The batch here has already left the queue: `pump()` breaks out of its loop on an interrupt holding
+            // whatever the last drain gave it, so `shutdown()`'s drain can no longer recover these rows and this
+            // flush is the last place their loss can be stated. Unguarded it threw out of the loop, which is both
+            // silent for the page and fatal for the thread.
+            val failing = mock(ToolInvocationLogMapper::class.java)
+            `when`(failing.batchInsert(anyList())).thenThrow(IllegalStateException("db down"))
+            val writer =
+                ToolInvocationAdaptorImpl(
+                    toolInvocationLogMapper = failing,
+                    queueCapacity = 512,
+                    batchSize = 64,
+                    flushIntervalMs = 200L,
+                    capturePayload = true,
+                    captureMaxChars = 2000,
+                )
+            val partial = listOf(event(toolName = "a"), event(toolName = "b"), event(toolName = "c"))
+
+            assertEquals(0L, writer.droppedCount)
+            // The explicit type argument selects `assertDoesNotThrow`'s supplier overload: left to inference,
+            // Kotlin picks the `Executable` one and the returned count arrives as Unit.
+            val held = assertDoesNotThrow<Int> { writer.flushBatch(partial) }
+
+            // Counted by exactly the rows it held, so the figure matches the statement that never landed.
+            assertEquals(3L, writer.droppedCount)
+            // Still the number of events it took, whatever the drain's caller does with it: `shutdown()` loops on
+            // it, and a zero here would stop that loop with the queue still full.
+            assertEquals(3, held)
+        }
     }
 
     /**
