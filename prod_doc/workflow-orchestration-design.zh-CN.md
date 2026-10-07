@@ -316,7 +316,7 @@ POST /api/agent/workflow/dry-run        body: { workflowId, inputs, historyHint?
 
 - 走 session-router 转发，但不落 `session` 表、不写 `session_message`（`triggered_from = dry_run`）。
 - 图从 admin 内部接口按 `workflowId` 取**草稿**（`GET /api/admin/internal/workflows/{id}/draft`，带租户校验），前端不提交图，避免把未发布定义直传执行体并绕开租户判断。
-- 模型配置由 `ChatModelConfigAdaptorImpl.getConfig(modelId)` 的 DB 兜底分支解析（该文件 `:34`、`:50`），因此试跑不需要会话级规格上下文。
+- 模型配置由 `ChatModelConfigAdaptorImpl.getConfig(modelId)` 的 DB 兜底分支解析（`harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/ChatModelConfigAdaptorImpl.kt:32` 取方法、`:45` 是兜底分支），因此试跑不需要会话级规格上下文。
 - 试跑同样写 `workflow_run`（`triggered_from = dry_run`）与节点明细，编排页的运行历史由此而来。
 
 ## 9. admin 侧接口与发布
