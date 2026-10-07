@@ -718,6 +718,14 @@ docker exec harnax-mysql mysql -uroot -proot123456 harnax_admin -e \
 对账工具同步：`logs/overview-from-sql.sql` 的 `topModels` 补上 provider 连接与 `qualifier`，`topAgents` 输出空串，让手工对账与线上契约同形。
 闸门在还原后的同一份代码上重跑：后端 `spotless:apply` → `test-compile` → `-Pintegration-test` 一段给出 surefire `Tests run: 7`（`DashboardServiceImplTest`）与 failsafe `Tests run: 3`（`DashboardOverviewIT`）+ `Tests run: 2`（隔离类），`BUILD SUCCESS`（`logs/it-round4.log`）；前端 `Tests: 19 passed`（`logs/jest-metrics4.log`）、窄范围 lint `Checked 5 files` 零诊断（`logs/lint-round4.log`）、`npm run build` `EXIT=0`（`logs/build-round4.log`）。
 
+## 合流落地
+
+变更集在本地 git 的形状：功能分支 `dashboard-overview`（从 `98b79301` 切出）三笔——后端 `9be3696a`、前端 `483d718b`、文档 `e32516a7`；`kotlin-dev` 四笔——用户在途的菜单与路由改动原样入库 `c1262d91`（内容一字未改）、同一份内容先后落地的后端 `ecbdfb18`、前端 `556a1ae1`、文档 `877c4098`，合流是 `dc6e2142`（双亲 `877c4098` 与 `e32516a7`）。两处都只在本地，push 由用户执行。
+
+丢没丢按行核过：分支相对基线新增 5190 行，逐行在合并后的 `kotlin-dev` 上查存在性，缺席 0 行。28 个文件里 22 个与分支副本逐字节相同，6 个（`routes.ts`、中英 `menu.ts`、中英 `pages.ts`、`typings.d.ts`）是 `kotlin-dev` 为超集——「监控与治理」分组与记忆双层的键和类型都在，我这 38 个 `pages.welcome.*` 键、`menu.dashboard` 与 `qualifier` 也都在。唯一冲突是 `DashboardRankItem`，取 HEAD 那份再补 `qualifier` 字段与其两行注释；`dc6e2142` 相对它的第一父只多这 3 行。
+
+合流后在同一份代码上重跑闸门：后端单测 7、真库 IT 3 + 2（`failsafe-reports` 非空）、全量 reactor 26/26 SUCCESS 且 4409 项 0 失败 0 跳过；前端 `max build` 成功、窄范围 lint `Checked 6 files` 零诊断、`metrics.test.ts` 19 项全绿。证据在主检出 `tmp/gate-merged-2026-10-07/`。后端那三跳测的是纯 HEAD 内容（后端没有未提交改动），前端两跳测的是 HEAD 加上用户那 3 只未提交的 webui 文件——本页不 import 那 3 只文件，而快捷入口指向的 `/system/token-monitor` 与 `/context/skill-drafts` 在他的重构里改成了 redirect，仍落得到原页面（`/monitor/token-monitor`、`/monitor/skill-drafts`）。
+
 ## 记账（未验）
 
 - **手动刷新失败会把已加载的整页换成错误卡**：本轮把「一处错误态」做实了（不再叠加全局 toast），但没改「失败即丢读数」这个形状——那是 C12 的字面口径，且只在手动刷新那一次触发（页面不轮询）。要改成「保留旧读数 + 顶部一条失败提示」属于口径变更，等拍板。
@@ -729,7 +737,7 @@ docker exec harnax-mysql mysql -uroot -proot123456 harnax_admin -e \
 - **`metrics.test.ts` 不在常规命令能跑到的路径上**：`jest.config.ts` 在本机加载即失败（`Cannot find module '@umijs/max/test'`），主检出同样复现。只能靠 CJS 解析出的 `logs/jest.resolved.json` 跑；若 CI 用的是同一条 `npm test`，这 19 项可能从未被执行过。
 - **前端 lint 的宽范围基线本来就是红的**：`biome lint src/pages src/locales` = 34 errors / 203 warnings，命中文件全是本次没碰过的既有页面。本方案只保证改动文件零诊断。
 - **构建残留 `harnax-webui/src/.umi-undefined/`**：`harnax-webui/.gitignore` 只列了 `.umi`、`.umi-production`、`.umi-test`，这个后缀不在忽略内。提交时不要带上它。
-- **落盘位置两份分开**：设计稿与实施方案只在主检出的 `prod_doc/`，代码改动只在 worktree `tmp/worktrees/dashboard-overview`（分支 `dashboard-overview`，从 `98b79301` 切出），两边尚未汇合；整套改动至今未 `git add`，提交与合并形状由用户决定。
+- **合流只到本地**：`kotlin-dev` 领先 `origin/kotlin-dev` 113 个 commit，功能分支 `dashboard-overview` 同样未 push，推送由用户执行。隔离工作树 `tmp/worktrees/dashboard-overview`（含它的 `logs/` 取证产物与 `harnax-webui/src/.umi-undefined/` 构建残留）仍留在原位未清理，取证桩进程（node 监听 127.0.0.1:8123、无头 Chrome 的 CDP 9333）也还在跑，清理要单独一步并经用户确认。
 - **跨日边界**：两个 IT 把行写在 `LocalDateTime.now()`，若用例恰好跨过午夜 00:00，「今日」窗口会位移一天而使 delta 失效。触发概率极低但非零，失败表现是这一类用例红，不是产品缺陷。
 - **隔离 IT 同时依赖一条既有行为**：以邻居身份读数靠的是 `X-Tenant-ID` + 管理员令牌跳过成员校验（`BaseAdminIT` 已写明，`ModelTenantIsolationIT` 已在用）。这条本身不是本方案的被测对象，所以该类若红，第一步要分清是谓词漏了还是这条前提变了。
 - **新文件注释里引用了设计小节号**（如「设计 §4.2」「（I3）」，共 17 处，全在前端 6 个文件：`sections.tsx` 6 / `metrics.ts` 4 / `RankList.tsx` 3 / `Welcome.tsx` 2 / `TrendCard.tsx` 1 / `metrics.test.ts` 1；后端与 mapper 侧的新增文件一条都没有）：已决保留。理由是两份文档就与代码同仓（`prod_doc/`），且仓内已有同形先例（`InternalApiControllerTest.kt:995` 的「（I5）」）。方案文档自身仍保持不引用其他 md。
