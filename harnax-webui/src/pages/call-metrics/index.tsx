@@ -68,6 +68,10 @@ const CallMetrics: React.FC = () => {
         }
         if (trendRes.code === 200) {
           setPoints(trendRes.data?.points ?? []);
+        } else {
+          // The cards and the table below already moved to the new window, so leaving the old buckets up draws
+          // a line that is no one's trend.
+          setPoints([]);
         }
       } catch (error: any) {
         message.error(error?.message || error?.info?.errorMessage || intl.formatMessage({ id: 'pages.callMetrics.loadFailed', defaultMessage: 'Failed to load call metrics' }));
@@ -81,6 +85,10 @@ const CallMetrics: React.FC = () => {
   const loadDetails = async (row: API.CallMetricsRow, page: number) => {
     setSubject(row);
     setDetailPage(page);
+    // Open empty: a detail request that fails would otherwise leave the previous row's calls listed under
+    // this row's title, which is the one thing a drill-down must never do.
+    setDetails([]);
+    setDetailTotal(0);
     setDetailLoading(true);
     try {
       const res = await getToolInvocations({
@@ -384,7 +392,7 @@ const CallMetrics: React.FC = () => {
           )}
           <Table<API.CallMetricsRow>
             className="styled-pro-table"
-            rowKey={(row) => `${row.kind}-${row.subjectKey}-${row.toolName}`}
+            rowKey={(row) => `${row.kind}-${row.subjectKey}-${row.toolName}-${row.subjectId ?? ''}`}
             columns={subjectColumns}
             dataSource={summary?.rows ?? []}
             loading={loading}
