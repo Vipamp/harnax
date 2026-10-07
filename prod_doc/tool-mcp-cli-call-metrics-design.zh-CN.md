@@ -177,7 +177,7 @@ ToolInvocationMiddleware → ToolInvocationAdaptor(harnax-tools-sdk 定义)
 | `queue-capacity` | 512 | |
 | `batch-size` | 64 | |
 | `flush-interval-ms` | 200 | 不满一批也在此间隔落库 |
-| `capture-payload` | true | 关时 `args_json` 与 `result_excerpt` 恒为 NULL |
+| `capture-payload` | true | 只管这两列：关时 `args_json` 与 `result_excerpt` 恒为 NULL；`error_message` 不受它控制，因为非终态调用的失败原因就是工具自己的输出（§3） |
 | `capture-max-chars` | 2000 | 两处各自的截断长度，尾部加 `…(truncated)` |
 
 适配器契约与 `SkillUsageAdaptor` 一致：立即返回、不抛、溢出丢弃并计数（每丢弃一批 warn 一次，附丢弃总数）。丢弃只发生在队列打满时，而打满意味着工具调用已经每秒数百次——那时少记几行比让整轮回答卡在数据库往返上更划算。
