@@ -24,10 +24,9 @@ export default [
   },
   {
    path: '/welcome',
-   name: 'welcome',
+   name: 'dashboard',
    icon: 'smile',
    component: './Welcome',
-   hideInMenu: true,
   },
   {
     name: 'agent',
@@ -100,16 +99,18 @@ export default [
         component: './skill',
       },
       {
-        name: 'skill.usage',
+        // 用量与待审草稿已迁至「监控与治理」，旧地址保活
         path: '/context/skill-usage',
-        component: './skill/usage',
+        redirect: '/monitor/skill-usage',
+        hideInMenu: true,
       },
       {
-        name: 'skill.drafts',
         path: '/context/skill-drafts',
-        component: './skill/drafts',
+        redirect: '/monitor/skill-drafts',
+        hideInMenu: true,
       },
       {
+        // 带路径参数的旧地址不能用 redirect（Navigate 不会替换 :id），所以仍挂同一个页面
         path: '/context/skill-draft/detail/:id',
         component: './skill/draftDetail',
         hideInMenu: true,
@@ -134,6 +135,33 @@ export default [
     ],
   },
   {
+    name: 'monitor',
+    icon: 'dashboard',
+    path: '/monitor',
+    routes: [
+      {
+        name: 'skill.usage',
+        path: '/monitor/skill-usage',
+        component: './skill/usage',
+      },
+      {
+        name: 'skill.drafts',
+        path: '/monitor/skill-drafts',
+        component: './skill/drafts',
+      },
+      {
+        path: '/monitor/skill-draft/detail/:id',
+        component: './skill/draftDetail',
+        hideInMenu: true,
+      },
+      {
+        name: 'token.monitor',
+        path: '/monitor/token-monitor',
+        component: './token-monitor',
+      },
+    ],
+  },
+  {
     name: 'system',
     icon: 'setting',
     path: '/system',
@@ -151,9 +179,10 @@ export default [
         access: 'canAccessUserManagement',
       },
       {
-        name: 'token.monitor',
+        // Token 监控已迁至「监控与治理」，旧地址保活
         path: '/system/token-monitor',
-        component: './token-monitor',
+        redirect: '/monitor/token-monitor',
+        hideInMenu: true,
       },
       {
         name: 'apikey.management',

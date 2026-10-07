@@ -1,5 +1,5 @@
 export default {
-  'menu.welcome': '欢迎',
+  'menu.dashboard': '总览',
   'menu.login': '登录',
 
   // 上下文管理
@@ -7,8 +7,6 @@ export default {
   'menu.context.model': '模型管理',
   'menu.context.mcp': 'MCP 服务',
   'menu.context.skill': '技能管理',
-  'menu.context.skill.usage': '技能用量',
-  'menu.context.skill.drafts': '待审草稿',
   'menu.context.cli': 'CLI 工具',
   'menu.context.tool': '工具管理',
 
@@ -22,11 +20,16 @@ export default {
 
   // 定时任务
 
+  // 监控与治理
+  'menu.monitor': '监控与治理',
+  'menu.monitor.skill.usage': '技能用量',
+  'menu.monitor.skill.drafts': '待审草稿',
+  'menu.monitor.token.monitor': 'Token 监控',
+
   // 系统管理
   'menu.system': '系统管理',
   'menu.system.user.management': '用户管理',
   'menu.system.tenant.management': '租户管理',
-  'menu.system.token.monitor': 'Token 监控',
   'menu.system.apikey.management': 'API Key 管理',
   'menu.system.env.management': '环境变量管理',
   'menu.system.channel': 'Channel 管理',

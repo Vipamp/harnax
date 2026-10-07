@@ -1,5 +1,5 @@
 export default {
-  'menu.welcome': 'Welcome',
+  'menu.dashboard': 'Overview',
   'menu.login': 'Login',
 
   // Context Management
@@ -7,8 +7,6 @@ export default {
   'menu.context.model': 'Model Management',
   'menu.context.mcp': 'MCP Services',
   'menu.context.skill': 'Skill Management',
-  'menu.context.skill.usage': 'Skill Usage',
-  'menu.context.skill.drafts': 'Draft Review',
   'menu.context.cli': 'CLI Tools',
   'menu.context.tool': 'Tool Management',
 
@@ -22,11 +20,16 @@ export default {
 
   // Job
 
+  // Monitoring & Governance
+  'menu.monitor': 'Monitoring & Governance',
+  'menu.monitor.skill.usage': 'Skill Usage',
+  'menu.monitor.skill.drafts': 'Draft Review',
+  'menu.monitor.token.monitor': 'Token Monitor',
+
   // System
   'menu.system': 'System Management',
   'menu.system.user.management': 'User Management',
   'menu.system.tenant.management': 'Tenant Management',
-  'menu.system.token.monitor': 'Token Monitor',
   'menu.system.apikey.management': 'API Key Management',
   'menu.system.env.management': 'Env Variables',
   'menu.system.channel': 'Channel Management',
