@@ -224,7 +224,7 @@ The difference between `callBound` and `executeWithRetry` deserves an explicit s
 
 ## 5. Endpoint contracts
 
-### 5.1 Conversation proxy (14 endpoints, prefix `/api/router/agent`)
+### 5.1 Conversation proxy (15 endpoints, prefix `/api/router/agent`)
 
 All are routed by `sessionId` and all pass through `SessionAccessGuard.requireAccessible`.
 
@@ -238,6 +238,7 @@ All are routed by `sessionId` and all pass through `SessionAccessGuard.requireAc
 | `GET /chat/history/{sessionId}` | — | pass-through | conversation history |
 | `GET /session/{sessionId}/plans` | — | pass-through | plan list |
 | `GET /session/{sessionId}/current-plan` | — | pass-through | current plan |
+| `GET /context/{sessionId}` | — | pass-through | context occupancy and window |
 | `GET /workspace/{sessionId}/files` | `path` (default `/workspace`) | pass-through | list a directory |
 | `GET /workspace/{sessionId}/read` | `path` | pass-through | read a file as text |
 | `GET /workspace/status` | `sessionIds` (comma-separated, required) | pass-through | workspace status for several sessions |
@@ -269,7 +270,7 @@ When a session is unbound (never chatted, binding expired, or its instance unreg
 | Endpoint | When unbound |
 |------|----------|
 | `DELETE /session/{id}` | `code=200`, `data` is an explanatory string |
-| `GET /chat/history/{id}`, `/plans`, `/current-plan` | `code=200`, `data` is an empty list / null |
+| `GET /chat/history/{id}`, `/plans`, `/current-plan`, `/context/{id}` | `code=200`, `data` is an empty list / null |
 | `GET /workspace/{id}/files`, `/workspace/status` | `code=200`, empty list / empty map |
 | `GET /workspace/{id}/read` | `code=404`, stating there is no workspace because the session is unbound |
 | `POST /workspace/{id}/upload` | `code=409`, telling the caller to send a message first |
@@ -420,7 +421,7 @@ During a switch the `excluded` set accumulates the instances already tried, and 
 
 ### 8.1 Where validation converges
 
-All 14 session-scoped endpoints pass `SessionAccessGuard.requireAccessible(sessionId)` before any instance is looked up: write paths call it explicitly, read paths get it from `boundInstance()` uniformly (a new endpoint inherits the guard simply by reusing `boundInstance`). The two sides compared: the caller's `tenantId` (the JWT's `tenantId` claim or the tenant attached to the Key) and the owning tenant admin reports; a mismatch raises `SecurityException`.
+All 15 session-scoped endpoints pass `SessionAccessGuard.requireAccessible(sessionId)` before any instance is looked up: write paths call it explicitly, read paths get it from `boundInstance()` uniformly (a new endpoint inherits the guard simply by reusing `boundInstance`). The two sides compared: the caller's `tenantId` (the JWT's `tenantId` claim or the tenant attached to the Key) and the owning tenant admin reports; a mismatch raises `SecurityException`.
 
 Why this guard exists: when forwarding, Router presents its own service token, so agent-service sees "a peer service" and cannot block a cross-tenant call on that basis; and inbound authentication answers "may you use Router", never "may you read this session".
 
@@ -492,7 +493,7 @@ The call-log database takes no part in readiness: failing to write a log must no
 `ApiCallLogFilter` (`@Order(HIGHEST_PRECEDENCE + 15)`) handles the `/api/router/agent/` prefix only; requests outside it are not logged:
 
 - the row is written when the response actually ends. The basis is the response status, not whether the filter chain returned — for streams and coroutine endpoints the chain returns at the start of async processing, and recording then would log a 200 and a few milliseconds;
-- SSE endpoints (path ending in `/stream`, or `/api/router/agent/confirm`) and coroutine batch endpoints (`/chat`, `/command`, `/session`, `/chat/history`, `/workspace` and its sub-paths) are not wrapped in a `ContentCachingResponseWrapper`: buffering would cut the event stream or flush out an empty body. These requests register an `AsyncListener` instead and write one row (exactly one) in `onComplete` / `onTimeout` / `onError`, with `duration_ms` covering the whole stream's life, and a timeout row marked as failure stating that the response was never written;
+- SSE endpoints (path ending in `/stream`, or `/api/router/agent/confirm`) and coroutine batch endpoints (`/chat`, `/command`, `/session`, `/chat/history`, `/context`, `/workspace` and its sub-paths) are not wrapped in a `ContentCachingResponseWrapper`: buffering would cut the event stream or flush out an empty body. These requests register an `AsyncListener` instead and write one row (exactly one) in `onComplete` / `onTimeout` / `onError`, with `duration_ms` covering the whole stream's life, and a timeout row marked as failure stating that the response was never written;
 - the landing instance comes from the request attribute `router.routedInstanceId` written by `SessionRouterService.trackPlacement`, falling back to MDC. MDC belongs to the thread where placement happened and is invalidated by coroutine suspension; only a thread bound to an HTTP request can write that attribute;
 - the four agent / model columns come from `SessionInfoClient`; when admin is unreachable they stay empty and the rest is recorded as usual;
 - `ApiCallLogService` buffers in memory, flushing a batch insert at 50 rows or every 5 seconds, with a buffer ceiling of 10000 rows beyond which rows are dropped and counted; a failed batch insert falls back to row-by-row retries and bad rows count towards `poisonedCount`; one flush happens before the process exits. Each string column is truncated to its DDL width.

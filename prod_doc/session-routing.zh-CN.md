@@ -224,7 +224,7 @@ Router 不做的事：不清除绑定。清除记录后会话仍指向同一实�
 
 ## 5. 端点契约
 
-### 5.1 对话代理（14 个，前缀 `/api/router/agent`）
+### 5.1 对话代理（15 个，前缀 `/api/router/agent`）
 
 全部以 `sessionId` 为路由键，全部经过 `SessionAccessGuard.requireAccessible`。
 
@@ -238,6 +238,7 @@ Router 不做的事：不清除绑定。清除记录后会话仍指向同一实�
 | `GET /chat/history/{sessionId}` | — | 透传 | 对话历史 |
 | `GET /session/{sessionId}/plans` | — | 透传 | 计划列表 |
 | `GET /session/{sessionId}/current-plan` | — | 透传 | 当前计划 |
+| `GET /context/{sessionId}` | — | 透传 | 上下文占用比例与窗口 |
 | `GET /workspace/{sessionId}/files` | `path`（默认 `/workspace`） | 透传 | 列目录 |
 | `GET /workspace/{sessionId}/read` | `path` | 透传 | 读文件文本 |
 | `GET /workspace/status` | `sessionIds`（逗号分隔，必填） | 透传 | 多会话 workspace 状态 |
@@ -269,7 +270,7 @@ ConfirmAgentRequest(sessionId, isConfirmed, toolInfoList = [], toolResults = [],
 | 端点 | 未绑定时 |
 |------|----------|
 | `DELETE /session/{id}` | `code=200`，`data` 为说明文本 |
-| `GET /chat/history/{id}`、`/plans`、`/current-plan` | `code=200`，`data` 为空列表 / null |
+| `GET /chat/history/{id}`、`/plans`、`/current-plan`、`/context/{id}` | `code=200`，`data` 为空列表 / null |
 | `GET /workspace/{id}/files`、`/workspace/status` | `code=200`，空列表 / 空映射 |
 | `GET /workspace/{id}/read` | `code=404`，说明未绑定所以没有 workspace |
 | `POST /workspace/{id}/upload` | `code=409`，提示先发消息再上传 |
@@ -420,7 +421,7 @@ EndEventChatEvent()
 
 ### 8.1 校验汇聚点
 
-所有 14 个会话作用域端点在找实例之前都要过 `SessionAccessGuard.requireAccessible(sessionId)`：写类路径显式调用，只读路径统一在 `boundInstance()` 里调用（新端点只要复用 `boundInstance` 就继承这道 guard）。比对的两边：调用方的 `tenantId`（JWT 的 `tenantId` claim 或 Key 上挂的租户）与 admin 报告的会话归属租户，不一致即 `SecurityException`。
+所有 15 个会话作用域端点在找实例之前都要过 `SessionAccessGuard.requireAccessible(sessionId)`：写类路径显式调用，只读路径统一在 `boundInstance()` 里调用（新端点只要复用 `boundInstance` 就继承这道 guard）。比对的两边：调用方的 `tenantId`（JWT 的 `tenantId` claim 或 Key 上挂的租户）与 admin 报告的会话归属租户，不一致即 `SecurityException`。
 
 这道 guard 存在的理由：Router 转发时打的是自己的服务令牌，agent-service 看到的是"一个对等服务"，无法据此挡跨租户；而入站鉴权回答的是"能不能用 Router"，从不回答"能不能读这个会话"。
 
@@ -492,7 +493,7 @@ EndEventChatEvent()
 `ApiCallLogFilter`（`@Order(HIGHEST_PRECEDENCE + 15)`）只处理 `/api/router/agent/` 前缀，白名单之外的请求不记录：
 
 - 行在响应真正结束时写。判定依据是响应状态而不是过滤器链是否返回——流与协程端点的链在异步处理开始时即返回，那时记录会得到一个 200 与几毫秒；
-- SSE 端点（路径以 `/stream` 结尾，或 `/api/router/agent/confirm`）与协程批量端点（`/chat`、`/command`、`/session`、`/chat/history`、`/workspace` 及其子路径）不套 `ContentCachingResponseWrapper`：缓冲会掐断事件流、或者刷出一个空 body。这些请求改为注册 `AsyncListener`，在 `onComplete` / `onTimeout` / `onError` 时写一行（只写一次），`duration_ms` 覆盖整条流的生命周期，超时行标记失败并写明"响应写出之前超时"；
+- SSE 端点（路径以 `/stream` 结尾，或 `/api/router/agent/confirm`）与协程批量端点（`/chat`、`/command`、`/session`、`/chat/history`、`/context`、`/workspace` 及其子路径）不套 `ContentCachingResponseWrapper`：缓冲会掐断事件流、或者刷出一个空 body。这些请求改为注册 `AsyncListener`，在 `onComplete` / `onTimeout` / `onError` 时写一行（只写一次），`duration_ms` 覆盖整条流的生命周期，超时行标记失败并写明"响应写出之前超时"；
 - 落点实例取自 `SessionRouterService.trackPlacement` 写入的请求属性 `router.routedInstanceId`，取不到再退到 MDC。MDC 属于放置发生的那条线程、并随协程挂起而失效，只有绑定了 HTTP 请求的线程能写下这个属性；
 - agent / model 四列由 `SessionInfoClient` 补，admin 不可达时这四列为空，其余照记；
 - `ApiCallLogService` 内存缓冲，攒满 50 条或每 5 秒刷一次批量插入，缓冲区上限 10000 行、超出丢弃并计数；批量插入失败退化为逐条重试，坏行计入 `poisonedCount`；进程退出前刷一次。各字符串列按 DDL 宽度截断。
