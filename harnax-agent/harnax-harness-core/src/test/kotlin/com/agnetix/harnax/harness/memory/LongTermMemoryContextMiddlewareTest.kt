@@ -6,6 +6,7 @@ import io.agentscope.harness.agent.filesystem.remote.store.BaseStore
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
@@ -50,10 +51,10 @@ class LongTermMemoryContextMiddlewareTest {
     }
 
     @Test
-    fun `the two layers arrive as two blocks the model can tell apart`() {
-        // The same clause's second half: a conversation that has both must not read them as one undifferentiated
-        // memory, because the session block is a draft that is about to be merged and cleared, and the
-        // long-term block is the one that survives it.
+    fun `the injected block is delimited and names which layer it is`() {
+        // What makes the block separable from everything else in the prompt: the conversation's own draft is
+        // about to be merged and cleared, and the text here is the one that survives it, so the model has to be
+        // able to tell the two apart. The other half of the clause — that both arrive — is the case below.
         val store = InMemoryStore()
         writeLongTerm(store, "- kept")
 
@@ -65,6 +66,50 @@ class LongTermMemoryContextMiddlewareTest {
             "the long-term text has to sit inside its own tags: $built",
         )
         assertTrue(built.contains("Long-term memory"), "the block has to name which layer it is: $built")
+    }
+
+    @Test
+    fun `a long-term layer over its budget arrives cut rather than whole`() {
+        // This block goes into every model call of the conversation, and the file it reads is kept under its
+        // budget only by a model complying with its prompt. Upstream truncates the block it reads for exactly
+        // this reason; an uncapped one here would let one owner's MEMORY.md grow the prompt without limit.
+        val store = InMemoryStore()
+        val text = "- kept\n".repeat(4_000)
+        writeLongTerm(store, text)
+
+        val built = prompt(LongTermMemoryContextMiddleware(domain(store)))
+
+        assertTrue(built.contains("- kept"), "the head of the layer still arrives")
+        assertTrue(built.contains(TRUNCATION_NOTICE), "a cut layer has to say it was cut")
+        assertTrue(built.length < text.length, "the block is capped: ${built.length} against ${text.length}")
+    }
+
+    @Test
+    fun `one conversation reads its owner's layer beside its own draft instead of as one text`() {
+        // Design 11.10 clause 2, second half. Upstream's own <memory_context> answers from the two mounted
+        // routes and is labelled by upstream, so what this class owns is the other half: the owner's curated
+        // text has to arrive as its own block while the conversation's draft stays in the conversation's
+        // bucket, and the two must not be folded into one undifferentiated memory.
+        val store = InMemoryStore()
+        writeLongTerm(store, "- the owner kept this across conversations")
+        val sessionRoutes = domain(store).routes("sess-A")
+        sessionRoutes.getValue(MemoryFilesystemRoutes.MEMORY_MD_ROUTE).write(rc("sess-A"), "/MEMORY.md", "- this turn's own draft")
+
+        val built = prompt(LongTermMemoryContextMiddleware(domain(store)))
+
+        assertTrue(built.contains("- the owner kept this across conversations"), built)
+        assertFalse(
+            built.contains("- this turn's own draft"),
+            "the conversation's un-merged draft is not the owner's block, and merging it in here would tell " +
+                "the model something this conversation has not curated",
+        )
+        assertEquals(
+            "- this turn's own draft",
+            sessionRoutes.getValue(MemoryFilesystemRoutes.MEMORY_MD_ROUTE)
+                .read(rc("sess-A"), "/MEMORY.md", 0, 0)
+                .fileData()?.content(),
+            "the draft stays where the flush wrote it, which is what upstream's block then reads",
+        )
     }
 
     @Test
@@ -129,5 +174,8 @@ class LongTermMemoryContextMiddlewareTest {
     private companion object {
         const val OPEN_TAG = "<long_term_memory>"
         const val CLOSE_TAG = "</long_term_memory>"
+
+        /** Spelled here rather than taken from production: the test has to notice the cut, not just find a constant. */
+        const val TRUNCATION_NOTICE = "(long-term memory truncated)"
     }
 }

@@ -10,6 +10,7 @@ import io.agentscope.harness.agent.filesystem.remote.store.BaseStore
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem
 import io.agentscope.harness.agent.memory.MemoryConsolidator
 import org.slf4j.LoggerFactory
+import java.time.Duration
 
 /**
  * Merges one conversation's own memory layer into its owner's long-term layer.
@@ -32,6 +33,14 @@ import org.slf4j.LoggerFactory
  * because that layer holds the only copy of what has not been curated yet. Losing it to a failed merge is the
  * one way this feature could make memory shrink.
  *
+ * The clear goes object by object, and only for objects that did not move while this pass was at the model.
+ * The flush of a later turn appends to the same daily ledger and upstream's consolidation rewrites the same
+ * draft through the mounted routes, so a file this pass read once is not necessarily the file it merged:
+ * deleting one that took a write in that window would destroy entries no merge ever saw.
+ *
+ * A merge that shrinks the owner's layer with no size reason to is treated as the model failing the task,
+ * because this pass both overwrites that text and deletes the only other copy of it.
+ *
  * The merge reuses upstream's consolidation prompt verbatim: its two declared inputs are "the current
  * MEMORY.md" and "new entries to merge", and a conversation's layer is exactly the second. The prohibitions
  * come from [MemoryConfigFactory] so a merge cannot launder a secret or another tenant's data into the layer
@@ -42,6 +51,7 @@ class MemoryPromoter(
     private val sessionId: String,
     private val model: Model,
     private val maxMemoryTokens: Int = MemoryConfigFactory.CONSOLIDATION_MAX_TOKENS,
+    private val modelTimeout: Duration = DEFAULT_MODEL_TIMEOUT,
 ) {
 
     private val log = LoggerFactory.getLogger(MemoryPromoter::class.java)
@@ -58,20 +68,34 @@ class MemoryPromoter(
         /** Someone else changed the long-term layer first: nothing written, nothing cleared. */
         CONFLICT,
 
-        /** The model failed, or answered with nothing worth writing. */
+        /** The model failed, ran out of the time one merge gets, or answered with text that drops the owner's. */
         MODEL_FAILED,
 
         /** The store refused a read or the versioned write. */
         STORE_FAILED,
     }
 
-    /** What one conversation's layer holds, read once per attempt and reused for both the prompt and the clear. */
+    /**
+     * What one conversation's layer holds, read once per attempt and reused for both the prompt and the clear.
+     *
+     * Every object carries the version this pass saw, which is what lets the clear tell a file it merged from a
+     * file that took a write while the model was answering.
+     */
     private class SessionLayer(
-        val curated: String?,
-        val ledgers: List<Pair<String, String>>,
+        val curated: Draft?,
+        val ledgers: List<Ledger>,
     ) {
-        fun isEmpty(): Boolean = curated.isNullOrBlank() && ledgers.isEmpty()
+        fun isEmpty(): Boolean = curated?.text.isNullOrBlank() && ledgers.isEmpty()
+
+        /** How many objects one merge took material out of, which is how many a clear could remove. */
+        fun objectCount(): Int = (if (curated?.text.isNullOrBlank()) 0 else 1) + ledgers.size
     }
+
+    /** This conversation's un-merged draft, with the version it answered with. */
+    private class Draft(val text: String?, val version: Long)
+
+    /** One daily ledger of this conversation: what it is called, what it holds, and what version this pass read. */
+    private class Ledger(val name: String, val text: String, val version: Long)
 
     /**
      * One promotion attempt, start to finish, called by [MemoryPromotionMiddleware] off the conversation path.
@@ -141,13 +165,15 @@ class MemoryPromoter(
             return Outcome.CONFLICT
         }
 
-        clearLayer(session)
+        val cleared = clearLayer(session)
         log.info(
-            "Promoted conversation '{}' of agent '{}' into its long-term layer ({} chars, {} ledger(s) cleared)",
+            "Promoted conversation '{}' of agent '{}' into its long-term layer ({} chars, {} of {} layer " +
+                "object(s) cleared)",
             sessionId,
             domain.agentId,
             merged.length,
-            session.ledgers.size,
+            cleared,
+            session.objectCount(),
         )
         return Outcome.PROMOTED
     }
@@ -164,11 +190,11 @@ class MemoryPromoter(
                 .content(TextBlock.builder().text(userContent(current, session)).build())
                 .build(),
         )
-        return try {
+        val merged = try {
             model.stream(messages, null, null)
                 .reduce(StringBuilder()) { sb, response -> sb.append(textOf(response.content)) }
                 .map { it.toString().trim() }
-                .block()
+                .block(modelTimeout)
                 ?.takeIf { it.isNotEmpty() }
         } catch (e: Exception) {
             log.warn(
@@ -178,7 +204,35 @@ class MemoryPromoter(
                 e.message,
             )
             null
+        } ?: return null
+
+        val longTerm = contentOf(current)
+        if (dropsTheOwnerLayer(longTerm, merged)) {
+            log.warn(
+                "The merge for conversation '{}' of agent '{}' answers with {} chars where the owner's layer " +
+                    "holds {} of them inside its budget: that reads as text the model dropped rather than as a " +
+                    "curated layer, so nothing was written and this conversation keeps its own layer",
+                sessionId,
+                domain.agentId,
+                merged.length,
+                longTerm?.length ?: 0,
+            )
+            return null
         }
+        return merged
+    }
+
+    /**
+     * Whether a merge would replace the owner's text with materially less of it for no size reason.
+     *
+     * An over-budget `MEMORY.md` is the one case where shrinking is the job, so the floor only speaks below the
+     * budget the prompt itself states. Half of it is deliberately coarse: a faithful merge adds this
+     * conversation's entries to the owner's text instead of trading a part of it away.
+     */
+    private fun dropsTheOwnerLayer(longTerm: String?, merged: String): Boolean {
+        val current = longTerm?.takeIf { it.isNotBlank() } ?: return false
+        if (current.length > maxMemoryTokens * CHARS_PER_TOKEN) return false
+        return merged.length * 2 < current.length
     }
 
     private fun systemPrompt(): String = String.format(
@@ -195,15 +249,13 @@ class MemoryPromoter(
         append("\n\nNew entries to merge, all from one conversation's own memory layer (")
         append(sessionId)
         append("):\n")
-        session.curated?.takeIf { it.isNotBlank() }?.let { append(section(CURATED_SECTION_NAME, it)) }
-        session.ledgers.forEach { (name, text) -> append(section(name, text)) }
+        session.curated?.text?.takeIf { it.isNotBlank() }?.let { append(section(CURATED_SECTION_NAME, it)) }
+        session.ledgers.forEach { append(section(it.name, it.text)) }
     }
 
     private fun section(name: String, text: String): String = "### $name\n${text.trim()}\n\n"
 
-    private fun readCurated(namespace: List<String>): String? = contentOf(
-        store.get(namespace, MemoryFilesystemRoutes.CURATED_ITEM_KEY),
-    )
+    private fun readCurated(namespace: List<String>): Draft? = store.get(namespace, MemoryFilesystemRoutes.CURATED_ITEM_KEY)?.let { Draft(contentOf(it), it.version()) }
 
     /**
      * This conversation's daily ledgers, oldest first, blank ones left out.
@@ -213,21 +265,21 @@ class MemoryPromoter(
      * An archived entry is history the long-term layer already curates, and this merge would both re-promote
      * it and delete the only copy of it.
      */
-    private fun readLedgers(): List<Pair<String, String>> {
+    private fun readLedgers(): List<Ledger> {
         val namespace = domain.ledgerNamespace(sessionId)
-        val found = LinkedHashMap<String, String>()
+        val found = LinkedHashMap<String, Ledger>()
         var offset = 0
         while (true) {
             val page = store.search(namespace, PAGE_SIZE, offset)
             page.forEach { item ->
                 val name = item.key()?.removePrefix("/") ?: return@forEach
                 if (name.contains('/') || !name.endsWith(".md") || name == MemoryConsolidator.STATE_FILE) return@forEach
-                contentOf(item)?.takeIf { it.isNotBlank() }?.let { found[name] = it }
+                contentOf(item)?.takeIf { it.isNotBlank() }?.let { found[name] = Ledger(name, it, item.version()) }
             }
             if (page.size < PAGE_SIZE) break
             offset += page.size
         }
-        return found.entries.sortedBy { it.key }.map { it.key to it.value }
+        return found.values.sortedBy { it.name }
     }
 
     /**
@@ -237,14 +289,53 @@ class MemoryPromoter(
      * written, so a progress stamp ahead of a fresh one cannot hide it, and dropping it would make the next
      * curation pass re-read ledgers this layer no longer has.
      */
-    private fun clearLayer(session: SessionLayer) {
-        if (!session.curated.isNullOrBlank()) {
-            store.delete(domain.curatedNamespace(sessionId), MemoryFilesystemRoutes.CURATED_ITEM_KEY)
+    private fun clearLayer(session: SessionLayer): Int {
+        var cleared = 0
+        session.curated?.takeIf { !it.text.isNullOrBlank() }?.let {
+            if (clearOne(domain.curatedNamespace(sessionId), MemoryFilesystemRoutes.CURATED_ITEM_KEY, DRAFT_NAME, it.version)) {
+                cleared++
+            }
         }
-        if (session.ledgers.isNotEmpty()) {
-            val namespace = domain.ledgerNamespace(sessionId)
-            session.ledgers.forEach { (name, _) -> store.delete(namespace, "/$name") }
+        val namespace = domain.ledgerNamespace(sessionId)
+        session.ledgers.forEach { if (clearOne(namespace, "/${it.name}", it.name, it.version)) cleared++ }
+        return cleared
+    }
+
+    /**
+     * One object of the layer, gone only while it is still the object this pass merged.
+     *
+     * A version that moved means the flush of a later turn, or the curation of this conversation's own bucket,
+     * wrote through the mounted routes after this pass read. Those bytes reached no merge, so the object stays
+     * and the next window merges it against the then-current long-term text; deleting anyway is the one way this
+     * pass loses un-curated memory. An object that cannot be re-read is answered the same way, because nothing
+     * here has proved it safe to remove.
+     */
+    private fun clearOne(namespace: List<String>, key: String, name: String, seenVersion: Long): Boolean {
+        val current = try {
+            store.get(namespace, key)
+        } catch (e: RuntimeException) {
+            log.warn(
+                "Could not re-check {} of conversation '{}' before clearing it, so it is left alone: {}",
+                name,
+                sessionId,
+                e.message,
+            )
+            return false
         }
+        if (current == null) return true
+        if (current.version() != seenVersion) {
+            log.info(
+                "{} of conversation '{}' was written while this merge ran (version {} when this pass read it, " +
+                    "now {}), so it keeps what this merge never saw for the next window",
+                name,
+                sessionId,
+                seenVersion,
+                current.version(),
+            )
+            return false
+        }
+        store.delete(namespace, key)
+        return true
     }
 
     private val store: BaseStore get() = domain.store
@@ -253,6 +344,18 @@ class MemoryPromoter(
 
         /** How the conversation's curated draft is labelled inside the merge input. */
         private const val CURATED_SECTION_NAME = "MEMORY.md (this conversation's own curated draft)"
+
+        /** How the conversation's curated draft is named in a log, where a path says nothing a reader needs. */
+        private const val DRAFT_NAME = "its curated draft"
+
+        /**
+         * How long one merge waits on the model before the attempt is called a failure.
+         *
+         * Bounded because this runs on a blocking scheduler and holds the in-flight count shutdown waits on: a
+         * stream that stops answering has to end on a clock rather than hold both until the process does. It is
+         * generous next to a turn's own timeout because a merge rewrites a whole curated layer in one completion.
+         */
+        private val DEFAULT_MODEL_TIMEOUT: Duration = Duration.ofMinutes(5)
 
         /** Rough characters per token — the arithmetic upstream's own prompt asks for. */
         private const val CHARS_PER_TOKEN = 4

@@ -31,7 +31,10 @@ import io.agentscope.harness.agent.coordination.StoreBackedPeriodicGate
 import io.agentscope.harness.agent.filesystem.CompositeFilesystem
 import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem
 import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore
+import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory
+import io.agentscope.harness.agent.filesystem.remote.store.StoreItem
 import io.agentscope.harness.agent.middleware.MemoryFlushMiddleware
 import io.agentscope.harness.agent.middleware.MemoryMaintenanceMiddleware
 import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware
@@ -344,6 +347,65 @@ class HarnessAgentLauncherMemoryTest {
         assertInstanceOf(
             MemoryPromoter::class.java,
             privateField(promotion.single(), "promoter"),
+        )
+    }
+
+    @Test
+    fun `a store that ignores its version precondition is refused the merge`(@TempDir workspace: Path) {
+        // Two conversations of one owner promote on independent clocks by design, so the only thing standing
+        // between a merge and a sibling's promoted text is a version comparison the store really performs.
+        // A throttle can degrade when this store cannot hold a slot; a last-write-wins merge just loses memory.
+        val ignoring = object : BaseStore by InMemoryStore() {
+            override fun putIfVersion(
+                namespace: List<String>,
+                key: String,
+                value: Map<String, Any>,
+                expectedVersion: Long,
+            ): Boolean {
+                put(namespace, key, value)
+                return true
+            }
+        }
+
+        assertFalse(launcher(workspace, Memory(enabled = true)).promoterIsSafe(ignoring))
+    }
+
+    @Test
+    fun `a store that compares versions keeps the merge and one that could not be asked still tries it`(@TempDir workspace: Path) {
+        val comparing = InMemoryStore()
+        assertTrue(
+            launcher(workspace, Memory(enabled = true)).promoterIsSafe(comparing),
+            "a store that answered all three probe arms is what this feature is built on",
+        )
+
+        // A store that threw is not a store found wanting: the probe got no answer, and the merge meets the same
+        // store on its own reads and writes, where a fault costs one merge and destroys nothing.
+        val unreachable = object : BaseStore {
+            override fun get(
+                namespace: List<String>,
+                key: String,
+            ): StoreItem? = throw IllegalStateException("connection refused")
+
+            override fun put(
+                namespace: List<String>,
+                key: String,
+                value: Map<String, Any>,
+            ): Unit = throw IllegalStateException("connection refused")
+
+            override fun search(
+                namespace: List<String>,
+                limit: Int,
+                offset: Int,
+            ): List<StoreItem> = throw IllegalStateException("connection refused")
+
+            override fun delete(
+                namespace: List<String>,
+                key: String,
+            ): Unit = throw IllegalStateException("connection refused")
+        }
+        assertTrue(
+            launcher(workspace, Memory(enabled = true)).promoterIsSafe(unreachable),
+            "an unclassified store is not a refused verdict",
         )
     }
 

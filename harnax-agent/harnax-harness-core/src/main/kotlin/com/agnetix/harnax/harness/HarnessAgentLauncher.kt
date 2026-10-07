@@ -724,16 +724,30 @@ class HarnessAgentLauncher(
                 // The other half of the layer: what that block writes has to reach the owner's text again, or
                 // a conversation that keeps its own memory simply loses it. An agent on one layer needs no
                 // promoter at all, because its extraction already lands in the owner's bucket.
-                agentBuilder.addMiddleware(
-                    MemoryPromotionMiddleware(
-                        MemoryPromoter(memoryDomain, sessionId, extractionModel ?: chatModel),
-                        // The same store upstream's two gates get, so a store that cannot hold a slot degrades
-                        // this throttle the way it degrades those: one replica per clock rather than none.
-                        StoreBackedPeriodicGate(coordinationStore(memoryDomain.store)),
-                        memory.consolidationMinGap,
-                        sessionId,
-                    ),
-                )
+                if (promoterIsSafe(memoryDomain.store)) {
+                    agentBuilder.addMiddleware(
+                        MemoryPromotionMiddleware(
+                            MemoryPromoter(memoryDomain, sessionId, extractionModel ?: chatModel),
+                            // The same store upstream's two gates get, so a store that cannot hold a slot degrades
+                            // this throttle the way it degrades those: one replica per clock rather than none.
+                            StoreBackedPeriodicGate(coordinationStore(memoryDomain.store)),
+                            memory.consolidationMinGap,
+                            sessionId,
+                        ),
+                    )
+                } else {
+                    // Reading the owner's layer costs nothing unsafe, so the block above stays: what an agent on
+                    // this store gets is a conversation layer that is never merged out of, rather than a merge
+                    // that would overwrite whatever a sibling conversation promoted first.
+                    log.warn(
+                        "[memory] agent '{}' keeps its conversations on their own layer: the object store " +
+                            "cannot compare versions ({}), and promoting without it would drop what another " +
+                            "conversation of this owner merged. Repair the store's version precondition to get " +
+                            "promotion back.",
+                        agentSpec.name,
+                        casSupport(memoryDomain.store).detail,
+                    )
+                }
             }
             agentBuilder.memory(MemoryConfigFactory.build(memory, extractionModel))
             // Upstream chooses the gate from the distributed store alone, so say which one this agent got:
@@ -1086,6 +1100,22 @@ class HarnessAgentLauncher(
         if (probed.definitive) probedCasSupport = probed
         return probed
     }
+
+    /**
+     * Whether [store] can be trusted with the promotion pass, whose only guard against losing a sibling's work
+     * is a version comparison.
+     *
+     * A merge overwrites the owner's curated layer and then deletes the conversation's copy of what went into
+     * it, so on a store that answers true to any version two conversations of one owner both merge, both are
+     * told the write landed, and the later one silently drops what the earlier promoted. Upstream's gate can
+     * degrade to a per-replica clock when the store cannot hold a slot because its own failure is a duplicate
+     * consolidation; this one's failure is lost memory, so it refuses instead.
+     *
+     * A probe that could not get an answer — a store that threw — is not a store found wanting: the merge reads
+     * and writes the same store and will meet whatever is wrong there on its own path, where it fails without
+     * destroying anything.
+     */
+    internal fun promoterIsSafe(store: BaseStore): Boolean = casSupport(store).let { it.supported || !it.definitive }
 
     /**
      * The store to hand upstream for the consolidation gate: [store] when it can compare versions, a

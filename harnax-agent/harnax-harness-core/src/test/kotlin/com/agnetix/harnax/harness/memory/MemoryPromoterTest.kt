@@ -170,6 +170,80 @@ class MemoryPromoterTest {
     }
 
     @Test
+    fun `an entry the flush wrote while this merge ran is not cleared with the rest`() {
+        // The daily ledger is written by the flush of every turn, and a later turn of the same conversation can
+        // land while this pass is at the model. Clearing the file because this pass read it once would destroy
+        // an entry that was never merged, and this layer holds the only copy of it (design 11.4's first rule).
+        val store = InMemoryStore()
+        writeLongTerm(store, "- prefers Chinese")
+        writeLedger(store, sessionId, "2026-10-05.md", "- from this conversation")
+        val ledgers = domain(store).ledgerNamespace(sessionId)
+
+        val interleaved = object : BaseStore by store {
+            override fun putIfVersion(
+                namespace: List<String>,
+                key: String,
+                value: Map<String, Any>,
+                expectedVersion: Long,
+            ): Boolean {
+                // The turn that started after this pass read flushes its own entry into the same day: upstream
+                // reads the file, appends and writes it back unconditionally.
+                val seen = store.get(ledgers, "/2026-10-05.md")!!.value()["content"]
+                store.put(ledgers, "/2026-10-05.md", mapOf("content" to "$seen\n- flushed after this pass read"))
+                return store.putIfVersion(namespace, key, value, expectedVersion)
+            }
+        }
+
+        assertEquals(
+            MemoryPromoter.Outcome.PROMOTED,
+            MemoryPromoter(
+                domain(interleaved),
+                sessionId,
+                ScriptedModel("- prefers Chinese\n- from this conversation"),
+            ).promoteNow(),
+        )
+
+        // What this pass merged went to the owner's layer, and what it never saw is still here for the next one.
+        val surviving = layer(interleaved, ledgers)
+        assertEquals(1, surviving.size, "a ledger that took a write during the merge keeps its place: $surviving")
+        assertTrue(surviving.single().contains("- flushed after this pass read"), surviving.toString())
+        assertTrue(surviving.single().contains("- from this conversation"), surviving.toString())
+    }
+
+    @Test
+    fun `a draft that was rewritten while this merge ran is not cleared with the rest`() {
+        // The same window on the other object of the layer: upstream's consolidation rewrites this conversation's
+        // MEMORY.md, and a draft that moved since this pass read it is not this pass's to delete.
+        val store = InMemoryStore()
+        writeCurated(store, sessionId, "- first draft")
+        val draft = domain(store).curatedNamespace(sessionId)
+
+        val interleaved = object : BaseStore by store {
+            override fun putIfVersion(
+                namespace: List<String>,
+                key: String,
+                value: Map<String, Any>,
+                expectedVersion: Long,
+            ): Boolean {
+                store.put(draft, MemoryFilesystemRoutes.CURATED_ITEM_KEY, mapOf("content" to "- rewritten while the merge ran"))
+                return store.putIfVersion(namespace, key, value, expectedVersion)
+            }
+        }
+
+        assertEquals(
+            MemoryPromoter.Outcome.PROMOTED,
+            MemoryPromoter(domain(interleaved), sessionId, ScriptedModel("- prefers Chinese\n- first draft")).promoteNow(),
+        )
+
+        val surviving = layer(interleaved, draft)
+        assertEquals(1, surviving.size, "a draft that took a write during the merge keeps its place: $surviving")
+        assertTrue(
+            surviving.single().contains("- rewritten while the merge ran"),
+            "the draft this pass did not merge is left for the next one: $surviving",
+        )
+    }
+
+    @Test
     fun `a model that fails leaves the only copy of the draft alone`() {
         val store = InMemoryStore()
         writeCurated(store, sessionId, "- not curated yet")
@@ -208,6 +282,68 @@ class MemoryPromoterTest {
 
         assertEquals(longTerm, layer(store, domain(store).curatedNamespace(null)))
         assertEquals(1, layer(store, domain(store).ledgerNamespace(sessionId)).size)
+    }
+
+    @Test
+    fun `a merge that shrinks a curated layer already inside its budget is refused`() {
+        // The prompt asks for the complete new MEMORY.md, and this pass overwrites the one block every later
+        // conversation reads and then deletes this conversation's copy of what it dropped. A model that answers
+        // with only this conversation's entries has failed the task, so it is handled as one.
+        val store = InMemoryStore()
+        val curated = "- owner inside budget\n".repeat(20)
+        writeLongTerm(store, curated)
+        writeLedger(store, sessionId, "2026-10-05.md", "- from this conversation")
+        val before = sessionNamespaces(store).map { layer(store, it) }
+
+        assertEquals(MemoryPromoter.Outcome.MODEL_FAILED, promoted(store, ScriptedModel("- from this conversation")))
+
+        assertEquals(curated, domain(store).longTermCurated(), "the owner's text is not replaced by a fragment")
+        assertEquals(before, sessionNamespaces(store).map { layer(store, it) }, "nothing is cleared on a refused merge")
+    }
+
+    @Test
+    fun `a merge of a curated layer that overran its budget is allowed to compact it`() {
+        // The floor is only for a layer that had no size reason to shrink. Consolidation exists to bring an
+        // over-budget MEMORY.md back down, so refusing the shrink here would wedge the owner's layer open.
+        val store = InMemoryStore()
+        writeLongTerm(store, "- owner over budget\n".repeat(1_200))
+        writeLedger(store, sessionId, "2026-10-05.md", "- from this conversation")
+
+        assertEquals(MemoryPromoter.Outcome.PROMOTED, promoted(store, ScriptedModel("- compacted owner")))
+
+        assertEquals("- compacted owner", domain(store).longTermCurated())
+        assertEquals(emptyList<String>(), layer(store, domain(store).ledgerNamespace(sessionId)))
+    }
+
+    @Test
+    fun `a model that never answers costs the merge and releases the thread`() {
+        // This runs on a blocking scheduler with a process-wide in-flight count, so a stream that stops
+        // answering has to end on a clock rather than hold the count until the JVM does.
+        val store = InMemoryStore()
+        writeCurated(store, sessionId, "- not curated yet")
+        val before = sessionNamespaces(store).map { layer(store, it) }
+        val silent = object : Model {
+            override fun stream(
+                messages: List<Msg>,
+                tools: List<io.agentscope.core.model.ToolSchema>?,
+                options: io.agentscope.core.model.GenerateOptions?,
+            ): Flux<ChatResponse> = Flux.never()
+
+            override fun getModelName(): String = "silent"
+        }
+
+        assertEquals(
+            MemoryPromoter.Outcome.MODEL_FAILED,
+            MemoryPromoter(
+                domain(store),
+                sessionId,
+                silent,
+                modelTimeout = java.time.Duration.ofMillis(100),
+            ).promoteNow(),
+        )
+
+        assertEquals(before, sessionNamespaces(store).map { layer(store, it) })
+        assertNull(domain(store).longTermCurated())
     }
 
     @Test
