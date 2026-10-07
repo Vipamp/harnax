@@ -1,14 +1,10 @@
 package com.agnetix.harnax.tools.builtin
 
-import com.agnetix.harnax.tools.sdk.SessionMetaContext
 import com.agnetix.harnax.tools.sdk.ToolEnvContext
-import com.agnetix.harnax.tools.sdk.UserIdentifier
-import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
-import org.mockito.kotlin.mock
 
 /**
  * EmailToolBox Integration Test — Real SMTP Send
@@ -29,7 +25,6 @@ import org.mockito.kotlin.mock
 class EmailToolBoxIntegrationTest {
 
     private lateinit var emailToolBox: EmailToolBox
-    private lateinit var mockAdaptor: ToolCallLogAdaptor
 
     // ====== SMTP Configuration — modify these or set env vars ======
     private val smtpHost: String = System.getenv("SMTP_HOST") ?: "smtp.126.com"
@@ -56,12 +51,6 @@ class EmailToolBoxIntegrationTest {
     @BeforeEach
     fun setUp() {
         emailToolBox = EmailToolBox()
-        mockAdaptor = mock()
-        emailToolBox.init(
-            mockAdaptor,
-            SessionMetaContext(agentId = 999L, sessionId = "integration-test-session"),
-            UserIdentifier(userId = 1L),
-        )
     }
 
     private fun envContext(): ToolEnvContext = ToolEnvContext(

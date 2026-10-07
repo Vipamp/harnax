@@ -20,6 +20,9 @@ class SkillViewRecorderTest {
         val batches = mutableListOf<Pair<String, List<Long>>>()
         val users = mutableListOf<Long?>()
 
+        /** Separate from [batches]: the recorder under test only ever reports loads, so this stays empty. */
+        val uses = mutableListOf<List<Long>>()
+
         override fun reportViews(
             sessionId: String,
             skillIds: List<Long>,
@@ -28,6 +31,14 @@ class SkillViewRecorderTest {
             batches += sessionId to skillIds
             users += userId
             onFailure()?.let { throw it }
+        }
+
+        override fun reportUses(
+            sessionId: String,
+            skillIds: List<Long>,
+            userId: Long?,
+        ) {
+            uses += skillIds
         }
     }
 
@@ -57,6 +68,9 @@ class SkillViewRecorderTest {
         recorder.onRead(listOf(skill("pdf-tools")))
 
         assertEquals(listOf("web-1" to listOf(7L)), adaptor.batches)
+        // The recorder reports loads only. A USE batch here would double-count a skill the model never
+        // worked through, and no other assertion in this class reads the uses list, so nothing else would notice.
+        assertTrue(adaptor.uses.isEmpty())
     }
 
     @Test

@@ -27,7 +27,7 @@
 - 系统表使用 `sys_` 前缀：`sys_user`、`sys_token_blacklist`
 - 移动端表使用 `mp_` 前缀：`mp_session`、`mp_chat_message`
 - 关联表使用 `A_B_binding` / `user_tenant` 风格：`agent_tool_binding`、`agent_mcp_binding`
-- 日志/统计表使用 `_log` / `_stats` 后缀：`process_log`、`tool_call_log`、`token_stats`
+- 日志/统计表使用 `_log` / `_stats` 后缀：`process_log`、`tool_invocation_log`、`token_stats`、`tool_invocation_stats`
 
 ### 2.2 字段命名
 
@@ -75,7 +75,7 @@
 
 ### 3.2 日志/流水表的精简字段
 
-只增不改的日志、统计表（`process_log`、`tool_call_log`、`token_stats`、`agent_task_log`）可省略 `status`、`active`、`update_time`，但必须保留：
+只增不改的日志、统计表（`process_log`、`tool_invocation_log`、`token_stats`、`agent_task_log`）可省略 `status`、`active`、`update_time`，但必须保留：
 
 - `id` 自增主键
 - 关联检索字段（`agent_id`、`session_id` 等）并建索引
@@ -221,16 +221,18 @@ CREATE TABLE IF NOT EXISTS `example` (
 | `harnax-scheduler` | `V1__init_schema.sql` | `harnax_scheduler` | `flyway_schema_history_scheduler` |
 | `harnax-session-router` | `V1__create_session_router_tables.sql` | `harnax_router` | `flyway_schema_history`（仅 cluster profile；`local` 模式走 `db/sqlite-init.sql`） |
 
-- 基线给出该模块 schema 的**最终形态**：每张表的建表语句带最终的列、索引、唯一键与注释，其后是系统启动所需的初始化数据。判「这张表现在长什么样」只看这一个文件，该模块的 `db/migration/` 目录下没有需要往上叠加的后续版本。
+- 基线给出该模块 schema 的**最终形态**：每张表的建表语句带最终的列、索引、唯一键与注释，其后是系统启动所需的初始化数据。判「这张表现在长什么样」看的是这个目录重放到最后一个版本之后的形状——默认只有一份 init 脚本，`harnax-admin` 目前另有两份前向增量叠在它上面（`V2__agent_session_memory.sql`、`V3__tool_invocation_metrics.sql`），增量在下文那条例外里。
 
 ### 9.2 变更落法
 
 变更直接写进所属模块的那一份 init 基线：把列、索引、唯一键、初数据改到该文件里对应的 `CREATE TABLE` 与 `INSERT` 上，然后重建库。`harnax-deploy` 环境一律按这条走，schema 历史不向下传。改基线的同时：
 
-- 重新生成 `harnax-entity/src/test/resources/schema-test.sql`——它的 DDL 段取自 admin 基线，不是手工对照；`SchemaBaselineDriftIT` 拿 Flyway 真正建出的库与该文件比对，漂了就红。
+- 重新生成 `harnax-entity/src/test/resources/schema-test.sql`——它的 DDL 段取自 admin 的 schema 在最后一个版本上的形状（基线加上叠在它上面的每一份前向增量），不是手工对照；`SchemaBaselineDriftIT` 拿 Flyway 真正建出的库与该文件比对，漂了就红。
 - 重跑 `mvn -o -pl harnax-entity -am test` 与 `mvn -o -pl harnax-admin -am -Pintegration-test verify`。
 
-没有「另写一份脚本叠上去」这条路：目录下只有基线一个文件，而已经按旧形态建好的库不认改过的基线——启动即校验和不符，`repair-on-migrate` 也不是解法。所以**改表结构与重建库是同一个动作**，不能拆开。
+例外写在 `harnax-admin/src/main/resources/db/migration/README.md`：不能重建的库——重建代价高于这次改表的价值，比如库里存着只有人能重填的模型 provider api_key——基线逐字不动，改动作为下一份前向增量 `V<n>__*.sql` 交付，三条同时成立：基线保持台账记下的那串校验和；增量把 schema 带到与重建后完全相同的形状，新建库按版本顺序重放就落在同一个位置；下一次重建时把增量折回基线并删掉它。`V2__agent_session_memory.sql` 与 `V3__tool_invocation_metrics.sql` 就是这个形状。
+
+默认这条路上没有「另写一份脚本叠上去」的余地：已按旧形态建好的库不认改过的基线——启动即校验和不符，`repair-on-migrate` 也不是解法。所以走默认路径时**改表结构与重建库是同一个动作**，不能拆开；只有上一段那条例外（库不能重建）才让目录里出现第二份脚本，而它必须在下次重建时折回基线。
 
 基线本身的编写规则：
 

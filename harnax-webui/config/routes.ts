@@ -145,6 +145,11 @@ export default [
         component: './skill/usage',
       },
       {
+        name: 'call.metrics',
+        path: '/monitor/call-metrics',
+        component: './call-metrics',
+      },
+      {
         name: 'skill.drafts',
         path: '/monitor/skill-drafts',
         component: './skill/drafts',

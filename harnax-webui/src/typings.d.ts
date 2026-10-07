@@ -552,6 +552,107 @@ message?: string;
   };
 
   /**
+   * @zh-CN 调用指标的一个主体行：按工具聚合时看 toolName，按智能体/会话聚合时看 subjectKey
+   *（对应后端 ToolMetricsRow）
+   */
+  export type CallMetricsRow = {
+    /** 明细维度（按智能体/会话）的行不带 kind 与 toolName，服务端给的是空串不是缺键 */
+    kind: string;
+    subjectKey: string;
+    /** kind 为 mcp 或 cli 时才是主体 id；后端把 subject_id=0 折成 null，键因此整个消失 */
+    subjectId?: number;
+    toolName: string;
+    calls: number;
+    successes: number;
+    errors: number;
+    denials: number;
+    interruptions: number;
+    /** 0..1，服务端算好的比值，页面只做百分比格式化 */
+    successRate: number;
+    avgDurationMs: number;
+    /** '<=' 或 '>'，六桶近似出来的 P95 落在桶里还是落在开口桶外 */
+    p95Operator: string;
+    p95Ms: number;
+    /** 聚合路径是日精度、明细路径是秒精度，页面统一按 YYYY-MM-DD HH:mm:ss 显示 */
+    lastSeenAt?: string;
+  };
+
+  /**
+   * @zh-CN 窗口内的调用总量与卡片计数（对应后端 ToolMetricsSummaryResponse）
+   */
+  export type CallMetricsSummary = {
+    days: number;
+    from: string;
+    to: string;
+    groupBy: string;
+    totalCalls: number;
+    totalSuccesses: number;
+    successRate: number;
+    failingCalls: number;
+    p95Operator: string;
+    p95Ms: number;
+    rows: CallMetricsRow[];
+  };
+
+  /**
+   * @zh-CN 趋势的一个补零桶（对应后端 ToolMetricsPoint）
+   */
+  export type CallMetricsPoint = {
+    timePoint: string;
+    kind: string;
+    /** 与 CallMetricsRow.subjectId 同一条规则：builtin/shell/framework 的 subject_id=0 折成 null，键消失 */
+    dimensionId?: number;
+    dimensionName: string;
+    calls: number;
+    successes: number;
+    errors: number;
+    denials: number;
+    interruptions: number;
+    avgDurationMs: number;
+  };
+
+  /**
+   * @zh-CN 时间序列响应（对应后端 ToolMetricsTimeSeriesResponse）
+   */
+  export type CallMetricsTrend = {
+    days: number;
+    granularity: string;
+    points: CallMetricsPoint[];
+  };
+
+  /**
+   * @zh-CN 一次调用的明细行，只在保留窗口内可查（对应后端 ToolInvocationRow）
+   */
+  export type CallInvocationRow = {
+    id: number;
+    kind: string;
+    toolName: string;
+    agentId?: number;
+    sessionId: string;
+    userId?: number;
+    mcpId?: number;
+    cliId?: number;
+    outcome: string;
+    errorMessage?: string;
+    /** capture-payload=false 时整列为 null，页面按「没有就不显示」处理 */
+    argsJson?: string;
+    resultExcerpt?: string;
+    durationMs: number;
+    startTime?: string;
+    ts?: string;
+  };
+
+  /**
+   * @zh-CN admin 的 Page 线上还带 pages/hasPrevious/hasNext 三个计算键，页面只读这四个；与 PageResult 的 size/current 形状不同
+   */
+  export type CallInvocationPage = {
+    pageNum: number;
+    pageSize: number;
+    total: number;
+    records: CallInvocationRow[];
+  };
+
+  /**
    * @zh-CN 草稿队列可按的状态过滤。EXPIRED 是后端列上写着而没有任何代码写入的值，接口按它过滤直接拒。
    */
   export type SkillDraftStatus = 'PENDING' | 'APPROVED' | 'REJECTED';

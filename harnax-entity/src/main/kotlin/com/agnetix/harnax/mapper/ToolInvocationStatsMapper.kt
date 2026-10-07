@@ -1,0 +1,79 @@
+package com.agnetix.harnax.mapper
+
+import org.apache.ibatis.annotations.Mapper
+import org.apache.ibatis.annotations.Param
+
+/**
+ * The daily fold of `tool_invocation_log` and the three reads the metrics page answers from it.
+ *
+ * The write is one statement, an aggregate recompute rather than an increment: the whole day is counted from
+ * the detail rows and every column is overwritten. That is what makes the rollup safe to run twice, safe
+ * to run on two replicas at once, and able to catch up on a day it missed — none of which a
+ * `calls = calls + n` increment would give.
+ *
+ * Catching up has a bound, though: the recompute is only as correct as the detail rows still there to be
+ * counted, so it must never run for a day whose details were already pruned, or it overwrites the day's
+ * true totals with a partial count. `ToolInvocationLogMapper.deleteRolledOut` gates on this table for
+ * exactly that reason.
+ *
+ * That statement is deliberately not tenant-scoped, unlike every read in `ToolInvocationLogMapper`: the
+ * rollup is a server-wide maintenance job that writes one row per tenant, and its own tenant predicate
+ * would fold only the workspace that happens to run the job.
+ *
+ * The three reads share one contract: each names a tenant, because there is no value that means "every
+ * workspace", and each bounds the window with `yyyy-MM-dd` rather than an instant, since `stat_date` is a
+ * DATE column. The detail table's reads in `ToolInvocationLogMapper` take instant bounds instead, and the
+ * service computes both precisions from one window.
+ *
+ * SQL lives in `resources/mapper/ToolInvocationStatsMapper.xml`.
+ */
+@Mapper
+interface ToolInvocationStatsMapper {
+
+    /**
+     * Recompute one day in full.
+     *
+     * @param statDate Day to fold, `yyyy-MM-dd`
+     * @return Rows touched; MySQL counts an updated row as 2 and an unchanged one as 0, so the number is
+     * not a row count and callers must not read it as one
+     */
+    fun upsertDay(
+        @Param("statDate") statDate: String,
+    ): Int
+
+    /**
+     * One row per subject over a day range, summed across days, with the six duration buckets so the P95 can
+     * be answered without touching the detail table. Aliases are the wire contract: the service reads the map
+     * by these keys.
+     */
+    fun selectSubjectTotals(
+        @Param("from") from: String,
+        @Param("to") to: String,
+        @Param("tenantId") tenantId: Long,
+        @Param("kind") kind: String?,
+    ): MutableList<MutableMap<String?, Any?>?>?
+
+    /**
+     * The same totals for the whole window as one row, with no grouping at all.
+     *
+     * This is what the four cards answer from, including under `groupBy=agent|session`, where the rows come
+     * from the detail table and have no buckets — a card must not borrow a maximum and call it a percentile.
+     * An aggregate without `GROUP BY` always returns exactly one row, and COALESCE keeps its counts at 0.
+     */
+    fun selectWindowTotals(
+        @Param("from") from: String,
+        @Param("to") to: String,
+        @Param("tenantId") tenantId: Long,
+        @Param("kind") kind: String?,
+    ): MutableMap<String?, Any?>?
+
+    /** The same totals per bucket, for the trend line. */
+    fun selectTimeSeries(
+        @Param("from") from: String,
+        @Param("to") to: String,
+        @Param("tenantId") tenantId: Long,
+        @Param("kind") kind: String?,
+        @Param("subjectId") subjectId: Long?,
+        @Param("granularity") granularity: String,
+    ): MutableList<MutableMap<String?, Any?>?>?
+}

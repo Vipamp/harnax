@@ -34,7 +34,7 @@ MVN=/Users/heqingsong/software/apache-maven-3.9.12/bin/mvn
 docker version > /dev/null 2>&1; echo "DOCKER=$?"   # 决定要不要排除容器测
 ```
 
-- 模块单测：`$MVN -o -q spotless:apply -pl <模块>` 然后 `$MVN -o test -pl <模块> > /tmp/t.log 2>&1; echo EXIT=$?`，再看 `/tmp/t.log` 里的 `Tests run:` 行。
+- 模块单测：`$MVN -o -q spotless:apply -pl <模块>` 然后 `$MVN -o test -pl <模块> > /tmp/t.log 2>&1; echo EXIT=$?`，再看 `/tmp/t.log` 里的 `Tests run:` 行。凡 `-pl harnax-agent/**` 的 `test` 与 `test-compile` 必须带 `-am`：本地仓库里的 harnax-entity 构件是旧的，不带时表现为 `Unresolved reference 'ToolInvocationLog'` 一类的假红。`spotless:apply` 不带 `-am`，否则会顺手改到上游模块的文件，在共享工作树里留下与本任务无关的改动。
 - admin 定向 IT（命令串里**不能出现字面 `*IT`**，且 `-Dtest` 要给一个故意不匹配的值，否则同一批 IT 在 surefire 与 failsafe 各跑一遍）：
   ```bash
   $MVN -o -pl harnax-admin -am -Pintegration-test \
@@ -125,7 +125,7 @@ CREATE TABLE IF NOT EXISTS `tool_invocation_stats` (
   `tenant_id` bigint NOT NULL COMMENT 'Owning tenant; detail rows without one are not aggregated at all',
   `kind` varchar(16) NOT NULL COMMENT 'Origin bucket, same vocabulary as the detail table',
   `subject_id` bigint NOT NULL DEFAULT '0' COMMENT 'mcp_id when kind = mcp, cli_id when kind = cli, 0 otherwise; 0 rather than NULL because a unique index does not treat NULLs as equal, and NULL would make the upsert insert a second row for the same day',
-  `tool_name` varchar(255) NOT NULL DEFAULT '' COMMENT 'Command name for kind = cli; empty means the day is keyed by subject only',
+  `tool_name` varchar(255) NOT NULL DEFAULT '' COMMENT 'Tool name as the model sees it; every kind carries it, so two tools of one MCP server are two rows on a day',
   `calls` int NOT NULL COMMENT 'Total invocations',
   `successes` int NOT NULL COMMENT 'Invocations ending SUCCESS',
   `errors` int NOT NULL COMMENT 'Invocations ending ERROR',
@@ -810,7 +810,7 @@ $MVN -o test -pl harnax-entity -Dtest=ToolInvocationStatsMapperTest -Dsurefire.f
         SELECT DATE_FORMAT(l.ts, '%Y-%m-%d') AS stat_date
         FROM tool_invocation_log l
         WHERE l.tenant_id IS NOT NULL
-        AND DATE(l.ts) &gt;= #{floor}
+        AND l.ts &gt;= #{floor}
         AND NOT EXISTS (
             SELECT 1 FROM tool_invocation_stats s
             WHERE s.stat_date = DATE(l.ts)
@@ -884,8 +884,17 @@ interface ToolInvocationStatsMapper {
         501 ms in le_2s. Closed intervals on both sides would claim a boundary call twice and the bucket
         sum would stop equalling `calls` (I4).
 
-        `subject_id` and `tool_name` are written with a COALESCE rather than left null: the unique key
-        treats two NULLs as different rows, so a NULL subject would let the same day insert twice.
+        `subject_id` is written with a COALESCE rather than left null, because the unique key treats two
+        NULLs as different rows: a NULL subject would let the same day insert twice.
+        The subject is also part of the grouping key, because it is what an operator reads the row as: one
+        agent mounts several MCP servers, and a single `mcp` group per tenant would leave the highest server
+        id holding every call of that day. The tool name is part of it too, and for every kind: one server
+        exposes several tools and one agent has several builtins, so a group that dropped the name would fold
+        tools the page lists apart into one row, and a reader could not tell which tool of a server answered.
+        The same expression is selected and grouped, so the value is the group's own key rather than an
+        aggregate taken over it.
+        The day is bounded by an instant range rather than by `DATE(l.ts) = #{statDate}`: a function over the
+        column is not sargable, so the optimizer cannot use it to narrow the scan.
         The update list covers every column the SELECT produces, including the counters, because this is a
         recompute and not an increment.
     -->
@@ -900,8 +909,12 @@ interface ToolInvocationStatsMapper {
         #{statDate},
         l.tenant_id,
         l.kind,
-        COALESCE(MAX(l.mcp_id), MAX(l.cli_id), 0),
-        CASE WHEN l.kind = 'cli' THEN l.tool_name ELSE '' END,
+        CASE
+        WHEN l.kind = 'mcp' THEN COALESCE(l.mcp_id, 0)
+        WHEN l.kind = 'cli' THEN COALESCE(l.cli_id, 0)
+        ELSE 0
+        END,
+        l.tool_name,
         COUNT(*),
         SUM(CASE WHEN l.outcome = 'SUCCESS' THEN 1 ELSE 0 END),
         SUM(CASE WHEN l.outcome = 'ERROR' THEN 1 ELSE 0 END),
@@ -916,10 +929,16 @@ interface ToolInvocationStatsMapper {
         SUM(CASE WHEN l.duration_ms &gt; 10000 AND l.duration_ms &lt;= 30000 THEN 1 ELSE 0 END),
         SUM(CASE WHEN l.duration_ms &gt; 30000 THEN 1 ELSE 0 END)
         FROM tool_invocation_log l
-        WHERE DATE(l.ts) = #{statDate}
+        WHERE l.ts &gt;= #{statDate}
+        AND l.ts &lt; DATE_ADD(#{statDate}, INTERVAL 1 DAY)
         AND l.tenant_id IS NOT NULL
         GROUP BY l.tenant_id, l.kind,
-        CASE WHEN l.kind = 'cli' THEN l.tool_name ELSE '' END
+        CASE
+        WHEN l.kind = 'mcp' THEN COALESCE(l.mcp_id, 0)
+        WHEN l.kind = 'cli' THEN COALESCE(l.cli_id, 0)
+        ELSE 0
+        END,
+        l.tool_name
         ON DUPLICATE KEY UPDATE
         calls = VALUES(calls),
         successes = VALUES(successes),
@@ -939,7 +958,7 @@ interface ToolInvocationStatsMapper {
 </mapper>
 ```
 
-> `GROUP BY` 里没有 `subject_id` 而 `SELECT` 里有，这是有意的：`kind = mcp` 的一组内 `mcp_id` 由分类器保证唯一（I1），`kind = cli` 的一组内 `tool_name` 就是分组键。若在此处发现同一 `kind` 组里出现多个 `mcp_id`，那是分类器的不变量破了，不该由这条 SQL 兜。跑 Step 5 时若 MySQL 以 `ONLY_FULL_GROUP_BY` 拒绝 `COALESCE(MAX(...))` 以外的列，按报错把 `subject_id` 表达式改成与分组键一致的确定形式，并在报告里写明改了什么。
+> `subject_id` 必须与 `GROUP BY` 用同一个确定表达式，不能写成 `MAX()`：一个智能体挂多个 MCP server，`kind = mcp` 的一组里本来就会有多个 `mcp_id`，折成一行等于把全天的调用记到 id 最大的那个 server 上。Task 11 的读侧按 `(kind, subject_id, tool_name)` 分组、Task 12 直接把 `subjectId` 当 `mcpId`/`cliId`，所以这一条是聚合表能不能答题的分界。（本行原文写的是「由分类器保证一组内 `mcp_id` 唯一」，那是错的；落地时按上述改法纠正。）
 
 - [ ] **Step 5: 跑测试确认绿**
 
@@ -948,7 +967,7 @@ $MVN -o -q spotless:apply -pl harnax-entity
 $MVN -o test -pl harnax-entity -Dtest=ToolInvocationStatsMapperTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t2.log 2>&1; echo EXIT=$?
 grep -E "Tests run|BUILD" /tmp/t2.log
 ```
-预期：`Tests run: 3, Failures: 0, Errors: 0`。
+预期：`Failures: 0, Errors: 0`。`Tests run` 等于这一步测试文件里 `@Test` 的条数，不在此处钉死。
 
 - [ ] **Step 6: 提交**
 
@@ -1140,7 +1159,7 @@ class ToolInvocationClassifierTest {
 - [ ] **Step 2: 跑测试确认失败**
 
 ```bash
-$MVN -o test -pl harnax-agent/harnax-harness-core -Dtest=ToolInvocationClassifierTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t3-red.log 2>&1; echo EXIT=$?
+$MVN -o -am test -pl harnax-agent/harnax-harness-core -Dtest=ToolInvocationClassifierTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t3-red.log 2>&1; echo EXIT=$?
 ```
 预期：`test-compile` 报 `unresolved reference: ToolInvocationClassifier`。
 
@@ -1332,16 +1351,16 @@ data class InvocationAttribution(
     }
 ```
 
-`tokenize` / `commandHeads` 是 `private`，但 `cliCommandName` 的用例已经覆盖它们的全部行为；不给它们开可见性。
+`tokenize` 是 `private`，不给它开可见性；`commandHeads` 必须保持 `public`，Task 8 要用它从 `CliSpec.checkCommand` 取 CLI 别名表（写成 `private` 会让 Task 8 编译不过）。
 
 - [ ] **Step 4: 跑测试确认绿**
 
 ```bash
 $MVN -o -q spotless:apply -pl harnax-agent/harnax-harness-core
-$MVN -o test -pl harnax-agent/harnax-harness-core -Dtest=ToolInvocationClassifierTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t3.log 2>&1; echo EXIT=$?
+$MVN -o -am test -pl harnax-agent/harnax-harness-core -Dtest=ToolInvocationClassifierTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t3.log 2>&1; echo EXIT=$?
 grep -E "Tests run|BUILD" /tmp/t3.log
 ```
-预期：`Tests run: 12, Failures: 0, Errors: 0`。
+预期：`Failures: 0, Errors: 0`。`Tests run` 等于这一步测试文件里 `@Test` 的条数，不在此处钉死（落地时实跑为 13）。
 
 - [ ] **Step 5: 提交**
 
@@ -1426,7 +1445,7 @@ data class ToolInvocationEvent(
 
 ```bash
 $MVN -o -q spotless:apply -pl harnax-agent/harnax-tools-sdk
-$MVN -o -q test-compile -pl harnax-agent/harnax-tools-sdk > /tmp/t4.log 2>&1; echo EXIT=$?
+$MVN -o -am -q test-compile -pl harnax-agent/harnax-tools-sdk > /tmp/t4.log 2>&1; echo EXIT=$?
 ```
 预期：EXIT=0，日志无 `[ERROR]`。
 
@@ -1445,7 +1464,7 @@ git commit -m "feat(metrics): 工具调用事件的写入契约"
 - Modify: `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/adaptor/SkillUsageAdaptor.kt`
 - Modify: `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/SkillUsageAdaptorImpl.kt`
 - Modify: `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/client/AdminApiClient.kt:254-280`
-- Test: `harnax-agent/harnax-agent-service/src/test/kotlin/com/agnetix/harnax/agent/service/adaptor/SkillUsageAdaptorImplTest.kt`（新增用例 + 改 5 处既有桩）
+- Test: `harnax-agent/harnax-agent-service/src/test/kotlin/com/agnetix/harnax/agent/service/adaptor/SkillUsageAdaptorImplTest.kt`（新增用例 + 改 9 处既有实参 + 补两处排空断言）
 - Modify: `harnax-agent/harnax-harness-core/src/test/kotlin/com/agnetix/harnax/harness/SkillViewRecorderTest.kt:19`（`FakeAdaptor`）
 - Modify: `harnax-agent/harnax-harness-core/src/test/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncherSkillUsageTest.kt:35`（`FakeUsage`）
 
@@ -1474,6 +1493,9 @@ git commit -m "feat(metrics): 工具调用事件的写入契约"
     fun `an empty use asks Admin nothing`() {
         adaptor.reportUses("web-1", emptyList(), 1L)
 
+        // Same drain as `an empty read asks Admin nothing`, for the same reason.
+        adaptor.shutdown()
+
         verifyNoInteractions(client)
     }
 ```
@@ -1485,12 +1507,13 @@ git commit -m "feat(metrics): 工具调用事件的写入契约"
         verify(client, timeout(5_000)).reportSkillUsage("web-1", listOf(9L), 1L, "VIEW")
 ```
 
+`an empty read asks Admin nothing` 与上面新加的空批用例还得各补一行：两者都用 `verifyNoInteractions`，而 `submit` 只做入队，断言跑在 worker 之前，把 `if (skillIds.isEmpty()) return` 整行删掉两条用例照样绿（变异实测 4/4 存活）。断言前先 `adaptor.shutdown()` 把队列排空——本类 `a batch queued before shutdown is still sent` 已经是这个形状，该文件 `:81-82` 的注释也已经在说同一件事：不排空的验证「worker 抢到就跑赢、没抢到就失败」。
 - [ ] **Step 2: 跑测试确认红**
 
 ```bash
 export JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home
 MVN=/Users/heqingsong/software/apache-maven-3.9.12/bin/mvn
-$MVN -o test -pl harnax-agent/harnax-agent-service -Dtest=SkillUsageAdaptorImplTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t5-red.log 2>&1; echo EXIT=$?
+$MVN -o -am test -pl harnax-agent/harnax-agent-service -Dtest=SkillUsageAdaptorImplTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t5-red.log 2>&1; echo EXIT=$?
 grep -E "unresolved reference|Tests run" /tmp/t5-red.log | head
 ```
 预期：`EXIT != 0`，先以 `unresolved reference: reportUses` / `No value passed for parameter` 形式的**编译失败**出现——这就是红，不必等断言失败。
@@ -1547,7 +1570,7 @@ interface SkillUsageAdaptor {
 
 - [ ] **Step 4: 实现与客户端**
 
-`SkillUsageAdaptorImpl.kt`：把 `reportViews` 的函数体抽成私有 `submit(...)`，两个 override 各传自己的事件词，并把 `companion object` 补上两个常量。整段替换 `:45-95`：
+`SkillUsageAdaptorImpl.kt`：把 `reportViews` 的函数体抽成私有 `submit(...)`，两个 override 各传自己的事件词，并把 `companion object` 补上两个常量。整段替换 `:45-95`。类 KDoc 一并改口径：它写的是「Posts skill VIEW events」且只说 VIEW，现在两类都从这里出去；而「溢出丢弃只亏一个冷却窗口」那句只对装载成立——USE 没有冷却、一轮只用一次，丢了就没了，照实把两类写成分开的两句。
 
 ```kotlin
     override fun reportViews(
@@ -1674,8 +1697,8 @@ interface SkillUsageAdaptor {
 
 ```bash
 $MVN -q spotless:apply -pl harnax-agent/harnax-harness-core,harnax-agent/harnax-agent-service
-$MVN -o test -pl harnax-agent/harnax-agent-service -Dtest=SkillUsageAdaptorImplTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t5.log 2>&1; echo EXIT=$?
-$MVN -o test -pl harnax-agent/harnax-harness-core -Dtest='SkillViewRecorderTest,HarnessAgentLauncherSkillUsageTest' -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t5b.log 2>&1; echo EXIT=$?
+$MVN -o -am test -pl harnax-agent/harnax-agent-service -Dtest=SkillUsageAdaptorImplTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t5.log 2>&1; echo EXIT=$?
+$MVN -o -am test -pl harnax-agent/harnax-harness-core -Dtest='SkillViewRecorderTest,HarnessAgentLauncherSkillUsageTest' -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t5b.log 2>&1; echo EXIT=$?
 grep -E "Tests run:.*Failures" /tmp/t5.log /tmp/t5b.log | tail -4
 ```
 预期：两份日志都有 `Tests run:` 行且 `Failures: 0, Errors: 0`（`SkillViewRecorderTest` 用 `-Dtest` 点名时**不会**触发容器测，`Memory*Test` 那两个类不在名单里）。
@@ -1793,10 +1816,12 @@ class ToolInvocationMiddlewareTest {
         return input
     }
 
-    private fun end(id: String, name: String, state: ToolResultState): ToolResultEndEvent {
+    private fun end(id: String?, name: String, state: ToolResultState): ToolResultEndEvent {
         val event = mock(ToolResultEndEvent::class.java)
         `when`(event.type).thenReturn(AgentEventType.TOOL_RESULT_END)
-        `when`(event.toolCallId).thenReturn(id)
+        // An id-less end event is left unstubbed rather than stubbed with null: Mockito already answers
+        // null for that getter, and that is what such an event carries.
+        if (id != null) `when`(event.toolCallId).thenReturn(id)
         `when`(event.toolCallName).thenReturn(name)
         `when`(event.state).thenReturn(state)
         return event
@@ -1961,9 +1986,16 @@ class ToolInvocationMiddlewareTest {
             val call = ToolUseBlock("t1", "now", emptyMap())
             val mw = middleware()
 
-            StepVerifier.create(mw.onActing(agent, ctx, actingInput(call), Function { Flux.just(end("t1", "now", ToolResultState.SUCCESS)) }))
-                .expectNextCount(1)
-                .verifyComplete()
+            // A repeated terminal frame for one id is the shape this pins: the accumulator is dropped as the
+            // first END is handled, so the second has nothing left to time and files nothing.
+            StepVerifier.create(
+                mw.onActing(
+                    agent,
+                    ctx,
+                    actingInput(call),
+                    Function { Flux.just(end("t1", "now", ToolResultState.SUCCESS), end("t1", "now", ToolResultState.SUCCESS)) },
+                ),
+            ).expectNextCount(2).verifyComplete()
 
             assertEquals(1, events.size)
         }
@@ -1992,6 +2024,53 @@ class ToolInvocationMiddlewareTest {
             // Nothing was timed for this id, so a row would carry a duration invented here rather than measured.
             assertTrue(events.isEmpty())
         }
+
+        @Test
+        fun `two nameless calls of one name file two rows`() {
+            // No id gives nothing to tell the two apart, but the count is still owed to both: the second
+            // start must not erase the first accumulator, and the two ENDs are answered in issue order.
+            val mw = middleware()
+
+            StepVerifier.create(
+                mw.onActing(
+                    agent,
+                    ctx,
+                    actingInput(ToolUseBlock(null, "now", emptyMap()), ToolUseBlock(null, "now", emptyMap())),
+                    Function { Flux.just(end(null, "now", ToolResultState.SUCCESS), end(null, "now", ToolResultState.SUCCESS)) },
+                ),
+            ).expectNextCount(2).verifyComplete()
+
+            assertEquals(2, events.size)
+        }
+
+        @Test
+        fun `a nameless start matched by an id-bearing end still files one row`() {
+            val mw = middleware()
+
+            StepVerifier.create(
+                mw.onActing(agent, ctx, actingInput(ToolUseBlock(null, "now", emptyMap())), Function { Flux.just(end("t1", "now", ToolResultState.SUCCESS)) }),
+            ).expectNextCount(1).verifyComplete()
+
+            // The keys never match, so only a fallback by name files this call at all.
+            assertEquals(1, events.size)
+        }
+
+        @Test
+        fun `an interrupted call keeps the output it had already streamed`() {
+            val call = ToolUseBlock("t1", "now", emptyMap())
+            val mw = middleware()
+
+            StepVerifier.create(
+                mw.onActing(agent, ctx, actingInput(call), Function {
+                    Flux.just<AgentEvent>(delta("t1", "now", "half an answer")).concatWith(Flux.error(RuntimeException("sandbox died")))
+                }),
+            ).expectNextCount(1).verifyError()
+
+            val event = events.single()
+            assertEquals(ToolInvocationLog.OUTCOME_INTERRUPTED, event.outcome)
+            assertEquals("half an answer", event.resultText)
+            assertTrue(event.errorMessage!!.contains("sandbox died"))
+        }
     }
 
     @Nested
@@ -2004,7 +2083,7 @@ class ToolInvocationMiddlewareTest {
         )
 
         @Test
-        fun `reading SKILL.md successfully reports one use for the delivered skill`() {
+        fun `reading the skill body successfully reports one use for the delivered skill`() {
             val mw = middleware(adminSkillIdsBySkillId = mapOf("web-search_custom" to 44L))
 
             StepVerifier.create(
@@ -2098,7 +2177,7 @@ class ToolInvocationMiddlewareTest {
 - [ ] **Step 2: 跑测试确认红**
 
 ```bash
-$MVN -o test -pl harnax-agent/harnax-harness-core -Dtest=ToolInvocationMiddlewareTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t6-red.log 2>&1; echo EXIT=$?
+$MVN -o -am test -pl harnax-agent/harnax-harness-core -Dtest=ToolInvocationMiddlewareTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t6-red.log 2>&1; echo EXIT=$?
 grep -E "unresolved reference|Tests run" /tmp/t6-red.log | head -3
 ```
 预期：编译失败 `unresolved reference: ToolInvocationMiddleware`。
@@ -2126,6 +2205,7 @@ import reactor.core.publisher.Flux
 import tools.jackson.databind.ObjectMapper
 import tools.jackson.module.kotlin.jacksonObjectMapper
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.atomic.AtomicReference
 import java.util.function.Function
 
@@ -2173,17 +2253,33 @@ class ToolInvocationMiddleware(
     ): Flux<AgentEvent> {
         val started = ConcurrentHashMap<String, Start>()
         val results = ConcurrentHashMap<String, StringBuffer>()
+        val openByName = ConcurrentHashMap<String, ConcurrentLinkedDeque<String>>()
         val failure = AtomicReference<Throwable?>()
+        var suffix = 0
         input.toolCalls.forEach { call ->
-            started[key(call.id, call.name)] = Start(call.name, call.input ?: emptyMap(), System.currentTimeMillis())
+            // One turn can ask twice for the same tool, and `ToolUseBlock.id` is nullable upstream, so two
+            // calls can compute the same key. A plain put would drop the first accumulator and that call
+            // would never be counted, so a colliding key gets a private suffix and every open key stays
+            // reachable by name in issue order. That queue is also how an end event finds its start when
+            // the id is present on one side only.
+            val base = key(call.id, call.name)
+            var k = base
+            while (started.putIfAbsent(k, Start(call.name, call.input ?: emptyMap(), System.currentTimeMillis())) != null) {
+                k = "$base#${++suffix}"
+            }
+            openByName.computeIfAbsent(call.name) { ConcurrentLinkedDeque() }.addLast(k)
         }
         return next.apply(input)
-            .doOnNext { event -> onEvent(event, started, results) }
+            .doOnNext { event -> onEvent(event, started, results, openByName) }
             .doOnError { error -> failure.set(error) }
-            .doFinally { emitUnresolved(started, failure.get()) }
+            .doFinally { emitUnresolved(started, results, openByName, failure.get()) }
     }
 
-    /** A call is matched by its id; an id-less block falls back to its name so a single call is not lost. */
+    /**
+     * The accumulator key: the call's id when the runtime gave one, otherwise its name. The name fallback
+     * is unique only while a single call of that name is open, which is why `onActing` suffixes a collision
+     * and `matchKey` falls back to issue order.
+     */
     private fun key(
         id: String?,
         name: String?,
@@ -2193,6 +2289,7 @@ class ToolInvocationMiddleware(
         event: AgentEvent,
         started: ConcurrentHashMap<String, Start>,
         results: ConcurrentHashMap<String, StringBuffer>,
+        openByName: ConcurrentHashMap<String, ConcurrentLinkedDeque<String>>,
     ) {
         runCatching {
             when (event.type) {
@@ -2202,7 +2299,7 @@ class ToolInvocationMiddleware(
                     if (!text.isNullOrEmpty()) results.computeIfAbsent(key(delta.toolCallId, delta.toolCallName)) { StringBuffer() }.append(text)
                 }
 
-                AgentEventType.TOOL_RESULT_END -> resolve(event as ToolResultEndEvent, started, results)
+                AgentEventType.TOOL_RESULT_END -> resolve(event as ToolResultEndEvent, started, results, openByName)
                 else -> {}
             }
         }.exceptionOrNull()?.let {
@@ -2214,9 +2311,11 @@ class ToolInvocationMiddleware(
         end: ToolResultEndEvent,
         started: ConcurrentHashMap<String, Start>,
         results: ConcurrentHashMap<String, StringBuffer>,
+        openByName: ConcurrentHashMap<String, ConcurrentLinkedDeque<String>>,
     ) {
         val key = key(end.toolCallId, end.toolCallName)
-        val start = started[key] ?: return
+        val startKey = matchKey(key, end.toolCallName, started, openByName) ?: return
+        val start = started[startKey] ?: return
         val outcome = when (end.state) {
             ToolResultState.SUCCESS -> ToolInvocationLog.OUTCOME_SUCCESS
             ToolResultState.ERROR -> ToolInvocationLog.OUTCOME_ERROR
@@ -2226,12 +2325,14 @@ class ToolInvocationMiddleware(
             // follows can still time it.
             else -> return
         }
-        started.remove(key)
-        val resultText = results.remove(key)?.toString()
+        started.remove(startKey)
+        // Deltas of a call that never carried an id accumulate under its name, so two same-name calls that
+        // both lack an id share one buffer. Their output is not separable upstream; the row count still is.
+        val resultText = results.remove(startKey)?.toString()
         if (end.toolCallName != null && end.toolCallName != start.name) {
             log.warn(
                 "Tool call {} in session {} ended under name '{}' but was recorded as '{}'",
-                key,
+                startKey,
                 sessionId,
                 end.toolCallName,
                 start.name,
@@ -2239,6 +2340,24 @@ class ToolInvocationMiddleware(
         }
         emit(start, start.name, outcome, resultText, failureText(outcome, resultText), System.currentTimeMillis())
         if (outcome == ToolInvocationLog.OUTCOME_SUCCESS) reportSkillUse(start)
+    }
+
+    /**
+     * Which accumulator this end event owns: the exact key when it is still open, otherwise the oldest call
+     * still open under this tool name. A model gets its own calls answered in the order it asked for them,
+     * so FIFO is the only defensible guess, and a wrong guess costs a duration measured against the wrong
+     * start rather than a lost row.
+     */
+    private fun matchKey(
+        key: String,
+        name: String?,
+        started: ConcurrentHashMap<String, Start>,
+        openByName: ConcurrentHashMap<String, ConcurrentLinkedDeque<String>>,
+    ): String? {
+        val open = name?.let { openByName[it] }
+        val matched = if (started.containsKey(key)) key else open?.pollFirst() ?: return null
+        open?.remove(matched)
+        return matched
     }
 
     /** Non-success rows carry a reason: the tool's own output is the reason when it produced one. */
@@ -2249,12 +2368,18 @@ class ToolInvocationMiddleware(
 
     private fun emitUnresolved(
         started: ConcurrentHashMap<String, Start>,
+        results: ConcurrentHashMap<String, StringBuffer>,
+        openByName: ConcurrentHashMap<String, ConcurrentLinkedDeque<String>>,
         failure: Throwable?,
     ) {
         started.keys.toList().forEach { key ->
             val start = started.remove(key) ?: return@forEach
+            openByName[start.name]?.remove(key)
+            // Whatever the tool streamed before the stream died is the most readable part of the row, so it
+            // is filed rather than dropped: the reason goes to `errorMessage`, the partial output to
+            // `resultText`, and the writer truncates it like any other.
             val text = failure?.let { "${it.javaClass.simpleName}: ${it.message ?: ""}" } ?: "stream ended before the tool returned"
-            emit(start, start.name, ToolInvocationLog.OUTCOME_INTERRUPTED, null, text, System.currentTimeMillis())
+            emit(start, start.name, ToolInvocationLog.OUTCOME_INTERRUPTED, results.remove(key)?.toString(), text, System.currentTimeMillis())
         }
     }
 
@@ -2324,10 +2449,10 @@ class ToolInvocationMiddleware(
 
 ```bash
 $MVN -q spotless:apply -pl harnax-agent/harnax-harness-core
-$MVN -o test -pl harnax-agent/harnax-harness-core -Dtest=ToolInvocationMiddlewareTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t6.log 2>&1; echo EXIT=$?
-grep -E "Tests run|BUILD" /tmp/t6.log | tail -3
+$MVN -o -am test -pl harnax-agent/harnax-harness-core -Dtest=ToolInvocationMiddlewareTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t6.log 2>&1; echo EXIT=$?
+grep -E "ToolInvocationMiddlewareTest|BUILD" /tmp/t6.log | tail -6
 ```
-预期：`Tests run: 18, Failures: 0, Errors: 0`。若 `an adaptor that throws does not fail the turn` 红了，说明 `runCatching` 没盖住投递点——不许改成「让适配器自己吞」，中间件这一层的契约就是不把任何记录故障带上流。
+预期：`ToolInvocationMiddlewareTest` 那一行 `Tests run: 21, Failures: 0, Errors: 0`。以该步文件里的 `@Test` 数为准，改了用例就同时改这个数；`-am` 会带上游模块进 reactor，它们在 `-Dtest` 点名下跑 0 个，别把 reactor 汇总行当成本任务的数。若 `an adaptor that throws does not fail the turn` 红了，说明 `runCatching` 没盖住投递点——不许改成「让适配器自己吞」，中间件这一层的契约就是不把任何记录故障带上流。
 
 - [ ] **Step 5: 提交**
 
@@ -2600,7 +2725,7 @@ class ToolInvocationAdaptorImplTest {
 - [ ] **Step 2: 跑测试确认红**
 
 ```bash
-$MVN -o test -pl harnax-agent/harnax-agent-service -Dtest=ToolInvocationAdaptorImplTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t7-red.log 2>&1; echo EXIT=$?
+$MVN -o -am test -pl harnax-agent/harnax-agent-service -Dtest=ToolInvocationAdaptorImplTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t7-red.log 2>&1; echo EXIT=$?
 grep -E "unresolved reference|Tests run" /tmp/t7-red.log | head -3
 ```
 预期：`unresolved reference: ToolInvocationAdaptorImpl`。
@@ -2787,7 +2912,7 @@ class ToolInvocationAdaptorImpl(
 
 ```bash
 $MVN -q spotless:apply -pl harnax-agent/harnax-agent-service
-$MVN -o test -pl harnax-agent/harnax-agent-service -Dtest=ToolInvocationAdaptorImplTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t7.log 2>&1; echo EXIT=$?
+$MVN -o -am test -pl harnax-agent/harnax-agent-service -Dtest=ToolInvocationAdaptorImplTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t7.log 2>&1; echo EXIT=$?
 grep -E "Tests run|BUILD" /tmp/t7.log | tail -3
 ```
 预期：`Tests run: 11, Failures: 0, Errors: 0`。
@@ -2806,13 +2931,14 @@ git commit -m "feat(metrics): 工具调用事件的批量写入适配器"
 
 **Files:**
 - Modify: `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentBuilder.kt`（在 `:293` 的 `getTool` 之后加一个只读枚举）
-- Modify: `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt`（构造器参数 `:117` 一带、MCP 循环 `:267-344`、技能循环 `:481-506`、挂载点 `:601` 之后、`initLauncher` `:1155`/`:1226`）
-- Modify: `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/spring/HarnessAutoConfiguration.kt`（`:313-369`）
+- Modify: `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt`（构造器参数在 `:136` 的 `skillUsageAdaptor` 之后、MCP 起于 `:264` 的 `mcpClients` 而终于 `:356` 的聚合告警、技能循环 `:481-506`、挂载点 `:601` 之后、`initLauncher` 的形参 `:1166` 与透传 `:1241`）
+- Modify: `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/spring/HarnessAutoConfiguration.kt`（`fun harnessAgentLauncher` 在 `:313`，`ObjectProvider` 先例 `:331`，透传 `:365`，闭括号 `:370`）
 - Modify: `harnax-agent/harnax-agent-service/src/main/resources/application.yml`（`harness:` 块内，与 `harness.memory:` 同级）
 
 **Interfaces:**
-- Consumes: Task 6 的中间件构造器、Task 3 的 `commandHeads`、Task 7 的 bean（由 Spring 按 `ToolInvocationAdaptor` 类型找到）、`McpTool.getClientName()`、`AgentSkill.getSkillId()`（2.0.4 里确有三个访问器，`javap` 已核）。
-- Produces: `HarnessAgentLauncher.toolInvocationAdaptor: ToolInvocationAdaptor? = null` 与 `HarnessAgentLauncher.invocationMetricsEnabled: Boolean = true` 两个构造器参数；`HarnessAgentBuilder.mcpToolClientNames(): Map<String, String>`。Task 9 删除旧链时不再回来改这里。
+- Consumes: Task 6 的中间件构造器、Task 3 的 `commandHeads`、Task 7 的 bean（由 Spring 按 `ToolInvocationAdaptor` 类型找到）、`McpTool.getClientName()`、`AgentSkill.getSkillId()`（2.0.4 里这两个访问器都在，`javap` 已核）。
+- Produces: `HarnessAgentLauncher.toolInvocationAdaptor: ToolInvocationAdaptor? = null` 一个构造器参数（**开关只有一个落点**：`enabled` 在 bean 装配处把 provider 变成 null，launcher 不再持第二个布尔，否则两处判断互为影子、单行变异谁都杀不死）；`HarnessAgentBuilder.mcpToolClientNames(): Map<String, String>`。Task 9 删除旧链时不再回来改这里。
+- 需要的 import（`HarnessAgentLauncher.kt` 现在三个都没有）：`com.agnetix.harnax.agent.provider.middleware.ToolInvocationMiddleware`、`com.agnetix.harnax.agent.provider.middleware.ToolInvocationClassifier`（在 harness-core 自己里面，不在 tools-sdk）、`com.agnetix.harnax.tools.sdk.adaptor.ToolInvocationAdaptor`。
 
 - [ ] **Step 1: builder 的只读枚举**
 
@@ -2894,9 +3020,10 @@ CLI 别名表（放在挂载点之前即可，`agentSpec.cliSpecs` 此刻已在�
 ```kotlin
         // ----- Tool invocation metrics -----
         // Third fresh instance per build for the same reason as the two above: the run's attribution lives in
-        // its fields. No adaptor means no middleware at all — the recording path is then exactly as it was,
-        // rather than a per-turn cost for a counter with nowhere to go.
-        if (invocationMetricsEnabled && toolInvocationAdaptor != null) {
+        // its fields. One guard only: `enabled=false` has already turned the adaptor into null where the bean
+        // is wired (Step 4), so absence here means "nothing to write to" and the recording path is exactly as
+        // it was, rather than a per-turn cost for a counter with nowhere to go.
+        if (toolInvocationAdaptor != null) {
             agentBuilder.addMiddleware(
                 ToolInvocationMiddleware(
                     adaptor = toolInvocationAdaptor,
@@ -2914,11 +3041,10 @@ CLI 别名表（放在挂载点之前即可，`agentSpec.cliSpecs` 此刻已在�
         }
 ```
 
-构造器参数（`:117` 一带，紧跟 `skillUsageAdaptor`）与 `initLauncher` 的形参（`:1155` 一带）与透传（`:1226` 一带）各加两条：
+构造器参数（`:136`，紧跟 `skillUsageAdaptor: SkillUsageAdaptor? = null,`）与 `initLauncher` 的形参（`:1166`，同一句位置关系）与透传（`:1241` 的 `skillUsageAdaptor = skillUsageAdaptor,` 之后）各加**一条**：
 
 ```kotlin
     val toolInvocationAdaptor: ToolInvocationAdaptor? = null,
-    val invocationMetricsEnabled: Boolean = true,
 ```
 
 - [ ] **Step 4: bean 与开关**
@@ -2932,9 +3058,8 @@ CLI 别名表（放在挂载点之前即可，`agentSpec.cliSpecs` 此刻已在�
 ```kotlin
             // Absent means no tool call is filed: a runtime with nowhere to write must not pay for a recorder.
             toolInvocationAdaptor = toolInvocationAdaptorProvider.ifAvailable?.takeIf { invocationMetricsEnabled },
-            invocationMetricsEnabled = invocationMetricsEnabled,
 ```
-补 import `com.agnetix.harnax.tools.sdk.adaptor.ToolInvocationAdaptor`。`enabled=false` 时 `takeIf` 把适配器变成 null，于是挂载条件自己就不成立——两处判断不需要各写一遍。
+补 import `com.agnetix.harnax.tools.sdk.adaptor.ToolInvocationAdaptor`。`enabled=false` 时 `takeIf` 把适配器变成 null，于是 Step 3 的挂载条件自己就不成立——**开关只有这一个落点**，launcher 不持第二个布尔。
 
 `harnax-agent-service/src/main/resources/application.yml` 在 `harness:` 块内、与 `memory:` 同级插入：
 
@@ -2956,8 +3081,8 @@ CLI 别名表（放在挂载点之前即可，`agentSpec.cliSpecs` 此刻已在�
 
 ```bash
 $MVN -q spotless:apply -pl harnax-agent/harnax-harness-core,harnax-agent/harnax-agent-service
-$MVN -o -q test-compile -pl harnax-agent/harnax-harness-core > /tmp/t8-compile.log 2>&1; echo EXIT=$?
-$MVN -o test -pl harnax-agent/harnax-harness-core -Dtest='HarnessAgentLauncher*Test,ToolInvocation*Test' -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t8.log 2>&1; echo EXIT=$?
+$MVN -o -am -q test-compile -pl harnax-agent/harnax-harness-core > /tmp/t8-compile.log 2>&1; echo EXIT=$?
+$MVN -o -am test -pl harnax-agent/harnax-harness-core -Dtest='HarnessAgentLauncher*Test,ToolInvocation*Test' -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t8.log 2>&1; echo EXIT=$?
 grep -E "Tests run:.*Failures|BUILD" /tmp/t8.log | tail -3
 ```
 预期：`EXIT=0` 且 `Tests run:` 非零。新增的两个具名参数都带默认值，所以 14 个 harness-core 夹具**不需要**在这一跳改——它们用具名实参调 `initLauncher`，多出来的参数取默认。若这里红了，是默认值没给或具名实参写错，不是夹具的问题。
@@ -2993,14 +3118,15 @@ git commit -m "feat(metrics): 装配期三张映射与调用指标中间件挂�
 - Modify: `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/LauncherBean.kt:46,62`（注释块里的两行）
 - Modify: `harnax-tools-external/harnax-tools-buildin/src/main/kotlin/com/agnetix/harnax/tools/buildin/EmailToolBox.kt:64`、`TimeToolBox.kt:23,27`
 - Modify: `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/team/TeamToolBoxes.kt:26,43,58,90,104,114`
-- Modify: `harnax-agent/harnax-tools-sdk/src/test/kotlin/com/agnetix/harnax/tools/sdk/ToolBoxTest.kt`（整文件替换）、`ToolCallContextTest.kt:20-65`
+- Delete: `harnax-agent/harnax-tools-sdk/src/test/kotlin/com/agnetix/harnax/tools/sdk/ToolBoxTest.kt`（整文件，理由见 Step 8）
+- Modify: `harnax-agent/harnax-tools-sdk/src/test/kotlin/com/agnetix/harnax/tools/sdk/ToolCallContextTest.kt:20-65`
 - Modify: `harnax-tools-external/harnax-tools-buildin/src/test/kotlin/com/agnetix/harnax/tools/buildin/TimeToolBoxTest.kt:32,39-43,71-85,104-115`、`EmailToolBoxTest.kt:40,53-58,105-133,321-350`、`EmailToolBoxIntegrationTest.kt:32,59-64`
 - Modify: `harnax-agent/harnax-harness-core/src/test/kotlin/com/agnetix/harnax/harness/team/TeamToolBoxesTest.kt:29-41,109-116`
 - Modify: 14 个 harness-core 夹具（清单见 Step 9）
 
 **Interfaces:**
 - Consumes: Task 6/7/8 已经接管工具调用的记录，本任务删的是**旧链**，不是唯一记录源。
-- Produces: `ToolBox` 只剩 `abstract fun name(): String`、`fun init(userIdentifier: UserIdentifier)`、`fun userIdentifier(): UserIdentifier`——**没有 `execute`**，子类直接返回自己的结果。`SessionMetaContext`、`ToolCallLogAdaptor`、`ToolCallInfo` 不再存在，后续任何任务引用它们都是编译错误。
+- Produces: `ToolBox` 只剩 `abstract fun name(): String`——**没有 `execute`，也没有 `init`**：`userIdentifier()` 在 main 里除自身声明外零调用方（现核 `ToolBox.kt:41` 加一份待删的 `ToolBoxTest.kt`），所以三个 `@Volatile` 字段与 `init` 一起消失而不是瘦身为 `init(userIdentifier)`（规格 §10 已裁）。子类直接返回自己的结果。`SessionMetaContext`、`ToolCallLogAdaptor`、`ToolCallInfo` 不再存在，后续任何任务引用它们都是编译错误。
 
 这条链的读侧是干净的：`ToolCallLogMapper` 只有一个 `insert`，全仓没有一处 select（`harnax-entity/src/main/kotlin/com/agnetix/harnax/mapper/ToolCallLogMapper.kt:7-13` 的 KDoc 自己写明「written once and never read back through this mapper」），`harnax-admin` 也没有接口读它——所以删除不需要先做读侧迁移，也不会有页面变空。规格 §10 的判据正是这个：只有写、没有读、且新表覆盖同一事实。
 
@@ -3032,37 +3158,28 @@ package com.agnetix.harnax.tools.sdk
 /**
  * Base class for a toolbox registered as a model-facing tool.
  *
- * The only thing a box needs from the runtime is the end user behind the call, because some tools act as
- * that user. Measuring and recording the call itself belongs to `ToolInvocationMiddleware`, which sees
- * every call — including an MCP tool or a shell command, neither of which is a `ToolBox`.
+ * It carries no state: measuring and recording the call belongs to `ToolInvocationMiddleware`, which sees
+ * every call — including an MCP tool or a shell command, neither of which is a `ToolBox`. A tool that
+ * needs to act as the end user takes that value as its own argument, the way the delivered tools already
+ * do, rather than through a base-class seam nothing calls.
  */
 abstract class ToolBox {
-    @Volatile
-    private var userIdentifierValue: UserIdentifier? = null
-
     /**
      * 获取工具名称（子类必须实现）
      */
     abstract fun name(): String
-
-    fun init(userIdentifier: UserIdentifier) {
-        this.userIdentifierValue = userIdentifier
-    }
-
-    fun userIdentifier(): UserIdentifier = userIdentifierValue
-        ?: throw IllegalStateException("ToolBox not initialized: userIdentifier is null")
 }
 ```
 
-`execute`/`executeInternal`/`logToolCall`/`logToolCallError`（`:44-150`）、只被那两条 warn 用到的 `name` 字段（`:22`）、`sessionMetaContextValue`、`toolCallLogAdaptorValue` 以及 `LoggerFactory`/`ToolCallInfo`/`ToolCallLogAdaptor` 三个 import 一起去掉。`@Author/@Date/@Description` 那一段旧文件头注释按全仓现状不再保留。
+`execute`/`executeInternal`/`logToolCall`/`logToolCallError`（`:44-150`）、只被那两条 warn 用到的 `name` 字段（`:22`）、`sessionMetaContextValue`、`toolCallLogAdaptorValue`、`userIdentifierValue`、`init`（`:30-38`）、`userIdentifier()`（`:41-42`）以及 `LoggerFactory`/`UserIdentifier`/`ToolCallInfo`/`ToolCallLogAdaptor` 四个 import 一起去掉；`@Author/@Date/@Description` 那一段旧文件头注释按全仓现状不再保留。删 `init` 之后 Step 5 的三处调用点跟着消失，不是换成单参形式。
 
 - [ ] **Step 4: `ToolCallContext.kt` 删 `SessionMetaContext`**
 
-保留 marker 接口 `ToolCallContext` 与 `data class UserIdentifier`——两者都还有活的引用方（`userIdentifier()`、注册表）。删掉 `data class SessionMetaContext`（`:11` 起整个类），并把接口 KDoc 里点名 `tool_call_log` 的那句改成只讲「一次调用的归属」，不点表名。
+保留 marker 接口 `ToolCallContext` 与 `data class UserIdentifier`，但理由要按现核写：`UserIdentifier` 有四个 main 引用方（`HarnessAgentLauncher`、`SkillUsageAdaptor`、`DefaultAgentRunner`、admin 的 `MemoryObjectKeys`），必须留；`ToolCallContext` 在 `SessionMetaContext` 删掉后只剩一个实现方且全仓没有按该类型消费的调用点（main 里五处命中全是它自己的声明与两个 `: ToolCallContext`），摘掉它要连带动 `UserIdentifier` 的声明与 import，是旧链之外的独立清理，本轮不做。删掉 `data class SessionMetaContext`（`:11` 起整个类），并把接口 KDoc 里点名 `tool_call_log` 的那句改成只讲「一次调用的归属」，不点表名。
 
 - [ ] **Step 5: 装配侧删接线（`HarnessAgentLauncher.kt`）**
 
-删四行：
+删五行（行号现核于 `HarnessAgentLauncher.kt`，Task 8 落地后按内容再推一遍）：
 
 ```kotlin
 // :52 与 :55
@@ -3078,20 +3195,23 @@ import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 // :1155 initLauncher 形参 —— 它是第 7 个必填参数，删掉会改 arity；
 // Step 9 的 14 处具名实参必须跟着删，否则 harness-core 测试源码集编译不过。
             toolCallLogAdaptor: ToolCallLogAdaptor,
+
+// :1226 initLauncher 体内的具名实参 —— 漏这一行就是「no parameter with name 'toolCallLogAdaptor' found」，
+// 形参与实参是一对，删一侧编译不过。
+                toolCallLogAdaptor = toolCallLogAdaptor,
 ```
 
-`:386-399` 注册块里的 `toolBox.init(...)` 三参换一参：
+`:386-399` 注册块里删掉整段 `toolBox.init(...)`（三行调用连同 `SessionMetaContext(...)` 那个实参），块只剩注册与记账：
 
 ```kotlin
                         val toolBox = toolRegistry?.createToolBoxInstance(beanName)
                         if (toolBox != null) {
-                            toolBox.init(userIdentifier)
                             agentBuilder.addTool(toolBox)
                             addedToolBoxBeans.add(beanName)
                         }
 ```
 
-`:553-567` 团队工具：删 `val teamSessionMeta = SessionMetaContext(...)` 及其上方两句注释（`// One context for both roles: ...` 两行），两处 `init` 换成 `toolBox.init(userIdentifier)`。改完这段是：
+`:553-567` 团队工具：删 `val teamSessionMeta = SessionMetaContext(...)` 及其上方两句注释（`// One context for both roles: ...` 两行），两处 `toolBox.init(toolCallLogAdaptor, teamSessionMeta, userIdentifier)` 整行删掉。改完这段是：
 
 ```kotlin
         // ----- Team tools -----
@@ -3100,14 +3220,12 @@ import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
         val teamToolNames: Set<String> = when (teamRole) {
             is TeamRole.Lead -> {
                 val toolBox = TeamLeadToolBox(teamRole.orchestrator)
-                toolBox.init(userIdentifier)
                 agentBuilder.addTool(toolBox)
                 TeamLeadToolBox.TOOL_NAMES
             }
 
             is TeamRole.Member -> {
                 val toolBox = TeamMemberToolBox(teamRole.orchestrator, teamRole.member.memberAgentId)
-                toolBox.init(userIdentifier)
                 agentBuilder.addTool(toolBox)
                 TeamMemberToolBox.TOOL_NAMES
             }
@@ -3138,67 +3256,17 @@ import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 
 - [ ] **Step 8: 改受影响的单元测试**
 
-`ToolBoxTest.kt` 整文件替换——`execute` 的返回值与异常透传不再是 `ToolBox` 的行为，`init` 存 user 才是它唯一剩下的承诺：
-
-```kotlin
-package com.agnetix.harnax.tools.sdk
-
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.DisplayName
-import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
-
-/**
- * The two members a toolbox is built on: a name the registry keys on, and the end user the runtime hands
- * down to a tool that acts as that user.
- */
-class ToolBoxTest {
-
-    private class SampleToolBox : ToolBox() {
-        override fun name(): String = "test-tool"
-    }
-
-    private lateinit var toolBox: SampleToolBox
-
-    @BeforeEach
-    fun setUp() {
-        toolBox = SampleToolBox()
-    }
-
-    @Test
-    @DisplayName("init should store userIdentifier accessible via userIdentifier()")
-    fun `init should store userIdentifier`() {
-        val identifier = UserIdentifier(userId = 42L)
-
-        toolBox.init(identifier)
-
-        assertEquals(identifier, toolBox.userIdentifier())
-    }
-
-    @Test
-    @DisplayName("a box used before the runtime initialized it says so instead of returning null")
-    fun `uninitialized box refuses the user lookup`() {
-        assertThrows<IllegalStateException> { toolBox.userIdentifier() }
-    }
-}
-```
+`ToolBoxTest.kt` **整文件删除**（`git rm`）——拆完之后 `ToolBox` 只剩一个抽象 `name()`，没有任何可断言的行为；留一份「造个空子类断言它返回自己的名字」的用例就是给自己造死状态测试，正是本轮 Task 5 I1 被打回的那一类。它现在 158 行里 8 个 `@Test`（`InitTests` 一个、`ExecuteSuccessTests` 三个、`ExecuteErrorTests` 两个、`AdaptorErrorTests` 两个）全部围着 `execute` 的日志与 `init` 存 user，两者一并消失。
 
 `ToolCallContextTest.kt:20-65` 删掉整个 `SessionMetaContextTests` 内部类（含 `@DisplayName("SessionMetaContext Tests")`），`UserIdentifierTests` 一行不动；文件顶部同时提到两个类的类注释改成就讲 `UserIdentifier`。
 
-`TimeToolBoxTest.kt`：删 `private lateinit var mockAdaptor: ToolCallLogAdaptor`（`:32`）；`setUp` 里 `mockAdaptor = mock()` 与三参 `init`（`:39-43`）换成一行 `timeToolBox.init(UserIdentifier(userId = 1L))`；删 `getDate should log tool call`（`:71-85`）与 `getDatetime should log tool call`（`:104-115`）两个用例；删 `SessionMetaContext`/`ToolCallInfo`/`ToolCallLogAdaptor` 三个 import。
+`TimeToolBoxTest.kt`：删 `private lateinit var mockAdaptor: ToolCallLogAdaptor`（`:32`）；`setUp` 里 `mockAdaptor = mock()` 与 `init(...)` 两处一起删（`:39-43` 只剩 `timeToolBox = TimeToolBox()` 一行）；删 `getDate should log tool call`（`:71-85`）与 `getDatetime should log tool call`（`:104-115`）两个用例；删 `SessionMetaContext`/`ToolCallInfo`/`ToolCallLogAdaptor`/`UserIdentifier` 四个 import。
 
-`EmailToolBoxTest.kt`：同形——删字段（`:40`）、`setUp` 的 `mockAdaptor = mock()` 与三参 `init`（`:53-58` 换成 `emailToolBox.init(UserIdentifier(userId = 1L))`）、`sendEmail plain text should log tool call`（`:105-133`）与 `sendEmail should log error on Transport failure`（`:321-350`）两个用例、三个 import。`sendEmail should throw when Transport send fails`（`:303`）保留——它验的是异常照旧上抛，与日志无关。
+`EmailToolBoxTest.kt`：同形——删字段（`:40`）、`setUp` 的 `mockAdaptor = mock()` 与 `init(...)`（`:53-58` 只剩构造那一行）、`sendEmail plain text should log tool call`（`:105-133`）与 `sendEmail should log error on Transport failure`（`:321-350`）两个用例、四个 import。`sendEmail should throw when Transport send fails`（`:303`）保留——它验的是异常照旧上抛，与日志无关。
 
-`EmailToolBoxIntegrationTest.kt`：删 `:32` 字段与 `:59-64` 的 `mockAdaptor = mock()` + 三参 `init`，换成 `emailToolBox.init(UserIdentifier(userId = 1L))`；`SessionMetaContext` 与 `ToolCallLogAdaptor` 两个 import 一并删。
+`EmailToolBoxIntegrationTest.kt`：删 `:32` 字段与 `:59-64` 的 `mockAdaptor = mock()` + `init(...)` 两行（`setUp` 只剩 `emailToolBox = EmailToolBox(...)`）；`SessionMetaContext`、`ToolCallLogAdaptor`、`UserIdentifier` 三个 import 一并删。这个文件整类 `@Disabled`（`:28`），但 `@Disabled` 只跳过运行不跳过编译，test-compile 照样红，别漏。
 
-`TeamToolBoxesTest.kt`：`wiredInto`（`:36-41`）换成只做一参初始化，两个列表（`:29-30`）与 `:109-116` 那条 `a refusal is logged as a tool call like any other result` 用例删掉——「一次拒绝仍然要被记为一次调用」这条承诺现在住在 Task 6 的 `every terminal state maps to its own outcome` 与 `a stream that completes without an end event files the call as interrupted` 里，测的是中间件而不是盒子。`ToolCallInfo`/`SessionMetaContext` 两个 import 一起删。换完的 helper：
-
-```kotlin
-    /** The framework initializes every toolbox it registers. */
-    private fun <T : ToolBox> T.wiredIn(): T = also { init(UserIdentifier(userId = 9L)) }
-```
-并把 `:32-33` 两处 `TeamLeadToolBox(orchestrator).wiredInto(leadCalls)` / `TeamMemberToolBox(...).wiredInto(memberCalls)` 改成 `.wiredIn()`。
+`TeamToolBoxesTest.kt`：`wiredInto` 连同它上方的 KDoc（`:35-41`）整个 helper 删掉——它唯一的作用就是那次三参 `init`，两处调用点（`:32-33`）改成直接构造 `TeamLeadToolBox(orchestrator)` / `TeamMemberToolBox(orchestrator, memberAgentId = 2L)`；两个列表（`:29-30`，`leadCalls`/`memberCalls` 是它的收集桶）与 `:109-116` 那条 `a refusal is logged as a tool call like any other result` 用例删掉——「一次拒绝仍然要被记为一次调用」这条承诺现在住在 Task 6 的 `every terminal state maps to its own outcome` 与 `a stream that completes without an end event files the call as interrupted` 里，测的是中间件而不是盒子。`ToolCallInfo`/`SessionMetaContext`/`UserIdentifier` 三个 import 一起删。
 
 - [ ] **Step 9: 14 处夹具删具名实参**
 
@@ -3207,7 +3275,7 @@ class ToolBoxTest {
 ```
 HarnessAgentLauncherCliEnvTest.kt:44         HarnessAgentLauncherLeadSkillTest.kt:74
 HarnessAgentLauncherCoordinationTest.kt:46   HarnessAgentLauncherMemoryTest.kt:72
-HarnessAgentLauncherSkillSelfWriteTest.kt:65 HarnessAgentLauncherSkillUsageTest.kt:74
+HarnessAgentLauncherSkillSelfWriteTest.kt:65 HarnessAgentLauncherSkillUsageTest.kt:86
 HarnessAgentLauncherSkillVisibilityTest.kt:72 HarnessAgentProcessLogAttributionTest.kt:57
 HarnessAgentRunAttributionTest.kt:49         HarnessAgentSessionHistoryReadTest.kt:89
 HarnessAgentTokenRecordingTest.kt:44         HarnessAgentTurnBudgetTest.kt:48
@@ -3224,7 +3292,7 @@ memory/MemoryBucketPipelineTest.kt:126       memory/MemoryGateFalsificationTest.
 export JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home
 MVN=/Users/heqingsong/software/apache-maven-3.9.12/bin/mvn
 $MVN -q spotless:apply -pl harnax-entity,harnax-agent/harnax-tools-sdk,harnax-agent/harnax-harness-core,harnax-agent/harnax-agent-service,harnax-tools-external/harnax-tools-buildin
-$MVN -o test -pl harnax-agent/harnax-tools-sdk,harnax-agent/harnax-harness-core,harnax-tools-external/harnax-tools-buildin,harnax-agent/harnax-agent-service > /tmp/t9.log 2>&1; echo EXIT=$?
+$MVN -o -am test -pl harnax-agent/harnax-tools-sdk,harnax-agent/harnax-harness-core,harnax-tools-external/harnax-tools-buildin,harnax-agent/harnax-agent-service > /tmp/t9.log 2>&1; echo EXIT=$?
 grep -E "Tests run:.*Failures|unresolved reference|BUILD" /tmp/t9.log | tail -8
 ```
 预期：`EXIT=0`，且 `unresolved reference: ToolCallLogAdaptor` / `SessionMetaContext` / `execute` 一条都不出现。
@@ -3263,7 +3331,7 @@ git commit -m "refactor(metrics): tool_call_log 整链下线，记录源交给�
 
 **Interfaces:**
 - Consumes: Task 2 的 `ToolInvocationLogMapper.selectUnrolledDates(floor: String): List<String>`、`ToolInvocationLogMapper.deleteRolledOut(before: String): Int`、`ToolInvocationStatsMapper.upsertDay(statDate: String): Int`。
-- Produces: `ToolInvocationRollupService.rollUp(): Int`（本次重算了多少天）与 `@Scheduled` 入口 `rollUpHourly()`。Task 11 的读侧与它无耦合：读侧永远先查聚合表，表里有昨天的行就答得出昨天。
+- Produces: `ToolInvocationRollupService.rollUp(): Int`（本次重算了多少天，含每次都会重访的昨天与今天）与 `@Scheduled` 入口 `rollUpHourly()`。Task 11 的读侧与它无耦合：读侧永远先查聚合表，表里有昨天的行就答得出昨天。
 
 **只有 `@Service` 一个类、不配 interface**：admin 的 interface + `impl` 双文件是给控制器注入用的，这个类没有任何控制器调用它，加一层接口只会多一个文件。
 
@@ -3349,7 +3417,8 @@ class ToolInvocationRollupIT : BaseAdminIT() {
             call(missed.atTime(9, 0), TENANT_ID, "SUCCESS", 120L)
             call(missed.atTime(9, 5), TENANT_ID, "ERROR", 900L)
 
-            assertEquals(1, rollup.rollUp())
+            // The missed day, plus the two days every run revisits.
+            assertEquals(3, rollup.rollUp())
 
             val stats = requireNotNull(statsFor(missed, TENANT_ID))
             assertEquals(2L, (stats["calls"] as Number).toLong())
@@ -3377,12 +3446,28 @@ class ToolInvocationRollupIT : BaseAdminIT() {
         }
 
         @Test
+        @DisplayName("a row that lands after a day was folded still gets folded") {
+            // The pending set stops naming a day once that day has an aggregate row, so only the forced
+            // revisit of yesterday can pick up detail arriving between a day's last fold and midnight.
+            val yesterday = LocalDate.now().minusDays(1)
+            call(yesterday.atTime(22, 0), TENANT_ID, "SUCCESS", 100L)
+            rollup.rollUp()
+            assertEquals(1L, (requireNotNull(statsFor(yesterday, TENANT_ID))["calls"] as Number).toLong())
+
+            call(yesterday.atTime(23, 58), TENANT_ID, "SUCCESS", 100L)
+            rollup.rollUp()
+
+            assertEquals(2L, (requireNotNull(statsFor(yesterday, TENANT_ID))["calls"] as Number).toLong())
+        }
+
+        @Test
         @DisplayName("a detail row with no tenant is not rolled up at all") {
             // The aggregate table cannot hold it (tenant_id NOT NULL); reporting it as pending would make
             // the difference set never empty and starve the days that can be rolled.
             call(LocalDate.now().minusDays(2).atTime(9, 0), null, "SUCCESS", 100L)
 
-            assertEquals(0, rollup.rollUp())
+            // Only the two days every run revisits: a tenant-less day never enters the pending set.
+            assertEquals(2, rollup.rollUp())
 
             assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM tool_invocation_stats", Int::class.java))
         }
@@ -3493,7 +3578,14 @@ class ToolInvocationRollupService(
         val today = LocalDate.now()
         // Today is always rolled, whether or not it shows up as pending: otherwise the first run of a day
         // writes that day's final value and the aggregate trails by a whole day instead of one period.
-        val days = (toolInvocationLogMapper.selectUnrolledDates(UNROLLED_FLOOR) + today.toString()).distinct()
+        // Yesterday is always rolled for the same reason at the other end. The fold fires at :05, so a detail
+        // row that arrives between a day's last fold and midnight is already covered by an aggregate row and
+        // never reappears in the pending set; without yesterday the closing slice of every day is folded
+        // never, and deleteRolledOut releases those rows anyway.
+        val days = (
+            toolInvocationLogMapper.selectUnrolledDates(UNROLLED_FLOOR) +
+                today.minusDays(1).toString() + today.toString()
+            ).distinct()
 
         var rolled = 0
         for (statDate in days.sorted()) {

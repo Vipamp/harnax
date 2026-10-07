@@ -60,7 +60,7 @@ The DDL lives in `harnax-admin/src/main/resources/db/migration/`; the current sh
 
 `team_artifact.team_id` and `child_session_id` are written at publish time; ownership and authorization resolve on `tenant_id` + `session_id`, so those two columns stay a lead for manual investigation.
 
-Attribution of a run comes from that run's own spec: for the lead, `AgentSpec.attributableAgentId` is null (its `id` is the lead sentinel 0 and the property reads that back as absence); for a member it is the member's own `agent.id`. So a lead's rows in `token_stats`, `tool_call_log` and `process_log` carry no agent attribution while a member's rows attribute to the member, and `process_log` attribution is written into the middleware each instance builds — building a member does not change where the lead's later rows go.
+Attribution of a run comes from that run's own spec: for the lead, `AgentSpec.attributableAgentId` is null (its `id` is the lead sentinel 0 and the property reads that back as absence); for a member it is the member's own `agent.id`. So a lead's rows in `token_stats`, `tool_invocation_log` and `process_log` carry no agent attribution while a member's rows attribute to the member, and `process_log` attribution is written into the middleware each instance builds — building a member does not change where the lead's later rows go.
 
 ### 3.3 Session Typing and the Team Entry
 

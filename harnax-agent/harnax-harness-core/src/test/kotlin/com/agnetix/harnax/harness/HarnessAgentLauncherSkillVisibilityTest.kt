@@ -13,7 +13,6 @@ import com.agnetix.harnax.agent.adaptor.model.OpenAIChatModelConfig
 import com.agnetix.harnax.entity.SkillVisibilityPolicy
 import com.agnetix.harnax.entity.dto.SkillVisibilityDto
 import com.agnetix.harnax.tools.sdk.UserIdentifier
-import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import io.agentscope.core.agent.RuntimeContext
 import io.agentscope.core.skill.AgentSkill
 import io.agentscope.core.state.AgentStateStore
@@ -69,7 +68,6 @@ class HarnessAgentLauncherSkillVisibilityTest {
         skillAdaptor = SkillAdaptor { id -> if (id == 1L) skill("report") else skill("pdf") },
         tokenStatAdaptor = mock(TokenStatAdaptor::class.java),
         processLogAdaptor = mock(ProcessLogAdaptor::class.java),
-        toolCallLogAdaptor = mock(ToolCallLogAdaptor::class.java),
         planNoteAdaptor = mock(PlanNoteAdaptor::class.java),
         workspaceRoot = workspace,
     ).createSingleAgent(

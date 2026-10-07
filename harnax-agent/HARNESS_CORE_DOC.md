@@ -39,7 +39,6 @@ harnax-agent/harnax-harness-core/
     │   │   ├── SkillAdaptor.kt
     │   │   ├── TokenStatAdaptor.kt
     │   │   ├── ProcessLogAdaptor.kt
-    │   │   ├── ToolCallLogAdaptor.kt
     │   │   ├── PlanNoteAdaptor.kt
     │   │   └── token/
     │   │       └── TokenStat.kt
@@ -50,7 +49,9 @@ harnax-agent/harnax-harness-core/
     │   ├── provider/                  # 中间件（每次装配新建实例）
     │   │   └── middleware/
     │   │       ├── ProcessLogMiddleware.kt
-    │   │       └── TokenStatsMiddleware.kt
+    │   │       ├── TokenStatsMiddleware.kt
+    │   │       ├── ToolInvocationMiddleware.kt  # 工具调用指标：唯一的记录点
+    │   │       └── ToolInvocationClassifier.kt  # kind 判定与 CLI 归因的纯函数
     │   └── session/                   # 会话持久化
     │       ├── SessionConfig.kt
     │       ├── SessionLoader.kt
@@ -90,12 +91,12 @@ harnax-agent/harnax-harness-core/
 | `skillAdaptor` | `SkillAdaptor` | 技能加载适配器 |
 | `tokenStatAdaptor` | `TokenStatAdaptor` | Token 统计持久化 |
 | `processLogAdaptor` | `ProcessLogAdaptor` | 流程日志记录 |
-| `toolCallLogAdaptor` | `ToolCallLogAdaptor` | 工具调用日志记录（可选） |
 | `planNoteAdaptor` | `PlanNoteAdaptor` | 计划笔记持久化 |
 | `workspaceRoot` | `Path` | 本地工作目录根路径 |
 | `harnessConfig` | `HarnessConfig` | 运行时配置 |
 | `minioConfig` | `MinioConfig?` | MinIO 分布式存储配置（可选） |
 | `keepAliveSandboxManager` | `KeepAliveSandboxManager?` | 沙箱保活管理器（可选） |
+| `toolInvocationAdaptor` | `ToolInvocationAdaptor?` | 工具调用指标写入（可选）：为 null 时中间件根本不挂载，`harness.metrics.invocation.enabled` 这一枚开关就落在这里 |
 
 **核心方法**：
 
@@ -210,7 +211,7 @@ HarnessAgentBuilder
 | `SkillAdaptor` | `getSkill(id): AgentSkill?` | 获取技能定义 |
 | `TokenStatAdaptor` | `saveTokenStat(stat)` | 保存 Token 消耗统计 |
 | `ProcessLogAdaptor` | `emitLog(log)` | 发送流程日志 |
-| `ToolCallLogAdaptor` | `emit(info)` | 发送工具调用日志 |
+| `ToolInvocationAdaptor` | `emit(event)` | 提交一次工具调用指标（接口声明在 `harnax-tools-sdk`，本模块只消费） |
 | `PlanNoteAdaptor` | `save/get/delete` | 计划笔记 CRUD |
 
 ---
@@ -236,7 +237,19 @@ agentscope 2.0.0 将 `Hook` 替换为 `MiddlewareBase`，采用洋葱模型（on
 
 **危险工具拦截**：由框架内置 `PermissionEngine`（ASK/ALLOW/DENY 规则）承担，无自定义确认中间件。
 
-### 6.3 中间件实例的作用域
+### 6.3 ToolInvocationMiddleware
+
+**拦截点**：`onActing`
+
+**行为**：进入 `onActing` 时先把模型这一批请求的每个调用记下发起（名字、入参、起始毫秒），再在同一条结果流上等终态事件。`TOOL_RESULT_END` 到达即组一行 `ToolInvocationEvent` 交 `ToolInvocationAdaptor`；流提前结束（异常或取消）时，还开着的起点一律记成 `INTERRUPTED`，那之前已经流出来的正文照样带走。终态只取 `SUCCESS` / `ERROR` / `DENIED` / `INTERRUPTED`，非终态不产生事件。
+
+**来源归类**：由同包的 `ToolInvocationClassifier` 决定，顺序是契约而不是实现细节——注册表答案（`mcp`）优先于下发工具名单，shell 检查排在工具名单之前（下发的 CLI 是经 shell 工具执行的），三者都不是才落 `framework`。`mcpIdsByTool` 取的是全部工具注册完之后的快照，早取会把 MCP 工具记成 `framework`。
+
+**技能 USE**：一次 `load_skill_through_path` 成功读回 `SKILL.md` 时，顺带经 `SkillUsageAdaptor.reportUses` 上报一条 USE——读技能的资源文件不算用。
+
+**落库**：本模块只交出事件，写在哪由宿主决定。`harnax-agent-service` 的 `ToolInvocationAdaptorImpl` 把它放进带界队列，由后台线程批量落 `tool_invocation_log`；队列满即丢弃并计数，不阻塞回合。
+
+### 6.4 中间件实例的作用域
 
 中间件与 `TokenStatBuilder` 一样按「一次装配一个实例」创建，不存在全局共享常量：
 
@@ -246,6 +259,22 @@ agentBuilder.addMiddleware(TokenStatsMiddleware(tokenStatAdaptor, tokenStatBuild
 val processLogMiddleware = ProcessLogMiddleware()
 processLogMiddleware.initial(processLogAdaptor, agentSpec.attributableAgentId, agentSpec.name, sessionId, agentSpec.tenantId)
 agentBuilder.addMiddleware(processLogMiddleware)
+if (toolInvocationAdaptor != null) {
+    agentBuilder.addMiddleware(
+        ToolInvocationMiddleware(
+            adaptor = toolInvocationAdaptor,
+            tenantId = agentSpec.tenantId,
+            agentId = agentSpec.attributableAgentId,
+            sessionId = sessionId,
+            userId = userIdentifier.userId,
+            mcpIdsByTool = mcpIdsByTool,
+            cliIdsByCommand = cliIdsByCommand,
+            builtinToolNames = agentSpec.toolSpecs.map { it.toolName }.toSet(),
+            skillUsageAdaptor = skillUsageAdaptor,
+            adminSkillIdsBySkillId = adminSkillIdsBySkillId,
+        ),
+    )
+}
 ```
 
 共享单例只在单个 Agent 的场合看不出问题，但它持有的归属是字段、由 `initial()` 覆盖写：一次 build 改写后，先前 build 出来的 Agent 也在用新归属。团队正是这个时序——成员在首次委派时才装配，此时主管早已 build 完成——于是主管的 `process_log` 会记到最后装配的那个成员名下（成员会话、成员 agent、成员租户）。
@@ -259,9 +288,16 @@ agentBuilder.addMiddleware(processLogMiddleware)
 ### 7.1 ToolBox 抽象基类
 
 **职责**：
-- 持有 `init()` 注入的运行时上下文：`ToolCallLogAdaptor`、`SessionMetaContext`、`UserIdentifier`
-- 提供 `execute()` 包裹工具方法，按调用成败各写一条 `tool_call_log`（`toolName` 为 `{ToolBox.name()}::{方法名}`，含参数、结果、起止时间与耗时），随后把异常原样抛出
-- 未 `init()` 时跳过写日志并 warn；`userIdentifier()` 在未初始化时抛 `IllegalStateException`
+
+```kotlin
+abstract class ToolBox {
+    abstract fun name(): String
+}
+```
+
+- 只声明组名。基类不持有任何状态：一次调用属于哪个会话、哪个智能体、哪个租户，由 §6.3 的 `ToolInvocationMiddleware` 在本次装配挂上的归属决定
+- 计量与记录都不在这里发生。`ToolInvocationMiddleware` 看得见模型能调的一切调用——包括 MCP 工具与 shell 命令，两者都不是 `ToolBox`——所以一行指标不需要工具配合就能记全
+- 需要以最终用户身份去调外部服务的工具，把这个值做成自己的参数（`@ToolParam` 或环境参数），基类不提供取它的缝隙
 
 `needConfirm` 的判定不在这个基类里：`ToolRegistry` 从 `@ToolMeta.needConfirm` 读出标记，装配时由 `HarnessAgentLauncher` 落成 PermissionEngine 的 ASK 规则。
 
@@ -273,19 +309,17 @@ agentBuilder.addMiddleware(processLogMiddleware)
 
 ### 7.3 ToolCallContext
 
-工具运行上下文，通过 `ToolExecutionContext` 注入：
-
 ```kotlin
-data class SessionMetaContext(
-    val agentId: Long?,        // 团队主管没有对应的 agent 行，此时为 null
-    val sessionId: String,
-    val tenantId: Long? = null,
-) : ToolCallContext
+interface ToolCallContext
 
 data class UserIdentifier(
     val userId: Long? = null,  // 调用方是服务或未绑定用户的密钥时为 null
 ) : ToolCallContext
 ```
+
+标记接口目前只有 `UserIdentifier` 一个实现：它实现 `ToolCallContext`，`ToolCallContext` 本身不声明任何成员，全仓也没有按这个类型消费的调用点——留着它只为给「一次调用运行在谁的身份下」这类值一个共同类型，摘掉它要连带动 `UserIdentifier` 的声明与各处 import，属于本模块之外的事务。
+
+会话归属不走这里。`createSingleAgent`、`createTeamLead`、`createTeamMember` 都收 `userIdentifier: UserIdentifier` 形参（`harness/HarnessAgentLauncher.kt:174`、`:195`、`:213`），装配侧只取它的 `userId` 交给 §6.3 的 `ToolInvocationMiddleware`；session、agent、租户三个归属同样由装配侧直接喂给中间件，工具看不到也不需要看。真正注入 `ToolExecutionContext` 的只有 `ToolEnvContext`——`AgentSpec.contextForTools` 里那一个元素，在 `HarnessAgentLauncher.kt:457-465` 逐个 `register`。
 
 声明位置：`harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolCallContext.kt`。
 

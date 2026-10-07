@@ -17,7 +17,6 @@ import com.agnetix.harnax.harness.config.MinioConfig
 import com.agnetix.harnax.harness.config.SandboxConfig
 import com.agnetix.harnax.harness.minio.MinioBaseStore
 import com.agnetix.harnax.tools.sdk.UserIdentifier
-import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import io.agentscope.core.agent.RuntimeContext
 import io.agentscope.core.event.AgentEndEvent
 import io.agentscope.core.event.AgentEvent
@@ -183,7 +182,6 @@ class MemoryGateFalsificationTest {
         skillAdaptor = mock(SkillAdaptor::class.java),
         tokenStatAdaptor = mock(TokenStatAdaptor::class.java),
         processLogAdaptor = mock(ProcessLogAdaptor::class.java),
-        toolCallLogAdaptor = mock(ToolCallLogAdaptor::class.java),
         planNoteAdaptor = mock(PlanNoteAdaptor::class.java),
         workspaceRoot = workspace,
         harnessConfig = HarnessConfig(

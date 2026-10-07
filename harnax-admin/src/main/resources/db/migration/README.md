@@ -6,7 +6,8 @@
 db/
 └── migration/
     ├── V1__init_schema.sql           # the module's whole schema, in final form
-    ├── V2__agent_session_memory.sql  # the one forward increment; see "Changing the Schema"
+    ├── V2__agent_session_memory.sql  # forward increments; see "Changing the Schema"
+    ├── V3__tool_invocation_metrics.sql
     └── README.md                     # this file
 ```
 
@@ -28,7 +29,7 @@ repository row.
 
 One path: edit this baseline in place, then recreate the database. Columns, indexes, keys, comments
 and the seed rows all go straight into the final `CREATE TABLE` / `INSERT` form — the file holds no
-`ALTER` deltas and no data-repair statements, and this directory holds nothing to stack on top of it.
+`ALTER` deltas and no data-repair statements, and a rebuilt database needs no other script.
 This is what every `harnax-deploy` environment does, and it is why the schema history is not carried
 forward: a fresh install and a rebuilt install end at the same shape because they run the same single
 script.
@@ -39,17 +40,19 @@ the schema and rebuilding the database are therefore one action, never two.
 
 The exception is a database that cannot be rebuilt — one whose contents cost more to restore than the
 schema change is worth, such as a live environment holding a model provider key that only a person can
-re-enter. There the change ships as the next forward `V<n>__*.sql` holding the `ALTER`, and three things
-hold: the baseline keeps the checksum the ledger already records, so it is left byte-for-byte alone; the
-increment ends the schema at the same shape a rebuilt database reaches, so a fresh install runs baseline
-then increment and lands where the live one already is; and the increment folds back into the baseline at
-the next rebuild, which is when it is deleted. `V2__agent_session_memory.sql` is that shape of change.
+re-enter. There the change ships as the next forward `V<n>__*.sql`, holding the `ALTER` or the new
+`CREATE TABLE` statements, and three things hold: the baseline keeps the checksum the ledger already
+records, so it is left byte-for-byte alone; the increment ends the schema at the same shape a rebuilt
+database reaches, so a fresh install runs baseline then increment and lands where the live one already
+is; and the increment folds back into the baseline at the next rebuild, which is when it is deleted.
+`V2__agent_session_memory.sql` and `V3__tool_invocation_metrics.sql` are that shape of change.
 
 Along with editing the baseline:
 
 1. Regenerate `harnax-entity/src/test/resources/schema-test.sql`. Its DDL block is copied from this
-   baseline rather than hand-maintained; `SchemaBaselineDriftIT` compares the fixture against the
-   schema Flyway actually built and fails on any drift.
+   baseline rather than hand-maintained, and it follows the schema at the last version - the baseline
+   plus every forward increment, since `SchemaBaselineDriftIT` compares the fixture against the schema
+   Flyway actually built after replaying all of them and fails on any drift.
 2. Re-run the mapper tests (`mvn -o -pl harnax-entity -am test`) and the drift guard
    (`mvn -o -pl harnax-admin -am -Pintegration-test verify`).
 
@@ -59,10 +62,10 @@ A database whose ledger already carries rows cannot simply switch to this baseli
 scripts that are no longer on the classpath, and the recorded checksum no longer matches the file on
 disk. Drop the schema and let the baseline rebuild it.
 
-`harnax-admin` alone runs Flyway with `repair-on-migrate: true`, so it would realign the checksum and
-clear the unresolved history rows instead of failing — but that leaves the schema unverified against
-the baseline by anything other than the drift guard, so a rebuild is still the required action.
-`harnax-scheduler` and `harnax-session-router` have no repair configured and fail outright.
+`repair-on-migrate: true` in `harnax-admin/src/main/resources/application.yml` is not an escape hatch: Spring Boot 4.0.1's
+`FlywayProperties` declares no such field, so the binder drops the key and admin fails validation the same way
+`harnax-scheduler` and `harnax-session-router` do. Never plan an upgrade around that setting — editing the baseline and
+rebuilding the database stay one action for every module.
 
 ## Configuration
 

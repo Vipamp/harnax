@@ -12,7 +12,6 @@ import com.agnetix.harnax.agent.adaptor.SkillUsageAdaptor
 import com.agnetix.harnax.agent.adaptor.TokenStatAdaptor
 import com.agnetix.harnax.agent.adaptor.model.OpenAIChatModelConfig
 import com.agnetix.harnax.tools.sdk.UserIdentifier
-import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import io.agentscope.core.skill.AgentSkill
 import io.agentscope.core.state.AgentStateStore
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -36,6 +35,9 @@ class HarnessAgentLauncherSkillUsageTest {
         val batches = mutableListOf<Pair<String, List<Long>>>()
         val users = mutableListOf<Long?>()
 
+        val useBatches = mutableListOf<Pair<String, List<Long>>>()
+        val useUsers = mutableListOf<Long?>()
+
         override fun reportViews(
             sessionId: String,
             skillIds: List<Long>,
@@ -43,6 +45,15 @@ class HarnessAgentLauncherSkillUsageTest {
         ) {
             batches += sessionId to skillIds
             users += userId
+        }
+
+        override fun reportUses(
+            sessionId: String,
+            skillIds: List<Long>,
+            userId: Long?,
+        ) {
+            useBatches += sessionId to skillIds
+            useUsers += userId
         }
     }
 
@@ -71,7 +82,6 @@ class HarnessAgentLauncherSkillUsageTest {
         skillAdaptor = skillAdaptor,
         tokenStatAdaptor = mock(TokenStatAdaptor::class.java),
         processLogAdaptor = mock(ProcessLogAdaptor::class.java),
-        toolCallLogAdaptor = mock(ToolCallLogAdaptor::class.java),
         planNoteAdaptor = mock(PlanNoteAdaptor::class.java),
         workspaceRoot = Path.of(System.getProperty("java.io.tmpdir")),
         skillUsageAdaptor = usage,
@@ -98,6 +108,8 @@ class HarnessAgentLauncherSkillUsageTest {
         val skills = delivered(agent).allSkills
 
         assertEquals(listOf("web-7" to listOf(5L)), usage.batches)
+        // Building an agent delivers a skill but does not work through it, so the load is the only event.
+        assertTrue(usage.useBatches.isEmpty())
         assertEquals(listOf("report-style"), skills.map { it.name }, "the delivered skill must still be delivered")
     }
 

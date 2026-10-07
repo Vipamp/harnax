@@ -30,6 +30,14 @@ local:
 harnax:
   cli:
     package-dir: ""
+  # The rollup's own knobs for the integration context. `rollup-enabled: false` is not a test shortcut: it is
+  # what keeps the hourly cron from folding and releasing rows underneath the cases, which all drive rollUp()
+  # directly, and the switch's behaviour is asserted in ToolInvocationRollupIT rather than assumed.
+  # RETENTION_DAYS in that class is this number, and `a row just inside the window survives` is what proves
+  # the two still agree.
+  metrics:
+    retention-days: 365
+    rollup-enabled: false
 
 skill:
   storage:

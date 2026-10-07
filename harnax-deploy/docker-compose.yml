@@ -168,6 +168,17 @@ services:
       # turning this on makes *new* agents two-layer rather than the whole deployment. Admin-only - the
       # runtime takes the per-agent answer off the delivered spec and never reads this.
       HARNAX_AGENT_SESSION_MEMORY_DEFAULT: ${HARNAX_AGENT_SESSION_MEMORY_DEFAULT:-false}
+      # Call-metrics retention: detail rows older than this are dropped once their day has been folded
+      # into `tool_invocation_stats`, so the aggregate stays the answer for anything older. Lowering it does
+      # not delete anything that has not been rolled up yet - the delete is conditioned on the day already
+      # being in the aggregate. One exception: rows whose `tenant_id` is NULL can never enter the
+      # aggregate, so they are released on the window alone.
+      HARNAX_METRICS_RETENTION_DAYS: ${HARNAX_METRICS_RETENTION_DAYS:-90}
+      # The hourly fold-up itself. Off freezes `tool_invocation_stats` at the last day it folded: every
+      # per-tool read answers from that table, so the page stops moving while detail rows keep arriving -
+      # and they are not released either, because the delete refuses to drop a day the aggregate has not
+      # taken. Turn it off only when another instance is the designated folder.
+      HARNAX_METRICS_ROLLUP_ENABLED: ${HARNAX_METRICS_ROLLUP_ENABLED:-true}
       # Router URL (for internal service communication)
       HARNAX_ROUTER_URL: ${HARNAX_ROUTER_URL:-http://router:8081}
       # Scheduler URL (for task trigger/start/pause)
@@ -562,6 +573,11 @@ services:
       # Second line of defence for stdio MCP servers: this is the runtime that would spawn the
       # process. Admin holds such rows back from delivery as well; both have to be on to run one.
       HARNAX_MCP_STDIO_ENABLED: ${HARNAX_MCP_STDIO_ENABLED:-false}
+      # One row per tool call in `tool_invocation_log`, filed by the acting middleware. Off installs no
+      # middleware at all. Bodies can carry literal secrets, so capture-payload off keeps every count and
+      # duration while leaving args and result columns NULL.
+      HARNESS_METRICS_INVOCATION_ENABLED: ${HARNESS_METRICS_INVOCATION_ENABLED:-true}
+      HARNESS_METRICS_INVOCATION_CAPTURE_PAYLOAD: ${HARNESS_METRICS_INVOCATION_CAPTURE_PAYLOAD:-true}
       # This deployment's environment label, which is what a skill's ENV visibility policy is matched
       # against. The default is the label an unconfigured policy is read against everywhere else, so
       # leaving this alone is production behaviour; set it only to run a second stack against the same

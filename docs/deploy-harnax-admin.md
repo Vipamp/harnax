@@ -45,6 +45,18 @@ CREATE DATABASE IF NOT EXISTS harnax_admin
 
 Flyway 会在服务启动时自动执行 `db/migration` 下的建表脚本，无需手动导入 SQL。
 
+> **这一版带一张前向增量**：`tool_invocation_log` / `tool_invocation_stats` 走 `V3__tool_invocation_metrics.sql`，而不是折进 `V1__init_schema.sql`。基线因此保持台账记下的那串字节，已经在跑的 `harnax_admin` 正常启动、Flyway 在启动时补放 V3；新建的库依次重放 V1 → V2 → V3，落到同一个形状。折进基线是一条要走清库重建的路（改基线与重建是一个动作），而这个库里的模型 provider api_key 只有人能重新填，所以这里不取那条路。`application.yml:45` 那行 `repair-on-migrate: true` 无论如何都不是逃生口：Spring Boot 4.0.1 的 `FlywayProperties` 没有这个字段，键被 binder 静默丢弃。
+>
+> 旧表 `tool_call_log` 的建表语句仍在基线里，因此新旧库里都还有它，而它的读写方已全部删除——只是不再增长，留着没有副作用。要真清掉得手工执行，这是一个不可回退的动作：先确认不再需要那些历史行（`SELECT COUNT(*) FROM tool_call_log;`），再执行
+>
+> ```sql
+> DROP TABLE tool_call_log;
+> ```
+>
+> `mcp_call_log` 不在这条清理之列：它是 MCP 授权账本，`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/McpOAuthUserServiceImpl.kt:618` 至今仍在写它，只是不当指标源用，删掉会丢授权审计。
+>
+> 下一次清库重建时把 V3 折回基线、同时从基线删掉 `tool_call_log` 的建表块，本文件与 `db/migration/README.md` 的那条规则就重新对齐了。
+
 ---
 
 ## 环境变量说明
@@ -91,6 +103,8 @@ Flyway 会在服务启动时自动执行 `db/migration` 下的建表脚本，无
 | `MINIO_ENABLED` / `MINIO_ENDPOINT` / `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` / `MINIO_OUTPUT_BUCKET` | `false` / `http://localhost:9000` / `minioadmin` / `minioadmin` / `harnax-output` | 输出文件的下载代理。**admin 与 agent 两侧都要配同一个桶**，否则用户在网页上看不到 agent 产出的文件 |
 | `HARNAX_CLI_PACKAGE_DIR` | `/home/harnax/cli-packages` | CLI 插件包目录（配置项 `harnax.cli.package-dir`）。只影响 admin；compose 把宿主机 `harnax-deploy/dist/cli-packages/` 以**只读 bind mount** 盖在同名路径上，详见下文「CLI 插件包投放与升级」 |
 | `MINIO_CLI_PACKAGE_BUCKET` | `harnax-cli-packages` | 登记后的包存放的桶（配置项 `minio.cli-package-bucket`）。**agent-service 读的是同一个变量名**（`harness.minio.cli-package-bucket`），只改一侧会导致运行期取不到包。两侧各自都会建桶（admin 登记器与 agent-service 的 `ensureBuckets`），谁先起来谁建，不需要手工预建 |
+| `HARNAX_METRICS_RETENTION_DAYS` | `90` | 调用明细（`tool_invocation_log`）的保留天数（配置项 `harnax.metrics.retention-days`）。**改小它不会立刻删掉任何东西**：清理以「那一天已折算进聚合」为前提，还没折的日子的行一律留着——**唯一例外是 `tenant_id` 为空的行**，聚合表的 `tenant_id` 是 `NOT NULL`，这类行永远进不了聚合，到窗口就清。只作用于明细，日聚合 `tool_invocation_stats` 永久保留，所以 90 天以外的口径仍然答得出（按工具维度） |
+| `HARNAX_METRICS_ROLLUP_ENABLED` | `true` | 每小时折算任务的开关（配置项 `harnax.metrics.rollup-enabled`，`0 5 * * * ?`）。关掉聚合就停在最后折算的那一天：按工具维度的读全部走聚合表，页面从此不动；而那些没折算的明细也因「未折算不删」一直涨，`tenant_id` 为空的行除外。**多副本同跑无害**，重算按天全量覆盖，见下文「调用指标折算」；真要关它只有关另一个实例负责折算时才合理 |
 | `HARNAX_AUTH_SECRET` | 占位串 | 服务间 token 的签名密钥，与 `ADMIN_INTERNAL_API_SECRET` 是两条不同的东西，别混用。**它是双向的**：既签本服务调 scheduler 的出向 token，也是 scheduler 校验 admin 转发进来的那枚 bearer 的密钥（契约 C4），所以**必须与 scheduler 同值**——compose 里两个服务由同一个变量插值，配一次就同源，手工/裸机部署两边各写一次才是坑。**两种配错的症状不一样，别混成一条**：两边**不同值**才是 401——scheduler 把每一次转发都拒掉，用户在网页上看到「Scheduler service unavailable」/40902，而 cron 照常触发；两边都**留占位值**（yml 与 compose 的默认串 `change-me-in-production-min-32-chars!!`，36 字符，过得了长度校验）**不报错、照常 200**，因为两个服务插的是同一个变量、值天然相同——它的问题是安全而不是可用：那串写在公开仓库里，等于给 `/api/scheduler/**` 配了一把谁都能配的钥匙，必须换掉。注意本服务另有一个 `ADMIN_INTERNAL_API_SECRET`（`admin.internal-api.secret`）确实会因占位值被拒（`JwtAuthenticationFilter` 认它为"未配置"，`/api/admin/**` 上直接 401），那是另一条链上的另一把密钥，别把两者的行为套到 `HARNAX_AUTH_SECRET` 上 |
 | `HARNAX_ROUTER_EXTERNAL_URL` | 空 | 返给前端 / 小程序的路由地址 |
 | `HARNAX_SCHEDULER_URL` | `http://localhost:8084`；compose 侧是 `${HARNAX_SCHEDULER_URL:-http://scheduler:8084}`，**可在 `.env` 覆盖** | admin → scheduler 的任务控制地址。**逗号分隔时只用第一个**：调度真相在共享 Quartz store 里，所以转发只有一次调用、没有逐实例广播。落到的那台必须是开着调度的实例——同名 service 下挂一台 `SCHEDULER_ENABLED=false` 的副本，就会按负载均衡的运气偶发 40903（reload 路径到用户那边表现为 40902），约束正文在 `docs/deploy-harnax-scheduler.md` |
@@ -164,7 +178,7 @@ admin 的业务接口本身是无状态的，但**多副本部署有两处例外
 
 > **定时任务域在本服务里只剩转发**。`/api/admin/agent-tasks/**` 的 12 个端点、请求体形状、`Page` 的 7 个键与 `records[*]` 的字段名、以及 `40901`/`40902`/`40903` 三个业务码的含义**对三客户端保持稳定**；调用背后做的事都在对面：11 条走 `SchedulerClientImpl.forward` 打到 `http://scheduler:8084`（`HARNAX_SCHEDULER_URL`），只有 `/agents` 是 admin 自己的域（agent 表在它手上）。**本服务对 `agent_task` / `agent_task_log` / `agent_task_execution` / `QRTZ_*` 这四张表发不出任何一条 SQL**——实体与 mapper 都不在 `harnax-entity` 里，`grep -rn "agentTaskMapper\|agentTaskLogMapper\|AgentTaskExecution" harnax-admin/src/main` 是零命中。每一发转发带三样东西：一枚 `typ=internal` 的 JWT（`HARNAX_AUTH_SECRET` 签）、`X-Forwarded-User`、`X-Tenant-Id`；scheduler 侧的门禁认这三样，所以 **admin 与 scheduler 必须同窗口升级**，只升一边的话，没带上这一枚 bearer 的转发一律 401（症状见 `docs/deploy-harnax-scheduler.md` 的「常见问题」）。
 >
-> **本服务内没有 Quartz**（`harnax-admin/pom.xml` 无该依赖，也没有 `@Scheduled`），调度全在独立服务 `harnax-scheduler`，部署与容量事项见 `docs/deploy-harnax-scheduler.md`。本服务重启只会打断内存里那两处状态（OAuth 待授权、验证码），任务定义与执行历史都在库里不受影响——而且它们在 scheduler 的库里，本服务重启碰不到。
+> **本服务内没有 Quartz**（`harnax-admin/pom.xml` 无该依赖），**面向用户的定时任务全在独立服务 `harnax-scheduler`**，部署与容量事项见 `docs/deploy-harnax-scheduler.md`。**本服务自己有一条 `@Scheduled`**：调用指标的每小时折算（`ToolInvocationRollupService`，见下文「调用指标折算」）——它是服务器内部的维护动作，不进 Quartz 集群，多副本同跑由「按天全量重算」兜住，因此不需要锁。本服务重启只会打断内存里那两处状态（OAuth 待授权、验证码），任务定义与执行历史都在库里不受影响——而且它们在 scheduler 的库里，本服务重启碰不到；重启漏掉的那一次折算由下一小时的补齐补回。
 
 > **会话数据库**：admin 的会话数据（`session.*` 配置）默认使用 `harnax_admin` 数据库，与业务数据在同一个库中。这与 agent-service 不同（agent-service 使用独立的 `agentscope` 数据库）。
 
@@ -292,6 +306,20 @@ docker exec harnax-minio ls -R /data/harnax-cli-packages
 ```
 
 `harnax` 自身的包就是按这套规范做的第一份实现，源码在 `harnax-cli/`，可当参考。
+
+---
+
+## 调用指标折算
+
+`harnax-agent-service` 把每一次工具调用（含 MCP 工具与经 shell 执行的已下发 CLI）写一行明细进 `tool_invocation_log`，本服务每小时把它折进日聚合 `tool_invocation_stats`：
+
+- 任务在 `ToolInvocationRollupService`，`@Scheduled(cron = "0 5 * * * ?")`，由 `HarnaxAdminApplication` 上的 `@EnableScheduling` 启用。**这是本服务第一个定时任务**，之前全仓 admin 侧零 `@Scheduled`。
+- 一次运行做三件事：把窗口内所有「聚合表里还没有的那天」整日重算（`upsertDay` 是全量覆盖，不是累加）；把昨天与今天各重算一遍（今天的明细还在长，而昨天最后那一段是在它当天最后一次 :05 之后才到齐的，不补就永远漏）；清掉超出 `harnax.metrics.retention-days` 且**已折算**的明细。
+- 待折算日期取自聚合表已有的 `stat_date`，起始下界写死 `1970-01-01` 而不由保留天数推：**用保留期当下界会让一个漏折的日子永久逃逸**——清理语句只删已折过的行，于是那些明细既删不掉也不再有人补它。
+- 多副本同时跑是无害的：重算幂等（聚合 = 那一天明细的求和），`upsertDay` 走唯一键 `(stat_date, tenant_id, kind, subject_id, tool_name)`，两个副本写进同一批值。没有分布式锁，也不需要。
+- 一次折算抛异常不影响下一次：`rollUpHourly()` 捕获并记 error，Spring 的调度线程不会因此退出。
+
+页面在 `harnax-webui` 的「监控与治理」分组下的「调用监控」，路径 **`/monitor/call-metrics`**，三个 tab 对应工具 / MCP / CLI，看数与下钻都不需要直连数据库。
 
 ---
 

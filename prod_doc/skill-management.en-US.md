@@ -382,7 +382,7 @@ All four fire at save time, while the configuration panel is still open and the 
 - `skillDetails: List<SkillDetailDto>` — the skills the agent or lead bound itself;
 - `cliDetails[].skill: SkillDetailDto?` — the skill each selected CLI package ships.
 
-`SkillDetailDto` is a six-tuple — `id`, `name`, `description`, `skillmd`, `resources`, `version` — mapped column by column by `InternalApiController.skillDetail(skill)`. `tenant_id`, `creator`, `is_public`, `status` and `active` do not cross the boundary: they are consumed by the delivery decision. The response's `tenantId` is the holder row's own tenant, which the runtime stamps onto `token_stats` / `tool_call_log` / `process_log`.
+`SkillDetailDto` is a six-tuple — `id`, `name`, `description`, `skillmd`, `resources`, `version` — mapped column by column by `InternalApiController.skillDetail(skill)`. `tenant_id`, `creator`, `is_public`, `status` and `active` do not cross the boundary: they are consumed by the delivery decision. The response's `tenantId` is the holder row's own tenant, which the runtime stamps onto `token_stats` / `tool_invocation_log` / `process_log`.
 
 ### 8.2 Resolution
 

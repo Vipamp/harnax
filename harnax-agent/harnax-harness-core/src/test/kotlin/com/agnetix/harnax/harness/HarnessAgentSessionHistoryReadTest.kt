@@ -9,7 +9,6 @@ import com.agnetix.harnax.agent.adaptor.TokenStatAdaptor
 import com.agnetix.harnax.agent.adaptor.model.OpenAIChatModelConfig
 import com.agnetix.harnax.agent.session.MysqlSessionMessageStore
 import com.agnetix.harnax.harness.compaction.CompactionOutcome
-import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import io.agentscope.core.ReActAgent
 import io.agentscope.core.message.ContentBlock
 import io.agentscope.core.message.Msg
@@ -86,7 +85,6 @@ class HarnessAgentSessionHistoryReadTest {
         skillAdaptor = SkillAdaptor { null },
         tokenStatAdaptor = mock(TokenStatAdaptor::class.java),
         processLogAdaptor = ProcessLogAdaptor { },
-        toolCallLogAdaptor = mock(ToolCallLogAdaptor::class.java),
         planNoteAdaptor = mock(PlanNoteAdaptor::class.java),
         workspaceRoot = Path.of(System.getProperty("java.io.tmpdir")),
         sessionMessageStore = archive,

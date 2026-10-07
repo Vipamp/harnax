@@ -64,7 +64,7 @@ const SkillUsage: React.FC = () => {
       title: intl.formatMessage({ id: 'pages.skill.usage.totalUses', defaultMessage: 'Uses' }),
       value: summary?.totalUses ?? 0,
       color: '#10b981',
-      hint: intl.formatMessage({ id: 'pages.skill.usage.usesHint', defaultMessage: "Times a skill's instructions were followed; the runtime reports loads only, so this column has no source yet" }),
+      hint: intl.formatMessage({ id: 'pages.skill.usage.usesHint', defaultMessage: "Times a skill's instructions were actually followed, reported by the runtime when a load succeeds" }),
     },
     {
       title: intl.formatMessage({ id: 'pages.skill.usage.zeroUse', defaultMessage: 'Never used' }),

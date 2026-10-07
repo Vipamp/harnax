@@ -24,8 +24,8 @@ import com.agnetix.harnax.harness.output.OutputFileStore
 import com.agnetix.harnax.harness.team.MinioTeamArtifactGateway
 import com.agnetix.harnax.harness.team.TeamArtifactGateway
 import com.agnetix.harnax.mapper.TeamArtifactMapper
-import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import com.agnetix.harnax.tools.sdk.adaptor.ToolConfigAdaptor
+import com.agnetix.harnax.tools.sdk.adaptor.ToolInvocationAdaptor
 import com.agnetix.harnax.tools.sdk.registry.ToolRegistry
 import io.agentscope.harness.agent.IsolationScope
 import io.minio.MinioClient
@@ -321,7 +321,6 @@ class HarnessAutoConfiguration {
         tokenStatAdaptor: TokenStatAdaptor,
         sessionConfig: SessionConfig,
         processLogAdaptor: ProcessLogAdaptor,
-        toolCallLogAdaptorProvider: ObjectProvider<ToolCallLogAdaptor>,
         mcpConfigDecryptorProvider: ObjectProvider<McpConfigDecryptor>,
         toolConfigAdaptorProvider: ObjectProvider<ToolConfigAdaptor>,
         toolRegistryProvider: ObjectProvider<ToolRegistry>,
@@ -334,9 +333,9 @@ class HarnessAutoConfiguration {
         mcpTokenSourceFactoryProvider: ObjectProvider<McpAccessTokenSourceFactory>,
         skillUsageAdaptorProvider: ObjectProvider<SkillUsageAdaptor>,
         skillDraftAdaptorProvider: ObjectProvider<SkillDraftAdaptor>,
+        toolInvocationAdaptorProvider: ObjectProvider<ToolInvocationAdaptor>,
+        @Value("\${harness.metrics.invocation.enabled:true}") invocationMetricsEnabled: Boolean,
     ): HarnessAgentLauncher {
-        val toolCallLogAdaptor = toolCallLogAdaptorProvider.ifAvailable
-            ?: ToolCallLogAdaptor { /* no-op */ }
         // Never null: a missing bean used to leave headers and stdio env params silently empty.
         // agent-service has no AES key — admin delivers those fields decrypted — so the fallback
         // parses plain text rather than decrypting. A real decryptor elsewhere still wins.
@@ -351,7 +350,6 @@ class HarnessAutoConfiguration {
             tokenStatAdaptor = tokenStatAdaptor,
             sessionConfig = sessionConfig,
             processLogAdaptor = processLogAdaptor,
-            toolCallLogAdaptor = toolCallLogAdaptor,
             planNoteAdaptor = planNoteAdaptor,
             workspaceRoot = java.nio.file.Path.of(tmpDir),
             harnessConfig = harnessConfig,
@@ -370,6 +368,8 @@ class HarnessAutoConfiguration {
             // Absent means nobody may author a skill: a draft with nowhere to be filed is unreviewed text
             // sitting in a workspace, which is the one thing this feature exists to prevent.
             skillDraftAdaptor = skillDraftAdaptorProvider.ifAvailable,
+            // One landing point for `harness.metrics.invocation.enabled`; the launcher's mount point is the authoritative account of what a null adaptor means.
+            toolInvocationAdaptor = toolInvocationAdaptorProvider.ifAvailable?.takeIf { invocationMetricsEnabled },
         )
     }
 }

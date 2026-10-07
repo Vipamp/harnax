@@ -1,10 +1,6 @@
 package com.agnetix.harnax.tools.builtin
 
-import com.agnetix.harnax.tools.sdk.SessionMetaContext
 import com.agnetix.harnax.tools.sdk.ToolEnvContext
-import com.agnetix.harnax.tools.sdk.UserIdentifier
-import com.agnetix.harnax.tools.sdk.adaptor.ToolCallInfo
-import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import jakarta.mail.Transport
 import jakarta.mail.internet.MimeMessage
 import org.junit.jupiter.api.Assertions.*
@@ -37,7 +33,6 @@ import org.mockito.kotlin.*
 class EmailToolBoxTest {
 
     private lateinit var emailToolBox: EmailToolBox
-    private lateinit var mockAdaptor: ToolCallLogAdaptor
 
     private val standardEnv = mapOf(
         "SMTP_HOST" to "smtp.example.com",
@@ -50,12 +45,6 @@ class EmailToolBoxTest {
     @BeforeEach
     fun setUp() {
         emailToolBox = EmailToolBox()
-        mockAdaptor = mock()
-        emailToolBox.init(
-            mockAdaptor,
-            SessionMetaContext(agentId = 1L, sessionId = "test-session"),
-            UserIdentifier(userId = 1L),
-        )
     }
 
     private fun envContext(bindings: Map<String, String> = standardEnv): ToolEnvContext = ToolEnvContext(bindings = bindings)
@@ -99,35 +88,6 @@ class EmailToolBoxTest {
 
                 assertEquals("Email sent successfully to recipient@example.com", result)
                 mockedTransport.verify { Transport.send(any(MimeMessage::class.java)) }
-            }
-        }
-
-        @Test
-        @DisplayName("sendEmail plain text should log tool call via adaptor")
-        fun `sendEmail plain text should log tool call`() {
-            val mockedTransport: MockedStatic<Transport> = mockStatic(Transport::class.java)
-            mockedTransport.use {
-                mockedTransport.`when`<Void> { Transport.send(any(MimeMessage::class.java)) }
-                    .then { }
-
-                emailToolBox.sendEmail(
-                    to = "recipient@example.com",
-                    subject = "Test Subject",
-                    body = "Hello",
-                    isHtml = false,
-                    envContext = envContext(),
-                )
-
-                val captor = argumentCaptor<ToolCallInfo>()
-                verify(mockAdaptor, times(1)).emit(captor.capture())
-
-                val info = captor.firstValue
-                assertEquals("email-tool-box::sendEmail", info.toolName)
-                assertTrue(info.success)
-                assertEquals(1L, info.agentId)
-                assertEquals("test-session", info.sessionId)
-                assertEquals("recipient@example.com", info.args["to"])
-                assertEquals("Test Subject", info.args["subject"])
             }
         }
     }
@@ -315,36 +275,6 @@ class EmailToolBoxTest {
                         envContext = envContext(),
                     )
                 }
-            }
-        }
-
-        @Test
-        @DisplayName("sendEmail should log error via adaptor when Transport fails")
-        fun `sendEmail should log error on Transport failure`() {
-            val mockedTransport: MockedStatic<Transport> = mockStatic(Transport::class.java)
-            mockedTransport.use {
-                mockedTransport.`when`<Void> { Transport.send(any(MimeMessage::class.java)) }
-                    .thenThrow(jakarta.mail.MessagingException("Connection refused"))
-
-                try {
-                    emailToolBox.sendEmail(
-                        to = "recipient@example.com",
-                        subject = "Test",
-                        body = "Body",
-                        isHtml = false,
-                        envContext = envContext(),
-                    )
-                } catch (_: Exception) {
-                    // expected
-                }
-
-                val captor = argumentCaptor<ToolCallInfo>()
-                verify(mockAdaptor, times(1)).emit(captor.capture())
-
-                val info = captor.firstValue
-                assertEquals("email-tool-box::sendEmail", info.toolName)
-                assertFalse(info.success)
-                assertTrue(info.result.contains("Connection refused"))
             }
         }
     }

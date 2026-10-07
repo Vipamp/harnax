@@ -53,15 +53,14 @@ graph TB
 
 | 类/接口 | 包路径 | 职责 |
 |---|---|---|
-| `ToolBox` | `sdk` | 抽象工具基类，提供 execute 模板方法、日志记录，确认位由 `@ToolMeta.needConfirm` 声明 |
+| `ToolBox` | `sdk` | 抽象工具基类，只声明 `name()`；一次调用的计量与记录在 `ToolInvocationMiddleware`，确认位由 `@ToolMeta.needConfirm` 声明 |
 | `ToolMeta` | `sdk` | 方法级注解，声明展示名、环境参数定义、是否需确认、是否必须工具 |
 | `ToolCallContext` | `sdk` | 工具调用上下文接口 |
-| `SessionMetaContext` | `sdk` | 会话级上下文（agentId + sessionId） |
 | `UserIdentifier` | `sdk` | 用户标识（userId） |
 | `ToolSpec` | `sdk` | 工具规格数据类（toolId、toolName、needConfirm） |
 | `ToolRegistry` | `sdk.registry` | Spring 容器级工具注册中心，自动发现所有 `ToolBox` Bean |
-| `ToolCallLogAdaptor` | `sdk.adaptor` | 工具调用日志适配器接口 |
-| `ToolCallInfo` | `sdk.adaptor` | 工具调用日志数据类 |
+| `ToolInvocationAdaptor` | `sdk.adaptor` | 工具调用指标写入接口（`fun interface`，`emit(ToolInvocationEvent)`） |
+| `ToolInvocationEvent` | `sdk.adaptor` | 一次调用的指标事件：租户/智能体/会话/用户归属、`kind`、`toolName`、`outcome`、起止毫秒时间戳、入参 JSON 与结果正文（正文在写入侧截断） |
 | `ToolConfigAdaptor` | `sdk.adaptor` | 工具配置适配器接口，用于从 admin 获取工具配置 |
 
 ### SDK 依赖
@@ -125,18 +124,15 @@ class MyToolBox : ToolBox() {
         @ToolParam(name = "limit", description = "最大返回数量", required = false)
         limit: Int? = 10,
         envContext: ToolEnvContext,  // 框架自动注入，不加 @ToolParam
-    ): String = execute("query" to query) {
+    ): String {
         val apiKey = envContext.require("API_KEY")
         // 实现工具逻辑
-        "result"
+        return "result"
     }
 
     @Tool(description = "需要确认的危险操作")
     @ToolMeta(needConfirm = true)
-    fun dangerousMethod(): String = execute {
-        // 危险操作，执行前需用户确认
-        "done"
-    }
+    fun dangerousMethod(): String = "done"
 
     override fun name(): String = "my-tool-box"
 }
@@ -173,7 +169,7 @@ HarnessAgentLauncher 使用 toolRegistry.getToolBox(beanName)
 
 | 模块 | 包 | 内容 |
 |---|---|---|
-| `harnax-agent/harnax-tools-sdk` | `com.agnetix.harnax.tools.sdk`（另有 `.registry`、`.adaptor`） | 契约与注册中心：`ToolBox`、`ToolMeta`、`ToolEnvParamDef`、`ToolSpec`、`ToolCallContext`、`ToolEnvContext`、`ToolMetaDescriptor`，加 `registry/ToolRegistry`、`adaptor/ToolCallLogAdaptor`、`adaptor/ToolConfigAdaptor` |
+| `harnax-agent/harnax-tools-sdk` | `com.agnetix.harnax.tools.sdk`（另有 `.registry`、`.adaptor`） | 契约与注册中心：`ToolBox`、`ToolMeta`、`ToolEnvParamDef`、`ToolSpec`、`ToolCallContext`、`ToolEnvContext`、`ToolMetaDescriptor`，加 `registry/ToolRegistry`、`adaptor/ToolInvocationAdaptor`、`adaptor/ToolConfigAdaptor` |
 | `harnax-tools-external/harnax-tools-buildin` | `com.agnetix.harnax.tools.builtin` | 内置实现：`TimeToolBox`、`EmailToolBox`。包名拼 `builtin`，模块与目录拼 `buildin`（`.../src/main/kotlin/com/agnetix/harnax/tools/buildin/TimeToolBox.kt:1`），两者不一致是现状，import 时以包名为准 |
 
 注解的分工：`@Tool` 与 `@ToolParam` 来自 agentscope 框架，本域不声明；本域声明的是 `@ToolMeta`（`harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolMeta.kt:29`）与 `@ToolEnvParamDef`（`harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolEnvParamDef.kt:22`）。

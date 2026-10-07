@@ -43,7 +43,6 @@ class LauncherConfig {
     //     @Autowired tokenStatAdaptor: TokenStatAdaptor,
     //     @Autowired sessionConfig: SessionConfig,
     //     @Autowired processLogAdaptor: ProcessLogAdaptor,
-    //     @Autowired(required = false) toolCallLogAdaptor: ToolCallLogAdaptor,
     //     @Autowired planNoteAdaptor: PlanNoteAdaptor,
     //     @Value("\${local.tmp-dir}") tmpDir: String,
     // ): AscopeAgentLauncher {
@@ -55,7 +54,6 @@ class LauncherConfig {
     //         tokenStatAdaptor,
     //         sessionConfig,
     //         processLogAdaptor,
-    //         toolCallLogAdaptor,
     //         planNoteAdaptor,
     //         Path(tmpDir),
     //     )

@@ -1,15 +1,10 @@
 package com.agnetix.harnax.tools.builtin
 
-import com.agnetix.harnax.tools.sdk.SessionMetaContext
-import com.agnetix.harnax.tools.sdk.UserIdentifier
-import com.agnetix.harnax.tools.sdk.adaptor.ToolCallInfo
-import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
-import org.mockito.kotlin.*
 import java.text.SimpleDateFormat
 
 /**
@@ -28,17 +23,10 @@ import java.text.SimpleDateFormat
 class TimeToolBoxTest {
 
     private lateinit var timeToolBox: TimeToolBox
-    private lateinit var mockAdaptor: ToolCallLogAdaptor
 
     @BeforeEach
     fun setUp() {
         timeToolBox = TimeToolBox()
-        mockAdaptor = mock()
-        timeToolBox.init(
-            mockAdaptor,
-            SessionMetaContext(agentId = 1L, sessionId = "test-session"),
-            UserIdentifier(userId = 1L),
-        )
     }
 
     @Nested
@@ -69,21 +57,6 @@ class TimeToolBoxTest {
             val expected = SimpleDateFormat(TimeToolBox.YYYY_MM_DD).format(java.util.Date())
             assertEquals(expected, result)
         }
-
-        @Test
-        @DisplayName("getDate should log tool call via adaptor")
-        fun `getDate should log tool call`() {
-            timeToolBox.getDate()
-
-            val captor = argumentCaptor<ToolCallInfo>()
-            verify(mockAdaptor, times(1)).emit(captor.capture())
-
-            val info = captor.firstValue
-            assertEquals("time-tool-box::getDate", info.toolName)
-            assertTrue(info.success)
-            assertEquals(1L, info.agentId)
-            assertEquals("test-session", info.sessionId)
-        }
     }
 
     @Nested
@@ -100,19 +73,6 @@ class TimeToolBoxTest {
 
             // Result should be between before and after (inclusive)
             assertTrue(result >= before && result <= after)
-        }
-
-        @Test
-        @DisplayName("getDatetime should log tool call via adaptor")
-        fun `getDatetime should log tool call`() {
-            timeToolBox.getDatetime()
-
-            val captor = argumentCaptor<ToolCallInfo>()
-            verify(mockAdaptor, times(1)).emit(captor.capture())
-
-            val info = captor.firstValue
-            assertEquals("time-tool-box::getDatetime", info.toolName)
-            assertTrue(info.success)
         }
     }
 

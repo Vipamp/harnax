@@ -23,7 +23,6 @@ import com.agnetix.harnax.harness.memory.MemoryPromotionMiddleware
 import com.agnetix.harnax.harness.minio.MinioBaseStore
 import com.agnetix.harnax.harness.minio.ProcessLocalCoordinationStore
 import com.agnetix.harnax.tools.sdk.UserIdentifier
-import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import io.agentscope.core.state.AgentStateStore
 import io.agentscope.harness.agent.IsolationScope
 import io.agentscope.harness.agent.coordination.LocalPeriodicGate
@@ -80,7 +79,6 @@ class HarnessAgentLauncherMemoryTest {
         skillAdaptor = mock(SkillAdaptor::class.java),
         tokenStatAdaptor = mock(TokenStatAdaptor::class.java),
         processLogAdaptor = mock(ProcessLogAdaptor::class.java),
-        toolCallLogAdaptor = mock(ToolCallLogAdaptor::class.java),
         planNoteAdaptor = mock(PlanNoteAdaptor::class.java),
         workspaceRoot = workspaceRoot,
         harnessConfig = HarnessConfig(

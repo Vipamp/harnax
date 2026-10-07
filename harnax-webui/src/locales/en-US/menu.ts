@@ -23,6 +23,7 @@ export default {
   // Monitoring & Governance
   'menu.monitor': 'Monitoring & Governance',
   'menu.monitor.skill.usage': 'Skill Usage',
+  'menu.monitor.call.metrics': 'Call Metrics',
   'menu.monitor.skill.drafts': 'Draft Review',
   'menu.monitor.token.monitor': 'Token Monitor',
 

@@ -23,6 +23,7 @@ export default {
   // 监控与治理
   'menu.monitor': '监控与治理',
   'menu.monitor.skill.usage': '技能用量',
+  'menu.monitor.call.metrics': '调用监控',
   'menu.monitor.skill.drafts': '待审草稿',
   'menu.monitor.token.monitor': 'Token 监控',
 

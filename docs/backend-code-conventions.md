@@ -592,7 +592,9 @@ throw BizException(messageUtil.getMessage("error.validation.required", "username
 
 ### 11.3 例外与豁免
 
-没有可豁免的自动机制。系统级 / 平台级表（`tenant`、`user_tenant`、`sys_user`、`sys_token_blacklist`、`plan_note`、`tool_call_log`、`agent_tool`）是否带租户条件，由各自的列表与详情 SQL 逐条决定；去掉或不加租户条件时，在该方法（或该表的设计说明）里写明理由，别让下一个读代码的人以为漏了。
+没有可豁免的自动机制。系统级 / 平台级表（`tenant`、`user_tenant`、`sys_user`、`sys_token_blacklist`、`plan_note`、`tool_invocation_log`、`agent_tool`）是否带租户条件，由各自的列表与详情 SQL 逐条决定；去掉或不加租户条件时，在该方法（或该表的设计说明）里写明理由，别让下一个读代码的人以为漏了。
+
+调用指标的两张表在这里形状不同，并且只有明细表需要豁免：`tool_invocation_log` 的 `tenant_id` 可空，两条折算相关的语句都为无归属的行单独写了一支——`selectUnrolledDates` 用 `l.tenant_id IS NOT NULL` 把它们排除在待折日期之外，`deleteRolledOut` 用 `tenant_id IS NULL` 让它们不必等「那一天已折算」就能按保留窗口释放（它们本来就不在任何聚合里，留着只会一直长大）；`tool_invocation_stats` 的 `tenant_id` 是 `NOT NULL`，所以无归属的明细行压根不进聚合，聚合侧的读取一律写成 `s.tenant_id = #{tenantId}`，不需要豁免。
 
 ### 11.4 租户上下文
 

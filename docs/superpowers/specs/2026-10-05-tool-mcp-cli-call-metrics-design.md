@@ -1,7 +1,7 @@
 # 工具 / MCP / CLI 调用指标 · 设计规格
 
 - 日期：2026-10-05
-- 状态：设计定稿，待实现
+- 状态：已实现并合入 `kotlin-dev`（原分支 `feat/tool-mcp-cli-metrics`）。本文件是 2026-10-05 的规划稿，落地后的口径以 `prod_doc/tool-mcp-cli-call-metrics-design.zh-CN.md` 为准，两份不一致时读那一份。
 - 范围：`harnax-agent/harnax-harness-core`、`harnax-agent/harnax-tools-sdk`、`harnax-agent/harnax-agent-service`、`harnax-entity`、`harnax-admin`、`harnax-webui`、`prod_doc`、`docs`
 
 ## 0. 要解决的问题
@@ -39,7 +39,7 @@
 
 ## 2. 数据模型
 
-两张表都折进 `harnax-admin` 的 Flyway 基线（规则见 `harnax-admin/src/main/resources/db/migration/README.md`：改基线与重建库是一个动作），并逐字同步 `harnax-entity/src/test/resources/schema-test.sql`。
+两张表最终没有折进 `harnax-admin` 的 Flyway 基线，而是走 `harnax-admin/src/main/resources/db/migration/README.md` 记的那个例外：这个库在跑、且里面的模型 provider API Key 只有人能重填，所以基线逐字不动、改动以前向增量 `V3__tool_invocation_metrics.sql` 交付，下一次重建时再折回基线。`harnax-entity/src/test/resources/schema-test.sql` 跟的是重放到最后一个版本之后的形状，也就是基线加全部增量的并集。
 
 ### 2.1 `tool_invocation_log`（明细，append-only）
 
@@ -96,15 +96,17 @@
 
 新增 `ToolInvocationMiddleware`，与 `ProcessLogMiddleware` 同包同目录：`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/provider/middleware/ToolInvocationMiddleware.kt`，挂载沿用 `agentBuilder.addMiddleware(...)`（`HarnessAgentLauncher.kt:587`、`:601` 那两行是同一家族）。
 
-上游形状已核过，实现时不必再猜：`ActingInput` 是 `record ActingInput(List<ToolUseBlock> toolCalls)`，`ToolUseBlock` 给 `getId()` / `getName()` / `getInput(): Map<String, Object>`；`ToolResultEndEvent` 同时带 `getToolCallId()`、`getToolCallName()` 和 `getState()`，所以按 id 关联成立且名字可作二次校验；`ToolResultState` 五个值就是 §3 映射表那五个。
+上游形状已核过，实现时不必再猜：`ActingInput` 是 `record ActingInput(List<ToolUseBlock> toolCalls)`，`ToolUseBlock` 给 `getId()` / `getName()` / `getInput(): Map<String, Object>`；`ToolResultEndEvent` 同时带 `getToolCallId()`、`getToolCallName()` 和 `getState()`，所以按 id 关联成立且名字可作二次校验（`ToolUseBlock.getId()` 上游可空，缺 id 与键冲突时的退路见下）；`ToolResultState` 五个值就是 §3 映射表那五个。
 
-`onActing` 内为本次 acting 批次建一张 `toolCallId → 起点` 的表，从 `input.toolCalls` 起表（记录 `name`、`input`、开始时刻），在 `next.apply(input)` 的事件流上：
+`onActing` 内为本次 acting 批次建一张起点表，键取 `toolCallId`、缺 id 时退到 `toolCallName`，从 `input.toolCalls` 起表（记录 `name`、`input`、开始时刻）；同一批次算出同一个键的调用在键尾加序号，另按 `name` 保存一组未终态键的先进先出队列，于是每个起点都可寻址。`ToolUseBlock` 的名字上游可空（由模型给的 JSON 反序列化而来，上游构造器不校验）：无名的调用既算不出键、也没有可写的 `tool_name`（该列 `NOT NULL`），因此不进起点表、不落库；登记本身绝不把异常抛出 `onActing`，D9 的「绝不抛」在事件流开始之前同样成立。在 `next.apply(input)` 的事件流上：
 
 | 事件 | 动作 |
 |---|---|
-| `TOOL_RESULT_END`（带 `toolCallId`、`state`） | 按 id 找到起点，出 `outcome`、`duration_ms`，投递适配器 |
-| 流 `onComplete` 时仍有未终态 id | 补一行 `INTERRUPTED`，时长到完成时刻 |
-| 流 `onError` / `onCancel` 时同理 | 同上，`error_message` 取异常文本 |
+| `TOOL_RESULT_END`（带 `toolCallId`、`state`） | 按 `key(toolCallId, toolCallName)` 找到起点，未命中时取该名字队列里最早的一个（匹配只 peek）；队列与起点表按键一一对应——登记时同处加入，投递与收流两条路径都按起点记录的 `name` 同处摘除，所以 peek 到的必是一个未终态起点；起点在投递前从表里摘除，同一个键在名字队列里按起点记录的 `name` 摘除而不是按帧名，所以改名的终态帧不会留下顶掉后续调用的幽灵键；重复的终态帧找不到起点，不会再落第二行 |
+| 流 `onComplete` 时仍有未终态 id | 补一行 `INTERRUPTED`，时长到完成时刻，`error_message` 写 `stream ended before the tool returned` |
+| 流 `onError` / `onCancel` 时同理 | 同上，`error_message` 取异常文本；已经流出的增量文本仍进 `result_excerpt`（按写入侧截断）|
+
+增量文本按事件自带的键累积（有 `toolCallId` 用 id，缺 id 用名字），投递时先按起点键取、取不到再按终态帧自己的键取，未投递的起点在收流结束时同样先按自己的键、再按记录的 `name` 取。真正共享同一份缓冲的是帧侧无可分辨键的同名调用：delta 不带 id 时两侧的增量都落进同一个名字键缓冲，与那两个起点自己有没有 id 无关。这种情况下能保住的是行数，文本归并是已知让步，而归并后的正文落在哪一行取决于收流时的遍历顺序，不保证稳定。另一侧的损失同样已知：一帧终态既不带 id、其 `toolCallName` 又撞不到任何名字队列时配不上起点，那一次调用由收流兜底记成 `INTERRUPTED`。这里不引入「本轮只剩一个未终态起点就把它配上」的回退——那已经是猜，而猜错会把一次真正中断的调用记成成功，按 I4 那一行就从聚合表的 `interruptions` 挪进 `successes`，两个计数同时错位；记成中断至少是一个可数的损失。
 
 `ToolResultState` 映射：`SUCCESS→SUCCESS`、`ERROR→ERROR`、`DENIED→DENIED`、`INTERRUPTED→INTERRUPTED`、`RUNNING→不落库`。
 
@@ -146,7 +148,7 @@ ToolInvocationMiddleware → ToolInvocationAdaptor(harnax-tools-sdk 定义)
 | `queue-capacity` | 512 | |
 | `batch-size` | 64 | |
 | `flush-interval-ms` | 200 | 不满一批也在此间隔落库 |
-| `capture-payload` | true | 关时 `args_json` 与 `result_excerpt` 恒为 NULL |
+| `capture-payload` | true | 只管这两列：关时 `args_json` 与 `result_excerpt` 恒为 NULL；`error_message` 不受它控制，因为非终态调用的失败原因就是工具自己的输出（§3） |
 | `capture-max-chars` | 2000 | 两处各自的截断长度，尾部加 `…(truncated)` |
 
 适配器契约与 `SkillUsageAdaptor` 一致：立即返回、不抛、溢出丢弃并计数（每丢弃一批 warn 一次，附丢弃总数）。丢弃只发生在队列打满时，而打满意味着工具调用已经每秒数百次——那时少记几行比让整轮回答卡在数据库往返上更划算。
@@ -208,7 +210,7 @@ ToolInvocationMiddleware → ToolInvocationAdaptor(harnax-tools-sdk 定义)
 - `harnax-agent-service`：`adaptor/ToolCallLogAdaptorImpl.kt` 与 `adaptor/ToolCallLogAdaptorImplTest.kt`（两个整文件）
 - `harnax-harness-core`：`HarnessAgentLauncher` 的 `toolCallLogAdaptor` 形参（`:117`）、KDoc `:102`、`toolBox.init(...)` 三处（`:390-394`、`:559`、`:566`）与 `:553-555` 的 `teamSessionMeta`、`initLauncher` 形参（`:1155`）与透传（`:1226`）；`HarnessAutoConfiguration` 的 import `:27`、provider 形参 `:320`、no-op 兜底 `:334-335`、注入 `:350`；`LauncherBean.kt:35-62` 那段注释掉的 `createLauncher` 里两处 `toolCallLogAdaptor`
 - 工具实现去掉 `execute(...) { }` 包裹：`EmailToolBox.kt:64`（闭合在 `:124`）、`TimeToolBox.kt:23`、`TimeToolBox.kt:27`、`TeamToolBoxes.kt:26`、`:43`、`:58`、`:90`、`:104`、`:114`。后四个与被删的 `execute(vararg Pair, action)` 之外的三个是无参重载 `execute { }`，同样直接返回方法体；`:43` 与 `:90`、`:104` 里有 `return@execute`，拆包裹时改成普通 `return`
-- 测试夹具：引用 `toolCallLogAdaptor` 形参的 harness-core 测试共 14 个（`HarnessAgentLauncherMemoryTest:22/:72`、`HarnessAgentTokenRecordingTest:14/:44`、`HarnessAgentTurnBudgetTest:20/:48`、`memory/MemoryBucketPipelineTest:19/:126`、`HarnessAgentLauncherLeadSkillTest:21/:74`、`HarnessAgentLauncherSkillSelfWriteTest:17/:65`、`HarnessAgentLauncherCliEnvTest:15/:44`、`HarnessAgentLauncherSkillVisibilityTest:16/:72`、`HarnessAgentLauncherSkillUsageTest:15/:74`、`HarnessAgentRunAttributionTest:18/:49`、`HarnessAgentProcessLogAttributionTest:19/:57`、`HarnessAgentSessionHistoryReadTest:12/:89`、`HarnessAgentLauncherCoordinationTest:15/:46`、`memory/MemoryGateFalsificationTest:20/:186`）；另需改 `tools-sdk` 的 `ToolBoxTest.kt`（`:26` 的 `TestableToolBox`、`:29/:31/:33` 的 `execute`、`:40/:47` 与 `:73-157` 那批断言日志的用例）与 `ToolCallContextTest.kt`（删 `SessionMetaContextTests` 内层类 `:19-64`，保留 `UserIdentifierTests` `:66-93`）、`EmailToolBoxTest.kt:3/:56` 与 `:121-131`/`:341-347`、`EmailToolBoxIntegrationTest.kt:3/:62`、`TimeToolBoxTest.kt:3/:39` 与 `:73-116`、`team/TeamToolBoxesTest.kt:3/:39` 与 `:29-36` 的 `leadCalls`/`memberCalls`/`wiredInto`
+- 测试夹具：引用 `toolCallLogAdaptor` 形参的 harness-core 测试共 14 个（`HarnessAgentLauncherMemoryTest:22/:72`、`HarnessAgentTokenRecordingTest:14/:44`、`HarnessAgentTurnBudgetTest:20/:48`、`memory/MemoryBucketPipelineTest:19/:126`、`HarnessAgentLauncherLeadSkillTest:21/:74`、`HarnessAgentLauncherSkillSelfWriteTest:17/:65`、`HarnessAgentLauncherCliEnvTest:15/:44`、`HarnessAgentLauncherSkillVisibilityTest:16/:72`、`HarnessAgentLauncherSkillUsageTest:15/:86`、`HarnessAgentRunAttributionTest:18/:49`、`HarnessAgentProcessLogAttributionTest:19/:57`、`HarnessAgentSessionHistoryReadTest:12/:89`、`HarnessAgentLauncherCoordinationTest:15/:46`、`memory/MemoryGateFalsificationTest:20/:186`）；另需改 `tools-sdk` 的 `ToolBoxTest.kt`（`:26` 的 `TestableToolBox`、`:29/:31/:33` 的 `execute`、`:40/:47` 与 `:73-157` 那批断言日志的用例）与 `ToolCallContextTest.kt`（删 `SessionMetaContextTests` 内层类 `:19-64`，保留 `UserIdentifierTests` `:66-93`）、`EmailToolBoxTest.kt:3/:56` 与 `:121-131`/`:341-347`、`EmailToolBoxIntegrationTest.kt:3/:62`、`TimeToolBoxTest.kt:3/:39` 与 `:73-116`、`team/TeamToolBoxesTest.kt:3/:39` 与 `:29-36` 的 `leadCalls`/`memberCalls`/`wiredInto`
 - 文档：`docs/architecture.md:263`、`:289`，`docs/tools-sdk-architecture.md:58-64`、`:176`，`docs/harnax-harness-core.md:331`，`docs/database-design-conventions.md:30`、`:78`，`docs/backend-code-conventions.md:595`，`docs/session-classification-design.md:121`，`harnax-agent/HARNESS_CORE_DOC.md:42`、`:93`、`:213`、`:262-263`、`:274-290`，`harnax-agent/harnax-tools-sdk/TOOL-DEV-GUIDE.md:25`、`:28`，`harnax-agent/harnax-agent-service/docs/conversation-flow.md:265-266`、`:720`，`harnax-admin/TOOL_INTEGRATION_DESIGN.md`（§2.4 整节与 `:352` 那条「保留不删」），`AgentSpec.kt:63-72` 的 KDoc 三件套，以及 `prod_doc/` 里 `tool-capability` / `tool-integration-design` / `multi-agent-team-design` / `product-overview` / `skill-management` 五个中英成对文件的对应段落
 
 `ToolCallContext.kt` 里的 `UserIdentifier` 与 marker 接口 `ToolCallContext` 都保留（launcher 与 MCP 授权链路在用），删的只有 `SessionMetaContext`。`mcp_call_log` 一行不动，但它的 DDL 注释与文档要写明它是授权账本、不是指标源。
@@ -235,7 +237,7 @@ ToolInvocationMiddleware → ToolInvocationAdaptor(harnax-tools-sdk 定义)
 
 - 一条 shell 命令串里出现两个已下发 CLI 时，只记最左命中的那个（复合命令拆行会破坏 I1「一次调用一行」，代价是漏记；`args_json` 里有完整命令串可复核）。
 - CLI 命令别名只来自 `name` + `checkCommand` 首词（payload 未物化时）：包内二进制若与包名不同且 `checkCommand` 里不出现它，就归因不到，落 `kind=shell`。
-- 两个 MCP server 暴露同名工具时，上游注册表按名覆盖（`ToolRegistry` 用 `tools.put(name, tool)`），模型侧本来就只能看见后注册的那一个；归因跟着枚举结果走，因此记给活下来的那个 server，与运行时实际调用的是谁一致。
+- 两个 MCP server 暴露同名工具时，按名覆盖发生在上游的 `io.agentscope.core.tool.ToolRegistry`（它以工具名为键，`Toolkit` 持有并转调），模型侧本来就只能看见后注册的那一个；归因跟着枚举结果走，因此记给活下来的那个 server，与运行时实际调用的是谁一致。本项目的 `com.agnetix.harnax.tools.sdk.registry.ToolRegistry` 是另一个同名的类，它按 Spring bean 名键控 admin 下发的 `ToolBox`，不参与 MCP 注册。
 - 不做按小时聚合（窗口超过保留期就没有小时粒度）；不做 OTel / 分布式 trace；不做工具级成本核算；不给 `mcp_call_log` 加指标读端；不引入 ClickHouse 之类外部指标存储。
 - 明细里的 `args_json` 可能含敏感字面值，默认截断 + 可用 `capture-payload=false` 整体关闭；本设计不做字段级脱敏。
 

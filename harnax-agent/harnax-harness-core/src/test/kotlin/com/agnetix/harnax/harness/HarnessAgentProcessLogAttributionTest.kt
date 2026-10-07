@@ -16,7 +16,6 @@ import com.agnetix.harnax.harness.team.TeamMemberSpec
 import com.agnetix.harnax.harness.team.TeamOrchestrator
 import com.agnetix.harnax.harness.team.TeamRuntimeSpec
 import com.agnetix.harnax.tools.sdk.UserIdentifier
-import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import io.agentscope.core.agent.Agent
 import io.agentscope.core.agent.RuntimeContext
 import io.agentscope.core.event.AgentEvent
@@ -54,7 +53,6 @@ class HarnessAgentProcessLogAttributionTest {
         skillAdaptor = SkillAdaptor { null },
         tokenStatAdaptor = mock(TokenStatAdaptor::class.java),
         processLogAdaptor = ProcessLogAdaptor { captured.add(it) },
-        toolCallLogAdaptor = mock(ToolCallLogAdaptor::class.java),
         planNoteAdaptor = mock(PlanNoteAdaptor::class.java),
         workspaceRoot = Path.of(System.getProperty("java.io.tmpdir")),
     )

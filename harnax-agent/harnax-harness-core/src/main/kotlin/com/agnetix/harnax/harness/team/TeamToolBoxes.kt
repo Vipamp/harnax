@@ -23,7 +23,7 @@ class TeamLeadToolBox(
         description = "列出团队成员的 agentId、名称和分工。委派前先用它确认成员 id。",
         readOnly = true,
     )
-    fun teamMembers(): String = execute { orchestrator.describeMembers().ifBlank { "这个团队没有成员。" } }
+    fun teamMembers(): String = orchestrator.describeMembers().ifBlank { "这个团队没有成员。" }
 
     @Tool(
         name = "team_delegate",
@@ -40,10 +40,10 @@ class TeamLeadToolBox(
             required = false,
         )
         fileIds: String?,
-    ): String = execute("member_agent_id" to memberAgentId, "task" to task) {
+    ): String {
         val id = memberAgentId?.trim()?.toLongOrNull()
-            ?: return@execute "member_agent_id 必须是 team_members 列出的数字 id，收到的是 '$memberAgentId'。"
-        orchestrator.delegate(
+            ?: return "member_agent_id 必须是 team_members 列出的数字 id，收到的是 '$memberAgentId'。"
+        return orchestrator.delegate(
             memberAgentId = id,
             task = task.orEmpty(),
             fileIds = fileIds?.split(',', ' ', '\n')?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty(),
@@ -55,7 +55,7 @@ class TeamLeadToolBox(
         description = "列出本次会话中成员已发布的产出文件及其 fileId。",
         readOnly = true,
     )
-    fun teamArtifacts(): String = execute { orchestrator.describeArtifacts() }
+    fun teamArtifacts(): String = orchestrator.describeArtifacts()
 
     override fun name(): String = NAME
 
@@ -87,9 +87,9 @@ class TeamMemberToolBox(
     fun teamArtifactPublish(
         @ToolParam(name = "path", description = "相对工作区的文件路径，例如 output/report.pdf")
         path: String?,
-    ): String = execute("path" to path) {
-        val run = currentRun() ?: return@execute OUTSIDE_RUN
-        orchestrator.publishArtifact(run, path.orEmpty())
+    ): String {
+        val run = currentRun() ?: return OUTSIDE_RUN
+        return orchestrator.publishArtifact(run, path.orEmpty())
     }
 
     @Tool(
@@ -101,9 +101,9 @@ class TeamMemberToolBox(
         fileId: String?,
         @ToolParam(name = "dest_path", description = "写入的相对路径，例如 input/report.pdf")
         destPath: String?,
-    ): String = execute("file_id" to fileId, "dest_path" to destPath) {
-        val run = currentRun() ?: return@execute OUTSIDE_RUN
-        orchestrator.fetchArtifact(run, fileId.orEmpty().trim(), destPath.orEmpty())
+    ): String {
+        val run = currentRun() ?: return OUTSIDE_RUN
+        return orchestrator.fetchArtifact(run, fileId.orEmpty().trim(), destPath.orEmpty())
     }
 
     @Tool(
@@ -111,7 +111,7 @@ class TeamMemberToolBox(
         description = "列出本次会话中已发布的团队产物及其 fileId。",
         readOnly = true,
     )
-    fun teamArtifacts(): String = execute { orchestrator.describeArtifacts() }
+    fun teamArtifacts(): String = orchestrator.describeArtifacts()
 
     private fun currentRun() = orchestrator.currentRunOf(memberAgentId)
 
