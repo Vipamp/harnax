@@ -1,7 +1,7 @@
 # 工具 / MCP / CLI 调用指标 · 设计规格
 
 - 日期：2026-10-05
-- 状态：设计定稿，待实现
+- 状态：已实现（分支 `feat/tool-mcp-cli-metrics`）。本文件是 2026-10-05 的规划稿，落地后的口径以 `prod_doc/tool-mcp-cli-call-metrics-design.zh-CN.md` 为准，两份不一致时读那一份。
 - 范围：`harnax-agent/harnax-harness-core`、`harnax-agent/harnax-tools-sdk`、`harnax-agent/harnax-agent-service`、`harnax-entity`、`harnax-admin`、`harnax-webui`、`prod_doc`、`docs`
 
 ## 0. 要解决的问题
@@ -237,7 +237,7 @@ ToolInvocationMiddleware → ToolInvocationAdaptor(harnax-tools-sdk 定义)
 
 - 一条 shell 命令串里出现两个已下发 CLI 时，只记最左命中的那个（复合命令拆行会破坏 I1「一次调用一行」，代价是漏记；`args_json` 里有完整命令串可复核）。
 - CLI 命令别名只来自 `name` + `checkCommand` 首词（payload 未物化时）：包内二进制若与包名不同且 `checkCommand` 里不出现它，就归因不到，落 `kind=shell`。
-- 两个 MCP server 暴露同名工具时，上游注册表按名覆盖（`ToolRegistry` 用 `tools.put(name, tool)`），模型侧本来就只能看见后注册的那一个；归因跟着枚举结果走，因此记给活下来的那个 server，与运行时实际调用的是谁一致。
+- 两个 MCP server 暴露同名工具时，按名覆盖发生在上游的 `io.agentscope.core.tool.ToolRegistry`（它以工具名为键，`Toolkit` 持有并转调），模型侧本来就只能看见后注册的那一个；归因跟着枚举结果走，因此记给活下来的那个 server，与运行时实际调用的是谁一致。本项目的 `com.agnetix.harnax.tools.sdk.registry.ToolRegistry` 是另一个同名的类，它按 Spring bean 名键控 admin 下发的 `ToolBox`，不参与 MCP 注册。
 - 不做按小时聚合（窗口超过保留期就没有小时粒度）；不做 OTel / 分布式 trace；不做工具级成本核算；不给 `mcp_call_log` 加指标读端；不引入 ClickHouse 之类外部指标存储。
 - 明细里的 `args_json` 可能含敏感字面值，默认截断 + 可用 `capture-payload=false` 整体关闭；本设计不做字段级脱敏。
 
