@@ -185,6 +185,22 @@ class ToolInvocationAdaptorImplTest {
         }
 
         @Test
+        fun `a clamp that lands inside an astral character drops the half character`() {
+            val writer = adaptor()
+            // One astral character is two UTF-16 units straddling index 254, so the clamp stops between its two
+            // halves and leaves a lone high surrogate — the one value that makes the column reject the row, and
+            // a rejected row is the whole batch of counters gone rather than this name shortened.
+            writer.emit(event(kind = ToolInvocationLog.KIND_MCP, toolName = "x".repeat(254) + "\uD83D\uDC00" + "y".repeat(45)))
+
+            assertEquals(1, writer.drainAndFlush())
+            val row = capturedRows().single()
+
+            // Asserted on the row's own value, not on how many statements went out.
+            assertEquals(254, row.toolName.length)
+            assertFalse(Character.isHighSurrogate(row.toolName.last()))
+        }
+
+        @Test
         fun `a failure reason is cut to the column width whatever the payload limit says`() {
             val writer = adaptor(captureMaxChars = 2000)
             writer.emit(event(errorMessage = "boom ".repeat(400)))

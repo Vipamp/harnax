@@ -150,7 +150,10 @@ class ToolInvocationAdaptorImpl(
             // is longer than varchar(255) only until it fails the statement and takes the other 63 counters of
             // the batch with it. A name no registry could have declared is better shortened than fatal, and
             // this column is part of the aggregate's unique key, so a marked name would open a third bucket.
-            toolName = event.toolName.take(TOOL_NAME_MAX_CHARS)
+            // The clamp indexes UTF-16, so it can stop between the two halves of an astral character and leave
+            // a lone high surrogate behind — the same failure `truncate()` already guards, with the same rule.
+            // `truncate()` is not reused here because it appends the marker this column must not carry.
+            toolName = event.toolName.take(TOOL_NAME_MAX_CHARS).let { if (it.isNotEmpty() && Character.isHighSurrogate(it.last())) it.dropLast(1) else it }
             mcpId = event.mcpId
             cliId = event.cliId
             outcome = event.outcome
@@ -187,8 +190,11 @@ class ToolInvocationAdaptorImpl(
         // Whatever is queued is counters, not state — but a graceful stop still owes them a write, and it is
         // done here rather than awaited on the worker so the promise holds without a timing assumption.
         while (drainAndFlush() > 0) {
-            // Bounded above by ceil(queued / batchSize): `emit` refuses to queue once `running` is false, so
-            // no producer can extend this loop after the stop has begun.
+            // Bounded above by ceil(queued / batchSize): `emit` refuses to queue once `running` is false, so the
+            // queue this loop drains cannot grow while the stop is running. The one exception is a producer that
+            // had already read `running` as true before the flip and offers after it: at most that one event
+            // lands in a queue no longer drained, and it is written neither by this loop nor counted as dropped
+            // — a known window, not a guarantee.
         }
     }
 
