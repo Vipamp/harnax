@@ -1,5 +1,5 @@
 export default {
-  'menu.welcome': 'Welcome',
+  'menu.dashboard': 'Overview',
   'menu.login': 'Login',
 
   // Context Management

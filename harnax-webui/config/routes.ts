@@ -24,10 +24,9 @@ export default [
   },
   {
    path: '/welcome',
-   name: 'welcome',
+   name: 'dashboard',
    icon: 'smile',
    component: './Welcome',
-   hideInMenu: true,
   },
   {
     name: 'agent',

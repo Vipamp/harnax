@@ -1,5 +1,5 @@
 export default {
-  'menu.welcome': '欢迎',
+  'menu.dashboard': '总览',
   'menu.login': '登录',
 
   // 上下文管理

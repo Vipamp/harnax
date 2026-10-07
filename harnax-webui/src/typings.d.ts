@@ -986,4 +986,79 @@ message?: string;
     data: McpTool[];
     timestamp: number;
   };
+
+  /**
+   * @zh-CN 总览：一个消费窗口里的量（对应后端 DashboardWindowStats，字段名逐字对齐 §3.2）
+   */
+  export type DashboardWindowStats = {
+    calls: number;
+    tokens: number;
+    sessions: number;
+    agents: number;
+  };
+
+  /**
+   * @zh-CN 趋势的一个日点：后端已按日补 0，前端不再插值（DashboardTrendPoint）
+   */
+  export type DashboardTrendPoint = {
+    /** yyyy-MM-dd */
+    date: string;
+    calls: number;
+    tokens: number;
+  };
+
+  /**
+   * @zh-CN 榜单的一行（DashboardRankItem）。没有 id：榜只做展示，页面上没有要回到那行的动作。
+   * name 为空表示消耗行的归属（agent / model）已被删除，同一榜里可能出现多条空名。
+   * qualifier 是第二重标识：榜按行 id 分组，同一个模型名挂在两个 provider 下就是两行同名，
+   * 这一列带 provider 名把它们分开；智能体榜没有这一列，归属行被删时 provider 一并消失，两者都是空。
+   */
+  export type DashboardRankItem = {
+    name: string;
+    qualifier?: string;
+    tokens: number;
+  };
+
+  /**
+   * @zh-CN 租户内的资产盘点（DashboardAssetCounts），谓词是 tenant_id + active = 1
+   */
+  export type DashboardAssetCounts = {
+    agents: number;
+    skills: number;
+    models: number;
+    mcpServers: number;
+    channels: number;
+    teams: number;
+    sessions: number;
+    users: number;
+  };
+
+  /**
+   * @zh-CN 平台级注册表的计数（DashboardPlatformCounts）：agent_tool 与 cli 没有租户列，
+   * 这两个数不属于当前租户，所以必须与租户资产分排显示。
+   */
+  export type DashboardPlatformCounts = {
+    tools: number;
+    cliPackages: number;
+  };
+
+  /**
+   * @zh-CN GET /api/admin/dashboard/overview 的 data：首页一屏要的全部（DashboardOverviewResponse）
+   * 后端顶层与嵌套字段一律非空带默认值，所以这里不写可选。
+   */
+  export type DashboardOverview = {
+    today: DashboardWindowStats;
+    yesterdaySameSpan: DashboardWindowStats;
+    trend: DashboardTrendPoint[];
+    topAgents: DashboardRankItem[];
+    topModels: DashboardRankItem[];
+    assets: DashboardAssetCounts;
+    platform: DashboardPlatformCounts;
+    pendingSkillDrafts: number;
+    totalUsers: number;
+    activeUsersLast7Days: number;
+    recent14dFee: number;
+    /** yyyy-MM-dd HH:mm:ss，页面用它显示「数据截至」 */
+    serverTime: string;
+  };
 }
