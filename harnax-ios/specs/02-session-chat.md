@@ -12,6 +12,7 @@
 
 - 桌面/平板双栏：左侧会话列表 + 右侧 `ChatWindow`；窄屏（移动端断点）单栏，列表页与聊天页互切，聊天页左上角有返回按钮。锚点 `harnax-webui/src/pages/session/index.tsx:106-109`（返回按钮渲染）、`harnax-webui/src/pages/session/index.tsx:255-263`（移动端单栏切换）、`harnax-webui/src/pages/session/index.tsx:152`、`harnax-webui/src/pages/session/index.tsx:229`（单/双栏容器分支）。
 - iOS 映射：`NavigationSplitView`（regular 宽度双栏 / compact 宽度单栏 push），返回即 `dismiss`。
+- iOS 独有的一行入口：会话列表顶部挂「技能草稿」行，通到本租户的草稿审核队列——Web 侧这一页在 `/context/skill-drafts`（`harnax-webui/config/routes.ts:107`-`:111`），不在会话列表里，所以这一行不对应 webui 的任何元素，只借会话列表的位置露出。行上的计数是租户级待审总数（队列接口没有按会话过滤的能力），读失败只隐藏数字不撤行；行的挂载位置与两级 push 形状见 `harnax-ios/specs/07-skill-draft-review.md` §5.1。
 
 ### 列表数据加载
 
