@@ -91,15 +91,17 @@ class ToolInvocationMiddlewareTest {
     private fun delta(
         id: String?,
         name: String,
-        text: String,
+        text: String?,
     ): ToolResultTextDeltaEvent {
         val event = mock(ToolResultTextDeltaEvent::class.java)
         `when`(event.type).thenReturn(AgentEventType.TOOL_RESULT_TEXT_DELTA)
         // Same shape as `end`: an id-less delta is left unstubbed, since Mockito already answers null and
-        // that is what such an event carries.
+        // that is what such an event carries. An empty or null text is left unstubbed for the same reason:
+        // stubbing "" here would build a frame no upstream sends, as the runtime answers null for the text a
+        // keep-alive frame carries.
         if (id != null) `when`(event.toolCallId).thenReturn(id)
         `when`(event.toolCallName).thenReturn(name)
-        `when`(event.delta).thenReturn(text)
+        if (!text.isNullOrEmpty()) `when`(event.delta).thenReturn(text)
         return event
     }
 
@@ -153,10 +155,15 @@ class ToolInvocationMiddlewareTest {
             val call = ToolUseBlock("t1", "now", emptyMap())
             val mw = middleware()
 
-            // I2: RUNNING never reaches the table. The count has to be read while the stream is still open,
-            // because a call left unterminal is owed the stream-end interrupted row: `then` runs between this
-            // frame passing through the middleware and the cancel below, so the batch it sees is the in-flight
-            // state, not the fallback.
+            // I2: RUNNING never reaches the table, so the batch has to be read while the stream is still open.
+            // The order that lets this read the in-flight state is a property of the test's source, not of the
+            // middleware: `Flux.just(...).concatWith(Flux.never())` hands `onNext` over synchronously on
+            // subscribe, and StepVerifier runs a `then` step inside that call stack, ahead of the cancel. Add a
+            // `publishOn` to this stream, or give `next` an async fake, and whether `then` lands before the
+            // stream-end sweep becomes an implementation detail of whoever wrote the source. What this case does
+            // not prove is that a call left unterminal is owed the stream-end interrupted row —
+            // `a stream that completes without an end event files the call as interrupted` and
+            // `a cancelled stream files the open call as interrupted` prove that, by asserting the row.
             StepVerifier.create(
                 mw.onActing(
                     agent,
@@ -211,6 +218,27 @@ class ToolInvocationMiddlewareTest {
             ).expectNextCount(3).verifyComplete()
 
             assertEquals("alpha beta", events.single().resultText)
+        }
+
+        @Test
+        fun `a lone empty delta leaves the result text null`() {
+            // Empty text is the ordinary shape of a keep-alive or heartbeat frame, and it says nothing about the
+            // body. Leaving a literal "null" in the accumulator would file "this call produced no excerpt" as
+            // "this call produced an excerpt whose content is the word null", so the guard on the delta is what
+            // this pins — the falsifier is the unguarded append, which writes exactly that string.
+            val call = ToolUseBlock("t1", "read_file", emptyMap())
+            val mw = middleware()
+
+            StepVerifier.create(
+                mw.onActing(
+                    agent,
+                    ctx,
+                    actingInput(call),
+                    Function { Flux.just<AgentEvent>(delta("t1", "read_file", ""), end("t1", "read_file", ToolResultState.SUCCESS)) },
+                ),
+            ).expectNextCount(2).verifyComplete()
+
+            assertNull(events.single().resultText)
         }
 
         @Test
@@ -352,6 +380,32 @@ class ToolInvocationMiddlewareTest {
         }
 
         @Test
+        fun `a renamed nameless end event is left to the stream-end fallback`() {
+            // This is the concession design section 3 records, so it is a requirement and not a defect: a
+            // terminal frame that carries neither an id nor a name any queue holds cannot be paired, and the
+            // call behind it is owed the stream-end INTERRUPTED row. Pairing it with the only start still open
+            // would be a guess, and a wrong guess files a genuinely interrupted call as a success — design I4
+            // then moves that row from the aggregate table's `interruptions` into its `successes`, miscounting
+            // both. The rename warning `resolve` logs sits after pairing, so this path never emits it.
+            val mw = middleware()
+
+            StepVerifier.create(
+                mw.onActing(
+                    agent,
+                    ctx,
+                    actingInput(ToolUseBlock(null, "github_search", emptyMap())),
+                    Function { Flux.just(end(null, "gh_search", ToolResultState.SUCCESS)) },
+                ),
+            ).expectNextCount(1).verifyComplete()
+
+            assertEquals(1, events.size)
+            val event = events.single()
+            assertEquals(ToolInvocationLog.OUTCOME_INTERRUPTED, event.outcome)
+            assertEquals("stream ended before the tool returned", event.errorMessage)
+            assertEquals("github_search", event.toolName)
+        }
+
+        @Test
         fun `an end event for an unknown id files nothing`() {
             val mw = middleware()
 
@@ -379,6 +433,9 @@ class ToolInvocationMiddlewareTest {
             ).expectNextCount(2).verifyComplete()
 
             assertEquals(2, events.size)
+            // The second reader of the key removal `resolve` does on the name queue: a row count alone survives
+            // that line's deletion, because a stranded start still files a row at the stream end — the wrong one.
+            assertEquals(listOf(ToolInvocationLog.OUTCOME_SUCCESS, ToolInvocationLog.OUTCOME_SUCCESS), events.map { it.outcome })
         }
 
         @Test

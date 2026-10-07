@@ -184,6 +184,11 @@ class ToolInvocationMiddleware(
      * frame's name (which a renamed frame differs in) would spend nothing where it looked and leave an
      * already-consumed key in the queue where the start actually sits. The next frame of that name without an
      * id would then pair with that ghost, find no start behind it and lose a call that had succeeded.
+     *
+     * Rejected, and deliberately so: falling back to `started.keys.singleOrNull()` when the frame's name matches
+     * no queue. That needs two absences at once — no id, and a frame name this run never registered — and no
+     * upstream is known to emit such a frame, so it would be a guess. Section 3's contract is match, never
+     * guess: an unpairable call goes to the stream-end interrupted row instead.
      */
     private fun matchKey(
         key: String,
