@@ -5,8 +5,9 @@
 ```
 db/
 └── migration/
-    ├── V1__init_schema.sql   # the module's whole schema, in final form
-    └── README.md             # this file
+    ├── V1__init_schema.sql           # the module's whole schema, in final form
+    ├── V2__agent_session_memory.sql  # the one forward increment; see "Changing the Schema"
+    └── README.md                     # this file
 ```
 
 Each service module owns exactly one baseline, applied against its own database and recorded in its
@@ -35,6 +36,14 @@ script.
 A database already built from an earlier form of this file will not accept the edited baseline: its
 history row names a script whose checksum no longer matches, so startup fails on validate. Editing
 the schema and rebuilding the database are therefore one action, never two.
+
+The exception is a database that cannot be rebuilt — one whose contents cost more to restore than the
+schema change is worth, such as a live environment holding a model provider key that only a person can
+re-enter. There the change ships as the next forward `V<n>__*.sql` holding the `ALTER`, and three things
+hold: the baseline keeps the checksum the ledger already records, so it is left byte-for-byte alone; the
+increment ends the schema at the same shape a rebuilt database reaches, so a fresh install runs baseline
+then increment and lands where the live one already is; and the increment folds back into the baseline at
+the next rebuild, which is when it is deleted. `V2__agent_session_memory.sql` is that shape of change.
 
 Along with editing the baseline:
 
