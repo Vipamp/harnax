@@ -460,9 +460,8 @@ class MemoryStoreGatewayTest {
          *
          * The listing hides a conversation's own layer, so an agent deleted from that page would otherwise
          * leave its draft and its ledgers in the bucket under a name the owner can no longer see. The delete
-         * runs on the unfiltered listing for exactly this reason, and the two session keys going here is also
-         * what proves they decoded at all — the page case above leans on that, since an unparseable key would
-         * vanish for the wrong reason.
+         * asks for the agent's prefix instead of picking objects out of a decoded listing, and the two session
+         * keys going here is what shows that one prefix really reaches both routes of both layers.
          */
         @Test
         fun `a conversation's own layer goes with the agent although the page hides it`() {
@@ -491,7 +490,9 @@ class MemoryStoreGatewayTest {
 
             gateway.deleteAgent(tenantId, userId, "Research")
 
-            assertEquals(listOf("harnax-store" to ownerPrefix), listedPrefixes())
+            // The agent's own prefix rather than the owner's: what goes is decided by what the bucket lists
+            // under that agent, not by this class picking agents out of the names it listed.
+            assertEquals(listOf("harnax-store" to "${ownerPrefix}agents/Research/"), listedPrefixes())
             deletedKeys().forEach { (bucket, key) ->
                 assertEquals("harnax-store", bucket)
                 assertTrue(key.startsWith(ownerPrefix), "$key escapes $ownerPrefix")
@@ -553,6 +554,26 @@ class MemoryStoreGatewayTest {
             assertEquals(3, removed)
             assertEquals(listOf("harnax-store" to ownerPrefix), listedPrefixes())
             deletedKeys().forEach { (_, key) -> assertTrue(key.startsWith(ownerPrefix), key) }
+        }
+
+        /**
+         * An agent whose own name contains a slash writes `agents/<first>/<second>/root/MEMORY.md`, a key no
+         * decoder here can place and no agent-scoped endpoint can name — so the page cannot show it either.
+         * The sweep asks the bucket for the owner's prefix rather than for objects it decoded, which is what
+         * keeps an owner's memory from outliving them under a name nothing can point at.
+         */
+        @Test
+        fun `a key no decoder can place still goes with its owner`() {
+            bucket(
+                stored("${ownerPrefix}agents/Research/root/MEMORY.md"),
+                stored("${ownerPrefix}agents/Deep/Nested/root/MEMORY.md"),
+            )
+
+            assertEquals(2, gateway.deleteUser(listOf(tenantId), userId))
+            assertTrue(
+                deletedKeys().map { it.second }.contains("${ownerPrefix}agents/Deep/Nested/root/MEMORY.md"),
+                "the key the page cannot name is still the owner's memory: ${deletedKeys()}",
+            )
         }
 
         /**
