@@ -163,6 +163,11 @@ services:
       # does not leak another owner's memory - it keys a prefix that has nothing under it, so every
       # owner's memory reads as empty.
       HARNAX_MEMORY_TENANT_SCOPED: ${HARNAX_MEMORY_TENANT_SCOPED:-true}
+      # Seed for the per-agent session memory switch: the value an agent gets when whatever created it said
+      # nothing. Agents already saved keep the answer they were given, and a request that answers wins, so
+      # turning this on makes *new* agents two-layer rather than the whole deployment. Admin-only - the
+      # runtime takes the per-agent answer off the delivered spec and never reads this.
+      HARNAX_AGENT_SESSION_MEMORY_DEFAULT: ${HARNAX_AGENT_SESSION_MEMORY_DEFAULT:-false}
       # Router URL (for internal service communication)
       HARNAX_ROUTER_URL: ${HARNAX_ROUTER_URL:-http://router:8081}
       # Scheduler URL (for task trigger/start/pause)

@@ -63,6 +63,7 @@ import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.never
 import org.mockito.quality.Strictness
 import org.springframework.mock.web.MockHttpServletRequest
+import org.springframework.test.util.ReflectionTestUtils
 import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.context.request.ServletRequestAttributes
 import java.time.LocalDateTime
@@ -447,6 +448,60 @@ class AgentServiceImplTest {
                 captor.firstValue.sessionMemoryEnabled,
                 "and none gets the session layer until it asks, so one request answering neither still answers both",
             )
+        }
+
+        @Test
+        @DisplayName("createAgent - A deployment started on the session layer seeds it")
+        fun `createAgent should seed the session layer from the deployment default`() {
+            // The knob decides only this moment. It is read while the row is made, and never comes back to
+            // re-decide an agent that was already saved.
+            val request = AgentCreateRequest(
+                name = "Seeded Agent",
+                description = "Seeded description",
+                systemPrompt = "Seeded prompt",
+                modelId = 1L,
+                owner = "admin",
+            )
+            val captor = argumentCaptor<Agent>()
+            `when`(agentMapper.insert(any())).thenReturn(1)
+            ReflectionTestUtils.setField(agentService, "sessionMemoryDefault", true)
+
+            // When
+            assertTrue(agentService.createAgent(request))
+
+            // Then
+            verify(agentMapper).insert(captor.capture())
+            assertEquals(
+                1,
+                captor.firstValue.sessionMemoryEnabled,
+                "a caller silent about the layer gets what this deployment starts with",
+            )
+            assertEquals(1, captor.firstValue.memoryEnabled, "and it does not cost the layer it already had")
+        }
+
+        @Test
+        @DisplayName("createAgent - The answer on the request overrules the deployment default")
+        fun `createAgent should let the request overrule the deployment default`() {
+            // Per agent stays authoritative: were a deployment-wide seed able to outvote an explicit off, the
+            // switch on the agent row would stop meaning anything.
+            val request = AgentCreateRequest(
+                name = "Refused Agent",
+                description = "Refused description",
+                systemPrompt = "Refused prompt",
+                modelId = 1L,
+                owner = "admin",
+                sessionMemoryEnabled = 0,
+            )
+            val captor = argumentCaptor<Agent>()
+            `when`(agentMapper.insert(any())).thenReturn(1)
+            ReflectionTestUtils.setField(agentService, "sessionMemoryDefault", true)
+
+            // When
+            assertTrue(agentService.createAgent(request))
+
+            // Then
+            verify(agentMapper).insert(captor.capture())
+            assertEquals(0, captor.firstValue.sessionMemoryEnabled)
         }
 
         @Test

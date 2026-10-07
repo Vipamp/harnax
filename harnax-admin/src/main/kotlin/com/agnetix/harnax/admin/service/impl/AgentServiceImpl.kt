@@ -37,6 +37,7 @@ import com.agnetix.harnax.mapper.TeamMapper
 import com.agnetix.harnax.mapper.TeamMemberMapper
 import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import tools.jackson.core.type.TypeReference
@@ -76,6 +77,15 @@ class AgentServiceImpl(
 
     private val log = LoggerFactory.getLogger(AgentServiceImpl::class.java)
     private val objectMapper = ObjectMapper()
+
+    /**
+     * What a newly created agent gets for the session memory layer when its request says nothing about it.
+     *
+     * Scope is the one moment the row is made: an agent already saved keeps the answer it was given, and a
+     * request that did answer wins over this. Off reproduces the single long-term layer.
+     */
+    @Value("\${harnax.agent.session-memory-default:false}")
+    private var sessionMemoryDefault: Boolean = false
 
     override fun page(
         name: String?,
@@ -128,8 +138,9 @@ class AgentServiceImpl(
         agent.skillSelfWrite = request.skillSelfWrite ?: 0
         // The inverse: memory is the default state, so only an explicit 0 takes it away.
         agent.memoryEnabled = request.memoryEnabled ?: 1
-        // And this one is off until the wizard turns it on: an omitted field means today's single layer.
-        agent.sessionMemoryEnabled = request.sessionMemoryEnabled ?: 0
+        // And this one falls to what the deployment was started with when the caller says nothing. That is the
+        // whole reach of the knob: an answered request wins, and a row already saved is never re-decided.
+        agent.sessionMemoryEnabled = request.sessionMemoryEnabled ?: if (sessionMemoryDefault) 1 else 0
         agent.tenantId = tenantId
         agent.creator = currentUsername
 
