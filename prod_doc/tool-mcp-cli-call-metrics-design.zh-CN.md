@@ -35,7 +35,7 @@
 | D7 | 技能 `USE` = 模型主动调 `load_skill_through_path` 取正文，落进现有 `skill_usage` | 上游把工具名钉死为 `load_skill_through_path`（`agentscope-core` 的 `SkillToolFactory.java:49`），参数是 `skillId` + `path`，是「指令被取用」的最强证据 |
 | D8 | `tool_call_log` 整链删除 | 2026-10-05 明确「完全按全新设计，不考虑历史兼容」。新事件源覆盖它的覆盖面，而它的 `tool_name` 与注册身份对不上，留着只会多一个口径 |
 | D9 | 写入 = 有界队列 + 批量 insert + 溢出丢弃计数；绝不在工具执行线程同步落库，绝不抛 | 与 `SkillUsageAdaptorImpl.kt:35-78` 同形。计数器不值得让一轮回答去等一次数据库往返，更不值得因它失败 |
-| D10 | 聚合与清理都在 admin，每小时三步：补齐缺失日期 → 逐日幂等重算 → 只删已折算且过窗的明细 | 补齐使重算自愈（漏跑一天、首次上线都不需要 backfill 开关）；删除挂在「已折算」这个事实上而不是挂在日期算术上，多副本同时跑无害 |
+| D10 | 聚合与清理都在 admin，每小时三步：补齐缺失日期 → 逐日幂等重算（每次带上昨天与今天）→ 只删已折算且过窗的明细 | 补齐使重算自愈（漏跑一天、首次上线都不需要 backfill 开关）；删除挂在「已折算」这个事实上而不是挂在日期算术上，多副本同时跑无害 |
 | D11 | P50 / P95 由时长分桶近似，页面标明是近似值 | 聚合表只有计数列，真分位数要留全部明细才算得出 |
 | D12 | 租户只由服务端决定：读侧 `TenantResolver.resolve(jwtUtil)`，写侧装配期随行携带 | 与 `TokenStatsController.kt:37`、`SkillUsageController` 同规。查询参数里出现 `tenantId` 等于给了跨租户读数的口子 |
 | D13 | 明细保留 90 天，`args_json` / `result_excerpt` 截断到 2000 字符，两条都可配可关 | 命令行参数与工具回执里会出现凭据字面值，默认截断 + 可整体关闭 |
@@ -90,7 +90,7 @@ CREATE TABLE IF NOT EXISTS `tool_invocation_stats` (
   `tenant_id` bigint NOT NULL COMMENT 'Owning tenant; detail rows without one are not aggregated at all',
   `kind` varchar(16) NOT NULL COMMENT 'Origin bucket, same vocabulary as the detail table',
   `subject_id` bigint NOT NULL DEFAULT '0' COMMENT 'mcp_id when kind = mcp, cli_id when kind = cli, 0 otherwise; 0 rather than NULL because a unique index does not treat NULLs as equal, and NULL would make the upsert insert a second row for the same day',
-  `tool_name` varchar(255) NOT NULL DEFAULT '' COMMENT 'Command name for kind = cli; empty means the day is keyed by subject only',
+  `tool_name` varchar(255) NOT NULL DEFAULT '' COMMENT 'Tool name as the model sees it; every kind carries it, so two tools of one MCP server are two rows on a day',
   `calls` int NOT NULL COMMENT 'Total invocations',
   `successes` int NOT NULL COMMENT 'Invocations ending SUCCESS',
   `errors` int NOT NULL COMMENT 'Invocations ending ERROR',
@@ -191,7 +191,7 @@ ToolInvocationMiddleware → ToolInvocationAdaptor(harnax-tools-sdk 定义)
 每次运行按顺序做三件事：
 
 1. 取明细里 `tenant_id IS NOT NULL` 的出现过的全部 `DATE(ts)`，与 `tool_invocation_stats` 已有的 `stat_date` 相减，得到「该折算却没折算」的日期集合。无租户的明细排除在外，否则那一天每小时都被报成待折算、而聚合又永远不会为它产生行（聚合表 `tenant_id NOT NULL`），差集就补不完。
-2. 对这个集合**加上今天**逐日重算，一条 `INSERT INTO tool_invocation_stats SELECT ... FROM tool_invocation_log WHERE DATE(ts) = ? GROUP BY ... ON DUPLICATE KEY UPDATE` 整行覆盖。今天必须在集合里，不管它有没有出现在第 1 步的差集：否则当天第一次调度写下的行就成了那天的终值，聚合会落后到次日第一个周期而不是一个周期。漏跑一天或首次上线由第 1 步的差集兜住，不需要额外的 backfill 入口。
+2. 对这个集合**加上昨天与今天**逐日重算，一条 `INSERT INTO tool_invocation_stats SELECT ... FROM tool_invocation_log WHERE ts >= ? AND ts < ? + INTERVAL 1 DAY GROUP BY ... ON DUPLICATE KEY UPDATE` 整行覆盖（日子用瞬间区间圈而不用 `DATE(ts) = ?`，因为对列取函数用不上索引）。今天必须在集合里，不管它有没有出现在第 1 步的差集：否则当天第一次调度写下的行就成了那天的终值，聚合会落后到次日第一个周期而不是一个周期。昨天同样必须在集合里，理由与今天对称但更隐蔽：第 1 步的差集按「那一天有没有聚合行」判定，一个自然日在 23:05 那次调度里已经有了行，此后至零点之间落进来的明细再不会把那一天报成待折算，而保留窗口一到就把它们删走——不重算昨天，每天结尾那段就是永久少计。漏跑一天或首次上线由第 1 步的差集兜住，不需要额外的 backfill 入口。
 3. 删除 `ts < now - retentionDays` 且（其 `(DATE(ts), tenant_id)` 已存在于聚合表 **或** `tenant_id IS NULL`）的明细。删除挂在「已折算」这个事实上的理由见 I6；无租户那半是唯一的例外出口，它们不进聚合，因此不能等聚合来放行。
 
 `harnax.metrics.retention-days` 默认 90、`harnax.metrics.rollup-enabled` 默认 true，调度表达式每小时第 5 分。两个键进 `harnax-admin/src/main/resources/application.yml` 的 `harnax:` 块（`:135-172`，与 `harnax.cli.archive-retention-days` 同形，用构造器 `@Value` 注入——全仓 `@ConfigurationProperties` 只有一处且是因为要 `@ConditionalOnProperty`）。

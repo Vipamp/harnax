@@ -125,7 +125,7 @@ CREATE TABLE IF NOT EXISTS `tool_invocation_stats` (
   `tenant_id` bigint NOT NULL COMMENT 'Owning tenant; detail rows without one are not aggregated at all',
   `kind` varchar(16) NOT NULL COMMENT 'Origin bucket, same vocabulary as the detail table',
   `subject_id` bigint NOT NULL DEFAULT '0' COMMENT 'mcp_id when kind = mcp, cli_id when kind = cli, 0 otherwise; 0 rather than NULL because a unique index does not treat NULLs as equal, and NULL would make the upsert insert a second row for the same day',
-  `tool_name` varchar(255) NOT NULL DEFAULT '' COMMENT 'Command name for kind = cli; empty means the day is keyed by subject only',
+  `tool_name` varchar(255) NOT NULL DEFAULT '' COMMENT 'Tool name as the model sees it; every kind carries it, so two tools of one MCP server are two rows on a day',
   `calls` int NOT NULL COMMENT 'Total invocations',
   `successes` int NOT NULL COMMENT 'Invocations ending SUCCESS',
   `errors` int NOT NULL COMMENT 'Invocations ending ERROR',
@@ -810,7 +810,7 @@ $MVN -o test -pl harnax-entity -Dtest=ToolInvocationStatsMapperTest -Dsurefire.f
         SELECT DATE_FORMAT(l.ts, '%Y-%m-%d') AS stat_date
         FROM tool_invocation_log l
         WHERE l.tenant_id IS NOT NULL
-        AND DATE(l.ts) &gt;= #{floor}
+        AND l.ts &gt;= #{floor}
         AND NOT EXISTS (
             SELECT 1 FROM tool_invocation_stats s
             WHERE s.stat_date = DATE(l.ts)
@@ -884,8 +884,17 @@ interface ToolInvocationStatsMapper {
         501 ms in le_2s. Closed intervals on both sides would claim a boundary call twice and the bucket
         sum would stop equalling `calls` (I4).
 
-        `subject_id` and `tool_name` are written with a COALESCE rather than left null: the unique key
-        treats two NULLs as different rows, so a NULL subject would let the same day insert twice.
+        `subject_id` is written with a COALESCE rather than left null, because the unique key treats two
+        NULLs as different rows: a NULL subject would let the same day insert twice.
+        The subject is also part of the grouping key, because it is what an operator reads the row as: one
+        agent mounts several MCP servers, and a single `mcp` group per tenant would leave the highest server
+        id holding every call of that day. The tool name is part of it too, and for every kind: one server
+        exposes several tools and one agent has several builtins, so a group that dropped the name would fold
+        tools the page lists apart into one row, and a reader could not tell which tool of a server answered.
+        The same expression is selected and grouped, so the value is the group's own key rather than an
+        aggregate taken over it.
+        The day is bounded by an instant range rather than by `DATE(l.ts) = #{statDate}`: a function over the
+        column is not sargable, so the optimizer cannot use it to narrow the scan.
         The update list covers every column the SELECT produces, including the counters, because this is a
         recompute and not an increment.
     -->
@@ -905,7 +914,7 @@ interface ToolInvocationStatsMapper {
         WHEN l.kind = 'cli' THEN COALESCE(l.cli_id, 0)
         ELSE 0
         END,
-        CASE WHEN l.kind = 'cli' THEN l.tool_name ELSE '' END,
+        l.tool_name,
         COUNT(*),
         SUM(CASE WHEN l.outcome = 'SUCCESS' THEN 1 ELSE 0 END),
         SUM(CASE WHEN l.outcome = 'ERROR' THEN 1 ELSE 0 END),
@@ -920,7 +929,8 @@ interface ToolInvocationStatsMapper {
         SUM(CASE WHEN l.duration_ms &gt; 10000 AND l.duration_ms &lt;= 30000 THEN 1 ELSE 0 END),
         SUM(CASE WHEN l.duration_ms &gt; 30000 THEN 1 ELSE 0 END)
         FROM tool_invocation_log l
-        WHERE DATE(l.ts) = #{statDate}
+        WHERE l.ts &gt;= #{statDate}
+        AND l.ts &lt; DATE_ADD(#{statDate}, INTERVAL 1 DAY)
         AND l.tenant_id IS NOT NULL
         GROUP BY l.tenant_id, l.kind,
         CASE
@@ -928,7 +938,7 @@ interface ToolInvocationStatsMapper {
         WHEN l.kind = 'cli' THEN COALESCE(l.cli_id, 0)
         ELSE 0
         END,
-        CASE WHEN l.kind = 'cli' THEN l.tool_name ELSE '' END
+        l.tool_name
         ON DUPLICATE KEY UPDATE
         calls = VALUES(calls),
         successes = VALUES(successes),
@@ -957,7 +967,7 @@ $MVN -o -q spotless:apply -pl harnax-entity
 $MVN -o test -pl harnax-entity -Dtest=ToolInvocationStatsMapperTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t2.log 2>&1; echo EXIT=$?
 grep -E "Tests run|BUILD" /tmp/t2.log
 ```
-预期：`Tests run: 3, Failures: 0, Errors: 0`。
+预期：`Failures: 0, Errors: 0`。`Tests run` 等于这一步测试文件里 `@Test` 的条数，不在此处钉死。
 
 - [ ] **Step 6: 提交**
 
@@ -1350,7 +1360,7 @@ $MVN -o -q spotless:apply -pl harnax-agent/harnax-harness-core
 $MVN -o test -pl harnax-agent/harnax-harness-core -Dtest=ToolInvocationClassifierTest -Dsurefire.failIfNoSpecifiedTests=false > /tmp/t3.log 2>&1; echo EXIT=$?
 grep -E "Tests run|BUILD" /tmp/t3.log
 ```
-预期：`Tests run: 12, Failures: 0, Errors: 0`。
+预期：`Failures: 0, Errors: 0`。`Tests run` 等于这一步测试文件里 `@Test` 的条数，不在此处钉死（落地时实跑为 13）。
 
 - [ ] **Step 5: 提交**
 
@@ -3272,7 +3282,7 @@ git commit -m "refactor(metrics): tool_call_log 整链下线，记录源交给�
 
 **Interfaces:**
 - Consumes: Task 2 的 `ToolInvocationLogMapper.selectUnrolledDates(floor: String): List<String>`、`ToolInvocationLogMapper.deleteRolledOut(before: String): Int`、`ToolInvocationStatsMapper.upsertDay(statDate: String): Int`。
-- Produces: `ToolInvocationRollupService.rollUp(): Int`（本次重算了多少天）与 `@Scheduled` 入口 `rollUpHourly()`。Task 11 的读侧与它无耦合：读侧永远先查聚合表，表里有昨天的行就答得出昨天。
+- Produces: `ToolInvocationRollupService.rollUp(): Int`（本次重算了多少天，含每次都会重访的昨天与今天）与 `@Scheduled` 入口 `rollUpHourly()`。Task 11 的读侧与它无耦合：读侧永远先查聚合表，表里有昨天的行就答得出昨天。
 
 **只有 `@Service` 一个类、不配 interface**：admin 的 interface + `impl` 双文件是给控制器注入用的，这个类没有任何控制器调用它，加一层接口只会多一个文件。
 
@@ -3358,7 +3368,8 @@ class ToolInvocationRollupIT : BaseAdminIT() {
             call(missed.atTime(9, 0), TENANT_ID, "SUCCESS", 120L)
             call(missed.atTime(9, 5), TENANT_ID, "ERROR", 900L)
 
-            assertEquals(1, rollup.rollUp())
+            // The missed day, plus the two days every run revisits.
+            assertEquals(3, rollup.rollUp())
 
             val stats = requireNotNull(statsFor(missed, TENANT_ID))
             assertEquals(2L, (stats["calls"] as Number).toLong())
@@ -3386,12 +3397,28 @@ class ToolInvocationRollupIT : BaseAdminIT() {
         }
 
         @Test
+        @DisplayName("a row that lands after a day was folded still gets folded") {
+            // The pending set stops naming a day once that day has an aggregate row, so only the forced
+            // revisit of yesterday can pick up detail arriving between a day's last fold and midnight.
+            val yesterday = LocalDate.now().minusDays(1)
+            call(yesterday.atTime(22, 0), TENANT_ID, "SUCCESS", 100L)
+            rollup.rollUp()
+            assertEquals(1L, (requireNotNull(statsFor(yesterday, TENANT_ID))["calls"] as Number).toLong())
+
+            call(yesterday.atTime(23, 58), TENANT_ID, "SUCCESS", 100L)
+            rollup.rollUp()
+
+            assertEquals(2L, (requireNotNull(statsFor(yesterday, TENANT_ID))["calls"] as Number).toLong())
+        }
+
+        @Test
         @DisplayName("a detail row with no tenant is not rolled up at all") {
             // The aggregate table cannot hold it (tenant_id NOT NULL); reporting it as pending would make
             // the difference set never empty and starve the days that can be rolled.
             call(LocalDate.now().minusDays(2).atTime(9, 0), null, "SUCCESS", 100L)
 
-            assertEquals(0, rollup.rollUp())
+            // Only the two days every run revisits: a tenant-less day never enters the pending set.
+            assertEquals(2, rollup.rollUp())
 
             assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM tool_invocation_stats", Int::class.java))
         }
@@ -3502,7 +3529,14 @@ class ToolInvocationRollupService(
         val today = LocalDate.now()
         // Today is always rolled, whether or not it shows up as pending: otherwise the first run of a day
         // writes that day's final value and the aggregate trails by a whole day instead of one period.
-        val days = (toolInvocationLogMapper.selectUnrolledDates(UNROLLED_FLOOR) + today.toString()).distinct()
+        // Yesterday is always rolled for the same reason at the other end. The fold fires at :05, so a detail
+        // row that arrives between a day's last fold and midnight is already covered by an aggregate row and
+        // never reappears in the pending set; without yesterday the closing slice of every day is folded
+        // never, and deleteRolledOut releases those rows anyway.
+        val days = (
+            toolInvocationLogMapper.selectUnrolledDates(UNROLLED_FLOOR) +
+                today.minusDays(1).toString() + today.toString()
+            ).distinct()
 
         var rolled = 0
         for (statDate in days.sorted()) {
