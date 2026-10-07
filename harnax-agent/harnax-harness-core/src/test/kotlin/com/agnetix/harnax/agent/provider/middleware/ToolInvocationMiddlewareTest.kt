@@ -708,9 +708,9 @@ class ToolInvocationMiddlewareTest {
 
         @Test
         fun `a call with a blank name files nothing and does not break the turn`() {
-            // The same reasoning as the null case, and the same column: `name` is model JSON and nothing
-            // validates it, so an empty string arrives too. The registry refuses a blank tool name
-            // (`ToolRegistry.registerTool` throws), so no row this feature writes can be true.
+            // The same reasoning as the null case and the same source: `ToolUseBlock.name` is model JSON
+            // that nothing validates, so an empty string arrives as easily as a null. Filed as it came it
+            // would be a row whose `tool_name` is "" — one no page can label and no subject attribute.
             val mw = middleware()
 
             StepVerifier.create(
