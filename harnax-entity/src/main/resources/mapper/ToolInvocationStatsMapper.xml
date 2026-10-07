@@ -78,4 +78,103 @@
         gt_30s = VALUES(gt_30s)
     </insert>
 
+    <!--
+        The three reads the metrics page answers from this table. Each names a tenant, and each bounds the
+        window through `stat_date` rather than through an instant, because that column is a DATE.
+
+        The thirteen aggregate columns live in one fragment, and one fragment only: the grouped read and the
+        window read have to count the same thing in the same way, because the page shows a card beside rows
+        that carry identically named counts. Two independently written lists would agree on every ordinary
+        day and drift on one bucket boundary, and the card would stop adding up with both queries correct.
+
+        `selectWindowTotals` does not select the three identity columns the grouped read starts with. A
+        select list that mixes bare columns with aggregates and carries no GROUP BY is refused by the
+        server's default sql_mode (ONLY_FULL_GROUP_BY, error 1140), and that row is the window as one number
+        rather than a subject, so nothing reads an identity out of it.
+    -->
+    <sql id="subjectTotalsColumns">
+        COALESCE(SUM(s.calls), 0) AS calls,
+        COALESCE(SUM(s.successes), 0) AS successes,
+        COALESCE(SUM(s.errors), 0) AS errors,
+        COALESCE(SUM(s.denials), 0) AS denials,
+        COALESCE(SUM(s.interruptions), 0) AS interruptions,
+        COALESCE(SUM(s.sum_duration_ms), 0) AS sumDurationMs,
+        COALESCE(MAX(s.max_duration_ms), 0) AS maxDurationMs,
+        COALESCE(SUM(s.le_100ms), 0) AS le100ms,
+        COALESCE(SUM(s.le_500ms), 0) AS le500ms,
+        COALESCE(SUM(s.le_2s), 0) AS le2s,
+        COALESCE(SUM(s.le_10s), 0) AS le10s,
+        COALESCE(SUM(s.le_30s), 0) AS le30s,
+        COALESCE(SUM(s.gt_30s), 0) AS gt30s
+    </sql>
+
+    <select id="selectSubjectTotals" resultType="map">
+        SELECT
+        s.kind AS kind,
+        s.subject_id AS subjectId,
+        s.tool_name AS toolName,
+        <include refid="subjectTotalsColumns"/>,
+        <!-- CAST keeps this a DATETIME so the map hands back a LocalDateTime rather than a java.sql.Date,
+             which would be read through the JVM default zone. -->
+        CAST(MAX(s.stat_date) AS DATETIME) AS lastSeenAt
+        FROM tool_invocation_stats s
+        WHERE s.tenant_id = #{tenantId}
+        AND s.stat_date &gt;= #{from}
+        AND s.stat_date &lt;= #{to}
+        <if test="kind != null and kind != ''">
+            AND s.kind = #{kind}
+        </if>
+        GROUP BY s.kind, s.subject_id, s.tool_name
+        ORDER BY calls DESC, lastSeenAt DESC
+    </select>
+
+    <select id="selectWindowTotals" resultType="map">
+        SELECT
+        <include refid="subjectTotalsColumns"/>
+        FROM tool_invocation_stats s
+        WHERE s.tenant_id = #{tenantId}
+        AND s.stat_date &gt;= #{from}
+        AND s.stat_date &lt;= #{to}
+        <if test="kind != null and kind != ''">
+            AND s.kind = #{kind}
+        </if>
+    </select>
+
+    <select id="selectTimeSeries" resultType="map">
+        SELECT
+        <choose>
+            <when test="granularity == 'week'">
+                CAST(DATE_FORMAT(DATE_SUB(s.stat_date, INTERVAL WEEKDAY(s.stat_date) DAY), '%Y-%m-%d 00:00:00') AS DATETIME) AS timePoint
+            </when>
+            <when test="granularity == 'month'">
+                CAST(DATE_FORMAT(s.stat_date, '%Y-%m-01 00:00:00') AS DATETIME) AS timePoint
+            </when>
+            <otherwise>
+                CAST(DATE_FORMAT(s.stat_date, '%Y-%m-%d 00:00:00') AS DATETIME) AS timePoint
+            </otherwise>
+        </choose>
+        ,
+        s.kind AS kind,
+        s.subject_id AS dimensionId,
+        s.tool_name AS dimensionName,
+        COALESCE(SUM(s.calls), 0) AS calls,
+        COALESCE(SUM(s.successes), 0) AS successes,
+        COALESCE(SUM(s.errors), 0) AS errors,
+        COALESCE(SUM(s.denials), 0) AS denials,
+        COALESCE(SUM(s.interruptions), 0) AS interruptions,
+        COALESCE(SUM(s.sum_duration_ms), 0) AS sumDurationMs
+        FROM tool_invocation_stats s
+        WHERE s.tenant_id = #{tenantId}
+        AND s.stat_date &gt;= #{from}
+        AND s.stat_date &lt;= #{to}
+        <if test="kind != null and kind != ''">
+            AND s.kind = #{kind}
+        </if>
+        <if test="subjectId != null">
+            AND s.subject_id = #{subjectId}
+        </if>
+        GROUP BY timePoint, s.kind, s.subject_id, s.tool_name
+        ORDER BY timePoint, calls DESC
+    </select>
+
 </mapper>

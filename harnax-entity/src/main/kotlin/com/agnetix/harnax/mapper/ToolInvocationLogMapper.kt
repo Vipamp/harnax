@@ -5,7 +5,8 @@ import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
 
 /**
- * Tool invocation detail writes and the retention sweep the rollup needs.
+ * Tool invocation detail writes, the retention sweep the rollup needs, and the two reads the metrics page
+ * answers an agent or session dimension and one page of single calls from.
  *
  * Every read here names a tenant, and `tenantId` is a non-null `Long` where a read is tenant-scoped: there
  * is no value that means "all tenants". The rollup's three statements are the exception and are commented
@@ -57,4 +58,38 @@ interface ToolInvocationLogMapper {
     fun deleteRolledOut(
         @Param("before") before: String,
     ): Int
+
+    /**
+     * Per-subject totals for a dimension the aggregate table does not carry: `agent` or `session`, named by
+     * [groupBy], which the service narrows to those two literals before it reaches this statement.
+     *
+     * Bounded by the detail retention: this answers only for the window in which single calls still exist.
+     */
+    fun selectSubjectTotalsFromDetail(
+        @Param("from") from: String,
+        @Param("to") to: String,
+        @Param("tenantId") tenantId: Long,
+        @Param("kind") kind: String?,
+        @Param("groupBy") groupBy: String,
+    ): MutableList<MutableMap<String?, Any?>?>?
+
+    /**
+     * One page of single calls, newest first, within the retention window.
+     *
+     * The widest mapper method in the repository, and it stays that way on purpose: the query object lives in
+     * `harnax-admin` and this module may not depend on it, so the alternatives are ten parameters or a lie
+     * about what an example query's equality semantics mean for a range predicate. The service narrows them.
+     */
+    fun selectInvocationPage(
+        @Param("from") from: String,
+        @Param("to") to: String,
+        @Param("tenantId") tenantId: Long,
+        @Param("kind") kind: String?,
+        @Param("toolName") toolName: String?,
+        @Param("mcpId") mcpId: Long?,
+        @Param("cliId") cliId: Long?,
+        @Param("agentId") agentId: Long?,
+        @Param("sessionId") sessionId: String?,
+        @Param("outcome") outcome: String?,
+    ): MutableList<MutableMap<String?, Any?>?>?
 }

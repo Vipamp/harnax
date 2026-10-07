@@ -55,4 +55,102 @@
         )
     </delete>
 
+    <!--
+        The two reads the metrics page answers from the detail rows. Both bind the window with instants
+        rather than with days, because `ts` is a `datetime(3)` column, and both name a tenant: this table
+        holds every workspace's single calls, and a read without a predicate would answer with all of them.
+    -->
+    <select id="selectSubjectTotalsFromDetail" resultType="map">
+        SELECT
+        <choose>
+            <when test="groupBy == 'session'">l.session_id</when>
+            <otherwise>CAST(l.agent_id AS CHAR)</otherwise>
+        </choose>
+        AS subjectKey,
+        <choose>
+            <when test="groupBy == 'session'">CAST(NULL AS SIGNED)</when>
+            <otherwise>l.agent_id</otherwise>
+        </choose>
+        AS subjectId,
+        COUNT(*) AS calls,
+        SUM(l.outcome = 'SUCCESS') AS successes,
+        SUM(l.outcome = 'ERROR') AS errors,
+        SUM(l.outcome = 'DENIED') AS denials,
+        SUM(l.outcome = 'INTERRUPTED') AS interruptions,
+        COALESCE(SUM(l.duration_ms), 0) AS sumDurationMs,
+        COALESCE(MAX(l.duration_ms), 0) AS maxDurationMs,
+        MAX(l.ts) AS lastSeenAt
+        FROM tool_invocation_log l
+        WHERE l.tenant_id = #{tenantId}
+        AND l.ts &gt;= #{from}
+        AND l.ts &lt;= #{to}
+        <if test="kind != null and kind != ''">
+            AND l.kind = #{kind}
+        </if>
+        <!-- The grouped column is the one named in SELECT, and the session dimension selects no other
+             non-aggregated column at all. -->
+        <!-- `agent_id` and `session_id` are both nullable, so the grouping collects one NULL key of its own.
+             A call with no agent can neither be counted under an agent nor opened in the drill-down, so that
+             group stays out of the response. The middleware writes an agent on every row today, which makes
+             this guard cost nothing now and be the only thing standing between a future writer and a blank
+             row name. -->
+        GROUP BY
+        <choose>
+            <when test="groupBy == 'session'">l.session_id</when>
+            <otherwise>l.agent_id</otherwise>
+        </choose>
+        HAVING subjectKey IS NOT NULL
+        ORDER BY calls DESC, lastSeenAt DESC
+    </select>
+
+    <select id="selectInvocationPage" resultType="map">
+        SELECT
+        l.id AS id,
+        l.kind AS kind,
+        l.tool_name AS toolName,
+        l.agent_id AS agentId,
+        l.session_id AS sessionId,
+        l.user_id AS userId,
+        l.mcp_id AS mcpId,
+        l.cli_id AS cliId,
+        l.outcome AS outcome,
+        l.error_message AS errorMessage,
+        l.args_json AS argsJson,
+        l.result_excerpt AS resultExcerpt,
+        l.duration_ms AS durationMs,
+        l.start_time AS startTime,
+        l.ts AS ts
+        FROM tool_invocation_log l
+        WHERE l.tenant_id = #{tenantId}
+        <!-- The window is here rather than behind an `<if>`: the service always computes it, so there is no
+             caller that asks for every row it holds, and the upper bound is what keeps a call recorded after
+             the window from reading as one taken inside it. -->
+        AND l.ts &gt;= #{from}
+        AND l.ts &lt;= #{to}
+        <if test="kind != null and kind != ''">
+            AND l.kind = #{kind}
+        </if>
+        <if test="toolName != null and toolName != ''">
+            AND l.tool_name = #{toolName}
+        </if>
+        <if test="mcpId != null">
+            AND l.mcp_id = #{mcpId}
+        </if>
+        <if test="cliId != null">
+            AND l.cli_id = #{cliId}
+        </if>
+        <if test="agentId != null">
+            AND l.agent_id = #{agentId}
+        </if>
+        <if test="sessionId != null and sessionId != ''">
+            AND l.session_id = #{sessionId}
+        </if>
+        <if test="outcome != null and outcome != ''">
+            AND l.outcome = #{outcome}
+        </if>
+        <!-- `id` breaks the tie because `ts` only goes to milliseconds: two calls recorded in the same
+             millisecond would otherwise come back in an order the storage engine picks. -->
+        ORDER BY l.ts DESC, l.id DESC
+    </select>
+
 </mapper>
