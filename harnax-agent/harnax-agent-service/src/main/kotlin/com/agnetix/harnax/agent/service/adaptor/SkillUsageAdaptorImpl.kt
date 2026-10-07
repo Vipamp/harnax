@@ -82,7 +82,7 @@ class SkillUsageAdaptorImpl(
             // never reaches the caller: this is the last line of the non-blocking, never-throws contract.
             val total = dropped.incrementAndGet()
             if (total == 1L || total % DROP_LOG_EVERY == 0L) {
-                log.warn("Skill {} batch for session {} dropped ({} dropped so far): {}", event, sessionId, total, e.message)
+                log.warn("Skill {} batch for session {} dropped ({} batches dropped so far): {}", event, sessionId, total, e.message)
             }
         }
     }

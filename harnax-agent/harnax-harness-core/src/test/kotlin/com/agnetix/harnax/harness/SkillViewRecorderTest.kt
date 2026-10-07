@@ -68,6 +68,9 @@ class SkillViewRecorderTest {
         recorder.onRead(listOf(skill("pdf-tools")))
 
         assertEquals(listOf("web-1" to listOf(7L)), adaptor.batches)
+        // The recorder reports loads only. A USE batch here would double-count a skill the model never
+        // worked through, and no other assertion in this class reads the uses list, so nothing else would notice.
+        assertTrue(adaptor.uses.isEmpty())
     }
 
     @Test

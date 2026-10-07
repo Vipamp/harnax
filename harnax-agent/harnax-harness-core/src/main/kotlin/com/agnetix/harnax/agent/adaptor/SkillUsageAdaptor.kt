@@ -14,6 +14,9 @@ package com.agnetix.harnax.agent.adaptor
  */
 interface SkillUsageAdaptor {
     /**
+     * The skill's body entered this session's context: Admin delivered it and the harness read it back. A
+     * load is not yet a use — reading one of the skill's resource files lands here, not in [reportUses].
+     *
      * @param userId the [com.agnetix.harnax.tools.sdk.UserIdentifier] this run is attributed to, or null when
      * the conversation names no harnax user — a channel conversation, or a service caller that did not
      * resolve one. Admin keeps the row and leaves its user column empty; it does not take the id on faith,
@@ -32,7 +35,7 @@ interface SkillUsageAdaptor {
      * only the body carries instructions.
      *
      * No cooldown, unlike [reportViews]: a load repeats because the harness re-reads the repository on every
-     * system-prompt assembly, while one turn loads one skill once. Same argument shape and same non-blocking,
+     * system-prompt assembly, while one turn uses one skill once. Same argument shape and same non-blocking,
      * non-throwing contract.
      */
     fun reportUses(

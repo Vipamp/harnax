@@ -110,6 +110,8 @@ class HarnessAgentLauncherSkillUsageTest {
         val skills = delivered(agent).allSkills
 
         assertEquals(listOf("web-7" to listOf(5L)), usage.batches)
+        // Building an agent delivers a skill but does not work through it, so the load is the only event.
+        assertTrue(usage.useBatches.isEmpty())
         assertEquals(listOf("report-style"), skills.map { it.name }, "the delivered skill must still be delivered")
     }
 

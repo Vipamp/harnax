@@ -64,13 +64,14 @@ class SkillUsageAdaptorImplTest {
     @Test
     fun `a client that throws does not stop the next batch`() {
         // The adaptor's contract is that it owns failures. This is an implementation breaking that contract,
-        // and the batch behind it still has to reach Admin.
+        // and the batch behind it still has to reach Admin - a different event, so the swallow is shown to
+        // protect USE as well as VIEW rather than only being shared code.
         `when`(client.reportSkillUsage("web-1", listOf(8L), 1L, "VIEW")).thenThrow(IllegalStateException("admin refused"))
 
         adaptor.reportViews("web-1", listOf(8L), 1L)
-        adaptor.reportViews("web-1", listOf(9L), 1L)
+        adaptor.reportUses("web-1", listOf(9L), 1L)
 
-        verify(client, timeout(5_000)).reportSkillUsage("web-1", listOf(9L), 1L, "VIEW")
+        verify(client, timeout(5_000)).reportSkillUsage("web-1", listOf(9L), 1L, "USE")
     }
 
     @Test
