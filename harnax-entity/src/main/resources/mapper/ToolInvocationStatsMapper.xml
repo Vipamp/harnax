@@ -7,12 +7,17 @@
         501 ms in le_2s. Closed intervals on both sides would claim a boundary call twice and the bucket
         sum would stop equalling `calls` (I4).
 
-        `subject_id` and `tool_name` are written with a COALESCE rather than left null: the unique key
-        treats two NULLs as different rows, so a NULL subject would let the same day insert twice.
+        `subject_id` is written with a COALESCE rather than left null, because the unique key treats two
+        NULLs as different rows: a NULL subject would let the same day insert twice.
         The subject is also part of the grouping key, because it is what an operator reads the row as: one
         agent mounts several MCP servers, and a single `mcp` group per tenant would leave the highest server
-        id holding every call of that day. The same expression is selected and grouped, so the value is the
-        group's own key rather than an aggregate taken over it.
+        id holding every call of that day. The tool name is part of it too, and for every kind: one server
+        exposes several tools and one agent has several builtins, so a group that dropped the name would fold
+        tools the page lists apart into one row, and a reader could not tell which tool of a server answered.
+        The same expression is selected and grouped, so the value is the group's own key rather than an
+        aggregate taken over it.
+        The day is bounded by an instant range rather than by `DATE(l.ts) = #{statDate}`: a function over the
+        column is not sargable, so the optimizer cannot use it to narrow the scan.
         The update list covers every column the SELECT produces, including the counters, because this is a
         recompute and not an increment.
     -->
@@ -32,7 +37,7 @@
         WHEN l.kind = 'cli' THEN COALESCE(l.cli_id, 0)
         ELSE 0
         END,
-        CASE WHEN l.kind = 'cli' THEN l.tool_name ELSE '' END,
+        l.tool_name,
         COUNT(*),
         SUM(CASE WHEN l.outcome = 'SUCCESS' THEN 1 ELSE 0 END),
         SUM(CASE WHEN l.outcome = 'ERROR' THEN 1 ELSE 0 END),
@@ -47,7 +52,8 @@
         SUM(CASE WHEN l.duration_ms &gt; 10000 AND l.duration_ms &lt;= 30000 THEN 1 ELSE 0 END),
         SUM(CASE WHEN l.duration_ms &gt; 30000 THEN 1 ELSE 0 END)
         FROM tool_invocation_log l
-        WHERE DATE(l.ts) = #{statDate}
+        WHERE l.ts &gt;= #{statDate}
+        AND l.ts &lt; DATE_ADD(#{statDate}, INTERVAL 1 DAY)
         AND l.tenant_id IS NOT NULL
         GROUP BY l.tenant_id, l.kind,
         CASE
@@ -55,7 +61,7 @@
         WHEN l.kind = 'cli' THEN COALESCE(l.cli_id, 0)
         ELSE 0
         END,
-        CASE WHEN l.kind = 'cli' THEN l.tool_name ELSE '' END
+        l.tool_name
         ON DUPLICATE KEY UPDATE
         calls = VALUES(calls),
         successes = VALUES(successes),

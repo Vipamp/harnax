@@ -8,8 +8,13 @@ import org.apache.ibatis.annotations.Param
  *
  * One statement, and it is an aggregate recompute rather than an increment: the whole day is counted from
  * the detail rows and every column is overwritten. That is what makes the rollup safe to run twice, safe
- * to run on two replicas at once, and safe to run for a day that was missed a week ago — none of which an
+ * to run on two replicas at once, and able to catch up on a day it missed — none of which a
  * `calls = calls + n` increment would give.
+ *
+ * Catching up has a bound, though: the recompute is only as correct as the detail rows still there to be
+ * counted, so it must never run for a day whose details were already pruned, or it overwrites the day's
+ * true totals with a partial count. `ToolInvocationLogMapper.deleteRolledOut` gates on this table for
+ * exactly that reason.
  *
  * That statement is deliberately not tenant-scoped, unlike every read in `ToolInvocationLogMapper`: the
  * rollup is a server-wide maintenance job that writes one row per tenant, and its own tenant predicate

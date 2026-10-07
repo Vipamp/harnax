@@ -27,7 +27,11 @@ interface ToolInvocationLogMapper {
     ): Int
 
     /**
-     * Days the detail table holds but the aggregate does not.
+     * Days whose details have no aggregate row yet, oldest first.
+     *
+     * This is a membership test and not a work queue: a day folded earlier is not named again even when its
+     * details have moved on since, so the fold stays complete for the current and the previous day only
+     * because the hourly job of Task 10 rolls both on every run, whatever this list returns.
      *
      * Detail rows with no tenant are excluded on purpose: the aggregate table's `tenant_id` is `NOT NULL`,
      * so no such day would ever gain a row to be compared against, and every hourly run would report it

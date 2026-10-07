@@ -23,13 +23,16 @@
 
     <!--
         The date set the rollup owes, oldest first. Grouping rather than a subquery against the aggregate
-        keeps this one pass over the index on (tenant_id, ts).
+        keeps this one pass over the index on (tenant_id, ts). The floor is compared against `l.ts` and not
+        against `DATE(l.ts)` because a function over the column is not sargable; a `yyyy-MM-dd` bound reads
+        as the start of that day. The day expression stays a function of the column, since grouping is not
+        narrowed by it.
     -->
     <select id="selectUnrolledDates" resultType="string">
         SELECT DATE_FORMAT(l.ts, '%Y-%m-%d') AS stat_date
         FROM tool_invocation_log l
         WHERE l.tenant_id IS NOT NULL
-        AND DATE(l.ts) &gt;= #{floor}
+        AND l.ts &gt;= #{floor}
         AND NOT EXISTS (
             SELECT 1 FROM tool_invocation_stats s
             WHERE s.stat_date = DATE(l.ts)

@@ -791,7 +791,7 @@ CREATE TABLE IF NOT EXISTS `tool_invocation_stats` (
   `tenant_id` bigint NOT NULL COMMENT 'Owning tenant; detail rows without one are not aggregated at all',
   `kind` varchar(16) NOT NULL COMMENT 'Origin bucket, same vocabulary as the detail table',
   `subject_id` bigint NOT NULL DEFAULT '0' COMMENT 'mcp_id when kind = mcp, cli_id when kind = cli, 0 otherwise; 0 rather than NULL because a unique index does not treat NULLs as equal, and NULL would make the upsert insert a second row for the same day',
-  `tool_name` varchar(255) NOT NULL DEFAULT '' COMMENT 'Command name for kind = cli; empty means the day is keyed by subject only',
+  `tool_name` varchar(255) NOT NULL DEFAULT '' COMMENT 'Tool name as the model sees it; every kind carries it, so two tools of one MCP server are two rows on a day',
   `calls` int NOT NULL COMMENT 'Total invocations',
   `successes` int NOT NULL COMMENT 'Invocations ending SUCCESS',
   `errors` int NOT NULL COMMENT 'Invocations ending ERROR',
