@@ -1021,9 +1021,12 @@ message?: string;
   /**
    * @zh-CN 榜单的一行（DashboardRankItem）。没有 id：榜只做展示，页面上没有要回到那行的动作。
    * name 为空表示消耗行的归属（agent / model）已被删除，同一榜里可能出现多条空名。
+   * qualifier 是第二重标识：榜按行 id 分组，同一个模型名挂在两个 provider 下就是两行同名，
+   * 这一列带 provider 名把它们分开；智能体榜没有这一列，归属行被删时 provider 一并消失，两者都是空。
    */
   export type DashboardRankItem = {
     name: string;
+    qualifier?: string;
     tokens: number;
   };
 
