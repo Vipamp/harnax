@@ -5,6 +5,7 @@ import com.agnetix.harnax.mapper.ToolInvocationLogMapper
 import com.agnetix.harnax.tools.sdk.adaptor.ToolInvocationEvent
 import org.junit.jupiter.api.Assertions.assertDoesNotThrow
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.anyList
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
@@ -121,7 +123,7 @@ class ToolInvocationAdaptorImplTest {
         @Test
         fun `capture-payload off leaves both body columns null`() {
             val writer = adaptor(capturePayload = false)
-            writer.emit(event())
+            writer.emit(event(errorMessage = "boom"))
 
             assertEquals(1, writer.drainAndFlush())
             val row = capturedRows().single()
@@ -129,6 +131,9 @@ class ToolInvocationAdaptorImplTest {
             assertNull(row.resultExcerpt)
             // The measurement is not a payload: what is counted has to survive turning bodies off.
             assertEquals(250L, row.durationMs)
+            // Neither is a failure reason: the switch exists for argument and receipt leakage, and a failed
+            // call's own reason is what the page has left to show once bodies are off.
+            assertEquals("boom", row.errorMessage)
         }
 
         @Test
@@ -143,6 +148,40 @@ class ToolInvocationAdaptorImplTest {
             assertTrue(row.argsJson!!.endsWith("(truncated)"))
             assertEquals(10 + "…(truncated)".length, row.argsJson!!.length)
             assertTrue(row.resultExcerpt!!.endsWith("(truncated)"))
+        }
+
+        @Test
+        fun `a cut that lands inside a surrogate pair drops the half character`() {
+            val writer = adaptor(captureMaxChars = 15)
+            // One emoji is two UTF-16 units, so ten of them are 20 units and a 15-unit cut falls between the
+            // two halves. The marker hides it from `last()`, so the unit under test is the one before it.
+            writer.emit(event(argsJson = "{\"note\":\"验证通过\"}", resultText = "😀".repeat(10)))
+
+            writer.drainAndFlush()
+            val row = capturedRows().single()
+
+            // A lone surrogate is what makes utf8mb4 reject the row, and one rejected row loses the whole batch.
+            val body = row.resultExcerpt!!.removeSuffix("…(truncated)")
+            assertFalse(Character.isHighSurrogate(body.last()))
+            assertEquals("😀".repeat(7), body)
+            // Non-ASCII payload below its own limit is written as it came, marker-free and uncut.
+            assertEquals("{\"note\":\"验证通过\"}", row.argsJson)
+        }
+
+        @Test
+        fun `a tool name over the column width is clamped without a marker`() {
+            val writer = adaptor()
+            // A name this long can only come from outside: an MCP server's own tools/list, or a model that
+            // invented one. It is varchar(255), so one such row would fail the statement carrying 63 others.
+            writer.emit(event(kind = ToolInvocationLog.KIND_MCP, toolName = "x".repeat(300)))
+
+            assertEquals(1, writer.drainAndFlush())
+            val row = capturedRows().single()
+
+            assertEquals(255, row.toolName.length)
+            // The marker would be worse than the overflow it prevents: this column is part of the aggregate's
+            // unique key, so a marked name opens a bucket no registry can name.
+            assertFalse(row.toolName.contains("…"))
         }
 
         @Test
@@ -221,6 +260,36 @@ class ToolInvocationAdaptorImplTest {
         }
 
         @Test
+        fun `a shutdown drains every batch instead of only the first one`() {
+            val writer = adaptor(batchSize = 2)
+            repeat(5) { writer.emit(event(toolName = "tool-$it")) }
+
+            writer.shutdown()
+
+            // 2+2+1: with batchSize left at its default the queue empties in one drain and the loop's own
+            // iteration is never observed, so a shutdown that stopped after one batch would look correct here.
+            val captor = argumentCaptor<List<ToolInvocationLog>>()
+            verify(mapper, times(3)).batchInsert(captor.capture())
+            assertEquals(listOf(2, 2, 1), captor.allValues.map { it.size })
+            assertEquals(5, captor.allValues.sumOf { it.size })
+        }
+
+        @Test
+        fun `an event emitted after shutdown is counted rather than lost silently`() {
+            val writer = adaptor()
+
+            writer.shutdown()
+            writer.emit(event())
+
+            // Nothing drains after `shutdown()` has done its own, so an accepted event is queued forever: it
+            // belongs on the counted-drop path, because "the page is empty" owes somebody a number.
+            // No waiting here — the drain promise is settled by `shutdown()` returning, and this asserts that
+            // the post-shutdown event never became a statement.
+            assertEquals(1L, writer.droppedCount)
+            verifyNoInteractions(mapper)
+        }
+
+        @Test
         fun `a mapper that throws is not carried up to the caller`() {
             val failing = mock(ToolInvocationLogMapper::class.java)
             `when`(failing.batchInsert(anyList())).thenThrow(IllegalStateException("db down"))
@@ -236,6 +305,46 @@ class ToolInvocationAdaptorImplTest {
             writer.emit(event())
 
             assertDoesNotThrow { writer.drainAndFlush() }
+        }
+    }
+
+    /**
+     * The commit decision `pump()` reaches on every pass, pinned without starting a thread: no test can reach
+     * the worker loop, so the decision is what moved out to here rather than the loop being raced.
+     */
+    @Nested
+    @DisplayName("flush decision")
+    inner class FlushDecision {
+        @Test
+        fun `a full batch commits without waiting for the timeout`() {
+            val writer = adaptor(batchSize = 4)
+
+            // The throughput case: a full batch must not sit and wait out its interval.
+            assertTrue(writer.shouldFlush(size = 4, timedOut = false))
+        }
+
+        @Test
+        fun `a partial batch commits once the poll has timed out`() {
+            val writer = adaptor(batchSize = 4)
+
+            // Three calls and a quiet session must reach the page on the next tick, not on the next call.
+            assertTrue(writer.shouldFlush(size = 3, timedOut = true))
+        }
+
+        @Test
+        fun `a partial batch stays queued inside the timeout`() {
+            val writer = adaptor(batchSize = 4)
+
+            // Neither commit reason holds: not full, and the poll has not given up on the next call yet.
+            assertFalse(writer.shouldFlush(size = 3, timedOut = false))
+        }
+
+        @Test
+        fun `an empty batch never commits whatever the timeout says`() {
+            val writer = adaptor(batchSize = 4)
+
+            assertFalse(writer.shouldFlush(size = 0, timedOut = true))
+            assertFalse(writer.shouldFlush(size = 0, timedOut = false))
         }
     }
 }

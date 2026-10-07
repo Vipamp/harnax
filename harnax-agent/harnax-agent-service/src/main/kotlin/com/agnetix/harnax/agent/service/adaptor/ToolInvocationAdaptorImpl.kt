@@ -25,8 +25,10 @@ import java.util.concurrent.atomic.AtomicLong
  * event at a high rate, and one `INSERT` per call would put its cost on every call.
  *
  * When the queue is full the newest event is dropped and counted rather than the backlog grown. A full
- * queue means hundreds of calls per second; a missing counter is the cheaper failure, and the bound is what
- * keeps memory flat when the database stays unreachable.
+ * queue means hundreds of calls per second; a missing counter is the cheaper failure. The bound that policy
+ * gives is on the number of queued events, not on their bytes: a body is cut in `toRow()` when the batch it
+ * belongs to is written, not when `emit` accepts it, so the peak this class holds is `queue-capacity`
+ * multiplied by one event's own payload rather than a constant the configuration keeps flat.
  */
 @Component
 class ToolInvocationAdaptorImpl(
@@ -47,10 +49,16 @@ class ToolInvocationAdaptorImpl(
 
     @Volatile
     private var running = true
+
+    @Volatile
     private var writer: Thread? = null
 
     override fun emit(event: ToolInvocationEvent) {
-        if (queue.offer(event)) return
+        // `running` is consulted here because `shutdown()` has already done its drain: an event accepted now
+        // sits in a queue no thread consumes any more, which is a silent loss and no number either — the
+        // exact thing this counter exists to remove. It joins the full-queue path rather than a counter of
+        // its own, so a page that is empty still has one figure to explain it.
+        if (running && queue.offer(event)) return
         val total = dropped.incrementAndGet()
         if (total == 1L || total % DROP_LOG_EVERY == 0L) {
             log.warn("Tool invocation event for '{}' in session {} dropped ({} dropped so far)", event.toolName, event.sessionId, total)
@@ -78,7 +86,7 @@ class ToolInvocationAdaptorImpl(
                     batch += first
                     queue.drainTo(batch, batchSize - batch.size)
                 }
-                if (batch.isNotEmpty() && (first == null || batch.size >= batchSize)) {
+                if (shouldFlush(batch.size, first == null)) {
                     write(batch)
                     batch.clear()
                 }
@@ -88,12 +96,24 @@ class ToolInvocationAdaptorImpl(
             } catch (e: Exception) {
                 // The batch is dropped, not retried: a writer that retried the same broken statement would
                 // spin against a database that is down, and the events behind it are counters.
-                log.warn("Tool invocation batch of {} row(s) was not written: {}", batch.size, e.message)
+                log.warn("Tool invocation batch of {} row(s) was not written", batch.size, e)
                 batch.clear()
             }
         }
         if (batch.isNotEmpty()) write(batch)
     }
+
+    /**
+     * The commit decision [pump] reaches on every pass, readable on its own: a batch is written when it is
+     * non-empty and either [timedOut] says the poll gave up waiting or [size] has filled `batchSize`.
+     *
+     * Extracted rather than left inline because no test can reach the worker loop — it never starts a thread,
+     * and a timing assumption in the suite is the wrong price for pinning this.
+     */
+    internal fun shouldFlush(
+        size: Int,
+        timedOut: Boolean,
+    ): Boolean = size > 0 && (timedOut || size >= batchSize)
 
     /**
      * Take up to a batch out of the queue and write it; the seam the worker loop, `shutdown()` and the tests
@@ -107,13 +127,12 @@ class ToolInvocationAdaptorImpl(
         return try {
             write(batch)
         } catch (e: Exception) {
-            log.warn("Tool invocation batch of {} row(s) was not written: {}", batch.size, e.message)
+            log.warn("Tool invocation batch of {} row(s) was not written", batch.size, e)
             batch.size
         }
     }
 
     private fun write(batch: List<ToolInvocationEvent>): Int {
-        if (batch.isEmpty()) return 0
         val rows = batch.map { toRow(it) }
         toolInvocationLogMapper.batchInsert(rows)
         return rows.size
@@ -127,7 +146,11 @@ class ToolInvocationAdaptorImpl(
             sessionId = event.sessionId
             userId = event.userId
             kind = event.kind
-            toolName = event.toolName
+            // Clamped to the column without a marker: an MCP server's own tool name, or one a model invented,
+            // is longer than varchar(255) only until it fails the statement and takes the other 63 counters of
+            // the batch with it. A name no registry could have declared is better shortened than fatal, and
+            // this column is part of the aggregate's unique key, so a marked name would open a third bucket.
+            toolName = event.toolName.take(TOOL_NAME_MAX_CHARS)
             mcpId = event.mcpId
             cliId = event.cliId
             outcome = event.outcome
@@ -149,7 +172,12 @@ class ToolInvocationAdaptorImpl(
         max: Int,
     ): String? {
         if (text == null || text.length <= max) return text
-        return text.take(max) + TRUNCATION_SUFFIX
+        val cut = text.take(max)
+        // The cut lands on a UTF-16 index, so it can stop between the two halves of an astral character and
+        // leave a lone high surrogate behind — the one thing that makes the column reject the row, taking the
+        // rest of the batch with it. Drop the half character rather than the whole row.
+        val body = if (Character.isHighSurrogate(cut.last())) cut.dropLast(1) else cut
+        return body + TRUNCATION_SUFFIX
     }
 
     @PreDestroy
@@ -159,7 +187,8 @@ class ToolInvocationAdaptorImpl(
         // Whatever is queued is counters, not state — but a graceful stop still owes them a write, and it is
         // done here rather than awaited on the worker so the promise holds without a timing assumption.
         while (drainAndFlush() > 0) {
-            // Bounded below by the queue capacity; break out if the writer is falling behind.
+            // Bounded above by ceil(queued / batchSize): `emit` refuses to queue once `running` is false, so
+            // no producer can extend this loop after the stop has begun.
         }
     }
 
@@ -169,5 +198,8 @@ class ToolInvocationAdaptorImpl(
 
         /** `error_message` is varchar(512); this keeps the marker inside the column whatever the payload limit says. */
         private const val MAX_ERROR_CHARS = 500
+
+        /** `tool_name` is varchar(255), clamped without a marker because the column is part of an aggregate key. */
+        private const val TOOL_NAME_MAX_CHARS = 255
     }
 }
