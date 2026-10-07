@@ -296,8 +296,8 @@ class HarnessAgentBuilder {
     /**
      * Toolkit tools that came from an MCP server, mapped to the client that registered them.
      *
-     * Read-only, and asked for once after every `addMcp`: the caller has the server rows and needs the tool
-     * names, while only the live registry knows which server a name belongs to. `addMcp` registers
+     * Read-only, and asked for once, after all the `addMcp` calls: the caller has the server rows and needs
+     * the tool names, while only the live registry knows which server a name belongs to. `addMcp` registers
      * synchronously, so what it installed is visible here. Harness' own built-ins (`execute`, `read_file`,
      * `memory_*`) are attached later, at `build()`, so they are absent — which is exactly right, since none
      * of them belongs to an MCP server.

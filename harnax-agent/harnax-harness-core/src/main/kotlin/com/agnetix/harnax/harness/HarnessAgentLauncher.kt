@@ -272,7 +272,7 @@ class HarnessAgentLauncher(
         val mcpClients = mutableListOf<McpClientWrapper>()
         // The runtime needs this for attribution, not for loading: a call of an MCP tool is filed against the
         // server that exposed it, and the tool name alone does not say which one it was. Keyed by the client
-        // wrapper's name, which `McpHelper` builds from `mcpConfig.name`.
+        // wrapper's name, which `McpHelper` builds from the MCP server row's `name`.
         val mcpIdByClientName = mutableMapOf<String, Long>()
         // A lead has no business tools to reach: MCP is a member concern (design section 5).
         val mcpServices = if (isLead) emptyList() else agentSpec.mcpServices
@@ -368,21 +368,7 @@ class HarnessAgentLauncher(
             )
         }
 
-        val mcpIdsByTool: Map<String, Long> = if (mcpIdByClientName.isEmpty()) {
-            emptyMap()
-        } else {
-            agentBuilder.mcpToolClientNames().mapNotNull { (toolName, clientName) ->
-                mcpIdByClientName[clientName]?.let { toolName to it }
-            }.toMap()
-        }
-        if (mcpClients.isNotEmpty() && mcpIdsByTool.isEmpty()) {
-            log.warn(
-                "Agent '{}' has {} MCP client(s) but the registry named none of their tools: their calls will be " +
-                    "filed as framework rather than as mcp",
-                agentSpec.name,
-                mcpClients.size,
-            )
-        }
+        // The snapshot has to be taken after every tool registration: the registry keys tools by name and a later `addTool` silently replaces an earlier one.
 
         // ----- Tools -----
         // A lead is assembled with the team tools only (design section 5). The meta tool is off for it as
@@ -635,6 +621,23 @@ class HarnessAgentLauncher(
                 .filter { it.isNotBlank() }
                 .map { it to spec.cliId }
         }.toMap()
+
+        val mcpIdsByTool: Map<String, Long> = if (mcpIdByClientName.isEmpty()) {
+            emptyMap()
+        } else {
+            agentBuilder.mcpToolClientNames().mapNotNull { (toolName, clientName) ->
+                mcpIdByClientName[clientName]?.let { toolName to it }
+            }.toMap()
+        }
+        if (mcpClients.isNotEmpty() && mcpIdsByTool.isEmpty()) {
+            log.debug(
+                "Agent '{}' has {} MCP client(s) but the registry named none of their tools, which is normal for " +
+                    "servers that only expose prompts or resources; if one of them was expected to have tools, " +
+                    "their calls will be filed as framework rather than as mcp",
+                agentSpec.name,
+                mcpClients.size,
+            )
+        }
 
         // ----- Tool invocation metrics -----
         // Third fresh instance per build for the same reason as the two above: the run's attribution lives in

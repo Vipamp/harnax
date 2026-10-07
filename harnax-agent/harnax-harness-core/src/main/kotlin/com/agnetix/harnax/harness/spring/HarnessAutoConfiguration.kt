@@ -364,9 +364,7 @@ class HarnessAutoConfiguration {
             // Absent means nobody may author a skill: a draft with nowhere to be filed is unreviewed text
             // sitting in a workspace, which is the one thing this feature exists to prevent.
             skillDraftAdaptor = skillDraftAdaptorProvider.ifAvailable,
-            // Absent means no tool call is filed: a runtime with nowhere to write must not pay for a recorder.
-            // `harness.metrics.invocation.enabled=false` lands here and nowhere else — the launcher holds no
-            // second switch, so turning the feature off simply leaves it with a null adaptor.
+            // One landing point for `harness.metrics.invocation.enabled`; the launcher's mount point is the authoritative account of what a null adaptor means.
             toolInvocationAdaptor = toolInvocationAdaptorProvider.ifAvailable?.takeIf { invocationMetricsEnabled },
         )
     }

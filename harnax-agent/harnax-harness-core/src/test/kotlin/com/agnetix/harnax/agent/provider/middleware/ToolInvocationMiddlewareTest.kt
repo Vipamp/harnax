@@ -705,5 +705,19 @@ class ToolInvocationMiddlewareTest {
 
             assertTrue(events.isEmpty())
         }
+
+        @Test
+        fun `a call with a blank name files nothing and does not break the turn`() {
+            // The same reasoning as the null case, and the same column: `name` is model JSON and nothing
+            // validates it, so an empty string arrives too. The registry refuses a blank tool name
+            // (`ToolRegistry.registerTool` throws), so no row this feature writes can be true.
+            val mw = middleware()
+
+            StepVerifier.create(
+                mw.onActing(agent, ctx, actingInput(ToolUseBlock("t1", "", emptyMap())), Function { Flux.just(end("t1", "now", ToolResultState.SUCCESS)) }),
+            ).expectNextCount(1).verifyComplete()
+
+            assertTrue(events.isEmpty())
+        }
     }
 }

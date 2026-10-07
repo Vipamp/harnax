@@ -79,12 +79,12 @@ class ToolInvocationMiddleware(
             // reachable by name in issue order. That queue is also how an end event finds its start when
             // the id is present on one side only.
 
-            // A nameless call is dropped here rather than registered: `ToolUseBlock.name` is deserialised from
-            // the model's JSON and validated by nothing upstream, and without a name there is no key to compute,
-            // no kind to decide and no `tool_name` to write into a NOT NULL column, so the row could not have
-            // been filed anyway. That costs one row; registering it would throw out of this method and cost
-            // the turn, which D9 forbids.
-            val name = call.name ?: return@forEach
+            // A nameless or blank-named call is dropped here rather than registered: `ToolUseBlock.name` is
+            // deserialised from the model's JSON and validated by nothing upstream, and without a name there
+            // is no key to compute, no kind to decide and no `tool_name` to write into a NOT NULL column, so
+            // the row could not have been filed anyway. That costs one row; registering it would throw out
+            // of this method and cost the turn, which D9 forbids.
+            val name = call.name?.takeIf { it.isNotBlank() } ?: return@forEach
             val base = key(call.id, name)
             var k = base
             while (started.putIfAbsent(k, Start(name, call.input ?: emptyMap(), System.currentTimeMillis())) != null) {
