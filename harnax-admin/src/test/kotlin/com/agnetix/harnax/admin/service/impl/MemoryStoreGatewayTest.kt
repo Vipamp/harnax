@@ -278,6 +278,91 @@ class MemoryStoreGatewayTest {
             assertTrue(gateway.listAgents(tenantId, userId).isEmpty())
         }
 
+        /**
+         * The page answers for the long-term layer only.
+         *
+         * A conversation's `root/MEMORY.md` is a draft that has not been merged yet and its ledger has not
+         * earned a place in the curated memory, so counting either would tell the owner that a new
+         * conversation will be told something it will not. The dates carry this case rather than the text:
+         * the listing reads only one curated object, and which one that is depends on the filter. That the
+         * same session keys still go on a delete is the case in [Deleting], which is also what proves they
+         * decoded here at all instead of being dropped as unparseable.
+         */
+        @Test
+        fun `a conversation's own layer is not shown as the owner's memory`() {
+            bucket(
+                stored("${ownerPrefix}agents/Research/root/MEMORY.md"),
+                stored("${ownerPrefix}agents/Research/memory/2026-10-05.md"),
+                stored("${ownerPrefix}agents/Research/sessions/sess-A/root/MEMORY.md"),
+                stored("${ownerPrefix}agents/Research/sessions/sess-A/memory/2026-10-06.md"),
+            )
+            serveWrapper("- the curated layer")
+
+            val row = gateway.listAgents(tenantId, userId).single()
+
+            assertEquals("- the curated layer", row.content)
+            assertEquals(listOf("2026-10-05"), row.dates, "the draft's day does not join the owner's ledger dates")
+        }
+
+        /**
+         * How many conversations of this agent still hold memory that has not been merged.
+         *
+         * The long-term layer is the only thing a new conversation is told, so an owner who has just switched
+         * an agent to two layers sees one row per agent and concludes the recent conversations were forgotten.
+         * The count is the other half of that answer, and it counts conversations rather than objects: one
+         * conversation's draft and its ledger are the one merge that is pending, and reporting them as two
+         * would make the same agent look twice as far behind.
+         */
+        @Test
+        fun `the pending count is the conversations whose own layer still holds memory`() {
+            bucket(
+                stored("${ownerPrefix}agents/Research/root/MEMORY.md"),
+                stored("${ownerPrefix}agents/Research/sessions/sess-A/root/MEMORY.md"),
+                stored("${ownerPrefix}agents/Research/sessions/sess-A/memory/2026-10-06.md"),
+                stored("${ownerPrefix}agents/Research/sessions/sess-B/memory/2026-10-07.md"),
+                stored("${ownerPrefix}agents/Research/sessions/sess-C/root/MEMORY.md"),
+            )
+            serveWrapper("- the curated layer")
+
+            val row = gateway.listAgents(tenantId, userId).single()
+
+            assertEquals(3, row.pendingSessionLayers, "the draft and the ledger of sess-A are one pending merge")
+        }
+
+        /**
+         * What a conversation layer looks like once its memory has been merged is not "nothing pending".
+         *
+         * The consolidation pass leaves its own state object behind and upstream retires an old day into
+         * `archive/`; neither is material waiting for the long-term layer, and the merge deliberately reads
+         * neither. Counting them would keep an agent's pending figure above zero forever, which is the answer
+         * an owner cannot do anything with.
+         */
+        @Test
+        fun `the passes state object and an archived day are not counted as unmerged memory`() {
+            bucket(
+                stored("${ownerPrefix}agents/Research/root/MEMORY.md"),
+                stored("${ownerPrefix}agents/Research/sessions/sess-A/memory/.consolidation_state"),
+                stored("${ownerPrefix}agents/Research/sessions/sess-A/memory/archive/2026-08-01.md"),
+            )
+            serveWrapper("- the curated layer")
+
+            assertEquals(0, gateway.listAgents(tenantId, userId).single().pendingSessionLayers)
+        }
+
+        @Test
+        fun `each agent's pending count covers only its own conversations`() {
+            bucket(
+                stored("${ownerPrefix}agents/Research/sessions/sess-A/root/MEMORY.md"),
+                stored("${ownerPrefix}agents/Ops/sessions/sess-B/root/MEMORY.md"),
+                stored("${ownerPrefix}agents/Ops/sessions/sess-C/memory/2026-10-08.md"),
+            )
+            serveWrapper("- anything")
+
+            val pending = gateway.listAgents(tenantId, userId).associate { it.agentId to it.pendingSessionLayers }
+
+            assertEquals(mapOf("Research" to 1, "Ops" to 2), pending)
+        }
+
         /** "No memory" and "the store did not answer" are different answers, and only one of them is a 200. */
         @Test
         fun `a store that cannot list is thrown at rather than reported as empty`() {
@@ -429,13 +514,44 @@ class MemoryStoreGatewayTest {
             )
         }
 
+        /**
+         * The half the page does not show, the delete still has to take.
+         *
+         * The listing hides a conversation's own layer, so an agent deleted from that page would otherwise
+         * leave its draft and its ledgers in the bucket under a name the owner can no longer see. The delete
+         * asks for the agent's prefix instead of picking objects out of a decoded listing, and the two session
+         * keys going here is what shows that one prefix really reaches both routes of both layers.
+         */
+        @Test
+        fun `a conversation's own layer goes with the agent although the page hides it`() {
+            bucket(
+                stored("${ownerPrefix}agents/Research/root/MEMORY.md"),
+                stored("${ownerPrefix}agents/Research/memory/2026-10-04.md"),
+                stored("${ownerPrefix}agents/Research/sessions/sess-A/root/MEMORY.md"),
+                stored("${ownerPrefix}agents/Research/sessions/sess-A/memory/2026-10-06.md"),
+            )
+
+            assertEquals(4, gateway.deleteAgent(tenantId, userId, "Research"))
+            assertEquals(
+                listOf(
+                    "${ownerPrefix}agents/Research/root/MEMORY.md",
+                    "${ownerPrefix}agents/Research/memory/2026-10-04.md",
+                    "${ownerPrefix}agents/Research/sessions/sess-A/root/MEMORY.md",
+                    "${ownerPrefix}agents/Research/sessions/sess-A/memory/2026-10-06.md",
+                ),
+                deletedKeys().map { it.second },
+            )
+        }
+
         @Test
         fun `a delete asks for the caller's prefix and every key it removes stays inside it`() {
             bucket(stored("${ownerPrefix}agents/Research/root/MEMORY.md"))
 
             gateway.deleteAgent(tenantId, userId, "Research")
 
-            assertEquals(listOf("harnax-store" to ownerPrefix), listedPrefixes())
+            // The agent's own prefix rather than the owner's: what goes is decided by what the bucket lists
+            // under that agent, not by this class picking agents out of the names it listed.
+            assertEquals(listOf("harnax-store" to "${ownerPrefix}agents/Research/"), listedPrefixes())
             deletedKeys().forEach { (bucket, key) ->
                 assertEquals("harnax-store", bucket)
                 assertTrue(key.startsWith(ownerPrefix), "$key escapes $ownerPrefix")
@@ -497,6 +613,26 @@ class MemoryStoreGatewayTest {
             assertEquals(3, removed)
             assertEquals(listOf("harnax-store" to ownerPrefix), listedPrefixes())
             deletedKeys().forEach { (_, key) -> assertTrue(key.startsWith(ownerPrefix), key) }
+        }
+
+        /**
+         * An agent whose own name contains a slash writes `agents/<first>/<second>/root/MEMORY.md`, a key no
+         * decoder here can place and no agent-scoped endpoint can name — so the page cannot show it either.
+         * The sweep asks the bucket for the owner's prefix rather than for objects it decoded, which is what
+         * keeps an owner's memory from outliving them under a name nothing can point at.
+         */
+        @Test
+        fun `a key no decoder can place still goes with its owner`() {
+            bucket(
+                stored("${ownerPrefix}agents/Research/root/MEMORY.md"),
+                stored("${ownerPrefix}agents/Deep/Nested/root/MEMORY.md"),
+            )
+
+            assertEquals(2, gateway.deleteUser(listOf(tenantId), userId))
+            assertTrue(
+                deletedKeys().map { it.second }.contains("${ownerPrefix}agents/Deep/Nested/root/MEMORY.md"),
+                "the key the page cannot name is still the owner's memory: ${deletedKeys()}",
+            )
         }
 
         /**

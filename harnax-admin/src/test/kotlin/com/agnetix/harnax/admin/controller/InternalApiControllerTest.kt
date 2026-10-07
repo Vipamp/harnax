@@ -581,6 +581,40 @@ class InternalApiControllerTest {
         }
 
         @Test
+        @DisplayName("getAgentSpec - the session layer answer travels on the same row")
+        fun `getAgentSpec delivers the session layer answer written on the agent row`() {
+            // The other half of the pair, and the one whose default runs the other way: a row nobody asked
+            // about means one layer, so a delivery that dropped this key would promise two layers to agents
+            // that never opted in — or, read the other way, keep them off the layer one agent did ask for.
+            val optedIn = Session().apply {
+                sessionId = "web-dual"
+                agentId = 100L
+            }
+            val untouched = Session().apply {
+                sessionId = "web-single"
+                agentId = 100L
+            }
+            `when`(sessionMapper.selectBySessionIdAndStatus("web-dual", 1)).thenReturn(optedIn)
+            `when`(sessionMapper.selectBySessionIdAndStatus("web-single", 1)).thenReturn(untouched)
+            `when`(agentMapper.selectById(100L)).thenReturn(
+                stubAgent().apply { sessionMemoryEnabled = 1 },
+                stubAgent(),
+            )
+
+            assertEquals(
+                1,
+                requireNotNull(controller.getAgentSpec("web-dual").data).sessionMemoryEnabled,
+                "the wizard's yes for this agent is what the delivery has to carry",
+            )
+            assertEquals(1, requireNotNull(controller.getAgentSpec("web-dual").data).memoryEnabled)
+            assertEquals(
+                0,
+                requireNotNull(controller.getAgentSpec("web-single").data).sessionMemoryEnabled,
+                "and a row that was never asked about the session layer says no to it",
+            )
+        }
+
+        @Test
         @DisplayName("getAgentSpec - chn session 返回 AgentSpec")
         fun `getAgentSpec should resolve from channel for chn prefix`() {
             val channel = Channel().apply {

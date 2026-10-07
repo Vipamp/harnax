@@ -73,6 +73,14 @@ data class AgentSpecInfoResponse(
     )
     val memoryEnabled: Int = 1,
 
+    @Schema(
+        description = "Agent keeps a second memory layer scoped to one conversation, later promoted into " +
+            "the long-term one (0:no, 1:yes), read from the agent row. " +
+            "Off unless admin says otherwise, because two layers are opted into per agent and a payload " +
+            "from an admin that does not know the switch means today's single layer",
+    )
+    val sessionMemoryEnabled: Int = 0,
+
     @Schema(description = "Permission mode (DEFAULT/ACCEPT_EDITS/EXPLORE/BYPASS/DONT_ASK)")
     val permissionMode: String = "DEFAULT",
 

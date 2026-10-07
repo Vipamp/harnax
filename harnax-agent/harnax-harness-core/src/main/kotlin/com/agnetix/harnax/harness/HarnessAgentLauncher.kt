@@ -28,8 +28,12 @@ import com.agnetix.harnax.entity.dto.SkillVisibilityDto
 import com.agnetix.harnax.harness.config.HarnessConfig
 import com.agnetix.harnax.harness.config.Memory
 import com.agnetix.harnax.harness.config.MinioConfig
+import com.agnetix.harnax.harness.memory.BucketScopedWatermarkStore
+import com.agnetix.harnax.harness.memory.LongTermMemoryContextMiddleware
 import com.agnetix.harnax.harness.memory.MemoryConfigFactory
-import com.agnetix.harnax.harness.memory.MemoryFilesystemRoutes
+import com.agnetix.harnax.harness.memory.MemoryDomain
+import com.agnetix.harnax.harness.memory.MemoryPromoter
+import com.agnetix.harnax.harness.memory.MemoryPromotionMiddleware
 import com.agnetix.harnax.harness.minio.MinioBaseStore
 import com.agnetix.harnax.harness.minio.MinioSnapshotClient
 import com.agnetix.harnax.harness.minio.ProcessLocalCoordinationStore
@@ -65,6 +69,7 @@ import io.agentscope.core.state.AgentStateStore
 import io.agentscope.core.tool.mcp.McpClientWrapper
 import io.agentscope.harness.agent.DistributedStore
 import io.agentscope.harness.agent.IsolationScope
+import io.agentscope.harness.agent.coordination.StoreBackedPeriodicGate
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor
@@ -75,6 +80,7 @@ import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec
 import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Duration
 import java.util.UUID
 
 /**
@@ -139,9 +145,13 @@ class HarnessAgentLauncher(
 
     private val log = LoggerFactory.getLogger(HarnessAgentLauncher::class.java)
 
-    /** This process's one CAS probe result, filled by [casSupport] on the first memory assembly. */
+    /**
+     * This process's CAS probe result and the instant it was taken, both written by [casSupport] and both
+     * read together. One object rather than two fields, because a reader that paired this verdict with an
+     * older age would re-probe on every assembly and one that paired it with a newer age would never re-probe.
+     */
     @Volatile
-    private var probedCasSupport: StoreCasProbe.StoreCasSupport? = null
+    private var cachedCasVerdict: Pair<StoreCasProbe.StoreCasSupport, Long>? = null
 
     /**
      * Graceful shutdown hook — called by Spring when the application context closes.
@@ -643,7 +653,21 @@ class HarnessAgentLauncher(
         // deployment and by the agent being assembled — decides whether the store's compare-and-swap gets
         // probed, and the probe picks the gate.
         val memory = harnessConfig.memory
-        val wantsMemory = memory.enabled && !isLead && agentSpec.memoryEnabled
+        val wantsMemory = memoryRequested(memory, agentSpec, isLead)
+        // The bucket, the store it lives in and every refusal this domain makes are decided here rather than
+        // where the routes are mounted: upstream reads the consolidation progress out of the same store the
+        // distributed builder is handed below, and that address carries no owner. Left alone, one owner's
+        // consolidation would advance the progress that decides which of another owner's daily entries count
+        // as already merged.
+        val memoryDomain = memoryDomainOf(minioStore, agentSpec, userIdentifier, isLead, memory)
+        // Whether this conversation keeps its own layer as well. The second switch only participates where the
+        // agent already got a bucket: the first row of 11.3's matrix says long-term off means no memory domain
+        // at all, and a conversation bucket of its own would be extraction into a bucket no promotion owns.
+        val sessionLayer = memoryDomain != null && agentSpec.sessionMemoryEnabled
+        // The bucket the routes mounted below point at. Upstream advances the consolidation progress of
+        // whichever bucket it was handed, so scoping it anywhere else would mark one layer's ledgers done on
+        // another layer's pass — the same object 11.7 moved out of the deployment-wide address.
+        val mountedBucket = memoryDomain?.namespace(if (sessionLayer) sessionId else null)
         if (!isLead && harnessConfig.sandbox.enabled && snapshotSpec != null) {
             // DockerFilesystemSpec moved to io.agentscope.harness.agent.sandbox.impl.docker in 2.0.0
             // .sandboxStateStore() is removed — sandbox state is now managed via DistributedStore
@@ -665,7 +689,7 @@ class HarnessAgentLauncher(
             if (minioStore != null) {
                 // Upstream builds the consolidation gate from this store alone, so this is the only place
                 // a store that cannot compare versions can be answered for.
-                distributedStoreBuilder.baseStore(if (wantsMemory) coordinationStore(minioStore) else minioStore)
+                distributedStoreBuilder.baseStore(memoryStore(wantsMemory, mountedBucket, minioStore))
             } else {
                 // Use a no-op base store when MinIO is not configured
                 distributedStoreBuilder.baseStore(
@@ -684,74 +708,76 @@ class HarnessAgentLauncher(
         // ----- Memory: bucket, hooks and tools switch together -----
         // Half-open was the status quo: four tools advertised to every model while the hooks that fill
         // the bucket were never installed and nothing read it back. An agent with no workspace of its own
-        // has no memory either, so a lead is out of this domain by construction.
-        var memoryEnabled = wantsMemory
-        if (memory.enabled && isLead) {
-            log.info("Agent '{}' is a team lead, which has no workspace: memory stays off for it", agentSpec.name)
-        }
-        if (memoryEnabled) {
-            val store = minioStore ?: throw IllegalStateException(
-                "harness.memory.enabled=true but this runtime has no MinIO to put the bucket in — " +
-                    "memory needs the shared store, an in-process map dies with the replica",
-            )
-            if (!harnessConfig.enableMemoryHooks) {
-                throw IllegalStateException(
-                    "harness.memory.enabled=true needs harness.enable-memory-hooks=true: those two hooks are " +
-                        "what extract the ledger and consolidate it",
-                )
-            }
-            val tenantId = agentSpec.tenantId
-            if (memory.tenantScoped && tenantId == null) {
-                throw IllegalStateException(
-                    "harness.memory.tenant-scoped=true but agent '${agentSpec.name}' carries no tenant, " +
-                        "so its bucket would be keyed on tenants/0 and shared with every other unscoped agent",
-                )
-            }
-            // The bucket binds its owner here, because the userId a call carries is also the key upstream
-            // uses for the persisted agent state and cannot be moved just to reach memory.
-            val owner = userIdentifier.userId?.toString()
-            if (owner.isNullOrBlank()) {
-                // No memory rather than a refused delivery: a caller that names no user still has to be able
-                // to chat. Everything goes off together — bucket, MemoryConfig, tools — so this is not the
-                // half-open state of a tool offered against a memory domain that never fills.
-                memoryEnabled = false
-                log.warn(
-                    "Agent '{}' has memory enabled but this delivery names no user, so memory stays off for " +
-                        "it: its bucket would be keyed on users/ and shared with every other caller that " +
-                        "names none",
-                    agentSpec.name,
-                )
-            } else {
-                // The same tuple on both assembly branches, so moving a deployment between them does not
-                // read as "the memory disappeared" for the same owner.
-                MemoryFilesystemRoutes
-                    .routes(store, tenantId, owner, agentSpec.name, memory.tenantScoped)
-                    .forEach { (prefix, route) -> agentBuilder.filesystemRoute(prefix, route) }
-                agentBuilder.memory(MemoryConfigFactory.build(memory, memoryModel(memory)))
-                // Upstream chooses the gate from the distributed store alone, so say which one this agent got:
-                // a deployment where consolidation never fires otherwise reads exactly like a broken bucket.
-                // The two hooks share that gate under two slot keys, each prefixed with its own name and keyed
-                // on the isolation scope the memory middleware got — which follows the filesystem spec, never
-                // the owner, whose id is not part of either key.
-                val sharedGate = harnessConfig.sandbox.enabled && snapshotSpec != null
-                val gateScope = if (sharedGate) harnessConfig.sandbox.isolationScope else IsolationScope.SESSION
-                // Three states, and the last one is what an operator would otherwise read as healthy: the
-                // store-backed class, with this process answering its claims because the store cannot.
-                val dedup = when {
-                    !sharedGate -> "counted in this replica alone"
-                    casSupport(store).supported -> "shared by every replica"
-                    else -> "counted in this replica alone: the store cannot hold a slot"
+        // has no memory either, so a lead is out of this domain by construction. Whether this delivery got a
+        // bucket at all is answered by [memoryDomainOf] above, which is also where the two misconfigurations
+        // that refuse assembly outright are checked — before the store got handed to the distributed builder.
+        val memoryEnabled = memoryDomain != null
+        if (memoryDomain != null) {
+            // Resolved once: the harness consolidates with it and the promotion pass merges with the same
+            // model, so loading it per consumer would build a second client for one configured row.
+            val extractionModel = memoryModel(memory)
+            // The same tuple on both assembly branches, so moving a deployment between them does not
+            // read as "the memory disappeared" for the same owner.
+            val mounted = if (sessionLayer) memoryDomain.routes(sessionId) else memoryDomain.routes()
+            mounted.forEach { (prefix, route) -> agentBuilder.filesystemRoute(prefix, route) }
+            if (sessionLayer) {
+                // The two canonical prefixes now answer from this conversation, which is what makes the flush,
+                // the consolidation and the four tools write the session layer instead of the owner's. The
+                // curated layer cannot share those prefixes without becoming writable by the model, so it
+                // arrives as its own read-only block.
+                agentBuilder.addMiddleware(LongTermMemoryContextMiddleware(memoryDomain))
+                // The other half of the layer: what that block writes has to reach the owner's text again, or
+                // a conversation that keeps its own memory simply loses it. An agent on one layer needs no
+                // promoter at all, because its extraction already lands in the owner's bucket.
+                if (promoterIsSafe(memoryDomain.store)) {
+                    agentBuilder.addMiddleware(
+                        MemoryPromotionMiddleware(
+                            MemoryPromoter(memoryDomain, sessionId, extractionModel ?: chatModel),
+                            // The same store upstream's two gates get, so a store that cannot hold a slot degrades
+                            // this throttle the way it degrades those: one replica per clock rather than none.
+                            StoreBackedPeriodicGate(coordinationStore(memoryDomain.store)),
+                            memory.consolidationMinGap,
+                            sessionId,
+                        ),
+                    )
+                } else {
+                    // Reading the owner's layer costs nothing unsafe, so the block above stays: what an agent on
+                    // this store gets is a conversation layer that is never merged out of, rather than a merge
+                    // that would overwrite whatever a sibling conversation promoted first.
+                    log.warn(
+                        "[memory] agent '{}' keeps its conversations on their own layer: the object store " +
+                            "cannot compare versions ({}), and promoting without it would drop what another " +
+                            "conversation of this owner merged. Repair the store's version precondition to get " +
+                            "promotion back.",
+                        agentSpec.name,
+                        casSupport(memoryDomain.store).detail,
+                    )
                 }
-                log.info(
-                    "Agent '{}' memory uses the {} consolidation gate: 'memory-flush:{}' and " +
-                        "'memory-maintenance:{}' are two slots of it, {}",
-                    agentSpec.name,
-                    if (sharedGate) "store-backed" else "local",
-                    gateScope,
-                    gateScope,
-                    dedup,
-                )
             }
+            agentBuilder.memory(MemoryConfigFactory.build(memory, extractionModel))
+            // Upstream chooses the gate from the distributed store alone, so say which one this agent got:
+            // a deployment where consolidation never fires otherwise reads exactly like a broken bucket.
+            // The two hooks share that gate under two slot keys, each prefixed with its own name and keyed
+            // on the isolation scope the memory middleware got — which follows the filesystem spec, never
+            // the owner, whose id is not part of either key.
+            val sharedGate = harnessConfig.sandbox.enabled && snapshotSpec != null
+            val gateScope = if (sharedGate) harnessConfig.sandbox.isolationScope else IsolationScope.SESSION
+            // Three states, and the last one is what an operator would otherwise read as healthy: the
+            // store-backed class, with this process answering its claims because the store cannot.
+            val dedup = when {
+                !sharedGate -> "counted in this replica alone"
+                casSupport(memoryDomain.store).supported -> "shared by every replica"
+                else -> "counted in this replica alone: the store cannot hold a slot"
+            }
+            log.info(
+                "Agent '{}' memory uses the {} consolidation gate: 'memory-flush:{}' and " +
+                    "'memory-maintenance:{}' are two slots of it, {}",
+                agentSpec.name,
+                if (sharedGate) "store-backed" else "local",
+                gateScope,
+                gateScope,
+                dedup,
+            )
         }
 
         // ----- Disable built-in features that conflict with Harnax custom middleware -----
@@ -1066,19 +1092,47 @@ class HarnessAgentLauncher(
     }
 
     /**
-     * Whether [store] really compares versions before it writes. Memoised when the store answered: the
-     * verdict is a property of the object store this process talks to, not of the agent being assembled,
-     * and assembly runs per session.
+     * Whether [store] really compares versions before it writes. Cached while it is young: the verdict is a
+     * property of the object store this process talks to, not of the agent being assembled, and assembly runs
+     * per session.
      *
-     * Two assemblies racing a cold cache both probe, which costs round trips and answers nothing wrong —
-     * each probe claims a slot named with its own uuid.
+     * Cached rather than kept forever, because a verdict that outlives its store makes the promise in
+     * [coordinationStore]'s warn false — it tells the operator to repair the version precondition to get the
+     * shared gate back, and nothing else here ever asks the store again.
+     *
+     * Two assemblies racing an expired verdict both probe, which costs round trips and answers nothing wrong —
+     * each probe claims a slot named with its own uuid and deletes it again.
+     *
+     * [ttl] is how long a verdict stays young, and a caller names it only to watch the expiry work.
      */
-    internal fun casSupport(store: BaseStore): StoreCasProbe.StoreCasSupport {
-        probedCasSupport?.let { return it }
+    internal fun casSupport(
+        store: BaseStore,
+        ttl: Duration = CAS_PROBE_TTL,
+    ): StoreCasProbe.StoreCasSupport {
+        val takenAt = System.nanoTime()
+        cachedCasVerdict?.let { (verdict, at) ->
+            if (verdict.definitive && takenAt - at < ttl.toNanos()) return verdict
+        }
         val probed = StoreCasProbe.probe(store)
-        if (probed.definitive) probedCasSupport = probed
+        if (probed.definitive) cachedCasVerdict = probed to takenAt
         return probed
     }
+
+    /**
+     * Whether [store] can be trusted with the promotion pass, whose only guard against losing a sibling's work
+     * is a version comparison.
+     *
+     * A merge overwrites the owner's curated layer and then deletes the conversation's copy of what went into
+     * it, so on a store that answers true to any version two conversations of one owner both merge, both are
+     * told the write landed, and the later one silently drops what the earlier promoted. Upstream's gate can
+     * degrade to a per-replica clock when the store cannot hold a slot because its own failure is a duplicate
+     * consolidation; this one's failure is lost memory, so it refuses instead.
+     *
+     * A probe that could not get an answer — a store that threw — is not a store found wanting: the merge reads
+     * and writes the same store and will meet whatever is wrong there on its own path, where it fails without
+     * destroying anything.
+     */
+    internal fun promoterIsSafe(store: BaseStore): Boolean = casSupport(store).let { it.supported || !it.definitive }
 
     /**
      * The store to hand upstream for the consolidation gate: [store] when it can compare versions, a
@@ -1101,7 +1155,96 @@ class HarnessAgentLauncher(
         return ProcessLocalCoordinationStore(store)
     }
 
+    /**
+     * Whether memory was asked for at all — by this deployment and by the agent being assembled.
+     *
+     * A lead is out of the domain by construction: it has no workspace of its own, so nothing to extract
+     * into and nothing to read back.
+     */
+    private fun memoryRequested(memory: Memory, agentSpec: AgentSpec, isLead: Boolean): Boolean = memory.enabled && !isLead && agentSpec.memoryEnabled
+
+    /**
+     * The memory bucket this delivery gets, or null when it gets none.
+     *
+     * Every refusal is here rather than at the mount points because the answer is needed before the store
+     * goes to the distributed builder: two of the three misconfigurations below abort assembly outright,
+     * and finding out after that store was handed over would leave a half-configured agent behind.
+     */
+    internal fun memoryDomainOf(
+        store: MinioBaseStore?,
+        agentSpec: AgentSpec,
+        userIdentifier: UserIdentifier,
+        isLead: Boolean,
+        memory: Memory,
+    ): MemoryDomain? {
+        if (memory.enabled && isLead) {
+            log.info("Agent '{}' is a team lead, which has no workspace: memory stays off for it", agentSpec.name)
+        }
+        if (!memoryRequested(memory, agentSpec, isLead)) return null
+        val bucketStore = store ?: throw IllegalStateException(
+            "harness.memory.enabled=true but this runtime has no MinIO to put the bucket in — " +
+                "memory needs the shared store, an in-process map dies with the replica",
+        )
+        if (!harnessConfig.enableMemoryHooks) {
+            throw IllegalStateException(
+                "harness.memory.enabled=true needs harness.enable-memory-hooks=true: those two hooks are " +
+                    "what extract the ledger and consolidate it",
+            )
+        }
+        val tenantId = agentSpec.tenantId
+        if (memory.tenantScoped && tenantId == null) {
+            throw IllegalStateException(
+                "harness.memory.tenant-scoped=true but agent '${agentSpec.name}' carries no tenant, " +
+                    "so its bucket would be keyed on tenants/0 and shared with every other unscoped agent",
+            )
+        }
+        // The bucket binds its owner here, because the userId a call carries is also the key upstream
+        // uses for the persisted agent state and cannot be moved just to reach memory.
+        val owner = userIdentifier.userId?.toString()
+        if (owner.isNullOrBlank()) {
+            // No memory rather than a refused delivery: a caller that names no user still has to be able
+            // to chat. Everything goes off together — bucket, MemoryConfig, tools and the hooks — so this
+            // is not the half-open state of a tool offered against a memory domain that never fills.
+            log.warn(
+                "Agent '{}' has memory enabled but this delivery names no user, so memory stays off for " +
+                    "it: its bucket would be keyed on users/ and shared with every other caller that " +
+                    "names none",
+                agentSpec.name,
+            )
+            return null
+        }
+        return MemoryDomain(bucketStore, tenantId, owner, agentSpec.name, memory.tenantScoped)
+    }
+
+    /**
+     * The store to hand upstream for an agent that may consolidate: the gate's store, with the
+     * consolidation progress moved into the bucket this delivery's routes point at.
+     *
+     * Upstream keeps that progress at one address for the whole deployment — a namespace of its own, with
+     * no tenant, user, agent or session in it — so on a shared store one owner's pass decides which of
+     * another owner's daily entries count as already merged. Two deliveries have no bucket to scope it to:
+     * one that never asked for memory, and one that asked and could not bind an owner, which mounts no
+     * routes and writes no memory at all.
+     */
+    internal fun memoryStore(wantsMemory: Boolean, bucket: List<String>?, store: BaseStore): BaseStore {
+        if (!wantsMemory) return store
+        val gated = coordinationStore(store)
+        return bucket?.let { BucketScopedWatermarkStore(gated, it) } ?: gated
+    }
+
     companion object {
+
+        /**
+         * How long one compare-and-swap verdict is trusted before the store is asked again.
+         *
+         * Not a cost question — a probe is a handful of store round trips and assembly is per session — but a
+         * promise one: the only other place a store that cannot compare gets mentioned is the warn saying the
+         * gate is served in this process until the store is repaired. Ten minutes is short enough for an
+         * operator to see that happen in the same hour they fix it, and long enough that a burst of new
+         * conversations does not spend a probe each.
+         */
+        private val CAS_PROBE_TTL: Duration = Duration.ofMinutes(10)
+
         /**
          * Appended when the model has internet search, so it answers real-time questions itself rather
          * than scraping pages for them.

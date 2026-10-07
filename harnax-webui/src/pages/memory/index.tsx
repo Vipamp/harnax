@@ -31,6 +31,10 @@ const { Text } = Typography;
  * column and no permission gate here — every account has to be able to reach its own memory. Nothing
  * is editable: the only write this page offers is the deletion, and it goes through the same
  * `DeleteButton` confirmation the rest of the destructive admin actions use.
+ *
+ * Only the long-term layer is ever shown as text, but an agent may also keep a memory layer per conversation,
+ * so the page reports that layer twice without displaying it: how many conversations are still waiting to be
+ * merged, and — for an agent that has the second layer switched on — why its long-term notes stop short.
  */
 const MyAgentMemory: React.FC = () => {
   const intl = useIntl();
@@ -142,6 +146,34 @@ const MyAgentMemory: React.FC = () => {
     }
   };
 
+  /**
+   * The one thing the daily column cannot say by itself.
+   *
+   * An agent that also remembers per conversation writes its days there first, and they only reach this
+   * listing when a merge has run, so its notes stop on the day the second layer started. Left as a bare
+   * count that reads as the agent forgetting, which is the one wrong answer this page may give about somebody's
+   * own memory. No note for a single-layer agent, and none when admin could not tell either: absence of the
+   * answer is not an answer that the second layer never existed.
+   */
+  const sessionLayerNote = (record?: API.MemoryAgentItem): string | undefined => {
+    if (record?.sessionMemory !== true) return undefined;
+    const last = record.dates?.[record.dates.length - 1];
+    return last
+      ? intl.formatMessage(
+          {
+            id: 'pages.memory.sessionLayerStopped',
+            defaultMessage:
+              'This agent also remembers per conversation, so its long-term notes stop at {date} until a merge runs',
+          },
+          { date: last },
+        )
+      : intl.formatMessage({
+          id: 'pages.memory.sessionLayerNoNotes',
+          defaultMessage:
+            'This agent also remembers per conversation, so nothing has reached its long-term notes yet',
+        });
+  };
+
   const columns: ColumnsType<API.MemoryAgentItem> = [
     {
       title: intl.formatMessage({
@@ -201,10 +233,38 @@ const MyAgentMemory: React.FC = () => {
       key: 'dates',
       width: 120,
       align: 'center',
-      render: (dates?: string[]) =>
-        dates?.length ? (
-          <Tooltip title={dates.join(', ')}>
-            <Tag color="blue">{dates.length}</Tag>
+      render: (dates?: string[], record?: API.MemoryAgentItem) => {
+        const tip = [dates?.join(', '), sessionLayerNote(record)].filter(Boolean).join('\n');
+        const cell = dates?.length ? (
+          <Tag color="blue">{dates.length}</Tag>
+        ) : (
+          <Text type="secondary">0</Text>
+        );
+        return tip ? <Tooltip title={tip}>{cell}</Tooltip> : cell;
+      },
+    },
+    {
+      title: intl.formatMessage({
+        id: 'pages.memory.pendingCount',
+        defaultMessage: 'Unmerged',
+      }),
+      dataIndex: 'pendingSessionLayers',
+      key: 'pendingSessionLayers',
+      width: 110,
+      align: 'center',
+      render: (count?: number) =>
+        count ? (
+          <Tooltip
+            title={intl.formatMessage(
+              {
+                id: 'pages.memory.pendingTooltip',
+                defaultMessage:
+                  'The memory of {count} conversation(s) has not been merged into the long-term layer yet',
+              },
+              { count },
+            )}
+          >
+            <Tag color="orange">{count}</Tag>
           </Tooltip>
         ) : (
           <Text type="secondary">0</Text>
@@ -240,7 +300,7 @@ const MyAgentMemory: React.FC = () => {
             {
               id: 'pages.memory.deleteConfirm',
               defaultMessage:
-                'Delete the memory of {name}? Its curated memory and all daily notes go with it, and nothing can be restored.',
+                'Delete the memory of {name}? Its curated memory, all daily notes and any conversation memory that has not been merged yet go with it, and nothing can be restored.',
             },
             { name: record.agentId },
           )}
@@ -302,7 +362,7 @@ const MyAgentMemory: React.FC = () => {
         message={intl.formatMessage({
           id: 'pages.memory.deleteWarning',
           defaultMessage:
-            'Deleting is final: the curated memory and every daily note of that agent are removed together and cannot be restored.',
+            'Deleting is final: the curated memory, every daily note and any conversation memory that has not been merged yet are removed together and cannot be restored.',
         })}
         style={{ marginBottom: 16 }}
       />

@@ -78,6 +78,16 @@ class MemoryConfigFactoryTest {
     }
 
     @Test
+    fun `the curation window comes from configuration`() {
+        // One knob for both throttles of design 11.4: this value is what the harness consolidates a bucket on
+        // and what the launcher hands the promotion middleware as its gate window, so slowing a deployment
+        // down does not leave conversation layers draining at the old rate.
+        val config = MemoryConfigFactory.build(Memory(consolidationMinGap = Duration.ofMinutes(11)), null)
+
+        assertEquals(Duration.ofMinutes(11), config.consolidationMinGap())
+    }
+
+    @Test
     fun `a memory model is used only when one was configured`() {
         val stub = mock(Model::class.java)
 

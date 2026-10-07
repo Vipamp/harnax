@@ -259,8 +259,9 @@ open class AgentMapperTest {
         @Test
         @DisplayName("memory answer - Round-trips on the agent row")
         fun `the memory answer round-trips through the agent row`() {
-            // Given - delivery reads this column back, so both statements have to carry it: a 0 written here
-            // must not come back as the column default, and switching it on has to survive updateById.
+            // Given - delivery reads these columns back, so both statements have to carry them: a 0 written here
+            // must not come back as the column default, and switching it on has to survive updateById. The
+            // session layer is off by default, so it has to be written both ways for the same reason.
             val now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
             val agent = Agent().apply {
                 name = "Forgetful Agent"
@@ -270,6 +271,7 @@ open class AgentMapperTest {
                 status = 1
                 isPublic = 0
                 memoryEnabled = 0
+                sessionMemoryEnabled = 0
                 creator = "testuser1"
                 active = 1
                 tenantId = 1L
@@ -279,16 +281,27 @@ open class AgentMapperTest {
             assertEquals(1, agentMapper.insert(agent))
 
             assertEquals(0, requireNotNull(agentMapper.selectById(agent.id)).memoryEnabled, "an agent that declined memory comes back as declined")
+            assertEquals(
+                0,
+                requireNotNull(agentMapper.selectById(agent.id)).sessionMemoryEnabled,
+                "an agent that declined the session layer comes back as declined",
+            )
 
             // When
             val stored = requireNotNull(agentMapper.selectById(agent.id)).apply {
                 memoryEnabled = 1
+                sessionMemoryEnabled = 1
                 updateTime = now
             }
             assertEquals(1, agentMapper.updateById(stored))
 
             // Then
             assertEquals(1, requireNotNull(agentMapper.selectById(agent.id)).memoryEnabled)
+            assertEquals(
+                1,
+                requireNotNull(agentMapper.selectById(agent.id)).sessionMemoryEnabled,
+                "and the wizard's answer about the session layer is what the row carries",
+            )
         }
 
         @Test

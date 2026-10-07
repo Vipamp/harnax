@@ -29,9 +29,32 @@ object MemoryFilesystemRoutes {
     /** The append-only daily ledgers, owned by the per-call flush. */
     const val MEMORY_DIR_ROUTE = "memory/"
 
-    /** Matches the framework's own segment for an exact-file route, so both layers sit under comparable keys. */
-    private const val ROOT_SEGMENT = "root"
-    private const val MEMORY_SEGMENT = "memory"
+    /**
+     * The route tail an exact-file route gets, matching the framework's own spelling so both layers sit under
+     * comparable keys.
+     *
+     * Public because a caller that addresses the bucket through the store rather than through a route — the
+     * promotion pass, which compares versions — needs the same tail to name the same namespace.
+     */
+    const val ROOT_SEGMENT = "root"
+
+    /**
+     * How the store keys the curated layer inside a bucket's [ROOT_SEGMENT] namespace.
+     *
+     * The routed write paths hand this form down: [io.agentscope.harness.agent.filesystem.CompositeFilesystem]
+     * canonicalizes a matched path to a leading slash before it reaches the backend, so the object exists at
+     * `/MEMORY.md` whether the flush wrote it as `MEMORY.md` or the model did as `/MEMORY.md`.
+     */
+    const val CURATED_ITEM_KEY = "/MEMORY.md"
+
+    /** Public because [BucketScopedWatermarkStore] keeps a bucket's progress beside the ledgers it counts. */
+    const val MEMORY_SEGMENT = "memory"
+
+    /**
+     * The segment a conversation's own layer nests under, inside the agent segment. Public because
+     * harnax-admin decodes the same keys and must spell this one identically.
+     */
+    const val SESSIONS_SEGMENT = "sessions"
 
     fun routes(
         store: BaseStore,
@@ -42,6 +65,25 @@ object MemoryFilesystemRoutes {
     ): Map<String, AbstractFilesystem> = mapOf(
         MEMORY_MD_ROUTE to route(store, tenantId, userId, agentId, tenantScoped, ROOT_SEGMENT),
         MEMORY_DIR_ROUTE to route(store, tenantId, userId, agentId, tenantScoped, MEMORY_SEGMENT),
+    )
+
+    /**
+     * The conversation's own bucket, which is the two memory routes re-keyed one segment deeper.
+     *
+     * Nothing else about the pipeline moves: the flush appends to `memory/` and the consolidation pass
+     * curates `MEMORY.md` through whichever route answers, so swapping the tail of the namespace is what
+     * makes a conversation extract into its own layer instead of the owner's long-term one.
+     */
+    fun sessionRoutes(
+        store: BaseStore,
+        tenantId: Long?,
+        userId: String,
+        agentId: String,
+        sessionId: String,
+        tenantScoped: Boolean,
+    ): Map<String, AbstractFilesystem> = mapOf(
+        MEMORY_MD_ROUTE to sessionRoute(store, tenantId, userId, agentId, sessionId, tenantScoped, ROOT_SEGMENT),
+        MEMORY_DIR_ROUTE to sessionRoute(store, tenantId, userId, agentId, sessionId, tenantScoped, MEMORY_SEGMENT),
     )
 
     /**
@@ -57,6 +99,23 @@ object MemoryFilesystemRoutes {
         agentId: String,
         tenantScoped: Boolean,
         segment: String,
+    ): List<String> = bucketNamespace(tenantId, userId, agentId, null, tenantScoped) + listOf(segment)
+
+    /**
+     * The bucket tuple on its own, with no route tail: `tenants/<id>/users/<uid>/agents/<agentId>`, plus
+     * `sessions/<sessionId>` when the bucket is a conversation's.
+     *
+     * Both layers come from here, one with a route segment appended and the other with a progress object
+     * beside it, so a deployment that switches the tenant segment off moves every key of both layers at once
+     * rather than leaving one keyed by a tenant the other does not read. A null [sessionId] is the owner's
+     * long-term bucket.
+     */
+    fun bucketNamespace(
+        tenantId: Long?,
+        userId: String,
+        agentId: String,
+        sessionId: String?,
+        tenantScoped: Boolean,
     ): List<String> = buildList {
         if (tenantScoped) {
             // The launcher refuses a tenant-scoped agent with no tenant before it reaches this factory, so
@@ -68,8 +127,26 @@ object MemoryFilesystemRoutes {
         add(userId)
         add("agents")
         add(agentId)
-        add(segment)
+        if (sessionId != null) {
+            add(SESSIONS_SEGMENT)
+            add(sessionId)
+        }
     }
+
+    /**
+     * The conversation's bucket tuple: the owner tuple, then `sessions/<sessionId>`, then the caller's
+     * [segment]. The session pair goes *inside* the agent segment on purpose, so listing or deleting
+     * `agents/<agentId>/` takes a conversation's layer along with the long-term one — the two whole-agent
+     * reclamation paths need no session-aware branch.
+     */
+    fun sessionNamespace(
+        tenantId: Long?,
+        userId: String,
+        agentId: String,
+        sessionId: String,
+        tenantScoped: Boolean,
+        segment: String,
+    ): List<String> = bucketNamespace(tenantId, userId, agentId, sessionId, tenantScoped) + listOf(segment)
 
     private fun route(
         store: BaseStore,
@@ -82,6 +159,21 @@ object MemoryFilesystemRoutes {
         store,
         NamespaceFactory {
             namespace(tenantId, userId, agentId, tenantScoped, segment)
+        },
+    )
+
+    private fun sessionRoute(
+        store: BaseStore,
+        tenantId: Long?,
+        userId: String,
+        agentId: String,
+        sessionId: String,
+        tenantScoped: Boolean,
+        segment: String,
+    ): AbstractFilesystem = RemoteFilesystem(
+        store,
+        NamespaceFactory {
+            sessionNamespace(tenantId, userId, agentId, sessionId, tenantScoped, segment)
         },
     )
 }

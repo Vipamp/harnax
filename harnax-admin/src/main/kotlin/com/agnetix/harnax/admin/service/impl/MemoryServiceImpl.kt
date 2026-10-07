@@ -8,6 +8,7 @@ import com.agnetix.harnax.admin.service.MemoryService
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.MemoryObjectKeys
 import com.agnetix.harnax.admin.util.TenantResolver
+import com.agnetix.harnax.mapper.AgentMapper
 import org.slf4j.LoggerFactory
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.stereotype.Service
@@ -25,10 +26,17 @@ import org.springframework.stereotype.Service
  * An internal (shared-secret) call has no row of its own and is refused: `internal-service` is a service
  * identity, not a person with memories, and letting it through would mean an agent runtime could read an
  * owner's bucket by guessing nothing at all.
+ *
+ * The listing also reads the agent table, for one field: whether an agent keeps a conversation layer. The
+ * memory bucket is keyed by the agent's name and holds no switch of its own, so without the row the page
+ * could only show the long-term ledger — which stops on the day two layers started, and reads as forgetting.
+ * That read is decoration on a compliance listing, so a missing row or a failing lookup costs the hint and
+ * never the memory: an owner still has to be able to see and delete what was written about them.
  */
 @Service
 class MemoryServiceImpl(
     private val memoryStoreGateway: MemoryStoreGateway,
+    private val agentMapper: AgentMapper,
     private val jwtUtil: JwtUtil,
 ) : MemoryService {
 
@@ -43,7 +51,7 @@ class MemoryServiceImpl(
             agents.size,
             caller.tenantId,
         )
-        return agents
+        return agents.map { it.copy(sessionMemory = keepsSessionLayer(it.agentId, caller)) }
     }
 
     override fun readMyMemory(agentId: String): MemoryDetailResponse? {
@@ -72,6 +80,32 @@ class MemoryServiceImpl(
             caller.tenantId,
         )
         return removed
+    }
+
+    /**
+     * Whether this agent was given a conversation layer, or null when the page cannot be told.
+     *
+     * Read by the name the memory bucket is keyed on and under the tenant that bucket was listed in: agent
+     * names are unique per workspace rather than across the deployment, so an unqualified lookup would hang
+     * another tenant's switch on this owner's memory. A row that is not there — the agent was renamed or
+     * deleted after it wrote this memory — is unknown rather than off, because "this agent never had a second
+     * layer" is a claim about the owner's memory that this page has no way to support.
+     */
+    private fun keepsSessionLayer(
+        agentId: String,
+        caller: Caller,
+    ): Boolean? = try {
+        // The row itself decides whether there is an answer at all: comparing a nullable column would fold
+        // "no agent row" into false and tell the owner their memory is complete.
+        agentMapper.selectByName(agentId, caller.tenantId)?.let { it.sessionMemoryEnabled == 1 }
+    } catch (e: Exception) {
+        log.warn(
+            "[memory] The layer switch of agent '{}' could not be read for user '{}': {}",
+            agentId,
+            caller.username,
+            e.message,
+        )
+        null
     }
 
     /** The account this request is acting as, and the namespace its memory lives in. */

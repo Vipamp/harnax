@@ -58,6 +58,16 @@ data class AgentSpec(
      * nobody fills is the half-open shape this domain keeps falling into.
      */
     val memoryEnabled: Boolean = true,
+
+    /**
+     * Whether this agent also keeps a memory layer scoped to one conversation, as granted on admin's
+     * `agent` row.
+     *
+     * Off by default: today's assembly is the single long-term layer, and the extra pair of routes keyed one
+     * segment deeper has to be asked for per agent rather than arrive with the upgrade. It means nothing when
+     * [memoryEnabled] is false — the whole memory domain stays off, this flag included.
+     */
+    val sessionMemoryEnabled: Boolean = false,
 ) {
 
     /**
@@ -99,6 +109,7 @@ class AgentSpecBuilder {
     private var planSpec: PlanSpec = PlanSpec(false)
     private var skillSelfWrite: Boolean = false
     private var memoryEnabled: Boolean = true
+    private var sessionMemoryEnabled: Boolean = false
 
     fun id(id: Long) = apply { this.id = id }
     fun tenantId(tenantId: Long?) = apply { this.tenantId = tenantId }
@@ -118,6 +129,7 @@ class AgentSpecBuilder {
     fun planSpec(planSpec: PlanSpec) = apply { this.planSpec = planSpec }
     fun skillSelfWrite(skillSelfWrite: Boolean) = apply { this.skillSelfWrite = skillSelfWrite }
     fun memoryEnabled(memoryEnabled: Boolean) = apply { this.memoryEnabled = memoryEnabled }
+    fun sessionMemoryEnabled(sessionMemoryEnabled: Boolean) = apply { this.sessionMemoryEnabled = sessionMemoryEnabled }
 
     fun build(): AgentSpec {
         // 0 is a team's lead: its configuration is the `team` row and no agent record stands behind it
@@ -142,6 +154,7 @@ class AgentSpecBuilder {
             planSpec = planSpec,
             skillSelfWrite = skillSelfWrite,
             memoryEnabled = memoryEnabled,
+            sessionMemoryEnabled = sessionMemoryEnabled,
         )
     }
 }

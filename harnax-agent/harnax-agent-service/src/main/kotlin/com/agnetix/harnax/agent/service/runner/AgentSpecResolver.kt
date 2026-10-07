@@ -234,6 +234,9 @@ class AgentSpecResolver(
             // The inverse of the grant above: memory is on unless the row says 0, so a value this runtime
             // never expected still leaves the agent with the memory every agent gets by default.
             .memoryEnabled(specInfo.memoryEnabled != 0)
+            // The session layer compares like the grant above rather than like the line before it: it opens
+            // a second pair of routes, so a value this runtime never expected stays on the single-layer side.
+            .sessionMemoryEnabled(specInfo.sessionMemoryEnabled == 1)
 
         // Collect all env bindings for ToolEnvContext (flat map, merged across tools and MCPs)
         val allEnvBindings = mutableMapOf<String, String>()

@@ -11,7 +11,9 @@ import io.minio.GetObjectArgs
 import io.minio.ListObjectsArgs
 import io.minio.MinioClient
 import io.minio.RemoveObjectArgs
+import io.minio.Result
 import io.minio.errors.ErrorResponseException
+import io.minio.messages.Item
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Value
@@ -31,8 +33,10 @@ import java.time.ZonedDateTime
  *
  * Three rules hold everywhere below:
  * 1. Every listing starts at the caller's own owner prefix — `store/tenants/<tenantId>/users/<userId>/`, or
- *    `store/users/<userId>/` when the writer's tenant-scoped switch is off — and a key that does not decode
- *    under that prefix is dropped before it can be read or deleted.
+ *    `store/users/<userId>/` when the writer's tenant-scoped switch is off — and a key outside it is never
+ *    touched. A read then keeps only the keys that decode to a memory location, because an object admin cannot
+ *    name is an object it cannot show. A delete keeps every key the bucket listed, because a sweep that skipped
+ *    the ones this decoder refuses would leave a "deleted" owner's memory behind forever.
  * 2. The bytes only ever come from keys the object store itself returned, never from a rebuilt path.
  * 3. A storage failure is thrown, never logged and answered as "no memory", on the listing and on the read
  *    alike: an owner told they have nothing because the server was unreachable would stop looking, and an
@@ -71,19 +75,24 @@ class MemoryStoreGateway(
         userId: String,
     ): List<MemoryAgentResponse> {
         val ownerPrefix = ownerPrefix(tenantId, userId)
+        // Grouped over both layers, so an agent that has so far only written conversation layers still gets a
+        // row: on the page that is the difference between "these conversations are not merged yet" and
+        // "this agent has no memory at all", and the second would be a lie.
         return groupByAgent(list(ownerPrefix)).map { (agentId, objects) ->
-            val curated = recordOf(objects, MemoryObjectKeys.ROOT_SEGMENT)
+            val longTerm = longTermOnly(objects)
+            val curated = recordOf(longTerm, MemoryObjectKeys.ROOT_SEGMENT)
             MemoryAgentResponse(
                 agentId = agentId,
                 content = curated?.record?.content ?: "",
                 lastModified = curated?.let { storageTime(it.stored.lastModified, it.record.modifiedAt) },
                 // Dates only here: a list that read every ledger of every agent would fetch the owner's
                 // whole memory history to show one line per agent.
-                dates = objects
+                dates = longTerm
                     .filter { it.location.segment == MemoryObjectKeys.MEMORY_SEGMENT }
                     .mapNotNull { MemoryObjectKeys.dateOf(it.location.itemKey) }
                     .distinct()
                     .sorted(),
+                pendingSessionLayers = pendingLayers(objects),
             )
         }
     }
@@ -97,7 +106,7 @@ class MemoryStoreGateway(
         if (!MemoryObjectKeys.isValidAgentId(agentId)) {
             throw BizException("Invalid agent id")
         }
-        val objects = groupByAgent(list(ownerPrefix(tenantId, userId)))[agentId] ?: return null
+        val objects = groupByAgent(longTermOnly(list(ownerPrefix(tenantId, userId))))[agentId] ?: return null
         val curated = recordOf(objects, MemoryObjectKeys.ROOT_SEGMENT)
         val entries = objects
             .filter { it.location.segment == MemoryObjectKeys.MEMORY_SEGMENT }
@@ -124,8 +133,9 @@ class MemoryStoreGateway(
     /**
      * Deletes one agent's memory for this owner and returns how many objects went away.
      *
-     * The agent id is validated before anything is addressed, and the deleted keys are the ones the listing
-     * under the caller's own prefix named — the request never contributes a path segment of its own.
+     * The agent id is validated before anything is addressed, and the keys are every object the bucket lists
+     * under that agent's prefix — the request contributes the one validated segment of the prefix and no path
+     * of its own. Both of the agent's layers go, and so does an object whose name this decoder would refuse.
      */
     fun deleteAgent(
         tenantId: Long,
@@ -135,8 +145,10 @@ class MemoryStoreGateway(
         if (!MemoryObjectKeys.isValidAgentId(agentId)) {
             throw BizException("Invalid agent id")
         }
-        val objects = groupByAgent(list(ownerPrefix(tenantId, userId)))[agentId].orEmpty()
-        return deleteAll(objects, "agent '$agentId' of user $userId in tenant $tenantId")
+        return deleteAll(
+            keysUnder(agentPrefix(tenantId, userId, agentId)),
+            "agent '$agentId' of user $userId in tenant $tenantId",
+        )
     }
 
     /**
@@ -146,6 +158,9 @@ class MemoryStoreGateway(
      * of several tenants has memory spread over one prefix per tenant, and a sweep of only the row's home
      * tenant leaves the rest of a "deleted" account's memory behind. Tenant and user both come from rows,
      * never from a path variable.
+     *
+     * The keys are raw for the same reason: an agent whose own name contains a slash writes a key no decoder
+     * can place, and that memory has to leave with its owner even though no endpoint can name its agent.
      */
     fun deleteUser(
         tenantIds: Collection<Long>,
@@ -153,8 +168,10 @@ class MemoryStoreGateway(
     ): Int {
         // With the switch off every tenant names the same area, and one sweep of that owner is the truth.
         val prefixes = tenantIds.map { ownerPrefix(it, userId) }.distinct()
-        val targets = prefixes.flatMap { list(it) }
-        return deleteAll(targets, "user $userId in ${prefixes.size} memory prefix(es)")
+        return deleteAll(
+            prefixes.flatMap { keysUnder(it) },
+            "user $userId in ${prefixes.size} memory prefix(es)",
+        )
     }
 
     /**
@@ -171,6 +188,30 @@ class MemoryStoreGateway(
         val record: MemoryRecordParser.Record,
     )
 
+    /**
+     * The objects that are this owner's long-term layer, dropping every conversation's own bucket.
+     *
+     * A session's `root/MEMORY.md` is a draft that has not been merged yet, and its ledgers have not earned
+     * a place in the curated memory. Handled as long-term content they would make the page say a new
+     * conversation will be told something it will not. Both layers still go away together, because
+     * [deleteAgent] and [deleteUser] address prefixes rather than decoded objects.
+     */
+    private fun longTermOnly(objects: List<Stored>): List<Stored> = objects.filter { it.location.sessionId == null }
+
+    /**
+     * How many of this agent's conversations still hold memory of their own.
+     *
+     * Conversations, not objects: one conversation's draft and its ledgers are the one merge that is waiting,
+     * and a page that counted objects would show an agent as twice as far behind for a conversation that
+     * wrote on two days. Which objects mean "not merged yet" is the writer's answer, not this one, so the
+     * shape rule lives in [MemoryObjectKeys.hasUnmergedContent] beside the keys it reads.
+     */
+    private fun pendingLayers(objects: List<Stored>): Int = objects
+        .filter { it.location.sessionId != null && MemoryObjectKeys.hasUnmergedContent(it.location) }
+        .mapNotNull { it.location.sessionId }
+        .distinct()
+        .size
+
     /** The curated layer of one agent's objects, read once. */
     private fun recordOf(
         objects: List<Stored>,
@@ -184,10 +225,39 @@ class MemoryStoreGateway(
         userId: String,
     ): String = MemoryObjectKeys.ownerPrefix(keyPrefix(), tenantId, userId, tenantScoped)
 
-    /** The objects under [prefix] that decode to a memory location of this owner. */
-    private fun list(prefix: String): List<Stored> {
+    /** One agent's memory of this owner: both routes, both layers, and every conversation's own bucket. */
+    private fun agentPrefix(
+        tenantId: Long,
+        userId: String,
+        agentId: String,
+    ): String = MemoryObjectKeys.agentPrefix(keyPrefix(), tenantId, userId, agentId, tenantScoped)
+
+    /**
+     * Every object key under [prefix], named the way the bucket names it.
+     *
+     * The two delete sweeps work on these instead of on [list]'s decoded objects, because a key this decoder
+     * refuses is a key a sweep may not skip: an agent whose own name contains a slash writes a memory object
+     * that no endpoint can name, and it has to leave with its owner. The prefix is the whole scope — built from
+     * ids the request cannot influence and always ending in `/`, so nothing that starts with it belongs to
+     * anybody else, and the workspace files of the same owner live under a different namespace entirely.
+     *
+     * An entry whose metadata the store cannot deliver is thrown rather than skipped, unlike the read path:
+     * reporting a clean sweep over objects that were never named is exactly what rule 3 forbids.
+     */
+    private fun keysUnder(prefix: String): List<String> = rawEntries(prefix).mapNotNull { entry ->
+        val objectKey = try {
+            entry.get().objectName()
+        } catch (e: Exception) {
+            log.error("[memory] Naming an entry under {} failed", prefix, e)
+            throw BizException(503, "Memory store could not be listed", e)
+        }
+        objectKey.takeIf { it.startsWith(prefix) }
+    }
+
+    /** The bucket's answer for [prefix], materialised before anything reads it so a fault is thrown here. */
+    private fun rawEntries(prefix: String): List<Result<Item>> {
         val (client, bucket) = storage()
-        val entries = try {
+        return try {
             client.listObjects(
                 ListObjectsArgs.builder().bucket(bucket).prefix(prefix).recursive(true).build(),
             ).toList()
@@ -195,8 +265,12 @@ class MemoryStoreGateway(
             log.error("[memory] Listing {} failed", prefix, e)
             throw BizException(503, "Memory store could not be listed", e)
         }
+    }
+
+    /** The objects under [prefix] that decode to a memory location of this owner. */
+    private fun list(prefix: String): List<Stored> {
         val stored = mutableListOf<Stored>()
-        for (entry in entries) {
+        for (entry in rawEntries(prefix)) {
             val item = try {
                 entry.get()
             } catch (e: Exception) {
@@ -217,7 +291,8 @@ class MemoryStoreGateway(
      *
      * An agent id that is not addressable (a name the runtime wrote with a slash in it, say) groups to a
      * key no request could ever ask for, so it is dropped rather than guessed at — the owner's memory is
-     * still there, only this page cannot name it.
+     * still there, only this page cannot name it. The two sweeps do not consult this map, so an agent the
+     * page cannot name still goes with its owner.
      */
     private fun groupByAgent(objects: List<Stored>): Map<String, List<Stored>> = objects
         .groupBy { it.location.agentId }
@@ -261,24 +336,24 @@ class MemoryStoreGateway(
     ): String? = lastModified?.toInstant()?.toString() ?: embedded
 
     private fun deleteAll(
-        targets: List<Stored>,
+        objectKeys: List<String>,
         described: String,
     ): Int {
-        if (targets.isEmpty()) {
+        if (objectKeys.isEmpty()) {
             return 0
         }
         val (client, bucket) = storage()
         var removed = 0
         var failure: Exception? = null
-        for (target in targets) {
+        for (objectKey in objectKeys) {
             try {
-                client.removeObject(RemoveObjectArgs.builder().bucket(bucket).`object`(target.objectKey).build())
+                client.removeObject(RemoveObjectArgs.builder().bucket(bucket).`object`(objectKey).build())
                 removed++
             } catch (e: Exception) {
                 // Every object still gets a chance, because a retry of a half-finished delete has to be the
                 // cheap case; the first failure is what gets reported.
                 failure = failure ?: e
-                log.warn("[memory] Object {} could not be deleted: {}", target.objectKey, e.message)
+                log.warn("[memory] Object {} could not be deleted: {}", objectKey, e.message)
             }
         }
         val error = failure
@@ -288,7 +363,7 @@ class MemoryStoreGateway(
             log.error("[memory] Deleting {} stopped after {} object(s): {}", described, removed, error.message)
             throw BizException(
                 503,
-                "Memory could not be fully deleted for $described ($removed of ${targets.size} object(s) removed before failing)",
+                "Memory could not be fully deleted for $described ($removed of ${objectKeys.size} object(s) removed before failing)",
                 error,
             )
         }

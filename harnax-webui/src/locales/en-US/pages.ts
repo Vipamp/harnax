@@ -588,6 +588,8 @@ export default {
   'pages.agent.skillSelfWriteHint': 'The agent may draft skills inside its own session. Nothing is published and no other agent sees it until a reviewer approves the draft on the draft review page.',
   'pages.agent.memoryEnabled': 'Long-term memory',
   'pages.agent.memoryEnabledHint': 'Off means this agent stops extracting memory from its sessions and stops carrying existing memory into its context. Memory already written is not deleted; clear it on the memory page.',
+  'pages.agent.sessionMemoryEnabled': 'Session memory',
+  'pages.agent.sessionMemoryEnabledHint': 'On gives each conversation its own memory as well, which is merged into long-term memory and cleared once enough time has passed. Needs long-term memory to be on; off here keeps the single long-term layer, as today.',
   'pages.agent.toolConfig': 'Tool Config',
   'pages.agent.toolConfigOptional': 'Configure tools (optional, can be skipped)',
   'pages.agent.modelNotSupportTool': 'Current model does not support tool calling. Switch to a supported model or skip this step',
@@ -1325,14 +1327,21 @@ export default {
   'pages.memory.curated': 'Curated Memory',
   'pages.memory.noCurated': 'Nothing curated yet',
   'pages.memory.dailyCount': 'Daily Notes',
+  'pages.memory.pendingCount': 'Unmerged',
+  'pages.memory.pendingTooltip':
+    'The memory of {count} conversation(s) has not been merged into the long-term layer yet',
+  'pages.memory.sessionLayerStopped':
+    'This agent also remembers per conversation, so its long-term notes stop at {date} until a merge runs',
+  'pages.memory.sessionLayerNoNotes':
+    'This agent also remembers per conversation, so nothing has reached its long-term notes yet',
   'pages.memory.updatedAt': 'Last Updated',
   'pages.memory.noData': 'None of your agents has long-term memory',
   'pages.memory.loadFailed': 'Failed to load your agent memory, please retry',
   'pages.memory.deleteWarning':
-    'Deleting is final: the curated memory and every daily note of that agent are removed together and cannot be restored.',
+    'Deleting is final: the curated memory, every daily note and any conversation memory that has not been merged yet are removed together and cannot be restored.',
   'pages.memory.deleteTooltip': 'Delete this memory',
   'pages.memory.deleteConfirm':
-    'Delete the memory of {name}? Its curated memory and all daily notes go with it, and nothing can be restored.',
+    'Delete the memory of {name}? Its curated memory, all daily notes and any conversation memory that has not been merged yet go with it, and nothing can be restored.',
   'pages.memory.deletedObjects':
     'Deleted successfully, {count} object(s) removed',
   'pages.memory.deleteNothingFound':

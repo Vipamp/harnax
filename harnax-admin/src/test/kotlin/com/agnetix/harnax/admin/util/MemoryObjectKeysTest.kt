@@ -244,5 +244,23 @@ class MemoryObjectKeysTest {
             assertNull(MemoryObjectKeys.dateOf("/notes.md"))
             assertNull(MemoryObjectKeys.dateOf("/2026-13-45.md"))
         }
+
+        /**
+         * How far a bucket's ledgers have been merged is one object the runtime keeps beside them (§11.7).
+         *
+         * It decodes, because it has to: an agent delete and a user delete sweep the prefix, and a progress
+         * object left behind would silently suppress consolidation for whoever next got that bucket. And it
+         * answers no date, because the page offers dated entries only — an operator reading their own memory
+         * should not be shown a bookkeeping object as a day of it.
+         */
+        @Test
+        fun `the bucket's consolidation progress decodes as a memory object with no date`() {
+            val location = MemoryObjectKeys.locationOf(owner, "${owner}agents/Research/memory/watermark")
+
+            assertNotNull(location, "the sweep that deletes this agent's memory has to be able to name it")
+            assertEquals("memory", location!!.segment)
+            assertEquals("/watermark", location.itemKey)
+            assertNull(MemoryObjectKeys.dateOf(location.itemKey), "so no row of the page ever carries it")
+        }
     }
 }

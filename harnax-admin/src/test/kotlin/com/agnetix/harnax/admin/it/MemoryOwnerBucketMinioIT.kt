@@ -23,6 +23,7 @@ import java.nio.charset.StandardCharsets
 import kotlin.random.Random
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -110,6 +111,35 @@ class MemoryOwnerBucketMinioIT : BaseAdminIT() {
 
         /** A slice of [CURATED] with no newline in it, so a leaked body can be spotted in an error page. */
         private const val CURATED_MARKER = "likes terse answers"
+
+        /**
+         * One conversation's own bucket of the same owner and agent: a draft that has not been promoted yet.
+         *
+         * The page is the owner's long-term memory, so nothing from here may show up on it — while an agent
+         * delete still has to reclaim it, or the bytes of a conversation outlive the agent they came from.
+         */
+        private const val SESSION_ID = "sess-1"
+        private const val SESSION_DRAFT = "# Draft\n- a line that has not been promoted yet"
+        private const val SESSION_LEDGER = "## 21:40\n- asked that the draft stay with the conversation"
+
+        /** Slices with no newline, so a leaked body shows up in the one line of a JSON response. */
+        private const val SESSION_DRAFT_MARKER = "has not been promoted yet"
+        private const val SESSION_LEDGER_MARKER = "stay with the conversation"
+
+        /** A day no long-term ledger of this class is written for, so a leaked session date is visible. */
+        private const val SESSION_DATE = "2026-10-06"
+
+        /**
+         * How far one bucket's ledgers have been merged, which the runtime keeps as one object beside them.
+         *
+         * Upstream stores that progress at an address with no owner in it, so every bucket of a deployment
+         * shares it; the runtime therefore relocates it into the bucket it counts (§11.7 of the memory
+         * design). Living inside the ledger namespace buys its reclamation, and costs the page one object that
+         * is not a day of anybody's memory — so [envelope] does not describe it: `MinioBaseStore` writes the
+         * value map as it came, and that map holds a timestamp, not file text.
+         */
+        private const val PROGRESS_ITEM_KEY = "watermark"
+        private const val PROGRESS_BODY = "{\"key\":\"/watermark\",\"value\":{\"ts\":1759670400000},\"version\":1}"
 
         @JvmStatic
         val minio: GenericContainer<*> = GenericContainer(DockerImageName.parse("minio/minio:latest"))
@@ -199,6 +229,24 @@ class MemoryOwnerBucketMinioIT : BaseAdminIT() {
         ownerPrefix: String = ADMIN_OWNER_PREFIX,
     ): String = "${ownerPrefix}agents/$agent/memory/$date.md"
 
+    /** One conversation's curated draft, nested under the agent segment rather than beside it. */
+    private fun sessionCuratedKey(
+        agent: String,
+        sessionId: String = SESSION_ID,
+    ): String = "${agentPrefix(agent)}sessions/$sessionId/root/MEMORY.md"
+
+    /** One conversation's daily ledger. */
+    private fun sessionLedgerKey(
+        date: String,
+        agent: String,
+        sessionId: String = SESSION_ID,
+    ): String = "${agentPrefix(agent)}sessions/$sessionId/memory/$date.md"
+
+    /** The one object that says how far [agent]'s ledgers have been merged for this owner. */
+    private fun progressKey(
+        agent: String,
+    ): String = "${agentPrefix(agent)}memory/$PROGRESS_ITEM_KEY"
+
     private fun agentPrefix(
         agent: String,
         ownerPrefix: String = ADMIN_OWNER_PREFIX,
@@ -255,6 +303,18 @@ class MemoryOwnerBucketMinioIT : BaseAdminIT() {
         put(curatedKey(DELETABLE_AGENT), envelope("/MEMORY.md", CURATED))
         put(ledgerKey("2026-10-05", DELETABLE_AGENT), envelope("/2026-10-05.md", LEDGER_SECOND))
 
+        // The session layer of both agents: keys the runtime writes when a conversation is allowed to keep
+        // its own memory. Under the page they must stay invisible; under the delete they must go.
+        put(sessionCuratedKey(LISTED_AGENT), envelope("/MEMORY.md", SESSION_DRAFT))
+        put(sessionLedgerKey(SESSION_DATE, LISTED_AGENT), envelope("/$SESSION_DATE.md", SESSION_LEDGER))
+        put(sessionCuratedKey(DELETABLE_AGENT), envelope("/MEMORY.md", SESSION_DRAFT))
+        put(sessionLedgerKey(SESSION_DATE, DELETABLE_AGENT), envelope("/$SESSION_DATE.md", SESSION_LEDGER))
+
+        // And the object each bucket keeps beside its ledgers to say how far they have been merged: same
+        // route as the daily entries, so the same sweep takes it, and no date, so the page never shows it.
+        put(progressKey(LISTED_AGENT), PROGRESS_BODY)
+        put(progressKey(DELETABLE_AGENT), PROGRESS_BODY)
+
         // Two neighbours that must survive every call this class makes: another owner in the same tenant,
         // and this same owner's copy in another workspace.
         put(curatedKey(PEER_AGENT, peerOwnerPrefix()), envelope("/MEMORY.md", PEER_CURATED))
@@ -264,23 +324,24 @@ class MemoryOwnerBucketMinioIT : BaseAdminIT() {
 
     @Test
     @Order(1)
-    fun `a delete removes exactly that agent's two routes and leaves every neighbour alone`() {
+    fun `a delete reclaims both the long-term layer and the conversations under it`() {
         val data = assertOk(deleteJson("/api/admin/memory/$DELETABLE_AGENT"))
 
         assertEquals(DELETABLE_AGENT, data["agentId"].asText())
         assertEquals(
-            2,
+            5,
             data["deletedObjects"].asInt(),
-            "the curated layer and the one ledger went, and the count is what an operator reads",
+            "the curated layer, its ledger, the one conversation's two objects and the progress object beside " +
+                "the ledgers went; the count is what an operator reads",
         )
         assertEquals(
             emptyList<String>(),
             keysUnder(agentPrefix(DELETABLE_AGENT)),
-            "the container's own listing says both objects are gone",
+            "the container's own listing says the long-term routes and the session bucket are all gone",
         )
         // Everything else in the shared bucket stays: this caller's other agent, the other owner in this
         // tenant, and this caller's copy under another tenant.
-        assertEquals(3, keysUnder(ADMIN_OWNER_PREFIX).size, "only the named agent's prefix went empty")
+        assertEquals(6, keysUnder(ADMIN_OWNER_PREFIX).size, "only the named agent's prefix went empty")
         assertEquals(2, keysUnder(peerOwnerPrefix()).size, "another owner's memory is never in scope")
         assertEquals(1, keysUnder("store/tenants/2/users/1/").size, "another workspace's copy is never in scope")
     }
@@ -386,7 +447,11 @@ class MemoryOwnerBucketMinioIT : BaseAdminIT() {
                 "an unauthenticated answer cannot carry the caller's memory text: ${response.body}",
             )
         }
-        assertEquals(3, keysUnder(agentPrefix(LISTED_AGENT)).size, "and nothing left the bucket either")
+        assertEquals(
+            6,
+            keysUnder(agentPrefix(LISTED_AGENT)).size,
+            "and nothing left the bucket either, neither the long-term layer nor the conversation under it",
+        )
     }
 
     @Test
@@ -428,9 +493,80 @@ class MemoryOwnerBucketMinioIT : BaseAdminIT() {
         val removed = assertOk(parseBody(exchange(HttpMethod.DELETE, "/api/admin/memory/$LISTED_AGENT", token = freshToken)))
         assertEquals(0, removed["deletedObjects"].asInt(), "and a sweep of an empty prefix removes nothing")
         assertEquals(
-            3,
+            6,
             keysUnder(agentPrefix(LISTED_AGENT)).size,
-            "not even somebody else's objects of the same agent name went",
+            "not even somebody else's objects of the same agent name went, long-term, session or bookkeeping",
+        )
+    }
+
+    @Test
+    @Order(10)
+    fun `the listing keeps a conversation's unpublished memory off the page`() {
+        val agents = assertOk(getJson("/api/admin/memory"))
+
+        val row = agents.firstOrNull { it["agentId"]?.asText() == LISTED_AGENT }
+        assertNotNull(row, "the agent seeded for this caller should come back: $agents")
+        assertEquals(CURATED, row["content"].asText(), "the page shows the curated layer, not the draft under it")
+        assertEquals(
+            listOf("2026-10-04", "2026-10-05"),
+            row["dates"].map { it.asText() },
+            "$SESSION_DATE is a conversation's own day and has not been promoted",
+        )
+        assertTrue(
+            !agents.toString().contains(SESSION_DRAFT_MARKER),
+            "a draft nobody merged yet must not reach any row: $agents",
+        )
+        assertEquals(
+            1,
+            row["pendingSessionLayers"].asInt(),
+            "one conversation holds a draft and a ledger, and the page counts the merge that is waiting, not " +
+                "the objects that make it up: $row",
+        )
+        // No agent row answers for this name — the seed wrote memory, not an agent — so the switch is unknown
+        // rather than off. Admin's mapper drops the null key, and the page has to read that absence as
+        // "nothing to explain" instead of telling the owner this agent never had a conversation layer.
+        assertNull(row["sessionMemory"], "an unknown layer switch is not reported as a single-layer agent: $row")
+    }
+
+    @Test
+    @Order(11)
+    fun `the detail answers the long-term layer alone even though a session bucket sits under it`() {
+        val data = assertOk(getJson("/api/admin/memory/$LISTED_AGENT"))
+
+        assertEquals(CURATED, data["content"].asText())
+        assertEquals(
+            listOf("2026-10-04", "2026-10-05"),
+            data["entries"].map { it["date"].asText() },
+            "the daily entries are this owner's ledgers, one conversation's ledger is not one: $data",
+        )
+        val body = data.toString()
+        assertTrue(
+            !body.contains(SESSION_DRAFT_MARKER) && !body.contains(SESSION_LEDGER_MARKER),
+            "neither object of the conversation bucket is in the response: $body",
+        )
+    }
+
+    @Test
+    @Order(12)
+    fun `the bookkeeping object a bucket keeps beside its ledgers is never shown as memory`() {
+        // The runtime moved the consolidation progress into the ledger namespace so the agent and user sweeps
+        // reclaim it (§11.7). That means the listing this page starts from hands it back, so the read side has
+        // to answer what an object that is not a day of anybody's memory is worth: nothing.
+        assertTrue(
+            keysUnder(agentPrefix(LISTED_AGENT)).contains(progressKey(LISTED_AGENT)),
+            "the progress object is really in the prefix both responses are built from",
+        )
+
+        val agents = assertOk(getJson("/api/admin/memory"))
+        val detail = assertOk(getJson("/api/admin/memory/$LISTED_AGENT"))
+
+        assertTrue(
+            !agents.toString().contains(PROGRESS_ITEM_KEY),
+            "no row of the listing carries it, and no date is offered for it: $agents",
+        )
+        assertTrue(
+            !detail.toString().contains(PROGRESS_ITEM_KEY) && !detail.toString().contains("1759670400000"),
+            "nor does the detail read its timestamp as a day of the owner's memory: $detail",
         )
     }
 

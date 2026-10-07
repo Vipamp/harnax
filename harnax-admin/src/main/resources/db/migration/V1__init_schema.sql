@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS `agent` (
   `is_public` tinyint DEFAULT '0' COMMENT 'Public visibility (0: Private, 1: Public)',
   `skill_self_write` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Whether the agent may author skills itself (0: no, 1: yes)',
   `memory_enabled` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Whether the agent has long-term memory (0: no, 1: yes)',
+  `session_memory_enabled` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Whether the agent also keeps a per-session memory layer that is later promoted into the long-term one (0: no, 1: yes)',
   `creator` varchar(100) DEFAULT NULL,
   `active` tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
   `create_time` datetime DEFAULT CURRENT_TIMESTAMP,

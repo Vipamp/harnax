@@ -4,7 +4,6 @@ import com.agnetix.harnax.harness.config.Memory
 import io.agentscope.core.model.Model
 import io.agentscope.harness.agent.memory.MemoryConfig
 import io.agentscope.harness.agent.memory.MemoryFlushManager
-import java.time.Duration
 
 /**
  * Turns [Memory] into the pipeline configuration the harness consumes.
@@ -16,18 +15,19 @@ import java.time.Duration
 object MemoryConfigFactory {
 
     /**
-     * Two prohibitions appended to the harness's own extraction prompt. The extractor writes a file
-     * that is injected back into every later conversation of this owner, so a stray name from another
-     * user or a key pasted into chat would both become durable context.
+     * Two prohibitions on every prompt that writes memory: the extractor's and the promoter's. Both write a
+     * file that is injected back into this owner's later conversations, so a stray name from another user or
+     * a key pasted into chat would both become durable context.
      */
-    private val FLUSH_PROHIBITIONS = """
+    internal val PROHIBITIONS = """
         Two prohibitions apply to everything you write:
         - Never record facts, names, contacts or documents belonging to another user or another tenant.
         - Never record credentials or secrets: no API keys, tokens, passwords, cookies or private endpoints.
     """.trimIndent()
 
-    private val CONSOLIDATION_MIN_GAP: Duration = Duration.ofMinutes(30)
-    private const val CONSOLIDATION_MAX_TOKENS = 4_000
+    /** The budget one whole rewrite of `MEMORY.md` is asked to stay inside, shared by curation and promotion. */
+    internal const val CONSOLIDATION_MAX_TOKENS = 4_000
+
     private const val DAILY_FILE_RETENTION_DAYS = 90
     private const val SESSION_RETENTION_DAYS = 180
 
@@ -37,8 +37,8 @@ object MemoryConfigFactory {
     ): MemoryConfig = MemoryConfig.builder()
         .model(memoryModel)
         .flushTrigger(triggerOf(memory))
-        .flushPrompt(MemoryFlushManager.DEFAULT_FLUSH_PROMPT.trim() + "\n\n" + FLUSH_PROHIBITIONS)
-        .consolidationMinGap(CONSOLIDATION_MIN_GAP)
+        .flushPrompt(MemoryFlushManager.DEFAULT_FLUSH_PROMPT.trim() + "\n\n" + PROHIBITIONS)
+        .consolidationMinGap(memory.consolidationMinGap)
         .consolidationMaxTokens(CONSOLIDATION_MAX_TOKENS)
         .dailyFileRetentionDays(DAILY_FILE_RETENTION_DAYS)
         .sessionRetentionDays(SESSION_RETENTION_DAYS)

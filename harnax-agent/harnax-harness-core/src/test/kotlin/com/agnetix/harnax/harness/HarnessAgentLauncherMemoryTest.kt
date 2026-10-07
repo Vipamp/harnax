@@ -16,6 +16,10 @@ import com.agnetix.harnax.harness.config.HarnessConfig
 import com.agnetix.harnax.harness.config.Memory
 import com.agnetix.harnax.harness.config.MinioConfig
 import com.agnetix.harnax.harness.config.SandboxConfig
+import com.agnetix.harnax.harness.memory.BucketScopedWatermarkStore
+import com.agnetix.harnax.harness.memory.LongTermMemoryContextMiddleware
+import com.agnetix.harnax.harness.memory.MemoryPromoter
+import com.agnetix.harnax.harness.memory.MemoryPromotionMiddleware
 import com.agnetix.harnax.harness.minio.MinioBaseStore
 import com.agnetix.harnax.harness.minio.ProcessLocalCoordinationStore
 import com.agnetix.harnax.tools.sdk.UserIdentifier
@@ -26,6 +30,11 @@ import io.agentscope.harness.agent.coordination.LocalPeriodicGate
 import io.agentscope.harness.agent.coordination.StoreBackedPeriodicGate
 import io.agentscope.harness.agent.filesystem.CompositeFilesystem
 import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem
+import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore
+import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory
+import io.agentscope.harness.agent.filesystem.remote.store.StoreItem
 import io.agentscope.harness.agent.middleware.MemoryFlushMiddleware
 import io.agentscope.harness.agent.middleware.MemoryMaintenanceMiddleware
 import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware
@@ -35,6 +44,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNotSame
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -43,6 +53,7 @@ import org.junit.jupiter.api.io.TempDir
 import org.mockito.Mockito.mock
 import org.slf4j.LoggerFactory
 import java.nio.file.Path
+import java.time.Duration
 import ch.qos.logback.classic.Logger as LogbackLogger
 
 /**
@@ -89,14 +100,15 @@ class HarnessAgentLauncherMemoryTest {
         secretKey = "minioadmin",
     )
 
-    private fun spec(memoryEnabled: Boolean = true) = AgentSpec.builder()
+    private fun spec(memoryEnabled: Boolean = true, tenantId: Long? = 4L, sessionMemoryEnabled: Boolean = false) = AgentSpec.builder()
         .id(1L)
-        .tenantId(4L)
+        .tenantId(tenantId)
         .name("Research")
         .description("a research agent")
         .systemPrompt("answer")
         .chatModelId(100L)
         .memoryEnabled(memoryEnabled)
+        .sessionMemoryEnabled(sessionMemoryEnabled)
         .build()
 
     private fun build(
@@ -108,6 +120,7 @@ class HarnessAgentLauncherMemoryTest {
         minioConfig: MinioConfig? = minio(),
         userId: Long? = 1L,
         memoryEnabled: Boolean = true,
+        sessionMemoryEnabled: Boolean = false,
     ): HarnessAgentWrapper = launcher(
         workspaceRoot = workspaceRoot,
         memory = memory,
@@ -116,7 +129,7 @@ class HarnessAgentLauncherMemoryTest {
         sandboxEnabled = sandboxEnabled,
         minioConfig = minioConfig,
     ).createSingleAgent(
-        agentSpec = spec(memoryEnabled),
+        agentSpec = spec(memoryEnabled, sessionMemoryEnabled = sessionMemoryEnabled),
         sessionId = "sess-1",
         chatSpec = ChatSpec.builder().build(),
         userIdentifier = UserIdentifier(userId = userId),
@@ -262,6 +275,189 @@ class HarnessAgentLauncherMemoryTest {
         assertSame(routed.primary(), routed.backendFor("agents/Research/sessions/sess-1/filesystem/notes.md"), "and nothing else leaves the sandbox")
     }
 
+    /**
+     * The bucket tuple the mounted route behind [path] addresses. Which of the two layers a conversation
+     * writes into is the whole content of the session-layer switch, and the tuple is the only observable that
+     * says it on an agent built against a store nobody is going to contact.
+     */
+    private fun mountedNamespace(agent: HarnessAgentWrapper, path: String): List<String> {
+        val composite = assertInstanceOf(
+            CompositeFilesystem::class.java,
+            agent.harnessAgent.workspaceManager.filesystem,
+            "memory mounted means a composite in front of the configured filesystem",
+        )
+        return assertInstanceOf(
+            RemoteFilesystem::class.java,
+            composite.filesystemFor(path),
+            "$path should answer from a memory bucket",
+        ).let { (privateField(it, "namespaceFactory") as NamespaceFactory).getNamespace(null) }
+    }
+
+    @Test
+    fun `an agent that did not ask for two layers keeps today's keys and today's injected blocks`(@TempDir workspace: Path) {
+        // Design 11.10 clause 1, the regression anchor for the whole layer: with the switch off nothing about
+        // this agent's memory moves — not the object keys, not what reaches the model, not the tools.
+        val agent = build(workspace, Memory(enabled = true), enableMemoryHooks = true)
+
+        assertEquals(listOf("tenants", "4", "users", "1", "agents", "Research", "root"), mountedNamespace(agent, "MEMORY.md"))
+        assertEquals(listOf("tenants", "4", "users", "1", "agents", "Research", "memory"), mountedNamespace(agent, "memory/2026-10-05.md"))
+        assertTrue(
+            middlewares(agent).none { it is LongTermMemoryContextMiddleware },
+            "one layer needs no second block: the reader already injects it",
+        )
+        assertTrue(
+            middlewares(agent).none { it is MemoryPromotionMiddleware },
+            "one layer writes the owner's bucket directly, so there is nothing to promote out of",
+        )
+    }
+
+    @Test
+    fun `an agent that asked for two layers extracts into its own conversation`(@TempDir workspace: Path) {
+        // The session layer takes the two canonical routes because the flush, the consolidation and the four
+        // tools all key off those prefixes; the long-term layer cannot also sit there, so it is injected by
+        // its own middleware instead. The tools stay offered — they now archive into this conversation.
+        val agent = build(
+            workspace,
+            Memory(enabled = true, consolidationMinGap = Duration.ofMinutes(11)),
+            enableMemoryHooks = true,
+            sessionMemoryEnabled = true,
+        )
+
+        assertEquals(
+            listOf("tenants", "4", "users", "1", "agents", "Research", "sessions", "sess-1", "root"),
+            mountedNamespace(agent, "MEMORY.md"),
+        )
+        assertEquals(
+            listOf("tenants", "4", "users", "1", "agents", "Research", "sessions", "sess-1", "memory"),
+            mountedNamespace(agent, "memory/2026-10-05.md"),
+        )
+        assertEquals(
+            1,
+            middlewares(agent).count { it is LongTermMemoryContextMiddleware },
+            "the owner's curated layer has to reach a conversation that has none of its own yet",
+        )
+        assertTrue(memoryTools(agent).containsAll(listOf("memory_search", "memory_get", "memory_save")), "got ${memoryTools(agent)}")
+
+        // A conversation layer nobody drains is a memory that quietly stops existing once the conversation is
+        // gone, so the promotion path is part of what the switch buys rather than an optional extra.
+        val promotion = middlewares(agent).filterIsInstance<MemoryPromotionMiddleware>()
+        assertEquals(1, promotion.size, "the second half of the session layer: got $promotion")
+        assertEquals(Duration.ofMinutes(11), privateField(promotion.single(), "minGap"))
+        assertEquals("sess-1", privateField(promotion.single(), "sessionId"))
+        assertInstanceOf(
+            MemoryPromoter::class.java,
+            privateField(promotion.single(), "promoter"),
+        )
+    }
+
+    @Test
+    fun `a store that ignores its version precondition is refused the merge`(@TempDir workspace: Path) {
+        // Two conversations of one owner promote on independent clocks by design, so the only thing standing
+        // between a merge and a sibling's promoted text is a version comparison the store really performs.
+        // A throttle can degrade when this store cannot hold a slot; a last-write-wins merge just loses memory.
+        val ignoring = object : BaseStore by InMemoryStore() {
+            override fun putIfVersion(
+                namespace: List<String>,
+                key: String,
+                value: Map<String, Any>,
+                expectedVersion: Long,
+            ): Boolean {
+                put(namespace, key, value)
+                return true
+            }
+        }
+
+        assertFalse(launcher(workspace, Memory(enabled = true)).promoterIsSafe(ignoring))
+    }
+
+    @Test
+    fun `a store that compares versions keeps the merge and one that could not be asked still tries it`(@TempDir workspace: Path) {
+        val comparing = InMemoryStore()
+        assertTrue(
+            launcher(workspace, Memory(enabled = true)).promoterIsSafe(comparing),
+            "a store that answered all three probe arms is what this feature is built on",
+        )
+
+        // A store that threw is not a store found wanting: the probe got no answer, and the merge meets the same
+        // store on its own reads and writes, where a fault costs one merge and destroys nothing.
+        val unreachable = object : BaseStore {
+            override fun get(
+                namespace: List<String>,
+                key: String,
+            ): StoreItem? = throw IllegalStateException("connection refused")
+
+            override fun put(
+                namespace: List<String>,
+                key: String,
+                value: Map<String, Any>,
+            ): Unit = throw IllegalStateException("connection refused")
+
+            override fun search(
+                namespace: List<String>,
+                limit: Int,
+                offset: Int,
+            ): List<StoreItem> = throw IllegalStateException("connection refused")
+
+            override fun delete(
+                namespace: List<String>,
+                key: String,
+            ): Unit = throw IllegalStateException("connection refused")
+        }
+        assertTrue(
+            launcher(workspace, Memory(enabled = true)).promoterIsSafe(unreachable),
+            "an unclassified store is not a refused verdict",
+        )
+    }
+
+    @Test
+    fun `the consolidation progress follows whichever bucket the routes point at`(@TempDir workspace: Path) {
+        // A conversation that consolidates must mark its own ledgers done, not its owner's cross-session ones —
+        // the same object 11.7 moved out of the shared address, now scoped per layer.
+        val agent = build(
+            workspace,
+            Memory(enabled = true),
+            enableMemoryHooks = true,
+            sandboxEnabled = true,
+            sessionMemoryEnabled = true,
+        )
+
+        val base = requireNotNull(agent.harnessAgent.distributedStore).baseStore()
+        assertEquals(
+            listOf("tenants", "4", "users", "1", "agents", "Research", "sessions", "sess-1", "memory"),
+            privateField(base, "watermarkNamespace"),
+            "beside the ledgers it counts, inside the conversation's own bucket",
+        )
+    }
+
+    @Test
+    fun `the session switch does not open memory on its own`(@TempDir workspace: Path) {
+        // The first row of 11.3's matrix: long-term off means the agent has no memory domain at all, and the
+        // second column does not participate. Mounting a conversation bucket here would be extraction into a
+        // bucket nothing reads and no promotion path owns.
+        val agent = build(
+            workspace,
+            Memory(enabled = true),
+            enableMemoryHooks = true,
+            memoryEnabled = false,
+            sessionMemoryEnabled = true,
+        )
+
+        assertTrue(memoryTools(agent).isEmpty(), "got ${memoryTools(agent)}")
+        assertTrue(middlewares(agent).none { it is LongTermMemoryContextMiddleware }, "no domain, no injection")
+        assertTrue(middlewares(agent).none { it is MemoryFlushMiddleware }, "no domain, no extraction")
+        // Which bucket a delivery mounts is decided in one place, and the composite is not the observable:
+        // upstream registers its own MEMORY.md and memory/ routes for every filesystem, mounted or not.
+        val domain = launcher(workspace, Memory(enabled = true), enableMemoryHooks = true)
+            .memoryDomainOf(
+                bucketStore(),
+                spec(memoryEnabled = false, sessionMemoryEnabled = true),
+                UserIdentifier(userId = 1L),
+                false,
+                Memory(enabled = true),
+            )
+        assertNull(domain, "the second switch does not open a memory domain on its own")
+    }
+
     @Test
     fun `a store that cannot be reached is not handed the consolidation claims`(@TempDir workspace: Path) {
         // The MinIO coordinates of this harness point at nothing, so the probe gets no answer at all and the
@@ -273,11 +469,83 @@ class HarnessAgentLauncherMemoryTest {
         assertNotNull(store, "the sandbox branch is the one that gets a distributed store")
         assertInstanceOf(
             ProcessLocalCoordinationStore::class.java,
-            store.baseStore(),
+            privateField(requireNotNull(store).baseStore(), "delegate"),
             "upstream builds the gate from this store alone, so a store that never answered has to be " +
-                "answered for: with no distributed store at all it would fall back to LocalPeriodicGate",
+                "answered for: with no distributed store at all it would fall back to LocalPeriodicGate. " +
+                "The bucket wrapper that relocates the consolidation progress sits in front of that answer.",
         )
     }
+
+    @Test
+    fun `the consolidation progress of one agent is keyed to that agent's own bucket`(@TempDir workspace: Path) {
+        // How far an owner's daily ledgers have been merged is one object upstream keeps at an address with no
+        // tenant, user, agent or session in it. Left there, one owner's pass decides which of another owner's
+        // ledgers count as already handled — and the entries it skips go silently. The relocation has to be on
+        // the store handed to the distributed builder because that is the only store upstream reads.
+        val agent = build(workspace, Memory(enabled = true), enableMemoryHooks = true, sandboxEnabled = true)
+
+        val base = requireNotNull(agent.harnessAgent.distributedStore).baseStore()
+        assertInstanceOf(
+            BucketScopedWatermarkStore::class.java,
+            base,
+            "a bucket that consolidates advances its own progress and nobody else's",
+        )
+        assertEquals(
+            listOf("tenants", "4", "users", "1", "agents", "Research", "memory"),
+            privateField(base, "watermarkNamespace"),
+            "beside the ledgers it counts, so the two whole-bucket reclamation paths take it along",
+        )
+    }
+
+    @Test
+    fun `an ownerless delivery gets no progress relocation because it has no bucket`(@TempDir workspace: Path) {
+        // Memory was asked for and this delivery could not bind an owner, so no routes are mounted and nothing
+        // is written to a bucket. The gate fallback still applies — the hooks' throttle is a separate question —
+        // but relocating the progress would need a bucket to relocate it into.
+        val agent = build(
+            workspace,
+            Memory(enabled = true),
+            enableMemoryHooks = true,
+            sandboxEnabled = true,
+            userId = null,
+        )
+
+        val base = requireNotNull(agent.harnessAgent.distributedStore).baseStore()
+        assertInstanceOf(
+            ProcessLocalCoordinationStore::class.java,
+            base,
+            "the gate answer stays, and nothing wraps it",
+        )
+    }
+
+    @Test
+    fun `a tenant-scoped bucket on an agent that carries no tenant is refused`(@TempDir workspace: Path) {
+        val failure = assertThrows(IllegalStateException::class.java) {
+            launcher(workspace, Memory(enabled = true), enableMemoryHooks = true)
+                .memoryDomainOf(bucketStore(), spec(tenantId = null), UserIdentifier(userId = 1L), false, Memory(enabled = true))
+        }
+
+        assertTrue(failure.message!!.contains("carries no tenant"), failure.message!!)
+    }
+
+    @Test
+    fun `with the tenant segment off the whole bucket keys on the owner alone`(@TempDir workspace: Path) {
+        // One key root for both layers and the progress between them, so a deployment that switches the tenant
+        // off does not leave the consolidation progress keyed by a tenant the routes no longer read.
+        val memory = Memory(enabled = true, tenantScoped = false)
+
+        val domain = launcher(workspace, memory, enableMemoryHooks = true)
+            .memoryDomainOf(bucketStore(), spec(tenantId = null), UserIdentifier(userId = 1L), false, memory)
+
+        assertEquals(
+            listOf("users", "1", "agents", "Research"),
+            requireNotNull(domain).namespace(null),
+            "an unscoped agent still gets a bucket of its own, and no `tenants/null` segment",
+        )
+    }
+
+    /** A store that is never contacted: resolving a domain only binds the bucket to it. */
+    private fun bucketStore() = MinioBaseStore(minio().createMinioClient(), "harnax-store", "store/")
 
     /** [block] with every INFO and WARN the launcher emits while it runs. */
     private fun reporting(block: () -> Unit): List<String> {
