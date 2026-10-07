@@ -8,7 +8,6 @@ export default {
   'menu.context.mcp': 'MCP Services',
   'menu.context.skill': 'Skill Management',
   'menu.context.skill.usage': 'Skill Usage',
-  'menu.context.call.metrics': 'Call Metrics',
   'menu.context.skill.drafts': 'Draft Review',
   'menu.context.cli': 'CLI Tools',
   'menu.context.tool': 'Tool Management',
@@ -22,6 +21,10 @@ export default {
   'menu.agent.memory': 'My Agent Memory',
 
   // Job
+
+  // Monitoring & Governance
+  'menu.monitor': 'Monitoring & Governance',
+  'menu.monitor.call.metrics': 'Call Metrics',
 
   // System
   'menu.system': 'System Management',

@@ -105,11 +105,6 @@ export default [
         component: './skill/usage',
       },
       {
-        name: 'call.metrics',
-        path: '/context/call-metrics',
-        component: './call-metrics',
-      },
-      {
         name: 'skill.drafts',
         path: '/context/skill-drafts',
         component: './skill/drafts',
@@ -135,6 +130,18 @@ export default [
         path: '/context/channel',
         redirect: '/system/channel',
         hideInMenu: true,
+      },
+    ],
+  },
+  {
+    name: 'monitor',
+    icon: 'dashboard',
+    path: '/monitor',
+    routes: [
+      {
+        name: 'call.metrics',
+        path: '/monitor/call-metrics',
+        component: './call-metrics',
       },
     ],
   },
