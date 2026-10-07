@@ -8,6 +8,7 @@ export default {
   'menu.context.mcp': 'MCP Services',
   'menu.context.skill': 'Skill Management',
   'menu.context.skill.usage': 'Skill Usage',
+  'menu.context.call.metrics': 'Call Metrics',
   'menu.context.skill.drafts': 'Draft Review',
   'menu.context.cli': 'CLI Tools',
   'menu.context.tool': 'Tool Management',
