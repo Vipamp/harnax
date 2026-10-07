@@ -296,7 +296,7 @@ class ToolInvocationMiddleware(
         /**
          * The heap bound on one call's accumulated body, not a correctness one.
          *
-         * It sits above the writer's capture ceiling (20,000 characters, `harnax.metrics.invocation.capture-max-chars`)
+         * It sits above the writer's capture ceiling (20,000 characters, `harness.metrics.invocation.capture-max-chars`)
          * on purpose: a body this long is already longer than anything the column can hold, so cutting here cannot
          * change what the row says and truncation semantics stay the writer's alone. 32,000 leaves the writer's
          * ceiling room to be configured anywhere up to it without the accumulator ever becoming the thing that

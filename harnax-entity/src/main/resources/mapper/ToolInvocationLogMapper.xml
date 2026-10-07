@@ -91,9 +91,10 @@
              non-aggregated column at all. -->
         <!-- `agent_id` and `session_id` are both nullable, so the grouping collects one NULL key of its own.
              A call with no agent can neither be counted under an agent nor opened in the drill-down, so that
-             group stays out of the response. The middleware writes an agent on every row today, which makes
-             this guard cost nothing now and be the only thing standing between a future writer and a blank
-             row name. -->
+             group stays out of the response. It is not hypothetical: a team's lead has no `agent` row, so a lead
+             run writes NULL here (`AgentSpec.attributableAgentId`) and its calls answer in the session dimension
+             and in `selectWindowTotals` — which is why the agent list does not add up to the window card. The
+             same guard stands between any future writer and a row with a blank name. -->
         GROUP BY
         <choose>
             <when test="groupBy == 'session'">l.session_id</when>

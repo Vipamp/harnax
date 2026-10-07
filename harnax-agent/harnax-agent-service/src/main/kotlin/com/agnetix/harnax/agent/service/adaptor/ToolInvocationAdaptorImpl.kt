@@ -111,16 +111,17 @@ class ToolInvocationAdaptorImpl(
                     queue.drainTo(batch, batchLimit - batch.size)
                 }
                 if (shouldFlush(batch.size, first == null)) {
-                    write(batch)
+                    flushBatch(batch)
                     batch.clear()
                 }
             } catch (e: InterruptedException) {
                 Thread.currentThread().interrupt()
                 break
             } catch (e: Exception) {
-                // The batch is dropped, not retried: a writer that retried the same broken statement would
-                // spin against a database that is down, and the events behind it are counters.
-                log.warn("Tool invocation batch of {} row(s) was not written", batch.size, e)
+                // A fault in the loop itself, not a rejected statement — that loss is absorbed where the
+                // batch is written. Release the partial batch and keep the worker alive: the events behind a
+                // failure are counters, and a writer that stopped on them would silently empty the table.
+                log.warn("Tool invocation writer released a batch of {} row(s) after an unexpected fault", batch.size, e)
                 batch.clear()
             }
         }
