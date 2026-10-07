@@ -11,16 +11,18 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Posts skill VIEW events to Admin over HTTP, on a thread that is not the model's.
+ * Posts skill VIEW and USE events to Admin over HTTP, on a thread that is not the model's.
  *
- * The read entry point this serves sits inside system-prompt composition, so the call is offloaded rather
- * than made inline: a slow or unreachable Admin must not add its latency to every model call, and it
- * certainly must not fail the turn. Admin being down is a reporting outage, not an inference outage.
+ * Both callers sit on the path that streams an answer — the load comes out of system-prompt composition, the
+ * use out of the acting stream — so the call is offloaded rather than made inline: a slow or unreachable Admin
+ * must not add its latency to every model call, and it certainly must not fail the turn. Admin being down is a
+ * reporting outage, not an inference outage.
  *
  * One worker and a short queue, because the events are counters. When the queue is full the newest batch is
- * dropped rather than the backlog grown: the recorder upstream re-reports a skill once its cooldown window
- * passes, so a drop costs one window of one count — the same order of error a throttled counter already
- * tolerates — while dropping is also what bounds memory when Admin stays unreachable for a long time.
+ * dropped rather than the backlog grown, which is also what bounds memory when Admin stays unreachable for a
+ * long time. The recorder upstream re-reports a load once its cooldown window passes, so a dropped VIEW costs
+ * one window of one count; a dropped USE is gone for good, since one turn uses a skill once — the trade every
+ * counter here makes, a missing number rather than a stalled answer.
  */
 @Component
 class SkillUsageAdaptorImpl(

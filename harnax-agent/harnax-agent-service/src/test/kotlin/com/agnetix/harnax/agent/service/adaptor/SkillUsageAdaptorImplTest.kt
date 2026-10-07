@@ -53,6 +53,11 @@ class SkillUsageAdaptorImplTest {
     fun `an empty read asks Admin nothing`() {
         adaptor.reportViews("web-1", emptyList(), 1L)
 
+        // Drained first rather than asserted inline: the reporter only enqueues, so a never-verification that
+        // races the worker passes whether or not the empty batch was rejected. With the queue shut down, what
+        // got past the guard has all had its turn at the client.
+        adaptor.shutdown()
+
         verifyNoInteractions(client)
     }
 
@@ -108,6 +113,9 @@ class SkillUsageAdaptorImplTest {
     @Test
     fun `an empty use asks Admin nothing`() {
         adaptor.reportUses("web-1", emptyList(), 1L)
+
+        // Same drain as `an empty read asks Admin nothing`, for the same reason.
+        adaptor.shutdown()
 
         verifyNoInteractions(client)
     }
