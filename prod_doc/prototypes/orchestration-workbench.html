@@ -1,0 +1,886 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harnax 编排工作台 · 原型</title>
+<style>
+/* 取 harnax-webui/src/global.less 的浅色 token，保证与原产品同一套色 */
+:root{
+  --primary:#4f6ef7; --primary-hover:#3d5ce5; --primary-light:#eef1fe; --primary-lighter:#f5f7ff;
+  --success:#52c41a; --warning:#fa8c16; --error:#f5222d;
+  --t1:#1a1a2e; --t2:#4a4a6a; --t3:#8c8c9a; --t4:#bfbfcc;
+  --bg-layout:#f8f9fc; --bg:#fff;
+  --bd:#e8eaf2; --bd2:#f0f2f8; --bd3:#f5f6fa;
+  --sh-sm:0 2px 8px rgba(26,26,46,.08); --sh-md:0 4px 16px rgba(26,26,46,.12); --sh-lg:0 8px 32px rgba(26,26,46,.16);
+  --r-xs:4px; --r-sm:8px; --r-md:12px; --r-lg:16px;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",-apple-system,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:var(--sans);color:var(--t1);background:var(--bg-layout);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+button{font-family:inherit;font-size:inherit;color:inherit;cursor:pointer;border:0;background:none;padding:0}
+input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
+a{color:var(--primary);text-decoration:none}
+.mono{font-family:var(--mono)}
+.dim{color:var(--t3)}
+
+/* ── 应用外壳 ───────────────────────────────── */
+.topbar{height:56px;background:var(--bg);border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:16px;padding:0 24px;position:sticky;top:0;z-index:20}
+.logo{display:flex;align-items:center;gap:9px;font-weight:600;letter-spacing:.02em;font-size:16px}
+.logo .mark{width:24px;height:24px;border-radius:7px;background:linear-gradient(135deg,#4f6ef7,#667eea);display:grid;place-items:center;color:#fff;font-size:11px;font-weight:700;box-shadow:0 2px 6px rgba(79,110,247,.35)}
+.topbar .crumb{color:var(--t3);font-size:13px;margin-left:4px}
+.topbar .sp{flex:1}
+.chip-tenant{display:flex;align-items:center;gap:6px;height:30px;padding:0 10px;border:1px solid var(--bd);border-radius:var(--r-sm);font-size:13px;color:var(--t2);background:var(--bg)}
+.avatar{width:30px;height:30px;border-radius:50%;background:var(--primary-light);color:var(--primary);display:grid;place-items:center;font-size:12px;font-weight:600}
+.shell{display:flex;min-height:calc(100vh - 56px)}
+.sider{width:208px;flex:none;background:var(--bg);border-right:1px solid var(--bd);padding:14px 0}
+.grp{padding:0 16px 2px;font-size:11px;color:var(--t4);letter-spacing:.08em;margin:12px 0 4px}
+.mi{display:flex;align-items:center;gap:9px;height:38px;padding:0 16px;color:var(--t2);font-size:14px;border-left:3px solid transparent}
+.mi:hover{background:var(--bd3)}
+.mi.on{background:var(--primary-lighter);color:var(--primary);border-left-color:var(--primary);font-weight:500}
+.mi .ic{width:16px;height:16px;flex:none}
+.main{flex:1;min-width:0;padding:20px 24px 84px}
+section[data-screen]{display:none}
+section[data-screen].on{display:block}
+
+/* ── 通用控件 ───────────────────────────────── */
+.btn{height:32px;padding:0 14px;border-radius:var(--r-sm);border:1px solid var(--bd);background:var(--bg);color:var(--t1);display:inline-flex;align-items:center;gap:6px;font-size:13px;transition:.15s}
+.btn:hover{border-color:var(--primary);color:var(--primary)}
+.btn.pri{background:var(--primary);border-color:var(--primary);color:#fff;box-shadow:0 2px 6px rgba(79,110,247,.28)}
+.btn.pri:hover{background:var(--primary-hover);color:#fff}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--t2)}
+.btn.ghost:hover{background:var(--bd3);color:var(--primary);border-color:transparent}
+.btn.sm{height:26px;padding:0 9px;font-size:12px}
+.badge{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:var(--r-xs);font-size:12px;font-weight:500}
+.badge .dot{width:6px;height:6px;border-radius:50%}
+.b-live{background:#ecfdf5;color:#389e0d}.b-live .dot{background:var(--success)}
+.b-draft{background:var(--bd3);color:var(--t2)}.b-draft .dot{background:var(--t4)}
+.b-off{background:#fff7e6;color:#ad4e00}.b-off .dot{background:var(--warning)}
+.b-run{background:var(--primary-light);color:var(--primary-hover)}.b-run .dot{background:var(--primary);animation:blip 1.1s infinite}
+.b-fail{background:#fff1f0;color:#c41d1d}.b-fail .dot{background:var(--error)}
+@keyframes blip{0%,100%{opacity:1}50%{opacity:.25}}
+.card{background:var(--bg);border:1px solid var(--bd);border-radius:var(--r-md);box-shadow:var(--sh-sm)}
+.kv{display:flex;gap:8px;font-size:12px;padding:3px 0}
+.kv b{font-weight:500;color:var(--t3);min-width:52px}
+.hr{height:1px;background:var(--bd2);margin:12px 0}
+
+/* 页头 */
+.ph{display:flex;align-items:flex-end;gap:16px;margin-bottom:18px}
+.ph h1{margin:0;font-size:20px;font-weight:600;letter-spacing:-.01em}
+.ph p{margin:0;color:var(--t3);font-size:13px}
+.ph .sp{flex:1}
+
+/* ProTable 形状 */
+.tbl-wrap{padding:0}
+.toolbar{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--bd2)}
+.search{display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border:1px solid var(--bd);border-radius:var(--r-sm);background:var(--bg);color:var(--t3);font-size:13px;min-width:220px}
+.seg{display:inline-flex;border:1px solid var(--bd);border-radius:var(--r-sm);overflow:hidden;background:var(--bg)}
+.seg button{padding:0 12px;height:30px;font-size:13px;color:var(--t2);border-right:1px solid var(--bd2)}
+.seg button:last-child{border-right:0}
+.seg button.on{background:var(--primary-light);color:var(--primary);font-weight:500}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-weight:500;color:var(--t3);padding:11px 16px;border-bottom:1px solid var(--bd);background:#fcfcfe;white-space:nowrap;font-size:12px}
+td{padding:13px 16px;border-bottom:1px solid var(--bd2);vertical-align:middle}
+tbody tr:hover{background:var(--primary-lighter)}
+td .nm{font-weight:500}
+td .sub{color:var(--t3);font-size:12px;margin-top:2px}
+td.acts{white-space:nowrap;font-size:13px}
+td.acts a{margin-right:12px}
+td.acts a:last-child{margin-right:0}
+.pager{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:12px 16px;font-size:13px;color:var(--t3)}
+.pg{width:26px;height:26px;border-radius:var(--r-xs);display:grid;place-items:center;border:1px solid var(--bd);font-family:var(--mono);font-size:12px;background:var(--bg)}
+.pg.on{background:var(--primary);border-color:var(--primary);color:#fff}
+
+/* ── 画布屏 ─────────────────────────────────── */
+.cvs-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-height:52px;padding:8px 14px;background:var(--bg);border:1px solid var(--bd);border-radius:var(--r-md) var(--r-md) 0 0}
+.cvs-top>*{white-space:nowrap}
+.cvs-top .ttl{font-size:15px;font-weight:600}
+.cvs-top .meta{font-size:12px;color:var(--t3);font-family:var(--mono)}
+.cvs-top .sp{flex:1}
+.cvs-body{display:flex;background:var(--bg);border:1px solid var(--bd);border-top:0;height:520px}
+.rail{width:196px;flex:none;border-right:1px solid var(--bd2);padding:12px 10px;overflow:auto;background:#fdfdff}
+.rail h4{margin:2px 0 10px;font-size:11px;color:var(--t4);letter-spacing:.08em;font-weight:500}
+.comp{display:flex;align-items:center;gap:9px;padding:8px 9px;border:1px solid var(--bd);border-radius:var(--r-sm);background:var(--bg);margin-bottom:7px;cursor:grab;box-shadow:0 1px 2px rgba(26,26,46,.04)}
+.comp:hover{border-color:var(--primary);box-shadow:var(--sh-sm)}
+.comp .ic{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;flex:none;color:#fff}
+.comp .nm{font-size:13px;font-weight:500}
+.comp .sub{font-size:11px;color:var(--t3)}
+.rail .note{font-size:11px;color:var(--t4);line-height:1.6;margin-top:10px;padding-top:10px;border-top:1px dashed var(--bd)}
+.canvas{position:relative;flex:1;min-width:0;overflow:auto;background:
+  radial-gradient(circle at 1px 1px, #dfe3ee 1px, transparent 0) 0 0/18px 18px, #fbfcfe}
+.canvas-inner{position:relative;width:1780px;height:620px}
+.edges{position:absolute;inset:0;width:1780px;height:620px;pointer-events:none;overflow:visible}
+.edges path{fill:none;stroke:#c3cae0;stroke-width:1.6}
+.edges path.taken{stroke:var(--primary);stroke-width:2}
+.edges path.skip{stroke:#d4d8e4;stroke-dasharray:5 4;stroke-width:1.4}
+.edges path.run{stroke:var(--primary);stroke-width:2;stroke-dasharray:6 5;animation:march .55s linear infinite}
+@keyframes march{to{stroke-dashoffset:-11}}
+.node{position:absolute;width:196px;background:var(--bg);border:1px solid var(--bd);border-radius:10px;box-shadow:0 1px 3px rgba(26,26,46,.07);cursor:pointer;transition:box-shadow .15s,border-color .15s,opacity .15s}
+.node:hover{box-shadow:var(--sh-md)}
+.node.sel{border-color:var(--primary);box-shadow:0 0 0 3px rgba(79,110,247,.16)}
+.node .hd{display:flex;align-items:center;gap:7px;padding:8px 10px;border-bottom:1px solid var(--bd2)}
+.node .hd .ic{width:19px;height:19px;border-radius:5px;display:grid;place-items:center;color:#fff;flex:none}
+.node .hd .nm{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.node .hd .ty{margin-left:auto;font-size:10px;color:var(--t4);font-family:var(--mono);flex:none}
+.node .bd{padding:8px 10px;font-size:11.5px;color:var(--t2);line-height:1.55}
+.node .bd .row{display:flex;gap:6px;padding:1px 0}
+.node .bd .row .k{color:var(--t4);min-width:38px;flex:none}
+.node .bd .ell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.node .foot{display:flex;gap:8px;padding:0 10px 8px;font-size:10.5px;color:var(--t3);font-family:var(--mono)}
+.node .stream{margin:0 10px 8px;padding:6px 8px;background:var(--primary-lighter);border:1px solid var(--bd2);border-radius:6px;font-size:11px;color:var(--t2);max-height:52px;overflow:hidden;font-family:var(--mono)}
+.h{position:absolute;top:50%;transform:translateY(-50%);width:9px;height:9px;border-radius:50%;background:var(--bg);border:1.5px solid #a9b2cc}
+.h.in{left:-5px}
+.h.out{right:-5px;border-color:var(--primary);background:var(--primary)}
+.h.out.lbl{width:auto;height:17px;border-radius:9px;padding:0 7px;font-size:10px;color:var(--t2);background:var(--bg);border:1px solid var(--bd);display:grid;place-items:center;white-space:nowrap;right:-8px}
+.node[data-status=success]{border-color:#b7eb8f}
+.node[data-status=running]{border-color:var(--primary);box-shadow:0 0 0 3px rgba(79,110,247,.14),var(--sh-md);animation:glow 1.4s ease-in-out infinite}
+@keyframes glow{0%,100%{box-shadow:0 0 0 3px rgba(79,110,247,.14),var(--sh-md)}50%{box-shadow:0 0 0 6px rgba(79,110,247,.06),var(--sh-md)}}
+.node[data-status=skipped]{opacity:.46;border-style:dashed;background:#fafbfd}
+.node[data-status=failed]{border-color:#ffa39e;box-shadow:0 0 0 3px rgba(245,34,45,.1)}
+.node[data-status=pending]{opacity:.8}
+.node .st{position:absolute;top:-9px;right:-9px;height:18px;padding:0 7px;border-radius:9px;font-size:10px;color:#fff;display:none;align-items:center;font-family:var(--mono)}
+body.runmode .node .st{display:flex}
+.st.success{background:var(--success)}.st.running{background:var(--primary)}.st.skipped{background:#98a0b3}.st.failed{background:var(--error)}.st.pending{background:#c9ceda}
+.minimap{position:absolute;right:10px;bottom:10px;width:150px;height:56px;background:rgba(255,255,255,.92);border:1px solid var(--bd);border-radius:8px;box-shadow:var(--sh-sm);pointer-events:none}
+.minimap i{position:absolute;background:#ccd3e6;border-radius:1px}
+.minimap i.taken{background:var(--primary)}
+.minimap .vp{position:absolute;left:2px;top:2px;width:60px;height:52px;border:1px solid var(--primary);border-radius:3px}
+.zoctl{position:absolute;left:10px;bottom:10px;display:flex;gap:4px;background:rgba(255,255,255,.94);border:1px solid var(--bd);border-radius:8px;padding:3px;box-shadow:var(--sh-sm)}
+.zoctl button{width:24px;height:24px;border-radius:5px;display:grid;place-items:center;color:var(--t2);font-family:var(--mono)}
+.zoctl button:hover{background:var(--bd3);color:var(--primary)}
+.drawer{width:340px;flex:none;border-left:1px solid var(--bd2);overflow:auto;background:var(--bg)}
+.dw-hd{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--bd2);position:sticky;top:0;background:var(--bg);z-index:2}
+.dw-hd .ic{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;color:#fff;flex:none}
+.dw-hd .nm{font-size:14px;font-weight:600}
+.dw-hd .ty{font-size:11px;color:var(--t4);font-family:var(--mono)}
+.dw-bd{padding:14px}
+.fld{margin-bottom:14px}
+.fld>label{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--t2);font-weight:500;margin-bottom:6px}
+.fld>label .req{color:var(--error)}
+.fld>label .sp{flex:1}
+.ipt{width:100%;height:32px;padding:0 10px;border:1px solid var(--bd);border-radius:var(--r-sm);background:var(--bg);font-size:13px}
+.ipt:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(79,110,247,.1)}
+textarea.ipt{height:88px;padding:9px 10px;line-height:1.6;font-family:var(--mono);font-size:12px;resize:vertical}
+.sel-ipt{display:flex;align-items:center;justify-content:space-between;color:var(--t2)}
+.vars{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:7px}
+.vchip{height:22px;padding:0 8px;border-radius:11px;border:1px solid var(--bd);background:var(--primary-lighter);color:var(--primary-hover);font-family:var(--mono);font-size:11px;display:inline-flex;align-items:center;gap:5px}
+.vchip:hover{background:var(--primary);color:#fff;border-color:var(--primary)}
+.vchip.off{background:var(--bd3);color:var(--t4);border-color:var(--bd)}
+.vchip.off:hover{background:var(--bd3);color:var(--t4);border-color:var(--bd)}
+.vchip .tp{font-size:9px;opacity:.7}
+.sw{width:38px;height:20px;border-radius:10px;background:#d9dde8;position:relative;transition:.2s;flex:none}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.sw.on{background:var(--primary)}.sw.on::after{left:20px}
+.swrow{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--bd2);border-radius:var(--r-sm);background:#fcfcfe}
+.swrow .tx{flex:1;font-size:12.5px}
+.swrow .tx small{display:block;color:var(--t3);font-size:11px;margin-top:2px}
+.cond{border:1px solid var(--bd);border-radius:var(--r-sm);padding:10px;margin-bottom:8px;background:#fcfcfe}
+.cond .l1{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--t3);margin-bottom:8px}
+.cond .l2{display:flex;gap:5px;align-items:center;margin-bottom:6px}
+.pill{height:26px;padding:0 9px;border-radius:6px;border:1px solid var(--bd);background:var(--bg);font-size:12px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.pill.mono{font-family:var(--mono);font-size:11.5px}
+.pill.src{background:var(--primary-light);border-color:#d6ddf9;color:var(--primary-hover)}
+.map-t{width:100%;border-collapse:collapse;font-size:12px}
+.map-t th{padding:6px 8px;background:#f7f8fc;font-size:11px;border-bottom:1px solid var(--bd)}
+.map-t td{padding:7px 8px;border-bottom:1px solid var(--bd2);font-size:12px}
+.readonly{padding:9px 11px;border-radius:var(--r-sm);background:#fff7e6;border:1px solid #ffe7ba;font-size:12px;color:#874d00;display:flex;gap:8px;align-items:flex-start}
+.outs{display:flex;flex-direction:column;gap:5px}
+.out{display:flex;align-items:center;gap:8px;font-size:12px;font-family:var(--mono);padding:6px 9px;border-radius:6px;background:var(--bd3);color:var(--t2)}
+.out .tp{margin-left:auto;font-size:10px;color:var(--t4)}
+/* 底部面板 */
+.bottom{background:var(--bg);border:1px solid var(--bd);border-top:0;border-radius:0 0 var(--r-md) var(--r-md)}
+.b-tabs{display:flex;align-items:center;gap:2px;padding:0 12px;border-bottom:1px solid var(--bd2)}
+.b-tabs button{padding:10px 12px;font-size:13px;color:var(--t2);border-bottom:2px solid transparent;margin-bottom:-1px}
+.b-tabs button.on{color:var(--primary);border-bottom-color:var(--primary);font-weight:500}
+.b-tabs .sp{flex:1}
+.b-bd{padding:14px 16px;min-height:150px;max-height:230px;overflow:auto}
+.step{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px dashed var(--bd2);font-size:12.5px}
+.step:last-child{border-bottom:0}
+.step .ix{width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font-family:var(--mono);font-size:10px;flex:none;color:#fff}
+.step .nm{font-weight:500}
+.step .bar{margin-left:auto;display:flex;gap:12px;font-family:var(--mono);font-size:11px;color:var(--t3);white-space:nowrap}
+.step.skip{opacity:.5}
+.step.err{background:#fff1f0;border-radius:6px;padding:7px 8px}
+.logline{font-family:var(--mono);font-size:11.5px;color:var(--t2);padding:3px 0;display:flex;gap:9px}
+.logline .ts{color:var(--t4);flex:none}
+.io{margin:6px 0 0;border:1px solid var(--bd2);border-radius:6px;background:#fbfcfe;padding:8px 10px;font-family:var(--mono);font-size:11px;color:var(--t2);white-space:pre-wrap;word-break:break-all}
+
+/* 校验 / 版本 */
+.two{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px;align-items:start}
+.blk{padding:16px 18px}
+.blk h3{margin:0 0 4px;font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
+.blk .desc{color:var(--t3);font-size:12.5px;margin:0 0 14px}
+.err-row{display:flex;gap:10px;padding:11px 12px;border:1px solid #ffccc7;background:#fff5f5;border-radius:var(--r-sm);margin-bottom:8px;align-items:flex-start}
+.err-row.warn{border-color:#ffe7ba;background:#fffbf5}
+.err-row.ok{border-color:#b7eb8f;background:#f6ffed}
+.err-row .code{font-family:var(--mono);font-size:11px;font-weight:600;color:#c41d1d;background:#fff;border:1px solid #ffccc7;border-radius:5px;padding:2px 6px;flex:none}
+.err-row.warn .code{color:#ad4e00;border-color:#ffe7ba}
+.err-row.ok .code{color:#389e0d;border-color:#b7eb8f}
+.err-row .tx{flex:1;font-size:13px}
+.err-row .tx small{display:block;color:var(--t3);font-size:11.5px;margin-top:3px;font-family:var(--mono)}
+.ver{display:flex;gap:12px;padding:13px 14px;border:1px solid var(--bd2);border-radius:var(--r-sm);margin-bottom:9px;align-items:flex-start;background:var(--bg)}
+.ver:hover{border-color:var(--bd);box-shadow:var(--sh-sm)}
+.ver.cur{border-color:var(--primary);background:var(--primary-lighter)}
+.ver .vno{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--primary)}
+.ver .t{font-size:13px;font-weight:500}
+.ver .m{font-size:11.5px;color:var(--t3);margin-top:3px;font-family:var(--mono)}
+.ver .a{margin-left:auto;display:flex;gap:8px;align-items:center;font-size:12px;white-space:nowrap;flex:none}
+.spark{height:3px;background:var(--bd);border-radius:2px;margin-top:8px;overflow:hidden}
+.spark i{display:block;height:100%;background:var(--primary)}
+
+/* 运行历史详情 */
+.tl{position:relative;padding-left:20px}
+.tl::before{content:"";position:absolute;left:6px;top:6px;bottom:6px;width:1px;background:var(--bd)}
+.tl-it{position:relative;padding:0 0 14px}
+.tl-it .pt{position:absolute;left:-17px;top:6px;width:9px;height:9px;border-radius:50%;background:#fff;border:2px solid var(--primary)}
+.tl-it.ok .pt{border-color:var(--success)}.tl-it.skip .pt{border-color:var(--t4)}.tl-it.err .pt{border-color:var(--error)}
+.tl-it .hd{display:flex;align-items:center;gap:9px;font-size:13px}
+.tl-it .hd .dur{margin-left:auto;font-family:var(--mono);font-size:11.5px;color:var(--t3)}
+.tl-it .sb{font-size:11.5px;color:var(--t3);font-family:var(--mono);margin-top:3px}
+.pill-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.mini{border:1px solid var(--bd);border-radius:var(--r-sm);padding:10px 13px;background:var(--bg);min-width:120px}
+.mini .k{font-size:11px;color:var(--t3)}
+.mini .v{font-size:17px;font-weight:600;font-family:var(--mono);letter-spacing:-.02em;margin-top:2px}
+.mini .v small{font-size:11px;color:var(--t3);font-weight:400;font-family:var(--sans)}
+
+/* 原型导航（不属于产品界面） */
+.proto-nav{position:fixed;left:50%;transform:translateX(-50%);bottom:14px;z-index:60;display:flex;align-items:center;gap:4px;background:#1a1a2e;border-radius:12px;padding:5px;box-shadow:var(--sh-lg)}
+.proto-nav .lb{font-size:10px;color:#8c8c9a;padding:0 8px 0 6px;letter-spacing:.06em}
+.proto-nav button{padding:6px 12px;border-radius:8px;color:#c8cbe0;font-size:12.5px;white-space:nowrap}
+.proto-nav button.on{background:var(--primary);color:#fff}
+.proto-nav .sep{width:1px;height:20px;background:#3a3a55;margin:0 4px}
+.proto-nav .tog{display:flex;align-items:center;gap:6px;color:#c8cbe0;font-size:12.5px;padding:0 8px}
+.anno-badge{display:none;position:absolute;width:17px;height:17px;border-radius:50%;background:#1a1a2e;color:#fff;font-size:10px;font-family:var(--mono);place-items:center;z-index:6;box-shadow:var(--sh-sm)}
+.anno-note{display:none;position:absolute;max-width:250px;background:#1a1a2e;color:#e8eaf0;font-size:11.5px;line-height:1.55;padding:8px 10px;border-radius:8px;z-index:6;box-shadow:var(--sh-md)}
+.anno-note b{color:#9fb0ff}
+.anno-inline{display:none;background:#eef1fe;border:1px dashed #b9c4f5;border-radius:6px;padding:6px 9px;font-size:11.5px;color:#3d5ce5;margin-top:8px;line-height:1.6}
+body.anno .anno-badge,body.anno .anno-note,body.anno .anno-inline{display:block}
+body.anno .anno-inline{display:block}
+body:not(.runmode) .only-run{display:none}
+body.runmode .only-edit{display:none}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<g id="i-cfg"><path d="M4 7h16M4 12h16M4 17h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none"/></g>
+<g id="i-model"><path d="M6 6h12v12H6zM9 3v3M15 3v3M9 21v-3M15 21v-3M3 9h3M3 15h3M18 9h3M18 15h3" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></g>
+<g id="i-branch"><path d="M7 5v9a3 3 0 0 0 3 3h7M7 5a2 2 0 1 0 0-.01M17 17a2 2 0 1 0 0-.01M17 21a2 2 0 1 0 0-.01" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/><circle cx="7" cy="5" r="1.9"/><circle cx="17" cy="17" r="1.9" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="17" cy="21" r="1.9" fill="none" stroke="currentColor" stroke-width="1.6"/></g>
+<g id="i-bolt"><path d="M13 3 5 14h5l-1 7 9-12h-5l1-6z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linejoin="round"/></g>
+<g id="i-funnel"><path d="M4 6h16l-6 7v6l-4-2v-4L4 6z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/></g>
+<g id="i-merge"><path d="M6 4v5c0 3 4 3 6 6M18 4v5c0 3-4 3-6 6M12 15v5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></g>
+<g id="i-braces"><path d="M8 4c-2 0-2 4-2 6s-2 2-2 2 2 0 2 2 0 6 2 6M16 4c2 0 2 4 2 6s2 2 2 2-2 0-2 2 0 6-2 6" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></g>
+<g id="i-chat"><path d="M4 5h16v10H9l-5 4V5z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/></g>
+<g id="i-play"><path d="M7 4l12 8-12 8V4z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/></g>
+<g id="i-save"><path d="M5 5h11l3 3v11H5V5zM9 5v5h6" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/></g>
+<g id="i-check"><path d="M4 12.5 10 18l10-12" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>
+<g id="i-up"><path d="M12 18V5M6 11l6-6 6 6" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>
+<g id="i-hist"><path d="M12 7v5l4 2M3.5 12a8.5 8.5 0 1 0 3-6.5M3 4v4h4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></g>
+<g id="i-robot"><path d="M6 9h12v9H6zM12 5v4M9 13h.01M15 13h.01" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/><circle cx="12" cy="4" r="1.6" fill="none" stroke="currentColor" stroke-width="1.6"/></g>
+<g id="i-team"><path d="M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20c0-3 2.5-5 5-5s5 2 5 5M16 11a2.6 2.6 0 1 0 0-5M16 15c2.5 0 5 2 5 5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></g>
+<g id="i-clock"><circle cx="12" cy="12" r="8.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 7.5V12l3.5 2" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></g>
+<g id="i-book"><path d="M5 4h9a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4zM17 7v13" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/></g>
+<g id="i-db"><path d="M12 4c4 0 7 1.3 7 3s-3 3-7 3-7-1.3-7-3 3-3 7-3zM5 7v10c0 1.7 3 3 7 3s7-1.3 7-3V7M5 12c0 1.7 3 3 7 3s7-1.3 7-3" stroke="currentColor" stroke-width="1.6" fill="none"/></g>
+<g id="i-api"><path d="M9 7 4 12l5 5M15 7l5 5-5 5M13 4l-2 16" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>
+<g id="i-chart"><path d="M4 20V9M10 20V4M16 20v-7M22 20H2" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/></g>
+<g id="i-user"><circle cx="12" cy="8" r="3.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></g>
+<g id="i-search"><circle cx="11" cy="11" r="6.2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="m16 16 4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></g>
+<g id="i-plus"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></g>
+<g id="i-close"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></g>
+<g id="i-right"><path d="m9 5 7 7-7 7" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>
+<g id="i-warn"><path d="M12 4 3 20h18L12 4zM12 10v4.5M12 17.4h.01" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round" stroke-linecap="round"/></g>
+<g id="i-down"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>
+</defs></svg>
+
+<header class="topbar">
+  <div class="logo"><span class="mark">H</span>Harnax</div>
+  <span class="crumb" id="crumb">智能体 / 编排</span>
+  <div class="sp"></div>
+  <div class="chip-tenant"><svg class="ic" width="15" height="15" viewBox="0 0 24 24"><use href="#i-db"/></svg>默认租户<span style="color:var(--t4)">·</span><span class="mono" style="font-size:11px;color:var(--t4)">tenant_id=1</span></div>
+  <svg class="ic" width="18" height="18" viewBox="0 0 24 24" style="color:var(--t3)"><use href="#i-hist"/></svg>
+  <div class="avatar">贺</div>
+</header>
+
+<div class="shell">
+  <aside class="sider">
+    <div class="grp">工作台</div>
+    <div class="mi"><svg class="ic" viewBox="0 0 24 24"><use href="#i-chart"/></svg>总览</div>
+    <div class="grp">智能体</div>
+    <div class="mi"><svg class="ic" viewBox="0 0 24 24"><use href="#i-robot"/></svg>智能体管理</div>
+    <div class="mi"><svg class="ic" viewBox="0 0 24 24"><use href="#i-team"/></svg>多智能体团队</div>
+    <div class="mi"><svg class="ic" viewBox="0 0 24 24"><use href="#i-chat"/></svg>会话</div>
+    <div class="mi"><svg class="ic" viewBox="0 0 24 24"><use href="#i-clock"/></svg>定时任务</div>
+    <div class="mi on" data-mi="cvs"><svg class="ic" viewBox="0 0 24 24"><use href="#i-branch"/></svg>编排</div>
+    <div class="mi"><svg class="ic" viewBox="0 0 24 24"><use href="#i-book"/></svg>我的智能体记忆</div>
+    <div class="grp">上下文管理</div>
+    <div class="mi"><svg class="ic" viewBox="0 0 24 24"><use href="#i-model"/></svg>模型管理</div>
+    <div class="mi"><svg class="ic" viewBox="0 0 24 24"><use href="#i-api"/></svg>MCP 服务</div>
+    <div class="mi"><svg class="ic" viewBox="0 0 24 24"><use href="#i-bolt"/></svg>技能管理</div>
+    <div class="grp">监控与治理</div>
+    <div class="mi"><svg class="ic" viewBox="0 0 24 24"><use href="#i-chart"/></svg>Token 监控</div>
+  </aside>
+
+  <main class="main">
+
+    <!-- ═══ 1 流程列表 ═══ -->
+    <section data-screen="list" class="on">
+      <div class="ph">
+        <div>
+          <h1>编排</h1>
+          <p>用流程图为智能体定义行为骨架，流程本身不对外，只能由绑定的智能体在对话中执行</p>
+        </div>
+        <div class="sp"></div>
+        <button class="btn"><svg width="14" height="14" viewBox="0 0 24 24"><use href="#i-hist"/></svg>运行历史</button>
+        <button class="btn pri"><svg width="14" height="14" viewBox="0 0 24 24"><use href="#i-plus"/></svg>新建流程</button>
+      </div>
+      <div class="anno-note" style="position:static;max-width:none;margin-bottom:14px">
+        <b>信息架构</b>：这一页挂在一级菜单「智能体」下，与「多智能体团队」「定时任务」平级；没有独立的 Workflow 应用列表、没有 API 发布入口——绑定关系在本表第 4 列，而不是流程自己持有对外身份。
+      </div>
+      <div class="card tbl-wrap">
+        <div class="toolbar">
+          <div class="search"><svg width="14" height="14" viewBox="0 0 24 24"><use href="#i-search"/></svg>搜索流程名称</div>
+          <div class="seg"><button class="on">全部</button><button>生效中</button><button>草稿</button><button>已下线</button></div>
+          <div class="sp" style="flex:1"></div>
+          <button class="btn sm">负责人</button>
+          <button class="btn sm">最近运行</button>
+        </div>
+        <table>
+          <thead><tr><th>流程名称</th><th>状态</th><th>生效版本</th><th>绑定智能体</th><th>节点 / 步数上限</th><th>最近运行</th><th>更新时间</th><th></th></tr></thead>
+          <tbody>
+            <tr>
+              <td><div class="nm">售后工单分流</div><div class="sub mono">workflow_id=2041 · 由贺</div></td>
+              <td><span class="badge b-live"><i class="dot"></i>生效</span></td>
+              <td class="mono">v7</td>
+              <td>客服助手 <span class="dim mono">agent=12</span></td>
+              <td class="mono">11 / 60</td>
+              <td><span class="badge b-live"><i class="dot"></i>成功</span> <span class="dim mono" style="font-size:11px">4.8s · 6 节点</span></td>
+              <td class="mono dim" style="font-size:12px">10-06 21:14</td>
+              <td class="acts"><a data-goto="cvs">编辑</a><a data-goto="history">历史</a><a>绑定</a></td>
+            </tr>
+            <tr>
+              <td><div class="nm">产品问答带上下文</div><div class="sub mono">workflow_id=2055 · 由李</div></td>
+              <td><span class="badge b-live"><i class="dot"></i>生效</span></td>
+              <td class="mono">v3</td>
+              <td>售前顾问 <span class="dim mono">agent=18</span></td>
+              <td class="mono">4 / 60</td>
+              <td><span class="badge b-fail"><i class="dot"></i>失败</span> <span class="dim mono" style="font-size:11px">WF_REF_FOREIGN</span></td>
+              <td class="mono dim" style="font-size:12px">10-05 16:02</td>
+              <td class="acts"><a data-goto="cvs">编辑</a><a data-goto="history">历史</a><a>绑定</a></td>
+            </tr>
+            <tr>
+              <td><div class="nm">线索资格判定</div><div class="sub mono">workflow_id=2061 · 由贺</div></td>
+              <td><span class="badge b-draft"><i class="dot"></i>草稿</span></td>
+              <td class="mono dim">未发布</td>
+              <td class="dim">未绑定</td>
+              <td class="mono">6 / 60</td>
+              <td class="dim">—</td>
+              <td class="mono dim" style="font-size:12px">10-07 09:31</td>
+              <td class="acts"><a data-goto="cvs">编辑</a><a data-goto="publish">校验</a><a>删除</a></td>
+            </tr>
+            <tr>
+              <td><div class="nm">多语言客服路由</div><div class="sub mono">workflow_id=2033 · 由王</div></td>
+              <td><span class="badge b-live"><i class="dot"></i>生效</span></td>
+              <td class="mono">v11</td>
+              <td>国际站客服 <span class="dim mono">agent=24</span> <span class="dim">+2</span></td>
+              <td class="mono">12 / 60</td>
+              <td><span class="badge b-run"><i class="dot"></i>运行中</span> <span class="dim mono" style="font-size:11px">00:12</span></td>
+              <td class="mono dim" style="font-size:12px">10-04 11:47</td>
+              <td class="acts"><a data-goto="cvs">编辑</a><a data-goto="history">历史</a><a>绑定</a></td>
+            </tr>
+            <tr>
+              <td><div class="nm">合规话术检查</div><div class="sub mono">workflow_id=2008 · 由贺</div></td>
+              <td><span class="badge b-off"><i class="dot"></i>已下线</span></td>
+              <td class="mono dim">v5<span style="text-decoration:line-through">（停）</span></td>
+              <td class="dim">绑定已解除</td>
+              <td class="mono">3 / 60</td>
+              <td><span class="badge b-live"><i class="dot"></i>成功</span> <span class="dim mono" style="font-size:11px">1.9s</span></td>
+              <td class="mono dim" style="font-size:12px">09-28 15:20</td>
+              <td class="acts"><a data-goto="cvs">编辑</a><a data-goto="history">历史</a><a>删除</a></td>
+            </tr>
+            <tr>
+              <td><div class="nm">周报生成（定时驱动）</div><div class="sub mono">workflow_id=2070 · 由贺</div></td>
+              <td><span class="badge b-live"><i class="dot"></i>生效</span></td>
+              <td class="mono">v2</td>
+              <td>运营播报 <span class="dim mono">agent=31</span></td>
+              <td class="mono">7 / 60</td>
+              <td><span class="badge b-live"><i class="dot"></i>成功</span> <span class="dim mono" style="font-size:11px">task-912-31-a3f</span></td>
+              <td class="mono dim" style="font-size:12px">10-07 07:00</td>
+              <td class="acts"><a data-goto="cvs">编辑</a><a data-goto="history">历史</a><a>绑定</a></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="pager">共 6 条<span class="pg">1</span><span class="dim">每页 20 条</span></div>
+      </div>
+    </section>
+
+    <!-- ═══ 2/3 画布（编辑态与试跑态共用） ═══ -->
+    <section data-screen="cvs">
+      <div class="cvs-top">
+        <button class="btn ghost sm" data-goto="list"><svg width="13" height="13" viewBox="0 0 24 24" style="transform:rotate(180deg)"><use href="#i-right"/></svg>编排</button>
+        <span class="ttl">售后工单分流</span>
+        <span class="badge b-live only-edit"><i class="dot"></i>生效 v7</span>
+        <span class="badge b-draft only-edit"><i class="dot"></i>草稿已改</span>
+        <span class="badge b-run only-run"><i class="dot"></i>试跑中 <span class="mono" id="elapsed">00:06</span></span>
+        <span class="meta">workflow_id=2041 · dslVersion=1</span>
+        <div class="sp"></div>
+        <span class="dim mono only-edit" style="font-size:11px">自动保存 09:41</span>
+        <button class="btn sm only-edit"><svg width="13" height="13" viewBox="0 0 24 24"><use href="#i-save"/></svg>保存草稿</button>
+        <button class="btn sm only-edit"><svg width="13" height="13" viewBox="0 0 24 24"><use href="#i-check"/></svg>校验</button>
+        <button class="btn sm pri only-edit"><svg width="13" height="13" viewBox="0 0 24 24"><use href="#i-up"/></svg>发布</button>
+        <button class="btn sm only-edit" data-goto="publish"><svg width="13" height="13" viewBox="0 0 24 24"><use href="#i-hist"/></svg>版本</button>
+        <button class="btn sm only-run"><svg width="13" height="13" viewBox="0 0 24 24"><use href="#i-close"/></svg>停止</button>
+      </div>
+
+      <div class="cvs-body">
+        <div class="rail">
+          <h4>组件</h4>
+          <div class="comp"><span class="ic" style="background:#5c7cff"><svg width="13" height="13" viewBox="0 0 24 24"><use href="#i-play"/></svg></span><div><div class="nm">开始</div><div class="sub">入参与历史窗口</div></div></div>
+          <div class="comp"><span class="ic" style="background:#722ed1"><svg width="13" height="13" viewBox="0 0 24 24"><use href="#i-model"/></svg></span><div><div class="nm">推理步骤</div><div class="sub">一次模型调用</div></div></div>
+          <div class="comp"><span class="ic" style="background:#13c2c2"><svg width="13" height="13" viewBox="0 0 24 24"><use href="#i-branch"/></svg></span><div><div class="nm">判断</div><div class="sub">条件选分支</div></div></div>
+          <div class="comp"><span class="ic" style="background:#fa8c16"><svg width="13" height="13" viewBox="0 0 24 24"><use href="#i-funnel"/></svg></span><div><div class="nm">意图分流</div><div class="sub">按语义分类</div></div></div>
+          <div class="comp"><span class="ic" style="background:#2f54eb"><svg width="13" height="13" viewBox="0 0 24 24"><use href="#i-bolt"/></svg></span><div><div class="nm">能力调用</div><div class="sub">内置 / MCP / HTTP</div></div></div>
+          <div class="comp"><span class="ic" style="background:#52c41a"><svg width="13" height="13" viewBox="0 0 24 24"><use href="#i-merge"/></svg></span><div><div class="nm">加工</div><div class="sub">聚合 · 拼装</div></div></div>
+          <div class="comp"><span class="ic" style="background:#1a1a2e"><svg width="13" height="13" viewBox="0 0 24 24"><use href="#i-chat"/></svg></span><div><div class="nm">回复</div><div class="sub">会话最终输出</div></div></div>
+          <div class="note">组件栏只有这七个入口：没有 HTTP 积木、没有「并行 / 迭代」、没有代码节点。</div>
+          <div class="anno-inline">面板七项 = A 档全部能力（加工含聚合与拼装两类节点），但一律用智能体语境命名；HTTP 收在「能力调用」的来源里，不单独成块。</div>
+        </div>
+
+        <div class="canvas" id="canvas">
+          <div class="canvas-inner" id="inner">
+            <svg class="edges" id="edges"></svg>
+
+            <div class="node" data-node="n_start" style="left:28px;top:236px;width:180px">
+              <div class="hd"><span class="ic" style="background:#5c7cff"><svg width="11" height="11" viewBox="0 0 24 24"><use href="#i-play"/></svg></span><span class="nm">开始</span><span class="ty">start</span></div>
+              <div class="bd">
+                <div class="row"><span class="k">入参</span><span class="mono">text, attachments</span></div>
+                <div class="row"><span class="k">历史</span><span>开启 · 最近 10 轮</span></div>
+              </div>
+              <span class="h in" data-h="n_start:in"></span><span class="h out" data-h="n_start:out"></span>
+              <span class="st success">成功</span>
+            </div>
+
+            <div class="node" data-node="n_intent" style="left:258px;top:214px;width:210px">
+              <div class="hd"><span class="ic" style="background:#fa8c16"><svg width="11" height="11" viewBox="0 0 24 24"><use href="#i-funnel"/></svg></span><span class="nm">意图分流</span><span class="ty">intent</span></div>
+              <div class="bd">
+                <div class="row"><span class="k">待判</span><span class="mono">${n_start.text}</span></div>
+                <div class="row"><span class="k">分类</span><span>售后 · 咨询 · 其他</span></div>
+                <div class="row"><span class="k">模型</span><span class="mono">qwen3.7-flash</span></div>
+              </div>
+              <div class="foot"><span>intent=售后</span><span>conf 0.94</span></div>
+              <span class="h in" data-h="n_intent:in"></span>
+              <span class="h out lbl" data-h="n_intent:售后">售后</span>
+              <span class="h out lbl" data-h="n_intent:咨询">咨询</span>
+              <span class="h out lbl" data-h="n_intent:其他">其他</span>
+              <span class="st success">成功</span>
+            </div>
+
+            <div class="node" data-node="n_ticket" style="left:530px;top:34px;width:222px">
+              <div class="hd"><span class="ic" style="background:#2f54eb"><svg width="11" height="11" viewBox="0 0 24 24"><use href="#i-bolt"/></svg></span><span class="nm">查工单</span><span class="ty">capability</span></div>
+              <div class="bd">
+                <div class="row"><span class="k">来源</span><span>内置工具 · order.query</span></div>
+                <div class="row"><span class="k">入参</span><span class="mono ell">ticket_no ← ${n_start.text}</span></div>
+                <div class="row"><span class="k">确认</span><span>该动作需用户确认</span></div>
+              </div>
+              <div class="foot"><span>超时 30s</span><span>幂等</span></div>
+              <span class="h in" data-h="n_ticket:in"></span><span class="h out" data-h="n_ticket:out"></span>
+              <span class="st running">执行中</span>
+              <div class="stream only-run">→ order.query(ticket_no=88213)…</div>
+            </div>
+
+            <div class="node" data-node="n_qa" style="left:530px;top:232px;width:222px">
+              <div class="hd"><span class="ic" style="background:#722ed1"><svg width="11" height="11" viewBox="0 0 24 24"><use href="#i-model"/></svg></span><span class="nm">产品问答</span><span class="ty">llm</span></div>
+              <div class="bd">
+                <div class="row"><span class="k">模型</span><span class="mono">跟随绑定智能体</span></div>
+                <div class="row"><span class="k">prompt</span><span class="mono ell">你是…${sys.history}…</span></div>
+              </div>
+              <div class="foot"><span>temp 0.3</span><span>历史 10 轮</span></div>
+              <span class="h in" data-h="n_qa:in"></span><span class="h out" data-h="n_qa:out"></span>
+              <span class="st skipped">跳过</span>
+            </div>
+
+            <div class="node" data-node="n_other" style="left:530px;top:392px;width:222px">
+              <div class="hd"><span class="ic" style="background:#722ed1"><svg width="11" height="11" viewBox="0 0 24 24"><use href="#i-model"/></svg></span><span class="nm">兜底引导</span><span class="ty">llm</span></div>
+              <div class="bd"><div class="row"><span class="k">prompt</span><span class="mono ell">无法识别时引导补充</span></div></div>
+              <div class="foot"><span>temp 0.2</span></div>
+              <span class="h in" data-h="n_other:in"></span><span class="h out" data-h="n_other:out"></span>
+              <span class="st skipped">跳过</span>
+            </div>
+
+            <div class="node" data-node="n_if" style="left:810px;top:44px;width:200px">
+              <div class="hd"><span class="ic" style="background:#13c2c2"><svg width="11" height="11" viewBox="0 0 24 24"><use href="#i-branch"/></svg></span><span class="nm">工单是否查到</span><span class="ty">if_else</span></div>
+              <div class="bd"><div class="row"><span class="k">条件</span><span class="mono ell">n_ticket.ok = true</span></div></div>
+              <span class="h in" data-h="n_if:in"></span>
+              <span class="h out lbl" data-h="n_if:true">成立</span>
+              <span class="h out lbl" data-h="n_if:false">否则</span>
+              <span class="st pending">待执行</span>
+            </div>
+
+            <div class="node" data-node="n_llm_a" style="left:1060px;top:0px;width:224px">
+              <div class="hd"><span class="ic" style="background:#722ed1"><svg width="11" height="11" viewBox="0 0 24 24"><use href="#i-model"/></svg></span><span class="nm">处理答复</span><span class="ty">llm</span></div>
+              <div class="bd"><div class="row"><span class="k">prompt</span><span class="mono ell">据 ${n_ticket.result} 组织</span></div></div>
+              <div class="foot"><span>jsonSchema 关</span></div>
+              <span class="h in" data-h="n_llm_a:in"></span><span class="h out" data-h="n_llm_a:out"></span>
+              <span class="st pending">待执行</span>
+            </div>
+
+            <div class="node" data-node="n_llm_b" style="left:1060px;top:148px;width:224px">
+              <div class="hd"><span class="ic" style="background:#722ed1"><svg width="11" height="11" viewBox="0 0 24 24"><use href="#i-model"/></svg></span><span class="nm">转人工话术</span><span class="ty">llm</span></div>
+              <div class="bd"><div class="row"><span class="k">错误策略</span><span>默认值</span></div></div>
+              <div class="foot"><span>default_value="…"</span></div>
+              <span class="h in" data-h="n_llm_b:in"></span><span class="h out" data-h="n_llm_b:out"></span>
+              <span class="st pending">待执行</span>
+            </div>
+
+            <div class="node" data-node="n_agg" style="left:1330px;top:150px;width:200px">
+              <div class="hd"><span class="ic" style="background:#52c41a"><svg width="11" height="11" viewBox="0 0 24 24"><use href="#i-merge"/></svg></span><span class="nm">变量聚合</span><span class="ty">aggregate</span></div>
+              <div class="bd"><div class="row"><span class="k">取值</span><span>第一个非空 · 4 路</span></div></div>
+              <div class="foot"><span>允许部分 skipped</span></div>
+              <span class="h in" data-h="n_agg:in"></span><span class="h out" data-h="n_agg:out"></span>
+              <span class="st pending">待执行</span>
+            </div>
+
+            <div class="node" data-node="n_compose" style="left:1330px;top:330px;width:200px">
+              <div class="hd"><span class="ic" style="background:#52c41a"><svg width="11" height="11" viewBox="0 0 24 24"><use href="#i-braces"/></svg></span><span class="nm">变量拼装</span><span class="ty">compose</span></div>
+              <div class="bd"><div class="row"><span class="k">模板</span><span class="mono ell">工单 ${n_agg.value}</span></div></div>
+              <div class="foot"><span>只有插值 · 无逻辑</span></div>
+              <span class="h in" data-h="n_compose:in"></span><span class="h out" data-h="n_compose:out"></span>
+              <span class="st pending">待执行</span>
+            </div>
+
+            <div class="node" data-node="n_reply" style="left:1580px;top:238px;width:190px">
+              <div class="hd"><span class="ic" style="background:#1a1a2e"><svg width="11" height="11" viewBox="0 0 24 24"><use href="#i-chat"/></svg></span><span class="nm">回复</span><span class="ty">reply</span></div>
+              <div class="bd"><div class="row"><span class="k">输出</span><span class="mono ell">${n_compose.text}</span></div></div>
+              <div class="foot"><span>→ TextEvent(isLast)</span></div>
+              <span class="h in" data-h="n_reply:in"></span>
+              <span class="st pending">待执行</span>
+            </div>
+
+            <div class="anno-note" style="left:470px;top:530px">未取分支整块标 <b>skipped</b>：虚线灰节点、虚线灰边，卡片保留但压到 46% 不透明度。合流节点在入边全部到齐（taken 或 skipped）后才跑一次。</div>
+            <div class="anno-note" style="left:60px;top:60px;max-width:270px"><b>没有「发布为 API / Web App」的动作</b>。顶栏四个动作只有保存草稿、校验、发布、版本；对外身份留在智能体与 API Key 那两页。</div>
+            <div class="anno-note" style="left:1060px;top:430px;max-width:270px">能力调用节点<b>没有确认开关</b>：needConfirm 与 dangerousInput 从工具定义继承，画布只读展示。给一个能关掉它的字段等于给绕过入口。</div>
+
+            <div class="minimap" id="minimap"><div class="vp"></div></div>
+            <div class="zoctl"><button>−</button><button class="mono" style="width:auto;padding:0 6px">86%</button><button>+</button><button title="适应画布" style="width:auto;padding:0 7px"><svg width="13" height="13" viewBox="0 0 24 24"><use href="#i-check"/></svg></button></div>
+          </div>
+        </div>
+
+        <aside class="drawer">
+          <div class="dw-hd"><span class="ic" id="dw-ic" style="background:#722ed1"><svg width="13" height="13" viewBox="0 0 24 24"><use href="#i-model"/></svg></span><div><div class="nm" id="dw-nm">产品问答</div><div class="ty" id="dw-ty">llm · version 1</div></div><div style="flex:1"></div><button class="btn ghost sm"><svg width="13" height="13" viewBox="0 0 24 24"><use href="#i-close"/></svg></button></div>
+          <div class="dw-bd" id="dw-bd"></div>
+        </aside>
+      </div>
+
+      <div class="bottom">
+        <div class="b-tabs">
+          <button data-tab="dry" class="on">试跑</button>
+          <button data-tab="res">本次结果</button>
+          <button data-tab="his">历史</button>
+          <div class="sp"></div>
+          <span class="dim mono" style="font-size:11px">POST /api/agent/workflow/dry-run · 不落 session 表 · 图由 admin 按 workflowId 取草稿</span>
+        </div>
+        <div class="b-bd" id="tab-dry">
+          <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">
+            <div style="min-width:300px;flex:1">
+              <div class="fld" style="margin-bottom:6px"><label>会话消息 <span class="req">*</span><span class="dim mono" style="font-weight:400">text</span></label>
+                <input class="ipt" value="我的工单 88213 到现在还没人处理，帮我催一下"></div>
+              <div class="dim mono" style="font-size:11px">输入表单由开始节点的参数声明自动生成，不手写 JSON</div>
+            </div>
+            <div style="min-width:210px"><div class="fld" style="margin-bottom:6px"><label>历史提示 <span class="dim" style="font-weight:400">可空</span></label><input class="ipt mono" value="最近 10 轮 · 4 条" style="font-size:12px"></div></div>
+            <div style="min-width:210px"><div class="fld" style="margin-bottom:6px"><label>mock 能力返回 <span class="dim" style="font-weight:400">仅 HTTP 来源</span></label><input class="ipt mono" value="（关）" style="font-size:12px"></div></div>
+            <button class="btn pri" data-run="1" style="height:32px"><svg width="14" height="14" viewBox="0 0 24 24"><use href="#i-play"/></svg>开始试跑</button>
+          </div>
+          <div class="anno-inline" style="margin-top:12px">试跑写 <b>workflow_run</b>（triggered_from=dry_run）与节点明细，但不写 session_message —— 所以试跑不会污染真实会话的历史，也不进 token 统计的会话维度。</div>
+        </div>
+        <div class="b-bd" id="tab-res" style="display:none">
+          <div style="display:flex;gap:14px;margin-bottom:10px;flex-wrap:wrap">
+            <div class="mini"><div class="k">节点</div><div class="v">2 <small>/ 11</small></div></div>
+            <div class="mini"><div class="k">已用耗时</div><div class="v">6.4<small>s</small></div></div>
+            <div class="mini"><div class="k">token</div><div class="v">1,284</div></div>
+            <div class="mini" style="min-width:190px"><div class="k">状态</div><div class="v" style="font-size:14px;display:flex;align-items:center;gap:7px"><span class="badge b-run"><i class="dot"></i>运行中</span><span class="dim" style="font-size:11px;font-family:var(--sans)">run_id=881204</span></div></div>
+          </div>
+          <div class="step"><span class="ix" style="background:#5c7cff">1</span><div><div class="nm">开始</div><div class="sb mono">text=「我的工单 88213…」 attachments=0</div></div><div class="bar"><span>0.0s</span><span>—</span><span>成功</span></div></div>
+          <div class="step"><span class="ix" style="background:#fa8c16">2</span><div><div class="nm">意图分流</div><div class="sb mono">intent=售后 confidence=0.94</div></div><div class="bar"><span>0.9s</span><span>412 tk</span><span>成功</span></div></div>
+          <div class="step"><span class="ix" style="background:#2f54eb">3</span><div><div class="nm">查工单 · order.query</div><div class="sb mono">awaiting_confirm → ToolConfirmChatEvent</div></div><div class="bar"><span>—</span><span>—</span><span style="color:var(--primary)">等待确认</span></div></div>
+          <div class="step skip"><span class="ix" style="background:#98a0b3">—</span><div><div class="nm">产品问答</div><div class="sb mono">branch 咨询 not taken → skipped</div></div><div class="bar"><span>—</span><span>—</span><span>跳过</span></div></div>
+          <div class="step skip"><span class="ix" style="background:#98a0b3">—</span><div><div class="nm">兜底引导</div><div class="sb mono">branch 其他 not taken → skipped</div></div><div class="bar"><span>—</span><span>—</span><span>跳过</span></div></div>
+        </div>
+        <div class="b-bd" id="tab-his" style="display:none">
+          <div class="logline"><span class="ts">10-07 09:41</span><span class="badge b-run" style="height:18px;font-size:11px"><i class="dot"></i>dry_run</span><span>节点 2/9 · 6.4s · 1,284 tk</span><a data-goto="history">详情</a></div>
+          <div class="logline"><span class="ts">10-07 08:12</span><span class="badge b-live" style="height:18px;font-size:11px"><i class="dot"></i>成功</span><span>chat · web-7f3… · 4.8s · 2,106 tk</span><a data-goto="history">详情</a></div>
+          <div class="logline"><span class="ts">10-06 22:03</span><span class="badge b-fail" style="height:18px;font-size:11px"><i class="dot"></i>失败</span><span>WF_VAR_UNKNOWN · 停在「处理答复」· 6.9s</span><a data-goto="history">详情</a></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ 4 校验与版本 ═══ -->
+    <section data-screen="publish">
+      <div class="ph">
+        <div><h1>校验与版本</h1><p>保存走软校验（只出告警不拒），发布走硬校验（逐条错误码，任一命中即拒）</p></div>
+        <div class="sp"></div>
+        <button class="btn" data-goto="cvs">返回画布</button>
+      </div>
+      <div class="two">
+        <div class="card blk">
+          <h3><svg width="15" height="15" viewBox="0 0 24 24" style="color:var(--error)"><use href="#i-warn"/></svg>发布级校验 · 2 条拒绝 1 条告警</h3>
+          <p class="desc">POST /api/admin/workflows/2041/validate · 错误码进现有信封（HTTP 200 + code）</p>
+          <div class="err-row"><span class="code">WF_CYCLE</span><div class="tx">「转人工话术」→「工单是否查到」构成环<b>（拓扑排序失败，外层必须 DAG）</b><small>node=n_llm_b → n_if</small></div><button class="btn sm">定位</button></div>
+          <div class="err-row"><span class="code">WF_BRANCH_EMPTY</span><div class="tx">「工单是否查到」的「否则」分支没有可达出口<small>handle=false → (none)</small></div><button class="btn sm">定位</button></div>
+          <div class="err-row warn"><span class="code">WF_VAR_TYPE_MISMATCH</span><div class="tx">引用字段类型与入参声明不兼容：把 List&lt;Msg&gt; 塞给了 String<small>node=n_qa field=sys.history</small></div><button class="btn sm">定位</button></div>
+          <div class="err-row ok"><span class="code">PASS</span><div class="tx">其余 8 条规则通过：节点 id 唯一、边端点齐全、sourceHandle 合法、单一 start、无孤立节点、无外部租户引用、<span class="mono">(type, version)</span> 均在注册表内</div></div>
+          <div class="anno-inline">变量作用域按拓扑上游判定，不按连线视觉顺序：能引用谁由编译器的拓扑序说了算，画布上的灰 chip 就是被这条规则挡掉的。</div>
+        </div>
+        <div class="card blk">
+          <h3><svg width="15" height="15" viewBox="0 0 24 24" style="color:var(--primary)"><use href="#i-hist"/></svg>版本</h3>
+          <p class="desc">发布生成不可变版本行并置为生效版本；回滚只动指针，不改写历史行</p>
+          <div class="ver cur"><div><div class="vno">v7 <span class="badge b-live" style="height:18px;font-size:11px;margin-left:4px"><i class="dot"></i>生效</span></div><div class="t" style="margin-top:4px">按意图拆三条分支，工单查不到时转人工</div><div class="m">10-06 21:14 · 贺 · 11 节点 / 13 边 · 绑定 1 个智能体</div><div class="spark"><i style="width:100%"></i></div></div><div class="a"><a>查看</a><a>导出</a></div></div>
+          <div class="ver"><div><div class="vno" style="color:var(--t2)">v6</div><div class="t" style="margin-top:4px">把 HTTP 从独立节点改成能力调用来源</div><div class="m">10-05 17:02 · 贺 · 7 节点 / 8 边</div><div class="spark"><i style="width:60%;background:var(--t4)"></i></div></div><div class="a"><a>回滚到此版本</a></div></div>
+          <div class="ver"><div><div class="vno" style="color:var(--t2)">v5</div><div class="t" style="margin-top:4px">加兜底引导节点</div><div class="m">10-02 10:20 · 李 · 8 节点 / 9 边</div><div class="spark"><i style="width:64%;background:var(--t4)"></i></div></div><div class="a"><a>回滚到此版本</a></div></div>
+          <div class="ver"><div><div class="vno" style="color:var(--t2)">v4</div><div class="t" style="margin-top:4px">意图分流替代关键词判断</div><div class="m">09-26 14:08 · 贺 · 7 节点 / 8 边</div><div class="spark"><i style="width:38%;background:var(--t4)"></i></div></div><div class="a"><a>回滚到此版本</a></div></div>
+          <div class="hr"></div>
+          <div class="dim" style="font-size:12px">绑定侧 <span class="mono">version_id</span> 可为空表示跟随生效版本；钉了版本的智能体不受回滚影响。</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ 5 运行历史 ═══ -->
+    <section data-screen="history">
+      <div class="ph"><div><h1>运行历史</h1><p>workflow_run + workflow_node_execution · 试跑与真实会话都在此，按 triggered_from 区分</p></div><div class="sp"></div><button class="btn sm">导出 CSV</button><button class="btn" data-goto="cvs">返回画布</button></div>
+      <div class="two" style="grid-template-columns:minmax(0,1fr) minmax(0,1.05fr)">
+        <div class="card tbl-wrap">
+          <div class="toolbar"><div class="seg"><button class="on">全部</button><button>会话</button><button>试跑</button><button>定时</button></div><div class="sp" style="flex:1"></div><div class="search" style="min-width:150px"><svg width="13" height="13" viewBox="0 0 24 24"><use href="#i-search"/></svg>近 7 天</div></div>
+          <table>
+            <thead><tr><th>run</th><th>来源</th><th>状态</th><th>节点</th><th>耗时</th><th>token</th></tr></thead>
+            <tbody>
+              <tr style="background:var(--primary-lighter)"><td class="mono" style="font-size:12px">881204<div class="sub mono" style="font-size:10px">v7</div></td><td><span class="badge b-run"><i class="dot"></i>试跑</span></td><td><span class="badge b-run"><i class="dot"></i>运行中</span></td><td class="mono">2/11</td><td class="mono">6.4s</td><td class="mono">1,284</td></tr>
+              <tr><td class="mono" style="font-size:12px">881190</td><td><span class="badge b-live"><i class="dot"></i>会话</span></td><td><span class="badge b-live"><i class="dot"></i>成功</span></td><td class="mono">6/11</td><td class="mono">4.8s</td><td class="mono">2,106</td></tr>
+              <tr><td class="mono" style="font-size:12px">881164</td><td><span class="badge b-live"><i class="dot"></i>会话</span></td><td><span class="badge b-fail"><i class="dot"></i>失败</span></td><td class="mono">3/11</td><td class="mono">6.9s</td><td class="mono">1,020</td></tr>
+              <tr><td class="mono" style="font-size:12px">881102</td><td><span class="badge b-off"><i class="dot"></i>定时</span></td><td><span class="badge b-live"><i class="dot"></i>成功</span></td><td class="mono">7/7</td><td class="mono">11.2s</td><td class="mono">3,441</td></tr>
+              <tr><td class="mono" style="font-size:12px">881058</td><td><span class="badge b-live"><i class="dot"></i>会话</span></td><td><span class="badge b-draft"><i class="dot"></i>已停止</span></td><td class="mono">3/11</td><td class="mono">1.4s</td><td class="mono">388</td></tr>
+              <tr><td class="mono" style="font-size:12px">881003</td><td><span class="badge b-live"><i class="dot"></i>会话</span></td><td><span class="badge b-off"><i class="dot"></i>超时</span></td><td class="mono">5/11</td><td class="mono">&gt;600s</td><td class="mono">1,970</td></tr>
+            </tbody>
+          </table>
+          <div class="pager">共 214 条<span class="pg on">1</span><span class="pg">2</span><span class="pg">3</span><span class="dim">…</span><span class="pg">11</span></div>
+        </div>
+        <div class="card blk">
+          <h3>run 881164 <span class="badge b-fail" style="margin-left:6px"><i class="dot"></i>失败</span></h3>
+          <p class="desc">web-7f3c… · 客服助手 agent=12 · v7 · 贺 · 10-06 22:03</p>
+          <div class="pill-row">
+            <span class="pill mono">步数 3 / 60</span><span class="pill mono">6.9s</span><span class="pill mono">1,020 tk</span><span class="pill mono">跳过 2 · 未执行 6</span><span class="pill" style="border-color:#ffccc7;color:#c41d1d">节点失败 · needConfirm 答否</span>
+          </div>
+          <div class="tl">
+            <div class="tl-it ok"><div class="pt"></div><div class="hd"><b>开始</b><span class="badge b-live" style="height:18px;font-size:11px"><i class="dot"></i>成功</span><span class="dur mono">0.0s</span></div><div class="sb mono">text=「88213 怎么还没人回」</div></div>
+            <div class="tl-it ok"><div class="pt"></div><div class="hd"><b>意图分流</b><span class="badge b-live" style="height:18px;font-size:11px"><i class="dot"></i>成功</span><span class="dur mono">0.8s</span></div><div class="sb mono">intent=售后 · conf 0.91 · 412 tk</div></div>
+            <div class="tl-it err"><div class="pt"></div><div class="hd"><b>查工单 · order.query</b><span class="badge b-fail" style="height:18px;font-size:11px"><i class="dot"></i>失败</span><span class="dur mono">6.1s</span></div><div class="sb mono">ok=false error=用户拒绝</div><div class="io">需确认 → ToolConfirmChatEvent → 用户答「否」→ 按节点失败走错误策略<br>error_strategy=none → 整图失败 → 会话侧发出 ErrorChatEvent</div></div>
+            <div class="tl-it skip"><div class="pt"></div><div class="hd"><b>产品问答</b><span class="badge b-draft" style="height:18px;font-size:11px"><i class="dot"></i>跳过</span><span class="dur mono">—</span></div><div class="sb mono">branch 咨询 not taken</div></div>
+            <div class="tl-it skip"><div class="pt"></div><div class="hd"><b>兜底引导</b><span class="badge b-draft" style="height:18px;font-size:11px"><i class="dot"></i>跳过</span><span class="dur mono">—</span></div><div class="sb mono">branch 其他 not taken</div></div>
+            <div class="tl-it skip"><div class="pt"></div><div class="hd"><b>其后 6 个节点</b><span class="badge b-draft" style="height:18px;font-size:11px"><i class="dot"></i>未执行</span></div><div class="sb mono">工单是否查到 · 处理答复 · 转人工话术 · 变量聚合 · 变量拼装 · 回复</div></div>
+          </div>
+          <div class="anno-inline">挂住等确认的 6.1s 计入节点超时（120s）——这是本原型里唯一一处「等待用户」与「超时上限」打架的地方，需要拍板：确认等待是否该从超时里扣除。</div>
+          <div class="anno-inline">token 记账复用既有 <b>token_stats</b> 列，不加流程维度字段：agent_id 用绑定智能体、chat_model_id 用节点实际生效模型。首页总览与既有聚合 SQL 不改就吃得到图执行的用量。</div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<nav class="proto-nav">
+  <span class="lb">原型导航</span>
+  <button class="on" data-scr="list">1 流程列表</button>
+  <button data-scr="cvs" data-run="0">2 画布编辑</button>
+  <button data-scr="cvs" data-run="1">3 画布试跑</button>
+  <button data-scr="publish">4 校验与版本</button>
+  <button data-scr="history">5 运行历史</button>
+  <span class="sep"></span>
+  <button class="tog" id="anno-tog"><svg width="13" height="13" viewBox="0 0 24 24"><use href="#i-check"/></svg>设计说明</button>
+</nav>
+
+<template id="p-n_start">
+  <div class="fld"><label>入参声明<span class="sp"></span><button class="btn ghost sm"><svg width="12" height="12" viewBox="0 0 24 24"><use href="#i-plus"/></svg>加一项</button></label>
+    <table class="map-t"><thead><tr><th>名称</th><th>类型</th><th>来源</th></tr></thead><tbody>
+      <tr><td class="mono">text</td><td class="mono">String</td><td>会话消息</td></tr>
+      <tr><td class="mono">attachments</td><td class="mono">Int</td><td>附件计数</td></tr>
+      <tr><td class="mono">params.*</td><td class="mono">Object</td><td>定时任务入参</td></tr>
+    </tbody></table></div>
+  <div class="fld"><label>携带会话历史</label>
+    <div class="swrow"><span class="sw on"></span><span class="tx">打开后引擎在 <span class="mono">sys.history</span> 给出 List&lt;Msg&gt;<small>只有推理步骤与意图分流能引用它，其余节点拿到会被校验拒绝</small></span></div></div>
+  <div class="fld"><label>历史窗口（最近 N 轮）</label><div style="display:flex;gap:8px;align-items:center"><input class="ipt mono" value="10" style="width:80px"><span class="dim" style="font-size:12px">默认 10 · 上限按 WORKFLOW_HISTORY_MAX_ROUNDS</span></div></div>
+  <div class="readonly"><svg width="14" height="14" viewBox="0 0 24 24" style="flex:none"><use href="#i-warn"/></svg><div>历史不是自动进图的。要带上文就在开始节点显式开，让「上下文从哪来」在图上看得见，而不是运行时偷偷塞。</div></div>
+  <div class="hr"></div><label style="font-size:12px;color:var(--t2);font-weight:500">输出变量</label>
+  <div class="outs" style="margin-top:7px"><div class="out">text<span class="tp">String</span></div><div class="out">attachments<span class="tp">Int</span></div><div class="out">sys.history<span class="tp">List&lt;Msg&gt;</span></div></div>
+</template>
+
+<template id="p-n_intent">
+  <div class="fld"><label>待判文本</label><div class="vars"><span class="vchip">${n_start.text}<span class="tp">Str</span></span><span class="vchip">${sys.history}<span class="tp">List</span></span></div><input class="ipt mono" value="${n_start.text}" style="font-size:12px"></div>
+  <div class="fld"><label>分类项<span class="sp"></span><button class="btn ghost sm"><svg width="12" height="12" viewBox="0 0 24 24"><use href="#i-plus"/></svg>新增</button></label>
+    <div class="cond"><div class="l2"><span class="pill mono">1</span><input class="ipt" value="售后" style="height:28px"><span class="dim" style="font-size:11px">→ 出边 售后</span></div>
+      <div class="l2"><span class="pill mono">2</span><input class="ipt" value="咨询" style="height:28px"><span class="dim" style="font-size:11px">→ 出边 咨询</span></div>
+      <div class="l2"><span class="pill mono">3</span><input class="ipt" value="其他" style="height:28px"><span class="dim" style="font-size:11px">→ 出边 其他</span></div></div></div>
+  <div class="fld"><label>兜底分支</label><div class="swrow"><span class="sw on"></span><span class="tx">未命中时走「其他」<small>兜底必须指向一条已命名的出边，否则报 WF_BRANCH_EMPTY</small></span></div></div>
+  <div class="fld"><label>模型</label><div class="ipt sel-ipt">qwen3.7-flash<svg width="13" height="13" viewBox="0 0 24 24"><use href="#i-down"/></svg></div>
+    <div class="dim" style="font-size:11px;margin-top:5px">一次不带工具的调用，强制结构化输出</div></div>
+  <div class="hr"></div><label style="font-size:12px;color:var(--t2);font-weight:500">输出变量</label>
+  <div class="outs" style="margin-top:7px"><div class="out">intent<span class="tp">String</span></div><div class="out">confidence<span class="tp">Float</span></div></div>
+</template>
+
+<template id="p-n_ticket">
+  <div class="fld"><label>来源</label>
+    <div class="seg" style="width:100%"><button class="on" style="flex:1">内置</button><button style="flex:1">MCP</button><button style="flex:1">HTTP</button></div>
+    <div class="anno-inline">三种来源同栏配置：内置走 ToolRegistry、MCP 走已授权连接、HTTP 才填方法/URL/头/超时/取值路径。<b>HTTP 不是一块独立积木。</b></div></div>
+  <div class="fld"><label>目标<span class="req">*</span></label><div class="ipt sel-ipt"><span class="mono">order.query</span><svg width="13" height="13" viewBox="0 0 24 24"><use href="#i-down"/></svg></div>
+    <div class="dim" style="font-size:11px;margin-top:5px">下拉来自本租户可见工具，引用别的租户会报 WF_REF_FOREIGN</div></div>
+  <div class="fld"><label>参数映射<span class="sp"></span><button class="btn ghost sm"><svg width="12" height="12" viewBox="0 0 24 24"><use href="#i-plus"/></svg>加一行</button></label>
+    <div class="vars"><span class="vchip">${n_start.text}<span class="tp">Str</span></span><span class="vchip">${sys.history}<span class="tp off">List</span></span></div>
+    <table class="map-t"><thead><tr><th>入参</th><th>映射</th></tr></thead><tbody><tr><td class="mono">ticket_no</td><td class="mono" style="color:var(--primary)">${n_start.text}</td></tr></tbody></table>
+    <div class="dim" style="font-size:11px;margin-top:5px">灰掉的 chip 是类型不符：List&lt;Msg&gt; 不能塞给 String</div></div>
+  <div class="fld"><label>超时</label><div style="display:flex;gap:8px"><input class="ipt mono" value="30" style="width:72px"><span class="dim" style="font-size:12px;line-height:32px">秒 · 幂等来源允许重试 1 次</span></div></div>
+  <div class="readonly"><svg width="14" height="14" viewBox="0 0 24 24" style="flex:none"><use href="#i-warn"/></svg><div>该动作需用户确认<span style="display:block;font-size:11px;margin-top:3px">needConfirm / dangerousInput 继承自工具定义与 <span class="mono">@ToolMeta</span>，画布上只读——确认是安全属性，不是编排属性。</span></div></div>
+  <div class="hr"></div><label style="font-size:12px;color:var(--t2);font-weight:500">输出变量</label>
+  <div class="outs" style="margin-top:7px"><div class="out">result<span class="tp">Object</span></div><div class="out">ok<span class="tp">Boolean</span></div><div class="out">error<span class="tp">String</span></div></div>
+</template>
+
+<template id="p-n_qa">
+  <div class="fld"><label>模型</label><div class="swrow" style="margin-bottom:8px"><span class="sw on"></span><span class="tx">跟随绑定智能体<small>关掉才单独选模型；生效值仍写进 token_stats.chat_model_id</small></span></div>
+    <div class="ipt sel-ipt dim" style="background:var(--bd3)">qwen3.7-flash（继承自 agent=12）<svg width="13" height="13" viewBox="0 0 24 24"><use href="#i-down"/></svg></div></div>
+  <div class="fld"><label>prompt 模板<span class="req">*</span><span class="sp"></span><span class="dim mono" style="font-weight:400">点击 chip 插入</span></label>
+    <div class="vars"><span class="vchip">${n_start.text}</span><span class="vchip">${sys.history}</span><span class="vchip off">${n_ticket.result}</span><span class="vchip off">${n_other.text}</span></div>
+    <textarea class="ipt">你是产品顾问。结合上一段对话回答用户问题，不要编造参数。
+用户：${n_start.text}
+历史：${sys.history}</textarea>
+    <div class="dim" style="font-size:11px;margin-top:5px">灰掉的两个变量不在拓扑上游：查工单在售后分支、兜底引导在其他分支，运行时不一定有值</div></div>
+  <div class="fld"><label>temperature</label><div style="display:flex;gap:9px;align-items:center"><input type="range" min="0" max="1" step="0.1" value="0.3" style="flex:1"><span class="pill mono">0.3</span></div></div>
+  <div class="fld"><label>结构化输出 jsonSchema<span class="sp"></span><span class="sw"></span></label>
+    <div class="dim" style="font-size:11.5px">打开后除 <span class="mono">text</span> 另出 <span class="mono">json</span>，用于把一段推理结果直接喂给下游参数映射</div></div>
+  <div class="hr"></div><label style="font-size:12px;color:var(--t2);font-weight:500">输出变量</label>
+  <div class="outs" style="margin-top:7px"><div class="out">text<span class="tp">String</span></div><div class="out dim">json<span class="tp">关</span></div></div>
+</template>
+
+<template id="p-n_if">
+  <div class="fld"><label>条件组<span class="sp"></span><button class="btn ghost sm"><svg width="12" height="12" viewBox="0 0 24 24"><use href="#i-plus"/></svg>新组</button></label>
+    <div class="cond"><div class="l1"><div class="seg" style="height:22px"><button class="on" style="height:20px;padding:0 8px;font-size:11px">AND</button><button style="height:20px;padding:0 8px;font-size:11px">OR</button></div><span>组 1 · 2 个条件</span></div>
+      <div class="l2"><span class="pill mono">${n_ticket.ok}</span><span class="pill">等于</span><span class="pill mono">true</span></div>
+      <div class="l2"><span class="pill mono">${n_ticket.result.status}</span><span class="pill">不等于</span><span class="pill mono">"已关闭"</span></div></div></div>
+  <div class="fld"><label>分支出口命名<span class="sp"></span><span class="dim" style="font-weight:400;font-size:11px">sourceHandle 的唯一编辑口</span></label>
+    <table class="map-t"><thead><tr><th>handle</th><th>显示名</th><th>出口</th></tr></thead><tbody>
+      <tr><td class="mono">true</td><td><input class="ipt" value="成立" style="height:26px;font-size:12px"></td><td><span class="mono" style="font-size:11px">→ 处理答复</span></td></tr>
+      <tr><td class="mono">false</td><td><input class="ipt" value="否则" style="height:26px;font-size:12px"></td><td><span style="color:var(--error);font-size:11px">未连 → WF_BRANCH_EMPTY</span></td></tr>
+    </tbody></table></div>
+  <div class="readonly" style="background:#fff1f0;border-color:#ffccc7;color:#a8071a"><svg width="14" height="14" viewBox="0 0 24 24" style="flex:none"><use href="#i-warn"/></svg><div>这一屏同时是发布被拒的原因：「否则」分支没有可达出口。<b>未取分支会整块标 skipped</b>，所以出口为空等于回复节点永远等不到它。</div></div>
+  <div class="hr"></div><label style="font-size:12px;color:var(--t2);font-weight:500">输出变量</label>
+  <div class="outs" style="margin-top:7px"><div class="out dim">无<span class="tp">只选出边</span></div></div>
+</template>
+
+<template id="p-n_generic">
+  <div class="fld"><label>说明</label><div class="dim" style="font-size:12.5px;line-height:1.7" id="gen-tx"></div></div>
+  <div class="hr"></div><label style="font-size:12px;color:var(--t2);font-weight:500">输出变量</label>
+  <div class="outs" style="margin-top:7px"><div class="out">value<span class="tp">String</span></div></div>
+</template>
+
+<script>
+const GENERIC = {
+  n_other:'兜底引导：推理步骤的简化配置，模型与 temperature 沿用默认，prompt 里只引用开始节点的文本。',
+  n_llm_a:'推理步骤：把工单查询结果组织成给用户的答复。流式增量直接进节点卡片，会话侧映射为 TextEvent（type=CHAT）。',
+  n_llm_b:'推理步骤：工单查不到时的转人工话术。错误策略选了 default_value，失败时给固定话术而不是让整图失败。',
+  n_agg:'变量聚合：把一组互斥分支的同名输出收成单个 value，取第一个非空。入边允许部分 skipped，这是 A 档里唯一能承接「多路汇一」的节点。',
+  n_compose:'变量拼装：一个模板加插值（${} 展开、数组 join），没有条件与循环。真要写逻辑就用推理步骤，或者把逻辑沉进工具。',
+  n_reply:'回复：输出模板可引用多个变量，映射为 TextEvent(isLast=true) 与 EndEvent。会话里只有这一个输出概念，没有「回复 / 流式回复」两种节点。'
+};
+const ICONS = {n_start:['#5c7cff','i-play'],n_intent:['#fa8c16','i-funnel'],n_ticket:['#2f54eb','i-bolt'],n_qa:['#722ed1','i-model'],
+  n_if:['#13c2c2','i-branch'],n_other:['#722ed1','i-model'],n_llm_a:['#722ed1','i-model'],n_llm_b:['#722ed1','i-model'],
+  n_agg:['#52c41a','i-merge'],n_compose:['#52c41a','i-braces'],n_reply:['#1a1a2e','i-chat']};
+const TYPE = {n_start:'start · version 1',n_intent:'intent · version 1',n_ticket:'capability · version 1',n_qa:'llm · version 1',
+  n_if:'if_else · version 1',n_other:'llm · version 1',n_llm_a:'llm · version 1',n_llm_b:'llm · version 1',
+  n_agg:'aggregate · version 1',n_compose:'compose · version 1',n_reply:'reply · version 1'};
+const PANEL = {n_start:'p-n_start',n_intent:'p-n_intent',n_ticket:'p-n_ticket',n_qa:'p-n_qa',n_if:'p-n_if'};
+const STATUS = {n_start:'success',n_intent:'success',n_ticket:'running',n_qa:'skipped',n_other:'skipped',n_if:'pending',
+  n_llm_a:'pending',n_llm_b:'pending',n_agg:'pending',n_compose:'pending',n_reply:'pending'};
+const RUN_EDGES = {'n_intent:咨询':'skip','n_intent:其他':'skip','n_start:out':'taken','n_intent:售后':'taken','n_ticket:out':'run'};
+
+function use(id){return '<svg width="13" height="13" viewBox="0 0 24 24"><use href="#'+id+'"/></svg>'}
+function selectNode(id){
+  document.querySelectorAll('.node').forEach(n=>n.classList.toggle('sel',n.dataset.node===id));
+  const [bg,ic]=ICONS[id]||['#8c8c9a','i-cfg'];
+  const dwIc=document.getElementById('dw-ic'),dwNm=document.getElementById('dw-nm'),dwTy=document.getElementById('dw-ty'),bd=document.getElementById('dw-bd');
+  dwIc.style.background=bg;dwIc.innerHTML=use(ic);
+  dwNm.textContent=document.querySelector('[data-node="'+id+'"] .nm').textContent;
+  dwTy.textContent=TYPE[id]||'llm · version 1';
+  const tpl=document.getElementById(PANEL[id]||'p-n_generic');
+  bd.innerHTML=tpl.innerHTML;
+  if(!PANEL[id]){const t=document.getElementById('gen-tx');if(t&&GENERIC[id])t.textContent=GENERIC[id];}
+  if(document.body.classList.contains('anno'))bd.querySelectorAll('.anno-inline').forEach(e=>e.style.display='block');
+}
+function layoutEdges(){
+  const inner=document.getElementById('inner'),svg=document.getElementById('edges');
+  if(!inner||!svg)return;
+  document.querySelectorAll('.node').forEach(n=>{
+    const outs=n.querySelectorAll('.h.out');
+    outs.forEach((el,i)=>{el.style.top=((i+1)/(outs.length+1)*100)+'%';});
+  });
+  const base=inner.getBoundingClientRect();
+  const pt=(el,kind)=>{const r=el.getBoundingClientRect();const y=r.top-base.top+r.height/2;
+    return {x:(kind==='out'?r.right-base.left:r.left-base.left),y};};
+  const chain=[['n_start:out','n_intent:in'],['n_intent:售后','n_ticket:in'],['n_intent:咨询','n_qa:in'],['n_intent:其他','n_other:in'],
+    ['n_ticket:out','n_if:in'],['n_if:true','n_llm_a:in'],['n_if:false','n_llm_b:in'],
+    ['n_llm_a:out','n_agg:in'],['n_llm_b:out','n_agg:in'],['n_qa:out','n_agg:in'],['n_other:out','n_agg:in'],
+    ['n_agg:out','n_compose:in'],['n_compose:out','n_reply:in']];
+  svg.innerHTML=chain.map(([s,t])=>{
+    const se=document.querySelector('[data-h="'+s+'"]'),te=document.querySelector('[data-h="'+t+'"]');
+    if(!se||!te)return '';
+    const a=pt(se,'out'),b=pt(te,'in');const dx=Math.max(40,Math.abs(b.x-a.x)*.5);
+    const key=s.split(':')[1];const st=(document.body.classList.contains('runmode')&&RUN_EDGES[s])||'';
+    return '<path class="'+st+'" d="M'+a.x+' '+a.y+'C'+(a.x+dx)+' '+a.y+' '+(b.x-dx)+' '+b.y+' '+b.x+' '+b.y+'"/>';
+  }).join('');
+}
+function setRun(on){
+  document.body.classList.toggle('runmode',on);
+  Object.entries(STATUS).forEach(([id,st])=>{const n=document.querySelector('[data-node="'+id+'"]');if(!n)return;
+    if(on){n.dataset.status=st;n.querySelector('.stream')&&(n.querySelector('.stream').style.display=st==='running'?'block':'none');}
+    else delete n.dataset.status;});
+  tab(on?'res':'dry');layoutEdges();
+}
+function tab(name){
+  document.querySelectorAll('.b-tabs button[data-tab]').forEach(b=>b.classList.toggle('on',b.dataset.tab===name));
+  ['dry','res','his'].forEach(k=>{const el=document.getElementById('tab-'+k);if(el)el.style.display=(k===name?'block':'none')});
+}
+function show(scr){
+  document.querySelectorAll('section[data-screen]').forEach(s=>s.classList.toggle('on',s.dataset.screen===scr));
+  document.getElementById('crumb').textContent = scr==='list'?'智能体 / 编排':scr==='cvs'?'智能体 / 编排 / 售后工单分流':scr==='publish'?'智能体 / 编排 / 售后工单分流 / 版本':'智能体 / 编排 / 运行历史';
+  document.querySelector('[data-mi="cvs"]').classList.toggle('on',true);
+  if(scr==='cvs'){requestAnimationFrame(()=>{layoutEdges();document.getElementById('canvas').scrollLeft=document.body.classList.contains('runmode')?0:0;});}
+  window.scrollTo(0,0);
+}
+document.querySelectorAll('.proto-nav button[data-scr]').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.proto-nav button[data-scr]').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  setRun(b.dataset.run==='1');show(b.dataset.scr);}));
+document.querySelectorAll('[data-goto]').forEach(a=>a.addEventListener('click',()=>{
+  const t=a.dataset.goto;
+  document.querySelectorAll('.proto-nav button[data-scr]').forEach(x=>x.classList.toggle('on',x.dataset.scr===t||(t==='cvs'&&x.dataset.run==='0')));
+  if(t!=='cvs')setRun(false);
+  show(t);}));
+document.querySelectorAll('.node').forEach(n=>n.addEventListener('click',()=>selectNode(n.dataset.node)));
+document.querySelectorAll('.b-tabs button[data-tab]').forEach(b=>b.addEventListener('click',()=>tab(b.dataset.tab)));
+document.querySelector('[data-run="1"].btn.pri').addEventListener('click',()=>{
+  document.querySelectorAll('.proto-nav button[data-scr]').forEach(x=>x.classList.toggle('on',x.dataset.run==='1'));
+  setRun(true);});
+document.getElementById('anno-tog').addEventListener('click',function(){
+  document.body.classList.toggle('anno');this.style.opacity=document.body.classList.contains('anno')?'1':'.72';
+  document.querySelectorAll('.anno-inline').forEach(e=>e.style.display=document.body.classList.contains('anno')?'block':'none');});
+document.getElementById('canvas').addEventListener('scroll',()=>{
+  const c=document.getElementById('canvas'),mm=document.getElementById('minimap'),vp=mm.querySelector('.vp');
+  const ratio=c.scrollLeft/(c.scrollWidth-c.clientWidth||1);vp.style.left=(2+ratio*(150-62))+'px';});
+document.getElementById('minimap').insertAdjacentHTML('beforeend',
+  [[30,236,180],[258,214,210],[530,34,222],[530,232,222],[530,392,222],[810,44,200],[1060,0,224],[1060,148,224],[1330,150,200],[1330,330,200],[1580,238,190]]
+  .map((p,i)=>'<i class="'+([0,1,2,6].includes(i)?'taken':'')+'" style="left:'+(p[0]/1780*146+2)+'px;top:'+(p[1]/620*52+2)+'px;width:'+Math.max(3,p[2]/1780*146)+'px;height:3px"></i>').join(''));
+window.addEventListener('resize',layoutEdges);
+const Q=new URLSearchParams(location.search);
+const scr=Q.get('scr')||'list',run=Q.get('run')==='1',nodeId=Q.get('node')||'n_qa';
+if(Q.get('anno')==='1'){document.body.classList.add('anno');document.getElementById('anno-tog').style.opacity='.72';
+  document.querySelectorAll('.anno-inline').forEach(e=>e.style.display='block');}
+document.querySelectorAll('.proto-nav button[data-scr]').forEach(x=>
+  x.classList.toggle('on',x.dataset.scr===scr&&((scr!=='cvs')||(x.dataset.run==='1')===run)));
+setRun(run);show(scr);selectNode(nodeId);
+if(Q.get('nav')==='0')document.querySelector('.proto-nav').style.display='none';
+if(scr==='cvs'&&!run)document.getElementById('canvas').scrollLeft=560;
+</script>
+</body>
+</html>
