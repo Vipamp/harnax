@@ -221,6 +221,33 @@ class ToolInvocationMiddlewareTest {
         }
 
         @Test
+        fun `a stream longer than the accumulation ceiling is cut there instead of held whole`() {
+            // The ceiling belongs on the accumulator rather than on the row because the writer's queue peaks at
+            // `capacity` multiplied by one event's body: unbounded, a tool that streamed 60 KB kept all of it on
+            // the heap until the end frame and then rode through the queue, even though only the first 20 KB of
+            // it can ever be read back from `result_excerpt`.
+            val call = ToolUseBlock("t1", "read_file", emptyMap())
+            val mw = middleware()
+            val deltas = (1..60).map { delta("t1", "read_file", if (it == 1) "head" + "x".repeat(996) else "y".repeat(1000)) }
+
+            StepVerifier.create(
+                mw.onActing(
+                    agent,
+                    ctx,
+                    actingInput(call),
+                    Function { Flux.fromIterable<AgentEvent>(deltas).concatWith(Flux.just(end("t1", "read_file", ToolResultState.SUCCESS))) },
+                ),
+            ).expectNextCount(61).verifyComplete()
+
+            val text = events.single().resultText!!
+            assertTrue(text.length <= 32_000, "the accumulator held ${text.length} characters — it is unbounded again")
+            assertTrue(text.startsWith("head"))
+            // No marker interleaved here: the writer's own `truncate()` is the single place that says a body was
+            // cut, and a second marker inside the buffer would read as part of the tool's output.
+            assertFalse(text.contains("truncated"))
+        }
+
+        @Test
         fun `a lone empty delta leaves the result text null`() {
             // Empty text is the ordinary shape of a keep-alive or heartbeat frame, and it says nothing about the
             // body. Leaving a literal "null" in the accumulator would file "this call produced no excerpt" as

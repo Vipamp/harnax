@@ -119,7 +119,14 @@ class ToolInvocationMiddleware(
                 AgentEventType.TOOL_RESULT_TEXT_DELTA -> {
                     val delta = event as ToolResultTextDeltaEvent
                     val text = delta.delta
-                    if (!text.isNullOrEmpty()) results.computeIfAbsent(key(delta.toolCallId, delta.toolCallName)) { StringBuffer() }.append(text)
+                    if (!text.isNullOrEmpty()) {
+                        // The queue's peak is capacity x one event body, so the accumulator must not be unbounded
+                        // even though the row is truncated: append stops at the ceiling rather than holding a
+                        // multi-megabyte stream until the end frame, and the writer's own `truncate()` still says
+                        // where the body was cut.
+                        val buffer = results.computeIfAbsent(key(delta.toolCallId, delta.toolCallName)) { StringBuffer() }
+                        if (buffer.length < MAX_ACCUMULATED_RESULT_CHARS) buffer.append(text.take(MAX_ACCUMULATED_RESULT_CHARS - buffer.length))
+                    }
                 }
 
                 AgentEventType.TOOL_RESULT_END -> resolve(event as ToolResultEndEvent, started, results, openByName)
@@ -285,5 +292,16 @@ class ToolInvocationMiddleware(
         private const val PARAM_SKILL_ID = "skillId"
         private const val PARAM_PATH = "path"
         private const val SKILL_BODY = "SKILL.md"
+
+        /**
+         * The heap bound on one call's accumulated body, not a correctness one.
+         *
+         * It sits above the writer's capture ceiling (20,000 characters, `harnax.metrics.invocation.capture-max-chars`)
+         * on purpose: a body this long is already longer than anything the column can hold, so cutting here cannot
+         * change what the row says and truncation semantics stay the writer's alone. 32,000 leaves the writer's
+         * ceiling room to be configured anywhere up to it without the accumulator ever becoming the thing that
+         * shortened a body the column could still have held.
+         */
+        private const val MAX_ACCUMULATED_RESULT_CHARS = 32_000
     }
 }
