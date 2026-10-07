@@ -124,6 +124,17 @@ harness:
     max-file-size: ${OUTPUT_MAX_FILE_SIZE:52428800}
     max-files-per-response: ${OUTPUT_MAX_FILES:5}
     admin-base-url: ${OUTPUT_ADMIN_BASE_URL:}
+  # One row per tool call in `tool_invocation_log`, filed by the acting middleware. `enabled=false` installs
+  # no middleware at all. Bodies (args and result) are optional: they can carry literal secrets, so a
+  # deployment that only wants counts and durations turns `capture-payload` off and keeps every measure.
+  metrics:
+    invocation:
+      enabled: ${HARNESS_METRICS_INVOCATION_ENABLED:true}
+      queue-capacity: ${HARNESS_METRICS_INVOCATION_QUEUE_CAPACITY:512}
+      batch-size: ${HARNESS_METRICS_INVOCATION_BATCH_SIZE:64}
+      flush-interval-ms: ${HARNESS_METRICS_INVOCATION_FLUSH_INTERVAL_MS:200}
+      capture-payload: ${HARNESS_METRICS_INVOCATION_CAPTURE_PAYLOAD:true}
+      capture-max-chars: ${HARNESS_METRICS_INVOCATION_CAPTURE_MAX_CHARS:2000}
 
 # Logging Configuration
 logging:

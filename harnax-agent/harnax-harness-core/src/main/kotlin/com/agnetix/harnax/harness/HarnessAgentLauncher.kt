@@ -19,6 +19,8 @@ import com.agnetix.harnax.agent.adaptor.model.ModelHelper
 import com.agnetix.harnax.agent.adaptor.token.TokenStatBuilder
 import com.agnetix.harnax.agent.provider.middleware.ProcessLogMiddleware
 import com.agnetix.harnax.agent.provider.middleware.TokenStatsMiddleware
+import com.agnetix.harnax.agent.provider.middleware.ToolInvocationClassifier
+import com.agnetix.harnax.agent.provider.middleware.ToolInvocationMiddleware
 import com.agnetix.harnax.agent.session.MysqlSessionMessageStore
 import com.agnetix.harnax.agent.session.SessionConfig
 import com.agnetix.harnax.agent.session.SessionLoader
@@ -54,6 +56,7 @@ import com.agnetix.harnax.tools.sdk.ToolMeta
 import com.agnetix.harnax.tools.sdk.UserIdentifier
 import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import com.agnetix.harnax.tools.sdk.adaptor.ToolConfigAdaptor
+import com.agnetix.harnax.tools.sdk.adaptor.ToolInvocationAdaptor
 import com.agnetix.harnax.tools.sdk.registry.ToolRegistry
 import io.agentscope.core.message.Msg
 import io.agentscope.core.model.Model
@@ -134,6 +137,15 @@ class HarnessAgentLauncher(
      */
     val sessionMessageStore: MysqlSessionMessageStore? = null,
     val skillUsageAdaptor: SkillUsageAdaptor? = null,
+    /**
+     * Where a finished tool call is filed (design section 5). Null means the recorder is not mounted at all and
+     * the runtime files nothing.
+     *
+     * This is the one landing point of the `harness.metrics.invocation.enabled` switch: the bean that resolves
+     * the adaptor turns an absent provider into null when the switch is off, so the launcher holds no second
+     * boolean to check and the mount below has exactly one condition.
+     */
+    val toolInvocationAdaptor: ToolInvocationAdaptor? = null,
     val skillDraftAdaptor: SkillDraftAdaptor? = null,
 ) {
 
@@ -262,6 +274,10 @@ class HarnessAgentLauncher(
         // only unbinds the state saver and clears the state cache, it does not touch the toolkit's MCP
         // clients, and a stdio client is an OS process. See `mcpClients` on HarnessAgentWrapper.
         val mcpClients = mutableListOf<McpClientWrapper>()
+        // The runtime needs this for attribution, not for loading: a call of an MCP tool is filed against the
+        // server that exposed it, and the tool name alone does not say which one it was. Keyed by the client
+        // wrapper's name, which `McpHelper` builds from `mcpConfig.name`.
+        val mcpIdByClientName = mutableMapOf<String, Long>()
         // A lead has no business tools to reach: MCP is a member concern (design section 5).
         val mcpServices = if (isLead) emptyList() else agentSpec.mcpServices
         mcpServices.forEach { mcpSpec ->
@@ -332,6 +348,7 @@ class HarnessAgentLauncher(
                 client = created
                 agentBuilder.addMcp(created)
                 mcpClients += created
+                mcpIdByClientName[mcpConfig.name] = mcpSpec.mcpId
             } catch (e: Exception) {
                 log.warn(
                     "MCP server '{}' (id={}) failed to load, the agent is built without it: {}",
@@ -352,6 +369,22 @@ class HarnessAgentLauncher(
                 sessionId,
                 mcpClients.size,
                 mcpServices.size,
+            )
+        }
+
+        val mcpIdsByTool: Map<String, Long> = if (mcpIdByClientName.isEmpty()) {
+            emptyMap()
+        } else {
+            agentBuilder.mcpToolClientNames().mapNotNull { (toolName, clientName) ->
+                mcpIdByClientName[clientName]?.let { toolName to it }
+            }.toMap()
+        }
+        if (mcpClients.isNotEmpty() && mcpIdsByTool.isEmpty()) {
+            log.warn(
+                "Agent '{}' has {} MCP client(s) but the registry named none of their tools: their calls will be " +
+                    "filed as framework rather than as mcp",
+                agentSpec.name,
+                mcpClients.size,
             )
         }
 
@@ -478,6 +511,10 @@ class HarnessAgentLauncher(
         // would be dead weight, and one keyed by the spec's copy of the name could disagree with the
         // repository's for a skill Admin delivered under a different one.
         val visibilityPolicies = mutableMapOf<String, SkillVisibilityDto>()
+        // The recorder above keys by skill name because that is what its read callback gets back. A tool call
+        // carries the other key — the upstream-derived `AgentSkill.skillId` — so this loop, the only place that
+        // holds both, records that one against the Admin row id too.
+        val adminSkillIdsBySkillId = mutableMapOf<String, Long>()
         agentSpec.skills.forEach {
             // A miss means the row was deleted between delivery and build, or it holds something
             // `AgentSkill` refuses (see SkillAdaptorImpl). Either way the loader has already logged
@@ -488,6 +525,9 @@ class HarnessAgentLauncher(
                 // The delivered AgentSkill carries no id, so this is the only place the count can learn
                 // which row stands behind the name the repository reads back.
                 skillViewRecorder?.attribute(skill.name, it.skillId)
+                // The loader is handed `AgentSkill.skillId` (`name_source`, upstream-derived) and not the Admin row
+                // id, so the use event can only be attributed back through a map built here.
+                adminSkillIdsBySkillId[skill.skillId] = it.skillId
                 it.visibility?.let { policy -> visibilityPolicies[skill.name] = policy }
                 if (isLead && skill.resources.isNotEmpty()) {
                     log.warn(
@@ -599,6 +639,38 @@ class HarnessAgentLauncher(
             agentSpec.tenantId,
         )
         agentBuilder.addMiddleware(processLogMiddleware)
+
+        // A delivered CLI package is not a tool: the model reaches it through the shell. Attribution therefore
+        // reads the command name off the command string, and the candidate names are the package name plus the
+        // first word of each segment of its own check command. A binary inside the package whose name matches
+        // neither is filed as `shell` (design section 12).
+        val cliIdsByCommand: Map<String, Long> = agentSpec.cliSpecs.flatMap { spec ->
+            (setOf(spec.name) + ToolInvocationClassifier.commandHeads(spec.checkCommand).map { it.substringAfterLast('/') })
+                .filter { it.isNotBlank() }
+                .map { it to spec.cliId }
+        }.toMap()
+
+        // ----- Tool invocation metrics -----
+        // Third fresh instance per build for the same reason as the two above: the run's attribution lives in
+        // its fields. One guard only: `enabled=false` has already turned the adaptor into null where the bean
+        // is wired (design section 5), so absence here means "nothing to write to" and the recording path is
+        // exactly as it was, rather than a per-turn cost for a counter with nowhere to go.
+        if (toolInvocationAdaptor != null) {
+            agentBuilder.addMiddleware(
+                ToolInvocationMiddleware(
+                    adaptor = toolInvocationAdaptor,
+                    tenantId = agentSpec.tenantId,
+                    agentId = agentSpec.attributableAgentId,
+                    sessionId = sessionId,
+                    userId = userIdentifier.userId,
+                    mcpIdsByTool = mcpIdsByTool,
+                    cliIdsByCommand = cliIdsByCommand,
+                    builtinToolNames = agentSpec.toolSpecs.map { it.toolName }.toSet(),
+                    skillUsageAdaptor = skillUsageAdaptor,
+                    adminSkillIdsBySkillId = adminSkillIdsBySkillId,
+                ),
+            )
+        }
 
         // ----- Memory -----
         // HarnessAgent always uses InMemoryMemory internally; no explicit memory configuration needed.
@@ -1164,6 +1236,7 @@ class HarnessAgentLauncher(
             outputFileStore: OutputFileStore? = null,
             mcpTokenSourceFactory: McpAccessTokenSourceFactory? = null,
             skillUsageAdaptor: SkillUsageAdaptor? = null,
+            toolInvocationAdaptor: ToolInvocationAdaptor? = null,
             skillDraftAdaptor: SkillDraftAdaptor? = null,
         ): HarnessAgentLauncher {
             minioConfig?.ensureBuckets()
@@ -1239,6 +1312,7 @@ class HarnessAgentLauncher(
                 mcpTokenSourceFactory = mcpTokenSourceFactory,
                 sessionMessageStore = stores.messageStore,
                 skillUsageAdaptor = skillUsageAdaptor,
+                toolInvocationAdaptor = toolInvocationAdaptor,
                 skillDraftAdaptor = skillDraftAdaptor,
             )
         }

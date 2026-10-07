@@ -26,6 +26,7 @@ import com.agnetix.harnax.harness.team.TeamArtifactGateway
 import com.agnetix.harnax.mapper.TeamArtifactMapper
 import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import com.agnetix.harnax.tools.sdk.adaptor.ToolConfigAdaptor
+import com.agnetix.harnax.tools.sdk.adaptor.ToolInvocationAdaptor
 import com.agnetix.harnax.tools.sdk.registry.ToolRegistry
 import io.agentscope.harness.agent.IsolationScope
 import io.minio.MinioClient
@@ -330,6 +331,8 @@ class HarnessAutoConfiguration {
         mcpTokenSourceFactoryProvider: ObjectProvider<McpAccessTokenSourceFactory>,
         skillUsageAdaptorProvider: ObjectProvider<SkillUsageAdaptor>,
         skillDraftAdaptorProvider: ObjectProvider<SkillDraftAdaptor>,
+        toolInvocationAdaptorProvider: ObjectProvider<ToolInvocationAdaptor>,
+        @Value("\${harness.metrics.invocation.enabled:true}") invocationMetricsEnabled: Boolean,
     ): HarnessAgentLauncher {
         val toolCallLogAdaptor = toolCallLogAdaptorProvider.ifAvailable
             ?: ToolCallLogAdaptor { /* no-op */ }
@@ -366,6 +369,10 @@ class HarnessAutoConfiguration {
             // Absent means nobody may author a skill: a draft with nowhere to be filed is unreviewed text
             // sitting in a workspace, which is the one thing this feature exists to prevent.
             skillDraftAdaptor = skillDraftAdaptorProvider.ifAvailable,
+            // Absent means no tool call is filed: a runtime with nowhere to write must not pay for a recorder.
+            // `harness.metrics.invocation.enabled=false` lands here and nowhere else — the launcher holds no
+            // second switch, so turning the feature off simply leaves it with a null adaptor.
+            toolInvocationAdaptor = toolInvocationAdaptorProvider.ifAvailable?.takeIf { invocationMetricsEnabled },
         )
     }
 }

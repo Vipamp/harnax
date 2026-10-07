@@ -15,6 +15,7 @@ import io.agentscope.core.tool.AgentTool
 import io.agentscope.core.tool.ToolExecutionContext
 import io.agentscope.core.tool.Toolkit
 import io.agentscope.core.tool.mcp.McpClientWrapper
+import io.agentscope.core.tool.mcp.McpTool
 import io.agentscope.harness.agent.DistributedStore
 import io.agentscope.harness.agent.HarnessAgent
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem
@@ -291,6 +292,19 @@ class HarnessAgentBuilder {
      * Used by the launcher to find tools that need post-registration wrapping.
      */
     fun getTool(toolName: String): AgentTool? = toolkit.getTool(toolName)
+
+    /**
+     * Toolkit tools that came from an MCP server, mapped to the client that registered them.
+     *
+     * Read-only, and asked for once after every `addMcp`: the caller has the server rows and needs the tool
+     * names, while only the live registry knows which server a name belongs to. `addMcp` registers
+     * synchronously, so what it installed is visible here. Harness' own built-ins (`execute`, `read_file`,
+     * `memory_*`) are attached later, at `build()`, so they are absent — which is exactly right, since none
+     * of them belongs to an MCP server.
+     */
+    fun mcpToolClientNames(): Map<String, String> = toolkit.getToolNames().mapNotNull { name ->
+        (toolkit.getTool(name) as? McpTool)?.clientName?.let { name to it }
+    }.toMap()
 
     /**
      * Wraps an already-registered tool with [DangerousInputCheckingTool].
