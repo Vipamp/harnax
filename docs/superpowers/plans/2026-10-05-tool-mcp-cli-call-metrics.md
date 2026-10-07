@@ -3118,14 +3118,15 @@ git commit -m "feat(metrics): 装配期三张映射与调用指标中间件挂�
 - Modify: `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/LauncherBean.kt:46,62`（注释块里的两行）
 - Modify: `harnax-tools-external/harnax-tools-buildin/src/main/kotlin/com/agnetix/harnax/tools/buildin/EmailToolBox.kt:64`、`TimeToolBox.kt:23,27`
 - Modify: `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/team/TeamToolBoxes.kt:26,43,58,90,104,114`
-- Modify: `harnax-agent/harnax-tools-sdk/src/test/kotlin/com/agnetix/harnax/tools/sdk/ToolBoxTest.kt`（整文件替换）、`ToolCallContextTest.kt:20-65`
+- Delete: `harnax-agent/harnax-tools-sdk/src/test/kotlin/com/agnetix/harnax/tools/sdk/ToolBoxTest.kt`（整文件，理由见 Step 8）
+- Modify: `harnax-agent/harnax-tools-sdk/src/test/kotlin/com/agnetix/harnax/tools/sdk/ToolCallContextTest.kt:20-65`
 - Modify: `harnax-tools-external/harnax-tools-buildin/src/test/kotlin/com/agnetix/harnax/tools/buildin/TimeToolBoxTest.kt:32,39-43,71-85,104-115`、`EmailToolBoxTest.kt:40,53-58,105-133,321-350`、`EmailToolBoxIntegrationTest.kt:32,59-64`
 - Modify: `harnax-agent/harnax-harness-core/src/test/kotlin/com/agnetix/harnax/harness/team/TeamToolBoxesTest.kt:29-41,109-116`
 - Modify: 14 个 harness-core 夹具（清单见 Step 9）
 
 **Interfaces:**
 - Consumes: Task 6/7/8 已经接管工具调用的记录，本任务删的是**旧链**，不是唯一记录源。
-- Produces: `ToolBox` 只剩 `abstract fun name(): String`、`fun init(userIdentifier: UserIdentifier)`、`fun userIdentifier(): UserIdentifier`——**没有 `execute`**，子类直接返回自己的结果。`SessionMetaContext`、`ToolCallLogAdaptor`、`ToolCallInfo` 不再存在，后续任何任务引用它们都是编译错误。
+- Produces: `ToolBox` 只剩 `abstract fun name(): String`——**没有 `execute`，也没有 `init`**：`userIdentifier()` 在 main 里除自身声明外零调用方（现核 `ToolBox.kt:41` 加一份待删的 `ToolBoxTest.kt`），所以三个 `@Volatile` 字段与 `init` 一起消失而不是瘦身为 `init(userIdentifier)`（规格 §10 已裁）。子类直接返回自己的结果。`SessionMetaContext`、`ToolCallLogAdaptor`、`ToolCallInfo` 不再存在，后续任何任务引用它们都是编译错误。
 
 这条链的读侧是干净的：`ToolCallLogMapper` 只有一个 `insert`，全仓没有一处 select（`harnax-entity/src/main/kotlin/com/agnetix/harnax/mapper/ToolCallLogMapper.kt:7-13` 的 KDoc 自己写明「written once and never read back through this mapper」），`harnax-admin` 也没有接口读它——所以删除不需要先做读侧迁移，也不会有页面变空。规格 §10 的判据正是这个：只有写、没有读、且新表覆盖同一事实。
 
@@ -3157,37 +3158,28 @@ package com.agnetix.harnax.tools.sdk
 /**
  * Base class for a toolbox registered as a model-facing tool.
  *
- * The only thing a box needs from the runtime is the end user behind the call, because some tools act as
- * that user. Measuring and recording the call itself belongs to `ToolInvocationMiddleware`, which sees
- * every call — including an MCP tool or a shell command, neither of which is a `ToolBox`.
+ * It carries no state: measuring and recording the call belongs to `ToolInvocationMiddleware`, which sees
+ * every call — including an MCP tool or a shell command, neither of which is a `ToolBox`. A tool that
+ * needs to act as the end user takes that value as its own argument, the way the delivered tools already
+ * do, rather than through a base-class seam nothing calls.
  */
 abstract class ToolBox {
-    @Volatile
-    private var userIdentifierValue: UserIdentifier? = null
-
     /**
      * 获取工具名称（子类必须实现）
      */
     abstract fun name(): String
-
-    fun init(userIdentifier: UserIdentifier) {
-        this.userIdentifierValue = userIdentifier
-    }
-
-    fun userIdentifier(): UserIdentifier = userIdentifierValue
-        ?: throw IllegalStateException("ToolBox not initialized: userIdentifier is null")
 }
 ```
 
-`execute`/`executeInternal`/`logToolCall`/`logToolCallError`（`:44-150`）、只被那两条 warn 用到的 `name` 字段（`:22`）、`sessionMetaContextValue`、`toolCallLogAdaptorValue` 以及 `LoggerFactory`/`ToolCallInfo`/`ToolCallLogAdaptor` 三个 import 一起去掉。`@Author/@Date/@Description` 那一段旧文件头注释按全仓现状不再保留。
+`execute`/`executeInternal`/`logToolCall`/`logToolCallError`（`:44-150`）、只被那两条 warn 用到的 `name` 字段（`:22`）、`sessionMetaContextValue`、`toolCallLogAdaptorValue`、`userIdentifierValue`、`init`（`:30-38`）、`userIdentifier()`（`:41-42`）以及 `LoggerFactory`/`UserIdentifier`/`ToolCallInfo`/`ToolCallLogAdaptor` 四个 import 一起去掉；`@Author/@Date/@Description` 那一段旧文件头注释按全仓现状不再保留。删 `init` 之后 Step 5 的三处调用点跟着消失，不是换成单参形式。
 
 - [ ] **Step 4: `ToolCallContext.kt` 删 `SessionMetaContext`**
 
-保留 marker 接口 `ToolCallContext` 与 `data class UserIdentifier`——两者都还有活的引用方（`userIdentifier()`、注册表）。删掉 `data class SessionMetaContext`（`:11` 起整个类），并把接口 KDoc 里点名 `tool_call_log` 的那句改成只讲「一次调用的归属」，不点表名。
+保留 marker 接口 `ToolCallContext` 与 `data class UserIdentifier`，但理由要按现核写：`UserIdentifier` 有四个 main 引用方（`HarnessAgentLauncher`、`SkillUsageAdaptor`、`DefaultAgentRunner`、admin 的 `MemoryObjectKeys`），必须留；`ToolCallContext` 在 `SessionMetaContext` 删掉后只剩一个实现方且全仓没有按该类型消费的调用点（main 里五处命中全是它自己的声明与两个 `: ToolCallContext`），摘掉它要连带动 `UserIdentifier` 的声明与 import，是旧链之外的独立清理，本轮不做。删掉 `data class SessionMetaContext`（`:11` 起整个类），并把接口 KDoc 里点名 `tool_call_log` 的那句改成只讲「一次调用的归属」，不点表名。
 
 - [ ] **Step 5: 装配侧删接线（`HarnessAgentLauncher.kt`）**
 
-删四行：
+删五行（行号现核于 `HarnessAgentLauncher.kt`，Task 8 落地后按内容再推一遍）：
 
 ```kotlin
 // :52 与 :55
@@ -3203,20 +3195,23 @@ import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 // :1155 initLauncher 形参 —— 它是第 7 个必填参数，删掉会改 arity；
 // Step 9 的 14 处具名实参必须跟着删，否则 harness-core 测试源码集编译不过。
             toolCallLogAdaptor: ToolCallLogAdaptor,
+
+// :1226 initLauncher 体内的具名实参 —— 漏这一行就是「no parameter with name 'toolCallLogAdaptor' found」，
+// 形参与实参是一对，删一侧编译不过。
+                toolCallLogAdaptor = toolCallLogAdaptor,
 ```
 
-`:386-399` 注册块里的 `toolBox.init(...)` 三参换一参：
+`:386-399` 注册块里删掉整段 `toolBox.init(...)`（三行调用连同 `SessionMetaContext(...)` 那个实参），块只剩注册与记账：
 
 ```kotlin
                         val toolBox = toolRegistry?.createToolBoxInstance(beanName)
                         if (toolBox != null) {
-                            toolBox.init(userIdentifier)
                             agentBuilder.addTool(toolBox)
                             addedToolBoxBeans.add(beanName)
                         }
 ```
 
-`:553-567` 团队工具：删 `val teamSessionMeta = SessionMetaContext(...)` 及其上方两句注释（`// One context for both roles: ...` 两行），两处 `init` 换成 `toolBox.init(userIdentifier)`。改完这段是：
+`:553-567` 团队工具：删 `val teamSessionMeta = SessionMetaContext(...)` 及其上方两句注释（`// One context for both roles: ...` 两行），两处 `toolBox.init(toolCallLogAdaptor, teamSessionMeta, userIdentifier)` 整行删掉。改完这段是：
 
 ```kotlin
         // ----- Team tools -----
@@ -3225,14 +3220,12 @@ import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
         val teamToolNames: Set<String> = when (teamRole) {
             is TeamRole.Lead -> {
                 val toolBox = TeamLeadToolBox(teamRole.orchestrator)
-                toolBox.init(userIdentifier)
                 agentBuilder.addTool(toolBox)
                 TeamLeadToolBox.TOOL_NAMES
             }
 
             is TeamRole.Member -> {
                 val toolBox = TeamMemberToolBox(teamRole.orchestrator, teamRole.member.memberAgentId)
-                toolBox.init(userIdentifier)
                 agentBuilder.addTool(toolBox)
                 TeamMemberToolBox.TOOL_NAMES
             }
@@ -3263,67 +3256,17 @@ import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 
 - [ ] **Step 8: 改受影响的单元测试**
 
-`ToolBoxTest.kt` 整文件替换——`execute` 的返回值与异常透传不再是 `ToolBox` 的行为，`init` 存 user 才是它唯一剩下的承诺：
-
-```kotlin
-package com.agnetix.harnax.tools.sdk
-
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.DisplayName
-import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
-
-/**
- * The two members a toolbox is built on: a name the registry keys on, and the end user the runtime hands
- * down to a tool that acts as that user.
- */
-class ToolBoxTest {
-
-    private class SampleToolBox : ToolBox() {
-        override fun name(): String = "test-tool"
-    }
-
-    private lateinit var toolBox: SampleToolBox
-
-    @BeforeEach
-    fun setUp() {
-        toolBox = SampleToolBox()
-    }
-
-    @Test
-    @DisplayName("init should store userIdentifier accessible via userIdentifier()")
-    fun `init should store userIdentifier`() {
-        val identifier = UserIdentifier(userId = 42L)
-
-        toolBox.init(identifier)
-
-        assertEquals(identifier, toolBox.userIdentifier())
-    }
-
-    @Test
-    @DisplayName("a box used before the runtime initialized it says so instead of returning null")
-    fun `uninitialized box refuses the user lookup`() {
-        assertThrows<IllegalStateException> { toolBox.userIdentifier() }
-    }
-}
-```
+`ToolBoxTest.kt` **整文件删除**（`git rm`）——拆完之后 `ToolBox` 只剩一个抽象 `name()`，没有任何可断言的行为；留一份「造个空子类断言它返回自己的名字」的用例就是给自己造死状态测试，正是本轮 Task 5 I1 被打回的那一类。它现在 158 行里 8 个 `@Test`（`InitTests` 一个、`ExecuteSuccessTests` 三个、`ExecuteErrorTests` 两个、`AdaptorErrorTests` 两个）全部围着 `execute` 的日志与 `init` 存 user，两者一并消失。
 
 `ToolCallContextTest.kt:20-65` 删掉整个 `SessionMetaContextTests` 内部类（含 `@DisplayName("SessionMetaContext Tests")`），`UserIdentifierTests` 一行不动；文件顶部同时提到两个类的类注释改成就讲 `UserIdentifier`。
 
-`TimeToolBoxTest.kt`：删 `private lateinit var mockAdaptor: ToolCallLogAdaptor`（`:32`）；`setUp` 里 `mockAdaptor = mock()` 与三参 `init`（`:39-43`）换成一行 `timeToolBox.init(UserIdentifier(userId = 1L))`；删 `getDate should log tool call`（`:71-85`）与 `getDatetime should log tool call`（`:104-115`）两个用例；删 `SessionMetaContext`/`ToolCallInfo`/`ToolCallLogAdaptor` 三个 import。
+`TimeToolBoxTest.kt`：删 `private lateinit var mockAdaptor: ToolCallLogAdaptor`（`:32`）；`setUp` 里 `mockAdaptor = mock()` 与 `init(...)` 两处一起删（`:39-43` 只剩 `timeToolBox = TimeToolBox()` 一行）；删 `getDate should log tool call`（`:71-85`）与 `getDatetime should log tool call`（`:104-115`）两个用例；删 `SessionMetaContext`/`ToolCallInfo`/`ToolCallLogAdaptor`/`UserIdentifier` 四个 import。
 
-`EmailToolBoxTest.kt`：同形——删字段（`:40`）、`setUp` 的 `mockAdaptor = mock()` 与三参 `init`（`:53-58` 换成 `emailToolBox.init(UserIdentifier(userId = 1L))`）、`sendEmail plain text should log tool call`（`:105-133`）与 `sendEmail should log error on Transport failure`（`:321-350`）两个用例、三个 import。`sendEmail should throw when Transport send fails`（`:303`）保留——它验的是异常照旧上抛，与日志无关。
+`EmailToolBoxTest.kt`：同形——删字段（`:40`）、`setUp` 的 `mockAdaptor = mock()` 与 `init(...)`（`:53-58` 只剩构造那一行）、`sendEmail plain text should log tool call`（`:105-133`）与 `sendEmail should log error on Transport failure`（`:321-350`）两个用例、四个 import。`sendEmail should throw when Transport send fails`（`:303`）保留——它验的是异常照旧上抛，与日志无关。
 
-`EmailToolBoxIntegrationTest.kt`：删 `:32` 字段与 `:59-64` 的 `mockAdaptor = mock()` + 三参 `init`，换成 `emailToolBox.init(UserIdentifier(userId = 1L))`；`SessionMetaContext` 与 `ToolCallLogAdaptor` 两个 import 一并删。
+`EmailToolBoxIntegrationTest.kt`：删 `:32` 字段与 `:59-64` 的 `mockAdaptor = mock()` + `init(...)` 两行（`setUp` 只剩 `emailToolBox = EmailToolBox(...)`）；`SessionMetaContext`、`ToolCallLogAdaptor`、`UserIdentifier` 三个 import 一并删。这个文件整类 `@Disabled`（`:28`），但 `@Disabled` 只跳过运行不跳过编译，test-compile 照样红，别漏。
 
-`TeamToolBoxesTest.kt`：`wiredInto`（`:36-41`）换成只做一参初始化，两个列表（`:29-30`）与 `:109-116` 那条 `a refusal is logged as a tool call like any other result` 用例删掉——「一次拒绝仍然要被记为一次调用」这条承诺现在住在 Task 6 的 `every terminal state maps to its own outcome` 与 `a stream that completes without an end event files the call as interrupted` 里，测的是中间件而不是盒子。`ToolCallInfo`/`SessionMetaContext` 两个 import 一起删。换完的 helper：
-
-```kotlin
-    /** The framework initializes every toolbox it registers. */
-    private fun <T : ToolBox> T.wiredIn(): T = also { init(UserIdentifier(userId = 9L)) }
-```
-并把 `:32-33` 两处 `TeamLeadToolBox(orchestrator).wiredInto(leadCalls)` / `TeamMemberToolBox(...).wiredInto(memberCalls)` 改成 `.wiredIn()`。
+`TeamToolBoxesTest.kt`：`wiredInto` 连同它上方的 KDoc（`:35-41`）整个 helper 删掉——它唯一的作用就是那次三参 `init`，两处调用点（`:32-33`）改成直接构造 `TeamLeadToolBox(orchestrator)` / `TeamMemberToolBox(orchestrator, memberAgentId = 2L)`；两个列表（`:29-30`，`leadCalls`/`memberCalls` 是它的收集桶）与 `:109-116` 那条 `a refusal is logged as a tool call like any other result` 用例删掉——「一次拒绝仍然要被记为一次调用」这条承诺现在住在 Task 6 的 `every terminal state maps to its own outcome` 与 `a stream that completes without an end event files the call as interrupted` 里，测的是中间件而不是盒子。`ToolCallInfo`/`SessionMetaContext`/`UserIdentifier` 三个 import 一起删。
 
 - [ ] **Step 9: 14 处夹具删具名实参**
 
@@ -3332,7 +3275,7 @@ class ToolBoxTest {
 ```
 HarnessAgentLauncherCliEnvTest.kt:44         HarnessAgentLauncherLeadSkillTest.kt:74
 HarnessAgentLauncherCoordinationTest.kt:46   HarnessAgentLauncherMemoryTest.kt:72
-HarnessAgentLauncherSkillSelfWriteTest.kt:65 HarnessAgentLauncherSkillUsageTest.kt:74
+HarnessAgentLauncherSkillSelfWriteTest.kt:65 HarnessAgentLauncherSkillUsageTest.kt:86
 HarnessAgentLauncherSkillVisibilityTest.kt:72 HarnessAgentProcessLogAttributionTest.kt:57
 HarnessAgentRunAttributionTest.kt:49         HarnessAgentSessionHistoryReadTest.kt:89
 HarnessAgentTokenRecordingTest.kt:44         HarnessAgentTurnBudgetTest.kt:48
