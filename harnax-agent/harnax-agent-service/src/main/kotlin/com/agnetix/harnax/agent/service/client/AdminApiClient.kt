@@ -237,32 +237,34 @@ class AdminApiClient(
     }
 
     /**
-     * File the skills this session had loaded into its context (design section 3.4).
+     * File what this session did with a set of Admin-delivered skills (design section 3.4).
      *
      * The session id is what decides the tenant: admin resolves it from that id rather than from anything
      * the runtime claims, and stamps receipt time itself. The user id is reported because the runtime now
      * knows it — the router authenticated the end user behind this run — and admin keeps the row with an
-     * empty user column if the id does not belong to the tenant the session resolved to. VIEW is the one
-     * event this caller can assert — the runtime knows a skill entered the context, not what the model did
-     * with it.
+     * empty user column if the id does not belong to the tenant the session resolved to. Which event is
+     * filed is the caller's decision: this client only carries the batch, so it asserts nothing about what
+     * the model did with a skill.
      *
      * @param sessionId the runtime session that read the skills
      * @param skillIds Admin skill ids, never names
      * @param userId the end user this run is attributed to, null when the conversation has none
+     * @param event the event word Admin records, `VIEW` or `USE`
      * @return true if admin accepted the batch
      */
     fun reportSkillUsage(
         sessionId: String,
         skillIds: List<Long>,
         userId: Long?,
+        event: String,
     ): Boolean {
         val url = "$adminUrl/api/admin/internal/skills/usage"
-        log.debug("[Agent→Admin] POST {} - reporting {} VIEW event(s)", url, skillIds.size)
+        log.debug("[Agent→Admin] POST {} - reporting {} {} event(s)", url, skillIds.size, event)
 
         val body = mapOf(
             "sessionId" to sessionId,
             "userId" to userId,
-            "events" to skillIds.map { mapOf("skillId" to it, "event" to "VIEW") },
+            "events" to skillIds.map { mapOf("skillId" to it, "event" to event) },
         )
         val responseType = object : ParameterizedTypeReference<ResultVo<Int>>() {}
         val response = try {

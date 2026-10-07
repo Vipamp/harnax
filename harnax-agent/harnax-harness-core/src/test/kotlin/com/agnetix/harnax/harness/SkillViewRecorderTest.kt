@@ -20,6 +20,9 @@ class SkillViewRecorderTest {
         val batches = mutableListOf<Pair<String, List<Long>>>()
         val users = mutableListOf<Long?>()
 
+        /** Separate from [batches]: the recorder under test only ever reports loads, so this stays empty. */
+        val uses = mutableListOf<List<Long>>()
+
         override fun reportViews(
             sessionId: String,
             skillIds: List<Long>,
@@ -28,6 +31,14 @@ class SkillViewRecorderTest {
             batches += sessionId to skillIds
             users += userId
             onFailure()?.let { throw it }
+        }
+
+        override fun reportUses(
+            sessionId: String,
+            skillIds: List<Long>,
+            userId: Long?,
+        ) {
+            uses += skillIds
         }
     }
 

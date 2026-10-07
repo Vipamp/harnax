@@ -46,6 +46,19 @@ class SkillUsageAdaptorImpl(
         sessionId: String,
         skillIds: List<Long>,
         userId: Long?,
+    ) = submit(sessionId, skillIds, userId, EVENT_VIEW)
+
+    override fun reportUses(
+        sessionId: String,
+        skillIds: List<Long>,
+        userId: Long?,
+    ) = submit(sessionId, skillIds, userId, EVENT_USE)
+
+    private fun submit(
+        sessionId: String,
+        skillIds: List<Long>,
+        userId: Long?,
+        event: String,
     ) {
         if (skillIds.isEmpty()) return
         try {
@@ -53,13 +66,13 @@ class SkillUsageAdaptorImpl(
                 try {
                     // The client turns transport failures into `false`; logged here too, so the reason for a
                     // missing count survives even when Admin answered with a business error instead of throwing.
-                    if (!adminApiClient.reportSkillUsage(sessionId, skillIds, userId)) {
-                        log.debug("Skill usage batch for session {} ({} skill(s)) was not accepted by Admin", sessionId, skillIds.size)
+                    if (!adminApiClient.reportSkillUsage(sessionId, skillIds, userId, event)) {
+                        log.debug("Skill {} batch for session {} ({} skill(s)) was not accepted by Admin", event, sessionId, skillIds.size)
                     }
                 } catch (e: Exception) {
                     // Caught rather than left to kill the worker: an implementation that throws is breaking
                     // its side of the contract, and the batches after it still owe Admin a count.
-                    log.warn("Skill usage batch for session {} ({} skill(s)) failed: {}", sessionId, skillIds.size, e.message)
+                    log.warn("Skill {} batch for session {} ({} skill(s)) failed: {}", event, sessionId, skillIds.size, e.message)
                 }
             }
         } catch (e: Exception) {
@@ -67,12 +80,7 @@ class SkillUsageAdaptorImpl(
             // never reaches the caller: this is the last line of the non-blocking, never-throws contract.
             val total = dropped.incrementAndGet()
             if (total == 1L || total % DROP_LOG_EVERY == 0L) {
-                log.warn(
-                    "Skill usage batch for session {} dropped ({} dropped so far): {}",
-                    sessionId,
-                    total,
-                    e.message,
-                )
+                log.warn("Skill {} batch for session {} dropped ({} dropped so far): {}", event, sessionId, total, e.message)
             }
         }
     }
@@ -92,5 +100,7 @@ class SkillUsageAdaptorImpl(
     companion object {
         private const val QUEUE_CAPACITY = 64
         private const val DROP_LOG_EVERY = 50L
+        private const val EVENT_VIEW = "VIEW"
+        private const val EVENT_USE = "USE"
     }
 }

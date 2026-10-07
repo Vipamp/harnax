@@ -36,6 +36,9 @@ class HarnessAgentLauncherSkillUsageTest {
         val batches = mutableListOf<Pair<String, List<Long>>>()
         val users = mutableListOf<Long?>()
 
+        val useBatches = mutableListOf<Pair<String, List<Long>>>()
+        val useUsers = mutableListOf<Long?>()
+
         override fun reportViews(
             sessionId: String,
             skillIds: List<Long>,
@@ -43,6 +46,15 @@ class HarnessAgentLauncherSkillUsageTest {
         ) {
             batches += sessionId to skillIds
             users += userId
+        }
+
+        override fun reportUses(
+            sessionId: String,
+            skillIds: List<Long>,
+            userId: Long?,
+        ) {
+            useBatches += sessionId to skillIds
+            useUsers += userId
         }
     }
 
