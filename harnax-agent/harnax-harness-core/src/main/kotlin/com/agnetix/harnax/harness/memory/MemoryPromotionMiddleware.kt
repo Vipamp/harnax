@@ -23,6 +23,10 @@ import java.util.function.Function
  * user asks (design 11.4). Keying the window on the conversation is what buys the third hard rule of that
  * section: two conversations of one agent promote independently, so neither waits on the other's clock.
  *
+ * The conversation's layer is read before that window is claimed, in that order and for one reason: winning a
+ * claim is not reversible, and the extraction that fills the layer arrives a model round trip after the turn
+ * that triggered it. A turn that claims first would spend a whole window on a layer it cannot see yet.
+ *
  * Nothing here is on the answer path. The claim is remote I/O under a store-backed gate and the merge is a
  * model call, so both run on the blocking-friendly scheduler after the turn has completed; a promotion that
  * fails leaves one log line and a conversation that got its answer anyway. The in-flight counter is bumped
@@ -43,7 +47,7 @@ class MemoryPromotionMiddleware(
     ): Flux<AgentEvent> = next.apply(input).doOnComplete {
         MemoryBackgroundTasks.begin()
         Mono.fromRunnable<Unit> {
-            if (gate.tryClaim(slotOf(sessionId), minGap)) {
+            if (promoter.hasUnpromotedContent() && gate.tryClaim(slotOf(sessionId), minGap)) {
                 promoter.promoteNow()
             }
         }.subscribeOn(Schedulers.boundedElastic())

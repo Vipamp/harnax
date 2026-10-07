@@ -1,5 +1,8 @@
 package com.agnetix.harnax.harness.memory
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import io.agentscope.core.agent.RuntimeContext
 import io.agentscope.core.message.ContentBlock
 import io.agentscope.core.message.Msg
@@ -16,7 +19,9 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.slf4j.LoggerFactory
 import reactor.core.publisher.Flux
+import ch.qos.logback.classic.Logger as LogbackLogger
 
 /**
  * The one path that moves a conversation's memory into the layer its owner keeps (design 11.4).
@@ -302,16 +307,40 @@ class MemoryPromoterTest {
     }
 
     @Test
-    fun `a merge of a curated layer that overran its budget is allowed to compact it`() {
-        // The floor is only for a layer that had no size reason to shrink. Consolidation exists to bring an
-        // over-budget MEMORY.md back down, so refusing the shrink here would wedge the owner's layer open.
+    fun `a curated layer that overran its budget is still not open to a collapse`() {
+        // How big the owner's text is says nothing about what the model may replace it with: this pass deletes
+        // the conversation's copy of whatever it drops, and a layer that has drifted past the budget is the one
+        // a model answering with a quarter of it looks most like careful curation.
         val store = InMemoryStore()
-        writeLongTerm(store, "- owner over budget\n".repeat(1_200))
+        val line = "- owner over budget\n"
+        val curated = line.repeat(1_200)
+        assertTrue(
+            curated.length > MemoryConfigFactory.CONSOLIDATION_MAX_TOKENS * 4,
+            "the fixture is the over-budget shape the floor used to lift itself for",
+        )
+        writeLongTerm(store, curated)
         writeLedger(store, sessionId, "2026-10-05.md", "- from this conversation")
+        val before = sessionNamespaces(store).map { layer(store, it) }
 
-        assertEquals(MemoryPromoter.Outcome.PROMOTED, promoted(store, ScriptedModel("- compacted owner")))
+        assertEquals(MemoryPromoter.Outcome.MODEL_FAILED, promoted(store, ScriptedModel("- compacted owner")))
 
-        assertEquals("- compacted owner", domain(store).longTermCurated())
+        assertEquals(curated, domain(store).longTermCurated(), "the owner keeps all of an oversized layer")
+        assertEquals(before, sessionNamespaces(store).map { layer(store, it) }, "and a refused compact clears nothing")
+    }
+
+    @Test
+    fun `a curated layer that overran its budget is brought back by a halving`() {
+        // Curating an oversized layer down is still one window's work: half of it is well inside the budget,
+        // so the floor costs convergence rather than memory.
+        val store = InMemoryStore()
+        val line = "- owner over budget\n"
+        writeLongTerm(store, line.repeat(1_200))
+        writeLedger(store, sessionId, "2026-10-05.md", "- from this conversation")
+        val compacted = line.repeat(700).trim()
+
+        assertEquals(MemoryPromoter.Outcome.PROMOTED, promoted(store, ScriptedModel(compacted)))
+
+        assertEquals(compacted, domain(store).longTermCurated())
         assertEquals(emptyList<String>(), layer(store, domain(store).ledgerNamespace(sessionId)))
     }
 
@@ -451,5 +480,99 @@ class MemoryPromoterTest {
         )
     }
 
+    @Test
+    fun `an object holding other bytes is not cleared because its number did not move`() {
+        // The version a store stamps is not the identity of what it holds: an unguarded write can land any
+        // bytes on any number, and this pass is about to remove the only copy of what it believes it merged.
+        val store = InMemoryStore()
+        writeLedger(store, sessionId, "2026-10-05.md", "- from this conversation")
+        val ledgers = domain(store).ledgerNamespace(sessionId)
+        val seen = store.get(ledgers, "/2026-10-05.md")!!
+        var rewritten = false
+        val lying = object : BaseStore by store {
+            override fun get(namespace: List<String>, key: String): StoreItem? = if (rewritten && namespace == ledgers && key == "/2026-10-05.md") {
+                StoreItem(key, mapOf("content" to "- bytes no merge ever saw"), seen.version())
+            } else {
+                store.get(namespace, key)
+            }
+
+            // A Kotlin class that implements a Java interface by delegation does not inherit that interface's
+            // default methods, and this one's default answers false: without the forwarding the owner's write
+            // is a conflict before the clean-up step under test is ever reached. Flipping the object's body on
+            // the same number is the unguarded sibling write the version comparison was never able to see.
+            override fun putIfVersion(
+                namespace: List<String>,
+                key: String,
+                value: Map<String, Any>,
+                expectedVersion: Long,
+            ): Boolean {
+                val written = store.putIfVersion(namespace, key, value, expectedVersion)
+                rewritten = written
+                return written
+            }
+        }
+
+        assertEquals(
+            MemoryPromoter.Outcome.PROMOTED,
+            MemoryPromoter(domain(lying), sessionId, ScriptedModel("- from this conversation")).promoteNow(),
+        )
+
+        assertEquals(
+            listOf("/2026-10-05.md=- from this conversation@${seen.version()}"),
+            layer(store, ledgers),
+            "a ledger whose body moved is left for the next window even when its version reads the same",
+        )
+    }
+
+    @Test
+    fun `a delete the store swallows is not counted as cleared`() {
+        // The object store this runs against answers a failed delete with a log line of its own and no error,
+        // and how much of the layer left is the one signal that says whether this pass did what it reported.
+        val store = InMemoryStore()
+        writeLedger(store, sessionId, "2026-10-05.md", "- from this conversation")
+        val ignoring = object : BaseStore by store {
+            override fun delete(namespace: List<String>, key: String) = Unit
+
+            // Not forwarded by the delegation, and the interface's default answers false: without this the pass
+            // never gets past its own write to the delete it is being tested on.
+            override fun putIfVersion(
+                namespace: List<String>,
+                key: String,
+                value: Map<String, Any>,
+                expectedVersion: Long,
+            ): Boolean = store.putIfVersion(namespace, key, value, expectedVersion)
+        }
+
+        val lines = reporting {
+            assertEquals(
+                MemoryPromoter.Outcome.PROMOTED,
+                MemoryPromoter(domain(ignoring), sessionId, ScriptedModel("- merged")).promoteNow(),
+            )
+        }
+
+        assertTrue(
+            lines.any { it.contains("Promoted conversation '$sessionId'") && it.contains("0 of 1 layer object(s) cleared") },
+            "a merge that drained nothing must not report one: $lines",
+        )
+        assertEquals(1, layer(store, domain(store).ledgerNamespace(sessionId)).size, "the object is still in the bucket")
+    }
+
     private fun sessionNamespacesOf(store: BaseStore, other: String) = listOf(domain(store).curatedNamespace(other), domain(store).ledgerNamespace(other)).map { layer(store, it) }
+
+    /** [block] with every INFO and WARN the promotion pass emits while it runs. */
+    private fun reporting(block: () -> Unit): List<String> {
+        val logger = LoggerFactory.getLogger(MemoryPromoter::class.java) as LogbackLogger
+        val appender = ListAppender<ILoggingEvent>()
+        appender.start()
+        val previousLevel = logger.level
+        logger.addAppender(appender)
+        logger.level = Level.INFO
+        try {
+            block()
+            return appender.list.filter { it.level == Level.INFO || it.level == Level.WARN }.map { it.formattedMessage }
+        } finally {
+            logger.detachAppender(appender)
+            logger.level = previousLevel
+        }
+    }
 }

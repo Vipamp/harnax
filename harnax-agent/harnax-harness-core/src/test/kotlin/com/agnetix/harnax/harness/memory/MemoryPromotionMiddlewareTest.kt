@@ -14,6 +14,7 @@ import io.agentscope.harness.agent.coordination.PeriodicGate
 import io.agentscope.harness.agent.coordination.StoreBackedPeriodicGate
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore
+import io.agentscope.harness.agent.filesystem.remote.store.StoreItem
 import io.agentscope.harness.agent.memory.MemoryBackgroundTasks
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -74,6 +75,9 @@ class MemoryPromotionMiddlewareTest {
 
     private fun rc(sessionId: String) = RuntimeContext.builder().sessionId(sessionId).build()
 
+    /** Built per test rather than per turn: the first mock a JVM makes costs more than the turn being timed. */
+    private val agent = mock(Agent::class.java)
+
     private fun writeLedger(store: BaseStore, sessionId: String, name: String, text: String) {
         domain(store).routes(sessionId).getValue(MemoryFilesystemRoutes.MEMORY_DIR_ROUTE)
             .write(rc(sessionId), "/$name", text)
@@ -85,7 +89,7 @@ class MemoryPromotionMiddlewareTest {
     private fun turn(middleware: MemoryPromotionMiddleware, sessionId: String = "sess-A"): Long {
         val started = System.nanoTime()
         middleware.onAgent(
-            mock(Agent::class.java),
+            agent,
             rc(sessionId),
             AgentInput(listOf(Msg.builder().role(MsgRole.USER).content(TextBlock.builder().text("hi").build()).build())),
             Function { Flux.empty<AgentEvent>() },
@@ -172,5 +176,69 @@ class MemoryPromotionMiddlewareTest {
 
         assertNull(domain(store).longTermCurated())
         assertEquals(listOf("/2026-10-05.md"), ledgers(store, "sess-A"))
+    }
+
+    @Test
+    fun `a first turn does not spend the window on a layer the extraction has not filled yet`() {
+        // The ordering this asserts is production's: a turn's own extraction is dispatched after the answer and
+        // needs a model round trip, so promotion looks at a layer that is still empty. Winning the claim at
+        // that moment closes the window for 30 minutes, and a conversation that ends before then — which is
+        // most of them — would never promote at all. A burned window is invisible here, so the test is the
+        // whole point: the turn that finds the layer has content still has one.
+        val store = InMemoryStore()
+        val middleware = middleware(store, StoreBackedPeriodicGate(store), "sess-A", "- terse answers")
+
+        turn(middleware)
+        awaitBackground()
+        assertNull(domain(store).longTermCurated())
+
+        writeLedger(store, "sess-A", "2026-10-05.md", "- the owner wants terse answers")
+        turn(middleware)
+        awaitBackground()
+
+        assertEquals("- terse answers", domain(store).longTermCurated(), "the second turn found its window open")
+        assertEquals(emptyList<String>(), ledgers(store, "sess-A"), "and drained the layer it merged")
+    }
+
+    @Test
+    fun `a conversation with nothing to promote does not ask the gate`() {
+        // The gate has one method and a claim cannot be handed back, so the cheap read goes first. This is the
+        // same rule as the test above, pinned at the seam rather than through a minute of store traffic.
+        val store = InMemoryStore()
+        val gate = FakeGate()
+
+        turn(middleware(store, gate, "sess-A", "- merged"))
+        awaitBackground()
+
+        assertEquals(emptyList<Pair<String, Duration>>(), gate.slots, "an empty layer is no reason to close a window")
+        assertNull(domain(store).longTermCurated())
+    }
+
+    @Test
+    fun `a layer that cannot be read leaves the window for whoever can`() {
+        // An outage must not look like a spent window either: the next turn of the same conversation would be
+        // throttled behind a claim that merged nothing.
+        val gate = FakeGate()
+        val unreadable = object : BaseStore {
+            override fun get(namespace: List<String>, key: String): StoreItem = throw IllegalStateException("minio is down")
+
+            override fun put(namespace: List<String>, key: String, value: Map<String, Any>) = Unit
+
+            override fun putIfVersion(
+                namespace: List<String>,
+                key: String,
+                value: Map<String, Any>,
+                expectedVersion: Long,
+            ) = true
+
+            override fun search(namespace: List<String>, limit: Int, offset: Int): List<StoreItem> = throw IllegalStateException("minio is down")
+
+            override fun delete(namespace: List<String>, key: String) = throw AssertionError("nothing may be cleared")
+        }
+
+        turn(middleware(unreadable, gate, "sess-A", "- merged"))
+        awaitBackground()
+
+        assertEquals(emptyList<Pair<String, Duration>>(), gate.slots, "a failed read is not a claim")
     }
 }

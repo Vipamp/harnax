@@ -26,6 +26,7 @@ import org.junit.jupiter.api.io.TempDir
 import org.mockito.Mockito.mock
 import org.slf4j.LoggerFactory
 import java.nio.file.Path
+import java.time.Duration
 import ch.qos.logback.classic.Logger as LogbackLogger
 
 /**
@@ -100,6 +101,19 @@ class HarnessAgentLauncherCoordinationTest {
         repeat(3) { launcher.coordinationStore(store) }
 
         assertEquals(1, store.probes, "the probe ran ${store.probes} times for three assemblies")
+    }
+
+    @Test
+    fun `a verdict past its own life is asked again`(@TempDir workspace: Path) {
+        // Why the cache expires at all: the warn that serves the gate locally tells the operator to repair the
+        // store to get the shared one back, and that is only true if this class asks the store again sometime
+        // after they do.
+        val store = NoCasStore()
+        val launcher = launcher(workspace)
+
+        repeat(2) { launcher.casSupport(store, Duration.ofNanos(0)) }
+
+        assertEquals(2, store.probes, "an expired verdict has to be looked up again, not kept: ${store.probes}")
     }
 
     @Test

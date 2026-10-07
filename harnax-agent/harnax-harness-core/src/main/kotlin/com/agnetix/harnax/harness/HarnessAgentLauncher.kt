@@ -80,6 +80,7 @@ import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec
 import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Duration
 import java.util.UUID
 
 /**
@@ -144,9 +145,13 @@ class HarnessAgentLauncher(
 
     private val log = LoggerFactory.getLogger(HarnessAgentLauncher::class.java)
 
-    /** This process's one CAS probe result, filled by [casSupport] on the first memory assembly. */
+    /**
+     * This process's CAS probe result and the instant it was taken, both written by [casSupport] and both
+     * read together. One object rather than two fields, because a reader that paired this verdict with an
+     * older age would re-probe on every assembly and one that paired it with a newer age would never re-probe.
+     */
     @Volatile
-    private var probedCasSupport: StoreCasProbe.StoreCasSupport? = null
+    private var cachedCasVerdict: Pair<StoreCasProbe.StoreCasSupport, Long>? = null
 
     /**
      * Graceful shutdown hook — called by Spring when the application context closes.
@@ -1087,17 +1092,29 @@ class HarnessAgentLauncher(
     }
 
     /**
-     * Whether [store] really compares versions before it writes. Memoised when the store answered: the
-     * verdict is a property of the object store this process talks to, not of the agent being assembled,
-     * and assembly runs per session.
+     * Whether [store] really compares versions before it writes. Cached while it is young: the verdict is a
+     * property of the object store this process talks to, not of the agent being assembled, and assembly runs
+     * per session.
      *
-     * Two assemblies racing a cold cache both probe, which costs round trips and answers nothing wrong —
-     * each probe claims a slot named with its own uuid.
+     * Cached rather than kept forever, because a verdict that outlives its store makes the promise in
+     * [coordinationStore]'s warn false — it tells the operator to repair the version precondition to get the
+     * shared gate back, and nothing else here ever asks the store again.
+     *
+     * Two assemblies racing an expired verdict both probe, which costs round trips and answers nothing wrong —
+     * each probe claims a slot named with its own uuid and deletes it again.
+     *
+     * [ttl] is how long a verdict stays young, and a caller names it only to watch the expiry work.
      */
-    internal fun casSupport(store: BaseStore): StoreCasProbe.StoreCasSupport {
-        probedCasSupport?.let { return it }
+    internal fun casSupport(
+        store: BaseStore,
+        ttl: Duration = CAS_PROBE_TTL,
+    ): StoreCasProbe.StoreCasSupport {
+        val takenAt = System.nanoTime()
+        cachedCasVerdict?.let { (verdict, at) ->
+            if (verdict.definitive && takenAt - at < ttl.toNanos()) return verdict
+        }
         val probed = StoreCasProbe.probe(store)
-        if (probed.definitive) probedCasSupport = probed
+        if (probed.definitive) cachedCasVerdict = probed to takenAt
         return probed
     }
 
@@ -1216,6 +1233,18 @@ class HarnessAgentLauncher(
     }
 
     companion object {
+
+        /**
+         * How long one compare-and-swap verdict is trusted before the store is asked again.
+         *
+         * Not a cost question — a probe is a handful of store round trips and assembly is per session — but a
+         * promise one: the only other place a store that cannot compare gets mentioned is the warn saying the
+         * gate is served in this process until the store is repaired. Ten minutes is short enough for an
+         * operator to see that happen in the same hour they fix it, and long enough that a burst of new
+         * conversations does not spend a probe each.
+         */
+        private val CAS_PROBE_TTL: Duration = Duration.ofMinutes(10)
+
         /**
          * Appended when the model has internet search, so it answers real-time questions itself rather
          * than scraping pages for them.
