@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - 基线（本 worktree 实测）：harness-core **662** 例（1 skipped）、admin **2430** 例、12 模块合计 **3645** 例，`BUILD SUCCESS`。任何任务收尾都要能重跑且不新增失败。
-- harness-core 实到数：Task 1 +2 = 664，Task 2 +3 = 667（`42d10261`），Task 3 +2 = 669（`9285688e`），Task 2 修复轮 +3 = **672**（`dc2cfeee`，1 skipped）。后面的任务按「672 + 自己新增」核，不要拿 662/664 当基线。
+- harness-core 实到数：Task 1 +2 = 664，Task 2 +3 = 667（`42d10261`），Task 3 +2 = 669（`9285688e`），Task 2 修复轮 +3 = 672（`dc2cfeee`，1 skipped），Task 4 +6 = **678**（`edc11e02`）。Task 4 的复审补强那笔（Step 6）再加 4 支 = 682。后面的任务按「678（或补强后 682）+ 自己新增」核，不要拿 662/664/667 当基线。
 - **每个任务结束时它自己的 HEAD 必须能编译、模块门禁必须能跑。** 谁改了一个签名，谁就在同一个任务里把所有调用点一起改掉——不许留「下一个任务会修」的编译失败。（计划里 Task 6/7 的中间件装配就是按这条重新切开的：Task 6 只把安装点搬到 launcher 并沿用旧构造，Task 7 换构造并跟着改那一行调用。）
 - 代码注释、KDoc、日志字符串一律英文；面向用户的界面文案走 i18n（webui `pages.session.*`，iOS `chat.*`），中英两份同步。
 - Maven 用全局路径 `/Users/heqingsong/software/apache-maven-3.9.12/bin/mvn`，`JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home`；`-am` 必带；`-pl` 对 agent 子模块要写路径形（`harnax-agent/harnax-harness-core`）；spotless 绑在 compile 上，改过 Kotlin 先 `mvn -q spotless:apply -pl <module>`（不带 `-am`）。单跑 `-Dtest=X` 时 `-am` 要配 `-Dsurefire.failIfNoSpecifiedTests=false`，否则上游模块会以「no tests matching pattern」先把 reactor 打断。
@@ -629,6 +629,9 @@ class SessionSkillStoreEnableTest {
         Mockito.`when`(sandbox.exec(isNull(), contains("test -f"), anyInt()))
             .thenReturn(ExecResult(1, "", "", false))
         assertEquals(EnableOutcome.SourceMissing, store().enable("ses-1", "invoice-fill"))
+        // Without this line the test also passes when the probe is deleted: an unstubbed fs.read throws, the
+        // reader swallows it, and readDraft answers SourceMissing from the next line anyway.
+        Mockito.verifyNoInteractions(fs)
     }
 
     @Test
@@ -644,17 +647,60 @@ class SessionSkillStoreEnableTest {
     }
 
     @Test
-    fun `a session already at the cap refuses a new name`() {
+    fun `a dangerous script inside the draft is refused even when its text looks clean`() {
+        // stubDraftExists leaves every support glob failing, so `resources` is an empty map in the other
+        // tests and the third argument to SkillSecurityScanner.scan could be deleted unnoticed. Here the
+        // SKILL.md is the benign MD fixture and only scripts/run.sh carries the danger, so this test can
+        // only go red if the resources actually reach the scanner.
         stubDraftExists("invoice-fill")
-        val filled = (1..10).toList().map { "s$it" }
+        Mockito.`when`(fs.glob(any(), eq("*"), eq("${SkillDraftStaging.DRAFTS_DIR}/invoice-fill/scripts")))
+            .thenReturn(
+                GlobResult.success(
+                    listOf(FileInfo.ofFile("${SkillDraftStaging.DRAFTS_DIR}/invoice-fill/scripts/run.sh", 12L, "2026-10-08T10:00:00Z")),
+                ),
+            )
+        Mockito.`when`(
+            fs.read(any(), eq("${SkillDraftStaging.DRAFTS_DIR}/invoice-fill/scripts/run.sh"), anyInt(), anyInt()),
+        ).thenReturn(ReadResult.success(FileData("rm -rf /\n", "utf-8")))
+        val outcome = store().enable("ses-1", "invoice-fill")
+        assertTrue(outcome is EnableOutcome.Blocked, "the scan has to see the draft's scripts: got $outcome")
+        Mockito.verify(sandbox, Mockito.never()).exec(isNull(), contains("cp -R"), anyInt())
+    }
+
+    @Test
+    fun `the scan is asked before the cap, so a full session still hears the real reason`() {
+        // Swapping the two guards in enable() keeps every other test green while telling the operator of a
+        // dangerous draft in a full session that they simply have too many skills enabled.
+        stubDraftExists("invoice-fill")
+        Mockito.`when`(fs.read(any(), eq("${SkillDraftStaging.DRAFTS_DIR}/invoice-fill/SKILL.md"), anyInt(), anyInt()))
+            .thenReturn(ReadResult.success(FileData(DANGEROUS_MD, "utf-8")))
         Mockito.`when`(fs.glob(any(), eq("SKILL.md"), eq(SkillDraftStaging.SESSION_ENABLED_DIR))).thenAnswer {
             GlobResult.success(
-                filled.map { FileInfo.ofDir("${SkillDraftStaging.SESSION_ENABLED_DIR}/$it/SKILL.md", "t") },
+                listOf("s1", "s2").map {
+                    FileInfo.ofFile("${SkillDraftStaging.SESSION_ENABLED_DIR}/$it/SKILL.md", 10L, "2026-10-08T10:00:00Z")
+                },
             )
         }
-        val other = store().enable("ses-1", "invoice-fill")
+        val outcome = store(max = 2).enable("ses-1", "invoice-fill")
+        assertTrue(outcome is EnableOutcome.Blocked, "a refusal by verdict outranks a refusal by count: got $outcome")
+    }
+
+    @Test
+    fun `a session already at the cap refuses a new name`() {
+        stubDraftExists("invoice-fill")
+        // ofFile, not ofDir: SKILL.md is a file, and Task 5 re-uses this shape as EnabledSkill.enabledAt.
+        Mockito.`when`(fs.glob(any(), eq("SKILL.md"), eq(SkillDraftStaging.SESSION_ENABLED_DIR))).thenAnswer {
+            GlobResult.success(
+                listOf("s1", "s2").map {
+                    FileInfo.ofFile("${SkillDraftStaging.SESSION_ENABLED_DIR}/$it/SKILL.md", 10L, "2026-10-08T10:00:00Z")
+                },
+            )
+        }
+        // The cap comes from the constructor here, so a deleted `maxEnabled` wiring cannot pass this test;
+        // with the default 10 and ten fixtures both numbers would be the constant 10 and nothing is pinned.
+        val other = store(max = 2).enable("ses-1", "invoice-fill")
         assertTrue(other is EnableOutcome.Full, "got $other")
-        assertEquals(10, (other as EnableOutcome.Full).count)
+        assertEquals(2, (other as EnableOutcome.Full).count)
     }
 
     @Test
@@ -662,13 +708,15 @@ class SessionSkillStoreEnableTest {
         stubDraftExists("invoice-fill")
         Mockito.`when`(sandbox.exec(isNull(), contains("cp -R"), anyInt()))
             .thenReturn(ExecResult(0, "", "", false))
-        val filled = listOf("invoice-fill") + (1..9).toList().map { "s$it" }
+        val filled = listOf("invoice-fill", "s1")
         Mockito.`when`(fs.glob(any(), eq("SKILL.md"), eq(SkillDraftStaging.SESSION_ENABLED_DIR))).thenAnswer {
             GlobResult.success(
-                filled.map { FileInfo.ofDir("${SkillDraftStaging.SESSION_ENABLED_DIR}/$it/SKILL.md", "t") },
+                filled.map {
+                    FileInfo.ofFile("${SkillDraftStaging.SESSION_ENABLED_DIR}/$it/SKILL.md", 10L, "2026-10-08T10:00:00Z")
+                },
             )
         }
-        val replay = store().enable("ses-1", "invoice-fill")
+        val replay = store(max = 2).enable("ses-1", "invoice-fill")
         assertTrue(replay is EnableOutcome.Enabled, "re-enabling a name already in the ten has to work: got $replay")
     }
 
@@ -687,6 +735,31 @@ class SessionSkillStoreEnableTest {
     }
 
     @Test
+    fun `a copy that dies by exception still reports a failure and not a missing draft`() {
+        stubDraftExists("invoice-fill")
+        // The shape production actually takes: DockerSandbox.doExec throws on a non-zero exit
+        // (`SandboxException.ExecException`, DockerSandbox.java:196-197), and only execRaw's catch turns that
+        // into an ExecResult whose stderr is the exception message. Nothing else in the module walks that catch.
+        Mockito.`when`(sandbox.exec(isNull(), contains("cp -R"), anyInt()))
+            .thenThrow(RuntimeException("Command exited with code 1: no space left on device"))
+        val outcome = store().enable("ses-1", "invoice-fill")
+        assertTrue(outcome is EnableOutcome.Failed, "got $outcome")
+        assertEquals(
+            "Command exited with code 1: no space left on device",
+            (outcome as EnableOutcome.Failed).reason,
+        )
+    }
+
+    @Test
+    fun `a copy failure with nothing to say still says the container refused`() {
+        stubDraftExists("invoice-fill")
+        Mockito.`when`(sandbox.exec(isNull(), contains("cp -R"), anyInt())).thenReturn(ExecResult(1, "", "", false))
+        val outcome = store().enable("ses-1", "invoice-fill")
+        assertTrue(outcome is EnableOutcome.Failed, "got $outcome")
+        assertEquals("the container refused the copy", (outcome as EnableOutcome.Failed).reason)
+    }
+
+    @Test
     fun `the copy never reaches into the draft directory it reads from`() {
         stubDraftExists("invoice-fill")
         Mockito.`when`(sandbox.exec(isNull(), contains("cp -R"), anyInt()))
@@ -695,14 +768,15 @@ class SessionSkillStoreEnableTest {
         val outcome = store().enable("ses-1", "invoice-fill")
         assertTrue(outcome is EnableOutcome.Enabled, "the fixture draft has to enable first: got $outcome")
         Mockito.verify(sandbox, Mockito.atLeastOnce()).exec(isNull(), command.capture(), anyInt())
-        val copy = command.allValues.first { it.contains("cp -R") }
+        // Every command, not just the one that carries the copy: an implementation that split the copy into a
+        // second exec containing `rm -rf '<drafts>'` would keep a first { }-based check green.
         assertTrue(
-            copy.contains("cp -R '$draftsRoot/invoice-fill/.'"),
-            "the copy reads the draft tree it was pointed at: $copy",
+            command.allValues.any { it.contains("cp -R '$draftsRoot/invoice-fill/.'") },
+            "the copy reads the draft tree it was pointed at: ${command.allValues}",
         )
         assertFalse(
-            copy.contains("rm -rf '$draftsRoot"),
-            "D4: the draft stays put for the reviewer; only the enabled target may be replaced: $copy",
+            command.allValues.any { it.contains("rm -rf '$draftsRoot") },
+            "D4: the draft stays put for the reviewer; only the enabled target may be replaced: ${command.allValues}",
         )
     }
 
@@ -732,7 +806,7 @@ class SessionSkillStore(
     private val workspaceRoot: String,
     private val maxEnabled: Int = MAX_ENABLED,
     private val execTimeoutSeconds: Int = EXEC_TIMEOUT_SECONDS,
-    /** Seam for tests: the pinned view is a final class the mockito inline agent will not stub. */
+    /** Seam for tests: the pinned view is constructed inside `filesystemFor`, so nothing else can swap in a double. */
     private val pinnedFilesystem: (Sandbox) -> AbstractFilesystem = { PinnedSandboxFilesystem(it) },
 ) {
 
@@ -740,18 +814,26 @@ class SessionSkillStore(
         handles.handle(sessionId)?.let(pinnedFilesystem)
 ```
 
-- [ ] **Step 4: 跑两支测试确认通过**
+- [ ] **Step 4: 跑测试确认通过**
 
-Run: `... mvn -q spotless:apply -pl harnax-agent/harnax-harness-core && ... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest='SessionSkillStore*Test'`
-Expected: `Failures: 0, Errors: 0`
+Run: `... mvn -q spotless:apply -pl harnax-agent/harnax-harness-core && ... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest='SessionSkillStore*Test' -Dsurefire.failIfNoSpecifiedTests=false`
+Expected: `Failures: 0, Errors: 0`。本文件落地时是 6 支（计划正文原先数成 5 支，实际夹具里有 6 个 `@Test`），配 Task 3 的 2 支共 8 支；模块 672 → **678**。
 
 - [ ] **Step 5: 提交**
 
 ```bash
 git add harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/skill/SessionSkillStore.kt \
         harnax-agent/harnax-harness-core/src/test/kotlin/com/agnetix/harnax/harness/skill/SessionSkillStoreEnableTest.kt
-git commit -m "test(skill): 启用四支拒因与十条上限各自可判、已满仍可重放旧名——pin 视图留出注入口"
 ```
+
+提交信息由控制方落笔（子代理的 `git commit` 会被权限层拒），实到的是 `feat(skill): enable 的四支拒因与上限补齐用例——注入 pinned 视图这层缝，容器里复制的成败各有断言`（`edc11e02`）。
+
+- [ ] **Step 6: 复审补强（只动测试文件，外加那行注释）**
+
+复审给的三支 Important 全部是「用例删掉守卫也绿」，且都是 Step 1 夹具自带的，因此补在同一支里跑一次 Maven：`SourceMissing` 加 `verifyNoInteractions(fs)`；`Failed` 补抛异常一支与空 stderr 一支（`execRaw` 的 catch 全仓原本没有用例走过）；D4 那条改判全部捕获命令。顺带两支 Minor：上限两支改 `store(max = 2)` 并把 `ofDir(…, "t")` 换成 `ofFile(…, 10L, ISO)`；新增「脚本里带危险而正文干净」与「扫描先于上限」两支，把 `scan` 的第三参与两段守卫的顺序钉住。`pinnedFilesystem` 的注释改成真实理由（本仓没有 MockMaker 覆盖，final 类可 mock，`DefaultAgentRunnerTest` 就在打 `KeepAliveSandboxManager`）。
+
+Run: `... mvn -o test -pl harnax-agent/harnax-harness-core -am`
+Expected: `Tests run: 682, Failures: 0, Errors: 0, Skipped: 1`（678 + 4 支新测试）。若「脚本危险」那支落不红（扫描器对 `resources` 的判定与预期不同），把它改成断言 `findings` 里出现 `scripts/run.sh` 再判，别把用例删掉交差。
 
 ---
 
@@ -1953,7 +2035,20 @@ git commit -m "feat(admin): 草稿队列可按会话过滤——SQL 谓词已有
 - [ ] **Step 1: 写失败测试（纯函数，jest 单置约定同 `contextUsage.test.ts`）**
 
 ```ts
-import { sessionSkillsFor, refusalMessage } from './SessionSkillsDrawer';
+import enPages from '@/locales/en-US/pages';
+import zhPages from '@/locales/zh-CN/pages';
+import { readOutcome, refusalOf, sessionSkillsFor } from './SessionSkillsDrawer';
+
+const queue = (records: { name: string; description?: string | null }[]) => ({
+  code: 200,
+  message: 'ok',
+  data: { pageNum: 1, pageSize: 50, total: records.length, records },
+});
+
+const zone = (rows: { name: string; enabledAt?: string | null }[]) => ({ code: 200, message: 'ok', data: rows });
+
+/** A refusal on the envelope, which is how both a guard rejection and a business failure reach the panel. */
+const refused = (code: number): any => ({ code, message: 'refused', data: null });
 
 describe('the session skill panel', () => {
   it('offers a draft that is not enabled yet and marks one that is', () => {
@@ -1975,19 +2070,77 @@ describe('the session skill panel', () => {
     expect(rows).toEqual([{ name: 'gone', description: null, enabled: true, enabledAt: 'x' }]);
   });
 
-  it('names the four refusals apart', () => {
-    expect(refusalMessage(403)).toContain('DANGEROUS');
-    expect(refusalMessage(409)).toContain('already');
-    expect(refusalMessage(410)).toContain('sandbox');
-    expect(refusalMessage(500)).toContain('refused');
-    expect(refusalMessage(404)).toContain('no draft');
+  it('names the five refusals apart by the locale id the drawer renders', () => {
+    expect(refusalOf(403).id).toBe('pages.session.skills.refusal.dangerous');
+    expect(refusalOf(409).id).toBe('pages.session.skills.refusal.limit');
+    expect(refusalOf(410).id).toBe('pages.session.skills.refusal.noSandbox');
+    expect(refusalOf(404).id).toBe('pages.session.skills.refusal.noDraft');
+    expect(refusalOf(500).id).toBe('pages.session.skills.refusal.container');
+  });
+
+  it('lands a code it does not know on the copy that blames nobody', () => {
+    expect(refusalOf(0).id).toBe('pages.session.skills.refusal.unknown');
+    expect(refusalOf(429).id).toBe('pages.session.skills.refusal.unknown');
+    // An undocumented code must not claim the draft is gone — it may only mean no sandbox or an expired login.
+    expect(refusalOf(429).id).not.toBe(refusalOf(404).id);
+    expect(refusalOf(0).id).not.toBe(refusalOf(410).id);
+  });
+
+  it('supplies both halves of the message for every code, known or not', () => {
+    for (const code of [403, 409, 410, 404, 500, 0, 429]) {
+      const refusal = refusalOf(code);
+      // The drawer renders id + defaultMessage from one table entry; either half missing renders an empty toast.
+      expect(refusal.id.startsWith('pages.session.skills.')).toBe(true);
+      expect(refusal.en.length).toBeGreaterThan(0);
+      expect(Object.hasOwn(zhPages, refusal.id)).toBe(true);
+      expect(Object.hasOwn(enPages, refusal.id)).toBe(true);
+    }
+  });
+
+  it('calls the session empty only when both reads answered', () => {
+    expect(readOutcome(queue([]), zone([]))).toEqual({ unavailable: false, rows: [] });
+    expect(readOutcome(queue([{ name: 'a' }]), zone([{ name: 'a', enabledAt: 'x' }]))).toEqual({
+      unavailable: false,
+      rows: [{ name: 'a', description: null, enabled: true, enabledAt: 'x' }],
+    });
+  });
+
+  it('says the read failed rather than that this session wrote nothing', () => {
+    // A guard 403 on the queue is a login problem, not an empty session.
+    expect(readOutcome(refused(403), zone([]))).toEqual({ unavailable: true, rows: [] });
+    // A transport error answers with no code worth naming, and must not be reported as an empty session either.
+    expect(readOutcome(refused(0), refused(0))).toEqual({ unavailable: true, rows: [] });
+  });
+
+  it('keeps the half that answered when the other one refuses', () => {
+    const nominations = readOutcome(queue([{ name: 'invoice-fill', description: 'fills' }]), refused(500));
+    expect(nominations.unavailable).toBe(true);
+    expect(nominations.rows).toEqual([
+      { name: 'invoice-fill', description: 'fills', enabled: false, enabledAt: null },
+    ]);
+
+    const enabled = readOutcome(refused(401), zone([{ name: 'gone', enabledAt: 'x' }]));
+    expect(enabled.unavailable).toBe(true);
+    expect(enabled.rows).toEqual([{ name: 'gone', description: null, enabled: true, enabledAt: 'x' }]);
+  });
+
+  it('hands the read path no copy of its own, so it cannot render a refusal code', () => {
+    // Listing is refused only by the guard or the transport; saying "the scan calls it DANGEROUS" here would
+    // send the operator to the review queue. The read half therefore reports a flag, never a message.
+    expect(Object.keys(readOutcome(refused(403), refused(500))).sort()).toEqual(['rows', 'unavailable']);
+    expect(Object.keys(readOutcome(queue([]), zone([]))).sort()).toEqual(['rows', 'unavailable']);
   });
 });
 ```
 
+**第二轮修复要补的两件判据（Task 11 复审记下的）：**
+- 上面每个 `refused(code)` 夹具都带 `data: null`，所以把 `readOutcome` 里那一层「这一半 code 不是 200 就当它没答」的过滤删掉，九条用例照样全绿。夹具要补一枚带非空 `data` 的拒因（`{ code: 500, message: 'x', data: [...] }`），断言那一半仍然不许进合并集。
+- `load()` 用 `Promise.all`：一半在 HTTP 层抛出（JWT 过期时 admin 侧就是 401 而不是 200 信封）会把另一半分到的结果一起丢掉，与上面「keeps the half that answered」在真实通道上等价的保证落空，而 `:52-54` 的注释却已经这么写了。改 `Promise.allSettled`，把 rejected 的一半折算成非 200 的信封再交给同一个 `readOutcome`。
+
+
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `cd harnax-webui && npx jest src/pages/session/components/sessionSkills.test.ts`
+Run: `cd harnax-webui && NODE_OPTIONS=--no-experimental-strip-types TS_NODE_PROJECT=../harnax-ui-test/tsconfig.json npx jest src/pages/session/components/sessionSkills.test.ts`
 Expected: FAIL，`Cannot find module './SessionSkillsDrawer'`
 
 - [ ] **Step 3: service 层**
@@ -2133,12 +2286,12 @@ Drawer 主体：`useEffect` 里并发取 `pageSkillDrafts({ status:'PENDING', se
 'pages.session.skills.loadFailed': '本会话技能读不出来' / "Could not load this session's skills"
 'pages.session.skills.enableFailed': '启用没有成功' / 'Could not enable it'
 'pages.session.skills.refresh': '刷新' / 'Refresh'
-'pages.session.skills.refusal.dangerous': '安全扫描判定危险，这个草稿不能在本会话启用' / 'The security scan says DANGEROUS, so this draft cannot be enabled'
-'pages.session.skills.refusal.limit': '本会话已启用十项技能，已达上限' / 'This session already has ten skills enabled'
-'pages.session.skills.refusal.noSandbox': '本会话没有运行中的沙箱' / 'This session has no running sandbox'
+'pages.session.skills.refusal.dangerous': '安全扫描判定 DANGEROUS，这份草稿不能启用' / 'The security scan says DANGEROUS, so this draft cannot be enabled'
+'pages.session.skills.refusal.limit': '这个会话已经启用了十个技能' / 'This session already has ten skills enabled'
+'pages.session.skills.refusal.noSandbox': '这个会话没有运行中的沙箱' / 'This session has no running sandbox'
 'pages.session.skills.refusal.container': '容器拒绝了这次复制' / 'The container refused the copy'
-'pages.session.skills.refusal.noDraft': '本会话没有这个名字的草稿' / 'This session has no draft with that name'
-'pages.session.skills.refusal.unknown': '启用被拒绝，原因本面板不认识；草稿本身没有动' / 'The enable request was refused for a reason this panel does not know; the draft itself is untouched'
+'pages.session.skills.refusal.noDraft': '这个会话没有这个名字的草稿' / 'This session has no draft with that name'
+'pages.session.skills.refusal.unknown': '启用请求被拒绝，原因未登记；草稿本身没有受影响' / 'The enable request was refused for a reason this panel does not know; the draft itself is untouched'
 ```
 
 英文侧含撇号的文案用双引号（`"Could not load this session's skills"`）；单引号包它会当场语法错。
@@ -2449,6 +2602,6 @@ git log --oneline kotlin-dev..feat/session-skill-lifecycle
 - 规格覆盖：D2/D3 → Task 1+5+6；D4/D5 + §4 → Task 3+4+8（Task 4 的 `the copy never reaches into the draft directory it reads from` 落的就是 D4「复制不动 `_drafts`」这一条）；D6/§5 → Task 7；§7 Admin 过滤 → Task 10（含 `SkillDraftFlowIT` 追加的会话过滤 IT）；§7 代理链 → Task 9；§8 界面 → Task 11+12；§10 验证 → 各任务 Step 1/2 + Task 13 Step 2/4。D7/D8/D10/D11/D12 是「不做」类裁定，无对应代码任务。
 - **§10 有一条按字面做不到**：「IT（harness-core）：……交付同名技能压住」。上游这两枚方法都是 `private`——`HarnessSkillMiddleware.skillsForCall`（`asrc-1008/io/agentscope/harness/agent/middleware/HarnessSkillMiddleware.java:321`）与 `mergeRepositories`（同文件 `:349`），本仓拿不到合并后的那张表，harness-core 现无任何 IT（`src/test/kotlin` 下 `*IT.kt` 为 0 支）。这一条拆成三处 discharge：名次本身由 Task 6 的 `skillRepositories` 顺序断言守住，会话区内容能否被读到由 Task 5 的 `getAllSkills` 守住，「交付那份压住会话那份」的真实合并只在 Task 13 Step 4 的真栈验收里观测。别为了这条去反射调用私有方法。
 - 测试框架核对过：`harnax-ios/Tests` 下 142 处 `import XCTest`、0 处 Swift Testing，所以 Task 12 用 `XCTestCase` + `XCTAssertEqual`；`harnax-webui` 用 jest 且有同目录 `*.test.ts` 先例（`src/pages/session/components/contextUsage.test.ts`），Task 11 沿用。`SkillDraftRow` 的成员式初始化器是 internal 且要填满 13 个存储属性，Task 12 的 Core 判据因此改吃 `SessionSkillRules.Draft`，不在测试里解码夹具。
-- 拒因码前后端对齐：后端 `EnableOutcome` 六支（Task 3）→ agent-service 信封码 403/409/404/410/500（Task 8；`ResultVo.error(code, message)` 只写信封 `code`、HTTP 恒 200，见 `harnax-common/src/main/kotlin/com/agnetix/harnax/common/dto/ResultVo.kt:55`，所以这枚码能原样穿过 Task 9 的代理）→ webui `refusalMessage`（Task 11）与 iOS `SessionSkillRefusal.messageKey`（Task 12）各覆盖同一组码，未知码一律落通用文案，不许谎报「草稿不在了」。
+- 拒因码前后端对齐：后端 `EnableOutcome` 六支（Task 3）→ agent-service 信封码 403/409/404/410/500（Task 8；`ResultVo.error(code, message)` 只写信封 `code`、HTTP 恒 200，见 `harnax-common/src/main/kotlin/com/agnetix/harnax/common/dto/ResultVo.kt:55`，所以这枚码能原样穿过 Task 9 的代理）→ webui `refusalOf(code).id`（Task 11）与 iOS `SessionSkillRefusal.messageKey`（Task 12）各覆盖同一组码，未知码一律落通用文案，不许谎报「草稿不在了」。
 - 占位符：Task 9 Step 1 的 `fixture()` 里留了一个 `TODO`，它在 Step 2 被明确要求替换成真实夹具——这是唯一一处，且带着把它清掉的步骤。
 - 类型一致性：`EnableOutcome`（Task 3 定义、Task 4 补行为、Task 8 消费）、`SessionDraft`/`EnabledSkill`（Task 3 定义、Task 7/8 消费）、`SESSION_SKILL_SOURCE`（Task 5 定义、Task 6 断言）、`findingTexts`（Task 3 定义、Task 7 消费）四处名字一致；webui `sessionSkillsFor` 与 iOS `SessionSkillRules.merged` 是同一条合并规则的两端实现，字段名 `name/description/enabled/enabledAt` 对齐；mapper 与 XML 的真实位置在 `harnax-entity`（Task 10 已按全路径写）。
