@@ -600,6 +600,18 @@ class HarnessAgentLauncher(
                 agentSpec.name,
                 staging.draftsDir,
             )
+            // Said at assembly rather than left to the offer: without a sandbox `KeepAliveSandboxManager` is never
+            // built, so the handle provider answers null and the out-of-call read sees no draft at all. Supporting
+            // self-write in that mode is a product decision; what this class owes the operator is that the dead
+            // stop is not silent.
+            if (!harnessConfig.sandbox.enabled) {
+                log.warn(
+                    "Agent '{}' is granted skill self-write but the sandbox is disabled: drafts still stage on the " +
+                        "workspace, but the out-of-call offer reads them through a sandbox handle that does not exist " +
+                        "in this mode, so nothing reaches the review queue. Set SANDBOX_ENABLED=true to use this feature.",
+                    agentSpec.name,
+                )
+            }
         }
 
         // ----- Team tools -----
