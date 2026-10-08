@@ -1418,15 +1418,7 @@ class SkillDraftSubmitMiddleware(
     }
 ```
 
-`claim`（`:98-110`）原样保留。Step 3 的代码里 `findingTexts(scan.findings())` 与 Step 4 的 `findingTexts(…)` 现在**全仓都不存在**——唯一等价物是 `AdminBackedPromotionGate.kt:104-105` 的私有成员 `describe(finding)`，中间件调不到。所以本步要把它升成同包的一条顶层函数，放在 `SkillDraftSubmitMiddleware.kt` 的类外（两个调用点都在 `com.agnetix.harnax.harness.skill` 包内，不需要 import），正文逐字沿用 `describe` 的拼接形状，别让队列的 findings 列在计划中途换形状：
-
-```kotlin
-/** One scan finding as the queue shows it: rule, severity/category, place, then the matched text. */
-fun findingTexts(findings: List<SkillSecurityScanner.Finding>): List<String> =
-    findings.map {
-        "${it.patternId()} [${it.severity()}/${it.category()}] ${it.file()}:${it.line()} ${it.description()}"
-    }
-```
+`claim`（`:98-110`）原样保留。Step 3 与 Step 4 都要用的 `findingTexts` **已经在仓里了**——Task 3 把它落在 `SessionSkillStore.kt:228`，`internal fun findingTexts(findings: List<SkillSecurityScanner.Finding>): List<String>`，与 `AdminBackedPromotionGate.kt:104-105` 那枚私有 `describe` 逐字同形状（同一串 `patternId [severity/category] file:line description`）。两个调用点都在 `com.agnetix.harnax.harness.skill` 包内，`internal` 在同模块可见，**直接调用、不要 import、更不要在本文件再声明一遍**——再声明一次是 redeclaration，整个模块编不过。队列的 findings 列因此不换形状。
 
 `ctx` 参数从 `offerStagedDrafts` 一路去掉——上报不再走 agent 的工作区文件系统，这正是这一跳修好的东西。imports 换成 `SkillSecurityScanner`、`SkillDraftAdaptor`、`SkillDraftIntake`、`SkillDraftProposal`，删掉 `SkillPromoter` 与 `RuntimeContext`（若 `onAgent` 仍需要 `RuntimeContext` 则保留）。
 
@@ -2584,8 +2576,18 @@ enum SessionSkillEndpoint {
 
 - [ ] **Step 6: 跑闸门**
 
-Run: `cd harnax-ios && swift build --build-tests --scratch-path /tmp/hx-ios-a && swift test --scratch-path /tmp/hx-ios-b`
-Expected: 基线 1884 例之上全绿。App target 再单查一次类型：`xcrun -sdk macosx swiftc -typecheck -I .build/arm64-apple-macosx/debug/Modules App/HarnaxDebugScreens.swift`
+Run: `cd harnax-ios && swift test --scratch-path /tmp/hx-ios-b`
+Expected: 全绿，0 失败。本分支上的 iOS 基线**不是** 1884——那是别的分支上的数；`git show HEAD:harnax-ios` 单独声明 2064 个测试方法，进场实测约 2059，本任务加 27 例，收尾数按 **2086** 记，验收口径是「+27 例、0 回归」。
+
+App target 不能用 `xcrun -sdk macosx swiftc -typecheck` 来证：`App/` 不是 SwiftPM target（`swift test` 根本碰不到它），而 `HarnaxDebugScreens.swift` 整份文件都在 `#if DEBUG` 里，不带 `-D DEBUG` 的类型检查是在编一个空文件，绿了也不说明任何事。真的闸门是打模拟器包：
+
+```bash
+xcodebuild -project Harnax.xcodeproj -scheme Harnax -configuration Debug -sdk iphonesimulator \
+  -arch arm64 CODE_SIGNING_ALLOWED=NO -derivedDataPath DerivedData build > /tmp/hx-app.log 2>&1
+echo "EXIT=$?" >> /tmp/hx-app.log
+```
+
+`-derivedDataPath` 必须配 `-scheme`（配 `-target` 会被 xcodebuild 直接拒）。判据两条：日志末尾 `** BUILD SUCCEEDED **`、且出现 `SwiftCompile normal arm64 Compiling HarnaxDebugScreens.swift`——只有前者而没有后者，说明这个文件没被编。`DerivedData/` 已在 `harnax-ios/.gitignore` 里。
 
 - [ ] **Step 7: 提交**
 
@@ -2628,7 +2630,7 @@ cd harnax-webui && npm run build
 cd harnax-ios && swift test --scratch-path /tmp/hx-ios-final
 ```
 
-Expected: 全部 `BUILD SUCCESS`；harness-core ≥ 662、admin ≥ 2430、iOS ≥ 1884，0 失败。
+Expected: 全部 `BUILD SUCCESS`，0 失败。计数按这条链对：harness-core **≥ 689**（662 进场 → 664/667/669/672/678 → Task 4 补强 682 → Task 5 685 → Task 6 687 → Task 7 689）；admin ≥ 2430（Task 10 若加用例则按它报告里的实数抬）；iOS **≥ 2086**（1884 是别的分支的数，本分支进场约 2059，Task 12 加 27 例）；webui 的 jest 与逐文件 biome 各跑一遍，`max build` 退 0。
 
 - [ ] **Step 3: 合回 kotlin-dev（不 push）**
 
