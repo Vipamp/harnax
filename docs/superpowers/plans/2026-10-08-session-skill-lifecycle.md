@@ -1065,36 +1065,40 @@ git commit -m "feat(skill): 会话可用区成目录册的一路——自研仓�
 
 **Interfaces:**
 - Consumes: Task 5 的 `SessionEnabledSkillRepository`、Task 3–4 的 `SessionSkillStore`
-- Produces: `HarnessAgentBuilder.skillSelfWrite(staging, gate, sessionSkills: SessionEnabledSkillRepository, store: SessionSkillStore)`；launcher 暴露 `val sessionSkillStore: SessionSkillStore?`
+- Produces: `HarnessAgentBuilder.skillSelfWrite(staging: SkillDraftStaging, gate: SkillPromotionGate, sessionSkills: SessionEnabledSkillRepository)`；launcher 暴露 `val sessionSkillStore: SessionSkillStore`（非空 lazy 单例，Task 8 的控制器直接取它）
 
 - [ ] **Step 1: 写失败测试**
 
-在 `HarnessAgentLauncherSkillSelfWriteTest.kt` 追加（`build(...)` 与 `spec(...)` 用文件里既有的两个夹具函数；`filesystemLocations(agent)` 也已在 `:140`）：
+在 `HarnessAgentLauncherSkillSelfWriteTest.kt` 追加。夹具照文件里既有的形状用：`build(workspace, selfWrite = …, draftAdaptor = intake)`——它没有 `spec`/`skills` 形参，交付的技能本来就由 launcher 自己的 `skillAdaptor` 给出（该夹具恒产出一支名为 `pdf` 的技能），所以 `InMemorySkillRepository` 一定会装上。文件已导入 `assertFalse`/`assertTrue`/`@TempDir`，只需再加 `import com.agnetix.harnax.harness.skill.SESSION_SKILL_SOURCE`（该常数是 `…harness.skill` 包的顶层声明，本测试在 `…harness` 包）。
 
 ```kotlin
-@Test
-fun `the session's enabled area is installed below the delivered skills so delivered wins the name`(@TempDir workspace: Path) {
-    val agent = build(spec(selfWrite = true), workspace, skills = listOf(skillNamed("invoice-fill")))
-    val sources = checkNotNull(agent.harnessAgent).skillRepositories.map { it.source }
-    val enabled = sources.indexOf(SESSION_SKILL_SOURCE)
-    val delivered = sources.indexOf(HarnessAgentBuilder.IN_MEMORY_SKILL_SOURCE)
-    assertTrue(enabled >= 0, "the enabled area has to be installed: $sources")
-    assertTrue(delivered >= 0, "the delivered skills are installed by name: $sources")
-    assertTrue(
-        enabled < delivered,
-        "composeSkillRepositories merges in add order and later wins, so the area must be installed first: $sources",
-    )
-}
+    @Test
+    fun `the session's enabled area is installed below the delivered skills so delivered wins the name`(@TempDir workspace: Path) {
+        val sources = sources(build(workspace, selfWrite = true, draftAdaptor = intake))
+        val enabled = sources.indexOf(SESSION_SKILL_SOURCE)
+        val delivered = sources.indexOf(HarnessAgentBuilder.IN_MEMORY_SKILL_SOURCE)
 
-@Test
-fun `an agent without the grant gets no enabled area to read from`(@TempDir workspace: Path) {
-    val agent = build(spec(selfWrite = false), workspace)
-    val sources = checkNotNull(agent.harnessAgent).skillRepositories.map { it.source }
-    assertTrue(!sources.contains(SESSION_SKILL_SOURCE), "no grant, no area: $sources")
-}
+        assertTrue(enabled >= 0, "the enabled area has to be installed: $sources")
+        assertTrue(delivered >= 0, "the delivered skills are installed by name: $sources")
+        assertTrue(
+            enabled < delivered,
+            "the later repository wins a name clash, so the enabled area must be installed first: $sources",
+        )
+    }
 
-private fun skillNamed(name: String): AgentSkill =
-    SkillUtil.createFrom("---\nname: $name\ndescription: delivered\n---\nbody\n", emptyMap())
+    @Test
+    fun `an agent without the grant gets no enabled area to read from`(@TempDir workspace: Path) {
+        val sources = sources(build(workspace, selfWrite = false, draftAdaptor = intake))
+
+        assertFalse(sources.contains(SESSION_SKILL_SOURCE), "no grant, no area: $sources")
+    }
+```
+
+并把取源函数与 `filesystemLocations`（`:140`）并排放一行——上游 `HarnessAgent.getSkillRepositories()` 的 KDoc 写明「ordered low to high priority」，所以这里的下标序就是合并序，比较下标是有意义的：
+
+```kotlin
+    private fun sources(agent: HarnessAgentWrapper): List<String> =
+        checkNotNull(agent.harnessAgent).skillRepositories.map { it.source }
 ```
 
 - [ ] **Step 2: 跑测试确认失败**
@@ -1200,7 +1204,7 @@ val sessionSkillStore: SessionSkillStore by lazy {
 - [ ] **Step 5: 跑该测试与全模块**
 
 Run: `... mvn -q spotless:apply -pl harnax-agent/harnax-harness-core && ... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=HarnessAgentLauncherSkillSelfWriteTest`
-Expected: PASS，且全模块 `mvn -o test -pl harnax-agent/harnax-harness-core -am` 仍然 664+ 全绿。本任务结束时 HEAD 必须能编译——中间件此刻仍按旧构造安装，签名换掉是 Task 7 的事。
+Expected: PASS，且全模块 `mvn -o test -pl harnax-agent/harnax-harness-core -am` 仍然全绿，总数 **687**（Task 5 之后 685 + 本任务 2 支）。本任务结束时 HEAD 必须能编译——中间件此刻仍按旧构造安装，签名换掉是 Task 7 的事。
 
 - [ ] **Step 6: 提交**
 
