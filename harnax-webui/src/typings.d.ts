@@ -707,6 +707,27 @@ message?: string;
   };
 
   /**
+   * @en-US one row of this session's own enabled zone: the name and when it was enabled, the body still lives with the draft
+   */
+  export type SessionSkillRow = {
+    name: string;
+    description?: string | null;
+    enabledAt?: string | null;
+  };
+
+  /**
+   * @en-US reply to the enable command. Refusals ride on the envelope code, not in here; findings/count are the
+   * two numbers a refusal carries (scan hit count, skills already enabled)
+   */
+  export type SessionSkillEnableResult = {
+    ok: boolean;
+    name?: string | null;
+    verdict?: string | null;
+    findings?: number;
+    count?: number;
+  };
+
+  /**
    * @zh-CN 脚本预览：头几行、行数与 sha256，全部由服务端对落库字节现算
    */
   export type SkillDraftScript = {

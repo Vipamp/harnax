@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { PageContainer } from '@ant-design/pro-components';
 import { Button, Card, List, Typography, Empty, Spin, message, Tag, Tooltip } from 'antd';
-import { PlusOutlined, BulbOutlined, CloudServerOutlined, ArrowLeftOutlined, TeamOutlined, FolderOpenOutlined } from '@ant-design/icons';
+import { PlusOutlined, BulbOutlined, CloudServerOutlined, ArrowLeftOutlined, TeamOutlined, FolderOpenOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { getSessionPage, deleteSession } from '@/services/ant-design-pro/session';
 import { getContextUsage } from '@/services/ant-design-pro/chat';
 import { getWorkspaceStatus } from '@/services/ant-design-pro/workspace';
@@ -17,6 +17,7 @@ import DetailModal from './components/DetailModal';
 import ChatWindow from './components/ChatWindow';
 import WorkspaceDrawer from './components/WorkspaceDrawer';
 import TeamArtifactsDrawer from './components/TeamArtifactsDrawer';
+import SessionSkillsDrawer from './components/SessionSkillsDrawer';
 import DeleteButton from '@/components/DeleteButton';
 import DetailButton from '@/components/DetailButton';
 import { useIsMobile } from '@/utils/responsive';
@@ -94,6 +95,8 @@ const SessionPage: React.FC = () => {
   const [detailSession, setDetailSession] = useState<API.SessionItem | null>(null);
   const [workspaceDrawerVisible, setWorkspaceDrawerVisible] = useState(false);
   const [artifactsDrawerVisible, setArtifactsDrawerVisible] = useState(false);
+  /** Skills this conversation drafted, and which of them the human has let into this session. */
+  const [sessionSkillsVisible, setSessionSkillsVisible] = useState(false);
   /** Null means the router has no reading for this session, and then the header shows nothing at all. */
   const [contextUsage, setContextUsage] = useState<API.ContextUsage | null>(null);
   const { initialState } = useModel('@@initialState');
@@ -390,6 +393,14 @@ const SessionPage: React.FC = () => {
                     {isMobile ? '' : intl.formatMessage({ id: 'pages.session.artifacts.entry', defaultMessage: 'Artifacts' })}
                   </Button>
                 )}
+                <Button
+                  type="text"
+                  icon={<ThunderboltOutlined />}
+                  size="small"
+                  onClick={() => setSessionSkillsVisible(true)}
+                >
+                  {isMobile ? '' : intl.formatMessage({ id: 'pages.session.skills.entry', defaultMessage: 'Session skills' })}
+                </Button>
               </div>
               
               {/* 聊天窗口 */}
@@ -451,6 +462,13 @@ const SessionPage: React.FC = () => {
         visible={artifactsDrawerVisible}
         sessionId={selectedSession?.sessionId}
         onClose={() => setArtifactsDrawerVisible(false)}
+      />
+
+      {/* Skills this session wrote */}
+      <SessionSkillsDrawer
+        visible={sessionSkillsVisible}
+        sessionId={selectedSession?.sessionId}
+        onClose={() => setSessionSkillsVisible(false)}
       />
     </PageContainer>
   );
