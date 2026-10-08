@@ -27,7 +27,7 @@ class SessionSkillStore(
     private val workspaceRoot: String,
     private val maxEnabled: Int = MAX_ENABLED,
     private val execTimeoutSeconds: Int = EXEC_TIMEOUT_SECONDS,
-    /** Seam for tests: the pinned view is a final class the mockito inline agent will not stub. */
+    /** Seam for tests: the pinned view is constructed inside `filesystemFor`, so nothing else can swap in a double. */
     private val pinnedFilesystem: (Sandbox) -> AbstractFilesystem = { PinnedSandboxFilesystem(it) },
 ) {
 

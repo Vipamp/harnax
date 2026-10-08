@@ -61,6 +61,11 @@ class SessionSkillStoreEnableTest {
         Mockito.`when`(sandbox.exec(isNull(), contains("test -f"), anyInt()))
             .thenReturn(ExecResult(1, "", "", false))
         assertEquals(EnableOutcome.SourceMissing, store().enable("ses-1", "invoice-fill"))
+        // The refusal has to come from the probe, not from a read: an implementation that answered
+        // SourceMissing after consulting the filesystem listing stays green without this line. Deleting the
+        // probe outright is caught only by luck — the unstubbed mock read returns null and the reader
+        // dereferences it outside its own try (SkillDraftFilesReader.kt:138), so enable throws.
+        Mockito.verifyNoInteractions(fs)
     }
 
     @Test
@@ -76,17 +81,60 @@ class SessionSkillStoreEnableTest {
     }
 
     @Test
-    fun `a session already at the cap refuses a new name`() {
+    fun `a dangerous script inside the draft is refused even when its text looks clean`() {
+        // stubDraftExists leaves every support glob failing, so `resources` is an empty map in the other
+        // tests and the third argument to SkillSecurityScanner.scan could be deleted unnoticed. Here the
+        // SKILL.md is the benign MD fixture and only scripts/run.sh carries the danger, so this test can
+        // only go red if the resources actually reach the scanner.
         stubDraftExists("invoice-fill")
-        val filled = (1..10).toList().map { "s$it" }
+        Mockito.`when`(fs.glob(any(), eq("*"), eq("${SkillDraftStaging.DRAFTS_DIR}/invoice-fill/scripts")))
+            .thenReturn(
+                GlobResult.success(
+                    listOf(FileInfo.ofFile("${SkillDraftStaging.DRAFTS_DIR}/invoice-fill/scripts/run.sh", 12L, "2026-10-08T10:00:00Z")),
+                ),
+            )
+        Mockito.`when`(
+            fs.read(any(), eq("${SkillDraftStaging.DRAFTS_DIR}/invoice-fill/scripts/run.sh"), anyInt(), anyInt()),
+        ).thenReturn(ReadResult.success(FileData("rm -rf /\n", "utf-8")))
+        val outcome = store().enable("ses-1", "invoice-fill")
+        assertTrue(outcome is EnableOutcome.Blocked, "the scan has to see the draft's scripts: got $outcome")
+        Mockito.verify(sandbox, Mockito.never()).exec(isNull(), contains("cp -R"), anyInt())
+    }
+
+    @Test
+    fun `the scan is asked before the cap, so a full session still hears the real reason`() {
+        // Swapping the two guards in enable() keeps every other test green while telling the operator of a
+        // dangerous draft in a full session that they simply have too many skills enabled.
+        stubDraftExists("invoice-fill")
+        Mockito.`when`(fs.read(any(), eq("${SkillDraftStaging.DRAFTS_DIR}/invoice-fill/SKILL.md"), anyInt(), anyInt()))
+            .thenReturn(ReadResult.success(FileData(DANGEROUS_MD, "utf-8")))
         Mockito.`when`(fs.glob(any(), eq("SKILL.md"), eq(SkillDraftStaging.SESSION_ENABLED_DIR))).thenAnswer {
             GlobResult.success(
-                filled.map { FileInfo.ofDir("${SkillDraftStaging.SESSION_ENABLED_DIR}/$it/SKILL.md", "t") },
+                listOf("s1", "s2").map {
+                    FileInfo.ofFile("${SkillDraftStaging.SESSION_ENABLED_DIR}/$it/SKILL.md", 10L, "2026-10-08T10:00:00Z")
+                },
             )
         }
-        val other = store().enable("ses-1", "invoice-fill")
+        val outcome = store(max = 2).enable("ses-1", "invoice-fill")
+        assertTrue(outcome is EnableOutcome.Blocked, "a refusal by verdict outranks a refusal by count: got $outcome")
+    }
+
+    @Test
+    fun `a session already at the cap refuses a new name`() {
+        stubDraftExists("invoice-fill")
+        // ofFile, not ofDir: SKILL.md is a file, and Task 5 re-uses this shape as EnabledSkill.enabledAt.
+        Mockito.`when`(fs.glob(any(), eq("SKILL.md"), eq(SkillDraftStaging.SESSION_ENABLED_DIR))).thenAnswer {
+            GlobResult.success(
+                listOf("s1", "s2").map {
+                    FileInfo.ofFile("${SkillDraftStaging.SESSION_ENABLED_DIR}/$it/SKILL.md", 10L, "2026-10-08T10:00:00Z")
+                },
+            )
+        }
+        // The cap comes from the constructor here, so a deleted `maxEnabled` wiring cannot pass this test;
+        // with the default 10 and ten fixtures both numbers would be the constant 10 and nothing is pinned.
+        val other = store(max = 2).enable("ses-1", "invoice-fill")
         assertTrue(other is EnableOutcome.Full, "got $other")
-        assertEquals(10, (other as EnableOutcome.Full).count)
+        assertEquals(2, (other as EnableOutcome.Full).count)
     }
 
     @Test
@@ -94,13 +142,15 @@ class SessionSkillStoreEnableTest {
         stubDraftExists("invoice-fill")
         Mockito.`when`(sandbox.exec(isNull(), contains("cp -R"), anyInt()))
             .thenReturn(ExecResult(0, "", "", false))
-        val filled = listOf("invoice-fill") + (1..9).toList().map { "s$it" }
+        val filled = listOf("invoice-fill", "s1")
         Mockito.`when`(fs.glob(any(), eq("SKILL.md"), eq(SkillDraftStaging.SESSION_ENABLED_DIR))).thenAnswer {
             GlobResult.success(
-                filled.map { FileInfo.ofDir("${SkillDraftStaging.SESSION_ENABLED_DIR}/$it/SKILL.md", "t") },
+                filled.map {
+                    FileInfo.ofFile("${SkillDraftStaging.SESSION_ENABLED_DIR}/$it/SKILL.md", 10L, "2026-10-08T10:00:00Z")
+                },
             )
         }
-        val replay = store().enable("ses-1", "invoice-fill")
+        val replay = store(max = 2).enable("ses-1", "invoice-fill")
         assertTrue(replay is EnableOutcome.Enabled, "re-enabling a name already in the ten has to work: got $replay")
     }
 
@@ -119,6 +169,31 @@ class SessionSkillStoreEnableTest {
     }
 
     @Test
+    fun `a copy that dies by exception still reports a failure and not a missing draft`() {
+        stubDraftExists("invoice-fill")
+        // The shape production actually takes: DockerSandbox.doExec throws on a non-zero exit
+        // (`SandboxException.ExecException`, DockerSandbox.java:196-197), and only execRaw's catch turns that
+        // into an ExecResult whose stderr is the exception message. Nothing else in the module walks that catch.
+        Mockito.`when`(sandbox.exec(isNull(), contains("cp -R"), anyInt()))
+            .thenThrow(RuntimeException("Command exited with code 1: no space left on device"))
+        val outcome = store().enable("ses-1", "invoice-fill")
+        assertTrue(outcome is EnableOutcome.Failed, "got $outcome")
+        assertEquals(
+            "Command exited with code 1: no space left on device",
+            (outcome as EnableOutcome.Failed).reason,
+        )
+    }
+
+    @Test
+    fun `a copy failure with nothing to say still says the container refused`() {
+        stubDraftExists("invoice-fill")
+        Mockito.`when`(sandbox.exec(isNull(), contains("cp -R"), anyInt())).thenReturn(ExecResult(1, "", "", false))
+        val outcome = store().enable("ses-1", "invoice-fill")
+        assertTrue(outcome is EnableOutcome.Failed, "got $outcome")
+        assertEquals("the container refused the copy", (outcome as EnableOutcome.Failed).reason)
+    }
+
+    @Test
     fun `the copy never reaches into the draft directory it reads from`() {
         stubDraftExists("invoice-fill")
         Mockito.`when`(sandbox.exec(isNull(), contains("cp -R"), anyInt()))
@@ -127,14 +202,15 @@ class SessionSkillStoreEnableTest {
         val outcome = store().enable("ses-1", "invoice-fill")
         assertTrue(outcome is EnableOutcome.Enabled, "the fixture draft has to enable first: got $outcome")
         Mockito.verify(sandbox, Mockito.atLeastOnce()).exec(isNull(), command.capture(), anyInt())
-        val copy = command.allValues.first { it.contains("cp -R") }
+        // Every command, not just the one that carries the copy: an implementation that split the copy into a
+        // second exec containing `rm -rf '<drafts>'` would keep a first { }-based check green.
         assertTrue(
-            copy.contains("cp -R '$draftsRoot/invoice-fill/.'"),
-            "the copy reads the draft tree it was pointed at: $copy",
+            command.allValues.any { it.contains("cp -R '$draftsRoot/invoice-fill/.'") },
+            "the copy reads the draft tree it was pointed at: ${command.allValues}",
         )
         assertFalse(
-            copy.contains("rm -rf '$draftsRoot"),
-            "D4: the draft stays put for the reviewer; only the enabled target may be replaced: $copy",
+            command.allValues.any { it.contains("rm -rf '$draftsRoot") },
+            "D4: the draft stays put for the reviewer; only the enabled target may be replaced: ${command.allValues}",
         )
     }
 
