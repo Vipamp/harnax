@@ -2781,7 +2781,9 @@ git commit -m "feat(ios): 会话页自写技能面板与启用动作——四类
    ```
    本分支实测该值为 71。
 5. `harnax-ios/specs/02-session-chat.md`、`harnax-ios/specs/07-skill-draft-review.md` 各挂一句交叉引用：会话页那块自写技能列表的读走 `SessionSkillReading`，两份读各走各的失败，不会因为一份挂了就抹掉另一份答上来的那一半。
-6. `prod_doc/self-improving-implementation.zh-CN.md` 扩写不变量那一段（`:41` 附近）：加进「本会话即时可用」这一档，并写明审核通过的是审后正文、30 分钟快照过期后交付那份压住会话那份。
+6. `prod_doc/self-improving-implementation.zh-CN.md` 扩写不变量那一段（`:41` 附近）：加进「本会话即时可用」这一档，并写明审核通过的是审后正文、30 分钟快照过期后交付那份压住会话那份；同段补一句前提——草稿的答后上报经容器句柄读，`SANDBOX_ENABLED` 关掉时这条特性不工作（`application.yml:98` 缺省是 false，`harnax-deploy/docker-compose.yml:504` 设的 true），装配期会打一条 warn（`adc13684`）。
+7. `SkillDraftStaging.kt:15`、`:19-21`（类自己的 KDoc 头段）与 Task 7 改掉的 `:69-70` 是同一处 stale-caller 毛病：它仍把 `_drafts` 描述成「晋升管线读的地方」并把本类讲成队列的上游入口，而答后上报现在直投 intake。按 `83609c75` 之后的实际处境改写，别留第三种读法。
+8. `SkillDraftSubmitMiddleware.kt:76-78` 那句注释「the scan is the only line inside offer that is not already caught」说满了：`shouldAllow`（`:112`）与被拦那支的日志（`:113`）同样在 try 外。改成不夸大范围的写法（外层 catch 兜的是 scan 及其前后的判定与日志），并把这句与第 7 条一起在同一次提交里过 `spotless`＋本模块门禁（总数仍 **691**）。
 
 收尾残扫（判据是命中数为 0，不是「看起来改完了」）：
 
