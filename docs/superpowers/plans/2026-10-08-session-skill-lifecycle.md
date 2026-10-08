@@ -2378,7 +2378,7 @@ git commit -m "feat(webui): 会话页挂出本会话自写技能——待启用�
 
 **Interfaces:**
 - Consumes: Task 9 的两条 `/api/router/agent/session-skills/**`
-- Produces: `SessionSkillReading` 协议（`rows(sessionId:)` / `enable(sessionId:name:)`）、`SessionSkillsViewModel`、`chat.skills.*` 文案
+- Produces: `SessionSkillReading` 协议（`read(sessionId:) -> SessionSkillRead` / `enable(sessionId:name:)`）、`SessionSkillsViewModel`、`chat.skills.*` 文案
 
 - [ ] **Step 1: 写失败测试（Core 层判据，XCTest）**
 
@@ -2509,8 +2509,18 @@ public enum SessionSkillRules {
     }
 }
 
+public struct SessionSkillRead: Equatable, Sendable {
+    public let rows: [SessionSkillRow]
+    /// At least one of the two reads did not answer. Never collapses to「这个会话没写过技能」.
+    public let unavailable: Bool
+    public init(rows: [SessionSkillRow], unavailable: Bool) {
+        self.rows = rows
+        self.unavailable = unavailable
+    }
+}
+
 public protocol SessionSkillReading: Sendable {
-    func rows(sessionId: String) async throws -> [SessionSkillRow]
+    func read(sessionId: String) async -> SessionSkillRead
     func enable(sessionId: String, name: String) async throws
 }
 
@@ -2552,14 +2562,14 @@ enum SessionSkillEndpoint {
 }
 ```
 
-`SessionSkillClient.swift`：`extension AdminClient: SessionSkillReading` —— router 与 admin 在 iOS 侧是同一个 `AdminClient`（`HarnaxDependencies.swift:152-165` 把 `contextUsage: admin`、`workspace: admin` 等都挂在同一枚实例上，`base: .router` 才是分路由的开关），照 `ContextUsageClient.swift:17-31` 与 `:36-44` 的形状写：`rows` 里两次 `await client.send(...)` 各取一份——本会话的提名取 `drafts.page(status: .pending, name: nil, sessionId: sessionId, num: 1, size: 50)`（`SkillDraftCataloging.page`，见 Files 那行新增的形参），已启用取 `GET /api/router/agent/session-skills/{sessionId}`——把每条 `SkillDraftRow` 收成 `SessionSkillRules.Draft(name:, description:)`，两份一起交 Step 3 的 `SessionSkillRules.merged(drafts:enabled:)`；`enable` 走 `APIError.business(code:message:)`（`HarnaxCore/Contract/APIError.swift:25`）落成 `SessionSkillRefusal(code:)`，非业务错（传输、解码）落 `SessionSkillRefusal(code: -1)`，两者都归 `chat.skills.enableFailed`。合并规则只有 Core 里这一份实现，客户端只做传输与降形，别在两个地方各写一遍。任何一份读失败都不许当成「这个会话没写过技能」：`rows` 失败时抛错，由 Step 5 的 `unavailable` 状态接手。
+`SessionSkillClient.swift`：`extension AdminClient: SessionSkillReading` —— router 与 admin 在 iOS 侧是同一个 `AdminClient`（`HarnaxDependencies.swift:152-165` 把 `contextUsage: admin`、`workspace: admin` 等都挂在同一枚实例上，`base: .router` 才是分路由的开关），照 `ContextUsageClient.swift:17-31` 与 `:36-44` 的形状写：`read` 里两次 `await client.send(...)` 各取一份——本会话的提名取 `drafts.page(status: .pending, name: nil, sessionId: sessionId, num: 1, size: 50)`（`SkillDraftCataloging.page`，见 Files 那行新增的形参），已启用取 `GET /api/router/agent/session-skills/{sessionId}`——把每条 `SkillDraftRow` 收成 `SessionSkillRules.Draft(name:, description:)`，两份一起交 Step 3 的 `SessionSkillRules.merged(drafts:enabled:)`；`enable` 走 `APIError.business(code:message:)`（`HarnaxCore/Contract/APIError.swift:25`）落成 `SessionSkillRefusal(code:)`，非业务错（传输、解码）落 `SessionSkillRefusal(code: -1)`，两者都归 `chat.skills.enableFailed`。合并规则只有 Core 里这一份实现，客户端只做传输与降形，别在两个地方各写一遍。两份读**各走各的失败**，与 webui 那条 `Promise.allSettled` 同一判据（`harnax-webui/src/pages/session/components/SessionSkillsDrawer.tsx`，并由 `sessionSkills.test.ts:100-124` 钉住「一份失败另一份成功时，成功的那一半照常渲染」）：每份各用一个 `switch` 就地吃掉自己的失败，失败那份交空清单，两份都答上来才 `unavailable = false`。所以 `read` **不抛错**，返回 `SessionSkillRead(rows:unavailable:)`——一份失败要抛错的话，已经拿到的那一半会被 VM 丢掉，第一次打开就变成「这个会话没写过技能」那句谎。两份互不依赖，用 `async let` 并发发出（今天的两次顺序 `await` 白等一个来回）。
 
 - [ ] **Step 5: 界面与依赖**
 
 `HarnaxDependencies.swift`：加 `public let sessionSkills: (any SessionSkillReading)?`（形参默认 `nil`，live 装配补上）。
 `ChatView.swift` `.toolbar`（`:83-100`，此刻两枚 `ToolbarItem(placement: .primaryAction)`）内加第三枚，并在 `:101-114` 加 `.sheet(isPresented: $showSessionSkills) { SessionSkillsSheet(vm: …) }`——`showSessionSkills` 是本 View 的 `@State`，不进 `ChatViewModel`；`.task(id: conversation)`（`:115-126`）也不取这份数，面板的数据只在面板打开时取。
-`SessionSkillsViewModel.swift`：`@Observable`（或本仓 Chat 目录里 ViewModel 的既有宏，逐字照同目录那几份）持 `rows: [SessionSkillRow]`、`isLoading`、`unavailable`、`notice: SessionSkillRefusal?`（Step 3 已有此型，它自带 `messageKey`，别再造一个），方法 `refresh()` 与 `enable(name:)`。`refresh()` 照 `ChatViewModel.refreshContextUsage()`（`:1471-1485`）的 generation 竞争保护形状：只把最新一次取数的答案留下。`reading` 为 `nil`（依赖未装配）与取数抛错都置 `unavailable = true` 而不是清空成「没有提名」；`enable` 的 `SessionSkillRefusal` 置 `notice`。
-`SessionSkillsSheet.swift`：一行一名 + `Button(hx("chat.skills.enable"))`，已启用的行显示 `chat.skills.enabled` 状态而不是再一枚按钮；`notice` 非空时用 `hx(notice.messageKey)` 落在行下方（本仓 Chat 目录没有 toast，拒因走 `SkillDraftDetailViewModel.swift:35,86,133` 那种 `notice` 状态形状）；`unavailable` 时空态文案取 `chat.skills.loadFailed`，`chat.skills.empty` 只在两份读都成功而合并结果为空时才出现。
+`SessionSkillsViewModel.swift`：`@Observable`（或本仓 Chat 目录里 ViewModel 的既有宏，逐字照同目录那几份）持 `rows: [SessionSkillRow]`、`isLoading`、`unavailable`、`notice: SessionSkillRefusal?`（Step 3 已有此型，它自带 `messageKey`，别再造一个），方法 `refresh()` 与 `enable(name:)`。`refresh()` 照 `ChatViewModel.refreshContextUsage()`（`:1471-1485`）的 generation 竞争保护形状：只把最新一次取数的答案留下。`reading` 为 `nil`（依赖未装配）只置 `unavailable = true`、`rows` 不动；否则把 `read` 返回的两项原样落下——一份读失败时 `rows` 就是答上来那一半，同时 `unavailable = true`，两者并存而不是互相抹掉；`enable` 的 `SessionSkillRefusal` 置 `notice`。
+`SessionSkillsSheet.swift`：一行一名 + `Button(hx("chat.skills.enable"))`，已启用的行显示 `chat.skills.enabled` 状态而不是再一枚按钮；`notice` 非空时用 `hx(notice.messageKey)` 落在行下方（本仓 Chat 目录没有 toast，拒因走 `SkillDraftDetailViewModel.swift:35,86,133` 那种 `notice` 状态形状）；`unavailable` 且 `rows` 为空才出 `chat.skills.loadFailed` 空态，`rows` 非空时清单照常列、`unavailable` 另挂一句横幅（与重读失败保住旧行那支同形状），`chat.skills.empty` 只在两份读都成功而合并结果为空时才出现。
 文案两份（zh 在 `skill.draft.*` 之前、en 同位）：
 
 ```
