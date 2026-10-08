@@ -270,19 +270,18 @@ export const TodoStrip: React.FC<TodoStripProps> = ({
 }) => {
   const intl = useIntl();
 
-  // Old addresses: /monitor/* only exists once the menu reorg lands, and both stay alive as redirects
-  // after it, so these two paths are the ones that resolve on either side of that change.
+  // 菜单重排已合入，/monitor/* 是正地址；旧的两条只剩 redirect 保活，页面不再往 redirect 上挂
   const quickLinks = [
     { id: 'pages.welcome.quick.agent', path: '/agent/manager' },
     { id: 'pages.welcome.quick.skill', path: '/context/skill' },
-    { id: 'pages.welcome.quick.tokenMonitor', path: '/system/token-monitor' },
+    { id: 'pages.welcome.quick.tokenMonitor', path: '/monitor/token-monitor' },
   ];
 
   return (
     <Card style={glassCardStyle} styles={{ body: { padding: '14px 20px' } }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
         <Space split={separator} size={8} wrap>
-          <Link onClick={() => history.push('/context/skill-drafts')}>
+          <Link onClick={() => history.push('/monitor/skill-drafts')}>
             {intl.formatMessage(
               { id: 'pages.welcome.todo.drafts' },
               { count: formatCount(pendingSkillDrafts) },
