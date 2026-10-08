@@ -1270,10 +1270,12 @@ git commit -m "feat(skill): 可用区在交付技能之前注册并晚绑定—�
 | `:87` 每次暂存的草稿都上报不只第一支 | 留 | `verify(adaptor).submit(...)` 对两个名字各一次（`argumentCaptor` 取 allValues） |
 | `:95` 窗口内同一草稿不重复上报 | 留 | `verify(adaptor, times(1)).submit(...)` |
 | `:106` 过了窗口同一草稿再上报 | 留 | `now += COOLDOWN` 后 `times(2)` |
-| `:117` 空暂存不起晋升 | 留，改名 `an empty draft list files nothing` | `verifyNoInteractions(adaptor)` |
+| `:117` 空暂存不起晋升 | 留，改名 `an empty draft list files nothing` | 判据不能只有 `verifyNoInteractions(adaptor)`——对空表跑 filter/forEach 本就是空操作，删掉 `if (names.isEmpty()) return` 也不红。本支自带一枚会自增的 clock（`clock = { reads++; now }`），断 `reads == 0`：空清单连节流簿记都不许启动 |
 | `:124` 未绑定 agent 的暂存无内容可报 | 换 | 这一性质已进 Task 3 的 store 用例，本位置改放下面新增第三支（读不到正文留给下一轮） |
 | `:131` 起不动的管线不碰答案 | 留 | `adaptor.submit` 抛异常 → `assertDoesNotThrow { middleware().turn() }` |
-| `:139` 答完之后失败的管线只记日志不抛 | 留 | `store.listDraftNames` 抛异常 → `assertDoesNotThrow { middleware().turn() }` |
+| `:139` 答完之后失败的管线只记日志不抛 | 换 | 与 `:131` 那支逐字同桩（都是 `store.listDraftNames` 抛）、同一条产线，`assertDoesNotThrow` 之外多出来的只有 `verifyNoInteractions(adaptor)`，没有任何变异能只红这一支——本位置改放「读正文抛异常」：`store.readDraft` 抛 → `assertDoesNotThrow { mw.turn() }` 且 `verifyNoInteractions(adaptor)`。整份测试目前没有任何一支让 readDraft 抛，删掉 `:79` 的 `return` 或整个 catch 都不红 |
+
+`Unavailable` 那支释放点（`SkillDraftSubmitMiddleware.kt:137`）同样得有证伪器，且不新建用例：把它挂在第一支 `the draft is filed straight into the queue instead of through the promotion gate` 的尾部——该支原本 `staged(...)` 一支草稿、桩 `submit → Queued(7L)`。改成 `Mockito.`when`(adaptor.submit(any())).thenReturn(SkillDraftIntake.Queued(7L), SkillDraftIntake.Unavailable("admin down"))`，原有对 captor 的断言随之从 `verify(adaptor).submit(...)` 改写成 `verify(adaptor, times(2)).submit(captor.capture())` 且仍取 `firstValue`（第一轮才是 Queued）；再 `now += 1` 走第二轮，断 `times(2)`。删掉 `:137` 的 `remove`，第二轮就领不到名额。
 
 净数 8 → 10 支（-2 支被替换、+4 支新增）。
 
@@ -1312,9 +1314,11 @@ git commit -m "feat(skill): 可用区在交付技能之前注册并晚绑定—�
     }
 
     @Test
-    fun `a draft that cannot be read is left for the next turn`() {
+    fun `a draft with no text to review is not filed`() {
         // The listing answered and the read did not: the draft is either gone or has no text, and neither is
-        // something the queue can review, so nothing is filed and the slot is not burned.
+        // something the queue can review, so nothing is filed. The slot taken this turn is kept, so it is
+        // offered again once the window passes rather than on the next turn. One turn only — this shape
+        // cannot pin kept-vs-released, and it does not try to.
         `when`(store.listDraftNames("ses-1")).thenReturn(listOf("invoice-fill"))
         `when`(store.readDraft("ses-1", "invoice-fill")).thenReturn(null)
 
@@ -1374,10 +1378,30 @@ class SkillDraftSubmitMiddleware(
         }
         if (names.isEmpty()) return
         val now = clock()
-        names.filter { claim(it, now) }.forEach { offer(it) }
+        names.forEach { name ->
+            val claimedAt = claim(name, now) ?: return@forEach
+            try {
+                offer(name, claimedAt)
+            } catch (e: Exception) {
+                // The scan is the only line inside offer that is not already caught, and a scanner that throws
+                // must cost this one draft its turn rather than every other draft's: slots were taken one name
+                // at a time, so the ones not reached yet are still unclaimed and this one gives its slot back.
+                log.warn(
+                    "Offering the staged draft {} of session {} raised {}: {}",
+                    name,
+                    sessionId,
+                    e.javaClass.simpleName,
+                    e.message,
+                )
+                lastOfferedAt.remove(name, claimedAt)
+            }
+        }
     }
 
-    private fun offer(name: String) {
+    private fun offer(
+        name: String,
+        claimedAt: Long,
+    ) {
         val draft = try {
             store.readDraft(sessionId, name)
         } catch (e: Exception) {
@@ -1408,7 +1432,7 @@ class SkillDraftSubmitMiddleware(
             // Not supposed to throw. One that does has told us nothing about whether the row landed, so the
             // cooldown slot is released and the next turn offers it again rather than letting it go stale.
             log.warn("Skill draft intake for {} raised {}: {}", name, e.javaClass.simpleName, e.message)
-            lastOfferedAt.remove(name)
+            lastOfferedAt.remove(name, claimedAt)
             return
         }
         when (intake) {
@@ -1416,13 +1440,36 @@ class SkillDraftSubmitMiddleware(
             is SkillDraftIntake.Refused -> log.warn("Draft skill {} was refused by the review queue: {}", name, intake.reason)
             is SkillDraftIntake.Unavailable -> {
                 log.warn("Draft skill {} could not reach the review queue: {}", name, intake.reason)
-                lastOfferedAt.remove(name)
+                lastOfferedAt.remove(name, claimedAt)
             }
         }
     }
 ```
 
-`claim`（`:98-110`）原样保留。Step 3 与 Step 4 都要用的 `findingTexts` **已经在仓里了**——Task 3 把它落在 `SessionSkillStore.kt:228`，`internal fun findingTexts(findings: List<SkillSecurityScanner.Finding>): List<String>`，与 `AdminBackedPromotionGate.kt:104-105` 那枚私有 `describe` 逐字同形状（同一串 `patternId [severity/category] file:line description`）。两个调用点都在 `com.agnetix.harnax.harness.skill` 包内，`internal` 在同模块可见，**直接调用、不要 import、更不要在本文件再声明一遍**——再声明一次是 redeclaration，整个模块编不过。队列的 findings 列因此不换形状。
+`claim`（`:98-110`）的窗口判据原样保留（design §5 那句「逻辑不变」指的是 `previous == null || now - previous >= cooldownMillis` 这条式子），只把返回型从 `Boolean` 换成 `Long?`——装上时返回那枚时间戳、没装上返回 null，两参 `remove(name, claimedAt)` 才有资格只回收自己那一次：
+
+```kotlin
+    /**
+     * Takes this draft's slot in the window and answers the timestamp it installed, or null while the slot is held.
+     */
+    private fun claim(
+        name: String,
+        now: Long,
+    ): Long? {
+        var claimedAt: Long? = null
+        lastOfferedAt.compute(name) { _, previous ->
+            if (previous == null || now - previous >= cooldownMillis) {
+                claimedAt = now
+                now
+            } else {
+                previous
+            }
+        }
+        return claimedAt
+    }
+```
+
+Step 3 与 Step 4 都要用的 `findingTexts` **已经在仓里了**——Task 3 把它落在 `SessionSkillStore.kt:228`，`internal fun findingTexts(findings: List<SkillSecurityScanner.Finding>): List<String>`，与 `AdminBackedPromotionGate.kt:104-105` 那枚私有 `describe` 逐字同形状（同一串 `patternId [severity/category] file:line description`）。两个调用点都在 `com.agnetix.harnax.harness.skill` 包内，`internal` 在同模块可见，**直接调用、不要 import、更不要在本文件再声明一遍**——再声明一次是 redeclaration，整个模块编不过。队列的 findings 列因此不换形状。
 
 `ctx` 参数从 `offerStagedDrafts` 一路去掉——上报不再走 agent 的工作区文件系统，这正是这一跳修好的东西。imports 换成 `SkillSecurityScanner`、`SkillDraftAdaptor`、`SkillDraftIntake`、`SkillDraftProposal`，删掉 `SkillPromoter` 与 `RuntimeContext`（若 `onAgent` 仍需要 `RuntimeContext` 则保留）。
 
@@ -1459,7 +1506,9 @@ scanFindings = findingTexts(candidate.securityScan()?.findings().orEmpty()),
 - [ ] **Step 5: 跑该模块全量**
 
 Run: `... mvn -q spotless:apply -pl harnax-agent/harnax-harness-core && ... mvn -o test -pl harnax-agent/harnax-harness-core -am`
-Expected: `Failures: 0, Errors: 0`，总数 **689**（Task 6 之后 687 + 本任务净增 2 支：8 → 10）。若实到数与 689 不符，先数 `SkillDraftSubmitMiddlewareTest` 里剩几支再说，别改基线数字交差。
+Expected: `Failures: 0, Errors: 0`，总数 **691**（Task 7 本体 8 → 10 支把 687 抬到 689，`attachIfRunning` 那笔句柄修复再加 2 支到 691，见 commit `d5999725`；本轮复审补强只改判据与释放点，不再动用例数，仍是 10 支）。若实到数与 691 不符，先数 `SkillDraftSubmitMiddlewareTest` 里剩几支再说，别改基线数字交差。
+
+`SkillDraftStaging.kt:69-70` 那句 KDoc「this is the only caller in harnax」在本任务删掉 `staging.promote(…)` 这条路径之后描述的是一个已经不存在的调用方，改口成它的实际处境（上游晋升管线的入口，当前生产路径不再经它）；两份方法 `listDraftNames(ctx)`/`promote(...)` 本身留着，既有 `SkillDraftStagingTest` 仍在走它们。
 
 - [ ] **Step 6: 提交**
 
