@@ -530,11 +530,28 @@ class KeepAliveSandboxManager(
     }
 
     /**
-     * Attaches to an existing Docker container for the given session, if it exists.
+     * Attaches to an existing Docker container for the given session, starting it if it is stopped.
      * This is useful when the service restarts but Docker containers are still running.
      * Returns the attached sandbox, or null if no container exists.
      */
-    fun attachToExisting(sessionId: String): DockerSandbox? {
+    fun attachToExisting(
+        sessionId: String,
+    ): DockerSandbox? = attachExisting(sessionId, startIfStopped = true)
+
+    /**
+     * Attaches only when the container is already running.
+     *
+     * A read must not be the reason a stopped sandbox wakes up: this answers null for a container
+     * that exists but is not running, and never runs `docker start`.
+     */
+    fun attachIfRunning(
+        sessionId: String,
+    ): DockerSandbox? = attachExisting(sessionId, startIfStopped = false)
+
+    private fun attachExisting(
+        sessionId: String,
+        startIfStopped: Boolean,
+    ): DockerSandbox? {
         // First check in-memory cache
         val cached = sandboxes[sessionId]
         if (cached != null) {
@@ -558,6 +575,10 @@ class KeepAliveSandboxManager(
 
                 // If container is stopped, start it first
                 if (!isRunning) {
+                    if (!startIfStopped) {
+                        log.debug("[keepAlive] Container for session={} exists but is stopped", sessionId)
+                        return null
+                    }
                     log.info("[keepAlive] Starting stopped container for session={}", sessionId)
                     dockerExecutor.execute(listOf("docker", "start", containerName))
                 }

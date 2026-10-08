@@ -182,7 +182,7 @@ class HarnessAgentLauncher(
     val sessionSkillStore: SessionSkillStore by lazy {
         SessionSkillStore(
             handles = SandboxHandleProvider { id ->
-                keepAliveSandboxManager?.let { it.getSandbox(id) ?: it.attachToExisting(id) }
+                keepAliveSandboxManager?.let { it.getSandbox(id) ?: it.attachIfRunning(id) }
             },
             workspaceRoot = harnessConfig.sandbox.workspaceRoot,
         )

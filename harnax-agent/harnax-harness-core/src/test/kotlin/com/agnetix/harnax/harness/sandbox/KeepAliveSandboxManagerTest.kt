@@ -562,6 +562,46 @@ class KeepAliveSandboxManagerTest {
         }
     }
 
+    // ==================== D2. attachIfRunning: never wakes a stopped container ====================
+
+    @Nested
+    inner class AttachIfRunning {
+
+        @Test
+        fun `container running - attaches without any docker start`() {
+            val manager = createManager()
+            val mockSandbox = createMockSandbox()
+
+            whenever(dockerExecutor.execute(argThat { contains("inspect") }))
+                .thenReturn(DockerCommandResult(0, "abc123def456|true"))
+            whenever(sandboxFactory.create(any())).thenReturn(mockSandbox)
+
+            val result = manager.attachIfRunning("session-1")
+
+            assertNotNull(result)
+            verify(sandboxFactory).create(
+                argThat {
+                    containerId == "abc123def456" && !isContainerOwned && isWorkspaceRootReady
+                },
+            )
+            verify(dockerExecutor, never()).execute(argThat { contains("start") })
+        }
+
+        @Test
+        fun `container stopped - declines without starting it`() {
+            val manager = createManager()
+
+            whenever(dockerExecutor.execute(argThat { contains("inspect") }))
+                .thenReturn(DockerCommandResult(0, "abc123def456|false"))
+
+            val result = manager.attachIfRunning("session-1")
+
+            assertNull(result)
+            verify(dockerExecutor, never()).execute(argThat { contains("start") })
+            verifyNoInteractions(sandboxFactory)
+        }
+    }
+
     // ==================== E. getSandbox / Helper Methods ====================
 
     @Nested
