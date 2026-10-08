@@ -2029,7 +2029,7 @@ suspend fun proxyEnableSessionSkill(
 - [ ] **Step 5: 跑测试与全模块**
 
 Run: `... mvn -q spotless:apply -pl harnax-session-router && ... mvn -o test -pl harnax-session-router -am`
-Expected: `BUILD SUCCESS`，0 失败；聚合行按模块读，本模块基线 **`Tests run: 546, Failures: 0, Errors: 0, Skipped: 0`**（上游 common 15 / auth 97 / protocol 103）。546 的来路要先知道 541 这个进场数：本任务净加 5 支——新类 4 支（Step 1 那三支加一支反射守卫）＋ `PROXY_ENTRY_POINTS` 两支新方法各计一次断言。若新类只被发现 1 支而总数少了 3，先查 Step 1 那两支的 `@Test` 是不是又编成了带返回值的方法。
+Expected: `BUILD SUCCESS`，0 失败；聚合行按模块读，本模块基线 **`Tests run: 546, Failures: 0, Errors: 0, Skipped: 0`**（上游 common 15 / auth 97 / protocol 103）。来路要按进场 **540** 起算：本任务净加 **6** 支——新类 4 支（Step 1 那三支加一支反射守卫）＋ `PROXY_ENTRY_POINTS` 两支新方法各成一次参数化用例；`ApiCallLogFilter.SUSPEND_ENDPOINTS` 加那一条不产生新用例，它只让既有的那一支守卫用例继续为绿。中途那个 541 是「新类只被发现 1 支」时的半红数，别拿它当进场基线。若聚合行落在 543 而新类 `@Test` 声明了 4 支，先查 Step 1 那两支是不是又编成了带返回值的 `@Test`。
 
 - [ ] **Step 6: 提交**
 
