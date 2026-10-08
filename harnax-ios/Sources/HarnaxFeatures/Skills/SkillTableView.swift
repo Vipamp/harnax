@@ -102,32 +102,12 @@ public struct SkillTableView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     if let route = Self.detailRoute(for: skill) {
                         NavigationLink(value: route) {
-                            detailTitle(skill)
+                            rowBody(skill)
                         }
+                        .buttonStyle(.plain)
                     } else {
-                        detailTitle(skill)
+                        rowBody(skill)
                     }
-                    if let detail = skill.detail {
-                        Text(verbatim: detail)
-                            .font(.caption)
-                            .foregroundStyle(Color.hx(.textSecondary))
-                            .lineLimit(2)
-                    }
-                    HStack(spacing: 6) {
-                        if skill.boundAgentCount > 0 {
-                            HXChip(hx("skill.bound.agents", skill.boundAgentCount), tone: .indigo)
-                        }
-                        if skill.boundTeamCount > 0 {
-                            HXChip(hx("skill.bound.teams", skill.boundTeamCount), tone: .purple)
-                        }
-                        if skill.isShared {
-                            HXBadge("state.badge.shared", tone: .teal)
-                        }
-                        originChip(skill)
-                    }
-                    Text(verbatim: byline(skill))
-                        .font(.caption2)
-                        .foregroundStyle(Color.hx(.textTertiary))
                 }
                 Spacer(minLength: 0)
                 statusMenu(skill)
@@ -136,6 +116,34 @@ public struct SkillTableView: View {
         .padding(12)
         .background(Color.hx(.surface), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .disabled(skill.id == nil)
+    }
+
+    /// Everything the row says about the skill, and everything that opens its detail. The status menu stays
+    /// beside this block rather than inside it, because a control cannot live in another control's label.
+    @ViewBuilder
+    private func rowBody(_ skill: SkillItem) -> some View {
+        detailTitle(skill)
+        if let detail = skill.detail {
+            Text(verbatim: detail)
+                .font(.caption)
+                .foregroundStyle(Color.hx(.textSecondary))
+                .lineLimit(2)
+        }
+        HStack(spacing: 6) {
+            if skill.boundAgentCount > 0 {
+                HXChip(hx("skill.bound.agents", skill.boundAgentCount), tone: .indigo)
+            }
+            if skill.boundTeamCount > 0 {
+                HXChip(hx("skill.bound.teams", skill.boundTeamCount), tone: .purple)
+            }
+            if skill.isShared {
+                HXBadge("state.badge.shared", tone: .teal)
+            }
+            originChip(skill)
+        }
+        Text(verbatim: byline(skill))
+            .font(.caption2)
+            .foregroundStyle(Color.hx(.textTertiary))
     }
 
     /// The row's first line. Shared by the linked and the unlinked case so an addressless row looks the same

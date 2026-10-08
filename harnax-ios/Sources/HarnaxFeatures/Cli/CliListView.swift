@@ -159,7 +159,8 @@ struct CliRecordCard: View {
                             .foregroundStyle(Color.hx(.textSecondary))
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    drillButton
+                    HXFlow(spacing: 6) { chips }
+                        .padding(.top, 2)
                     if let checkCommand = hxPresented(cli.checkCommand) {
                         Text(verbatim: checkCommand)
                             .font(.caption.monospaced())
@@ -175,6 +176,7 @@ struct CliRecordCard: View {
                 }
             }
         }
+        .hxCardTap(onDetail)
         .overlay(alignment: .topTrailing) { menu.padding(10) }
     }
 
@@ -190,15 +192,7 @@ struct CliRecordCard: View {
         .padding(.trailing, 34)
     }
 
-    /// The chips are the entry point to the drawer that holds the rest of the declaration.
-    private var drillButton: some View {
-        Button(action: onDetail) {
-            HXFlow(spacing: 6) { chips }
-                .padding(.top, 2)
-        }
-        .buttonStyle(.plain)
-    }
-
+    /// The chips carry what the rest of the declaration shows; the card is what opens them.
     @ViewBuilder
     private var chips: some View {
         if let version = hxPresented(cli.version) {

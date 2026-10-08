@@ -203,9 +203,8 @@ struct McpRecordCard: View {
                     outcomeBanner(outcome)
                 }
             }
-            .contentShape(Rectangle())
-            .onTapGesture(perform: onOpen)
         }
+        .hxCardTap(onOpen)
         .overlay(alignment: .topTrailing) { menu.padding(10) }
     }
 

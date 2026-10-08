@@ -186,7 +186,8 @@ struct AgentRecordCard: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if hasChips {
-                        drillButton
+                        HXFlow(spacing: 6) { chips }
+                            .padding(.top, 2)
                     }
                     let byline = AgentRowMeta.byline(for: agent)
                     if !byline.isEmpty {
@@ -197,6 +198,7 @@ struct AgentRecordCard: View {
                 }
             }
         }
+        .hxCardTap(onDrillDown)
         .overlay(alignment: .topTrailing) { menu.padding(10) }
     }
 
@@ -220,15 +222,7 @@ struct AgentRecordCard: View {
             || agent.toolCount > 0 || agent.skillCount > 0 || agent.mcpCount > 0 || agent.cliCount > 0
     }
 
-    /// The counts are the entry point to the detail the web console shows in a hover popover.
-    private var drillButton: some View {
-        Button(action: onDrillDown) {
-            HXFlow(spacing: 6) { chips }
-                .padding(.top, 2)
-        }
-        .buttonStyle(.plain)
-    }
-
+    /// The counts are what the console shows in a hover popover; the card is what opens them.
     @ViewBuilder
     private var chips: some View {
         if let model = hxPresented(agent.modelName), !model.isEmpty {

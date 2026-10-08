@@ -182,7 +182,8 @@ struct TeamRecordCard: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if hasChips {
-                        drillButton
+                        HXFlow(spacing: 6) { chips }
+                            .padding(.top, 2)
                     }
                     let byline = RowMeta.byline(creator: team.creator, createTime: team.createTime)
                     if !byline.isEmpty {
@@ -193,6 +194,7 @@ struct TeamRecordCard: View {
                 }
             }
         }
+        .hxCardTap(onDrillDown)
         .overlay(alignment: .topTrailing) { menu.padding(10) }
     }
 
@@ -219,15 +221,7 @@ struct TeamRecordCard: View {
         team.leadModelName != nil || !team.memberList.isEmpty || !team.skillList.isEmpty
     }
 
-    /// The counts are the entry point to the members and lead skills the console shows in its expanded row.
-    private var drillButton: some View {
-        Button(action: onDrillDown) {
-            HXFlow(spacing: 6) { chips }
-                .padding(.top, 2)
-        }
-        .buttonStyle(.plain)
-    }
-
+    /// The counts are what the console shows in its expanded row; the card is what opens them.
     @ViewBuilder
     private var chips: some View {
         if let model = team.leadModelName {

@@ -132,8 +132,7 @@ struct ToolRecordCard: View {
                 }
             }
         }
-        .contentShape(Rectangle())
-        .onTapGesture(perform: onDrillDown)
+        .hxCardTap(onDrillDown)
     }
 
     private var titleRow: some View {

@@ -301,7 +301,7 @@ struct SessionRecordCard: View {
                 VStack(alignment: .leading, spacing: 7) {
                     titleRow
                     badgeRow
-                    textColumn
+                    details
                     let byline = RowMeta.byline(creator: session.creator, createTime: session.createTime)
                     if !byline.isEmpty {
                         Text(verbatim: byline)
@@ -311,6 +311,7 @@ struct SessionRecordCard: View {
                 }
             }
         }
+        .hxCardTap(onOpen.map { open in { open(session) } })
         .overlay(alignment: .topTrailing) { menu.padding(10) }
     }
 
@@ -343,18 +344,7 @@ struct SessionRecordCard: View {
         }
     }
 
-    /// Everything under the title. Wrapped in one button when the root can open the conversation, because
-    /// the card's own menu sits in an overlay and a card-wide tap would swallow it.
-    @ViewBuilder
-    private var textColumn: some View {
-        if let onOpen {
-            Button { onOpen(session) } label: { details }
-                .buttonStyle(.plain)
-        } else {
-            details
-        }
-    }
-
+    /// Everything under the title. This draws plain because the card it sits in is the tap target.
     @ViewBuilder
     private var details: some View {
         VStack(alignment: .leading, spacing: 7) {
