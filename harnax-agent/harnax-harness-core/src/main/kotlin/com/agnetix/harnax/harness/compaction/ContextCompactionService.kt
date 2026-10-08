@@ -137,16 +137,11 @@ object ContextCompactionService {
     }
 
     /**
-     * The tier a command runs on: `triggerMessages(1)` so no threshold can answer a user who asked for this, and
-     * both file-writing steps off. `keepTokens` only moves where the tail starts — upstream's own defaults for it
-     * (`keepMessages=20`, the dynamic token tier) stay in charge when the command carries no number.
+     * The tier a command runs on: [AutoCompactionTier.command] — the same numbers the automatic path uses, with
+     * `triggerMessages(1)` so no threshold can answer a user who asked for this, both file-writing steps off,
+     * and `keepTokens` only moving where the tail starts.
      */
-    private fun commandConfig(keepTokens: Int?): CompactionConfig = CompactionConfig.builder()
-        .triggerMessages(1)
-        .flushBeforeCompact(false)
-        .offloadBeforeCompact(false)
-        .apply { keepTokens?.let { keepTokens(it) } }
-        .build()
+    private fun commandConfig(keepTokens: Int?): CompactionConfig = AutoCompactionTier.command(keepTokens)
 
     /**
      * Upstream swallows a failed summary call into the summary text and still returns a replacement list

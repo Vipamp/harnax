@@ -22,6 +22,7 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec
 import io.agentscope.harness.agent.memory.MemoryConfig
+import io.agentscope.harness.agent.memory.compaction.CompactionConfig
 import io.agentscope.harness.agent.skill.curator.SkillPromotionGate
 import io.agentscope.harness.agent.skill.curator.SkillVisibilityFilter
 import io.agentscope.harness.agent.tool.SkillManageConfig
@@ -219,6 +220,13 @@ class HarnessAgentBuilder {
     fun filesystemRoute(prefix: String, filesystem: AbstractFilesystem): HarnessAgentBuilder = apply {
         builder.filesystemRoute(prefix, filesystem)
     }
+
+    /**
+     * Overrides the compaction tier the automatic path runs on. Passing null would turn automatic compaction
+     * off entirely — upstream reads it as `disableCompaction` (`HarnessAgent.java:1875`) — which is why the
+     * launcher passes [AutoCompactionTier.auto] and never nothing.
+     */
+    fun compaction(config: CompactionConfig): HarnessAgentBuilder = apply { builder.compaction(config) }
 
     // ===== Disable built-in features =====
 

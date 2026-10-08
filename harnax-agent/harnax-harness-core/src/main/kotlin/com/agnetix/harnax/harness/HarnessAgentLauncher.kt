@@ -27,6 +27,7 @@ import com.agnetix.harnax.agent.session.SessionLoader
 import com.agnetix.harnax.common.mcp.McpConfigDecryptor
 import com.agnetix.harnax.entity.McpAuthTypes
 import com.agnetix.harnax.entity.dto.SkillVisibilityDto
+import com.agnetix.harnax.harness.compaction.AutoCompactionTier
 import com.agnetix.harnax.harness.config.HarnessConfig
 import com.agnetix.harnax.harness.config.Memory
 import com.agnetix.harnax.harness.config.MinioConfig
@@ -868,6 +869,12 @@ class HarnessAgentLauncher(
         // track auto-compaction, offer no read-back path and stay outside `clearSession`'s deletes.
         // Applies to every assembly branch, including the two that carry a filesystem.
         agentBuilder.disableTranscript()
+        // The same channel from the other side: upstream's offload step writes the trimmed prefix through the
+        // SessionTranscriptWriter this call site has just disabled, into a copy with no reader here
+        // (session_search is removed below), no read-back path and no delete in clearSession. Pinning the tier
+        // is also what makes the number /context reports the number this runtime actually uses — both sides now
+        // read AutoCompactionTier instead of one of them guessing at upstream's defaults.
+        agentBuilder.compaction(AutoCompactionTier.auto())
         if (isLead) {
             // A lead has nothing to read, run or reimplement: it has no workspace of its own, and the
             // framework's own subagents would be a second, unmanaged delegation path.

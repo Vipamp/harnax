@@ -313,7 +313,7 @@ class HarnessAgentContextArchiveAndUsageTest {
 
             val usage = wrapper(agent).contextUsage(null)!!
 
-            // reserved is 20_000 by default, so this is where the automatic path would fire.
+            // reserved is the margin harnax pins, so this is where the automatic path would fire.
             assertEquals(80_000, usage.triggerTokens)
             assertEquals(50, usage.triggerMessages)
         }

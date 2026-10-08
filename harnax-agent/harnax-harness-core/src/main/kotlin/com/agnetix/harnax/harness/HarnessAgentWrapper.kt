@@ -14,6 +14,7 @@ import com.agnetix.harnax.agent.protocol.ToolConfirmChatEvent
 import com.agnetix.harnax.agent.session.MysqlSessionMessageStore
 import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.common.error.HarnaxException
+import com.agnetix.harnax.harness.compaction.AutoCompactionTier
 import com.agnetix.harnax.harness.compaction.CompactionOutcome
 import com.agnetix.harnax.harness.compaction.ContextCompactionService
 import com.agnetix.harnax.harness.output.OutputFileDetector
@@ -424,8 +425,8 @@ class HarnessAgentWrapper(
      * Reads through [getLiveAgentState], including its state-store fallback: this is a read, and after a restart
      * the persisted context is exactly what the next turn loads, so it is the honest numerator either way.
      *
-     * The trigger numbers come from upstream's default [CompactionConfig] because that is what this runtime
-     * builds with — no builder call here overrides the compaction tier.
+     * The trigger numbers are harnax's own pinned tier ([AutoCompactionTier]), which the launcher hands to the
+     * builder — so this is the number the middleware will consult, not a reading of upstream's defaults.
      *
      * @param lastCallInputTokens billed input tokens of this session's latest model call, read by the caller
      *   from `token_stats`; null when nothing has been recorded yet
@@ -433,7 +434,6 @@ class HarnessAgentWrapper(
     fun contextUsage(lastCallInputTokens: Int?): ContextUsageResponse? {
         val context = getLiveAgentState()?.context ?: return null
         val estimated = TokenCounterUtil.calculateToken(context)
-        val defaultConfig = CompactionConfig.builder().build()
         val modelWindow = harnessAgent.model.contextWindowSize
         val (window, source) = resolveContextWindow(modelWindow)
         // The ratio answers "how full is the window", so it goes on the real request size. [estimatedTokens]
@@ -446,8 +446,8 @@ class HarnessAgentWrapper(
             contextWindow = window,
             windowSource = source,
             ratio = if (window > 0) numerator / window else 0.0,
-            triggerTokens = triggerTokens(modelWindow, defaultConfig),
-            triggerMessages = defaultConfig.triggerMessages,
+            triggerTokens = triggerTokens(modelWindow),
+            triggerMessages = AutoCompactionTier.TRIGGER_MESSAGES,
         )
     }
 
@@ -467,15 +467,12 @@ class HarnessAgentWrapper(
 
     /**
      * Where the automatic path compacts this model, recomputed as `CompactionMiddleware.resolveEffectiveConfig`
-     * does: the window minus the reserved margin, clamped to half the window when the margin would eat it, and
-     * the fallback constant when no window is known at all.
+     * does: the window minus the margin this runtime pins ([AutoCompactionTier.RESERVED_TOKENS]), clamped to
+     * half the window when the margin would eat it, and the fallback constant when no window is known at all.
      */
-    private fun triggerTokens(
-        modelWindow: Int,
-        config: CompactionConfig,
-    ): Int {
+    private fun triggerTokens(modelWindow: Int): Int {
         if (modelWindow <= 0) return CompactionConfig.FALLBACK_TRIGGER_TOKENS
-        val trigger = modelWindow - config.reserved
+        val trigger = modelWindow - AutoCompactionTier.RESERVED_TOKENS
         return if (trigger <= 0) maxOf(1, modelWindow / 2) else trigger
     }
 
