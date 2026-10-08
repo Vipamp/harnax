@@ -181,8 +181,8 @@ const SubjectDrawer: React.FC<SubjectDrawerProps> = ({ row, groupBy, onClose }) 
       width={560}
       open={!!row}
       onClose={onClose}
-      title={`${t('pages.callMetrics.profile.title', 'Subject profile')}${
-        row ? ` — ${groupBy === 'tool' ? row.toolName || row.subjectKey : row.subjectKey}` : ''
+      title={`${t('pages.callMetrics.profile.title', 'Registered info')}${
+        row ? ` — ${row.subjectName || row.subjectKey}` : ''
       }`}
     >
       <Spin spinning={loading}>

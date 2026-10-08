@@ -552,16 +552,24 @@ message?: string;
   };
 
   /**
-   * @zh-CN 调用指标的一个主体行：按工具聚合时看 toolName，按智能体/会话聚合时看 subjectKey
-   *（对应后端 ToolMetricsRow）
+   * @zh-CN 调用指标的一个主体行：按工具/mcp/cli 聚合读小时档，按智能体/会话聚合读明细档，
+   *名字一律看 subjectName（对应后端 ToolMetricsRow）
    */
   export type CallMetricsRow = {
     /** 明细维度（按智能体/会话）的行不带 kind 与 toolName，服务端给的是空串不是缺键 */
     kind: string;
+    /** 按工具档是工具名，按 mcp/cli 档是主体 id 的字符串，按会话档是会话 id */
     subjectKey: string;
     /** kind 为 mcp 或 cli 时才是主体 id；后端把 subject_id=0 折成 null，键因此整个消失 */
     subjectId?: number;
     toolName: string;
+    /**
+     * 这一行主体自己的登记名：MCP 服务器名 / CLI 包名 / 智能体名 / 会话标题，按工具档时就是工具名。
+     * 登记行已经不在（服务器删了而调用记录还在）时服务端回落成 subjectKey，所以不会是空串。
+     */
+    subjectName?: string;
+    /** 只在 kind 为 mcp 或 cli 的行上有值：工具行带出答它的那台服务器/那个包，页面才说得出是谁跑的 */
+    parentName?: string;
     calls: number;
     successes: number;
     errors: number;
@@ -573,7 +581,7 @@ message?: string;
     /** '<=' 或 '>'，六桶近似出来的 P95 落在桶里还是落在开口桶外 */
     p95Operator: string;
     p95Ms: number;
-    /** 聚合路径是日精度、明细路径是秒精度，页面统一按 YYYY-MM-DD HH:mm:ss 显示 */
+    /** 聚合路径给的是整点（stat_hour），明细路径给的是这一次调用自己的时刻，页面按维度决定显示到分还是到秒 */
     lastSeenAt?: string;
   };
 
@@ -581,9 +589,9 @@ message?: string;
    * @zh-CN 区间内的调用总量与卡片计数（对应后端 ToolMetricsSummaryResponse）
    */
   export type CallMetricsSummary = {
-    /** 服务端算完档位后回给页面的首日，yyyy-MM-dd，含当天 */
+    /** 服务端算完窗口后回给页面的首个整点，yyyy-MM-dd HH:mm:ss，含该整点 */
     from: string;
-    /** 末日，yyyy-MM-dd，含当天；未来的 end 会被折回今天 */
+    /** 末个整点，yyyy-MM-dd HH:mm:ss，含该整点；未来的 end 会被折回当前整点 */
     to: string;
     groupBy: string;
     totalCalls: number;
