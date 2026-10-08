@@ -90,21 +90,33 @@ class SkillDraftStaging : SkillDraftFilesReader {
 
         const val PROMOTED_DIR = "$STAGING_ROOT/promoted"
 
+        /**
+         * Where a skill the operator confirmed for *this session* is copied to, so the model can use it on its
+         * next call. Not upstream's [PROMOTED_DIR]: the harness appends the writable repository it builds for
+         * promotion at the end of the repository list, which is the winning position on a name clash, so a
+         * directory loaded from there would shadow every skill Admin delivered.
+         */
+        const val SESSION_ENABLED_DIR = "$STAGING_ROOT/session-enabled"
+
+        /** Everything the guard below has to keep out of the delivered-skills tree. */
+        val STAGING_DIRS = listOf(DRAFTS_DIR, PROMOTED_DIR, SESSION_ENABLED_DIR)
+
         init {
             // The directories above are compile-time constants, so this can only fire once someone edits
             // them — which is the point: it runs on class load, before any agent is assembled and before
             // anything has been written where a model could read it.
-            val clash = listOf(DRAFTS_DIR, PROMOTED_DIR).firstOrNull { it.clashesWithTheSkillsDir() }
+            val clash = STAGING_DIRS.firstOrNull { dirClashesWithSkillsDir(it) }
             require(clash == null) {
                 "Skill staging directory '$clash' overlaps '" + SandboxSkillProjector.SKILLS_DIR +
                     "', the directory Admin's delivered skills are projected into; staged drafts would " +
                     "become a load source the model reads"
             }
         }
-
-        private fun String.clashesWithTheSkillsDir(): Boolean {
-            val skills = SandboxSkillProjector.SKILLS_DIR
-            return this == skills || startsWith("$skills/") || skills.startsWith("$this/")
-        }
     }
+}
+
+/** Whether [dir] sits inside [SandboxSkillProjector.SKILLS_DIR], in either direction. */
+internal fun dirClashesWithSkillsDir(dir: String): Boolean {
+    val skills = SandboxSkillProjector.SKILLS_DIR
+    return dir == skills || dir.startsWith("$skills/") || skills.startsWith("$dir/")
 }
