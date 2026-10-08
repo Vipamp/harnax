@@ -10,8 +10,12 @@ const queue = (records: { name: string; description?: string | null }[]) => ({
 
 const zone = (rows: { name: string; enabledAt?: string | null }[]) => ({ code: 200, message: 'ok', data: rows });
 
-/** A refusal on the envelope, which is how both a guard rejection and a business failure reach the panel. */
-const refused = (code: number): any => ({ code, message: 'refused', data: null });
+/**
+ * A refusal on the envelope, which is how both a guard rejection and a business failure reach the panel. `data` stays
+ * null for the plain cases, but a failure envelope can also carry a payload — the last page the server had read — and
+ * that half still owns no row in the merge.
+ */
+const refused = (code: number, data: any = null): any => ({ code, message: 'refused', data });
 
 describe('the session skill panel', () => {
   it('offers a draft that is not enabled yet and marks one that is', () => {
@@ -85,6 +89,40 @@ describe('the session skill panel', () => {
     const enabled = readOutcome(refused(401), zone([{ name: 'gone', enabledAt: 'x' }]));
     expect(enabled.unavailable).toBe(true);
     expect(enabled.rows).toEqual([{ name: 'gone', description: null, enabled: true, enabledAt: 'x' }]);
+  });
+
+  it('drops a refused half that still carries a payload, on both sides of the merge', () => {
+    // Trusting `data` whatever the code says is the defect this pins: a failed read is not an answer, so the rows
+    // riding on its envelope are stale and must not reach the panel next to the half that did answer.
+    const staleQueue = refused(500, {
+      pageNum: 1,
+      pageSize: 50,
+      total: 1,
+      records: [{ name: 'ghost', description: 'stale' }],
+    });
+    const staleZone = refused(401, [{ name: 'phantom', enabledAt: 'x' }]);
+
+    expect(readOutcome(staleQueue, zone([]))).toEqual({ unavailable: true, rows: [] });
+    expect(readOutcome(queue([]), staleZone)).toEqual({ unavailable: true, rows: [] });
+    expect(readOutcome(staleQueue, staleZone)).toEqual({ unavailable: true, rows: [] });
+
+    expect(readOutcome(staleQueue, zone([{ name: 'gone', enabledAt: 'x' }])).rows).toEqual([
+      { name: 'gone', description: null, enabled: true, enabledAt: 'x' },
+    ]);
+    expect(readOutcome(queue([{ name: 'invoice-fill', description: 'fills' }]), staleZone).rows).toEqual([
+      { name: 'invoice-fill', description: 'fills', enabled: false, enabledAt: null },
+    ]);
+
+    // A half that rejected at the HTTP level reaches this decision as exactly this synthetic envelope — no code to
+    // name, no payload — and it must read as "did not answer" while the other half keeps contributing its rows.
+    expect(readOutcome({ code: 0 }, zone([{ name: 'gone', enabledAt: 'x' }]))).toEqual({
+      unavailable: true,
+      rows: [{ name: 'gone', description: null, enabled: true, enabledAt: 'x' }],
+    });
+    expect(readOutcome(queue([{ name: 'invoice-fill', description: 'fills' }]), { code: 0 })).toEqual({
+      unavailable: true,
+      rows: [{ name: 'invoice-fill', description: 'fills', enabled: false, enabledAt: null }],
+    });
   });
 
   it('hands the read path no copy of its own, so it cannot render a refusal code', () => {

@@ -47,11 +47,14 @@ export function sessionSkillsFor(
 /**
  * What the two reads leave the panel able to say, decided apart from what an enable refusal says.
  *
- * Listing can only fail at the guard (401/403) or at the transport, so a failed read never borrows a code from the
- * refusal table: calling a draft DANGEROUS because the queue could not be read sends the operator to the review
- * queue instead of to the login screen. `unavailable` is the flag that separates "this session wrote nothing" from
- * "nothing could be read". A half that did answer still contributes its rows, so one refusal does not hide the
- * other half's truth.
+ * A read fails in one of two channels: on the envelope, where the guard answers HTTP 200 with a non-200 code, or at
+ * the HTTP level, where an expired JWT makes the admin queue reject outright. `load()` folds the second channel into
+ * the first as a non-200 envelope, so this function only ever sees envelopes and every non-200 half counts as unread.
+ * A failed read therefore never borrows a code from the refusal table: calling a draft DANGEROUS because the queue
+ * could not be read sends the operator to the review queue instead of to the login screen. `unavailable` is the flag
+ * that separates "this session wrote nothing" from "nothing could be read", and a half that did answer contributes its
+ * rows whatever the other half did — which is why a payload riding on a failure envelope is dropped here rather than
+ * trusted.
  */
 export function readOutcome(
   drafts: API.Result<API.SkillDraftPage>,
@@ -134,14 +137,22 @@ const SessionSkillsDrawer: React.FC<SessionSkillsDrawerProps> = ({ visible, sess
     // A retry reads afresh: the previous round's verdict must not survive into this one, not even while in flight.
     setUnavailable(false);
     try {
-      const [draftResponse, enabledResponse] = await Promise.all([
+      // Both reads go out together, but neither may take the other's payload down with it. The admin queue answers an
+      // expired JWT with an HTTP status rather than an envelope, so `Promise.all` would throw away the enabled rows the
+      // router half had already returned; a rejection is a read that did not answer, and says nothing about the other.
+      const [draftSettled, enabledSettled] = await Promise.allSettled([
         pageSkillDrafts(
           { status: 'PENDING', sessionId, pageNum: 1, pageSize: 50 },
           { skipErrorHandler: true },
         ),
         listSessionSkills(sessionId, { skipErrorHandler: true }),
       ]);
-      // A refusal arrives on HTTP 200 with the code in the envelope, so umi's errorThrower never fires here.
+      // A refusal on the envelope already arrives on HTTP 200 with the code in it; a rejection gets a code that names
+      // nothing, which is all the read path is allowed to say about either.
+      const draftResponse: API.Result<API.SkillDraftPage> =
+        draftSettled.status === 'fulfilled' ? draftSettled.value : { code: 0 };
+      const enabledResponse: API.Result<API.SessionSkillRow[]> =
+        enabledSettled.status === 'fulfilled' ? enabledSettled.value : { code: 0 };
       const outcome = readOutcome(draftResponse, enabledResponse);
       setUnavailable(outcome.unavailable);
       setRows(outcome.rows);
@@ -156,7 +167,8 @@ const SessionSkillsDrawer: React.FC<SessionSkillsDrawerProps> = ({ visible, sess
         );
       }
     } catch {
-      // An unreadable panel must not read as "this session wrote nothing": that is the empty state's own claim.
+      // Both reads are settled by here, so reaching this line means the panel itself broke. It still must not read as
+      // "this session wrote nothing": that is the empty state's own claim.
       setRows([]);
       setUnavailable(true);
     } finally {
@@ -192,10 +204,17 @@ const SessionSkillsDrawer: React.FC<SessionSkillsDrawerProps> = ({ visible, sess
         );
       }
     } catch (error: any) {
+      // A server-supplied message is not translatable, so this toast comes out of the locale files only: an envelope
+      // code carried by a BizError gets named by the same table the 200 path uses, and everything else — a transport
+      // failure, an expired login, a refusal with no code behind it — is just an enable that did not succeed.
+      const code = error?.info?.errorCode;
+      const refusal = typeof code === 'number' ? refusalOf(code) : null;
       message.error(
-        error?.message ||
-          error?.info?.errorMessage ||
-          intl.formatMessage({ id: 'pages.session.skills.enableFailed', defaultMessage: 'Could not enable it' }),
+        intl.formatMessage(
+          refusal
+            ? { id: refusal.id, defaultMessage: refusal.en }
+            : { id: 'pages.session.skills.enableFailed', defaultMessage: 'Could not enable it' },
+        ),
       );
     } finally {
       setBusyName(null);
