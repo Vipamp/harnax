@@ -44,9 +44,9 @@ data class ToolMetricsRow(
 )
 
 data class ToolMetricsSummaryResponse(
-    @Schema(description = "Window in days, after the server clamps it")
-    val days: Int = 30,
+    @Schema(description = "First day answered, `yyyy-MM-dd`, after the clamps")
     val from: String = "",
+    @Schema(description = "Last day answered, inclusive, `yyyy-MM-dd`, after the clamps")
     val to: String = "",
     @Schema(description = "The dimension answered, after an unrecognised value falls back to tool")
     val groupBy: String = "tool",
@@ -76,7 +76,13 @@ data class ToolMetricsPoint(
 )
 
 data class ToolMetricsTimeSeriesResponse(
-    val days: Int = 30,
+    @Schema(
+        description = "First day answered, `yyyy-MM-dd`; week and month buckets align backwards, so the " +
+            "first point can open before this day",
+    )
+    val from: String = "",
+    @Schema(description = "Last day answered, inclusive, `yyyy-MM-dd`")
+    val to: String = "",
     val granularity: String = "day",
     val points: List<ToolMetricsPoint> = emptyList(),
 )

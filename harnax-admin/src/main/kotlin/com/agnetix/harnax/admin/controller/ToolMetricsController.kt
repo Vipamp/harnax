@@ -38,14 +38,16 @@ class ToolMetricsController(
         description = "Totals over the window; the tool view reads the daily aggregate, agent and session read the detail table",
     )
     fun getSummary(
-        @Parameter(description = "Window length in days, 1..365")
-        @RequestParam(name = "days", required = false, defaultValue = "30") days: Int,
+        @Parameter(description = "First day, yyyy-MM-dd (inclusive); defaults to 30 days before `end`")
+        @RequestParam(name = "start", required = false) start: String?,
+        @Parameter(description = "Last day, yyyy-MM-dd (inclusive); defaults to today")
+        @RequestParam(name = "end", required = false) end: String?,
         @Parameter(description = "Origin filter: builtin / mcp / cli / shell / framework")
         @RequestParam(name = "kind", required = false) kind: String?,
         @Parameter(description = "Subject dimension: tool (default) / agent / session")
         @RequestParam(name = "groupBy", required = false, defaultValue = "tool") groupBy: String,
     ): ResultVo<ToolMetricsSummaryResponse> = try {
-        ResultVo.success(toolMetricsService.getSummary(days, kind, groupBy))
+        ResultVo.success(toolMetricsService.getSummary(start, end, kind, groupBy))
     } catch (e: Exception) {
         log.error("Failed to get tool metrics summary", e)
         ResultVo.error(ApiErrors.message(e, "Failed to get call metrics"))
@@ -57,8 +59,10 @@ class ToolMetricsController(
         description = "Zero-filled buckets so a quiet day does not make the trend line skip",
     )
     fun getTimeSeries(
-        @Parameter(description = "Window length in days, 1..365")
-        @RequestParam(name = "days", required = false, defaultValue = "30") days: Int,
+        @Parameter(description = "First day, yyyy-MM-dd (inclusive); defaults to 30 days before `end`")
+        @RequestParam(name = "start", required = false) start: String?,
+        @Parameter(description = "Last day, yyyy-MM-dd (inclusive); defaults to today")
+        @RequestParam(name = "end", required = false) end: String?,
         @Parameter(description = "Origin filter: builtin / mcp / cli / shell / framework")
         @RequestParam(name = "kind", required = false) kind: String?,
         @Parameter(description = "MCP server or CLI package id")
@@ -66,7 +70,7 @@ class ToolMetricsController(
         @Parameter(description = "Bucket size: day (default) / week / month")
         @RequestParam(name = "granularity", required = false, defaultValue = "day") granularity: String,
     ): ResultVo<ToolMetricsTimeSeriesResponse> = try {
-        ResultVo.success(toolMetricsService.getTimeSeries(days, kind, subjectId, granularity))
+        ResultVo.success(toolMetricsService.getTimeSeries(start, end, kind, subjectId, granularity))
     } catch (e: Exception) {
         log.error("Failed to get tool metrics time series", e)
         ResultVo.error(ApiErrors.message(e, "Failed to get call trend"))
@@ -78,8 +82,10 @@ class ToolMetricsController(
         description = "Real durations and failure reasons, inside the retention window only",
     )
     fun getInvocations(
-        @Parameter(description = "Window length in days, 1..365")
-        @RequestParam(name = "days", required = false, defaultValue = "30") days: Int,
+        @Parameter(description = "First day, yyyy-MM-dd (inclusive); defaults to 30 days before `end`")
+        @RequestParam(name = "start", required = false) start: String?,
+        @Parameter(description = "Last day, yyyy-MM-dd (inclusive); defaults to today")
+        @RequestParam(name = "end", required = false) end: String?,
         @Parameter(description = "Origin filter: builtin / mcp / cli / shell / framework")
         @RequestParam(name = "kind", required = false) kind: String?,
         @Parameter(description = "Tool name as the model sees it")
@@ -102,7 +108,8 @@ class ToolMetricsController(
         ResultVo.success(
             toolMetricsService.getInvocations(
                 InvocationQuery(
-                    days = days,
+                    start = start,
+                    end = end,
                     kind = kind,
                     toolName = toolName,
                     mcpId = mcpId,

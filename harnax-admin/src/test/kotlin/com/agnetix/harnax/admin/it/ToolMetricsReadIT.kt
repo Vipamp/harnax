@@ -21,9 +21,13 @@ import java.time.LocalDateTime
  * JSON: `successRate`, which operator the P95 answers with, and which column `lastSeenAt` came from are all
  * made in the service.
  *
- * Fixture days are relative to `LocalDate.now()` rather than an absolute month: the rollup's retention sweep
- * runs in `seedAggregate` below, an absolute window far enough back to be interesting is also far enough
- * back to be pruned, and then the tenant and window assertions would be reading an empty table.
+ * Fixture days are relative to `LocalDate.now()` rather than an absolute month: [seedRows] rolls the rows up
+ * and the retention sweep runs with it, so an absolute window far enough back to be interesting is also far
+ * enough back to be pruned, and then the tenant and window assertions would be reading an empty table.
+ *
+ * The same relativity is why [SEVEN_DAYS] names its bounds as days rather than as a length: the range a
+ * request sends is what the server clamps, and the range it echoes back in `from` / `to` is where a clamp is
+ * observable — the log line is not an assertion.
  */
 class ToolMetricsReadIT : BaseAdminIT() {
 
@@ -109,7 +113,7 @@ class ToolMetricsReadIT : BaseAdminIT() {
     @Test
     @DisplayName("summary answers per subject with the rates the page shows")
     fun summaryAnswersPerSubject() {
-        val body = data("/api/admin/tool-metrics/summary?days=7")
+        val body = data("/api/admin/tool-metrics/summary?$SEVEN_DAYS")
         val rows = body["rows"]
         val emails = rows.first { it["toolName"].asString() == "send_email" }
         assertEquals(4, emails["calls"].asInt())
@@ -129,6 +133,10 @@ class ToolMetricsReadIT : BaseAdminIT() {
         assertEquals(4, body["totalSuccesses"].asInt())
         assertEquals(3, body["failingCalls"].asInt())
         assertEquals("tool", body["groupBy"].asString())
+        // The bounds come back as the request named them: a response that swapped them, or widened them to the
+        // default span, would otherwise only show up as a chart drawn over the wrong days.
+        assertEquals(LocalDate.now().minusDays(6L).toString(), body["from"].asString())
+        assertEquals(LocalDate.now().toString(), body["to"].asString())
         // The four terminal outcomes partition the calls, so the card's two numbers have to add back up.
         assertEquals(body["totalCalls"].asInt(), body["totalSuccesses"].asInt() + body["failingCalls"].asInt())
         // Rows tie at one call each, so only the unique maximum is a safe ordering claim.
@@ -138,7 +146,7 @@ class ToolMetricsReadIT : BaseAdminIT() {
     @Test
     @DisplayName("p95 is the bucket the accumulated count reaches 95 percent in")
     fun p95LandsInABucket() {
-        val body = data("/api/admin/tool-metrics/summary?days=7")
+        val body = data("/api/admin/tool-metrics/summary?$SEVEN_DAYS")
         // send_email: 50 -> <=100ms, 400 and 120 -> <=500ms, 4000 -> <=10s. 4 calls need ceil(3.8)=4, which
         // the accumulation reaches in the 10s bucket.
         val emails = body["rows"].first { it["toolName"].asString() == "send_email" }
@@ -156,24 +164,24 @@ class ToolMetricsReadIT : BaseAdminIT() {
     @Test
     @DisplayName("one tenant's reads never answer another's rows")
     fun tenantIsConvergedInBothDirections() {
-        val mine = data("/api/admin/tool-metrics/summary?days=7")
+        val mine = data("/api/admin/tool-metrics/summary?$SEVEN_DAYS")
         assertEquals(7, mine["totalCalls"].asInt())
         assertEquals(setOf("send_email", "fetch_url", "gh", "list_files"), names(mine["rows"]).toSet())
 
-        val theirs = data("/api/admin/tool-metrics/summary?days=7", NEIGHBOUR_TENANT_ID)
+        val theirs = data("/api/admin/tool-metrics/summary?$SEVEN_DAYS", NEIGHBOUR_TENANT_ID)
         assertEquals(2, theirs["totalCalls"].asInt())
         assertEquals(setOf("leaked-a", "leaked-b"), names(theirs["rows"]).toSet())
 
         // The window's upper bound and the paging seam: total stays the full count while records is one page,
         // and ts DESC puts the newest row first.
-        val page = data("/api/admin/tool-metrics/invocations?days=7&pageNum=1&pageSize=2")
+        val page = data("/api/admin/tool-metrics/invocations?$SEVEN_DAYS&pageNum=1&pageSize=2")
         assertEquals(7, page["total"].asInt())
         assertEquals(2, page["records"].size())
         assertEquals("$DAY1 10:00:00", page["records"][0]["ts"].asString())
         assertEquals("$DAY1 09:00:00", page["records"][1]["ts"].asString())
         assertEquals(120L, page["records"][0]["durationMs"].asLong())
 
-        val theirPage = data("/api/admin/tool-metrics/invocations?days=7", NEIGHBOUR_TENANT_ID)
+        val theirPage = data("/api/admin/tool-metrics/invocations?$SEVEN_DAYS", NEIGHBOUR_TENANT_ID)
         assertEquals(2, theirPage["total"].asInt())
         assertTrue(theirPage["records"].none { it["toolName"].asString() == "send_email" }, theirPage.toString())
     }
@@ -181,7 +189,7 @@ class ToolMetricsReadIT : BaseAdminIT() {
     @Test
     @DisplayName("groupBy agent and session read the detail table and carry only the id a drill-down needs")
     fun detailDimensionsReadTheDetailTable() {
-        val sessions = data("/api/admin/tool-metrics/summary?days=7&groupBy=session")
+        val sessions = data("/api/admin/tool-metrics/summary?$SEVEN_DAYS&groupBy=session")
         val session = sessions["rows"].single { it["subjectKey"].asString() == SESSION }
         assertEquals(7, session["calls"].asInt())
         // A session id is not a row id, so there is nothing to hand back for the drill-down besides the key.
@@ -189,17 +197,17 @@ class ToolMetricsReadIT : BaseAdminIT() {
         // The detail path carries the exact instant; the aggregate path can only carry a day.
         assertEquals("$DAY1 10:00:00", session["lastSeenAt"].asString())
 
-        val agents = data("/api/admin/tool-metrics/summary?days=7&groupBy=agent")
+        val agents = data("/api/admin/tool-metrics/summary?$SEVEN_DAYS&groupBy=agent")
         val agent = agents["rows"].single()
         assertEquals("1", agent["subjectKey"].asString())
         assertEquals(1L, agent["subjectId"].asLong())
         assertEquals(7, agent["calls"].asInt())
 
         // An unrecognised dimension answers the default and says so in the field the page renders from.
-        assertEquals("tool", data("/api/admin/tool-metrics/summary?days=7&groupBy=client")["groupBy"].asString())
+        assertEquals("tool", data("/api/admin/tool-metrics/summary?$SEVEN_DAYS&groupBy=client")["groupBy"].asString())
 
         // The eight optional predicates are what the drill-down drawer is built from.
-        val errors = data("/api/admin/tool-metrics/invocations?days=7&outcome=ERROR")
+        val errors = data("/api/admin/tool-metrics/invocations?$SEVEN_DAYS&outcome=ERROR")
         assertEquals(1, errors["total"].asInt())
         assertEquals("send_email", errors["records"][0]["toolName"].asString())
     }
@@ -207,7 +215,7 @@ class ToolMetricsReadIT : BaseAdminIT() {
     @Test
     @DisplayName("time-series buckets the days and zero-fills the empty ones")
     fun timeSeriesZeroFills() {
-        val points = data("/api/admin/tool-metrics/time-series?days=7")["points"]
+        val points = data("/api/admin/tool-metrics/time-series?$SEVEN_DAYS")["points"]
         val days = points.map { it["timePoint"].asString().substring(0, 10) }.distinct()
         // A 7-day window answers 7 buckets, not the two that have rows and not eight.
         assertEquals(7, days.size)
@@ -227,10 +235,45 @@ class ToolMetricsReadIT : BaseAdminIT() {
         assertEquals(77L, mcp["dimensionId"].asLong())
     }
 
+    @Test
+    @DisplayName("the requested range is clamped and echoed back as from / to")
+    fun windowClampsEchoTheAnsweredRange() {
+        val today = LocalDate.now()
+
+        // Only `end`, and a day the clock has not reached: it clamps to today and the missing start takes the
+        // default span from there, so the page reads a 30-day window ending today.
+        val future = data("/api/admin/tool-metrics/summary?end=${today.plusDays(3L)}")
+        assertEquals(today.minusDays(29L).toString(), future["from"].asString())
+        assertEquals(today.toString(), future["to"].asString())
+        assertEquals(7, future["totalCalls"].asInt())
+
+        // A start after the end collapses onto it rather than reversing the range, which is the shape a
+        // hand-edited URL arrives in. The day is one the fixture has no rows on, so only the range is claimed.
+        val reversed = data("/api/admin/tool-metrics/summary?start=${today.minusDays(1L)}&end=${today.minusDays(4L)}")
+        assertEquals("${today.minusDays(4L)}", reversed["from"].asString())
+        assertEquals("${today.minusDays(4L)}", reversed["to"].asString())
+
+        // Wider than the tables can answer: the end stays, the start is pushed to the first day covered.
+        val wide = data("/api/admin/tool-metrics/summary?start=${today.minusYears(2L)}&end=$today")
+        assertEquals(today.minusDays(364L).toString(), wide["from"].asString())
+        assertEquals(today.toString(), wide["to"].asString())
+        assertEquals(7, wide["totalCalls"].asInt())
+
+        // Neither value parses, which is a bug on the page rather than in the data: the default range answers,
+        // so a broken picker still shows a chart instead of an error card.
+        val garbage = data("/api/admin/tool-metrics/summary?start=not-a-day&end=also-not-a-day")
+        assertEquals(today.minusDays(29L).toString(), garbage["from"].asString())
+        assertEquals(today.toString(), garbage["to"].asString())
+        assertEquals(7, garbage["totalCalls"].asInt())
+    }
+
     private companion object {
         const val TENANT_ID = 1L
         const val NEIGHBOUR_TENANT_ID = 950_500L
         const val SESSION = "metrics-session"
+
+        /** The fixture's two days plus the quiet ones, as the inclusive range every request below sends. */
+        val SEVEN_DAYS: String = "start=${LocalDate.now().minusDays(6L)}&end=${LocalDate.now()}"
         val DAY2: String = LocalDate.now().minusDays(2L).toString()
         val DAY1: String = LocalDate.now().minusDays(1L).toString()
         val QUIET_DAY: String = LocalDate.now().minusDays(5L).toString()

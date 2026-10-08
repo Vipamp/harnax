@@ -799,29 +799,6 @@ CREATE TABLE IF NOT EXISTS `tool_invocation_stats` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
-CREATE TABLE IF NOT EXISTS `tool_call_log` (
-  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Log ID',
-  `agent_id` bigint DEFAULT NULL COMMENT 'Agent ID',
-  `session_id` varchar(255) DEFAULT NULL COMMENT 'Session ID',
-  `tool_name` varchar(255) DEFAULT NULL,
-  `args` text COMMENT 'Tool arguments (JSON format)',
-  `result` text,
-  `success` tinyint(1) DEFAULT '1' COMMENT 'Execution result (1: Success, 0: Failed)',
-  `start_time` datetime DEFAULT NULL,
-  `end_time` datetime DEFAULT NULL,
-  `duration` bigint DEFAULT '0',
-  `ts` datetime DEFAULT NULL,
-  `tenant_id` bigint DEFAULT NULL COMMENT 'Tenant ID',
-  PRIMARY KEY (`id`),
-  KEY `idx_agent_id` (`agent_id`),
-  KEY `idx_session_id` (`session_id`),
-  KEY `idx_tool_name` (`tool_name`),
-  KEY `idx_ts` (`ts`),
-  KEY `idx_tenant_ts` (`tenant_id`,`ts`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Tool Call Log table';
-/*!40101 SET character_set_client = @saved_cs_client */;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE IF NOT EXISTS `user_tenant` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Relationship ID',
   `user_id` bigint NOT NULL COMMENT 'User ID',
@@ -925,11 +902,6 @@ INSERT INTO `process_log` (`agent_id`, `agent_name`, `session_id`, `message`, `l
 (1, 'Test Agent 1', 'session-001', '开始处理请求', 'INFO', NULL, '2026-04-25 10:00:00', 1),
 (1, 'Test Agent 1', 'session-001', '处理完成', 'INFO', NULL, '2026-04-25 10:00:05', 1),
 (2, 'Test Agent 2', 'session-002', '发生错误：超时', 'ERROR', 'java.util.concurrent.TimeoutException', '2026-04-25 11:00:00', 1);
-
-INSERT INTO `tool_call_log` (`agent_id`, `session_id`, `tool_name`, `args`, `result`, `success`, `start_time`, `end_time`, `duration`, `ts`, `tenant_id`) VALUES
-(1, 'session-001', 'web-search', '{"query":"AI latest news"}', '{"results":[]}', 1, '2026-04-25 10:00:01', '2026-04-25 10:00:03', 2000, '2026-04-25 10:00:03', 1),
-(1, 'session-001', 'code-review', '{"code":"print(1)"}', '{"issues":[]}', 1, '2026-04-25 10:00:04', '2026-04-25 10:00:05', 1000, '2026-04-25 10:00:05', 1),
-(2, 'session-002', 'web-search', '{"query":"test"}', '{"error":"timeout"}', 0, '2026-04-25 11:00:00', '2026-04-25 11:00:30', 30000, '2026-04-25 11:00:30', 1);
 
 INSERT INTO `token_stats` (`session_id`, `agent_id`, `chat_model_id`, `input_token`, `output_token`, `total_token`, `fee`, `ts`, `tenant_id`) VALUES
 ('session-001', 1, 1, 100, 50, 150, 1, '2025-01-01 10:00:00', 1),

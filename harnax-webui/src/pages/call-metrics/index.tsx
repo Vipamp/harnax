@@ -1,17 +1,24 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { PageContainer } from '@ant-design/pro-components';
-import { Alert, Card, Col, Descriptions, Drawer, Empty, Row, Select, Spin, Statistic, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd';
+import { Alert, Card, Col, DatePicker, Descriptions, Drawer, Empty, Row, Select, Spin, Statistic, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { Line } from '@ant-design/plots';
 import { DashboardOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import { useIntl } from '@umijs/max';
 import dayjs from 'dayjs';
+import type { Dayjs } from 'dayjs';
 import { getToolInvocations, getToolMetricsSummary, getToolMetricsTimeSeries } from '@/services/ant-design-pro/toolMetrics';
+import SubjectDrawer from './SubjectDrawer';
 import { formatLastSeen } from './lastSeen';
 
 const CALLS_COLOR = '#4f6ef7';
 const SUCCESS_COLOR = '#10b981';
 const FAILURE_COLOR = '#ef4444';
+const { RangePicker } = DatePicker;
+
+/** The window the page opens on and the presets offer; the server defaults to the same span. */
+const RANGE_PRESETS = [7, 30, 90, 365];
+const DEFAULT_RANGE_DAYS = 30;
 
 /**
  * Tab to origin bucket. `shell` and `framework` stay reachable inside the tool tab because the endpoint takes
@@ -40,27 +47,34 @@ const CallMetrics: React.FC = () => {
   const intl = useIntl();
   const [tab, setTab] = useState<string>('tool');
   const [toolKind, setToolKind] = useState<string>('builtin');
-  const [days, setDays] = useState<number>(30);
+  const [range, setRange] = useState<[Dayjs, Dayjs]>(() => [
+    dayjs().subtract(DEFAULT_RANGE_DAYS - 1, 'day'),
+    dayjs(),
+  ]);
   const [groupBy, setGroupBy] = useState<string>('tool');
   const [summary, setSummary] = useState<API.CallMetricsSummary | null>(null);
   const [points, setPoints] = useState<API.CallMetricsPoint[]>([]);
   const [loading, setLoading] = useState(false);
 
   const [subject, setSubject] = useState<API.CallMetricsRow | null>(null);
+  const [profileRow, setProfileRow] = useState<API.CallMetricsRow | null>(null);
   const [details, setDetails] = useState<API.CallInvocationRow[]>([]);
   const [detailTotal, setDetailTotal] = useState<number>(0);
   const [detailPage, setDetailPage] = useState<number>(1);
   const [detailLoading, setDetailLoading] = useState(false);
 
   const kind = tab === 'tool' ? toolKind : TAB_KINDS[tab];
+  // One range drives every read on the page: cards, trend, table and the drill-down drawer alike.
+  const start = range[0].format('YYYY-MM-DD');
+  const end = range[1].format('YYYY-MM-DD');
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       try {
         const [summaryRes, trendRes] = await Promise.all([
-          getToolMetricsSummary({ days, kind, groupBy }),
-          getToolMetricsTimeSeries({ days, kind, granularity: 'day' }),
+          getToolMetricsSummary({ start, end, kind, groupBy }),
+          getToolMetricsTimeSeries({ start, end, kind, granularity: 'day' }),
         ]);
         if (summaryRes.code === 200) {
           setSummary(summaryRes.data ?? null);
@@ -81,7 +95,7 @@ const CallMetrics: React.FC = () => {
       }
     };
     load();
-  }, [days, kind, groupBy]);
+  }, [start, end, kind, groupBy]);
 
   const loadDetails = async (row: API.CallMetricsRow, page: number) => {
     setSubject(row);
@@ -93,7 +107,8 @@ const CallMetrics: React.FC = () => {
     setDetailLoading(true);
     try {
       const res = await getToolInvocations({
-        days,
+        start,
+        end,
         // Detail-dimension rows carry no kind, so the tab's kind is the fallback; an empty string would make
         // the backend's <if> drop the predicate and the drawer would list every origin bucket.
         kind: row.kind || kind,
@@ -189,7 +204,14 @@ const CallMetrics: React.FC = () => {
       width: 240,
       ellipsis: true,
       render: (_: unknown, row) => (
-        <a onClick={() => loadDetails(row, 1)} style={{ fontWeight: 500, cursor: 'pointer' }}>
+        <a
+          onClick={() => {
+            // Two views of the same row: opening the profile closes the records drawer rather than stacking on it.
+            setSubject(null);
+            setProfileRow(row);
+          }}
+          style={{ fontWeight: 500, cursor: 'pointer' }}
+        >
           {groupBy === 'tool' ? row.toolName : row.subjectKey}
           {/* The aggregate groups by (kind, subject_id, tool_name): one tool served by two MCP servers is two
               rows with the same name, and each click scopes the drawer to a different server. */}
@@ -206,6 +228,19 @@ const CallMetrics: React.FC = () => {
       dataIndex: 'calls',
       key: 'calls',
       width: 100,
+      // The number and the drawer are the same count read at two resolutions, so the drill-down hangs off this
+      // column rather than off the subject, which now opens the subject's own profile.
+      render: (calls: number, row) => (
+        <a
+          onClick={() => {
+            setProfileRow(null);
+            loadDetails(row, 1);
+          }}
+          style={{ cursor: 'pointer' }}
+        >
+          {calls}
+        </a>
+      ),
     },
     {
       title: intl.formatMessage({ id: 'pages.callMetrics.col.successRate', defaultMessage: 'Success rate' }),
@@ -274,9 +309,11 @@ const CallMetrics: React.FC = () => {
     },
   ];
 
-  const windowOptions = [7, 30, 90, 365].map((value) => ({
-    value,
+  // The four spans the page offered as a day count are the picker's presets now: a preset is a range whose last
+  // day is today, so it answers the same numbers the old Select did.
+  const rangePresets = RANGE_PRESETS.map((value) => ({
     label: intl.formatMessage({ id: `pages.callMetrics.window.${value}`, defaultMessage: `Last ${value} days` }),
+    value: [dayjs().subtract(value - 1, 'day'), dayjs()] as [Dayjs, Dayjs],
   }));
 
   return (
@@ -378,7 +415,20 @@ const CallMetrics: React.FC = () => {
                   label: intl.formatMessage({ id: `pages.callMetrics.groupBy.${value}`, defaultMessage: value }),
                 }))}
               />
-              <Select value={days} onChange={setDays} style={{ width: 130 }} options={windowOptions} />
+              <RangePicker
+                value={range}
+                presets={rangePresets}
+                allowClear={false}
+                style={{ width: 260 }}
+                disabledDate={(current) => current.isAfter(dayjs().endOf('day'))}
+                onChange={(dates) => {
+                  if (!dates?.[0] || !dates?.[1]) return;
+                  setRange([dates[0], dates[1]]);
+                  // The records an open drawer lists belong to the range they were counted over; paging them
+                  // under a new range would silently mix the two.
+                  setSubject(null);
+                }}
+              />
             </div>
           }
           styles={{ body: { padding: '12px' } }}
@@ -409,7 +459,12 @@ const CallMetrics: React.FC = () => {
             }}
           />
           <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
-            {intl.formatMessage({ id: 'pages.callMetrics.windowHint', defaultMessage: 'Counts cover the last {days} days. Success rate and P95 are window-wide figures, not per-day ones.' }, { days })}
+            {intl.formatMessage(
+              { id: 'pages.callMetrics.windowHint', defaultMessage: 'Counts cover {from} to {to}, both days inclusive - the cards, the trend line and the table below all read this range. Success rate and P95 are range-wide figures, not per-day ones.' },
+              // The server answers the range it actually counted, clamps included; the picked range only covers
+              // the moment before the first read comes back.
+              { from: summary?.from || start, to: summary?.to || end },
+            )}
           </Typography.Paragraph>
         </Card>
       </Spin>
@@ -418,7 +473,7 @@ const CallMetrics: React.FC = () => {
         width={720}
         open={!!subject}
         onClose={() => setSubject(null)}
-        title={`${intl.formatMessage({ id: 'pages.callMetrics.detail.title', defaultMessage: 'Recent calls' })} — ${subject ? (groupBy === 'tool' ? subject.toolName : subject.subjectKey) : ''}`}
+        title={`${intl.formatMessage({ id: 'pages.callMetrics.detail.title', defaultMessage: 'Call records' })} — ${subject ? (groupBy === 'tool' ? subject.toolName : subject.subjectKey) : ''}`}
       >
         <Table<API.CallInvocationRow>
           className="styled-pro-table"
@@ -462,6 +517,8 @@ const CallMetrics: React.FC = () => {
           }}
         />
       </Drawer>
+
+      <SubjectDrawer row={profileRow} groupBy={groupBy} onClose={() => setProfileRow(null)} />
     </PageContainer>
   );
 };

@@ -16,8 +16,10 @@ import com.agnetix.harnax.mapper.ToolInvocationStatsMapper
 import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import kotlin.math.ceil
 
 /**
@@ -42,11 +44,12 @@ class ToolMetricsServiceImpl(
     private val log = LoggerFactory.getLogger(ToolMetricsServiceImpl::class.java)
 
     override fun getSummary(
-        days: Int,
+        start: String?,
+        end: String?,
         kind: String?,
         groupBy: String,
     ): ToolMetricsSummaryResponse {
-        val window = window(days)
+        val window = window(start, end)
         val dimension = dimension(groupBy)
         val tenantId = currentTenantId()
         // One ungrouped aggregate row, whatever the rows below come from: the cards and the window P95 are
@@ -60,7 +63,6 @@ class ToolMetricsServiceImpl(
         val (windowOperator, windowMs) = p95(totals, totalCalls)
         val rows = if (dimension == DIM_TOOL) toolRows(window, tenantId, kind) else detailRows(window, tenantId, kind, dimension)
         return ToolMetricsSummaryResponse(
-            days = window.days,
             from = window.fromDate,
             to = window.toDate,
             groupBy = dimension,
@@ -75,12 +77,13 @@ class ToolMetricsServiceImpl(
     }
 
     override fun getTimeSeries(
-        days: Int,
+        start: String?,
+        end: String?,
         kind: String?,
         subjectId: Long?,
         granularity: String,
     ): ToolMetricsTimeSeriesResponse {
-        val window = window(days)
+        val window = window(start, end)
         val bucket = granularityOf(granularity)
         val rows = toolInvocationStatsMapper.selectTimeSeries(window.fromDate, window.toDate, currentTenantId(), kind, subjectId, bucket).orEmpty()
 
@@ -119,11 +122,11 @@ class ToolMetricsServiceImpl(
                 )
             }
         }
-        return ToolMetricsTimeSeriesResponse(days = window.days, granularity = bucket, points = points)
+        return ToolMetricsTimeSeriesResponse(from = window.fromDate, to = window.toDate, granularity = bucket, points = points)
     }
 
     override fun getInvocations(query: InvocationQuery): Page<ToolInvocationRow> {
-        val window = window(query.days)
+        val window = window(query.start, query.end)
         PageHelper.startPage<Map<String?, Any?>>(query.pageNum.coerceAtLeast(1), query.pageSize.coerceIn(1, MAX_PAGE_SIZE))
         // Nothing may be queried between startPage and this call: PageHelper parks its request on a thread
         // local that the next statement consumes, so one inserted query would take the paging and leave this
@@ -272,14 +275,58 @@ class ToolMetricsServiceImpl(
         else -> from.toLocalDate().atStartOfDay()
     }
 
-    private fun window(days: Int): Window {
-        val windowDays = days.coerceIn(MIN_WINDOW_DAYS, MAX_WINDOW_DAYS)
-        if (windowDays != days) {
-            log.info("Metrics window {} days clamped to {}", days, windowDays)
+    /**
+     * The requested day range, clamped to what these tables can answer.
+     *
+     * Both bounds are inclusive days. A missing `end` means today; a missing `start` means the default span
+     * ending at `end`, so the two bounds are each other's fallback rather than two separate defaults — a page
+     * that sends only `end=2026-05-01` gets the 30 days before it, which is what the same request with no
+     * window answers today. `start` after `end` collapses onto `end`, and a span wider than
+     * [MAX_WINDOW_DAYS] pushes `start` forward rather than rejecting the request.
+     *
+     * A value that does not parse counts as absent: the page can only send what its picker produced, so a
+     * malformed date is a bug on that side, and answering with the default range beats failing the whole card
+     * row. Every clamp is logged with the values it resolved to, because the response always echoes the range
+     * that was actually answered.
+     */
+    private fun window(
+        start: String?,
+        end: String?,
+    ): Window {
+        val today = LocalDate.now()
+        val requestedEnd = parseDate(end)
+        if (end != null && requestedEnd == null) {
+            log.info("Metrics window end `$end` is not a yyyy-MM-dd day, using today {}", today)
         }
-        val to = LocalDateTime.now()
-        return Window(windowDays, to.minusDays((windowDays - 1).toLong()).toLocalDate().atStartOfDay(), to)
+        var to = requestedEnd ?: today
+        if (requestedEnd != null && requestedEnd.isAfter(today)) {
+            log.info("Metrics window end {} is in the future, clamped to {}", requestedEnd, today)
+            to = today
+        }
+        val requestedStart = parseDate(start)
+        if (start != null && requestedStart == null) {
+            log.info("Metrics window start `$start` is not a yyyy-MM-dd day, using {} days before {}", DEFAULT_WINDOW_DAYS, to)
+        }
+        var from = requestedStart ?: to.minusDays((DEFAULT_WINDOW_DAYS - 1).toLong())
+        if (from.isAfter(to)) {
+            log.info("Metrics window start {} is after end {}, clamped to the end day", from, to)
+            from = to
+        }
+        if (ChronoUnit.DAYS.between(from, to) + 1 > MAX_WINDOW_DAYS) {
+            val pushed = to.minusDays((MAX_WINDOW_DAYS - 1).toLong())
+            log.info("Metrics window {}..{} spans more than {} days, start pushed to {}", from, to, MAX_WINDOW_DAYS, pushed)
+            from = pushed
+        }
+        return Window(from.atStartOfDay(), to.plusDays(1).atStartOfDay().minusNanos(1_000_000L))
     }
+
+    /** A request value as a day, with blank and unparseable both answering null rather than throwing. */
+    private fun parseDate(
+        value: String?,
+    ): LocalDate? = value
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { runCatching { LocalDate.parse(it, DATE_FORMATTER) }.getOrNull() }
 
     /**
      * The subject a series row belongs to.
@@ -344,23 +391,32 @@ class ToolMetricsServiceImpl(
 
     private fun currentTenantId(): Long = TenantResolver.resolve(jwtUtil)
 
-    /** A clamped day window, with both string precisions the two tables compare against. */
+    /**
+     * A clamped day range as the two precisions the two tables compare against.
+     *
+     * `to` is the last millisecond of the end day rather than its start: both detail queries bound the upper
+     * side with `<=`, so a start-of-day bound would answer a range one day short of what the page asked for,
+     * and the column is `datetime(3)`, so `.999` is the widest bound that stays inside the day. The aggregate
+     * reads a `date` column and takes the day strings, where the same instant formats back to the end day.
+     */
     private class Window(
-        val days: Int,
         val from: LocalDateTime,
         val to: LocalDateTime,
     ) {
         val fromDate: String get() = from.format(DATE_FORMATTER)
         val toDate: String get() = to.format(DATE_FORMATTER)
         val fromTs: String get() = from.format(TIMESTAMP_FORMATTER)
-        val toTs: String get() = to.format(TIMESTAMP_FORMATTER)
+        val toTs: String get() = to.format(BOUND_FORMATTER)
     }
 
     companion object {
         private val DATE_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
         private val TIMESTAMP_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
-        const val MIN_WINDOW_DAYS = 1
+        /** The bound formatter carries the millisecond the upper bound needs; row stamps stay second-precise. */
+        private val BOUND_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS")
+
+        const val DEFAULT_WINDOW_DAYS = 30
         const val MAX_WINDOW_DAYS = 365
         const val MAX_PAGE_SIZE = 200
 

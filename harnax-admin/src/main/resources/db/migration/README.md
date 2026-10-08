@@ -8,6 +8,7 @@ db/
     ├── V1__init_schema.sql           # the module's whole schema, in final form
     ├── V2__agent_session_memory.sql  # forward increments; see "Changing the Schema"
     ├── V3__tool_invocation_metrics.sql
+    ├── V4__drop_tool_call_log.sql
     └── README.md                     # this file
 ```
 
@@ -40,12 +41,12 @@ the schema and rebuilding the database are therefore one action, never two.
 
 The exception is a database that cannot be rebuilt — one whose contents cost more to restore than the
 schema change is worth, such as a live environment holding a model provider key that only a person can
-re-enter. There the change ships as the next forward `V<n>__*.sql`, holding the `ALTER` or the new
-`CREATE TABLE` statements, and three things hold: the baseline keeps the checksum the ledger already
+re-enter. There the change ships as the next forward `V<n>__*.sql`, holding the `ALTER`, the new
+`CREATE TABLE` or the `DROP TABLE` statements, and three things hold: the baseline keeps the checksum the ledger already
 records, so it is left byte-for-byte alone; the increment ends the schema at the same shape a rebuilt
 database reaches, so a fresh install runs baseline then increment and lands where the live one already
 is; and the increment folds back into the baseline at the next rebuild, which is when it is deleted.
-`V2__agent_session_memory.sql` and `V3__tool_invocation_metrics.sql` are that shape of change.
+`V2__agent_session_memory.sql`, `V3__tool_invocation_metrics.sql` and `V4__drop_tool_call_log.sql` are that shape of change. The last of them shows the other half of what an increment may hold: a table the baseline still creates but production no longer needs is removed by a `DROP TABLE IF EXISTS` in the increment, because the baseline line that creates it cannot be edited — and a rebuilt database, where that line is gone, still replays the drop harmlessly.
 
 Along with editing the baseline:
 

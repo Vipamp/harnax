@@ -2,10 +2,13 @@
 /* eslint-disable */
 import { request } from '@umijs/max';
 
-/** GET /api/admin/tool-metrics/summary — per-subject totals over one window */
+/** GET /api/admin/tool-metrics/summary — per-subject totals over one inclusive day range */
 export async function getToolMetricsSummary(
   params: {
-    days?: number;
+    /** First day, `yyyy-MM-dd`, inclusive; the server defaults it to 30 days before `end` */
+    start?: string;
+    /** Last day, `yyyy-MM-dd`, inclusive; the server defaults it to today */
+    end?: string;
     kind?: string;
     groupBy?: string;
   },
@@ -23,7 +26,8 @@ export async function getToolMetricsSummary(
 /** GET /api/admin/tool-metrics/time-series — zero-filled buckets for the trend line */
 export async function getToolMetricsTimeSeries(
   params: {
-    days?: number;
+    start?: string;
+    end?: string;
     granularity?: string;
     kind?: string;
     subjectId?: number;
@@ -42,7 +46,8 @@ export async function getToolMetricsTimeSeries(
 /** GET /api/admin/tool-metrics/invocations — detail rows, inside the retention window only */
 export async function getToolInvocations(
   params: {
-    days?: number;
+    start?: string;
+    end?: string;
     kind?: string;
     toolName?: string;
     mcpId?: number;

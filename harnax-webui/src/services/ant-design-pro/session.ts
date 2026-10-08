@@ -24,6 +24,22 @@ export async function getSessionPage(
 }
 
 /**
+ * 按会话 ID 读取会话配置（调用监控页的主体抽屉用：指标行带的是 sessionId 串，不是行 id）
+ */
+export async function getSessionConfig(
+  sessionId: string,
+  options?: { [key: string]: any },
+) {
+  return request<API.Result<API.SessionItem>>(
+    `/api/admin/sessions/${encodeURIComponent(sessionId)}/config`,
+    {
+      method: 'GET',
+      ...(options || {}),
+    },
+  );
+}
+
+/**
  * 检查会话名称是否存在
  */
 export async function checkSessionTitle(

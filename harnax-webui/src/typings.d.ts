@@ -578,11 +578,12 @@ message?: string;
   };
 
   /**
-   * @zh-CN 窗口内的调用总量与卡片计数（对应后端 ToolMetricsSummaryResponse）
+   * @zh-CN 区间内的调用总量与卡片计数（对应后端 ToolMetricsSummaryResponse）
    */
   export type CallMetricsSummary = {
-    days: number;
+    /** 服务端算完档位后回给页面的首日，yyyy-MM-dd，含当天 */
     from: string;
+    /** 末日，yyyy-MM-dd，含当天；未来的 end 会被折回今天 */
     to: string;
     groupBy: string;
     totalCalls: number;
@@ -615,7 +616,8 @@ message?: string;
    * @zh-CN 时间序列响应（对应后端 ToolMetricsTimeSeriesResponse）
    */
   export type CallMetricsTrend = {
-    days: number;
+    from: string;
+    to: string;
     granularity: string;
     points: CallMetricsPoint[];
   };
@@ -650,6 +652,24 @@ message?: string;
     pageSize: number;
     total: number;
     records: CallInvocationRow[];
+  };
+
+  /**
+   * @zh-CN admin 工具注册表的一行，调用监控页的主体抽屉按名字在这份清单里匹配（对应后端 AgentToolResponse）
+   * admin 的信封不写 null 键，除 name 外都可能缺席；两个时刻列是 Jackson 的 ISO 形状，不是服务端格式化过的串
+   */
+  export type AgentToolItem = {
+    id?: number;
+    name: string;
+    displayName?: string;
+    displayNameZh?: string;
+    description?: string;
+    readOnly?: number;
+    needConfirm?: number;
+    isRequired?: number;
+    status?: number;
+    creator?: string;
+    createTime?: string;
   };
 
   /**

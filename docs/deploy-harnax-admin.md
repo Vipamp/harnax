@@ -45,17 +45,13 @@ CREATE DATABASE IF NOT EXISTS harnax_admin
 
 Flyway 会在服务启动时自动执行 `db/migration` 下的建表脚本，无需手动导入 SQL。
 
-> **这一版带一张前向增量**：`tool_invocation_log` / `tool_invocation_stats` 走 `V3__tool_invocation_metrics.sql`，而不是折进 `V1__init_schema.sql`。基线因此保持台账记下的那串字节，已经在跑的 `harnax_admin` 正常启动、Flyway 在启动时补放 V3；新建的库依次重放 V1 → V2 → V3，落到同一个形状。折进基线是一条要走清库重建的路（改基线与重建是一个动作），而这个库里的模型 provider api_key 只有人能重新填，所以这里不取那条路。`application.yml:45` 那行 `repair-on-migrate: true` 无论如何都不是逃生口：Spring Boot 4.0.1 的 `FlywayProperties` 没有这个字段，键被 binder 静默丢弃。
+> **这一版带两条前向增量**：`tool_invocation_log` / `tool_invocation_stats` 走 `V3__tool_invocation_metrics.sql`，`V4__drop_tool_call_log.sql` 紧接着把旧表 `tool_call_log` 删掉，两条都不折进 `V1__init_schema.sql`。基线因此保持台账记下的那串字节，已经在跑的 `harnax_admin` 正常启动、Flyway 在启动时依次补放 V3 与 V4；新建的库重放 V1 → V2 → V3 → V4，落到同一个形状。折进基线是一条要走清库重建的路（改基线与重建是一个动作），而这个库里的模型 provider api_key 只有人能重新填，所以这里不取那条路。`application.yml:45` 那行 `repair-on-migrate: true` 无论如何都不是逃生口：Spring Boot 4.0.1 的 `FlywayProperties` 没有这个字段，键被 binder 静默丢弃。
 >
-> 旧表 `tool_call_log` 的建表语句仍在基线里，因此新旧库里都还有它，而它的读写方已全部删除——只是不再增长，留着没有副作用。要真清掉得手工执行，这是一个不可回退的动作：先确认不再需要那些历史行（`SELECT COUNT(*) FROM tool_call_log;`），再执行
->
-> ```sql
-> DROP TABLE tool_call_log;
-> ```
+> `tool_call_log` 的清账因此是声明式的，没有手工步骤：它的读写方已全部删除，表由 V4 在下一次 admin 重建并重启时释放。`DROP TABLE IF EXISTS` 让它既能删掉既有库里的表，也能在从新基线建起来的库上原地空转。这张表存的是工具调用的历史行，删掉之后这些行只能从 `tool_invocation_log` 的新口径重头积累——这是它下线时已接受的代价，不是回退。
 >
 > `mcp_call_log` 不在这条清理之列：它是 MCP 授权账本，`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/McpOAuthUserServiceImpl.kt:618` 至今仍在写它，只是不当指标源用，删掉会丢授权审计。
 >
-> 下一次清库重建时把 V3 折回基线、同时从基线删掉 `tool_call_log` 的建表块，本文件与 `db/migration/README.md` 的那条规则就重新对齐了。
+> 下一次清库重建时把 V3 与 V4 折回基线、同时从基线删掉 `tool_call_log` 的建表块，本文件与 `db/migration/README.md` 的那条规则就重新对齐了。
 
 ---
 
