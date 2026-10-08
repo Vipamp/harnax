@@ -584,9 +584,16 @@ class HarnessAgentLauncher(
                 gate = AdminBackedPromotionGate(sessionId, skillDraftIntake, staging),
                 sessionSkills = sessionSkills,
             )
-            // Registered here rather than by the builder: the middleware is the launcher's own wiring, and
-            // Task 7 gives it the staging plus the store a draft is filed against.
-            agentBuilder.addMiddleware(SkillDraftSubmitMiddleware(staging))
+            // Registered here rather than by the builder: the middleware is the launcher's own wiring. It is
+            // handed the out-of-call store rather than the staging it used to read, because the offer runs
+            // after the answer, by which time the sandbox is unbound and a workspace read answers nothing.
+            agentBuilder.addMiddleware(
+                SkillDraftSubmitMiddleware(
+                    sessionId = sessionId,
+                    store = sessionSkillStore,
+                    adaptor = skillDraftIntake,
+                ),
+            )
             log.info(
                 "Agent '{}' may author skills: drafts stage in '{}', every one of them waits for review, and " +
                     "the operator can enable one of them into this session",

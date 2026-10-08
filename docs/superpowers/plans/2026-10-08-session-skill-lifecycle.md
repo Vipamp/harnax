@@ -1702,7 +1702,16 @@ package com.agnetix.harnax.router.proxy
 import com.agnetix.harnax.auth.AuthContext
 import com.agnetix.harnax.auth.AuthContextHolder
 import com.agnetix.harnax.common.dto.ResultVo
+import com.agnetix.harnax.router.entity.AgentInstance
 import com.agnetix.harnax.router.service.AgentServiceClient
+import com.agnetix.harnax.router.service.IdempotencyService
+import com.agnetix.harnax.router.service.InstanceRegistry
+import com.agnetix.harnax.router.service.SessionAccessGuard
+import com.agnetix.harnax.router.service.SessionEvictor
+import com.agnetix.harnax.router.service.SessionMappingService
+import com.agnetix.harnax.router.service.impl.LocalInstanceCircuitBreaker
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -1711,6 +1720,8 @@ import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.mockito.kotlin.any
 import org.mockito.kotlin.eq
+import org.mockito.kotlin.isNull
+import java.time.Instant
 
 /**
  * An unbound session answers empty instead of being placed on some other instance: the enabled skills are
@@ -1753,24 +1764,55 @@ class SessionRouterServiceSessionSkillTest {
     fun `a caller with no auth context forwards no operator rather than an invented one`() = runBlocking {
         val (service, client) = fixture(bound = true)
         assertNull(AuthContextHolder.get())
-        Mockito.`when`(client.sessionSkillEnable(any(), any(), any(), eq(null)))
+        Mockito.`when`(client.sessionSkillEnable(any(), any(), any(), isNull()))
             .thenReturn(ResultVo.success(mapOf("ok" to true)))
         service.proxyEnableSessionSkill("ses-1", "invoice-fill")
-        Mockito.verify(client).sessionSkillEnable(any(), eq("ses-1"), eq("invoice-fill"), eq(null))
+        Mockito.verify(client).sessionSkillEnable(any(), eq("ses-1"), eq("invoice-fill"), isNull())
     }
 
     private fun fixture(bound: Boolean): Pair<SessionRouterService, AgentServiceClient> {
-        // 复用本模块既有测试夹具：SessionRouterService 的构造在
-        // src/test/kotlin/com/agnetix/harnax/router/support/ 下已有 helper；
-        // bound=false 让 sessionMappingService.getInstanceId 回 null。
-        TODO("see Step 2")
+        // 抄同包 SessionRouterServiceTest.kt:69-89 的 setUp：breaker 与 meterRegistry 用真身，其余全是 mock。
+        // bound=false 让 sessionMappingService.getInstanceId 回 null，于是 boundInstance 回 null。
+        val client = Mockito.mock(AgentServiceClient::class.java)
+        val mappingService = Mockito.mock(SessionMappingService::class.java)
+        val registry = Mockito.mock(InstanceRegistry::class.java)
+        Mockito.`when`(mappingService.getInstanceId("ses-1"))
+            .thenReturn(if (bound) "inst-1" else null)
+        if (bound) {
+            // AgentInstance 的构造抄 SessionRouterServiceTest.kt:104-111 的 healthyInstance，只把 host
+            // 换成 agent：getBaseUrl() 就是 "http://$host:$port"（AgentInstance.kt:173），断言里那个
+            // http://agent:8082 是这么来的。
+            Mockito.`when`(registry.getInstance("inst-1")).thenReturn(
+                AgentInstance().apply {
+                    instanceId = "inst-1"
+                    host = "agent"
+                    port = 8082
+                    status = "UP"
+                    active = 1
+                    lastHeartbeat = Instant.now()
+                },
+            )
+        }
+        val service = SessionRouterService(
+            registry,
+            mappingService,
+            Mockito.mock(IdempotencyService::class.java),
+            LocalInstanceCircuitBreaker(failureThreshold = 3, openDurationMs = 30000),
+            client,
+            Mockito.mock(SessionEvictor::class.java),
+            Mockito.mock(SessionAccessGuard::class.java),
+            SimpleMeterRegistry(),
+            30000L,
+            2,
+        )
+        return service to client
     }
 }
 ```
 
-- [ ] **Step 2: 用本模块既有夹具补齐 fixture**
+- [ ] **Step 2: 核对 fixture 与既有测试同源**
 
-先看 `ls harnax-session-router/src/test/kotlin/com/agnetix/harnax/router/proxy/`，取一支已存在的 `SessionRouterService*Test` 抄它的构造夹具（`sessionMappingService`、`instanceRegistry`、`sessionAccessGuard`、`agentServiceClient` 四枚 mock 与 `boundInstance` 的桩）。不许新建第二套容器夹具；`TODO` 必须在这一 step 被替换成真实代码。
+Step 1 的 `fixture()` 已按 `harnax-session-router/src/test/kotlin/com/agnetix/harnax/router/proxy/SessionRouterServiceTest.kt:69-89` 写实，不必再补代码，但要对着它核三件事：`SessionRouterService` 的构造仍是那十枚参数（`SessionRouterService.kt:39-52`，多了少了都说明主源码构造变了，要回改这里而不是改主源码）；`LocalInstanceCircuitBreaker(failureThreshold = 3, openDurationMs = 30000)` 与 `SimpleMeterRegistry()` 的真身用法与那支一致；`AgentInstance` 的 setter 名逐个对得上同文件 `:104-111`。第三支用例若 `isNull()` 在 `Long?` 上推断不过，退写成 `eq<Long?>(null)`，别改成 `any()`——那会把「没带操作人」这一支证成什么都没说。
 
 - [ ] **Step 3: client 两条转发**
 
@@ -1922,7 +1964,7 @@ git commit -m "feat(router): 会话技能两条代理路由——归属判定继
 - Modify: `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/SkillDraftService.kt:38-43`
 - Modify: `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/SkillDraftServiceImpl.kt:208-227`
 - Modify: `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/SkillDraftController.kt:55-79`
-- Test: `harnax-admin/src/test/kotlin/com/agnetix/harnax/admin/service/impl/SkillDraftServiceImplPageTest.kt`
+- Test: `harnax-admin/src/test/kotlin/com/agnetix/harnax/admin/service/impl/SkillDraftServiceImplTest.kt`（在 `page is tenant scoped`（`:475-488`）之后追加两支用例，复用该文件 `:105-132` 的 setUp 与既有 `service` / `skillDraftMapper` 字段；**不新建** page 专测文件，那等于把同一套租户+审核人夹具抄第二遍）
 - Test: `harnax-admin/src/test/kotlin/com/agnetix/harnax/admin/it/SkillDraftFlowIT.kt`（追加一支用例）
 
 **Interfaces:**
@@ -1932,24 +1974,36 @@ git commit -m "feat(router): 会话技能两条代理路由——归属判定继
 - [ ] **Step 1: 写失败测试**
 
 ```kotlin
-@Test
-fun `a session filter is passed down rather than applied after paging`() {
-    val service = service(tenant = 3L)
-    service.page("PENDING", null, "ses-1", 1, 20)
-    verify(mapper).selectDraftList(3L, "PENDING", null, "ses-1")
-}
+    @Test
+    @DisplayName("a conversation filter is a SQL predicate, not a trim applied after paging")
+    fun `the session filter travels down to the query`() {
+        TenantContext.setTenantId(3L)
+        `when`(skillDraftMapper.selectDraftList(eq(3L), anyOrNull(), anyOrNull(), anyOrNull()))
+            .thenReturn(listOf(storedDraft(tenantId = 3L)))
 
-@Test
-fun `a blank session filter means no filter at all`() {
-    val service = service(tenant = 3L)
-    service.page("PENDING", null, "  ", 1, 20)
-    verify(mapper).selectDraftList(3L, "PENDING", null, null)
-}
+        service.page(status = "PENDING", name = null, sessionId = "ses-1", pageNum = 1, pageSize = 20)
+
+        verify(skillDraftMapper).selectDraftList(eq(3L), eq("PENDING"), anyOrNull(), eq("ses-1"))
+    }
+
+    @Test
+    @DisplayName("a blank conversation filter is dropped, not searched for")
+    fun `a blank session id filters nothing`() {
+        TenantContext.setTenantId(3L)
+        `when`(skillDraftMapper.selectDraftList(eq(3L), anyOrNull(), anyOrNull(), anyOrNull()))
+            .thenReturn(listOf(storedDraft(tenantId = 3L)))
+
+        service.page(status = null, name = null, sessionId = "  ", pageNum = 1, pageSize = 20)
+
+        verify(skillDraftMapper).selectDraftList(eq(3L), eq(null), eq(null), eq(null))
+    }
 ```
+
+`service`、`skillDraftMapper`、`storedDraft(tenantId = …)` 都是同文件既有成员，`when`/`verify`/`eq`/`anyOrNull` 的用法照 `:478-487` 那支抄。第二支里三枚 `eq(null)` 若推断不过，写成 `isNull()`（`MatchersKt` 两枚都在：`<T> eq(T)` 与 `<T> isNull()`）。两支都不许改成 `any()`——那等于什么都没断言。
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `... mvn -o test -pl harnax-admin -am -Dtest=SkillDraftServiceImplPageTest` -Dsurefire.failIfNoSpecifiedTests=false
+Run: `... mvn -o test -pl harnax-admin -am -Dtest=SkillDraftServiceImplTest` -Dsurefire.failIfNoSpecifiedTests=false
 Expected: 编译失败（`page` 只有 4 个参数）
 
 - [ ] **Step 3: 三处签名**
@@ -1981,10 +2035,23 @@ val session = sessionId?.trim()?.takeIf { it.isNotEmpty() }
 skillDraftMapper.selectDraftList(currentTenantId(), state, name?.trim()?.takeIf { it.isNotEmpty() }, session),
 ```
 
-`SkillDraftController.kt:55-79`：加一个可选参数并往下传，其余不动（含 `:74` 把缺省 status 兜成 `PENDING` 的既有行为——会话页要的正是一样一份待启用清单）：
+`SkillDraftController.kt:55-79`：形参加一枚可选参数（`:69` 的 `name` 之后），并把 `:73` 那唯一一处调用补上第 3 个具名实参——其余不动，含 `:74` 把缺省 status 兜成 `PENDING` 的既有行为（会话页要的正是一样一份待启用清单）：
 
 ```kotlin
-@RequestParam(name = "sessionId", required = false) sessionId: String?,
+        @Parameter(description = "Narrow to one conversation's proposals") @RequestParam(
+            name = "sessionId",
+            required = false,
+        ) sessionId: String?,
+```
+
+```kotlin
+            skillDraftService.page(
+                status = status ?: SkillDraft.STATUS_PENDING,
+                name = name,
+                sessionId = sessionId,
+                pageNum = pageNum ?: 1,
+                pageSize = pageSize ?: DEFAULT_PAGE_SIZE,
+            ),
 ```
 
 - [ ] **Step 4: 加 IT —— 过滤只收会话，不松租户**
@@ -2009,7 +2076,7 @@ skillDraftMapper.selectDraftList(currentTenantId(), state, name?.trim()?.takeIf 
     }
 ```
 
-用例（`@Order(11)`；`siblingSessionUuid = ""`、`siblingSessionRowId = -1L` 与既有 `sessionUuid` / `sessionRowId` 同处声明，即 `:61-62` 那一块）。**既有那支占用 `@Order(11)` 的用例是本文件最后一支，名为 `clearing the proposing session takes neither the approval nor the record of it`（`:452-487`），它必须继续排在最后**——它在 `:468` 用 `deleteJson("/api/admin/sessions/$sessionRowId")` 把出处会话删掉，任何还依赖该会话的用例排它之后都会红（`submit` 推租户要回查会话行）。所以新用例接 `@Order(11)`，把那支既有的改成 `@Order(12)`。这个文件**没有** `@AfterAll`，也**没有** `deleteSession(...)` 这种助手，唯一的删会话通道就是上面那句 `deleteJson`；兄弟会话因此由新用例自己在末尾删走，不留悬挂数据：
+用例（`@Order(11)`；`siblingSessionUuid = ""`、`siblingSessionRowId = -1L` 与既有 `sessionUuid` / `sessionRowId` 同处声明，即 `:61-62` 那一块）。**既有那支占用 `@Order(11)` 的用例是本文件最后一支，名为 `clearing the proposing session takes neither the approval nor the record of it`（`:453-487`），它必须继续排在最后**——它在 `:468` 用 `deleteJson("/api/admin/sessions/$sessionRowId")` 把出处会话删掉，任何还依赖该会话的用例排它之后都会红（`submit` 推租户要回查会话行）。所以新用例接 `@Order(11)`，把那支既有的改成 `@Order(12)`。这个文件**没有** `@AfterAll`，也**没有** `deleteSession(...)` 这种助手，唯一的删会话通道就是上面那句 `deleteJson`；兄弟会话因此由新用例自己在末尾删走，不留悬挂数据：
 
 ```kotlin
     @Test
@@ -2050,7 +2117,7 @@ Expected: `Failures: 0, Errors: 0`（先决条件：Docker 在跑；本仓 IT �
 - [ ] **Step 5: 跑 admin 门禁**
 
 Run: `... mvn -q spotless:apply -pl harnax-admin && ... mvn -o test -pl harnax-admin -am`
-Expected: `Tests run: 2430+, Failures: 0, Errors: 0`
+Expected: `Tests run: 2432, Failures: 0, Errors: 0`（admin 基线实测 2430 ＋ 本任务 2 支 unit；Step 4 那支 IT 只在 `-Pintegration-test` 里跑，不进这一行的计数）
 
 - [ ] **Step 6: 提交**
 
@@ -2058,7 +2125,7 @@ Expected: `Tests run: 2430+, Failures: 0, Errors: 0`
 git add harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/SkillDraftService.kt \
         harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/SkillDraftServiceImpl.kt \
         harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/SkillDraftController.kt \
-        harnax-admin/src/test/kotlin/com/agnetix/harnax/admin/service/impl/SkillDraftServiceImplPageTest.kt \
+        harnax-admin/src/test/kotlin/com/agnetix/harnax/admin/service/impl/SkillDraftServiceImplTest.kt \
         harnax-admin/src/test/kotlin/com/agnetix/harnax/admin/it/SkillDraftFlowIT.kt
 git commit -m "feat(admin): 草稿队列可按会话过滤——SQL 谓词已有，service 与 controller 补上这一格"
 ```
