@@ -221,7 +221,7 @@ CREATE TABLE IF NOT EXISTS `example` (
 | `harnax-scheduler` | `V1__init_schema.sql` | `harnax_scheduler` | `flyway_schema_history_scheduler` |
 | `harnax-session-router` | `V1__create_session_router_tables.sql` | `harnax_router` | `flyway_schema_history`（仅 cluster profile；`local` 模式走 `db/sqlite-init.sql`） |
 
-- 基线给出该模块 schema 的**最终形态**：每张表的建表语句带最终的列、索引、唯一键与注释，其后是系统启动所需的初始化数据。判「这张表现在长什么样」看的是这个目录重放到最后一个版本之后的形状——默认只有一份 init 脚本，`harnax-admin` 目前另有四份前向增量叠在它上面（`V2__agent_session_memory.sql`、`V3__tool_invocation_metrics.sql`、`V4__drop_tool_call_log.sql`、`V5__tool_invocation_stats_hourly.sql`），增量在下文那条例外里。
+- 基线给出该模块 schema 的**最终形态**：每张表的建表语句带最终的列、索引、唯一键与注释，其后是系统启动所需的初始化数据。判「这张表现在长什么样」看的是这个目录重放到最后一个版本之后的形状——默认只有一份 init 脚本，`harnax-admin` 目前另有六份前向增量叠在它上面（`V2__agent_session_memory.sql`、`V3__tool_invocation_metrics.sql`、`V4__drop_tool_call_log.sql`、`V5__tool_invocation_stats_hourly.sql`、`V6__drop_agent_session_memory.sql`、`V7__memory_draft.sql`），增量在下文那条例外里。
 
 ### 9.2 变更落法
 
@@ -230,7 +230,7 @@ CREATE TABLE IF NOT EXISTS `example` (
 - 重新生成 `harnax-entity/src/test/resources/schema-test.sql`——它的 DDL 段取自 admin 的 schema 在最后一个版本上的形状（基线加上叠在它上面的每一份前向增量），不是手工对照；`SchemaBaselineDriftIT` 拿 Flyway 真正建出的库与该文件比对，漂了就红。
 - 重跑 `mvn -o -pl harnax-entity -am test` 与 `mvn -o -pl harnax-admin -am -Pintegration-test verify`。
 
-例外写在 `harnax-admin/src/main/resources/db/migration/README.md`：不能重建的库——重建代价高于这次改表的价值，比如库里存着只有人能重填的模型 provider api_key——基线逐字不动，改动作为下一份前向增量 `V<n>__*.sql` 交付，三条同时成立：基线保持台账记下的那串校验和；增量把 schema 带到与重建后完全相同的形状，新建库按版本顺序重放就落在同一个位置；下一次重建时把增量折回基线并删掉它。`V2__agent_session_memory.sql`、`V3__tool_invocation_metrics.sql`、`V4__drop_tool_call_log.sql` 与 `V5__tool_invocation_stats_hourly.sql` 就是这个形状——后两条还各带一份增量的另一半：V4 删掉基线仍在建而生产已不需要的表，V5 把一列与其上的两条键换档（`stat_date` 改 `stat_hour`）并清空按旧档写就不成立的行。
+例外写在 `harnax-admin/src/main/resources/db/migration/README.md`：不能重建的库——重建代价高于这次改表的价值，比如库里存着只有人能重填的模型 provider api_key——基线逐字不动，改动作为下一份前向增量 `V<n>__*.sql` 交付，三条同时成立：基线保持台账记下的那串校验和；增量把 schema 带到与重建后完全相同的形状，新建库按版本顺序重放就落在同一个位置；下一次重建时把增量折回基线并删掉它。`V2__agent_session_memory.sql`、`V3__tool_invocation_metrics.sql`、`V4__drop_tool_call_log.sql`、`V5__tool_invocation_stats_hourly.sql`、`V6__drop_agent_session_memory.sql` 与 `V7__memory_draft.sql` 就是这个形状，各自做的事：V3 建指标的两张表、V4 删掉基线仍在建而生产已不需要的旧表、V5 把一列与其上的两条键换档（`stat_date` 改 `stat_hour`）并清空按旧档写就不成立的行；V2 与 V6 是同一枚开关的两头——V2 给 `agent` 补上那一列，V6 删掉它，因为会话层不再有按智能体的开关；V7 建 `memory_draft`，人工批准的晋升在落库前先记在那张表里。
 
 默认这条路上没有「另写一份脚本叠上去」的余地：已按旧形态建好的库不认改过的基线——启动即校验和不符，`repair-on-migrate` 也不是解法。所以走默认路径时**改表结构与重建库是同一个动作**，不能拆开；只有上一段那条例外（库不能重建）才让目录里出现第二份脚本，而它必须在下次重建时折回基线。
 

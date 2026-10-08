@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.controller
 
+import com.agnetix.harnax.admin.dto.MemoryDraftSubmitRequest
 import com.agnetix.harnax.admin.dto.SkillDraftSubmitRequest
 import com.agnetix.harnax.admin.dto.SkillUsageReportRequest
 import com.agnetix.harnax.admin.exception.BizException
@@ -7,6 +8,7 @@ import com.agnetix.harnax.admin.registrar.BuiltinToolAutoRegistrar
 import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.service.McpOAuthUserService
 import com.agnetix.harnax.admin.service.McpStdioPolicy
+import com.agnetix.harnax.admin.service.MemoryDraftService
 import com.agnetix.harnax.admin.service.SkillDraftService
 import com.agnetix.harnax.admin.service.SkillUsageService
 import com.agnetix.harnax.admin.skill.SkillBindingResolver
@@ -84,6 +86,7 @@ class InternalApiController(
     private val skillBindingResolver: SkillBindingResolver,
     private val skillUsageService: SkillUsageService,
     private val skillDraftService: SkillDraftService,
+    private val memoryDraftService: MemoryDraftService,
 ) {
 
     private val log = LoggerFactory.getLogger(InternalApiController::class.java)
@@ -316,6 +319,30 @@ class InternalApiController(
         ResultVo.error(500, "Skill draft intake failed")
     }
 
+    /**
+     * Queues one conversation's merged memory layer for its owner to decide on.
+     *
+     * The same intake policy as [submitSkillDraft] for the same reason, and one more on top of it: the
+     * promotion pass keeps the conversation's own files untouched only when this call says the candidate did
+     * not land, so a swallowed refusal would leave a conversation believing its memory has been merged while
+     * no queue holds it and the same text silently never reaches the long-term layer. Every refusal therefore
+     * travels as an envelope code the runtime can turn into an outcome it reports.
+     *
+     * Nothing here takes a user id or a tenant. The session id is the whole identity claim, and
+     * [MemoryDraftService] resolves from it whose memory this is, which agent ran, and which bucket the
+     * approval will have to write.
+     */
+    @PostMapping("/memory/drafts")
+    fun submitMemoryDraft(@RequestBody request: MemoryDraftSubmitRequest): ResultVo<Long> = try {
+        ResultVo.success(memoryDraftService.submit(request))
+    } catch (e: BizException) {
+        log.warn("Memory draft intake refused for session {}: {}", request.sessionId, e.message)
+        ResultVo.error(e.code, e.message ?: "Memory draft intake failed")
+    } catch (e: Exception) {
+        log.error("Memory draft intake failed for session {}", request.sessionId, e)
+        ResultVo.error(500, "Memory draft intake failed")
+    }
+
     // ========================================
     // Agent Spec (unified, for agent-service)
     // ========================================
@@ -441,7 +468,6 @@ class InternalApiController(
             permissionMode = session.permissionMode,
             skillSelfWrite = agent.skillSelfWrite,
             memoryEnabled = agent.memoryEnabled,
-            sessionMemoryEnabled = agent.sessionMemoryEnabled,
         )
     }
 
@@ -467,7 +493,6 @@ class InternalApiController(
             enablePlan = channel.enablePlan,
             skillSelfWrite = agent.skillSelfWrite,
             memoryEnabled = agent.memoryEnabled,
-            sessionMemoryEnabled = agent.sessionMemoryEnabled,
         )
     }
 
@@ -506,7 +531,6 @@ class InternalApiController(
             permissionMode = "BYPASS",
             skillSelfWrite = agent.skillSelfWrite,
             memoryEnabled = agent.memoryEnabled,
-            sessionMemoryEnabled = agent.sessionMemoryEnabled,
         )
     }
 
@@ -605,7 +629,6 @@ class InternalApiController(
             permissionMode = permissionMode,
             skillSelfWrite = agent.skillSelfWrite,
             memoryEnabled = agent.memoryEnabled,
-            sessionMemoryEnabled = agent.sessionMemoryEnabled,
         )
     }
 
@@ -639,11 +662,8 @@ class InternalApiController(
             enablePlan = enablePlan,
             permissionMode = permissionMode,
             // No agent row stands behind a lead, so there is no switch to read and nothing to turn off here:
-            // what keeps a lead out of the memory domain is the runtime's own `!isLead` guard. The session
-            // layer is answered off for the same reason — there is no row to answer from, and it is the
-            // opt-in one.
+            // what keeps a lead out of the memory domain is the runtime's own `!isLead` guard.
             memoryEnabled = 1,
-            sessionMemoryEnabled = 0,
             toolBindings = emptyList(),
             mcpBindings = emptyList(),
             skillIds = teamSkillBindingMapper.selectByTeamId(team.id).map { it.skillId },
@@ -683,9 +703,6 @@ class InternalApiController(
         // Required rather than defaulted: a new call site that never names it would otherwise deliver the
         // default to every agent and the wizard's "no memory" answer would die silently at that site.
         memoryEnabled: Int,
-        // Same reason and same shape — this one is the opt-in layer, so a forgotten name would have been
-        // read as "nobody wants two layers", which no row was asked about.
-        sessionMemoryEnabled: Int,
         permissionMode: String = "DEFAULT",
         toolBindings: List<AgentToolBinding> = toolBindingMapper.selectByAgentId(agentId),
         mcpBindings: List<AgentMcpBinding> = mcpBindingMapper.selectByAgentId(agentId),
@@ -945,7 +962,6 @@ class InternalApiController(
             enablePlan = enablePlan,
             skillSelfWrite = skillSelfWrite,
             memoryEnabled = memoryEnabled,
-            sessionMemoryEnabled = sessionMemoryEnabled,
             permissionMode = permissionMode,
             modelSupportInternet = model?.supportInternet ?: 0,
             modelSupportReasoning = model?.supportReasoning ?: 0,

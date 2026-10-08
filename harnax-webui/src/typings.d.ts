@@ -841,8 +841,6 @@ message?: string;
     skillSelfWrite?: number;
     /** 0/1 — long-term memory; absent or 1 means on, only an explicit 0 turns it off */
     memoryEnabled?: number;
-    /** 0/1 — per-session memory layer; absent or 0 means off, only an explicit 1 asks for two layers */
-    sessionMemoryEnabled?: number;
     creator?: string;
     createTime?: string;
     updateTime?: string;
@@ -969,13 +967,8 @@ message?: string;
     lastModified?: string;
     /** Days that have a daily note, e.g. `2026-10-05`, oldest first */
     dates: string[];
-    /** Conversations whose own memory has not been merged in yet; absent when there are none */
+    /** Conversations whose own memory has produced a candidate nobody has decided yet; absent when there are none */
     pendingSessionLayers?: number;
-    /**
-     * Whether this agent also remembers per conversation. Absent means admin could not tell — that is not the
-     * same as `false`, which means the agent has only ever had the long-term layer.
-     */
-    sessionMemory?: boolean;
   };
 
   /**
@@ -1005,6 +998,93 @@ message?: string;
     deletedObjects: number;
   };
 
+  export type MemoryDraftStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+  /**
+   * @zh-CN 记忆候选队列的一行：不带正文，正文只在详情里，列表给的是字数与来源文件数
+   */
+  export type MemoryDraftRow = {
+    id: number;
+    /** The agent whose long-term layer this merge joins — memory is keyed by name, not by numeric id */
+    agentName: string;
+    /** The conversation that produced the merge */
+    sessionId: string;
+    status: string;
+    /** Version of the owner's layer this merge read; 0 means there was none yet */
+    baseVersion: number;
+    mergedChars: number;
+    sourceCount: number;
+    createTime?: string;
+    updateTime?: string;
+    reviewedBy?: string;
+    reviewedAt?: string;
+    rejectReason?: string;
+  };
+
+  /**
+   * @zh-CN admin 的 Page 序列化出的就是这四个字段，与 PageResult 的 size/current 形状不同
+   */
+  export type MemoryDraftPage = {
+    pageNum: number;
+    pageSize: number;
+    total: number;
+    records: MemoryDraftRow[];
+  };
+
+  /**
+   * @zh-CN 这次合并读过的一个会话层文件，连同当时在那里读到的字节
+   */
+  export type MemoryDraftSource = {
+    path: string;
+    content?: string;
+  };
+
+  /**
+   * @zh-CN 单条候选的全文。baseMd 是这次合并读到的现有长期层，没有则为空
+   */
+  export type MemoryDraftDetail = {
+    id: number;
+    agentName: string;
+    sessionId: string;
+    status: string;
+    mergedMd: string;
+    baseMd?: string;
+    baseVersion: number;
+    sources: MemoryDraftSource[];
+    /** 服务端对上面这些列现算的摘要，批准必须签回它 */
+    contentDigest: string;
+    createTime?: string;
+    updateTime?: string;
+    reviewedBy?: string;
+    reviewedAt?: string;
+    rejectReason?: string;
+  };
+
+  export type MemoryDraftApproveRequest = {
+    expectedDigest: string;
+  };
+
+  export type MemoryDraftRejectRequest = {
+    reason: string;
+  };
+
+  /**
+   * @zh-CN 审批动作的结果。审核人能据以再动作的拒绝随 200 信封回来，判据是 outcome 而不是状态码。
+   */
+  export type MemoryDraftDecision = {
+    outcome: 'APPROVED' | 'REJECTED' | 'DRAFT_CHANGED' | 'ALREADY_REVIEWED' | 'STALE_BASE';
+    longTermVersion?: number;
+    clearedSources?: number;
+    keptSources?: number;
+    absentSources?: number;
+    reason?: string;
+    currentDigest?: string;
+    currentBaseVersion?: number;
+    reviewedBy?: string;
+    reviewedAt?: string;
+    rejectReason?: string;
+  };
+
   /**
    * @zh-CN 智能体创建请求
    */
@@ -1022,7 +1102,6 @@ message?: string;
     isPublic?: number;
     skillSelfWrite?: number;
     memoryEnabled?: number;
-    sessionMemoryEnabled?: number;
   };
 
   /**
@@ -1041,7 +1120,6 @@ message?: string;
     isPublic?: number;
     skillSelfWrite?: number;
     memoryEnabled?: number;
-    sessionMemoryEnabled?: number;
   };
 
   /**

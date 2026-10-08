@@ -37,6 +37,18 @@ object MemoryObjectKeys {
     /** The item key of the curated layer inside the [ROOT_SEGMENT] route. */
     const val MEMORY_MD_ITEM_KEY = "/MEMORY.md"
 
+    /**
+     * The path a merge proposal names the conversation's own curated file by, verbatim
+     * `MemoryFilesystemRoutes.MEMORY_MD_ROUTE`.
+     */
+    const val CURATED_SOURCE_PATH = "MEMORY.md"
+
+    /** The path prefix a merge proposal names a ledger file by, verbatim `MemoryFilesystemRoutes.MEMORY_DIR_ROUTE`. */
+    private const val LEDGER_SOURCE_PREFIX = "memory/"
+
+    /** The width of `session.session_id`, the column every session id reaching this code comes from. */
+    private const val SESSION_ID_MAX_LENGTH = 100
+
     /** The `agents` namespace segment, kept because the runtime keys memory per agent as well as per owner. */
     private const val AGENTS_SEGMENT = "agents"
 
@@ -171,6 +183,68 @@ object MemoryObjectKeys {
         namespace(tenantId, userId, agentId, SESSIONS_SEGMENT, tenantScoped) + listOf(sessionId, ROOT_SEGMENT),
         MEMORY_MD_ITEM_KEY,
     )
+
+    /**
+     * One conversation's own-layer file as a merge proposal names it, or null when the path is not one the
+     * merge could have read.
+     *
+     * The approval clears the objects a candidate was made from, so it has to turn the proposal's `sources`
+     * paths back into keys. Those paths are the routes `MemoryPromoter` read through — [CURATED_SOURCE_PATH]
+     * and [LEDGER_SOURCE_PREFIX] plus the file name — so the rule here is the writer's own ledger filter
+     * (one level under `memory/`, no `/`, no `..`, ending in `.md`) rather than a list of names that look
+     * like dates: a file the writer accepted and this refused would stay in the bucket after the approval
+     * that describes it. [isValidAgentId] and [isValidSessionId] gate the two segments first, because a key
+     * built from an unaddressable one of them points at a bucket nobody owns.
+     */
+    fun sessionSourceKey(
+        keyPrefix: String,
+        tenantId: Long,
+        userId: String,
+        agentId: String,
+        sessionId: String,
+        path: String,
+        tenantScoped: Boolean = true,
+    ): String? {
+        if (!isValidAgentId(agentId) || !isValidSessionId(sessionId)) return null
+        val source = sourcePathOf(path) ?: return null
+        return buildKey(
+            keyPrefix,
+            namespace(tenantId, userId, agentId, SESSIONS_SEGMENT, tenantScoped) + listOf(sessionId, source.first),
+            source.second,
+        )
+    }
+
+    /** The route tail and item key one proposal path spans, or null when it is not a merge source. */
+    private fun sourcePathOf(path: String): Pair<String, String>? = when {
+        path == CURATED_SOURCE_PATH -> ROOT_SEGMENT to MEMORY_MD_ITEM_KEY
+        path.startsWith(LEDGER_SOURCE_PREFIX) -> {
+            val name = path.removePrefix(LEDGER_SOURCE_PREFIX)
+            if (name.isEmpty() || name.contains('/') || name.contains("..") || !name.endsWith(".md")) {
+                null
+            } else {
+                MEMORY_SEGMENT to "/$name"
+            }
+        }
+        else -> null
+    }
+
+    /**
+     * Whether [sessionId] may be used as a namespace segment.
+     *
+     * The same shapes [isValidAgentId] refuses, bounded by the `session.session_id` column the value comes
+     * from. Session ids this system generates (`web-`, `mp-`, `chn-`, `team-…`) all satisfy it; the check is
+     * there because the value arrives from an agent runtime over HTTP and then from a stored row, not from
+     * the path builder.
+     */
+    fun isValidSessionId(sessionId: String?): Boolean {
+        if (sessionId.isNullOrBlank()) return false
+        if (sessionId.length > SESSION_ID_MAX_LENGTH) return false
+        if (sessionId.contains("..")) return false
+        if (sessionId == ".") return false
+        if (sessionId.contains('/') || sessionId.contains('\\')) return false
+        if (sessionId.any { it.isISOControl() }) return false
+        return !sessionId.first().isWhitespace() && !sessionId.last().isWhitespace()
+    }
 
     /**
      * The narrowest prefix that still covers everything one owner wrote, used to enumerate their agents.

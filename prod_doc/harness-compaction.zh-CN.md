@@ -180,7 +180,7 @@ CREATE TABLE IF NOT EXISTS session_message (
 | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Model.kt:16-84`、同目录 `dto/ModelConfigDto.kt:45` | 各加一个可空 `contextWindow` 字段。窗口值进运行时只有两条通道，都从这两处读：`ChatModelConfigAdaptorImpl.kt:72,82,89` 取 `cfg.contextWindow`（`ModelConfigDto`），`:109,119,126` 取 `model.contextWindow`（实体）。`AgentSpecInfoResponse` 不在任一条通道上，也没有读窗口的调用方，因此**不加**这个字段 —— 加了就是一列死数据 |
 | `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/ChatModelConfigAdaptorImpl.kt:60,97` | 两条通道各一个方法，把窗口值透传进 `ChatModelConfig`；模型对象最终由 `harnax-agent/harnax-agent-utils/src/main/kotlin/com/agnetix/harnax/agent/adaptor/model/ModelHelper.kt:52,76` 走上游 `DashScopeChatModel.builder()` / `OpenAIChatModel.builder()` 构造，窗口值就进那个 builder（三个 provider 各一处：`:64,82,104`）—— 不再另开一条"直接读列"的通道，读列的那两处已经在上一行的适配器里 |
 | admin 模型表单 | 一个可选数字输入框（单位：token） |
-| 已部署环境 | 基线折进 V1 意味着**清库重建**；不想清库的话就改出前向增量 `V2__model_context_window.sql`。两条都写得出来，默认走清库重建 |
+| 已部署环境 | 这一列就写在基线 `V1__init_schema.sql` 里，落它的那一次因此是**清库重建**；不想清库的话才改出一份前向增量，版本号取迁移目录里最大号之后的下一个 |
 
 **自动压缩的档位是钉出来的**：装配链把 5.1 那份 `AutoCompactionTier.auto()` 经 `HarnessAgentBuilder.compaction(...)` 交给上游，命令路径取同源的 `command(keepTokens)`，本节这个阈值的减数读的也是同一份常量。`disableMemoryTools()` / `disableToolsConfig()` 的收口排在第 11 节。
 

@@ -301,6 +301,7 @@ class ToolMetricsReadIT : BaseAdminIT() {
         call(hour, TENANT_ID, ToolInvocationLog.KIND_MCP, "search_nodes", "SUCCESS", 80L, mcpId = 77L)
         call(hour, TENANT_ID, ToolInvocationLog.KIND_CLI, "lark", "SUCCESS", 90L, cliId = 55L)
         call(hour, TENANT_ID, ToolInvocationLog.KIND_BUILTIN, "read_file", "SUCCESS", 20L, agentId = 900001L)
+        call(hour, TENANT_ID, ToolInvocationLog.KIND_BUILTIN, "write_file", "SUCCESS", 15L, agentId = 900002L)
         rollup.rollUp()
 
         assertEquals("文档检索服务", data("/api/admin/tool-metrics/summary?kind=mcp&groupBy=mcp")["rows"][0]["subjectName"].asString())
@@ -315,10 +316,12 @@ class ToolMetricsReadIT : BaseAdminIT() {
         assertEquals("文档检索服务", toolRow["parentName"].asString())
 
         // The agent dimension reads the detail table through a primary-key join: the registered one answers
-        // with its name, and the fixture's agent 1 — which has no row behind it — falls back to its id.
+        // with its name, and the one with no row behind it falls back to its id. The unregistered id is this
+        // class's own reserved band rather than the fixture's agent 1 — another class's agent row can land on
+        // any id the sequence hands out, and 1 is the first one it hands out.
         val agents = data("/api/admin/tool-metrics/summary?groupBy=agent")["rows"]
         assertEquals("取数助手", agents.first { it["subjectKey"].asString() == "900001" }["subjectName"].asString())
-        assertEquals("1", agents.first { it["subjectKey"].asString() == "1" }["subjectName"].asString())
+        assertEquals("900002", agents.first { it["subjectKey"].asString() == "900002" }["subjectName"].asString())
 
         // The fixture's session has no `session` row, so its own id is the only name there is.
         val sessions = data("/api/admin/tool-metrics/summary?groupBy=session")["rows"]

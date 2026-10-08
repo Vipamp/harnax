@@ -1,17 +1,21 @@
 package com.agnetix.harnax.admin.service.impl
 
 import com.agnetix.harnax.admin.config.AdminMinioProperties
+import com.agnetix.harnax.admin.dto.MemoryDraftSource
 import com.agnetix.harnax.admin.exception.BizException
 import io.minio.GetObjectArgs
 import io.minio.GetObjectResponse
 import io.minio.ListObjectsArgs
 import io.minio.MinioClient
+import io.minio.PutObjectArgs
 import io.minio.RemoveObjectArgs
 import io.minio.Result
 import io.minio.errors.ErrorResponseException
 import io.minio.messages.Item
+import okhttp3.Headers.Companion.toHeaders
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -155,11 +159,20 @@ class MemoryStoreGatewayTest {
      *
      * Both read entry points are stubbed because a JDK reader may bulk-read or peek a single byte depending
      * on how its buffer fills; the position is shared, so either path reads the same bytes.
+     *
+     * [etag] is what the server answers for this exact body, and the write path refuses to replace an object
+     * that does not carry one — a read-side stub without it stays a read-side stub.
      */
-    private fun objectStream(body: String): GetObjectResponse {
+    private fun objectStream(
+        body: String,
+        etag: String? = null,
+    ): GetObjectResponse {
         val bytes = body.toByteArray(StandardCharsets.UTF_8)
         val position = AtomicInteger(0)
         return mock(GetObjectResponse::class.java).apply {
+            `when`(headers()).thenReturn(
+                (if (etag == null) emptyMap() else mapOf("ETag" to etag)).toHeaders(),
+            )
             `when`(read()).thenAnswer {
                 val at = position.get()
                 if (at < bytes.size) {
@@ -184,6 +197,47 @@ class MemoryStoreGatewayTest {
                     taken
                 }
             }
+        }
+    }
+
+    /**
+     * A minio 404/`NoSuchKey`, the answer an object store gives for a key that is not there.
+     *
+     * Each mock is stubbed on its own line: beginning a nested stubbing while the outer one is still
+     * unfinished is what Mockito reports as `UnfinishedStubbing`, not as a useful failure message.
+     */
+    private fun missingObject(): ErrorResponseException {
+        val http = mock(okhttp3.Response::class.java)
+        `when`(http.code).thenReturn(404)
+        val error = mock(io.minio.messages.ErrorResponse::class.java)
+        `when`(error.code()).thenReturn("NoSuchKey")
+        val failure = mock(ErrorResponseException::class.java)
+        `when`(failure.response()).thenReturn(http)
+        `when`(failure.errorResponse()).thenReturn(error)
+        return failure
+    }
+
+    /**
+     * A stand-in bucket: [objects] holds the bodies by key, a read of a key that is not in it answers 404, and
+     * a delete really takes the key away.
+     *
+     * The delete is what makes the clear-side cases mean something: the gateway reads the object back after
+     * removing it, and a stub that kept answering the old body would turn a working delete into a fault and a
+     * broken one into a success. With [honoursDelete] false the bucket answers a remove and keeps the object,
+     * which is the store behaviour that read-back exists to catch.
+     */
+    private fun fakeBucket(
+        objects: MutableMap<String, String>,
+        honoursDelete: Boolean = true,
+    ) {
+        `when`(minioClient.getObject(any<GetObjectArgs>())).thenAnswer { invocation ->
+            val requested = invocation.getArgument<GetObjectArgs>(0).`object`()
+            val body = objects[requested] ?: throw missingObject()
+            objectStream(body, etag = "\"${requested.hashCode()}\"")
+        }
+        `when`(minioClient.removeObject(any<RemoveObjectArgs>())).thenAnswer { invocation ->
+            if (honoursDelete) objects.remove(invocation.getArgument<RemoveObjectArgs>(0).`object`())
+            null
         }
     }
 
@@ -452,23 +506,6 @@ class MemoryStoreGatewayTest {
             val detail = gateway.readAgent(tenantId, userId, "Research")
 
             assertEquals("", detail?.content)
-        }
-
-        /**
-         * A minio 404/`NoSuchKey`, the answer an object store gives for a key that is not there.
-         *
-         * Each mock is stubbed on its own line: beginning a nested stubbing while the outer one is still
-         * unfinished is what Mockito reports as `UnfinishedStubbing`, not as a useful failure message.
-         */
-        private fun missingObject(): ErrorResponseException {
-            val http = mock(okhttp3.Response::class.java)
-            `when`(http.code).thenReturn(404)
-            val error = mock(io.minio.messages.ErrorResponse::class.java)
-            `when`(error.code()).thenReturn("NoSuchKey")
-            val failure = mock(ErrorResponseException::class.java)
-            `when`(failure.response()).thenReturn(http)
-            `when`(failure.errorResponse()).thenReturn(error)
-            return failure
         }
 
         /**
@@ -759,6 +796,284 @@ class MemoryStoreGatewayTest {
 
             assertEquals(503, failure.code)
             verify(minioClient, never()).removeObject(any<RemoveObjectArgs>())
+        }
+    }
+
+    /**
+     * The write half: an approval replaces the owner's curated layer and clears the conversation's own files.
+     *
+     * What is pinned here is which key each write addresses and which precondition it asks the store to
+     * enforce, because a mocked client cannot enforce anything — it can only be shown what was asked of it.
+     * The server's own answers (a 412 on a real conditional write, an object that survives a real delete, the
+     * ETag a real GET carries) are measured against a live MinIO in `MemoryApprovalStoreIT`.
+     */
+    @Nested
+    @DisplayName("Applying what a reviewer approved")
+    inner class ApprovalWrites {
+
+        private val curatedKey = "${ownerPrefix}agents/Research/root/MEMORY.md"
+
+        private fun sessionKey(
+            route: String,
+            item: String,
+        ) = "${ownerPrefix}agents/Research/sessions/sess-1/$route/$item"
+
+        /** The store refusing a conditional write, because the object moved between this read and this put. */
+        private fun preconditionFailed(): ErrorResponseException {
+            val http = mock(okhttp3.Response::class.java)
+            `when`(http.code).thenReturn(412)
+            val error = mock(io.minio.messages.ErrorResponse::class.java)
+            `when`(error.code()).thenReturn("PreconditionFailed")
+            val failure = mock(ErrorResponseException::class.java)
+            `when`(failure.response()).thenReturn(http)
+            `when`(failure.errorResponse()).thenReturn(error)
+            return failure
+        }
+
+        /** Every object the gateway asked to write: its key, its conditional headers, and its body bytes. */
+        private fun writes(): List<Triple<String, Map<String, String>, String>> = argumentCaptor<PutObjectArgs>().apply {
+            verify(minioClient, atLeastOnce()).putObject(capture())
+        }.allValues.map { args ->
+            Triple(
+                args.`object`(),
+                // The version precondition travels as an extra header, which is how MinioBaseStore sends it too.
+                args.extraHeaders().entries().associate { it.key to it.value },
+                args.stream().readBytes().toString(StandardCharsets.UTF_8),
+            )
+        }
+
+        @Test
+        fun `a first approval creates the layer conditionally on its absence`() {
+            val missing = missingObject()
+            `when`(minioClient.getObject(any<GetObjectArgs>())).thenThrow(missing)
+
+            assertTrue(gateway.writeCuratedIfVersion(tenantId, userId, "Research", 0L, "# Memory\n- approved"))
+
+            val (key, headers, body) = writes().single()
+            assertEquals(curatedKey, key, "the write addresses the one curated key of this owner and agent")
+            assertEquals("*", headers["If-None-Match"], "a create is refused by the store if anybody got there first")
+            assertEquals(
+                "close",
+                headers["Connection"],
+                "a refusal must cost this write's own connection, not the next approval's write",
+            )
+            assertNull(headers["If-Match"])
+            val envelope = objectMapper.readTree(body)
+            assertEquals("/MEMORY.md", envelope.path("key").asText())
+            assertEquals(1L, envelope.path("version").asLong(), "an absent layer becomes version 1")
+            assertEquals("# Memory\n- approved", envelope.path("value").path("content").asText())
+            // The runtime reads this object back through MinioBaseStore, so the document is written as that
+            // class writes it — field order included, because the pinned cross-check literal has one.
+            val positions = listOf("created_at", "encoding", "modified_at", "content").map { body.indexOf("\"$it\"") }
+            assertTrue(positions.all { it >= 0 }, "every field the envelope contract names is present: $body")
+            assertEquals(positions.sorted(), positions, "value fields must keep the writer's order")
+            assertTrue(body.indexOf("\"key\"") < positions.first())
+            assertTrue(body.indexOf("\"version\"") > positions.last())
+        }
+
+        @Test
+        fun `a replacement keeps the layer's own creation stamp and bumps its version`() {
+            val objects = mutableMapOf(
+                curatedKey to """
+                    {"key":"/MEMORY.md","value":{"created_at":"2026-01-01T00:00:00Z","encoding":"utf-8",
+                    "modified_at":"2026-01-02T00:00:00Z","content":"- old"},"version":3}
+                """.trim().replace("\n", ""),
+            )
+            fakeBucket(objects)
+
+            assertTrue(gateway.writeCuratedIfVersion(tenantId, userId, "Research", 3L, "- new"))
+
+            val (_, headers, body) = writes().single()
+            assertEquals("\"${curatedKey.hashCode()}\"", headers["If-Match"], "the write is conditioned on the bytes the read just returned")
+            assertEquals("close", headers["Connection"], "and it is not the write after this one that pays for a refusal")
+            val envelope = objectMapper.readTree(body)
+            assertEquals(
+                "2026-01-01T00:00:00Z",
+                envelope.path("value").path("created_at").asText(),
+                "the file was created when it was created, not when a reviewer approved a candidate",
+            )
+            assertNotEquals("2026-01-02T00:00:00Z", envelope.path("value").path("modified_at").asText(), "the text changed now, so that stamp moves")
+            assertEquals(4L, envelope.path("version").asLong())
+        }
+
+        @Test
+        fun `a candidate merged against an older version never reaches the store`() {
+            val objects = mutableMapOf(curatedKey to wrapper("- old"))
+            fakeBucket(objects)
+
+            assertFalse(gateway.writeCuratedIfVersion(tenantId, userId, "Research", 2L, "- mine"))
+
+            verify(minioClient, never()).putObject(any<PutObjectArgs>())
+            assertEquals("- old", objectMapper.readTree(objects.getValue(curatedKey)).path("value").path("content").asText())
+        }
+
+        @Test
+        fun `a layer that moved after this read is refused by the store rather than overwritten`() {
+            val objects = mutableMapOf(curatedKey to wrapper("- the merge that got there first"))
+            fakeBucket(objects)
+            // The version still matched when it was read, so the guard that catches this one is the ETag on the
+            // wire: a second approval of the same base raced past the first and the store took its side.
+            val conflict = preconditionFailed()
+            `when`(minioClient.putObject(any<PutObjectArgs>())).thenThrow(conflict)
+
+            assertFalse(gateway.writeCuratedIfVersion(tenantId, userId, "Research", 3L, "- mine"))
+
+            assertEquals(
+                "- the merge that got there first",
+                objectMapper.readTree(objects.getValue(curatedKey)).path("value").path("content").asText(),
+                "a refused approval leaves the layer exactly as the approval that won wrote it",
+            )
+        }
+
+        @Test
+        fun `a layer that answers no ETag is not replaced unconditionally`() {
+            // version 3 as `wrapper` writes it, and no ETag header on the response.
+            serveBody(wrapper("- old"))
+
+            assertFalse(gateway.writeCuratedIfVersion(tenantId, userId, "Research", 3L, "- new"))
+
+            verify(minioClient, never()).putObject(any<PutObjectArgs>())
+        }
+
+        @Test
+        fun `a body that is not a store envelope is refused rather than read as no memory`() {
+            serveBody("plain text that is not JSON at all")
+
+            val failure = assertThrows(BizException::class.java) { gateway.readCuratedLayer(tenantId, userId, "Research") }
+
+            assertEquals(503, failure.code, "'no memory yet' would let an approval create a second object over this one")
+            verify(minioClient, never()).putObject(any<PutObjectArgs>())
+        }
+
+        @Test
+        fun `an envelope with no embedded version reads as version 1, the way the store answers it`() {
+            serveBody("""{"key":"/MEMORY.md","value":{"content":"- seeded by hand"},"version":0}""")
+
+            assertEquals(1L, gateway.readCuratedLayer(tenantId, userId, "Research").version)
+        }
+
+        @Test
+        fun `an absent layer reads as empty at version 0`() {
+            val missing = missingObject()
+            `when`(minioClient.getObject(any<GetObjectArgs>())).thenThrow(missing)
+
+            val layer = gateway.readCuratedLayer(tenantId, userId, "Research")
+
+            assertEquals("", layer.content)
+            assertEquals(0L, layer.version, "0 is the version a first candidate is filed against")
+        }
+
+        @Test
+        fun `an agent id that could name a path never reaches the store`() {
+            listOf("../", "a/b", "..", "agents/Ops/root", "..\\..\\x").forEach { candidate ->
+                reset(minioClient)
+
+                assertEquals(
+                    400,
+                    assertThrows(BizException::class.java) {
+                        gateway.writeCuratedIfVersion(tenantId, userId, candidate, 0L, "- x")
+                    }.code,
+                    "'$candidate' should have been refused as a write target",
+                )
+                assertThrows(BizException::class.java) { gateway.readCuratedLayer(tenantId, userId, candidate) }
+
+                verify(minioClient, never()).getObject(any<GetObjectArgs>())
+            }
+        }
+
+        @Test
+        fun `only a source that still holds the merged bytes is cleared`() {
+            val matched = sessionKey("root", "MEMORY.md")
+            val moved = sessionKey("memory", "2026-10-05.md")
+            val objects = mutableMapOf(
+                matched to wrapper("- recorded"),
+                moved to wrapper("- something a later turn appended"),
+            )
+            fakeBucket(objects)
+
+            val cleared = gateway.clearSessionSources(
+                tenantId,
+                userId,
+                "Research",
+                "sess-1",
+                listOf(
+                    MemoryDraftSource("MEMORY.md", "- recorded"),
+                    MemoryDraftSource("memory/2026-10-05.md", "- recorded"),
+                ),
+            )
+
+            assertEquals(1, cleared.cleared)
+            assertEquals(1, cleared.kept, "the ledger moved after the merge read it, so its next candidate still has it")
+            assertEquals(0, cleared.absent)
+            assertFalse(objects.containsKey(matched))
+            assertTrue(objects.containsKey(moved))
+        }
+
+        @Test
+        fun `a path the merge never reads is not addressed at all`() {
+            fakeBucket(mutableMapOf())
+
+            val cleared = gateway.clearSessionSources(
+                tenantId,
+                userId,
+                "Research",
+                "sess-1",
+                listOf(MemoryDraftSource("root/MEMORY.md", "- x"), MemoryDraftSource("notes.md", "- x")),
+            )
+
+            assertEquals(0, cleared.cleared)
+            assertEquals(2, cleared.kept)
+            verify(minioClient, never()).getObject(any<GetObjectArgs>())
+        }
+
+        @Test
+        fun `a source that is already gone is counted apart from one that was cleared`() {
+            fakeBucket(mutableMapOf())
+
+            val cleared = gateway.clearSessionSources(
+                tenantId,
+                userId,
+                "Research",
+                "sess-1",
+                listOf(MemoryDraftSource("MEMORY.md", "- x")),
+            )
+
+            assertEquals(MemoryStoreGateway.ClearedSources(0, 0, 1), cleared)
+            verify(minioClient, never()).removeObject(any<RemoveObjectArgs>())
+        }
+
+        @Test
+        fun `an object that survives its own deletion is a fault, not a clear`() {
+            val objects = mutableMapOf(sessionKey("root", "MEMORY.md") to wrapper("- recorded"))
+            // The bucket answers the remove and keeps the object, the way a store that swallows it would.
+            fakeBucket(objects, honoursDelete = false)
+
+            val failure = assertThrows(BizException::class.java) {
+                gateway.clearSessionSources(
+                    tenantId,
+                    userId,
+                    "Research",
+                    "sess-1",
+                    listOf(MemoryDraftSource("MEMORY.md", "- recorded")),
+                )
+            }
+
+            assertEquals(503, failure.code, "counting it cleared would leave the queue claiming a merge that is still sitting there")
+        }
+
+        @Test
+        fun `a conversation id that could name a path clears nothing`() {
+            val cleared = gateway.clearSessionSources(
+                tenantId,
+                userId,
+                "Research",
+                "sess-1/../../other",
+                listOf(MemoryDraftSource("MEMORY.md", "- x")),
+            )
+
+            assertEquals(0, cleared.cleared)
+            assertEquals(1, cleared.kept)
+            verify(minioClient, never()).getObject(any<GetObjectArgs>())
         }
     }
 }

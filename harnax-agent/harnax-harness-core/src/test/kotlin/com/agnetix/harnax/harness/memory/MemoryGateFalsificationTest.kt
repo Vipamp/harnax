@@ -113,9 +113,22 @@ class MemoryGateFalsificationTest {
 
     private fun ownerNs(owner: String, segment: String) = listOf("tenants", "4", "users", owner, "agents", AGENT_ID, segment)
 
-    private fun ledgerContent(owner: String): String? = store().get(ownerNs(owner, "memory"), "/$today.md")?.value()?.get("content")?.toString()
+    /** The bucket one assembled conversation's routes answer from. */
+    private fun conversationNs(
+        owner: String,
+        sessionId: String,
+        segment: String,
+    ) = ownerNs(owner, "sessions") + listOf(sessionId, segment)
 
-    private fun memoryMdContent(owner: String): String? = store().get(ownerNs(owner, "root"), "/MEMORY.md")?.value()?.get("content")?.toString()
+    private fun ledgerContent(
+        owner: String,
+        sessionId: String = "sess-A",
+    ): String? = store().get(conversationNs(owner, sessionId, "memory"), "/$today.md")?.value()?.get("content")?.toString()
+
+    private fun memoryMdContent(
+        owner: String,
+        sessionId: String = "sess-A",
+    ): String? = store().get(conversationNs(owner, sessionId, "root"), "/MEMORY.md")?.value()?.get("content")?.toString()
 
     @BeforeAll
     fun createBucket() {
@@ -299,7 +312,7 @@ class MemoryGateFalsificationTest {
         turn(flushMiddleware(built.harnessAgent.workspaceManager, model, MemoryConfig.FlushTrigger.always(), gate), built, "s-always")
 
         assertEquals(1, model.calls.get(), "always() never consults the gate")
-        val content = requireNotNull(ledgerContent(owner)) { "the ledger must land in the owner bucket" }
+        val content = requireNotNull(ledgerContent(owner)) { "the ledger must land in this conversation's own bucket" }
         assertTrue(content.contains(EXTRACTED), "got: $content")
     }
 
@@ -388,8 +401,8 @@ class MemoryGateFalsificationTest {
         turn(flushMiddleware(second.harnessAgent.workspaceManager, model, trigger, gate), second, "shared-slot")
 
         assertEquals(1, model.calls.get(), "the second owner's turn lost the claim the first one held")
-        assertNotNull(ledgerContent("17"), "the owner that claimed wrote its own bucket")
-        assertNull(ledgerContent("18"), "and the throttled owner wrote nothing of its own")
+        assertNotNull(ledgerContent("17", "host-first"), "the owner that claimed wrote into its own conversation bucket")
+        assertNull(ledgerContent("18", "host-second"), "and the throttled owner wrote nothing of its own")
     }
 
     @Test

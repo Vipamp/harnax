@@ -45,13 +45,13 @@ CREATE DATABASE IF NOT EXISTS harnax_admin
 
 Flyway 会在服务启动时自动执行 `db/migration` 下的建表脚本，无需手动导入 SQL。
 
-> **这一版带三条前向增量**：`tool_invocation_log` / `tool_invocation_stats` 走 `V3__tool_invocation_metrics.sql`，`V4__drop_tool_call_log.sql` 紧接着把旧表 `tool_call_log` 删掉，`V5__tool_invocation_stats_hourly.sql` 再把聚合表升到小时一档——先 `DELETE FROM tool_invocation_stats` 清空旧的日行，然后把 `stat_date` 改名成 `stat_hour`（`datetime`）并换上小时的两条键 `uk_tool_invocation_stats_hour` 与 `idx_tool_invocation_stats_tenant_hour`。三条都不折进 `V1__init_schema.sql`。基线因此保持台账记下的那串字节，已经在跑的 `harnax_admin` 正常启动、Flyway 在启动时依次补放 V3、V4 与 V5；新建的库重放 V1 → V2 → V3 → V4 → V5，落到同一个形状。折进基线是一条要走清库重建的路（改基线与重建是一个动作），而这个库里的模型 provider api_key 只有人能重新填，所以这里不取那条路。`application.yml:45` 那行 `repair-on-migrate: true` 无论如何都不是逃生口：Spring Boot 4.0.1 的 `FlywayProperties` 没有这个字段，键被 binder 静默丢弃。
+> **`db/migration` 在基线之上叠了六份前向增量**，分属两个域。工具指标那一组是三条：`tool_invocation_log` / `tool_invocation_stats` 走 `V3__tool_invocation_metrics.sql`，`V4__drop_tool_call_log.sql` 紧接着把旧表 `tool_call_log` 删掉，`V5__tool_invocation_stats_hourly.sql` 再把聚合表升到小时一档——先 `DELETE FROM tool_invocation_stats` 清空旧的日行，然后把 `stat_date` 改名成 `stat_hour`（`datetime`）并换上小时的两条键 `uk_tool_invocation_stats_hour` 与 `idx_tool_invocation_stats_tenant_hour`。记忆域那一组是另两条：`V6__drop_agent_session_memory.sql` 删掉 `V2__agent_session_memory.sql` 给 `agent` 补上的 `session_memory_enabled`——会话层不再有按智能体的开关，每一台开了记忆的 agent 底下每个会话都有自己的层；`V7__memory_draft.sql` 建 `memory_draft`，会话层晋升长期层要先作为一条候选等人批准，这张表就是那条候选的账。六条都不折进 `V1__init_schema.sql`。基线因此保持台账记下的那串字节，已经在跑的 `harnax_admin` 正常启动、Flyway 在启动时依次补放台账里还没有的那几条（已经落过 V3 至 V5 的库这次补的是 V6 与 V7）；新建的库重放 V1 → V2 → V3 → V4 → V5 → V6 → V7，落到同一个形状。折进基线是一条要走清库重建的路（改基线与重建是一个动作），而这个库里的模型 provider api_key 只有人能重新填，所以这里不取那条路。`application.yml:45` 那行 `repair-on-migrate: true` 无论如何都不是逃生口：Spring Boot 4.0.1 的 `FlywayProperties` 没有这个字段，键被 binder 静默丢弃。
 >
 > `tool_call_log` 的清账因此是声明式的，没有手工步骤：它的读写方已全部删除，表由 V4 在下一次 admin 重建并重启时释放。`DROP TABLE IF EXISTS` 让它既能删掉既有库里的表，也能在从新基线建起来的库上原地空转。这张表存的是工具调用的历史行，删掉之后这些行只能从 `tool_invocation_log` 的新口径重头积累——这是它下线时已接受的代价，不是回退。
 >
 > `mcp_call_log` 不在这条清理之列：它是 MCP 授权账本，`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/McpOAuthUserServiceImpl.kt:618` 至今仍在写它，只是不当指标源用，删掉会丢授权审计。
 >
-> 下一次清库重建时把 V3、V4 与 V5 折回基线——同时从基线删掉 `tool_call_log` 的建表块、并把 `tool_invocation_stats` 的建表语句直接按小时档（`stat_hour` 与小时的两条键）写——本文件与 `db/migration/README.md` 的那条规则就重新对齐了。
+> 下一次清库重建时把六条一起折回基线：V3、V4 与 V5 是工具指标那一组——同时从基线删掉 `tool_call_log` 的建表块、并把 `tool_invocation_stats` 的建表语句直接按小时档（`stat_hour` 与小时的两条键）写；V2 与 V6 一加一删正好相抵，基线的 `agent` 建表块本来就不带 `session_memory_enabled`，所以这一对折回只是删掉那两份文件；V7 折回成基线里的 `memory_draft` 建表块。折完之后 `db/migration` 只剩一份 `V1__init_schema.sql`，本文件与 `db/migration/README.md` 的那条规则就重新对齐了。
 
 ---
 
@@ -71,7 +71,6 @@ Flyway 会在服务启动时自动执行 `db/migration` 下的建表脚本，无
 | `HARNAX_AES_SECRET_KEY` | `change-me-32-chars-secret-key!!` | 所有凭据的落库加密密钥（配置项 `harnax.aes.secret-key`），**必须正好 32 字符**：`openssl rand -base64 48 \| tr -d '/+=' \| cut -c1-32`。默认值就写在仓库里，留着它等于任何读得到仓库的人都能解开这些密文。**先设再填凭据**：换密钥不会重新加密任何历史行，旧密文一律解不开（MCP headers / envParams、工具 HTTP headers、OAuth client_secret 与每个用户的 access / refresh token 都在这条范围内）。compose 按 `${HARNAX_AES_SECRET_KEY:-change-me-32-chars-secret-key!!}` 注入这一项，真值要在 `harnax-deploy/.env` 里给 |
 | `HARNAX_MCP_STDIO_ENABLED` | `false` | 是否允许 stdio 类型的 MCP 服务（配置项 `harnax.mcp.stdio-enabled`；同一个变量也决定 agent 侧的 `harness.mcp-stdio-enabled`）。关闭时新建 stdio 与从网络型切进 stdio 都被拒，存量行仍可编辑但永不下发；开启意味着允许在 agent-service 容器里按表单填的命令起进程，而那个容器挂着宿主 Docker socket |
 | `HARNAX_MEMORY_TENANT_SCOPED` | `true` | 记忆接口（读、删）与删用户时的记忆清理所寻的桶键前缀（配置项 `harnax.memory.tenant-scoped`）：开=`store/tenants/<tenantId>/users/<userId>/agents/<智能体名>/…`，关=去掉租户那一段。**同一个变量名也是 agent-service 的写入侧开关**（`harness.memory.tenant-scoped`），compose 里两处都按 `${HARNAX_MEMORY_TENANT_SCOPED:-true}` 注入，别只改一边。改错了不会读到别人的记忆：admin 按一个空前缀去列对象，每个用户的记忆都表现为空、删除也删不到东西 |
-| `HARNAX_AGENT_SESSION_MEMORY_DEFAULT` | `false` | 新建智能体时「会话记忆」那一枚的初值（配置项 `harnax.agent.session-memory-default`）。**只在插入那一刻起作用，且只作用于没带这一项的请求**：向导每次都显式给 `0`/`1`，所以它不受这一项支配；存量智能体保持自己已有的答案，开了也不会被改回去。本仓唯一会建智能体的调用方就是那个向导，因此这枚实际服务的是**直接打 admin 这个接口且不填该字段**的用法（curl / Swagger / 经 nginx `/api/admin/` 的 API Key 调用），它不是把整份部署翻成双层的开关。只有 admin 读它，agent-service 拿的是智能体行上那枚开关随 spec 下发的值 |
 | `FLYWAY_ENABLED` | `true` | 是否启用 Flyway 建表 |
 | `SWAGGER_ENABLED` | `true` | 是否启用 Swagger 文档 (生产建议关闭) |
 | `HARNAX_ROUTER_URL` | `http://localhost:8081` | Router 服务地址 |

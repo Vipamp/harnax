@@ -3,6 +3,7 @@ package com.agnetix.harnax.harness.spring
 import com.agnetix.harnax.agent.adaptor.ChatModelConfigAdaptor
 import com.agnetix.harnax.agent.adaptor.McpAccessTokenSourceFactory
 import com.agnetix.harnax.agent.adaptor.McpConfigAdaptor
+import com.agnetix.harnax.agent.adaptor.MemoryDraftAdaptor
 import com.agnetix.harnax.agent.adaptor.PlanNoteAdaptor
 import com.agnetix.harnax.agent.adaptor.ProcessLogAdaptor
 import com.agnetix.harnax.agent.adaptor.SkillAdaptor
@@ -333,6 +334,7 @@ class HarnessAutoConfiguration {
         mcpTokenSourceFactoryProvider: ObjectProvider<McpAccessTokenSourceFactory>,
         skillUsageAdaptorProvider: ObjectProvider<SkillUsageAdaptor>,
         skillDraftAdaptorProvider: ObjectProvider<SkillDraftAdaptor>,
+        memoryDraftAdaptorProvider: ObjectProvider<MemoryDraftAdaptor>,
         toolInvocationAdaptorProvider: ObjectProvider<ToolInvocationAdaptor>,
         @Value("\${harness.metrics.invocation.enabled:true}") invocationMetricsEnabled: Boolean,
     ): HarnessAgentLauncher {
@@ -368,6 +370,9 @@ class HarnessAutoConfiguration {
             // Absent means nobody may author a skill: a draft with nowhere to be filed is unreviewed text
             // sitting in a workspace, which is the one thing this feature exists to prevent.
             skillDraftAdaptor = skillDraftAdaptorProvider.ifAvailable,
+            // Absent means a conversation's memory never leaves that conversation: the layer still fills, but
+            // with no queue to file a merge into there is nothing for a person to approve.
+            memoryDraftAdaptor = memoryDraftAdaptorProvider.ifAvailable,
             // One landing point for `harness.metrics.invocation.enabled`; the launcher's mount point is the authoritative account of what a null adaptor means.
             toolInvocationAdaptor = toolInvocationAdaptorProvider.ifAvailable?.takeIf { invocationMetricsEnabled },
         )

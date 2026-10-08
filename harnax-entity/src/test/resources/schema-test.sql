@@ -2,7 +2,9 @@
 --
 -- The DDL below is the table-definition block of harnax-admin's schema at its last version - the baseline
 -- (harnax-admin/src/main/resources/db/migration/V1__init_schema.sql) plus the forward increments stacked on
--- it (V2__agent_session_memory.sql, V3__tool_invocation_metrics.sql) - copied so this file and the
+-- it (V2__agent_session_memory.sql, V3__tool_invocation_metrics.sql, V4__drop_tool_call_log.sql,
+-- V5__tool_invocation_stats_hourly.sql, V6__drop_agent_session_memory.sql - which undoes the column V2
+-- added - and V7__memory_draft.sql) - copied so this file and the
 -- production schema cannot drift apart the way the hand-maintained version did. What matters is the shape
 -- Flyway ends at, because that is what SchemaBaselineDriftIT replays and compares. Regenerate this file's
 -- DDL block whenever the baseline or any increment changes.
@@ -21,7 +23,6 @@ CREATE TABLE IF NOT EXISTS `agent` (
   `is_public` tinyint DEFAULT '0' COMMENT 'Public visibility (0: Private, 1: Public)',
   `skill_self_write` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Whether the agent may author skills itself (0: no, 1: yes)',
   `memory_enabled` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Whether the agent has long-term memory (0: no, 1: yes)',
-  `session_memory_enabled` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Whether the agent also keeps a per-session memory layer that is later promoted into the long-term one (0: no, 1: yes)',
   `creator` varchar(100) DEFAULT NULL,
   `active` tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
   `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
@@ -318,6 +319,29 @@ CREATE TABLE IF NOT EXISTS `mcp_user_credential` (
   UNIQUE KEY `uk_mcp_user_credential_tenant_user_mcp` (`tenant_id`,`user_id`,`mcp_id`),
   KEY `idx_mcp_user_credential_mcp` (`mcp_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Per-user OAuth grant for an MCP server';
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE IF NOT EXISTS `memory_draft` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Candidate ID',
+  `tenant_id` bigint NOT NULL COMMENT 'Tenant resolved server-side from the session, never taken from the request body',
+  `user_id` bigint NOT NULL COMMENT 'Owner whose memory bucket this merges into, read from the session row; the queue belongs to that person, not to their workspace',
+  `agent_name` varchar(100) NOT NULL COMMENT 'Agent bucket segment the runtime keyed the layer by - agent names, not IDs, address the memory objects',
+  `session_id` varchar(100) NOT NULL COMMENT 'Conversation whose own layer was merged - as wide as session.session_id, because a team child id is that root id with a prefix and a suffix on it',
+  `merged_md` mediumtext NOT NULL COMMENT 'The complete new MEMORY.md the merge produced, as the reviewer reads it',
+  `base_md` mediumtext COMMENT 'The owner''s text the merge read, null when the owner had none yet',
+  `base_version` bigint NOT NULL COMMENT 'Version of that object the merge read; 0 means it did not exist, so the approval is a create',
+  `sources` mediumtext NOT NULL COMMENT 'JSON array of {path, content}: every conversation-layer object the merge read, with the bytes it read there',
+  `status` varchar(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING / APPROVED / REJECTED',
+  `reviewed_by` varchar(100) DEFAULT NULL COMMENT 'Reviewer username, once decided',
+  `reviewed_at` datetime DEFAULT NULL COMMENT 'Review time, once decided',
+  `reject_reason` varchar(512) DEFAULT NULL COMMENT 'Why the owner rejected it',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_memory_draft_tenant_status` (`tenant_id`,`status`),
+  KEY `idx_memory_draft_session` (`session_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Conversation memory merges waiting for their owner to approve them';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;

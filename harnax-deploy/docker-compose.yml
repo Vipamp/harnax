@@ -163,11 +163,6 @@ services:
       # does not leak another owner's memory - it keys a prefix that has nothing under it, so every
       # owner's memory reads as empty.
       HARNAX_MEMORY_TENANT_SCOPED: ${HARNAX_MEMORY_TENANT_SCOPED:-true}
-      # Seed for the per-agent session memory switch: the value an agent gets when whatever created it said
-      # nothing. Agents already saved keep the answer they were given, and a request that answers wins, so
-      # turning this on makes *new* agents two-layer rather than the whole deployment. Admin-only - the
-      # runtime takes the per-agent answer off the delivered spec and never reads this.
-      HARNAX_AGENT_SESSION_MEMORY_DEFAULT: ${HARNAX_AGENT_SESSION_MEMORY_DEFAULT:-false}
       # Call-metrics retention: detail rows older than this are dropped once their day has been folded
       # into `tool_invocation_stats`, so the aggregate stays the answer for anything older. Lowering it does
       # not delete anything that has not been rolled up yet - the delete is conditioned on the day already
@@ -563,7 +558,7 @@ services:
       HARNAX_MEMORY_FLUSH_TRIGGER: ${HARNAX_MEMORY_FLUSH_TRIGGER:-throttled}
       HARNAX_MEMORY_FLUSH_MIN_GAP: ${HARNAX_MEMORY_FLUSH_MIN_GAP:-5m}
       # One window for both background passes over a bucket: curating the daily ledgers into MEMORY.md, and
-      # promoting a conversation's own layer into its owner's (only when that agent has session memory on).
+      # promoting a conversation's own layer into its owner's.
       HARNAX_MEMORY_CONSOLIDATION_MIN_GAP: ${HARNAX_MEMORY_CONSOLIDATION_MIN_GAP:-30m}
       # Whether the model gets memory_search / memory_get / memory_save.
       HARNAX_MEMORY_TOOLS_ENABLED: ${HARNAX_MEMORY_TOOLS_ENABLED:-true}

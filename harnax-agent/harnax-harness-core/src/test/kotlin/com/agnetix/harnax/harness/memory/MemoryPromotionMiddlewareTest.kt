@@ -1,5 +1,8 @@
 package com.agnetix.harnax.harness.memory
 
+import com.agnetix.harnax.agent.adaptor.MemoryDraftAdaptor
+import com.agnetix.harnax.agent.adaptor.MemoryDraftIntake
+import com.agnetix.harnax.agent.adaptor.MemoryDraftProposal
 import io.agentscope.core.agent.Agent
 import io.agentscope.core.agent.RuntimeContext
 import io.agentscope.core.event.AgentEvent
@@ -27,13 +30,17 @@ import java.util.concurrent.TimeUnit
 import java.util.function.Function
 
 /**
- * When a conversation's layer gets drained, and what a user feels when it does not.
+ * When a conversation's layer gets proposed, and what a user feels when it does not.
  *
  * The trigger is a per-conversation throttle fired after the answer (design 11.4), and the two properties that
  * make it safe are both measurable here rather than in [MemoryPromoterTest]: nothing on the answer path may
  * wait on a model call nobody asked for, and one window per conversation is what lets two hot conversations of
  * the same owner each keep their own memory without either one holding the other's clock. The gate is the real
  * store-backed one, because a fake that always says yes would test the throttle by turning it off.
+ *
+ * What the fired attempt produced is read from the queue, not from the bucket: this stage hands a merge to a
+ * person and stops. The fake intake therefore only remembers candidates — an approval writing the owner's layer
+ * here would test Admin, and this class has no way to grant one.
  */
 class MemoryPromotionMiddlewareTest {
 
@@ -64,10 +71,26 @@ class MemoryPromotionMiddlewareTest {
         }
     }
 
+    /** A queue that accepts and remembers, so a turn's output is visible without anyone approving it. */
+    private class RecordingQueue : MemoryDraftAdaptor {
+        val proposals = mutableListOf<MemoryDraftProposal>()
+
+        override fun propose(proposal: MemoryDraftProposal): MemoryDraftIntake {
+            proposals.add(proposal)
+            return MemoryDraftIntake.Queued(proposals.size.toLong())
+        }
+    }
+
     private fun domain(store: BaseStore) = MemoryDomain(store, tenantId, owner, agentId, true)
 
-    private fun middleware(store: BaseStore, gate: PeriodicGate, sessionId: String, answer: String) = MemoryPromotionMiddleware(
-        MemoryPromoter(domain(store), sessionId, FixedModel(answer)),
+    private fun middleware(
+        store: BaseStore,
+        gate: PeriodicGate,
+        sessionId: String,
+        answer: String,
+        queue: RecordingQueue,
+    ) = MemoryPromotionMiddleware(
+        MemoryPromoter(domain(store), sessionId, FixedModel(answer), queue),
         gate,
         window,
         sessionId,
@@ -99,23 +122,25 @@ class MemoryPromotionMiddlewareTest {
 
     /** Waits for whatever the turn dispatched, the way [io.agentscope.harness.agent.HarnessAgent.close] does. */
     private fun awaitBackground() {
-        assertTrue(MemoryBackgroundTasks.awaitQuiescence(10, TimeUnit.SECONDS), "the dispatched promotion never finished")
+        assertTrue(MemoryBackgroundTasks.awaitQuiescence(10, TimeUnit.SECONDS), "the dispatched proposal never finished")
     }
 
     @Test
     fun `the answer does not wait for the merge`() {
-        // The claim is a store round trip and the merge is a model call, both after every turn of a hot
-        // conversation. A user must not pay for either, and the in-flight counter still has to cover the work
-        // so a shutdown cannot release the workspace under a merge mid-write.
+        // The claim is a store round trip and the merge is a model call plus an intake, both after every turn of
+        // a hot conversation. A user must not pay for any of them, and the in-flight counter still has to cover
+        // the work so a shutdown cannot release the workspace under a merge mid-flight.
         val store = InMemoryStore()
         writeLedger(store, "sess-A", "2026-10-05.md", "- the owner wants terse answers")
         val gate = FakeGate(claimMillis = 500)
+        val queue = RecordingQueue()
 
-        val elapsed = turn(middleware(store, gate, "sess-A", "- terse answers"))
+        val elapsed = turn(middleware(store, gate, "sess-A", "- terse answers", queue))
         awaitBackground()
 
         assertTrue(elapsed < 500, "the turn completed in ${elapsed}ms while the gate was still busy")
-        assertEquals("- terse answers", domain(store).longTermCurated())
+        assertEquals("- terse answers", queue.proposals.single().mergedMarkdown)
+        assertNull(domain(store).longTermCurated(), "the owner's layer waits for a person")
         assertEquals(
             listOf("memory-promotion:SESSION:sess-A" to window),
             gate.slots,
@@ -124,56 +149,66 @@ class MemoryPromotionMiddlewareTest {
     }
 
     @Test
-    fun `a turn inside the window promotes nothing`() {
+    fun `a turn inside the window proposes nothing`() {
         val store = InMemoryStore()
         writeLedger(store, "sess-A", "2026-10-05.md", "- from this conversation")
+        val queue = RecordingQueue()
 
-        turn(middleware(store, FakeGate(allow = false), "sess-A", "- merged"))
+        turn(middleware(store, FakeGate(allow = false), "sess-A", "- merged", queue))
         awaitBackground()
 
         assertEquals(listOf("/2026-10-05.md"), ledgers(store, "sess-A"), "a refused claim must not drain the layer")
+        assertEquals(0, queue.proposals.size)
         assertNull(domain(store).longTermCurated())
     }
 
     @Test
-    fun `two conversations of one agent promote on their own clocks`() {
+    fun `two conversations of one agent propose on their own clocks`() {
         // The third hard rule of 11.4, measured on the gate production actually hands the middleware: each
-        // conversation has its own slot, so a hot conversation is never held behind a sibling that promoted a
+        // conversation has its own slot, so a hot conversation is never held behind a sibling that proposed a
         // minute ago — and its own second turn still is.
         val store = InMemoryStore()
         val gate = StoreBackedPeriodicGate(store)
+        val queue = RecordingQueue()
         writeLedger(store, "sess-A", "2026-10-05.md", "- from A")
         writeLedger(store, "sess-B", "2026-10-05.md", "- from B")
 
-        turn(middleware(store, gate, "sess-A", "- merged A"), "sess-A")
+        turn(middleware(store, gate, "sess-A", "- merged A", queue), "sess-A")
         awaitBackground()
-        turn(middleware(store, gate, "sess-B", "- merged B"), "sess-B")
+        turn(middleware(store, gate, "sess-B", "- merged B", queue), "sess-B")
         awaitBackground()
 
-        assertEquals("- merged B", domain(store).longTermCurated(), "B promoted on its own clock, not A's")
-        assertEquals(emptyList<String>(), ledgers(store, "sess-B"))
+        assertEquals(
+            listOf("sess-A", "sess-B"),
+            queue.proposals.map { it.sessionId },
+            "B proposed on its own clock, not A's",
+        )
+        assertEquals(listOf("/2026-10-05.md"), ledgers(store, "sess-B"), "and a proposal drains nothing on its own")
 
         writeLedger(store, "sess-A", "2026-10-06.md", "- A again")
-        turn(middleware(store, gate, "sess-A", "- should not run"))
+        turn(middleware(store, gate, "sess-A", "- should not run", queue), "sess-A")
         awaitBackground()
 
-        assertTrue(ledgers(store, "sess-A").contains("/2026-10-06.md"), "A is still inside its own window")
+        assertEquals(2, queue.proposals.size, "A is still inside its own window")
+        assertTrue(ledgers(store, "sess-A").contains("/2026-10-06.md"))
     }
 
     @Test
     fun `a gate that cannot answer costs the turn nothing`() {
-        // The store-backed gate already swallows its own failures, and the promotion runs off the answer path
+        // The store-backed gate already swallows its own failures, and the proposal runs off the answer path
         // anyway — but the pairing of the in-flight counter with the dispatch is what lets close() wait, so a
         // throw before the work starts must still release it rather than hang a shutdown forever.
         val store = InMemoryStore()
         writeLedger(store, "sess-A", "2026-10-05.md", "- from this conversation")
+        val queue = RecordingQueue()
         val throwing = object : PeriodicGate {
             override fun tryClaim(name: String, minGap: Duration): Boolean = throw IllegalStateException("minio is down")
         }
 
-        turn(middleware(store, throwing, "sess-A", "- merged"))
+        turn(middleware(store, throwing, "sess-A", "- merged", queue))
         awaitBackground()
 
+        assertEquals(0, queue.proposals.size)
         assertNull(domain(store).longTermCurated())
         assertEquals(listOf("/2026-10-05.md"), ledgers(store, "sess-A"))
     }
@@ -183,21 +218,22 @@ class MemoryPromotionMiddlewareTest {
         // The ordering this asserts is production's: a turn's own extraction is dispatched after the answer and
         // needs a model round trip, so promotion looks at a layer that is still empty. Winning the claim at
         // that moment closes the window for 30 minutes, and a conversation that ends before then — which is
-        // most of them — would never promote at all. A burned window is invisible here, so the test is the
+        // most of them — would never propose at all. A burned window is invisible here, so the test is the
         // whole point: the turn that finds the layer has content still has one.
         val store = InMemoryStore()
-        val middleware = middleware(store, StoreBackedPeriodicGate(store), "sess-A", "- terse answers")
+        val queue = RecordingQueue()
+        val middleware = middleware(store, StoreBackedPeriodicGate(store), "sess-A", "- terse answers", queue)
 
         turn(middleware)
         awaitBackground()
-        assertNull(domain(store).longTermCurated())
+        assertEquals(0, queue.proposals.size)
 
         writeLedger(store, "sess-A", "2026-10-05.md", "- the owner wants terse answers")
         turn(middleware)
         awaitBackground()
 
-        assertEquals("- terse answers", domain(store).longTermCurated(), "the second turn found its window open")
-        assertEquals(emptyList<String>(), ledgers(store, "sess-A"), "and drained the layer it merged")
+        assertEquals("- terse answers", queue.proposals.single().mergedMarkdown, "the second turn found its window open")
+        assertEquals(listOf("/2026-10-05.md"), ledgers(store, "sess-A"), "while the layer it merged stays for the approval")
     }
 
     @Test
@@ -206,11 +242,13 @@ class MemoryPromotionMiddlewareTest {
         // same rule as the test above, pinned at the seam rather than through a minute of store traffic.
         val store = InMemoryStore()
         val gate = FakeGate()
+        val queue = RecordingQueue()
 
-        turn(middleware(store, gate, "sess-A", "- merged"))
+        turn(middleware(store, gate, "sess-A", "- merged", queue))
         awaitBackground()
 
         assertEquals(emptyList<Pair<String, Duration>>(), gate.slots, "an empty layer is no reason to close a window")
+        assertEquals(0, queue.proposals.size)
         assertNull(domain(store).longTermCurated())
     }
 
@@ -219,6 +257,7 @@ class MemoryPromotionMiddlewareTest {
         // An outage must not look like a spent window either: the next turn of the same conversation would be
         // throttled behind a claim that merged nothing.
         val gate = FakeGate()
+        val queue = RecordingQueue()
         val unreadable = object : BaseStore {
             override fun get(namespace: List<String>, key: String): StoreItem = throw IllegalStateException("minio is down")
 
@@ -236,9 +275,10 @@ class MemoryPromotionMiddlewareTest {
             override fun delete(namespace: List<String>, key: String) = throw AssertionError("nothing may be cleared")
         }
 
-        turn(middleware(unreadable, gate, "sess-A", "- merged"))
+        turn(middleware(unreadable, gate, "sess-A", "- merged", queue))
         awaitBackground()
 
         assertEquals(emptyList<Pair<String, Duration>>(), gate.slots, "a failed read is not a claim")
+        assertEquals(0, queue.proposals.size)
     }
 }

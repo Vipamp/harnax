@@ -4,6 +4,7 @@ import com.agnetix.harnax.admin.registrar.BuiltinToolAutoRegistrar
 import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.service.McpOAuthUserService
 import com.agnetix.harnax.admin.service.McpStdioPolicy
+import com.agnetix.harnax.admin.service.MemoryDraftService
 import com.agnetix.harnax.admin.service.SkillDraftService
 import com.agnetix.harnax.admin.service.SkillUsageService
 import com.agnetix.harnax.admin.skill.SkillBindingResolver
@@ -148,6 +149,10 @@ class InternalApiTaskSpecTest {
     /** Same reason for the draft intake endpoint: a spec delivery files no draft. */
     @Mock
     private lateinit var skillDraftService: SkillDraftService
+
+    /** Same reason again for the memory merge intake endpoint. */
+    @Mock
+    private lateinit var memoryDraftService: MemoryDraftService
 
     @InjectMocks
     private lateinit var controller: InternalApiController

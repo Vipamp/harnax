@@ -6,6 +6,7 @@ import com.agnetix.harnax.agent.CliSpec
 import com.agnetix.harnax.agent.adaptor.ChatModelConfigAdaptor
 import com.agnetix.harnax.agent.adaptor.McpAccessTokenSourceFactory
 import com.agnetix.harnax.agent.adaptor.McpConfigAdaptor
+import com.agnetix.harnax.agent.adaptor.MemoryDraftAdaptor
 import com.agnetix.harnax.agent.adaptor.PlanNote
 import com.agnetix.harnax.agent.adaptor.PlanNoteAdaptor
 import com.agnetix.harnax.agent.adaptor.ProcessLogAdaptor
@@ -105,6 +106,8 @@ import java.util.UUID
  * means the runtime reports no usage at all
  * @param skillDraftAdaptor intake a staged draft is filed with for a human to review; absent means no agent
  * may author skills, whatever its own grant says
+ * @param memoryDraftAdaptor intake one conversation's merged memory layer is filed with for a human to
+ * approve; absent means conversation layers fill and are never proposed into the owner's long-term memory
  * @param tokenStatAdaptor adaptor for token stat persistence
  * @param processLogAdaptor adaptor for process logging
  * @param planNoteAdaptor adaptor for plan note persistence
@@ -150,6 +153,12 @@ class HarnessAgentLauncher(
      */
     val toolInvocationAdaptor: ToolInvocationAdaptor? = null,
     val skillDraftAdaptor: SkillDraftAdaptor? = null,
+    /**
+     * Where one conversation's merged memory layer is filed for a person to decide (design 11.4). Null means
+     * there is no queue to file into, so the promotion stage is not mounted and conversation layers fill with
+     * nothing proposing them.
+     */
+    val memoryDraftAdaptor: MemoryDraftAdaptor? = null,
 ) {
 
     private val log = LoggerFactory.getLogger(HarnessAgentLauncher::class.java)
@@ -722,14 +731,11 @@ class HarnessAgentLauncher(
         // consolidation would advance the progress that decides which of another owner's daily entries count
         // as already merged.
         val memoryDomain = memoryDomainOf(minioStore, agentSpec, userIdentifier, isLead, memory)
-        // Whether this conversation keeps its own layer as well. The second switch only participates where the
-        // agent already got a bucket: the first row of 11.3's matrix says long-term off means no memory domain
-        // at all, and a conversation bucket of its own would be extraction into a bucket no promotion owns.
-        val sessionLayer = memoryDomain != null && agentSpec.sessionMemoryEnabled
-        // The bucket the routes mounted below point at. Upstream advances the consolidation progress of
-        // whichever bucket it was handed, so scoping it anywhere else would mark one layer's ledgers done on
-        // another layer's pass — the same object 11.7 moved out of the deployment-wide address.
-        val mountedBucket = memoryDomain?.namespace(if (sessionLayer) sessionId else null)
+        // The bucket the routes mounted below point at: this conversation's own layer, which every agent with
+        // a bucket now keeps. Upstream advances the consolidation progress of whichever bucket it was handed,
+        // so scoping it anywhere else would mark one layer's ledgers done on another layer's pass — the same
+        // object 11.7 moved out of the deployment-wide address.
+        val mountedBucket = memoryDomain?.namespace(sessionId)
         if (!isLead && harnessConfig.sandbox.enabled && snapshotSpec != null) {
             // DockerFilesystemSpec moved to io.agentscope.harness.agent.sandbox.impl.docker in 2.0.0
             // .sandboxStateStore() is removed — sandbox state is now managed via DistributedStore
@@ -780,41 +786,39 @@ class HarnessAgentLauncher(
             val extractionModel = memoryModel(memory)
             // The same tuple on both assembly branches, so moving a deployment between them does not
             // read as "the memory disappeared" for the same owner.
-            val mounted = if (sessionLayer) memoryDomain.routes(sessionId) else memoryDomain.routes()
+            // The two canonical prefixes answer from this conversation, which is what makes the flush, the
+            // consolidation and the four tools write the conversation's layer instead of the owner's. The
+            // curated layer cannot share those prefixes without becoming writable by the model, so it
+            // arrives as its own read-only block.
+            val mounted = memoryDomain.routes(sessionId)
             mounted.forEach { (prefix, route) -> agentBuilder.filesystemRoute(prefix, route) }
-            if (sessionLayer) {
-                // The two canonical prefixes now answer from this conversation, which is what makes the flush,
-                // the consolidation and the four tools write the session layer instead of the owner's. The
-                // curated layer cannot share those prefixes without becoming writable by the model, so it
-                // arrives as its own read-only block.
-                agentBuilder.addMiddleware(LongTermMemoryContextMiddleware(memoryDomain))
-                // The other half of the layer: what that block writes has to reach the owner's text again, or
-                // a conversation that keeps its own memory simply loses it. An agent on one layer needs no
-                // promoter at all, because its extraction already lands in the owner's bucket.
-                if (promoterIsSafe(memoryDomain.store)) {
-                    agentBuilder.addMiddleware(
-                        MemoryPromotionMiddleware(
-                            MemoryPromoter(memoryDomain, sessionId, extractionModel ?: chatModel),
-                            // The same store upstream's two gates get, so a store that cannot hold a slot degrades
-                            // this throttle the way it degrades those: one replica per clock rather than none.
-                            StoreBackedPeriodicGate(coordinationStore(memoryDomain.store)),
-                            memory.consolidationMinGap,
-                            sessionId,
-                        ),
-                    )
-                } else {
-                    // Reading the owner's layer costs nothing unsafe, so the block above stays: what an agent on
-                    // this store gets is a conversation layer that is never merged out of, rather than a merge
-                    // that would overwrite whatever a sibling conversation promoted first.
-                    log.warn(
-                        "[memory] agent '{}' keeps its conversations on their own layer: the object store " +
-                            "cannot compare versions ({}), and promoting without it would drop what another " +
-                            "conversation of this owner merged. Repair the store's version precondition to get " +
-                            "promotion back.",
-                        agentSpec.name,
-                        casSupport(memoryDomain.store).detail,
-                    )
-                }
+            agentBuilder.addMiddleware(LongTermMemoryContextMiddleware(memoryDomain))
+            // The other half of the layer: what this conversation writes has to reach the owner's text again,
+            // or a conversation that keeps its own memory simply loses it. Crossing that line is a decision a
+            // person makes (design 11.4), so this stage files a merge rather than applying one, and it files
+            // it only where there is a queue to file it into.
+            val draftIntake = memoryDraftAdaptor
+            if (draftIntake != null) {
+                agentBuilder.addMiddleware(
+                    MemoryPromotionMiddleware(
+                        MemoryPromoter(memoryDomain, sessionId, extractionModel ?: chatModel, draftIntake),
+                        // The same store upstream's two gates get, so a store that cannot hold a slot degrades
+                        // this throttle the way it degrades those: one replica per clock rather than none.
+                        StoreBackedPeriodicGate(coordinationStore(memoryDomain.store)),
+                        memory.consolidationMinGap,
+                        sessionId,
+                    ),
+                )
+            } else {
+                // The conversation layer still fills, because reading the owner's curated text back is what
+                // makes memory worth having at all. What such a deployment does not get is the way out of the
+                // layer, so this says so rather than leaving a queue nobody knew was missing.
+                log.warn(
+                    "[memory] agent '{}' has no memory draft intake: its conversations fill their own layers " +
+                        "and nothing proposes them for promotion, so what is written there never reaches the " +
+                        "owner's long-term memory. Configure a MemoryDraftAdaptor to open the queue.",
+                    agentSpec.name,
+                )
             }
             agentBuilder.memory(MemoryConfigFactory.build(memory, extractionModel))
             // Upstream chooses the gate from the distributed store alone, so say which one this agent got:
@@ -1187,22 +1191,6 @@ class HarnessAgentLauncher(
     }
 
     /**
-     * Whether [store] can be trusted with the promotion pass, whose only guard against losing a sibling's work
-     * is a version comparison.
-     *
-     * A merge overwrites the owner's curated layer and then deletes the conversation's copy of what went into
-     * it, so on a store that answers true to any version two conversations of one owner both merge, both are
-     * told the write landed, and the later one silently drops what the earlier promoted. Upstream's gate can
-     * degrade to a per-replica clock when the store cannot hold a slot because its own failure is a duplicate
-     * consolidation; this one's failure is lost memory, so it refuses instead.
-     *
-     * A probe that could not get an answer — a store that threw — is not a store found wanting: the merge reads
-     * and writes the same store and will meet whatever is wrong there on its own path, where it fails without
-     * destroying anything.
-     */
-    internal fun promoterIsSafe(store: BaseStore): Boolean = casSupport(store).let { it.supported || !it.definitive }
-
-    /**
      * The store to hand upstream for the consolidation gate: [store] when it can compare versions, a
      * [ProcessLocalCoordinationStore] over it when it cannot.
      *
@@ -1376,6 +1364,7 @@ class HarnessAgentLauncher(
             skillUsageAdaptor: SkillUsageAdaptor? = null,
             toolInvocationAdaptor: ToolInvocationAdaptor? = null,
             skillDraftAdaptor: SkillDraftAdaptor? = null,
+            memoryDraftAdaptor: MemoryDraftAdaptor? = null,
         ): HarnessAgentLauncher {
             minioConfig?.ensureBuckets()
 
@@ -1451,6 +1440,7 @@ class HarnessAgentLauncher(
                 skillUsageAdaptor = skillUsageAdaptor,
                 toolInvocationAdaptor = toolInvocationAdaptor,
                 skillDraftAdaptor = skillDraftAdaptor,
+                memoryDraftAdaptor = memoryDraftAdaptor,
             )
         }
 

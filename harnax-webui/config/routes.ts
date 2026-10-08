@@ -62,6 +62,19 @@ export default [
         path: '/agent/memory',
         component: './memory',
       },
+      {
+        // A conversation's merge only reaches an agent's long-term layer once its owner says so,
+        // so the queue lives beside the page that shows what those layers hold
+        name: 'memory.drafts',
+        icon: 'audit',
+        path: '/agent/memory-drafts',
+        component: './memory/drafts',
+      },
+      {
+        path: '/agent/memory-draft/detail/:id',
+        component: './memory/draftDetail',
+        hideInMenu: true,
+      },
     ],
   },
   {

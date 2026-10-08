@@ -1,11 +1,13 @@
 package com.agnetix.harnax.admin.controller
 
+import com.agnetix.harnax.admin.dto.MemoryDraftSubmitRequest
 import com.agnetix.harnax.admin.dto.SkillDraftSubmitRequest
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.registrar.BuiltinToolAutoRegistrar
 import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.service.McpOAuthUserService
 import com.agnetix.harnax.admin.service.McpStdioPolicy
+import com.agnetix.harnax.admin.service.MemoryDraftService
 import com.agnetix.harnax.admin.service.SkillDraftService
 import com.agnetix.harnax.admin.service.SkillUsageService
 import com.agnetix.harnax.admin.skill.SkillBindingResolver
@@ -171,6 +173,10 @@ class InternalApiControllerTest {
     /** Stands in for the draft intake endpoint's own collaborator, exercised in its nested cases below. */
     @Mock
     private lateinit var skillDraftService: SkillDraftService
+
+    /** Same reason for the memory merge intake endpoint, whose cases are nested below too. */
+    @Mock
+    private lateinit var memoryDraftService: MemoryDraftService
 
     @InjectMocks
     private lateinit var controller: InternalApiController
@@ -578,40 +584,6 @@ class InternalApiControllerTest {
 
             assertEquals(0, requireNotNull(controller.getAgentSpec("web-off").data).memoryEnabled)
             assertEquals(1, requireNotNull(controller.getAgentSpec("web-on").data).memoryEnabled)
-        }
-
-        @Test
-        @DisplayName("getAgentSpec - the session layer answer travels on the same row")
-        fun `getAgentSpec delivers the session layer answer written on the agent row`() {
-            // The other half of the pair, and the one whose default runs the other way: a row nobody asked
-            // about means one layer, so a delivery that dropped this key would promise two layers to agents
-            // that never opted in — or, read the other way, keep them off the layer one agent did ask for.
-            val optedIn = Session().apply {
-                sessionId = "web-dual"
-                agentId = 100L
-            }
-            val untouched = Session().apply {
-                sessionId = "web-single"
-                agentId = 100L
-            }
-            `when`(sessionMapper.selectBySessionIdAndStatus("web-dual", 1)).thenReturn(optedIn)
-            `when`(sessionMapper.selectBySessionIdAndStatus("web-single", 1)).thenReturn(untouched)
-            `when`(agentMapper.selectById(100L)).thenReturn(
-                stubAgent().apply { sessionMemoryEnabled = 1 },
-                stubAgent(),
-            )
-
-            assertEquals(
-                1,
-                requireNotNull(controller.getAgentSpec("web-dual").data).sessionMemoryEnabled,
-                "the wizard's yes for this agent is what the delivery has to carry",
-            )
-            assertEquals(1, requireNotNull(controller.getAgentSpec("web-dual").data).memoryEnabled)
-            assertEquals(
-                0,
-                requireNotNull(controller.getAgentSpec("web-single").data).sessionMemoryEnabled,
-                "and a row that was never asked about the session layer says no to it",
-            )
         }
 
         @Test
@@ -1901,6 +1873,50 @@ class InternalApiControllerTest {
             `when`(skillDraftService.submit(any())).thenThrow(RuntimeException("db is down"))
 
             val result = controller.submitSkillDraft(request())
+
+            assertEquals(500, result.code)
+        }
+    }
+
+    @Nested
+    @DisplayName("记忆候选入库接口")
+    inner class SubmitMemoryDraftTests {
+
+        private fun request(sessionId: String = "web-42") = MemoryDraftSubmitRequest(
+            sessionId = sessionId,
+            agentName = "Research",
+            mergedMarkdown = "# Memory\n- terse answers",
+            baseVersion = 3L,
+        )
+
+        @Test
+        @DisplayName("submitMemoryDraft - 入库成功时回候选行 id，运行侧据此判已入账")
+        fun `submitMemoryDraft should return the queue row the owner will decide`() {
+            `when`(memoryDraftService.submit(any())).thenReturn(78L)
+
+            val result = controller.submitMemoryDraft(request())
+
+            assertTrue(result.isSuccess())
+            assertEquals(78L, result.data)
+        }
+
+        @Test
+        @DisplayName("submitMemoryDraft - 拒绝时保留 code 与原因，运行侧才敢留着会话层")
+        fun `submitMemoryDraft should keep the refusal the promotion pass has to report`() {
+            `when`(memoryDraftService.submit(any())).thenThrow(BizException(404, "session 'web-42' resolves to no owner and agent"))
+
+            val result = controller.submitMemoryDraft(request())
+
+            assertEquals(404, result.code)
+            assertTrue(result.message!!.contains("web-42"), result.message)
+        }
+
+        @Test
+        @DisplayName("submitMemoryDraft - 未预期故障压成 500，运行侧按可重试处理")
+        fun `submitMemoryDraft should turn an unexpected fault into a retryable code`() {
+            `when`(memoryDraftService.submit(any())).thenThrow(RuntimeException("db is down"))
+
+            val result = controller.submitMemoryDraft(request())
 
             assertEquals(500, result.code)
         }

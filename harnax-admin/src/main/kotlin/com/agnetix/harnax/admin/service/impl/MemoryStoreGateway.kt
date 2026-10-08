@@ -4,12 +4,14 @@ import com.agnetix.harnax.admin.config.AdminMinioProperties
 import com.agnetix.harnax.admin.dto.MemoryAgentResponse
 import com.agnetix.harnax.admin.dto.MemoryDailyEntryResponse
 import com.agnetix.harnax.admin.dto.MemoryDetailResponse
+import com.agnetix.harnax.admin.dto.MemoryDraftSource
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.util.MemoryObjectKeys
 import com.agnetix.harnax.admin.util.MemoryRecordParser
 import io.minio.GetObjectArgs
 import io.minio.ListObjectsArgs
 import io.minio.MinioClient
+import io.minio.PutObjectArgs
 import io.minio.RemoveObjectArgs
 import io.minio.Result
 import io.minio.errors.ErrorResponseException
@@ -19,28 +21,39 @@ import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 import tools.jackson.databind.ObjectMapper
+import java.io.ByteArrayInputStream
 import java.nio.charset.StandardCharsets
+import java.time.Instant
 import java.time.ZonedDateTime
 
 /**
- * Reads and removes one owner's long-term agent memory out of the shared store bucket.
+ * Reads, replaces and removes one owner's agent memory in the shared store bucket.
  *
- * The agent runtime owns every byte here: it writes the curated `MEMORY.md` and the daily ledger through
- * `MinioBaseStore`, which wraps each file in a JSON envelope. This class is the mirror of that write for
- * the two things admin has to answer — what one owner has, and how to take it back — and it never builds a
- * key from anything but a tenant id and a user id the request cannot influence, plus an agent id that
- * passed [MemoryObjectKeys.isValidAgentId].
+ * The agent runtime owns the conversation's own layer: it writes a session's draft and ledgers through
+ * `MinioBaseStore` (harnax-harness-core), which wraps every file in a JSON envelope, and it merges them into
+ * a candidate it files with the review queue instead of writing the owner's layer itself. An approval is what
+ * writes here, which makes this class the only path into a person's long-term `MEMORY.md`. It is therefore
+ * the mirror of that write for three questions — what one owner has, how to replace the curated layer with
+ * what a reviewer accepted, and how to take a memory back — and it never builds a key from anything but a
+ * tenant id and a user id the request cannot influence, plus an agent id that passed
+ * [MemoryObjectKeys.isValidAgentId].
  *
- * Three rules hold everywhere below:
+ * Four rules hold everywhere below:
  * 1. Every listing starts at the caller's own owner prefix — `store/tenants/<tenantId>/users/<userId>/`, or
  *    `store/users/<userId>/` when the writer's tenant-scoped switch is off — and a key outside it is never
  *    touched. A read then keeps only the keys that decode to a memory location, because an object admin cannot
  *    name is an object it cannot show. A delete keeps every key the bucket listed, because a sweep that skipped
  *    the ones this decoder refuses would leave a "deleted" owner's memory behind forever.
- * 2. The bytes only ever come from keys the object store itself returned, never from a rebuilt path.
+ * 2. The bytes only ever come from keys the object store itself returned, never from a rebuilt path. A write
+ *    goes to the one key [curatedKey] produces, and a conversation-layer clear only ever addresses a key
+ *    [MemoryObjectKeys.sessionSourceKey] resolved from a path the merge itself recorded.
  * 3. A storage failure is thrown, never logged and answered as "no memory", on the listing and on the read
  *    alike: an owner told they have nothing because the server was unreachable would stop looking, and an
  *    admin whose user delete left memory behind would believe the account was cleaned.
+ * 4. The long-term layer is only ever replaced conditionally — against the version the merge read, carried by
+ *    the object's own ETag — and a conversation's file is only ever deleted while it still holds the bytes the
+ *    merge recorded. Two conversations of one agent merge against the same base; whoever approves second is
+ *    told plainly that the layer moved instead of overwriting the first.
  *
  * The client and its properties arrive through [ObjectProvider] because `minio.enabled=false` is a
  * supported deployment — the client bean is conditional. Without a store there is no memory to show, and
@@ -175,6 +188,163 @@ class MemoryStoreGateway(
     }
 
     /**
+     * The owner's long-term curated layer: its text and the version the store answers for it.
+     *
+     * [version] is 0 when there is no object yet, which is the same reading `MinioBaseStore` gives the
+     * promotion pass that filed the candidate — so the number a reviewer's approve is checked against is the
+     * number the merge itself saw.
+     */
+    data class CuratedLayer(
+        val content: String,
+        val version: Long,
+    )
+
+    /**
+     * What an approval did to one conversation's own layer.
+     *
+     * Three counts because all three are true answers about a bucket the runtime keeps writing into:
+     * [cleared] held exactly the bytes the merge recorded and is gone, [kept] moved since that read — a later
+     * turn appended to the same ledger — or is a path no merge could have read, and [absent] was already gone.
+     * A kept file re-enters the next candidate, which is what makes a partial clear safe rather than lossy.
+     */
+    data class ClearedSources(
+        val cleared: Int,
+        val kept: Int,
+        val absent: Int,
+    )
+
+    /**
+     * The owner's `MEMORY.md` as the store holds it now.
+     *
+     * Absent answers as [CuratedLayer] with empty text and version 0, because that is what a create is filed
+     * against. A key that cannot be addressed is thrown rather than answered that way: "no memory yet" about
+     * an agent this call cannot name would let an approval create a bucket nothing can read back.
+     */
+    fun readCuratedLayer(
+        tenantId: Long,
+        userId: String,
+        agentId: String,
+    ): CuratedLayer {
+        val record = loadWrapper(curatedKey(tenantId, userId, agentId)) ?: return CuratedLayer("", CREATE_IF_ABSENT)
+        return CuratedLayer(record.content, record.version)
+    }
+
+    /**
+     * Replaces the owner's `MEMORY.md`, but only while it still holds [expectedVersion].
+     *
+     * Two guards, in this order. The version the candidate was merged against is compared here, before
+     * anything goes on the wire; and the object's own ETag travels as `If-Match` (`If-None-Match: *` for a
+     * layer that does not exist yet), so a second approval that raced past the first is refused by the store
+     * rather than by this process. A 412 is an answer, not a fault — false — while anything else the store
+     * throws is thrown, because an approval that believed it had written would tell the owner their memory
+     * had been merged when it had not.
+     *
+     * The new version is [expectedVersion] + 1, so a layer that has been approved twice in a row cannot
+     * answer the same version to two different candidates.
+     */
+    fun writeCuratedIfVersion(
+        tenantId: Long,
+        userId: String,
+        agentId: String,
+        expectedVersion: Long,
+        content: String,
+    ): Boolean {
+        val objectKey = curatedKey(tenantId, userId, agentId)
+        val current = loadWrapper(objectKey)
+        val version = current?.version ?: CREATE_IF_ABSENT
+        if (version != expectedVersion) {
+            log.warn(
+                "[memory] Refused to replace {} at version {}: the layer is at {} now",
+                objectKey,
+                expectedVersion,
+                version,
+            )
+            return false
+        }
+        val precondition = when {
+            current == null -> mapOf("If-None-Match" to "*")
+            current.etag != null -> mapOf("If-Match" to current.etag)
+            // MinioBaseStore.putIfVersion answers the same way: with no ETag there is nothing to make the
+            // write conditional on, and an unconditional write would overwrite what the read did not see.
+            else -> {
+                log.warn("[memory] Object {} answered no ETag, so its replacement cannot be made conditional", objectKey)
+                return false
+            }
+        }
+        return writeEnvelope(objectKey, content, version + 1, current?.createdAt, precondition)
+    }
+
+    /**
+     * The object one candidate's [path] says the merge read from, or null when no merge could have read it.
+     *
+     * Intake asks this so a proposal cannot queue a source its approval would later ignore. It is the same
+     * call [clearSessionSources] makes, over the same key prefix and the same `harnax.memory.tenant-scoped`
+     * switch, which is why it lives here rather than beside [MemoryObjectKeys.sessionSourceKey]: two places
+     * reading that switch is how a queued source and a cleared object stop being the same file.
+     */
+    fun sessionSourceKey(
+        tenantId: Long,
+        userId: String,
+        agentId: String,
+        sessionId: String,
+        path: String,
+    ): String? = MemoryObjectKeys.sessionSourceKey(keyPrefix(), tenantId, userId, agentId, sessionId, path, tenantScoped)
+
+    /**
+     * Takes the files of one conversation's own layer that this candidate was merged out of.
+     *
+     * Each [sources] entry carries the path the promotion pass read through and the exact text it found, and
+     * both are load-bearing here: the path resolves to the object to clear through
+     * [sessionSourceKey] — a path that does not resolve is a [ClearedSources.kept], because
+     * the only objects this may touch are the ones a merge actually read — and the content is what the object
+     * has to still hold for the delete to be allowed. A conversation keeps writing between the merge and the
+     * decision; an entry whose bytes moved belongs to a candidate nobody has seen, and clearing it would
+     * throw away a conversation's memory on the strength of a proposal that does not describe it.
+     *
+     * Every delete is confirmed by reading the object back, and one that survives is thrown rather than
+     * counted: the queue would otherwise keep a conversation marked as un-merged, and its next merge would
+     * propose the same text again.
+     */
+    fun clearSessionSources(
+        tenantId: Long,
+        userId: String,
+        agentId: String,
+        sessionId: String,
+        sources: List<MemoryDraftSource>,
+    ): ClearedSources {
+        var cleared = 0
+        var kept = 0
+        var absent = 0
+        for (source in sources) {
+            val path = source.path
+            if (path == null) {
+                log.warn("[memory] A source of conversation {} carries no path, so nothing is cleared for it", sessionId)
+                kept++
+                continue
+            }
+            val objectKey = sessionSourceKey(tenantId, userId, agentId, sessionId, path)
+            if (objectKey == null) {
+                log.warn("[memory] Source path '{}' of conversation {} is not a merge source, leaving that object alone", path, sessionId)
+                kept++
+                continue
+            }
+            val record = loadWrapper(objectKey)
+            if (record == null) {
+                absent++
+                continue
+            }
+            if (record.content != source.content.orEmpty()) {
+                log.info("[memory] Source '{}' of conversation {} moved since the merge read it, keeping it for the next candidate", path, sessionId)
+                kept++
+                continue
+            }
+            deleteAndConfirmGone(objectKey)
+            cleared++
+        }
+        return ClearedSources(cleared, kept, absent)
+    }
+
+    /**
      * Whether this instance can reach a memory store at all.
      *
      * Lets the user-delete sweep skip quietly on a deployment that never turned MinIO on, instead of
@@ -231,6 +401,179 @@ class MemoryStoreGateway(
         userId: String,
         agentId: String,
     ): String = MemoryObjectKeys.agentPrefix(keyPrefix(), tenantId, userId, agentId, tenantScoped)
+
+    /**
+     * The owner's long-term `MEMORY.md`, addressed by the one agent id this class will accept.
+     *
+     * The single source of that key for everything write-side below, so no write can address a bucket the
+     * read side would not have shown: an unaddressable agent id is refused here rather than producing a key
+     * for a memory nobody owns.
+     */
+    private fun curatedKey(
+        tenantId: Long,
+        userId: String,
+        agentId: String,
+    ): String {
+        if (!MemoryObjectKeys.isValidAgentId(agentId)) {
+            throw BizException("Invalid agent id")
+        }
+        return MemoryObjectKeys.memoryMdKey(keyPrefix(), tenantId, userId, agentId, tenantScoped)
+    }
+
+    /**
+     * One store object, read the way a write needs it read.
+     *
+     * @param etag the server's answer for this exact body, which is what the replacement is made conditional
+     *   on; a null means the write cannot be made conditional at all
+     * @param version the store's version of the object — never 0 for an object that exists, because
+     *   `MinioBaseStore.effectiveVersion` answers 1 for an envelope that predates the embedded version, and
+     *   the two sides must not name one layer by two numbers
+     * @param content the file text at `value.content`
+     * @param createdAt the timestamp the first write embedded, kept so a replacement does not relabel the
+     *   file as brand new
+     */
+    private data class Wrapper(
+        val etag: String?,
+        val version: Long,
+        val content: String,
+        val createdAt: String?,
+    )
+
+    /**
+     * Reads one object for a write.
+     *
+     * Null is only ever "the object is not there", and it is the whole precondition for a create. Everything
+     * else the store or the body complains about is thrown: [readBody]'s tolerance belongs to the read path,
+     * where a neighbour's odd object is not this caller's memory, while here a body this class cannot
+     * round-trip is a body it must not overwrite. A store that answers 500 would otherwise be answered with
+     * "no memory yet", and the approval would create a second object over the one the owner has.
+     */
+    private fun loadWrapper(objectKey: String): Wrapper? {
+        val (client, bucket) = storage()
+        return try {
+            client.getObject(
+                GetObjectArgs.builder().bucket(bucket).`object`(objectKey).build(),
+            ).use { response ->
+                val etag = response.headers()["ETag"]
+                unwrap(objectKey, etag, response.bufferedReader(StandardCharsets.UTF_8).readText())
+            }
+        } catch (e: BizException) {
+            throw e
+        } catch (e: ErrorResponseException) {
+            if (isMissingObject(e)) {
+                log.debug("[memory] No object at {} yet, which is a create", objectKey)
+                null
+            } else {
+                throw BizException(503, "Memory object $objectKey could not be read", e)
+            }
+        } catch (e: Exception) {
+            throw BizException(503, "Memory object $objectKey could not be read", e)
+        }
+    }
+
+    /** The envelope of [body] as a write needs it, refused when the object is not an envelope at all. */
+    private fun unwrap(
+        objectKey: String,
+        etag: String?,
+        body: String,
+    ): Wrapper {
+        val root = try {
+            objectMapper.readTree(body)
+        } catch (e: Exception) {
+            throw BizException(503, "Memory object $objectKey is not a store envelope, so it cannot be replaced", e)
+        }
+        val value = root?.path("value")
+        if (value == null || !value.isObject) {
+            throw BizException(503, "Memory object $objectKey is not a store envelope, so it cannot be replaced")
+        }
+        return Wrapper(
+            etag = etag,
+            version = root.path("version").asLong(0L).coerceAtLeast(1L),
+            content = MemoryRecordParser.parse(body, objectMapper).content,
+            createdAt = value.path("created_at").takeIf { it.isString || it.isNumber }?.asText(),
+        )
+    }
+
+    /**
+     * Writes one envelope over [objectKey], conditionally when [precondition] says so.
+     *
+     * The body is the same document `MinioBaseStore.write()` produces — `key`, then `value` with
+     * `created_at`, `encoding`, `modified_at` and `content` in that order, then `version` — because the agent
+     * runtime reads this object back through that class, and `MemoryOwnerBucketMinioIT` pins the shape on
+     * both sides the way every other memory key string is pinned in this repo.
+     *
+     * A 412 is the conditional write having been refused, which is an answer about the bucket and comes back
+     * as false; anything else the store complains about is thrown.
+     */
+    private fun writeEnvelope(
+        objectKey: String,
+        content: String,
+        version: Long,
+        createdAt: String?,
+        precondition: Map<String, String>,
+    ): Boolean {
+        val (client, bucket) = storage()
+        val now = Instant.now().toString()
+        val json = objectMapper.writeValueAsString(
+            linkedMapOf(
+                "key" to MemoryObjectKeys.MEMORY_MD_ITEM_KEY,
+                "value" to linkedMapOf<String, Any>(
+                    "created_at" to (createdAt ?: now),
+                    "encoding" to "utf-8",
+                    "modified_at" to now,
+                    "content" to content,
+                ),
+                "version" to version,
+            ),
+        )
+        val bytes = json.toByteArray(StandardCharsets.UTF_8)
+        val builder = PutObjectArgs.builder()
+            .bucket(bucket)
+            .`object`(objectKey)
+            .stream(ByteArrayInputStream(bytes), bytes.size.toLong(), -1)
+            .contentType("application/json")
+        if (precondition.isNotEmpty()) {
+            // MinIO answers an unfulfilled conditional PUT by closing the connection without reading the body,
+            // and okhttp hands that dead connection to the next write on this client — which then throws an
+            // IOException and loses a write that had every right to land (measured in MemoryApprovalStoreIT).
+            // A conditional write is therefore a one-connection event: a refusal costs its own connection
+            // rather than the next approval's.
+            builder.extraHeaders(precondition + mapOf("Connection" to "close"))
+        }
+        return try {
+            client.putObject(builder.build())
+            log.info("[memory] Wrote {} as version {}", objectKey, version)
+            true
+        } catch (e: ErrorResponseException) {
+            if (e.response().code == 412) {
+                log.warn("[memory] The store refused the version precondition on {}, so another write got there first", objectKey)
+                false
+            } else {
+                throw BizException(503, "Memory object $objectKey could not be written", e)
+            }
+        } catch (e: Exception) {
+            throw BizException(503, "Memory object $objectKey could not be written", e)
+        }
+    }
+
+    /**
+     * Removes one object and reads it back, throwing while it is still there.
+     *
+     * The store's own success answer is not the evidence: an approval that counted a file as merged away
+     * while the conversation still has it would re-propose the same text on the next pass, forever, and the
+     * queue would say the two counts it just printed.
+     */
+    private fun deleteAndConfirmGone(objectKey: String) {
+        val (client, bucket) = storage()
+        try {
+            client.removeObject(RemoveObjectArgs.builder().bucket(bucket).`object`(objectKey).build())
+        } catch (e: Exception) {
+            throw BizException(503, "Memory object $objectKey could not be deleted", e)
+        }
+        if (loadWrapper(objectKey) != null) {
+            throw BizException(503, "Memory object $objectKey survived its own deletion, so the conversation layer was not cleared")
+        }
+    }
 
     /**
      * Every object key under [prefix], named the way the bucket names it.
@@ -383,4 +726,9 @@ class MemoryStoreGateway(
     }
 
     private fun keyPrefix(): String = minioPropertiesProvider.ifAvailable?.storePrefix ?: MemoryObjectKeys.DEFAULT_KEY_PREFIX
+
+    companion object {
+        /** The version an absent `MEMORY.md` answers with, and the one a first approval is filed against. */
+        private const val CREATE_IF_ABSENT = 0L
+    }
 }

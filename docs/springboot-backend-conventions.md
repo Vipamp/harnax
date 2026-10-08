@@ -1092,7 +1092,7 @@ CREATE TABLE IF NOT EXISTS `example` (
 
 - 每个服务模块在自己的 `resources/db/migration/` 下有一份 schema 基线（`harnax-admin`、`harnax-scheduler` 为 `V1__init_schema.sql`，`harnax-session-router` 为 `V1__create_session_router_tables.sql`），给出该模块 schema 的最终形态：建表语句带最终的列、索引、唯一键与注释，其后是启动所需的初始化数据
   - 结构、索引、注释与启动初始化数据都写进这一份基线，初始化数据放在建表语句之后，不为它单独开脚本
-  - 判「这张表现在长什么样」看的是这个目录重放到最后一个版本之后的形状；默认目录下只有基线，`harnax-admin` 目前另有四份前向增量叠在基线上（`V2__agent_session_memory.sql`、`V3__tool_invocation_metrics.sql`、`V4__drop_tool_call_log.sql`、`V5__tool_invocation_stats_hourly.sql`）
+  - 判「这张表现在长什么样」看的是这个目录重放到最后一个版本之后的形状；默认目录下只有基线，`harnax-admin` 目前另有六份前向增量叠在基线上（`V2__agent_session_memory.sql`、`V3__tool_invocation_metrics.sql`、`V4__drop_tool_call_log.sql`、`V5__tool_invocation_stats_hourly.sql`、`V6__drop_agent_session_memory.sql`、`V7__memory_draft.sql`）
 - 变更默认直接写进这一份 init 基线并重建库，schema 历史不向下传：已按旧形态建好的库不认改过的基线——启动即校验和不符，所以改表结构与重建库是同一个动作，不能拆开
 - 例外见 `harnax-admin/src/main/resources/db/migration/README.md`：不能重建的库（比如库里存着只有人能重填的模型 provider api_key）基线逐字不动，改动作为下一份前向增量 `V<n>__*.sql` 交付，且增量必须把 schema 带到与重建后相同的形状、下次重建时折回基线
 

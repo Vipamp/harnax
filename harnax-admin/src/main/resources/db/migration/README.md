@@ -10,6 +10,8 @@ db/
     ├── V3__tool_invocation_metrics.sql
     ├── V4__drop_tool_call_log.sql
     ├── V5__tool_invocation_stats_hourly.sql
+    ├── V6__drop_agent_session_memory.sql
+    ├── V7__memory_draft.sql
     └── README.md                     # this file
 ```
 
@@ -47,7 +49,7 @@ re-enter. There the change ships as the next forward `V<n>__*.sql`, holding the 
 records, so it is left byte-for-byte alone; the increment ends the schema at the same shape a rebuilt
 database reaches, so a fresh install runs baseline then increment and lands where the live one already
 is; and the increment folds back into the baseline at the next rebuild, which is when it is deleted.
-`V2__agent_session_memory.sql`, `V3__tool_invocation_metrics.sql`, `V4__drop_tool_call_log.sql` and `V5__tool_invocation_stats_hourly.sql` are that shape of change. V4 shows the other half of what an increment may hold: a table the baseline still creates but production no longer needs is removed by a `DROP TABLE IF EXISTS` in the increment, because the baseline line that creates it cannot be edited — and a rebuilt database, where that line is gone, still replays the drop harmlessly. V5 shows the third: a column and the keys over it change grain (`stat_date` becomes `stat_hour`), so the increment renames the column and replaces both keys, and empties the rows that no longer read correctly under the new shape — an aggregate row is recomputable from the detail table, so emptying it costs nothing a rebuild would not also do.
+`V2__agent_session_memory.sql`, `V3__tool_invocation_metrics.sql`, `V4__drop_tool_call_log.sql` and `V5__tool_invocation_stats_hourly.sql` are that shape of change. V4 shows the other half of what an increment may hold: a table the baseline still creates but production no longer needs is removed by a `DROP TABLE IF EXISTS` in the increment, because the baseline line that creates it cannot be edited — and a rebuilt database, where that line is gone, still replays the drop harmlessly. V5 shows the third: a column and the keys over it change grain (`stat_date` becomes `stat_hour`), so the increment renames the column and replaces both keys, and empties the rows that no longer read correctly under the new shape — an aggregate row is recomputable from the detail table, so emptying it costs nothing a rebuild would not also do. `V6__drop_agent_session_memory.sql` and `V7__memory_draft.sql` are a pair on one domain: the sixth undoing what the second added, which is what a withdrawn switch looks like when the database cannot be rebuilt, and the seventh creating `memory_draft`, the table a hand-approved promotion is recorded in before it is applied.
 
 Along with editing the baseline:
 
