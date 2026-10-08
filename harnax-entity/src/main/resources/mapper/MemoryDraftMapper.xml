@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agnetix.harnax.mapper.MemoryDraftMapper">
+
+    <resultMap id="MemoryDraftResultMap" type="com.agnetix.harnax.entity.MemoryDraft">
+        <id column="id" property="id"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="user_id" property="userId"/>
+        <result column="agent_name" property="agentName"/>
+        <result column="session_id" property="sessionId"/>
+        <result column="merged_md" property="mergedMd"/>
+        <result column="base_md" property="baseMd"/>
+        <result column="base_version" property="baseVersion"/>
+        <result column="sources" property="sources"/>
+        <result column="status" property="status"/>
+        <result column="reviewed_by" property="reviewedBy"/>
+        <result column="reviewed_at" property="reviewedAt"/>
+        <result column="reject_reason" property="rejectReason"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <!-- insert -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO memory_draft (tenant_id, user_id, agent_name, session_id, merged_md, base_md,
+                                  base_version, sources, status)
+        VALUES (#{tenantId}, #{userId}, #{agentName}, #{sessionId}, #{mergedMd}, #{baseMd},
+                #{baseVersion}, #{sources}, #{status})
+    </insert>
+
+    <!-- selectById -->
+    <select id="selectById" resultMap="MemoryDraftResultMap">
+        SELECT * FROM memory_draft WHERE id = #{id}
+    </select>
+
+    <!-- selectPendingBySession: the merge target, newest touched first -->
+    <select id="selectPendingBySession" resultMap="MemoryDraftResultMap">
+        SELECT * FROM memory_draft
+        WHERE tenant_id = #{tenantId} AND session_id = #{sessionId} AND status = 'PENDING'
+        ORDER BY update_time DESC, id DESC
+        LIMIT 1
+    </select>
+
+    <!--
+        updateContent: the four columns a proposal carries are all reassigned together, because the merged text,
+        the base it was merged against and the objects it came out of are one answer — a reviewer approving the
+        new text while the old precondition stayed behind would write the owner's layer against bytes the merge
+        never read. The owner tuple and the conversation are not touched: they identify the candidate, and a
+        proposal cannot move somebody's queue into somebody else's. `status = 'PENDING'` is the guard: a
+        candidate the owner has already decided never accepts another proposal.
+    -->
+    <update id="updateContent">
+        UPDATE memory_draft
+        SET merged_md = #{mergedMd},
+            base_md = #{baseMd},
+            base_version = #{baseVersion},
+            sources = #{sources},
+            update_time = CURRENT_TIMESTAMP
+        WHERE id = #{id} AND status = 'PENDING'
+    </update>
+
+    <!-- markReviewed: the conditional state change, so the second approver gets 0 instead of an overwrite -->
+    <update id="markReviewed">
+        UPDATE memory_draft
+        SET status = #{status},
+            reviewed_by = #{reviewedBy},
+            reviewed_at = CURRENT_TIMESTAMP,
+            reject_reason = #{rejectReason},
+            update_time = CURRENT_TIMESTAMP
+        WHERE id = #{id} AND status = 'PENDING'
+    </update>
+
+    <!-- selectDraftList: PageHelper wraps this, so no LIMIT of its own -->
+    <select id="selectDraftList" resultMap="MemoryDraftResultMap">
+        SELECT * FROM memory_draft
+        <where>
+            tenant_id = #{tenantId} AND user_id = #{userId}
+            <if test="status != null and status != ''">
+                AND status = #{status}
+            </if>
+            <if test="agentName != null and agentName != ''">
+                AND agent_name LIKE CONCAT('%', #{agentName}, '%')
+            </if>
+            <if test="sessionId != null and sessionId != ''">
+                AND session_id = #{sessionId}
+            </if>
+        </where>
+        ORDER BY update_time DESC, id DESC
+    </select>
+
+</mapper>

@@ -9,6 +9,7 @@ db/
     ├── V2__agent_session_memory.sql  # forward increments; see "Changing the Schema"
     ├── V3__tool_invocation_metrics.sql
     ├── V5__drop_agent_session_memory.sql
+    ├── V6__memory_draft.sql
     └── README.md                     # this file
 ```
 
