@@ -90,7 +90,7 @@ fun `the guard's own rule still rejects a directory under the delivered skills`(
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home /Users/heqingsong/software/apache-maven-3.9.12/bin/mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=SkillDraftStagingTest`
+Run: `JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home /Users/heqingsong/software/apache-maven-3.9.12/bin/mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=SkillDraftStagingTest` -Dsurefire.failIfNoSpecifiedTests=false
 Expected: 编译失败，`unresolved reference: SESSION_ENABLED_DIR`
 
 - [ ] **Step 3: 改 `SkillDraftStaging` 的 companion**
@@ -140,7 +140,7 @@ internal fun dirClashesWithSkillsDir(dir: String): Boolean {
 
 - [ ] **Step 4: 格式化后跑测试确认通过**
 
-Run: `... mvn -q spotless:apply -pl harnax-agent/harnax-harness-core && ... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=SkillDraftStagingTest`
+Run: `... mvn -q spotless:apply -pl harnax-agent/harnax-harness-core && ... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=SkillDraftStagingTest` -Dsurefire.failIfNoSpecifiedTests=false
 Expected: `Tests run: <n>, Failures: 0, Errors: 0`
 
 - [ ] **Step 5: 提交**
@@ -196,7 +196,7 @@ fun `the same reader pointed at the enabled directory reads the enabled copy`() 
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=WorkspaceDraftFilesReaderTest`
+Run: `... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=WorkspaceDraftFilesReaderTest` -Dsurefire.failIfNoSpecifiedTests=false
 Expected: 编译失败，`unresolved reference: readSkillMarkdown`
 
 - [ ] **Step 3: 实现**
@@ -237,7 +237,7 @@ fun readSkillMarkdown(
 
 - [ ] **Step 4: 跑测试确认通过**
 
-Run: `... mvn -q spotless:apply -pl harnax-agent/harnax-harness-core && ... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=WorkspaceDraftFilesReaderTest`
+Run: `... mvn -q spotless:apply -pl harnax-agent/harnax-harness-core && ... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=WorkspaceDraftFilesReaderTest` -Dsurefire.failIfNoSpecifiedTests=false
 Expected: `Failures: 0, Errors: 0`
 
 - [ ] **Step 5: 提交**
@@ -316,7 +316,7 @@ class SessionSkillStoreTest {
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=SessionSkillStoreTest`
+Run: `... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=SessionSkillStoreTest` -Dsurefire.failIfNoSpecifiedTests=false
 Expected: 编译失败，`unresolved reference: SessionSkillStore`
 
 - [ ] **Step 3: 实现 `SessionSkillStore.kt`**
@@ -540,7 +540,7 @@ internal fun findingTexts(findings: List<SkillSecurityScanner.Finding>): List<St
 
 - [ ] **Step 4: 跑测试确认通过**
 
-Run: `... mvn -q spotless:apply -pl harnax-agent/harnax-harness-core && ... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=SessionSkillStoreTest`
+Run: `... mvn -q spotless:apply -pl harnax-agent/harnax-harness-core && ... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=SessionSkillStoreTest` -Dsurefire.failIfNoSpecifiedTests=false
 Expected: `Failures: 0, Errors: 0`
 
 - [ ] **Step 5: 提交**
@@ -926,7 +926,7 @@ class SessionEnabledSkillRepositoryTest {
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=SessionEnabledSkillRepositoryTest`
+Run: `... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=SessionEnabledSkillRepositoryTest` -Dsurefire.failIfNoSpecifiedTests=false
 Expected: 编译失败，`unresolved reference: SessionEnabledSkillRepository`
 
 - [ ] **Step 3: 实现**
@@ -1041,7 +1041,7 @@ const val SESSION_SKILL_SOURCE = "session-enabled"
 
 - [ ] **Step 4: 跑测试确认通过**
 
-Run: `... mvn -q spotless:apply -pl harnax-agent/harnax-harness-core && ... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=SessionEnabledSkillRepositoryTest`
+Run: `... mvn -q spotless:apply -pl harnax-agent/harnax-harness-core && ... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=SessionEnabledSkillRepositoryTest` -Dsurefire.failIfNoSpecifiedTests=false
 Expected: `Tests run: 685, Failures: 0, Errors: 0, Skipped: 1`（682 + 本任务 3 支）。
 
 已核实（不必再猜）：上游 `RuntimeContextSkillRepository` 只额外声明 `List<AgentSkill> getAllSkills(RuntimeContext)`，`getSkill(name, ctx)` 是 default，形参是 Java 平台类型，所以 Kotlin 侧把 override 形参收成 `RuntimeContext?` 合法；`AgentSkillRepository` 的非 default 方法正好 10 个（`close()` 有 default），照 `InMemorySkillRepository` 的形状 override 即可。
@@ -1103,7 +1103,7 @@ git commit -m "feat(skill): 会话可用区成目录册的一路——自研仓�
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=HarnessAgentLauncherSkillSelfWriteTest`
+Run: `... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=HarnessAgentLauncherSkillSelfWriteTest` -Dsurefire.failIfNoSpecifiedTests=false
 Expected: FAIL —— 第一条断言 `the enabled area has to be installed` 为假
 
 - [ ] **Step 3: builder 注册**
@@ -1203,7 +1203,7 @@ val sessionSkillStore: SessionSkillStore by lazy {
 
 - [ ] **Step 5: 跑该测试与全模块**
 
-Run: `... mvn -q spotless:apply -pl harnax-agent/harnax-harness-core && ... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=HarnessAgentLauncherSkillSelfWriteTest`
+Run: `... mvn -q spotless:apply -pl harnax-agent/harnax-harness-core && ... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=HarnessAgentLauncherSkillSelfWriteTest` -Dsurefire.failIfNoSpecifiedTests=false
 Expected: PASS，且全模块 `mvn -o test -pl harnax-agent/harnax-harness-core -am` 仍然全绿，总数 **687**（Task 5 之后 685 + 本任务 2 支）。本任务结束时 HEAD 必须能编译——中间件此刻仍按旧构造安装，签名换掉是 Task 7 的事。
 
 - [ ] **Step 6: 提交**
@@ -1333,7 +1333,7 @@ git commit -m "feat(skill): 可用区在交付技能之前注册并晚绑定—�
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=SkillDraftSubmitMiddlewareTest`
+Run: `... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=SkillDraftSubmitMiddlewareTest` -Dsurefire.failIfNoSpecifiedTests=false
 Expected: 编译失败 —— 构造参数不符
 
 - [ ] **Step 3: 重写中间件**
@@ -1551,7 +1551,7 @@ class SessionSkillControllerTest {
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `... mvn -o test -pl harnax-agent/harnax-agent-service -am -Dtest=SessionSkillControllerTest`
+Run: `... mvn -o test -pl harnax-agent/harnax-agent-service -am -Dtest=SessionSkillControllerTest` -Dsurefire.failIfNoSpecifiedTests=false
 Expected: 编译失败，`unresolved reference: SessionSkillController`
 
 - [ ] **Step 3: 实现控制器**
@@ -1947,7 +1947,7 @@ fun `a blank session filter means no filter at all`() {
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `... mvn -o test -pl harnax-admin -am -Dtest=SkillDraftServiceImplPageTest`
+Run: `... mvn -o test -pl harnax-admin -am -Dtest=SkillDraftServiceImplPageTest` -Dsurefire.failIfNoSpecifiedTests=false
 Expected: 编译失败（`page` 只有 4 个参数）
 
 - [ ] **Step 3: 三处签名**
@@ -2007,7 +2007,7 @@ skillDraftMapper.selectDraftList(currentTenantId(), state, name?.trim()?.takeIf 
     }
 ```
 
-用例（`@Order(11)`，接在既有队列过滤那支之后；`siblingSessionUuid = ""`、`siblingSessionRowId = -1L` 与既有 `sessionUuid` / `sessionRowId` 同处声明，`@AfterAll` 的删会话要一并把这条兄弟会话删掉，走既有 `deleteSession(sessionRowId)` 那同一条通道）：
+用例（`@Order(11)`；`siblingSessionUuid = ""`、`siblingSessionRowId = -1L` 与既有 `sessionUuid` / `sessionRowId` 同处声明，即 `:61-62` 那一块）。**既有那支占用 `@Order(11)` 的用例是本文件最后一支，名为 `clearing the proposing session takes neither the approval nor the record of it`（`:452-487`），它必须继续排在最后**——它在 `:468` 用 `deleteJson("/api/admin/sessions/$sessionRowId")` 把出处会话删掉，任何还依赖该会话的用例排它之后都会红（`submit` 推租户要回查会话行）。所以新用例接 `@Order(11)`，把那支既有的改成 `@Order(12)`。这个文件**没有** `@AfterAll`，也**没有** `deleteSession(...)` 这种助手，唯一的删会话通道就是上面那句 `deleteJson`；兄弟会话因此由新用例自己在末尾删走，不留悬挂数据：
 
 ```kotlin
     @Test
@@ -2035,10 +2035,14 @@ skillDraftMapper.selectDraftList(currentTenantId(), state, name?.trim()?.takeIf 
             foreign["data"]["records"].none { it["name"].asText().startsWith("it_draft_ses_") },
             "a neighbour tenant that guesses the session id still gets nothing of ours",
         )
+
+        // This file has no @AfterAll: the session a test creates is the test's to remove. The primary session
+        // stays, because the invariant-3 case after this one is the thing that clears it on purpose.
+        assertOk(deleteJson("/api/admin/sessions/$siblingSessionRowId"))
     }
 ```
 
-Run: `... mvn -o test -pl harnax-admin -am -Pintegration-test -Dtest=SkillDraftFlowIT`
+Run: `... mvn -o test -pl harnax-admin -am -Pintegration-test -Dtest=SkillDraftFlowIT` -Dsurefire.failIfNoSpecifiedTests=false
 Expected: `Failures: 0, Errors: 0`（先决条件：Docker 在跑；本仓 IT 走 testcontainers）
 
 - [ ] **Step 5: 跑 admin 门禁**
