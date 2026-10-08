@@ -47,7 +47,11 @@ import com.agnetix.harnax.harness.sandbox.CliImageBuilder
 import com.agnetix.harnax.harness.sandbox.CliPackageStore
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
 import com.agnetix.harnax.harness.skill.AdminBackedPromotionGate
+import com.agnetix.harnax.harness.skill.SandboxHandleProvider
+import com.agnetix.harnax.harness.skill.SessionEnabledSkillRepository
+import com.agnetix.harnax.harness.skill.SessionSkillStore
 import com.agnetix.harnax.harness.skill.SkillDraftStaging
+import com.agnetix.harnax.harness.skill.SkillDraftSubmitMiddleware
 import com.agnetix.harnax.harness.skill.TenantSkillVisibilityFilter
 import com.agnetix.harnax.harness.team.TeamLeadToolBox
 import com.agnetix.harnax.harness.team.TeamMemberSpec
@@ -172,6 +176,16 @@ class HarnessAgentLauncher(
         log.info("[harness] Shutdown hook triggered, persisting all sandbox snapshots...")
         keepAliveSandboxManager?.persistAll()
         log.info("[harness] Shutdown hook complete")
+    }
+
+    /** The out-of-call door onto any session's container, for whoever has no agent to bind to. */
+    val sessionSkillStore: SessionSkillStore by lazy {
+        SessionSkillStore(
+            handles = SandboxHandleProvider { id ->
+                keepAliveSandboxManager?.let { it.getSandbox(id) ?: it.attachToExisting(id) }
+            },
+            workspaceRoot = harnessConfig.sandbox.workspaceRoot,
+        )
     }
 
     /**
@@ -564,12 +578,18 @@ class HarnessAgentLauncher(
         }
         if (skillDraftIntake != null) {
             val staging = SkillDraftStaging()
+            val sessionSkills = SessionEnabledSkillRepository()
             agentBuilder.skillSelfWrite(
                 staging = staging,
                 gate = AdminBackedPromotionGate(sessionId, skillDraftIntake, staging),
+                sessionSkills = sessionSkills,
             )
+            // Registered here rather than by the builder: the middleware is the launcher's own wiring, and
+            // Task 7 gives it the staging plus the store a draft is filed against.
+            agentBuilder.addMiddleware(SkillDraftSubmitMiddleware(staging))
             log.info(
-                "Agent '{}' may author skills: drafts stage in '{}', every one of them waits for review",
+                "Agent '{}' may author skills: drafts stage in '{}', every one of them waits for review, and " +
+                    "the operator can enable one of them into this session",
                 agentSpec.name,
                 staging.draftsDir,
             )
