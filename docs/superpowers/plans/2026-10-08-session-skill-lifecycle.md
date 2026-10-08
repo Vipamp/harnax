@@ -1985,7 +1985,16 @@ Expected: FAIL，`Cannot find module './SessionSkillsDrawer'`
 import { request } from '@umijs/max';
 
 function getRouterApiKey(): string {
-  return localStorage.getItem('router_api_key') || '';
+  try {
+    const tokenInfoStr = localStorage.getItem('tokenInfo');
+    if (tokenInfoStr) {
+      const tokenInfo = JSON.parse(tokenInfoStr);
+      return tokenInfo.routerApiKey || '';
+    }
+  } catch {
+    // ignore
+  }
+  return '';
 }
 
 function buildRouterOptions(extraOptions?: { [key: string]: any }) {
