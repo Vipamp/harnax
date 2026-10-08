@@ -46,12 +46,18 @@ interface ToolInvocationStatsMapper {
      * One row per subject over an hour range, summed across hours, with the six duration buckets so the P95 can
      * be answered without touching the detail table. Aliases are the wire contract: the service reads the map
      * by these keys.
+     *
+     * @param dimension What a subject is: `tool` groups by kind, subject id and tool name, `mcp` and `cli` by
+     * kind and subject id alone, so one server's or one package's several names fold into one row and their
+     * `toolName` comes back empty. The caller has resolved this, so it is never null and never `agent` or
+     * `session` — those two dimensions read the detail table.
      */
     fun selectSubjectTotals(
         @Param("from") from: String,
         @Param("to") to: String,
         @Param("tenantId") tenantId: Long,
         @Param("kind") kind: String?,
+        @Param("dimension") dimension: String,
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**

@@ -225,6 +225,54 @@ class ToolMetricsReadIT : BaseAdminIT() {
     }
 
     @Test
+    @DisplayName("groupBy mcp folds one server's several tools into a single row")
+    fun mcpDimensionFoldsOneServerIntoOneRow() {
+        val hour = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS)
+        // 77 already carries the fixture's fetch_url, so these two names join it into a three-call row; 88
+        // runs a tool name 77 also runs and has to stay its own row.
+        call(hour, TENANT_ID, ToolInvocationLog.KIND_MCP, "search_nodes", "SUCCESS", 80L, mcpId = 77L)
+        call(hour.plusMinutes(20L), TENANT_ID, ToolInvocationLog.KIND_MCP, "fetch_doc", "SUCCESS", 400L, mcpId = 77L)
+        call(hour.plusMinutes(30L), TENANT_ID, ToolInvocationLog.KIND_MCP, "search_nodes", "ERROR", 900L, mcpId = 88L)
+        rollup.rollUp()
+
+        val body = data("/api/admin/tool-metrics/summary?kind=mcp&groupBy=mcp")
+        val rows = body["rows"]
+        assertEquals(2, rows.size())
+        assertEquals(listOf(77L, 88L), rows.map { it["subjectId"].asLong() })
+        assertEquals("mcp", body["groupBy"].asString())
+        // A row is one server now, so no single tool name belongs on it.
+        assertEquals("", rows[0]["toolName"].asString())
+        assertEquals(3L, rows[0]["calls"].asLong())
+        assertEquals(3L, rows[0]["successes"].asLong())
+        // The buckets add over hours: 80 goes in <=100ms, 400 in <=500ms and 900 in <=2s, and the 3 calls
+        // need ceil(0.95*3)=3, first reached in the 2s bucket.
+        assertEquals("<=", rows[0]["p95Operator"].asString())
+        assertEquals(2_000L, rows[0]["p95Ms"].asLong())
+        assertEquals(460L, rows[0]["avgDurationMs"].asLong())
+        assertEquals(1L, rows[1]["calls"].asLong())
+        assertEquals(1L, rows[1]["errors"].asLong())
+        // The cards answer the same filter without grouping, so they add the two rows up.
+        assertEquals(4L, body["totalCalls"].asLong())
+    }
+
+    @Test
+    @DisplayName("groupBy cli folds one package's several commands into a single row")
+    fun cliDimensionFoldsOnePackageIntoOneRow() {
+        val hour = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS)
+        call(hour, TENANT_ID, ToolInvocationLog.KIND_CLI, "gh-pr", "SUCCESS", 60L, cliId = 88L)
+        call(hour.plusMinutes(10L), TENANT_ID, ToolInvocationLog.KIND_CLI, "gh-issue", "DENIED", 70L, cliId = 88L)
+        call(hour.plusMinutes(20L), TENANT_ID, ToolInvocationLog.KIND_CLI, "kubectl", "SUCCESS", 500L, cliId = 99L)
+        rollup.rollUp()
+
+        val rows = data("/api/admin/tool-metrics/summary?kind=cli&groupBy=cli")["rows"]
+        // 88 is the fixture's own 40-second gh plus these two; 99 stays separate on its own id.
+        assertEquals(listOf(88L, 99L), rows.map { it["subjectId"].asLong() })
+        assertEquals(3L, rows[0]["calls"].asLong())
+        assertEquals(1L, rows[0]["denials"].asLong())
+        assertEquals(1L, rows[1]["calls"].asLong())
+    }
+
+    @Test
     @DisplayName("time-series buckets the days and zero-fills the empty ones")
     fun timeSeriesZeroFills() {
         val points = data("/api/admin/tool-metrics/time-series?$SEVEN_DAYS")["points"]

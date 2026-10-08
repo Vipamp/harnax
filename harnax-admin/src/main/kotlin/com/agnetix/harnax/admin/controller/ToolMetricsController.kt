@@ -44,7 +44,7 @@ class ToolMetricsController(
         @RequestParam(name = "end", required = false) end: String?,
         @Parameter(description = "Origin filter: builtin / mcp / cli / shell / framework")
         @RequestParam(name = "kind", required = false) kind: String?,
-        @Parameter(description = "Subject dimension: tool (default) / agent / session")
+        @Parameter(description = "Subject dimension: tool (default) / mcp / cli / agent / session; the first three read the hourly aggregate, the last two the detail table")
         @RequestParam(name = "groupBy", required = false, defaultValue = "tool") groupBy: String,
     ): ResultVo<ToolMetricsSummaryResponse> = try {
         ResultVo.success(toolMetricsService.getSummary(start, end, kind, groupBy))

@@ -115,7 +115,14 @@
         SELECT
         s.kind AS kind,
         s.subject_id AS subjectId,
-        s.tool_name AS toolName,
+        <!-- The mcp and cli dimensions group away from the tool name, and a constant keeps the column in the
+             result without joining the GROUP BY: under ONLY_FULL_GROUP_BY a bare s.tool_name that is not
+             grouped would fail the whole statement, while omitting the column would break the map keys the
+             service reads. -->
+        <choose>
+            <when test="dimension == 'mcp' or dimension == 'cli'">'' AS toolName,</when>
+            <otherwise>s.tool_name AS toolName,</otherwise>
+        </choose>
         <include refid="subjectTotalsColumns"/>,
         <!-- A real hour now: the column is already a DATETIME, so no CAST is needed to keep the map handing
              back a LocalDateTime rather than a java.sql.Date read through the JVM default zone — and a CAST
@@ -128,7 +135,8 @@
         <if test="kind != null and kind != ''">
             AND s.kind = #{kind}
         </if>
-        GROUP BY s.kind, s.subject_id, s.tool_name
+        GROUP BY s.kind, s.subject_id
+        <if test="dimension == 'tool'">, s.tool_name</if>
         ORDER BY calls DESC, lastSeenAt DESC
     </select>
 

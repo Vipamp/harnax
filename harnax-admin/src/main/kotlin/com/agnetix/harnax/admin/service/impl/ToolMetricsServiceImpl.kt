@@ -61,7 +61,13 @@ class ToolMetricsServiceImpl(
         // only answers the whole window when the four terminal outcomes really partition it.
         val failingCalls = totals.longOf("errors") + totals.longOf("denials") + totals.longOf("interruptions")
         val (windowOperator, windowMs) = p95(totals, totalCalls)
-        val rows = if (dimension == DIM_TOOL) toolRows(window, tenantId, kind) else detailRows(window, tenantId, kind, dimension)
+        // Three of the five dimensions are properties the aggregate already carries per subject; only agent
+        // and session have no column of their own in it and have to be counted from the detail rows.
+        val rows = if (dimension == DIM_TOOL || dimension == DIM_MCP || dimension == DIM_CLI) {
+            toolRows(window, tenantId, kind, dimension)
+        } else {
+            detailRows(window, tenantId, kind, dimension)
+        }
         return ToolMetricsSummaryResponse(
             from = window.fromStr,
             to = window.toStr,
@@ -148,18 +154,20 @@ class ToolMetricsServiceImpl(
     }
 
     /**
-     * Rows for the tool dimension: one per subject over the whole window, straight from the aggregate.
+     * Rows for the three dimensions the aggregate carries: one per subject over the whole window.
      *
-     * The key is the tool name, because that is what the page lists, and an id only travels with a subject
-     * the drill-down can point at.
+     * Under `tool` the key is the tool name, because that is what the page lists, and an id only travels with a
+     * subject the drill-down can point at. Under `mcp` and `cli` the subject is the server or the package, so
+     * the name column comes back empty and the id is the key — one server's several tools are one row.
      */
     private fun toolRows(
         window: Window,
         tenantId: Long,
         kind: String?,
+        dimension: String,
     ): List<ToolMetricsRow> {
         val rows = mutableListOf<ToolMetricsRow>()
-        for (row in toolInvocationStatsMapper.selectSubjectTotals(window.fromStr, window.toStr, tenantId, kind).orEmpty()) {
+        for (row in toolInvocationStatsMapper.selectSubjectTotals(window.fromStr, window.toStr, tenantId, kind, dimension).orEmpty()) {
             row ?: continue
             val calls = row.longOf("calls")
             val successes = row.longOf("successes")
@@ -189,9 +197,11 @@ class ToolMetricsServiceImpl(
     /**
      * Rows for the two dimensions the aggregate does not carry, counted from the detail rows.
      *
-     * A row here spans every tool the subject ran, so the tool name and the origin stay empty; the key is the
-     * grouped column itself. The P95 has no bucket to answer from on this path, so it reports the longest
-     * call actually measured, and the window's percentile beside it comes from the aggregate instead.
+     * Only `agent` and `session` arrive: `mcp` and `cli` are subjects the aggregate already folds per hour, and
+     * [getSummary] sends those three to [toolRows]. A row here spans every tool the subject ran, so the tool
+     * name and the origin stay empty; the key is the grouped column itself. The P95 has no bucket to answer
+     * from on this path, so it reports the longest call actually measured, and the window's percentile beside
+     * it comes from the aggregate instead.
      */
     private fun detailRows(
         window: Window,
@@ -239,17 +249,20 @@ class ToolMetricsServiceImpl(
         return ">" to 30_000L
     }
 
+    /** The five subjects the page can group by; anything else answers the default and says so in `groupBy`. */
     private fun dimension(
         groupBy: String,
-    ): String = if (groupBy == DIM_AGENT || groupBy == DIM_SESSION) groupBy else DIM_TOOL
+    ): String = if (groupBy in DIMENSIONS) groupBy else DIM_TOOL
 
     /** Requested granularity wins when it is one of the four; otherwise the span picks a readable bucket. */
     private fun granularityOf(
         requested: String,
         window: Window,
     ): String = when {
-        requested == GRANULARITY_HOUR || requested == GRANULARITY_DAY ||
-            requested == GRANULARITY_WEEK || requested == GRANULARITY_MONTH -> requested
+        requested == GRANULARITY_HOUR ||
+            requested == GRANULARITY_DAY ||
+            requested == GRANULARITY_WEEK ||
+            requested == GRANULARITY_MONTH -> requested
         window.hours <= 48L -> GRANULARITY_HOUR
         // Past 92 days a day-per-point line stops being readable, and the week bucket takes over.
         window.hours <= 24L * 92 -> GRANULARITY_DAY
@@ -439,8 +452,13 @@ class ToolMetricsServiceImpl(
         const val MAX_PAGE_SIZE = 200
 
         const val DIM_TOOL = "tool"
+        const val DIM_MCP = "mcp"
+        const val DIM_CLI = "cli"
         const val DIM_AGENT = "agent"
         const val DIM_SESSION = "session"
+
+        /** What [dimension] accepts; a request naming anything else is read as the default. */
+        private val DIMENSIONS: Set<String> = setOf(DIM_TOOL, DIM_MCP, DIM_CLI, DIM_AGENT, DIM_SESSION)
 
         const val GRANULARITY_HOUR = "hour"
         const val GRANULARITY_DAY = "day"
