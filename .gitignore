@@ -60,3 +60,8 @@ deploy/local/pids/
 # CLI build artifacts
 harnax-cli/harnax
 harnax-cli/harnax-cli
+
+# iOS device build output and local verification probes
+harnax-ios/device-build/
+.hc-device/
+.hc-headcheck/
