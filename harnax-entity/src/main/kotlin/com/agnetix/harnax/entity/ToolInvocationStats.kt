@@ -2,20 +2,21 @@ package com.agnetix.harnax.entity
 
 import io.swagger.v3.oas.annotations.media.Schema
 import java.io.Serializable
-import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.temporal.ChronoUnit
 
 /**
- * One day of [ToolInvocationLog] folded into counters, keyed by `(statDate, tenantId, kind, subjectId,
+ * One hour of [ToolInvocationLog] folded into counters, keyed by `(statHour, tenantId, kind, subjectId,
  * toolName)`.
  *
- * Rows are recomputable and overwritten whole, so a re-run of any day changes nothing; that is what lets
+ * Rows are recomputable and overwritten whole, so a re-run of any hour changes nothing; that is what lets
  * several replicas schedule this rollup without a lock. The key holds no `agentId` or `sessionId`: their
- * cardinality is not bounded, and a day keyed by them would grow as fast as the detail table.
+ * cardinality is not bounded, and an hour keyed by them would grow as fast as the detail table.
  *
  * [subjectId] is `0` rather than null for the kinds with no subject because a unique index does not treat
- * nulls as equal — a null there would let the upsert insert a second row for the same day.
+ * nulls as equal — a null there would let the upsert insert a second row for the same hour.
  */
-@Schema(description = "Daily tool invocation aggregate")
+@Schema(description = "Hourly tool invocation aggregate")
 class ToolInvocationStats : Serializable {
 
     companion object {
@@ -28,8 +29,8 @@ class ToolInvocationStats : Serializable {
     @Schema(description = "Aggregate row ID")
     var id: Long = 0
 
-    @Schema(description = "Day of the calls")
-    var statDate: LocalDate = LocalDate.now()
+    @Schema(description = "Hour the calls fall in")
+    var statHour: LocalDateTime = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS)
 
     @Schema(description = "Owning tenant")
     var tenantId: Long = 0
@@ -61,7 +62,7 @@ class ToolInvocationStats : Serializable {
     @Schema(description = "Duration total, milliseconds")
     var sumDurationMs: Long = 0
 
-    @Schema(description = "Longest single call of the day, milliseconds")
+    @Schema(description = "Longest single call of the hour, milliseconds")
     var maxDurationMs: Long = 0
 
     @Schema(description = "Calls of at most 100 ms")

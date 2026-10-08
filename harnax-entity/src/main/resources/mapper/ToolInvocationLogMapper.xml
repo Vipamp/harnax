@@ -22,24 +22,24 @@
     </insert>
 
     <!--
-        The date set the rollup owes, oldest first. Grouping rather than a subquery against the aggregate
+        The hour set the rollup owes, oldest first. Grouping rather than a subquery against the aggregate
         keeps this one pass over the index on (tenant_id, ts). The floor is compared against `l.ts` and not
-        against `DATE(l.ts)` because a function over the column is not sargable; a `yyyy-MM-dd` bound reads
-        as the start of that day. The day expression stays a function of the column, since grouping is not
-        narrowed by it.
+        against a truncation of it because a function over the column is not sargable; a
+        `yyyy-MM-dd HH:mm:ss` bound reads as that instant. The hour expression stays a function of the
+        column, since grouping is not narrowed by it.
     -->
-    <select id="selectUnrolledDates" resultType="string">
-        SELECT DATE_FORMAT(l.ts, '%Y-%m-%d') AS stat_date
+    <select id="selectUnrolledHours" resultType="string">
+        SELECT DATE_FORMAT(l.ts, '%Y-%m-%d %H:00:00') AS stat_hour
         FROM tool_invocation_log l
         WHERE l.tenant_id IS NOT NULL
         AND l.ts &gt;= #{floor}
         AND NOT EXISTS (
             SELECT 1 FROM tool_invocation_stats s
-            WHERE s.stat_date = DATE(l.ts)
+            WHERE s.stat_hour = DATE_FORMAT(l.ts, '%Y-%m-%d %H:00:00')
             AND s.tenant_id = l.tenant_id
         )
-        GROUP BY DATE_FORMAT(l.ts, '%Y-%m-%d')
-        ORDER BY stat_date ASC
+        GROUP BY DATE_FORMAT(l.ts, '%Y-%m-%d %H:00:00')
+        ORDER BY stat_hour ASC
     </select>
 
     <delete id="deleteRolledOut">
@@ -49,16 +49,19 @@
             tenant_id IS NULL
             OR EXISTS (
                 SELECT 1 FROM tool_invocation_stats s
-                WHERE s.stat_date = DATE(tool_invocation_log.ts)
+                WHERE s.stat_hour = DATE_FORMAT(tool_invocation_log.ts, '%Y-%m-%d %H:00:00')
                 AND s.tenant_id = tool_invocation_log.tenant_id
             )
         )
     </delete>
 
     <!--
-        The two reads the metrics page answers from the detail rows. Both bind the window with instants
-        rather than with days, because `ts` is a `datetime(3)` column, and both name a tenant: this table
-        holds every workspace's single calls, and a read without a predicate would answer with all of them.
+        The two reads the metrics page answers from the detail rows. Both take the window's opening hour as
+        `>=` and one hour past its closing hour as `<`, because the aggregate row of that closing hour covers
+        sixty minutes: the pair here answers exactly the range `stat_hour >= from AND stat_hour <= to` answers
+        on the aggregate side, so the two reads cannot disagree on the last hour of every window. Both name a
+        tenant: this table holds every workspace's single calls, and a read without a predicate would answer
+        with all of them.
     -->
     <select id="selectSubjectTotalsFromDetail" resultType="map">
         SELECT
@@ -72,6 +75,22 @@
             <otherwise>l.agent_id</otherwise>
         </choose>
         AS subjectId,
+        <!-- The subject's own name. An agent row joins `agent` by primary key and wraps the column in MAX:
+             one id is one name, so the aggregate answers that name and ONLY_FULL_GROUP_BY stays satisfied
+             without widening the GROUP BY. A session row has to read its title through a scalar subquery
+             instead of a join, because `session.session_id` carries no unique index — the column comment calls
+             it unique, the index list has neither a unique nor a plain index on it — so a join would fan one
+             grouped row into one per duplicate and double every count below. ORDER BY ss.id DESC LIMIT 1 picks
+             the newest row's title, and the subquery returns at most one value whatever the table holds.
+             Both branches fall back to the row's own key when nothing is registered. -->
+        <choose>
+            <when test="groupBy == 'session'">
+                COALESCE((SELECT ss.title FROM session ss
+                WHERE ss.session_id = l.session_id AND ss.tenant_id = l.tenant_id
+                ORDER BY ss.id DESC LIMIT 1), l.session_id) AS subjectName,
+            </when>
+            <otherwise>COALESCE(MAX(a.name), CAST(l.agent_id AS CHAR)) AS subjectName,</otherwise>
+        </choose>
         COUNT(*) AS calls,
         SUM(l.outcome = 'SUCCESS') AS successes,
         SUM(l.outcome = 'ERROR') AS errors,
@@ -81,14 +100,19 @@
         COALESCE(MAX(l.duration_ms), 0) AS maxDurationMs,
         MAX(l.ts) AS lastSeenAt
         FROM tool_invocation_log l
+        <!-- Only the agent dimension has a table to name, and the join is on a primary key with the row's own
+             tenant, so it cannot add a row to any group. -->
+        <if test="groupBy != 'session'">
+            LEFT JOIN agent a ON a.id = l.agent_id AND a.tenant_id = l.tenant_id
+        </if>
         WHERE l.tenant_id = #{tenantId}
         AND l.ts &gt;= #{from}
-        AND l.ts &lt;= #{to}
+        AND l.ts &lt; #{to}
         <if test="kind != null and kind != ''">
             AND l.kind = #{kind}
         </if>
-        <!-- The grouped column is the one named in SELECT, and the session dimension selects no other
-             non-aggregated column at all. -->
+        <!-- The grouped column is the one named in SELECT, and every other selected column is either an
+             aggregate or a subquery bound to that grouped column. -->
         <!-- `agent_id` and `session_id` are both nullable, so the grouping collects one NULL key of its own.
              A call with no agent can neither be counted under an agent nor opened in the drill-down, so that
              group stays out of the response. It is not hypothetical: a team's lead has no `agent` row, so a lead
@@ -127,7 +151,7 @@
              caller that asks for every row it holds, and the upper bound is what keeps a call recorded after
              the window from reading as one taken inside it. -->
         AND l.ts &gt;= #{from}
-        AND l.ts &lt;= #{to}
+        AND l.ts &lt; #{to}
         <if test="kind != null and kind != ''">
             AND l.kind = #{kind}
         </if>

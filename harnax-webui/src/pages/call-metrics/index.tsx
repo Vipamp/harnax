@@ -10,6 +10,7 @@ import type { Dayjs } from 'dayjs';
 import { getToolInvocations, getToolMetricsSummary, getToolMetricsTimeSeries } from '@/services/ant-design-pro/toolMetrics';
 import SubjectDrawer from './SubjectDrawer';
 import { formatLastSeen } from './lastSeen';
+import { TAB_DIMENSIONS, readsAggregate } from './dimensions';
 
 const CALLS_COLOR = '#4f6ef7';
 const SUCCESS_COLOR = '#10b981';
@@ -48,12 +49,14 @@ const CallMetrics: React.FC = () => {
   const [tab, setTab] = useState<string>('tool');
   const [toolKind, setToolKind] = useState<string>('builtin');
   const [range, setRange] = useState<[Dayjs, Dayjs]>(() => [
-    dayjs().subtract(DEFAULT_RANGE_DAYS - 1, 'day'),
-    dayjs(),
+    dayjs().subtract(DEFAULT_RANGE_DAYS - 1, 'day').startOf('hour'),
+    dayjs().startOf('hour'),
   ]);
   const [groupBy, setGroupBy] = useState<string>('tool');
   const [summary, setSummary] = useState<API.CallMetricsSummary | null>(null);
   const [points, setPoints] = useState<API.CallMetricsPoint[]>([]);
+  /** The bucket size the trend endpoint answered with; the server folds it from the span, the page only reads it back. */
+  const [granularity, setGranularity] = useState<string>('day');
   const [loading, setLoading] = useState(false);
 
   const [subject, setSubject] = useState<API.CallMetricsRow | null>(null);
@@ -65,8 +68,8 @@ const CallMetrics: React.FC = () => {
 
   const kind = tab === 'tool' ? toolKind : TAB_KINDS[tab];
   // One range drives every read on the page: cards, trend, table and the drill-down drawer alike.
-  const start = range[0].format('YYYY-MM-DD');
-  const end = range[1].format('YYYY-MM-DD');
+  const start = range[0].format('YYYY-MM-DD HH:mm');
+  const end = range[1].format('YYYY-MM-DD HH:mm');
 
   useEffect(() => {
     const load = async () => {
@@ -74,7 +77,7 @@ const CallMetrics: React.FC = () => {
       try {
         const [summaryRes, trendRes] = await Promise.all([
           getToolMetricsSummary({ start, end, kind, groupBy }),
-          getToolMetricsTimeSeries({ start, end, kind, granularity: 'day' }),
+          getToolMetricsTimeSeries({ start, end, kind }),
         ]);
         if (summaryRes.code === 200) {
           setSummary(summaryRes.data ?? null);
@@ -83,10 +86,12 @@ const CallMetrics: React.FC = () => {
         }
         if (trendRes.code === 200) {
           setPoints(trendRes.data?.points ?? []);
+          setGranularity(trendRes.data?.granularity ?? 'day');
         } else {
           // The cards and the table below already moved to the new window, so leaving the old buckets up draws
           // a line that is no one's trend.
           setPoints([]);
+          setGranularity('day');
         }
       } catch (error: any) {
         message.error(error?.message || error?.info?.errorMessage || intl.formatMessage({ id: 'pages.callMetrics.loadFailed', defaultMessage: 'Failed to load call metrics' }));
@@ -187,7 +192,11 @@ const CallMetrics: React.FC = () => {
     shapeField: 'smooth',
     height: 260,
     axis: {
-      x: { labelFormatter: (time: string) => (time ? dayjs(time).format('MM-DD') : time), labelAutoRotate: false },
+      // Hour buckets all share a date, so a date-only label would print the same day across a two-day window.
+      x: {
+        labelFormatter: (time: string) => (time ? dayjs(time).format(granularity === 'hour' ? 'MM-DD HH:00' : 'MM-DD') : time),
+        labelAutoRotate: false,
+      },
       y: { labelFormatter: (value: number) => `${value}` },
     },
     legend: { color: { position: 'top' as const, layout: { justifyContent: 'center' } } },
@@ -199,7 +208,7 @@ const CallMetrics: React.FC = () => {
 
   const subjectColumns: ColumnsType<API.CallMetricsRow> = [
     {
-      title: intl.formatMessage({ id: 'pages.callMetrics.col.subject', defaultMessage: 'Subject' }),
+      title: intl.formatMessage({ id: `pages.callMetrics.dim.${groupBy}`, defaultMessage: groupBy }),
       key: 'subject',
       width: 240,
       ellipsis: true,
@@ -212,12 +221,13 @@ const CallMetrics: React.FC = () => {
           }}
           style={{ fontWeight: 500, cursor: 'pointer' }}
         >
-          {groupBy === 'tool' ? row.toolName : row.subjectKey}
+          {row.subjectName || row.subjectKey}
           {/* The aggregate groups by (kind, subject_id, tool_name): one tool served by two MCP servers is two
-              rows with the same name, and each click scopes the drawer to a different server. */}
-          {groupBy === 'tool' && row.subjectId != null ? (
+              rows with the same name, and the server named beside it is what tells them apart — and scopes the
+              drawer to a different server. */}
+          {groupBy === 'tool' && row.parentName ? (
             <Typography.Text type="secondary" style={{ marginLeft: 6, fontSize: 12 }}>
-              #{row.subjectId}
+              {row.parentName}
             </Typography.Text>
           ) : null}
         </a>
@@ -309,11 +319,11 @@ const CallMetrics: React.FC = () => {
     },
   ];
 
-  // The four spans the page offered as a day count are the picker's presets now: a preset is a range whose last
-  // day is today, so it answers the same numbers the old Select did.
+  // The four spans the page offered as a day count are the picker's presets now: each one ends at the current
+  // hour and starts the same number of hours back, so a preset answers the numbers the old Select did.
   const rangePresets = RANGE_PRESETS.map((value) => ({
     label: intl.formatMessage({ id: `pages.callMetrics.window.${value}`, defaultMessage: `Last ${value} days` }),
-    value: [dayjs().subtract(value - 1, 'day'), dayjs()] as [Dayjs, Dayjs],
+    value: [dayjs().subtract(value - 1, 'day').startOf('hour'), dayjs().startOf('hour')] as [Dayjs, Dayjs],
   }));
 
   return (
@@ -333,12 +343,37 @@ const CallMetrics: React.FC = () => {
           onChange={(key) => {
             setTab(key);
             if (key !== 'tool') setToolKind('builtin');
+            // Each tab groups by its own subject first, so a dimension that belongs to another tab is dropped
+            // rather than left on show asking the new table a question it cannot answer.
+            if (!TAB_DIMENSIONS[key].includes(groupBy)) setGroupBy(TAB_DIMENSIONS[key][0]);
           }}
           items={[
             { key: 'tool', label: intl.formatMessage({ id: 'pages.callMetrics.tab.tool', defaultMessage: 'Tools' }) },
             { key: 'mcp', label: intl.formatMessage({ id: 'pages.callMetrics.tab.mcp', defaultMessage: 'MCP' }) },
             { key: 'cli', label: intl.formatMessage({ id: 'pages.callMetrics.tab.cli', defaultMessage: 'CLI' }) },
           ]}
+          tabBarExtraContent={{
+            right: (
+              <RangePicker
+                value={range}
+                showTime={{ format: 'HH:mm', showMinute: true, showSecond: false }}
+                format="YYYY-MM-DD HH:mm"
+                presets={rangePresets}
+                allowClear={false}
+                style={{ width: 330 }}
+                disabledDate={(current) => current.isAfter(dayjs().endOf('day'))}
+                onChange={(dates) => {
+                  if (!dates?.[0] || !dates?.[1]) return;
+                  // The server folds any minute down to the hour it belongs to; snapping here means the box
+                  // shows the window that was actually counted instead of one the reader has to translate.
+                  setRange([dates[0].startOf('hour'), dates[1].startOf('hour')]);
+                  // The records an open drawer lists belong to the range they were counted over; paging them
+                  // under a new range would silently mix the two.
+                  setSubject(null);
+                }}
+              />
+            ),
+          }}
         />
 
         <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
@@ -390,7 +425,7 @@ const CallMetrics: React.FC = () => {
         <Card
           title={
             <span style={{ fontSize: '14px', fontWeight: 600 }}>
-              {intl.formatMessage({ id: 'pages.callMetrics.subjectTitle', defaultMessage: 'Per-subject detail' })}
+              {intl.formatMessage({ id: 'pages.callMetrics.detailTitle', defaultMessage: 'Detail' })}
             </span>
           }
           extra={
@@ -410,30 +445,19 @@ const CallMetrics: React.FC = () => {
                 value={groupBy}
                 onChange={setGroupBy}
                 style={{ width: 130 }}
-                options={['tool', 'agent', 'session'].map((value) => ({
+                options={TAB_DIMENSIONS[tab].map((value) => ({
                   value,
-                  label: intl.formatMessage({ id: `pages.callMetrics.groupBy.${value}`, defaultMessage: value }),
+                  label: intl.formatMessage(
+                    { id: 'pages.callMetrics.groupByPrefix', defaultMessage: 'By {dimension}' },
+                    { dimension: intl.formatMessage({ id: `pages.callMetrics.dim.${value}`, defaultMessage: value }) },
+                  ),
                 }))}
-              />
-              <RangePicker
-                value={range}
-                presets={rangePresets}
-                allowClear={false}
-                style={{ width: 260 }}
-                disabledDate={(current) => current.isAfter(dayjs().endOf('day'))}
-                onChange={(dates) => {
-                  if (!dates?.[0] || !dates?.[1]) return;
-                  setRange([dates[0], dates[1]]);
-                  // The records an open drawer lists belong to the range they were counted over; paging them
-                  // under a new range would silently mix the two.
-                  setSubject(null);
-                }}
               />
             </div>
           }
           styles={{ body: { padding: '12px' } }}
         >
-          {groupBy !== 'tool' && (
+          {!readsAggregate(groupBy) && (
             <Alert
               type="info"
               showIcon
@@ -460,7 +484,7 @@ const CallMetrics: React.FC = () => {
           />
           <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
             {intl.formatMessage(
-              { id: 'pages.callMetrics.windowHint', defaultMessage: 'Counts cover {from} to {to}, both days inclusive - the cards, the trend line and the table below all read this range. Success rate and P95 are range-wide figures, not per-day ones.' },
+              { id: 'pages.callMetrics.windowHint', defaultMessage: 'Counts cover {from} to {to}, both hours inclusive - the cards, the trend line and the table below all read this range. Success rate and P95 are range-wide figures, not per-bucket ones.' },
               // The server answers the range it actually counted, clamps included; the picked range only covers
               // the moment before the first read comes back.
               { from: summary?.from || start, to: summary?.to || end },
@@ -473,7 +497,7 @@ const CallMetrics: React.FC = () => {
         width={720}
         open={!!subject}
         onClose={() => setSubject(null)}
-        title={`${intl.formatMessage({ id: 'pages.callMetrics.detail.title', defaultMessage: 'Call records' })} — ${subject ? (groupBy === 'tool' ? subject.toolName : subject.subjectKey) : ''}`}
+        title={`${intl.formatMessage({ id: 'pages.callMetrics.detail.title', defaultMessage: 'Call records' })} — ${subject ? subject.subjectName || subject.subjectKey : ''}`}
       >
         <Table<API.CallInvocationRow>
           className="styled-pro-table"

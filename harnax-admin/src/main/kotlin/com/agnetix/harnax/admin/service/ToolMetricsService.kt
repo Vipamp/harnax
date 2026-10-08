@@ -11,7 +11,8 @@ import com.agnetix.harnax.admin.dto.ToolMetricsTimeSeriesResponse
  * No method names a tenant: the implementation resolves it from the caller's own credentials, so a request
  * cannot carry one. `start` and `end` arrive raw because the clamps and their log lines belong to the
  * implementation, and what comes back in the response is the range it actually answered. Both are inclusive
- * `yyyy-MM-dd` days; either may be absent, and a value that does not parse counts as absent.
+ * hours in `yyyy-MM-dd HH:mm`, and a bare `yyyy-MM-dd` day is read as its 00:00 opening; either may be absent,
+ * and a value that parses neither way counts as absent.
  */
 interface ToolMetricsService {
 

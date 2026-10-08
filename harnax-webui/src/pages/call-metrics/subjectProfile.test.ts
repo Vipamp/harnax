@@ -37,6 +37,14 @@ describe('profileTargetOf', () => {
     });
   });
 
+  it('reads a row grouped by MCP server, which carries the same kind and id without a tool name', () => {
+    expect(profileTargetOf(row({ kind: 'mcp', subjectKey: '77', subjectId: 77 }), 'mcp')).toEqual({ source: 'mcp', id: 77 });
+  });
+
+  it('reads a row grouped by CLI package the same way', () => {
+    expect(profileTargetOf(row({ kind: 'cli', subjectKey: '55', subjectId: 55 }), 'cli')).toEqual({ source: 'cli', id: 55 });
+  });
+
   it('refuses to ask an id the row does not carry instead of sending undefined down the wire', () => {
     // Server folds subject_id=0 to null, so a missing key is the real shape of a row that has no registry id.
     expect(profileTargetOf(row({ kind: 'mcp', subjectKey: 'filesystem', toolName: 'fetch_url' }), 'tool')).toEqual({ source: 'none' });

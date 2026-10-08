@@ -13,6 +13,8 @@ import org.springframework.jdbc.core.JdbcTemplate
 import tools.jackson.databind.JsonNode
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 
 /**
  * The three read endpoints over a seeded pair of tables.
@@ -47,15 +49,17 @@ class ToolMetricsReadIT : BaseAdminIT() {
         mcpId: Long? = null,
         cliId: Long? = null,
         session: String = SESSION,
+        agentId: Long = 1L,
     ) {
         jdbc.update(
             """
                 INSERT INTO tool_invocation_log
                 (tenant_id, agent_id, session_id, user_id, kind, tool_name, mcp_id, cli_id, outcome,
                  duration_ms, start_time, end_time, ts)
-                VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """.trimIndent(),
             tenantId,
+            agentId,
             session,
             1L,
             kind,
@@ -83,8 +87,30 @@ class ToolMetricsReadIT : BaseAdminIT() {
 
     private fun names(rows: JsonNode): List<String> = rows.map { it["subjectKey"].asString() }
 
+    /**
+     * An hour as the picker sends it, with the space left raw: the request path is treated as a URI template
+     * and encoded once, so a hand-written `%20` would arrive as the literal text `%20` and count as unparseable.
+     */
+    private fun hour(
+        value: LocalDateTime,
+    ): String = value.format(HOUR_PARAM)
+
+    /**
+     * The registration rows this class seeds, under ids no seed data uses. Cleared before every test because
+     * the container is shared and a rerun would otherwise answer a duplicate key, and again when a test is
+     * done because another class reads these tables expecting only what it inserted itself — an agent row
+     * left behind here would show up in an agent list count.
+     */
+    private fun clearOwnedRegistrations() {
+        jdbc.update("DELETE FROM mcp_server WHERE id = 77")
+        jdbc.update("DELETE FROM cli WHERE id = 55")
+        jdbc.update("DELETE FROM agent WHERE id = 900001")
+        jdbc.update("DELETE FROM session WHERE session_id = 's-dup'")
+    }
+
     @BeforeEach
     fun seedRows() {
+        clearOwnedRegistrations()
         jdbc.update("DELETE FROM tool_invocation_stats")
         jdbc.update("DELETE FROM tool_invocation_log")
 
@@ -126,17 +152,19 @@ class ToolMetricsReadIT : BaseAdminIT() {
         // The tool dimension's key is the tool name itself, and a builtin call has no subject id to carry.
         assertEquals("send_email", emails["subjectKey"].asString())
         assertFalse(emails.has("subjectId"), emails.toString())
-        assertEquals("$DAY1 00:00:00", emails["lastSeenAt"].asString())
+        // The newest hour that has a row, not its day: read through the aggregate this still answers 10:00.
+        assertEquals("$DAY1 10:00:00", emails["lastSeenAt"].asString())
 
-        // The card block reads the daily aggregate on its own, so its counts cover every subject.
+        // The card block reads the hourly aggregate on its own, so its counts cover every subject.
         assertEquals(7, body["totalCalls"].asInt())
         assertEquals(4, body["totalSuccesses"].asInt())
         assertEquals(3, body["failingCalls"].asInt())
         assertEquals("tool", body["groupBy"].asString())
-        // The bounds come back as the request named them: a response that swapped them, or widened them to the
-        // default span, would otherwise only show up as a chart drawn over the wrong days.
-        assertEquals(LocalDate.now().minusDays(6L).toString(), body["from"].asString())
-        assertEquals(LocalDate.now().toString(), body["to"].asString())
+        // The bounds come back as the request named them, now as hours: a bare day is read as its 00:00
+        // opening. A response that swapped them, or widened them to the default span, would otherwise only
+        // show up as a chart drawn over the wrong days.
+        assertEquals("${LocalDate.now().minusDays(6L)} 00:00:00", body["from"].asString())
+        assertEquals("${LocalDate.now()} 00:00:00", body["to"].asString())
         // The four terminal outcomes partition the calls, so the card's two numbers have to add back up.
         assertEquals(body["totalCalls"].asInt(), body["totalSuccesses"].asInt() + body["failingCalls"].asInt())
         // Rows tie at one call each, so only the unique maximum is a safe ordering claim.
@@ -194,7 +222,7 @@ class ToolMetricsReadIT : BaseAdminIT() {
         assertEquals(7, session["calls"].asInt())
         // A session id is not a row id, so there is nothing to hand back for the drill-down besides the key.
         assertFalse(session.has("subjectId"), session.toString())
-        // The detail path carries the exact instant; the aggregate path can only carry a day.
+        // The detail path carries the call's own instant; the aggregate path carries the hour it fell in.
         assertEquals("$DAY1 10:00:00", session["lastSeenAt"].asString())
 
         val agents = data("/api/admin/tool-metrics/summary?$SEVEN_DAYS&groupBy=agent")
@@ -210,6 +238,118 @@ class ToolMetricsReadIT : BaseAdminIT() {
         val errors = data("/api/admin/tool-metrics/invocations?$SEVEN_DAYS&outcome=ERROR")
         assertEquals(1, errors["total"].asInt())
         assertEquals("send_email", errors["records"][0]["toolName"].asString())
+    }
+
+    @Test
+    @DisplayName("groupBy mcp folds one server's several tools into a single row")
+    fun mcpDimensionFoldsOneServerIntoOneRow() {
+        val hour = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS)
+        // 77 already carries the fixture's fetch_url, so these two names join it into a three-call row; 88
+        // runs a tool name 77 also runs and has to stay its own row.
+        call(hour, TENANT_ID, ToolInvocationLog.KIND_MCP, "search_nodes", "SUCCESS", 80L, mcpId = 77L)
+        call(hour.plusMinutes(20L), TENANT_ID, ToolInvocationLog.KIND_MCP, "fetch_doc", "SUCCESS", 400L, mcpId = 77L)
+        call(hour.plusMinutes(30L), TENANT_ID, ToolInvocationLog.KIND_MCP, "search_nodes", "ERROR", 900L, mcpId = 88L)
+        rollup.rollUp()
+
+        val body = data("/api/admin/tool-metrics/summary?kind=mcp&groupBy=mcp")
+        val rows = body["rows"]
+        assertEquals(2, rows.size())
+        assertEquals(listOf(77L, 88L), rows.map { it["subjectId"].asLong() })
+        assertEquals("mcp", body["groupBy"].asString())
+        // A row is one server now, so no single tool name belongs on it.
+        assertEquals("", rows[0]["toolName"].asString())
+        assertEquals(3L, rows[0]["calls"].asLong())
+        assertEquals(3L, rows[0]["successes"].asLong())
+        // The buckets add over hours: 80 goes in <=100ms, 400 in <=500ms and 900 in <=2s, and the 3 calls
+        // need ceil(0.95*3)=3, first reached in the 2s bucket.
+        assertEquals("<=", rows[0]["p95Operator"].asString())
+        assertEquals(2_000L, rows[0]["p95Ms"].asLong())
+        assertEquals(460L, rows[0]["avgDurationMs"].asLong())
+        assertEquals(1L, rows[1]["calls"].asLong())
+        assertEquals(1L, rows[1]["errors"].asLong())
+        // The cards answer the same filter without grouping, so they add the two rows up.
+        assertEquals(4L, body["totalCalls"].asLong())
+    }
+
+    @Test
+    @DisplayName("groupBy cli folds one package's several commands into a single row")
+    fun cliDimensionFoldsOnePackageIntoOneRow() {
+        val hour = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS)
+        call(hour, TENANT_ID, ToolInvocationLog.KIND_CLI, "gh-pr", "SUCCESS", 60L, cliId = 88L)
+        call(hour.plusMinutes(10L), TENANT_ID, ToolInvocationLog.KIND_CLI, "gh-issue", "DENIED", 70L, cliId = 88L)
+        call(hour.plusMinutes(20L), TENANT_ID, ToolInvocationLog.KIND_CLI, "kubectl", "SUCCESS", 500L, cliId = 99L)
+        rollup.rollUp()
+
+        val rows = data("/api/admin/tool-metrics/summary?kind=cli&groupBy=cli")["rows"]
+        // 88 is the fixture's own 40-second gh plus these two; 99 stays separate on its own id.
+        assertEquals(listOf(88L, 99L), rows.map { it["subjectId"].asLong() })
+        assertEquals(3L, rows[0]["calls"].asLong())
+        assertEquals(1L, rows[0]["denials"].asLong())
+        assertEquals(1L, rows[1]["calls"].asLong())
+    }
+
+    @Test
+    @DisplayName("every dimension names its subject and falls back to the key when nothing is registered")
+    fun everyDimensionResolvesAName() {
+        val hour = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS)
+        // Every id here is named rather than left to the auto-increment: the name is matched on
+        // `id = subject_id`, and the sequence's next value is not a fact this test may assume. No agent row is
+        // seeded by the migrations, so the registered one is inserted here.
+        jdbc.update("INSERT INTO mcp_server (id, tenant_id, name, type) VALUES (77, ?, '文档检索服务', 'stdio')", TENANT_ID)
+        jdbc.update("INSERT INTO cli (id, name) VALUES (55, 'lark-cli')")
+        jdbc.update("INSERT INTO agent (id, tenant_id, name) VALUES (900001, ?, '取数助手')", TENANT_ID)
+        call(hour, TENANT_ID, ToolInvocationLog.KIND_MCP, "search_nodes", "SUCCESS", 80L, mcpId = 77L)
+        call(hour, TENANT_ID, ToolInvocationLog.KIND_CLI, "lark", "SUCCESS", 90L, cliId = 55L)
+        call(hour, TENANT_ID, ToolInvocationLog.KIND_BUILTIN, "read_file", "SUCCESS", 20L, agentId = 900001L)
+        rollup.rollUp()
+
+        assertEquals("文档检索服务", data("/api/admin/tool-metrics/summary?kind=mcp&groupBy=mcp")["rows"][0]["subjectName"].asString())
+        val cliRows = data("/api/admin/tool-metrics/summary?kind=cli&groupBy=cli")["rows"]
+        assertEquals("lark-cli", cliRows.first { it["subjectId"].asLong() == 55L }["subjectName"].asString())
+        // The mcp and cli keys are the ids themselves, so a page that keys its rows on one stays unique.
+        assertEquals("77", data("/api/admin/tool-metrics/summary?kind=mcp&groupBy=mcp")["rows"][0]["subjectKey"].asString())
+
+        // The tool dimension names the tool and still says which server answered it.
+        val toolRow = data("/api/admin/tool-metrics/summary?kind=mcp&groupBy=tool")["rows"][0]
+        assertEquals("search_nodes", toolRow["subjectName"].asString())
+        assertEquals("文档检索服务", toolRow["parentName"].asString())
+
+        // The agent dimension reads the detail table through a primary-key join: the registered one answers
+        // with its name, and the fixture's agent 1 — which has no row behind it — falls back to its id.
+        val agents = data("/api/admin/tool-metrics/summary?groupBy=agent")["rows"]
+        assertEquals("取数助手", agents.first { it["subjectKey"].asString() == "900001" }["subjectName"].asString())
+        assertEquals("1", agents.first { it["subjectKey"].asString() == "1" }["subjectName"].asString())
+
+        // The fixture's session has no `session` row, so its own id is the only name there is.
+        val sessions = data("/api/admin/tool-metrics/summary?groupBy=session")["rows"]
+        assertEquals(SESSION, sessions.first { it["subjectKey"].asString() == SESSION }["subjectName"].asString())
+
+        // Registration removed: the name falls back to the key instead of an empty cell the page cannot read.
+        jdbc.update("DELETE FROM mcp_server WHERE id = 77")
+        val orphan = data("/api/admin/tool-metrics/summary?kind=mcp&groupBy=mcp")["rows"][0]
+        assertEquals(orphan["subjectKey"].asString(), orphan["subjectName"].asString())
+        clearOwnedRegistrations()
+    }
+
+    @Test
+    @DisplayName("two session rows sharing one id name the row without doubling its counts")
+    fun duplicateSessionRowsDoNotFanOut() {
+        val hour = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS)
+        call(hour, TENANT_ID, ToolInvocationLog.KIND_BUILTIN, "read_file", "SUCCESS", 10L, session = "s-dup")
+        call(hour.plusMinutes(5L), TENANT_ID, ToolInvocationLog.KIND_BUILTIN, "read_file", "SUCCESS", 10L, session = "s-dup")
+        // `session.session_id` is only documented as unique and carries no unique index, so one id really can
+        // own several rows. The title is read by a scalar subquery that picks the newest row.
+        jdbc.update("INSERT INTO session (tenant_id, session_id, title) VALUES (?, 's-dup', '标题甲')", TENANT_ID)
+        jdbc.update("INSERT INTO session (tenant_id, session_id, title) VALUES (?, 's-dup', '标题乙')", TENANT_ID)
+        rollup.rollUp()
+
+        val row = data("/api/admin/tool-metrics/summary?groupBy=session")["rows"]
+            .first { it["subjectKey"].asString() == "s-dup" }
+        // Had the title been joined rather than subqueried, this group would be two rows of two calls each.
+        assertEquals(2L, row["calls"].asLong())
+        assertEquals(2L, row["successes"].asLong())
+        assertEquals("标题乙", row["subjectName"].asString())
+        clearOwnedRegistrations()
     }
 
     @Test
@@ -236,35 +376,72 @@ class ToolMetricsReadIT : BaseAdminIT() {
     }
 
     @Test
-    @DisplayName("the requested range is clamped and echoed back as from / to")
-    fun windowClampsEchoTheAnsweredRange() {
-        val today = LocalDate.now()
+    @DisplayName("an end the clock has not reached clamps to the current hour")
+    fun futureEndClampsToTheCurrentHour() {
+        val currentHour = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS)
+        // Both bounds echo as whole hours. An echo of the requested instant instead would tell the page it
+        // answered a range it never queried. The window is six hours wide and the fixture sits two days
+        // back, so only the range is claimed here.
+        val body = data(
+            "/api/admin/tool-metrics/summary?start=${hour(currentHour.minusHours(6L))}&end=${hour(currentHour.plusHours(9L))}",
+        )
+        assertEquals(currentHour.minusHours(6L).format(HOUR_STAMP), body["from"].asString())
+        assertEquals(currentHour.format(HOUR_STAMP), body["to"].asString())
+    }
 
-        // Only `end`, and a day the clock has not reached: it clamps to today and the missing start takes the
-        // default span from there, so the page reads a 30-day window ending today.
-        val future = data("/api/admin/tool-metrics/summary?end=${today.plusDays(3L)}")
-        assertEquals(today.minusDays(29L).toString(), future["from"].asString())
-        assertEquals(today.toString(), future["to"].asString())
-        assertEquals(7, future["totalCalls"].asInt())
+    @Test
+    @DisplayName("start after end collapses onto the end hour, an unparseable pair falls back to the default span")
+    fun invertedAndUnparseableWindows() {
+        val currentHour = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS)
+        // The shape a hand-edited URL arrives in. Collapsing beats reversing: a reversed range answers an
+        // empty table while still claiming a window.
+        val collapsed = data(
+            "/api/admin/tool-metrics/summary?start=${hour(currentHour.plusHours(3L))}&end=${hour(currentHour)}",
+        )
+        assertEquals(collapsed["to"].asString(), collapsed["from"].asString())
 
-        // A start after the end collapses onto it rather than reversing the range, which is the shape a
-        // hand-edited URL arrives in. The day is one the fixture has no rows on, so only the range is claimed.
-        val reversed = data("/api/admin/tool-metrics/summary?start=${today.minusDays(1L)}&end=${today.minusDays(4L)}")
-        assertEquals("${today.minusDays(4L)}", reversed["from"].asString())
-        assertEquals("${today.minusDays(4L)}", reversed["to"].asString())
+        // Neither value parses, which is a bug on the page rather than in the data: the default span answers,
+        // so a broken picker still shows a chart instead of an error card. The fixture sits inside that span.
+        val defaulted = data("/api/admin/tool-metrics/summary?start=also-not-an-hour&end=not-a-day")
+        val from = LocalDateTime.parse(defaulted["from"].asString(), HOUR_STAMP)
+        val to = LocalDateTime.parse(defaulted["to"].asString(), HOUR_STAMP)
+        assertEquals(719L, ChronoUnit.HOURS.between(from, to))
+        assertEquals(7, defaulted["totalCalls"].asInt())
+    }
 
-        // Wider than the tables can answer: the end stays, the start is pushed to the first day covered.
-        val wide = data("/api/admin/tool-metrics/summary?start=${today.minusYears(2L)}&end=$today")
-        assertEquals(today.minusDays(364L).toString(), wide["from"].asString())
-        assertEquals(today.toString(), wide["to"].asString())
+    @Test
+    @DisplayName("a span wider than the tables can answer keeps its end and pushes its start forward")
+    fun wideWindowPushesTheStartForward() {
+        val currentHour = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS)
+        val wide = data("/api/admin/tool-metrics/summary?start=${hour(currentHour.minusYears(2L))}&end=${hour(currentHour)}")
+        // Ten years is the ceiling, so the start lands on the 8760th hour back rather than the request being
+        // refused — refusing would blank the whole card row over a range no reader can ask.
+        assertEquals(currentHour.minusHours(8759L).format(HOUR_STAMP), wide["from"].asString())
+        assertEquals(currentHour.format(HOUR_STAMP), wide["to"].asString())
         assertEquals(7, wide["totalCalls"].asInt())
+    }
 
-        // Neither value parses, which is a bug on the page rather than in the data: the default range answers,
-        // so a broken picker still shows a chart instead of an error card.
-        val garbage = data("/api/admin/tool-metrics/summary?start=not-a-day&end=also-not-a-day")
-        assertEquals(today.minusDays(29L).toString(), garbage["from"].asString())
-        assertEquals(today.toString(), garbage["to"].asString())
-        assertEquals(7, garbage["totalCalls"].asInt())
+    @Test
+    @DisplayName("the trend bucket follows the span on both sides of each boundary")
+    fun granularityFollowsTheSpan() {
+        val currentHour = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS)
+        fun granularityOf(hours: Long): String = data(
+            "/api/admin/tool-metrics/time-series?start=${hour(currentHour.minusHours(hours - 1L))}&end=${hour(currentHour)}",
+        )["granularity"].asString()
+
+        // Both sides of the 48-hour cut, and both sides of the 92-day one. The boundary itself belongs to the
+        // finer bucket, because the page asks for a readable number of points, not for a range of days.
+        assertEquals("hour", granularityOf(48L))
+        assertEquals("day", granularityOf(49L))
+        assertEquals("day", granularityOf(24L * 92L))
+        assertEquals("week", granularityOf(24L * 93L))
+        // An explicit request still speaks louder than the span.
+        assertEquals(
+            "month",
+            data(
+                "/api/admin/tool-metrics/time-series?start=${hour(currentHour.minusHours(72L))}&end=${hour(currentHour)}&granularity=month",
+            )["granularity"].asString(),
+        )
     }
 
     private companion object {
@@ -277,5 +454,9 @@ class ToolMetricsReadIT : BaseAdminIT() {
         val DAY2: String = LocalDate.now().minusDays(2L).toString()
         val DAY1: String = LocalDate.now().minusDays(1L).toString()
         val QUIET_DAY: String = LocalDate.now().minusDays(5L).toString()
+
+        /** The shape the picker sends an hour in, and the shape the server echoes a bound back as. */
+        val HOUR_PARAM: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+        val HOUR_STAMP: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
     }
 }

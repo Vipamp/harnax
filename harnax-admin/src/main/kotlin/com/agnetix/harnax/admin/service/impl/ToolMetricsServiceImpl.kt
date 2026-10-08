@@ -25,7 +25,7 @@ import kotlin.math.ceil
 /**
  * The three reads behind `/api/admin/tool-metrics`.
  *
- * Two tables answer, and which one depends on the dimension the page asked for: the daily aggregate carries
+ * Two tables answer, and which one depends on the dimension the page asked for: the hourly aggregate carries
  * the tool dimension and the six duration buckets, while an agent or a session only exists in the detail
  * rows. The four cards never follow the rows, because on the detail path the rows carry no buckets and a
  * percentile would have to be borrowed from a maximum — a number that reads as a distribution and is one
@@ -54,17 +54,23 @@ class ToolMetricsServiceImpl(
         val tenantId = currentTenantId()
         // One ungrouped aggregate row, whatever the rows below come from: the cards and the window P95 are
         // properties of the window, not of the dimension the page happens to be grouped by.
-        val totals = toolInvocationStatsMapper.selectWindowTotals(window.fromDate, window.toDate, tenantId, kind)
+        val totals = toolInvocationStatsMapper.selectWindowTotals(window.fromStr, window.toStr, tenantId, kind)
         val totalCalls = totals.longOf("calls")
         val totalSuccesses = totals.longOf("successes")
         // Added up from the three failure columns rather than taken as calls minus successes, so that the sum
         // only answers the whole window when the four terminal outcomes really partition it.
         val failingCalls = totals.longOf("errors") + totals.longOf("denials") + totals.longOf("interruptions")
         val (windowOperator, windowMs) = p95(totals, totalCalls)
-        val rows = if (dimension == DIM_TOOL) toolRows(window, tenantId, kind) else detailRows(window, tenantId, kind, dimension)
+        // Three of the five dimensions are properties the aggregate already carries per subject; only agent
+        // and session have no column of their own in it and have to be counted from the detail rows.
+        val rows = if (dimension == DIM_TOOL || dimension == DIM_MCP || dimension == DIM_CLI) {
+            toolRows(window, tenantId, kind, dimension)
+        } else {
+            detailRows(window, tenantId, kind, dimension)
+        }
         return ToolMetricsSummaryResponse(
-            from = window.fromDate,
-            to = window.toDate,
+            from = window.fromStr,
+            to = window.toStr,
             groupBy = dimension,
             totalCalls = totalCalls,
             totalSuccesses = totalSuccesses,
@@ -84,8 +90,8 @@ class ToolMetricsServiceImpl(
         granularity: String,
     ): ToolMetricsTimeSeriesResponse {
         val window = window(start, end)
-        val bucket = granularityOf(granularity)
-        val rows = toolInvocationStatsMapper.selectTimeSeries(window.fromDate, window.toDate, currentTenantId(), kind, subjectId, bucket).orEmpty()
+        val bucket = granularityOf(granularity, window)
+        val rows = toolInvocationStatsMapper.selectTimeSeries(window.fromStr, window.toStr, currentTenantId(), kind, subjectId, bucket).orEmpty()
 
         // The query only answers buckets that have rows, so the series has to be assembled from the two sets
         // the page needs intact: every bucket in the window, and every subject the window named at all.
@@ -102,7 +108,7 @@ class ToolMetricsServiceImpl(
         for (timePoint in timePoints(window, bucket)) {
             val stamp = timePoint.format(TIMESTAMP_FORMATTER)
             for ((subject, sample) in subjects) {
-                // A bucket with no row for this subject is a quiet day, not a missing point: the line the page
+                // A bucket with no row for this subject is a quiet hour, not a missing point: the line the page
                 // draws has to keep stepping over it, so the counts come from an empty row and stay 0.
                 val row = rowsByBucket[stamp to subject]
                 val calls = row.longOf("calls")
@@ -122,7 +128,7 @@ class ToolMetricsServiceImpl(
                 )
             }
         }
-        return ToolMetricsTimeSeriesResponse(from = window.fromDate, to = window.toDate, granularity = bucket, points = points)
+        return ToolMetricsTimeSeriesResponse(from = window.fromStr, to = window.toStr, granularity = bucket, points = points)
     }
 
     override fun getInvocations(query: InvocationQuery): Page<ToolInvocationRow> {
@@ -133,8 +139,8 @@ class ToolMetricsServiceImpl(
         // one answering every row while the page reports a single slice of it.
         return Page.fromPageInfo(
             toolInvocationLogMapper.selectInvocationPage(
-                window.fromTs,
-                window.toTs,
+                window.fromStr,
+                window.toExclusiveStr,
                 currentTenantId(),
                 query.kind,
                 query.toolName?.trim()?.takeIf { it.isNotEmpty() },
@@ -148,28 +154,34 @@ class ToolMetricsServiceImpl(
     }
 
     /**
-     * Rows for the tool dimension: one per subject over the whole window, straight from the aggregate.
+     * Rows for the three dimensions the aggregate carries: one per subject over the whole window.
      *
-     * The key is the tool name, because that is what the page lists, and an id only travels with a subject
-     * the drill-down can point at.
+     * Under `tool` the key is the tool name, because that is what the page lists, and an id only travels with a
+     * subject the drill-down can point at. Under `mcp` and `cli` the subject is the server or the package, so
+     * the name column comes back empty and the id is the key — one server's several tools are one row.
      */
     private fun toolRows(
         window: Window,
         tenantId: Long,
         kind: String?,
+        dimension: String,
     ): List<ToolMetricsRow> {
         val rows = mutableListOf<ToolMetricsRow>()
-        for (row in toolInvocationStatsMapper.selectSubjectTotals(window.fromDate, window.toDate, tenantId, kind).orEmpty()) {
+        for (row in toolInvocationStatsMapper.selectSubjectTotals(window.fromStr, window.toStr, tenantId, kind, dimension).orEmpty()) {
             row ?: continue
             val calls = row.longOf("calls")
             val successes = row.longOf("successes")
+            val subjectId = row.subjectIdOf("subjectId")
             val (operator, ms) = p95(row, calls)
             rows.add(
                 ToolMetricsRow(
                     kind = row.stringOf("kind"),
-                    subjectKey = row.stringOf("toolName"),
-                    subjectId = row.subjectIdOf("subjectId"),
+                    // A server or a package has no single tool name to key on, so its id is the key.
+                    subjectKey = if (dimension == DIM_TOOL) row.stringOf("toolName") else subjectId?.toString().orEmpty(),
+                    subjectId = subjectId,
                     toolName = row.stringOf("toolName"),
+                    subjectName = row.stringOf("subjectName"),
+                    parentName = row.stringOf("parentName"),
                     calls = calls,
                     successes = successes,
                     errors = row.longOf("errors"),
@@ -189,9 +201,12 @@ class ToolMetricsServiceImpl(
     /**
      * Rows for the two dimensions the aggregate does not carry, counted from the detail rows.
      *
-     * A row here spans every tool the subject ran, so the tool name and the origin stay empty; the key is the
-     * grouped column itself. The P95 has no bucket to answer from on this path, so it reports the longest
-     * call actually measured, and the window's percentile beside it comes from the aggregate instead.
+     * Only `agent` and `session` arrive: `mcp` and `cli` are subjects the aggregate already folds per hour, and
+     * [getSummary] sends those three to [toolRows]. A row here spans every tool the subject ran, so the tool
+     * name and the origin stay empty; the key is the grouped column itself and `subjectName` is its registered
+     * agent name or session title, already fallen back to that key by the SQL. There is no owner to name on
+     * this path, so `parentName` stays empty. The P95 has no bucket to answer from here, so it reports the
+     * longest call actually measured, and the window's percentile beside it comes from the aggregate instead.
      */
     private fun detailRows(
         window: Window,
@@ -200,7 +215,7 @@ class ToolMetricsServiceImpl(
         dimension: String,
     ): List<ToolMetricsRow> {
         val rows = mutableListOf<ToolMetricsRow>()
-        for (row in toolInvocationLogMapper.selectSubjectTotalsFromDetail(window.fromTs, window.toTs, tenantId, kind, dimension).orEmpty()) {
+        for (row in toolInvocationLogMapper.selectSubjectTotalsFromDetail(window.fromStr, window.toExclusiveStr, tenantId, kind, dimension).orEmpty()) {
             row ?: continue
             val calls = row.longOf("calls")
             val successes = row.longOf("successes")
@@ -208,6 +223,7 @@ class ToolMetricsServiceImpl(
                 ToolMetricsRow(
                     subjectKey = row.stringOf("subjectKey"),
                     subjectId = row.subjectIdOf("subjectId"),
+                    subjectName = row.stringOf("subjectName"),
                     calls = calls,
                     successes = successes,
                     errors = row.longOf("errors"),
@@ -239,13 +255,25 @@ class ToolMetricsServiceImpl(
         return ">" to 30_000L
     }
 
+    /** The five subjects the page can group by; anything else answers the default and says so in `groupBy`. */
     private fun dimension(
         groupBy: String,
-    ): String = if (groupBy == DIM_AGENT || groupBy == DIM_SESSION) groupBy else DIM_TOOL
+    ): String = if (groupBy in DIMENSIONS) groupBy else DIM_TOOL
 
+    /** Requested granularity wins when it is one of the four; otherwise the span picks a readable bucket. */
     private fun granularityOf(
-        granularity: String,
-    ): String = if (granularity == GRANULARITY_WEEK || granularity == GRANULARITY_MONTH) granularity else GRANULARITY_DAY
+        requested: String,
+        window: Window,
+    ): String = when {
+        requested == GRANULARITY_HOUR ||
+            requested == GRANULARITY_DAY ||
+            requested == GRANULARITY_WEEK ||
+            requested == GRANULARITY_MONTH -> requested
+        window.hours <= 48L -> GRANULARITY_HOUR
+        // Past 92 days a day-per-point line stops being readable, and the week bucket takes over.
+        window.hours <= 24L * 92 -> GRANULARITY_DAY
+        else -> GRANULARITY_WEEK
+    }
 
     /** Bucket starts the window covers, oldest first, aligned exactly as the SQL's bucket expression is. */
     private fun timePoints(
@@ -257,6 +285,7 @@ class ToolMetricsServiceImpl(
         while (!cursor.isAfter(window.to)) {
             points.add(cursor)
             cursor = when (granularity) {
+                GRANULARITY_HOUR -> cursor.plusHours(1)
                 GRANULARITY_WEEK -> cursor.plusWeeks(1)
                 GRANULARITY_MONTH -> cursor.plusMonths(1)
                 else -> cursor.plusDays(1)
@@ -265,27 +294,33 @@ class ToolMetricsServiceImpl(
         return points
     }
 
-    /** Monday for week, the 1st for month, 00:00 for day: the same three alignments as selectTimeSeries. */
+    /**
+     * The hour itself for hour, Monday for week, the 1st for month, 00:00 for day: the same four alignments
+     * as selectTimeSeries, because a walk that steps from a different origin than the rows do would look up
+     * every bucket under a key the query never produces and answer a window of zeros.
+     */
     private fun align(
         from: LocalDateTime,
         granularity: String,
     ): LocalDateTime = when (granularity) {
+        GRANULARITY_HOUR -> from.truncatedTo(ChronoUnit.HOURS)
         GRANULARITY_WEEK -> from.toLocalDate().minusDays((from.dayOfWeek.value - 1).toLong()).atStartOfDay()
         GRANULARITY_MONTH -> from.toLocalDate().withDayOfMonth(1).atStartOfDay()
         else -> from.toLocalDate().atStartOfDay()
     }
 
     /**
-     * The requested day range, clamped to what these tables can answer.
+     * The requested hour range, clamped to what these tables can answer.
      *
-     * Both bounds are inclusive days. A missing `end` means today; a missing `start` means the default span
-     * ending at `end`, so the two bounds are each other's fallback rather than two separate defaults — a page
-     * that sends only `end=2026-05-01` gets the 30 days before it, which is what the same request with no
-     * window answers today. `start` after `end` collapses onto `end`, and a span wider than
-     * [MAX_WINDOW_DAYS] pushes `start` forward rather than rejecting the request.
+     * Both bounds are inclusive hours and a bare day is read as its 00:00 opening, so a picker that only
+     * carries days still names a range this table can hold. A missing `end` means the current hour; a missing
+     * `start` means the default span ending at `end`, so the two bounds are each other's fallback rather than
+     * two separate defaults — a page that sends only `end=2026-05-01 00:00` gets the 30 days before it, which
+     * is what the same request with no window answers now. `start` after `end` collapses onto `end`, and a
+     * span wider than [MAX_WINDOW_HOURS] pushes `start` forward rather than rejecting the request.
      *
-     * A value that does not parse counts as absent: the page can only send what its picker produced, so a
-     * malformed date is a bug on that side, and answering with the default range beats failing the whole card
+     * A value that parses neither way counts as absent: the page can only send what its picker produced, so a
+     * malformed stamp is a bug on that side, and answering with the default range beats failing the whole card
      * row. Every clamp is logged with the values it resolved to, because the response always echoes the range
      * that was actually answered.
      */
@@ -293,40 +328,42 @@ class ToolMetricsServiceImpl(
         start: String?,
         end: String?,
     ): Window {
-        val today = LocalDate.now()
-        val requestedEnd = parseDate(end)
+        val currentHour = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS)
+        val requestedEnd = parseHour(end)
         if (end != null && requestedEnd == null) {
-            log.info("Metrics window end `$end` is not a yyyy-MM-dd day, using today {}", today)
+            log.info("Metrics window end `$end` is neither a yyyy-MM-dd HH:mm hour nor a day, using current hour {}", currentHour)
         }
-        var to = requestedEnd ?: today
-        if (requestedEnd != null && requestedEnd.isAfter(today)) {
-            log.info("Metrics window end {} is in the future, clamped to {}", requestedEnd, today)
-            to = today
+        var to = requestedEnd ?: currentHour
+        if (to.isAfter(currentHour)) {
+            log.info("Metrics window end {} is in the future, clamped to {}", to, currentHour)
+            to = currentHour
         }
-        val requestedStart = parseDate(start)
+        val requestedStart = parseHour(start)
         if (start != null && requestedStart == null) {
-            log.info("Metrics window start `$start` is not a yyyy-MM-dd day, using {} days before {}", DEFAULT_WINDOW_DAYS, to)
+            log.info("Metrics window start `$start` is unparseable, using {} hours before {}", DEFAULT_WINDOW_HOURS, to)
         }
-        var from = requestedStart ?: to.minusDays((DEFAULT_WINDOW_DAYS - 1).toLong())
+        var from = requestedStart ?: to.minusHours((DEFAULT_WINDOW_HOURS - 1).toLong())
         if (from.isAfter(to)) {
-            log.info("Metrics window start {} is after end {}, clamped to the end day", from, to)
+            log.info("Metrics window start {} is after end {}, clamped to the end hour", from, to)
             from = to
         }
-        if (ChronoUnit.DAYS.between(from, to) + 1 > MAX_WINDOW_DAYS) {
-            val pushed = to.minusDays((MAX_WINDOW_DAYS - 1).toLong())
-            log.info("Metrics window {}..{} spans more than {} days, start pushed to {}", from, to, MAX_WINDOW_DAYS, pushed)
+        if (ChronoUnit.HOURS.between(from, to) + 1 > MAX_WINDOW_HOURS) {
+            val pushed = to.minusHours((MAX_WINDOW_HOURS - 1).toLong())
+            log.info("Metrics window {}..{} spans more than {} hours, start pushed to {}", from, to, MAX_WINDOW_HOURS, pushed)
             from = pushed
         }
-        return Window(from.atStartOfDay(), to.plusDays(1).atStartOfDay().minusNanos(1_000_000L))
+        return Window(from, to)
     }
 
-    /** A request value as a day, with blank and unparseable both answering null rather than throwing. */
-    private fun parseDate(
+    /** An hour or a bare day as an instant, with the minutes and seconds of an hour dropped; blank and unparseable both answer null. */
+    private fun parseHour(
         value: String?,
-    ): LocalDate? = value
-        ?.trim()
-        ?.takeIf { it.isNotEmpty() }
-        ?.let { runCatching { LocalDate.parse(it, DATE_FORMATTER) }.getOrNull() }
+    ): LocalDateTime? {
+        val text = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return runCatching { LocalDateTime.parse(text, HOUR_PARAM).truncatedTo(ChronoUnit.HOURS) }
+            .recoverCatching { LocalDate.parse(text, DATE_FORMATTER).atStartOfDay() }
+            .getOrNull()
+    }
 
     /**
      * The subject a series row belongs to.
@@ -392,38 +429,44 @@ class ToolMetricsServiceImpl(
     private fun currentTenantId(): Long = TenantResolver.resolve(jwtUtil)
 
     /**
-     * A clamped day range as the two precisions the two tables compare against.
+     * A clamped hour range in the forms the two tables are bound with.
      *
-     * `to` is the last millisecond of the end day rather than its start: both detail queries bound the upper
-     * side with `<=`, so a start-of-day bound would answer a range one day short of what the page asked for,
-     * and the column is `datetime(3)`, so `.999` is the widest bound that stays inside the day. The aggregate
-     * reads a `date` column and takes the day strings, where the same instant formats back to the end day.
+     * Both bounds are inclusive hour starts, and the aggregate compares `stat_hour` against them directly.
+     * The detail side takes the same `from` and one hour past `to`: an hour's aggregate row covers sixty
+     * minutes, so an inclusive upper bound there and an exclusive one a hour later here are the same window,
+     * while any other pairing puts the last hour of every request one step out of step between the two reads.
      */
     private class Window(
         val from: LocalDateTime,
         val to: LocalDateTime,
     ) {
-        val fromDate: String get() = from.format(DATE_FORMATTER)
-        val toDate: String get() = to.format(DATE_FORMATTER)
-        val fromTs: String get() = from.format(TIMESTAMP_FORMATTER)
-        val toTs: String get() = to.format(BOUND_FORMATTER)
+        val hours: Long get() = ChronoUnit.HOURS.between(from, to) + 1
+        val fromStr: String get() = from.format(TIMESTAMP_FORMATTER)
+        val toStr: String get() = to.format(TIMESTAMP_FORMATTER)
+        val toExclusiveStr: String get() = to.plusHours(1).format(TIMESTAMP_FORMATTER)
     }
 
     companion object {
         private val DATE_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
         private val TIMESTAMP_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
-        /** The bound formatter carries the millisecond the upper bound needs; row stamps stay second-precise. */
-        private val BOUND_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS")
+        /** The shape the page's picker sends a bound in; a bare `yyyy-MM-dd` day is still accepted. */
+        private val HOUR_PARAM: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
 
-        const val DEFAULT_WINDOW_DAYS = 30
-        const val MAX_WINDOW_DAYS = 365
+        const val DEFAULT_WINDOW_HOURS = 720
+        const val MAX_WINDOW_HOURS = 8760
         const val MAX_PAGE_SIZE = 200
 
         const val DIM_TOOL = "tool"
+        const val DIM_MCP = "mcp"
+        const val DIM_CLI = "cli"
         const val DIM_AGENT = "agent"
         const val DIM_SESSION = "session"
 
+        /** What [dimension] accepts; a request naming anything else is read as the default. */
+        private val DIMENSIONS: Set<String> = setOf(DIM_TOOL, DIM_MCP, DIM_CLI, DIM_AGENT, DIM_SESSION)
+
+        const val GRANULARITY_HOUR = "hour"
         const val GRANULARITY_DAY = "day"
         const val GRANULARITY_WEEK = "week"
         const val GRANULARITY_MONTH = "month"

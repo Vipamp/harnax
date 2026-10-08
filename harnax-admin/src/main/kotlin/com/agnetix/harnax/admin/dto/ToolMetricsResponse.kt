@@ -18,15 +18,29 @@ import io.swagger.v3.oas.annotations.media.Schema
 data class ToolMetricsRow(
     @Schema(description = "Origin bucket: builtin / mcp / cli / shell / framework; empty when grouped by agent or session")
     val kind: String = "",
-    @Schema(description = "The row's key: the tool name when grouped by tool, the agent id or session id otherwise")
+    @Schema(
+        description = "The row's key: the tool name when grouped by tool, the session id when grouped by " +
+            "session, the id as text when grouped by mcp or cli, the agent id as text otherwise",
+    )
     val subjectKey: String = "",
     @Schema(
         description = "MCP server id or CLI package id when kind is mcp or cli, the agent id when grouped by " +
             "agent, absent otherwise. This is the value the drill-down predicate is built from.",
     )
     val subjectId: Long? = null,
-    @Schema(description = "Tool name; empty when grouped by agent or session")
+    @Schema(description = "Tool name; empty when grouped by mcp, cli, agent or session")
     val toolName: String = "",
+    @Schema(
+        description = "This row's own subject as its registered name: the MCP server, CLI package or agent " +
+            "name, the session title, or the tool name when grouped by tool. Falls back to subjectKey when " +
+            "nothing is registered behind the id.",
+    )
+    val subjectName: String = "",
+    @Schema(
+        description = "Owning MCP server or CLI package name, present only on a row whose kind is mcp or cli; " +
+            "a tool row keeps its name and adds the server that answered, so the row says which one ran it",
+    )
+    val parentName: String = "",
     val calls: Long = 0L,
     val successes: Long = 0L,
     val errors: Long = 0L,
@@ -39,14 +53,14 @@ data class ToolMetricsRow(
     val p95Operator: String = "<=",
     @Schema(description = "Upper bound of the bucket p95Operator points at, in ms")
     val p95Ms: Long = 0L,
-    @Schema(description = "`yyyy-MM-dd HH:mm:ss`; day precision on the aggregate path, second precision on the detail path")
+    @Schema(description = "`yyyy-MM-dd HH:mm:ss`; hour precision on the aggregate path, second precision on the detail path")
     val lastSeenAt: String? = null,
 )
 
 data class ToolMetricsSummaryResponse(
-    @Schema(description = "First day answered, `yyyy-MM-dd`, after the clamps")
+    @Schema(description = "First hour answered, `yyyy-MM-dd HH:mm:ss`, after the clamps")
     val from: String = "",
-    @Schema(description = "Last day answered, inclusive, `yyyy-MM-dd`, after the clamps")
+    @Schema(description = "Last hour answered, inclusive, `yyyy-MM-dd HH:mm:ss`, after the clamps")
     val to: String = "",
     @Schema(description = "The dimension answered, after an unrecognised value falls back to tool")
     val groupBy: String = "tool",
@@ -77,12 +91,13 @@ data class ToolMetricsPoint(
 
 data class ToolMetricsTimeSeriesResponse(
     @Schema(
-        description = "First day answered, `yyyy-MM-dd`; week and month buckets align backwards, so the " +
-            "first point can open before this day",
+        description = "First hour answered, `yyyy-MM-dd HH:mm:ss`; week and month buckets align backwards, so " +
+            "the first point can open before this hour",
     )
     val from: String = "",
-    @Schema(description = "Last day answered, inclusive, `yyyy-MM-dd`")
+    @Schema(description = "Last hour answered, inclusive, `yyyy-MM-dd HH:mm:ss`")
     val to: String = "",
+    @Schema(description = "Bucket the trend was folded to: hour / day / week / month")
     val granularity: String = "day",
     val points: List<ToolMetricsPoint> = emptyList(),
 )

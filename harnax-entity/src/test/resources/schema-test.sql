@@ -774,18 +774,18 @@ CREATE TABLE IF NOT EXISTS `tool_invocation_log` (
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE IF NOT EXISTS `tool_invocation_stats` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Aggregate row ID',
-  `stat_date` date NOT NULL COMMENT 'Day of the calls, taken from tool_invocation_log.ts',
+  `stat_hour` datetime NOT NULL COMMENT 'Hour the calls fall in, `tool_invocation_log.ts` truncated to the hour; minutes and seconds are always zero',
   `tenant_id` bigint NOT NULL COMMENT 'Owning tenant; detail rows without one are not aggregated at all',
   `kind` varchar(16) NOT NULL COMMENT 'Origin bucket, same vocabulary as the detail table',
-  `subject_id` bigint NOT NULL DEFAULT '0' COMMENT 'mcp_id when kind = mcp, cli_id when kind = cli, 0 otherwise; 0 rather than NULL because a unique index does not treat NULLs as equal, and NULL would make the upsert insert a second row for the same day',
-  `tool_name` varchar(255) NOT NULL DEFAULT '' COMMENT 'Tool name as the model sees it; every kind carries it, so two tools of one MCP server are two rows on a day',
+  `subject_id` bigint NOT NULL DEFAULT '0' COMMENT 'mcp_id when kind = mcp, cli_id when kind = cli, 0 otherwise; 0 rather than NULL because a unique index does not treat NULLs as equal, and NULL would make the upsert insert a second row for the same hour',
+  `tool_name` varchar(255) NOT NULL DEFAULT '' COMMENT 'Tool name as the model sees it; every kind carries it, so two tools of one MCP server are two rows in an hour',
   `calls` int NOT NULL COMMENT 'Total invocations',
   `successes` int NOT NULL COMMENT 'Invocations ending SUCCESS',
   `errors` int NOT NULL COMMENT 'Invocations ending ERROR',
   `denials` int NOT NULL COMMENT 'Invocations ending DENIED',
   `interruptions` int NOT NULL COMMENT 'Invocations ending INTERRUPTED',
   `sum_duration_ms` bigint NOT NULL COMMENT 'Duration total; the mean is this divided by calls',
-  `max_duration_ms` bigint NOT NULL COMMENT 'Longest single call of the day',
+  `max_duration_ms` bigint NOT NULL COMMENT 'Longest single call of the hour',
   `le_100ms` int NOT NULL DEFAULT '0' COMMENT 'Calls of at most 100 ms',
   `le_500ms` int NOT NULL DEFAULT '0' COMMENT 'Calls over 100 ms and at most 500 ms',
   `le_2s` int NOT NULL DEFAULT '0' COMMENT 'Calls over 500 ms and at most 2 s',
@@ -793,9 +793,9 @@ CREATE TABLE IF NOT EXISTS `tool_invocation_stats` (
   `le_30s` int NOT NULL DEFAULT '0' COMMENT 'Calls over 10 s and at most 30 s',
   `gt_30s` int NOT NULL DEFAULT '0' COMMENT 'Calls over 30 s',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_tool_invocation_stats_day` (`stat_date`,`tenant_id`,`kind`,`subject_id`,`tool_name`),
-  KEY `idx_tool_invocation_stats_tenant_date` (`tenant_id`,`stat_date`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Daily rollup of tool_invocation_log, retained permanently';
+  UNIQUE KEY `uk_tool_invocation_stats_hour` (`stat_hour`,`tenant_id`,`kind`,`subject_id`,`tool_name`),
+  KEY `idx_tool_invocation_stats_tenant_hour` (`tenant_id`,`stat_hour`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Hourly rollup of tool_invocation_log; rows are kept permanently';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;

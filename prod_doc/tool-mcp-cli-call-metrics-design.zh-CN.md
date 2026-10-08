@@ -1,7 +1,7 @@
 # 工具 / MCP / CLI 调用指标 · 设计规格
 
-- 日期：2026-10-05
-- 状态：已定稿，待实现
+- 日期：2026-10-05，小时档与五维度修订 2026-10-08
+- 状态：已实现
 - 影响模块：`harnax-agent/harnax-harness-core`（事件源）、`harnax-agent/harnax-tools-sdk`（写入契约）、`harnax-agent/harnax-agent-service`（写入实现）、`harnax-entity`（两张表）、`harnax-admin`（聚合与读接口）、`harnax-webui`（新页面）、`prod_doc`
 - 取代：`tool_call_log` 整条链（表、实体、Mapper、Adaptor、`ToolBox` 的日志包裹）；`mcp_call_log` 保留但职责写清
 
@@ -20,7 +20,7 @@
 
 对照参照物是「监控与治理 → 技能用量」：`skill_usage`（基线 `:584`）有写入方（`SkillUsageAdaptorImpl` 异步批量上报）、有读端点（`/api/admin/skill-usage/summary`）、有页面（`harnax-webui/src/pages/skill/usage.tsx`），但它只报 `VIEW`；页面「执行次数」那一列的提示文案自己承认没有数据来源（`src/locales/zh-CN/pages.ts:209`）。
 
-目标：一个事件源、一张明细、一张日聚合、三个读端点、一个新页面，覆盖 `builtin` / `mcp` / `cli` / `shell` / `framework` 五种来源，并顺带给技能用量补上 `USE` 的写入方。
+目标：一个事件源、一张明细、一张小时聚合、三个读端点、一个新页面，覆盖 `builtin` / `mcp` / `cli` / `shell` / `framework` 五种来源，并顺带给技能用量补上 `USE` 的写入方。
 
 ## 1. 决策清单（已定稿）
 
@@ -28,24 +28,26 @@
 |---|---|---|
 | D1 | 唯一事件源 = 实现 `MiddlewareBase.onActing` 的中间件，装配期挂在 agent 上 | agentscope 2.0.4 的 `onActing` 收到 `record ActingInput(List<ToolUseBlock> toolCalls)`，`ToolUseBlock` 带 `getId()` / `getName()` / `getInput(): Map<String,Object>`；`ProcessLogMiddleware.kt:86` 已经在用同一个钩子。这是唯一能同时覆盖内置工具、MCP 工具与沙箱 shell 的位置 |
 | D2 | 一次工具调用一行，落库时必须是终态 | `ToolResultEndEvent` 同时带 `getToolCallId()`、`getToolCallName()`、`getState()`，按 id 关联成立（`ToolUseBlock.getId()` 可空，退路见 §3）；`ToolResultState.RUNNING` 表示外部执行还没回传，等终态再来。半途的行既进不了成功率也进不了耗时 |
-| D3 | 一张明细 + 一张日聚合；默认口径读聚合，按 agent / session 的维度与单次下钻读明细 | 分表才既能删明细（体积）又答得出跨保留期的趋势。agent / session 不进聚合，它们的基数不受控 |
+| D3 | 一张明细 + 一张小时聚合；`tool` / `mcp` / `cli` 三档读聚合，按 agent / session 的维度与单次下钻读明细 | 分表才既能删明细（体积）又答得出跨保留期的趋势。agent / session 不进聚合，它们的基数不受控 |
 | D4 | `kind` 只用装配期已知事实判定，不回查数据库 | 运行侧没有 admin 的表；一次回查把计数器变成每个工具调用一次 admin 往返 |
 | D5 | CLI 口径 = 解析 shell 工具的 `command` 参数归因，不新增 `run_cli` 工具 | 新增工具会改模型可见的工具面与每个包 `SKILL.md` 的写法，属产品级重构；shell 归因零侵入且反映真实使用 |
 | D6 | MCP 归因在装配完成后枚举已组装好的 `Toolkit` 反查所属 server；`mcp_call_log` 原样保留 | 枚举读的是模型实际看见的那份注册结果，同名覆盖与注册失败都自然反映，且不必对每个 server 多发一次 `listTools()`。可行性见 §4 |
 | D7 | 技能 `USE` = 模型主动调 `load_skill_through_path` 取正文，落进现有 `skill_usage` | 上游把工具名钉死为 `load_skill_through_path`（`agentscope-core` 的 `SkillToolFactory.java:49`），参数是 `skillId` + `path`，是「指令被取用」的最强证据 |
 | D8 | `tool_call_log` 整链删除，物理表由前向增量 `V4__drop_tool_call_log.sql` 删 | 2026-10-05 明确「完全按全新设计，不考虑历史兼容」。新事件源覆盖它的覆盖面，而它的 `tool_name` 与注册身份对不上，留着只会多一个口径。基线里的建表块改不动（V1 已应用，动一个字节即校验和不符），所以删除动作只能是一条 DROP 增量 |
 | D9 | 写入 = 有界队列 + 批量 insert + 丢弃计数（队列拒收与写库被拒都计入同一个数）；绝不在工具执行线程同步落库，绝不抛 | 与 `SkillUsageAdaptorImpl.kt:35-78` 同形。计数器不值得让一轮回答去等一次数据库往返，更不值得因它失败 |
-| D10 | 聚合与清理都在 admin，每小时三步：补齐缺失日期 → 逐日幂等重算（每次带上昨天与今天）→ 只删已折算且过窗的明细 | 补齐使重算自愈（漏跑一天、首次上线都不需要 backfill 开关）；删除挂在「已折算」这个事实上而不是挂在日期算术上，多副本同时跑无害 |
+| D10 | 聚合与清理都在 admin，每小时第 5 分三步：补齐缺失小时 → 逐小时幂等重算（每次带上上一小时与当前小时）→ 只删已折算且过窗的明细 | 补齐使重算自愈（漏跑一个周期、首次上线都不需要 backfill 开关）；删除挂在「已折算」这个事实上而不是挂在时间算术上，多副本同时跑无害。当前小时也在重算之列，页面才不会永远落后一个整点 |
 | D11 | P95 由时长分桶近似，页面标明是近似值 | 聚合表只有计数列，真分位数要留全部明细才算得出 |
 | D12 | 租户只由服务端决定：读侧 `TenantResolver.resolve(jwtUtil)`，写侧装配期随行携带 | 与 `TokenStatsController.kt:37`、`SkillUsageController` 同规。查询参数里出现 `tenantId` 等于给了跨租户读数的口子 |
 | D13 | 明细保留 90 天，`args_json` / `result_excerpt` 截断到 2000 字符，两条都可配可关 | 命令行参数与工具回执里会出现凭据字面值，默认截断 + 可整体关闭 |
-| D14 | 窗口是一条日期区间 `start` / `end`（`yyyy-MM-dd`），不是天数 | 三个读端点与下钻共用同一个区间，才有「选一次时间，整页图形跟着变」。天数与日期对是同一状态的两种形态，同时留就等于给一次请求留一个「谁赢」的问题；预设（近 7 / 30 / 90 / 365 天）改成纯前端的日期算术，服务端只认区间 |
-| D15 | 主体列与调用量列各开一个抽屉：前者给该主体的档案加本窗口指标，后者给单次调用记录 | 行名读作「这是谁」，计数读作「这几次是什么」。档案来源按维度分流：`agent` 查 agent 行、`mcp` 查 server 行、`cli` 查包行、`session` 按会话 id 字符串查会话行、`builtin` 从内置工具列表按名匹配；`shell` / `framework` 与已注销的工具没有登记行，抽屉只给指标并明说无档案 |
+| D14 | 窗口是一条小时区间 `start` / `end`（`yyyy-MM-dd HH:mm`，两端都是含端点的整点起点），不是天数 | 三个读端点与下钻共用同一个区间，才有「选一次时间，整页图形跟着变」。天数与区间是同一状态的两种形态，同时留就等于给一次请求留一个「谁赢」的问题；预设（近 7 / 30 / 90 / 365 天）改成纯前端的时间算术，服务端只认区间。只到小时是钉死的口径：聚合的存储粒度就是一小时，选择器给到分秒只会让页面问出一个存储答不出的边界 |
+| D15 | 行名列与调用量列各开一个抽屉：前者给这一行主体的档案加本窗口指标，后者给单次调用记录 | 行名读作「这是谁」，计数读作「这几次是什么」。档案来源按维度分流：`agent` 查 agent 行、`mcp` 查 server 行、`cli` 查包行、`session` 按会话 id 字符串查会话行、`builtin` 从内置工具列表按名匹配；`shell` / `framework` 与已注销的工具没有登记行，抽屉只给指标并明说无档案 |
 | D16 | 档位显示名：`builtin` 叫「可选工具」，`framework` 叫「系统内置」 | 「可选工具」是这套东西在别处的既有叫法（`/api/admin/tools/available`、iOS 的「暂无可选工具」、`prod_doc/tool-integration-design` 的可选工具/必须工具之分），页面上再叫「下发工具」等于同一物件两个名字；「系统内置」对「可选」才是同一把尺子的两端 |
+| D17 | 分组维度按 tab 给矩阵：工具 tab＝工具／智能体／会话，MCP tab＝MCP／智能体／会话，CLI tab＝CLI／智能体／会话 | 三个 tab 共用一份「按工具／按智能体／按会话」时，MCP tab 里的「按工具」列的是一台服务器暴露的每个工具，想按服务器看一行汇总没有档，CLI 同理。新增 `mcp`、`cli` 两个维度，切 tab 时当前档位不在矩阵里就收敛到该 tab 的第一档 |
+| D18 | 行名由服务端 SQL 带出 `subjectName`，前端不逐行查登记接口；解析不到时回落原 key | 一页几十行，逐行查登记接口等于把一张表变成几十次往返。回落而不是留空：登记行已删（服务器删了而调用记录还在）与 `chn-` / `task-` 这类在 `session` 表本就没有行的会话 id，都要读得出「是哪一行」，空白格只会让人以为数据缺了 |
 
 ## 2. 数据模型
 
-两张表走 `harnax-admin` 的前向增量 `V3__tool_invocation_metrics.sql`，不折进基线。README（`harnax-admin/src/main/resources/db/migration/README.md`）的默认路径是「改基线与重建库是一个动作」，而这个库留着只有人能重填的模型 provider api_key，属于它写明的例外：既有库因此照常启动并由 Flyway 补放 V3，新建的库重放 V1 → V2 → V3 → V4 落到同一个形状，下一次清库重建时把 V3、V4 折回基线。删旧表也走同一条通道：`V4__drop_tool_call_log.sql` 是一条 `DROP TABLE IF EXISTS`，它删的是 V1 建出的那张表（建表块本身改不动，见 §10）。`harnax-entity/src/test/resources/schema-test.sql` 仍**逐字**同步——漂移由 `SchemaBaselineDriftIT` 守，它比的是 Flyway 最终建出的表、列与索引名，不看名字来自哪一个文件，所以增量与基线两侧的改动都要并进这份副本，DROP 掉的表在副本里同样不能留。
+两张表走 `harnax-admin` 的前向增量 `V3__tool_invocation_metrics.sql`，不折进基线。README（`harnax-admin/src/main/resources/db/migration/README.md`）的默认路径是「改基线与重建库是一个动作」，而这个库留着只有人能重填的模型 provider api_key，属于它写明的例外：既有库因此照常启动并由 Flyway 补放 V3，新建的库重放 V1 → V2 → V3 → V4 → V5 落到同一个形状，下一次清库重建时把 V3、V4、V5 折回基线。删旧表也走同一条通道：`V4__drop_tool_call_log.sql` 是一条 `DROP TABLE IF EXISTS`，它删的是 V1 建出的那张表（建表块本身改不动，见 §10）。聚合表由「一天一行」升到「一小时一行」同样走这条通道：`V5__tool_invocation_stats_hourly.sql` 改列（`stat_hour datetime`）、换唯一键与二级索引，并在改列前 `DELETE FROM tool_invocation_stats`——旧的一天一行若原样搬成小时档，会被读作「00:00 这一小时装了一天的量」，而待折算集合又已认定那小时折过，明细于是被放行删除、再也重折不出来。清掉不是丢数据：保留窗口内的明细全在，下一轮折算逐小时重折即可，窗口本身有界。`harnax-entity/src/test/resources/schema-test.sql` 仍**逐字**同步——漂移由 `SchemaBaselineDriftIT` 守，它比的是 Flyway 最终建出的表、列与索引名，不看名字来自哪一个文件，所以增量与基线两侧的改动都要并进这份副本，DROP 掉的表在副本里同样不能留。
 
 命名跟 `docs/database-design-conventions.md:30`：日志/统计表用 `_log` / `_stats` 后缀，所以聚合表叫 `tool_invocation_stats` 而不是 `..._daily`。索引按最新的 `skill_usage` 形状用表名限定的 `idx_tool_invocation_log_*` / `uk_tool_invocation_stats_*`；列注释一律英文；基线里每个建表块带 `/*!40101 SET character_set_client ... */` 三行守卫，增量文件里则是裸 `CREATE TABLE`，两者建出的形状一致。
 
@@ -82,25 +84,25 @@ CREATE TABLE IF NOT EXISTS `tool_invocation_log` (
 
 `tenant_id` 可空跟 `token_stats:748` 同形（`AgentSpec.tenantId` 本身可空，不猜工作区）；`agent_id` 可空沿用 `AgentSpec.attributableAgentId`（团队主管无 `agent` 行）。
 
-### 2.2 `tool_invocation_stats`（日聚合，永久）
+### 2.2 `tool_invocation_stats`（小时聚合，永久）
 
-唯一键 `(stat_date, tenant_id, kind, subject_id, tool_name)`。
+唯一键 `(stat_hour, tenant_id, kind, subject_id, tool_name)`。
 
 ```sql
 CREATE TABLE IF NOT EXISTS `tool_invocation_stats` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'Aggregate row ID',
-  `stat_date` date NOT NULL COMMENT 'Day of the calls, taken from tool_invocation_log.ts',
+  `stat_hour` datetime NOT NULL COMMENT 'Hour the calls fall in, `tool_invocation_log.ts` truncated to the hour; minutes and seconds are always zero',
   `tenant_id` bigint NOT NULL COMMENT 'Owning tenant; detail rows without one are not aggregated at all',
   `kind` varchar(16) NOT NULL COMMENT 'Origin bucket, same vocabulary as the detail table',
-  `subject_id` bigint NOT NULL DEFAULT '0' COMMENT 'mcp_id when kind = mcp, cli_id when kind = cli, 0 otherwise; 0 rather than NULL because a unique index does not treat NULLs as equal, and NULL would make the upsert insert a second row for the same day',
-  `tool_name` varchar(255) NOT NULL DEFAULT '' COMMENT 'Tool name as the model sees it; every kind carries it, so two tools of one MCP server are two rows on a day',
+  `subject_id` bigint NOT NULL DEFAULT '0' COMMENT 'mcp_id when kind = mcp, cli_id when kind = cli, 0 otherwise; 0 rather than NULL because a unique index does not treat NULLs as equal, and NULL would make the upsert insert a second row for the same hour',
+  `tool_name` varchar(255) NOT NULL DEFAULT '' COMMENT 'Tool name as the model sees it; every kind carries it, so two tools of one MCP server are two rows in an hour',
   `calls` int NOT NULL COMMENT 'Total invocations',
   `successes` int NOT NULL COMMENT 'Invocations ending SUCCESS',
   `errors` int NOT NULL COMMENT 'Invocations ending ERROR',
   `denials` int NOT NULL COMMENT 'Invocations ending DENIED',
   `interruptions` int NOT NULL COMMENT 'Invocations ending INTERRUPTED',
   `sum_duration_ms` bigint NOT NULL COMMENT 'Duration total; the mean is this divided by calls',
-  `max_duration_ms` bigint NOT NULL COMMENT 'Longest single call of the day',
+  `max_duration_ms` bigint NOT NULL COMMENT 'Longest single call of the hour',
   `le_100ms` int NOT NULL DEFAULT '0' COMMENT 'Calls of at most 100 ms',
   `le_500ms` int NOT NULL DEFAULT '0' COMMENT 'Calls over 100 ms and at most 500 ms',
   `le_2s` int NOT NULL DEFAULT '0' COMMENT 'Calls over 500 ms and at most 2 s',
@@ -108,10 +110,12 @@ CREATE TABLE IF NOT EXISTS `tool_invocation_stats` (
   `le_30s` int NOT NULL DEFAULT '0' COMMENT 'Calls over 10 s and at most 30 s',
   `gt_30s` int NOT NULL DEFAULT '0' COMMENT 'Calls over 30 s',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_tool_invocation_stats_day` (`stat_date`,`tenant_id`,`kind`,`subject_id`,`tool_name`),
-  KEY `idx_tool_invocation_stats_tenant_date` (`tenant_id`,`stat_date`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Daily rollup of tool_invocation_log, retained permanently';
+  UNIQUE KEY `uk_tool_invocation_stats_hour` (`stat_hour`,`tenant_id`,`kind`,`subject_id`,`tool_name`),
+  KEY `idx_tool_invocation_stats_tenant_hour` (`tenant_id`,`stat_hour`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Hourly rollup of tool_invocation_log; rows are kept permanently';
 ```
+
+表里**只存小时一档**。计数四终态、六个耗时桶、`sum_duration_ms` 都是按小时可加的量，`max_duration_ms` 是按小时取 max 也可加，所以页面上的日／周／月视图就是这些行按桶求和，不需要第二套行；同时存两档的话任何一次跨粒度求和都会把同一时刻数两遍，而没有一种读法需要它。代价是小时行的量是日行的 24 倍，而这张表按永久保留设计。
 
 六桶是**半开区间**（`le_500ms` = `(100, 500]`），否则「正好 500ms」会被两个桶重复认领，`calls` 与桶和就不恒等了。
 
@@ -122,7 +126,7 @@ CREATE TABLE IF NOT EXISTS `tool_invocation_stats` (
 - I3 明细行的 `tenant_id` 与 `agent_id` 在写入时就定死，读侧不再猜。
 - I4 聚合任一行的 `calls` = 四个终态计数之和 = 六个桶之和。
 - I5 聚合可整体重算且结果不变（幂等），因此重算与并发副本都无害。
-- I6 任一明细日在被折算进聚合之前不会被删除（删除语句以「该 `(DATE(ts), tenant_id)` 已存在于聚合表」为条件）。唯一的例外是 `tenant_id IS NULL` 的明细：聚合表那列 `NOT NULL`（§2.2）让它们不进任何聚合，因此只看保留窗口，否则永远删不掉。
+- I6 任一明细小时在被折算进聚合之前不会被删除（删除语句以「该 `(小时, tenant_id)` 已存在于聚合表」为条件，小时取 `ts` 向下整点到小时）。唯一的例外是 `tenant_id IS NULL` 的明细：聚合表那列 `NOT NULL`（§2.2）让它们不进任何聚合，因此只看保留窗口，否则永远删不掉。
 
 ## 3. 事件源与判定
 
@@ -197,31 +201,33 @@ ToolInvocationMiddleware → ToolInvocationAdaptor(harnax-tools-sdk 定义)
 
 每次运行按顺序做三件事：
 
-1. 取明细里 `tenant_id IS NOT NULL` 的出现过的全部 `DATE(ts)`，与 `tool_invocation_stats` 已有的 `stat_date` 相减，得到「该折算却没折算」的日期集合。无租户的明细排除在外，否则那一天每小时都被报成待折算、而聚合又永远不会为它产生行（聚合表 `tenant_id NOT NULL`），差集就补不完。
-2. 对这个集合**加上昨天与今天**逐日重算，一条 `INSERT INTO tool_invocation_stats SELECT ... FROM tool_invocation_log WHERE ts >= ? AND ts < ? + INTERVAL 1 DAY GROUP BY ... ON DUPLICATE KEY UPDATE` 整行覆盖（日子用瞬间区间圈而不用 `DATE(ts) = ?`，因为对列取函数用不上索引）。今天必须在集合里，不管它有没有出现在第 1 步的差集：否则当天第一次调度写下的行就成了那天的终值，聚合会落后到次日第一个周期而不是一个周期。昨天同样必须在集合里，理由与今天对称但更隐蔽：第 1 步的差集按「那一天有没有聚合行」判定，一个自然日在 23:05 那次调度里已经有了行，此后至零点之间落进来的明细再不会把那一天报成待折算，而保留窗口一到就把它们删走——不重算昨天，每天结尾那段就是永久少计。漏跑一天或首次上线由第 1 步的差集兜住，不需要额外的 backfill 入口。
-3. 删除 `ts < now - retentionDays` 且（其 `(DATE(ts), tenant_id)` 已存在于聚合表 **或** `tenant_id IS NULL`）的明细。删除挂在「已折算」这个事实上的理由见 I6；无租户那半是唯一的例外出口，它们不进聚合，因此不能等聚合来放行。
+1. 取明细里 `tenant_id IS NOT NULL` 的出现过的全部小时（`DATE_FORMAT(ts, '%Y-%m-%d %H:00:00')`），与 `tool_invocation_stats` 已有的 `stat_hour` 相减，得到「该折算却没折算」的小时集合。无租户的明细排除在外，否则那些小时每小时都被报成待折算、而聚合又永远不会为它们产生行（聚合表 `tenant_id NOT NULL`），差集就补不完。下界写死 `1970-01-01 00:00:00` 而不是一个滚动的起点：任何下界都会让一个从未折过的小时掉出待折算集合而永远不折，而下一条的删除恰恰拒绝释放这样的小时里的行。下界比的是 `l.ts` 而不是它的截断值——对列取函数用不上索引；差集用一次 `NOT EXISTS` 加 `GROUP BY` 而不是对聚合表做子查询差，一趟 `(tenant_id, ts)` 索引就够。
+2. 对这个集合**加上当前小时与上一小时**逐小时重算，一条 `INSERT INTO tool_invocation_stats SELECT ... FROM tool_invocation_log WHERE ts >= ? AND ts < DATE_ADD(?, INTERVAL 1 HOUR) GROUP BY ... ON DUPLICATE KEY UPDATE` 整行覆盖（小时用瞬间区间圈而不用 `DATE_FORMAT(ts, ...) = ?`，因为对列取函数用不上索引）。未来的小时直接跳过，晚于当前小时的参数永远不折。当前小时必须在集合里，不管它有没有出现在第 1 步的差集：它还在被写入，等它关掉再折会让页面每次都少读一个小时。上一小时同样必须在集合里：清理跑在每小时第 5 分，一个小时的最后一次折算发生在它关闭之前，此后到整点之间落进来的明细再不会把那一小时报成待折算，而保留窗口一到就把它们删走——不重算上一小时，每个小时结尾那一段就是永久少计。漏跑一个周期或首次上线由第 1 步的差集兜住，不需要额外的 backfill 入口。
+3. 删除 `ts < now - retentionDays` 且（其 `(小时, tenant_id)` 已存在于聚合表 **或** `tenant_id IS NULL`）的明细。删除挂在「已折算」这个事实上的理由见 I6；无租户那半是唯一的例外出口，它们不进聚合，因此不能等聚合来放行。
 
-`harnax.metrics.retention-days` 默认 90、`harnax.metrics.rollup-enabled` 默认 true，调度表达式每小时第 5 分。两个键进 `harnax-admin/src/main/resources/application.yml` 的 `harnax:` 块（`:135-172`，与 `harnax.cli.archive-retention-days` 同形，用构造器 `@Value` 注入——全仓 `@ConfigurationProperties` 只有一处且是因为要 `@ConditionalOnProperty`）。
+`harnax.metrics.retention-days` 默认 90、`harnax.metrics.rollup-enabled` 默认 true，调度表达式每小时第 5 分。保留天数在服务启动时夹进 `1..3650` 并在夹动时 warn 一条而不是拒启动：`retention-days: 0` 会让清理的界限等于运行瞬间，下一个 :05 就释放掉所有已折算小时的明细——这是这一层唯一会毁数据而不是只让计数停住的错配；上限不是列宽而是一道地平线：聚合行永久保留，调大保留天数只把明细能答的窗口往外延。两个键进 `harnax-admin/src/main/resources/application.yml` 的 `harnax:` 块（`:135-172`，与 `harnax.cli.archive-retention-days` 同形，用构造器 `@Value` 注入——全仓 `@ConfigurationProperties` 只有一处且是因为要 `@ConditionalOnProperty`）。
 
 分位数：桶边界 100 / 500 / 2000 / 10000 / 30000 ms。P95 的算法是「按桶累加到 ≥ 0.95·calls，落在哪个桶就报该桶上界，落进 `gt_30s` 报 `>30s`」。窗口内明细未过期时，`/invocations` 给出的单次真耗时是复核依据。
 
 ## 7. 读侧 API
 
-`ToolMetricsController`，前缀 `/api/admin/tool-metrics`，与 `SkillUsageController` / `TokenStatsController` 同规：Kotlin 主构造器注入（admin 内零 `@RequiredArgsConstructor`）、`@Tag` / `@Operation` / `@Parameter` 齐全、方法体是 `= try { ... } catch (e: Exception) { log.error(...); ResultVo.error(ApiErrors.message(e, fallback)) }` 表达式函数、租户走 `TenantResolver.resolve(jwtUtil)` 且永不做查询参数、窗口是一条 `start` / `end` 日期区间且夹取全在服务端。
+`ToolMetricsController`，前缀 `/api/admin/tool-metrics`，与 `SkillUsageController` / `TokenStatsController` 同规：Kotlin 主构造器注入（admin 内零 `@RequiredArgsConstructor`）、`@Tag` / `@Operation` / `@Parameter` 齐全、方法体是 `= try { ... } catch (e: Exception) { log.error(...); ResultVo.error(ApiErrors.message(e, fallback)) }` 表达式函数、租户走 `TenantResolver.resolve(jwtUtil)` 且永不做查询参数、窗口是一条 `start` / `end` 整点小时区间且夹取全在服务端。
 
 | 端点 | 参数 | 返回 |
 |---|---|---|
-| `GET /summary` | `start`、`end`（均 `yyyy-MM-dd`，可缺省）、`kind`、`groupBy`=`tool`（默认）\| `agent` \| `session` | 卡片计数 + 主体行列表（`kind` / `subjectId` / `toolName` / 名称 / `calls` / `successRate` / `avgDurationMs` / `p95Operator`（`<=` 或 `>`）/ `p95Ms`（Long）/ `lastSeenAt`）。P95 给「算符 + 数值」两个字段而不是一个显示串：文案由前端 `pages.callMetrics.*` 造，服务端只给数，排序与画条要的是数值 |
-| `GET /time-series` | `start`、`end`、`granularity`=`day`\|`week`\|`month`、`kind`、`subjectId` | 按桶补零的时间序列（`timePoint` × 维度，行内带 `dimensionId` / `dimensionName`） |
+| `GET /summary` | `start`、`end`（`yyyy-MM-dd HH:mm`，可缺省；裸 `yyyy-MM-dd` 整天也收，读作那天 00:00 那个整点）、`kind`、`groupBy`=`tool`（默认）\| `mcp` \| `cli` \| `agent` \| `session` | 卡片计数 + 行列表（`kind` / `subjectKey` / `subjectId` / `subjectName` / `parentName` / `toolName` / `calls` / 四终态 / `successRate` / `avgDurationMs` / `p95Operator`（`<=` 或 `>`）/ `p95Ms`（Long）/ `lastSeenAt`）。`tool` / `mcp` / `cli` 三档读聚合表，`agent` / `session` 读明细表。P95 给「算符 + 数值」两个字段而不是一个显示串：文案由前端 `pages.callMetrics.*` 造，服务端只给数，排序与画条要的是数值。行名一律服务端带出（D18），页面上不再拿 id 去猜是谁 |
+| `GET /time-series` | `start`、`end`、`granularity`=`auto`（默认）\| `hour` \| `day` \| `week` \| `month`、`kind`、`subjectId` | 按桶补零的时间序列（`timePoint` × 维度，行内带 `dimensionId` / `dimensionName`），响应另回 `granularity`——选档发生在服务端，页面按它标出的档位画轴而不是自己再算一遍 |
 | `GET /invocations` | `start`、`end`、`kind`、`toolName`、`mcpId`、`cliId`、`agentId`、`sessionId`、`outcome`、`pageNum` / `pageSize` | 明细分页 `ResultVo<Page<...>>`，含 `error_message` / `args_json` / `result_excerpt` |
 
-区间的解析只有一处（`ToolMetricsServiceImpl.window`），三个端点与下钻共用：`end` 缺省为今天、晚于今天夹到今天；`start` 缺省为 `end` 往前 29 天（即默认 30 天窗口）、晚于 `end` 夹到 `end`、跨度超过 365 天时把 `start` 推到 `end - 364`；两个值任一解析不出来就整体按缺省走并 `log.info` 一条。夹取一律改写成边界而不是拒答，被夹过的值都留一行日志。窗口两端在响应里回成 `from` / `to`（`/time-series` 也回这两个字段），响应里没有天数字段：天数是区间的派生量，页要标注的是它选中的那两个日期。
+区间的解析只有一处（`ToolMetricsServiceImpl.window`），三个端点与下钻共用：`end` 缺省为当前整点、晚于当前小时夹到当前小时；`start` 缺省为 `end` 往前 719 小时（即默认 720 小时 = 30 天窗口）、晚于 `end` 夹到 `end`、跨度超过 8760 小时（365 天）时把 `start` 推到 `end - 8759 小时`；两个值任一解析不出来就整体按缺省走并 `log.info` 一条。夹取一律改写成边界而不是拒答，被夹过的值都留一行日志。窗口两端在响应里回成 `from` / `to`（`/time-series` 也回这两个字段，另外回 `granularity`），响应里没有天数字段：天数是区间的派生量，页要标注的是它选中的那两个整点。
 
-`groupBy=agent|session` 走明细表（聚合表不带这两个维度），因此受保留窗口限制；`/summary` 默认口径走聚合表，可答超过 90 天的窗口。明细这条路上没有耗时桶可答，所以这一档每行的 P95 是 `<=` 配上该主体窗口内**实测最长的一次**（`MAX(duration_ms)`，`ToolMetricsServiceImpl.kt:218-219`）——它是分位数的上界而不是分位数本身，同一次响应里卡片上那个窗口 P95 仍按桶算（同文件 `:228` 起的 `p95()`）。分页沿用 `PageHelper.startPage` + `admin/dto/Page.fromPageInfo`（现例 `AgentToolController.kt:26-39` 与 `AgentToolServiceImpl.kt:26-31`）。
+趋势的档位由服务端选：请求显式给了 `hour` / `day` / `week` / `month` 就照它，`auto` 或缺省时按跨度选——不超过 48 小时给小时，不超过 92 天给日，再宽给周。补零的桶起点走的是与 SQL 完全相同的四种对齐（小时取本身、日取 00:00、周取周一、月取 1 号），两边从不同的原点走会每一个桶都查不到行、回一片零。
+
+`groupBy=mcp|cli` 与 `tool` 一样读聚合表，可答超过保留期的窗口；`agent` / `session` 走明细表（聚合表不带这两个维度），因此受保留窗口限制。明细这条路上没有耗时桶可答，所以这两档每行的 P95 是 `<=` 配上该行窗口内**实测最长的一次**（`MAX(duration_ms)`，见 `ToolMetricsServiceImpl.detailRows`）——它是分位数的上界而不是分位数本身，同一次响应里卡片上那个窗口 P95 仍按桶算（同文件 `p95()`）。明细这条路上聚合侧与它必须答同一个区间：两条读法都从起始整点取起，但聚合侧比到 `stat_hour <= to`（那一行覆盖六十分钟），明细侧比到 `ts < to + 1 小时`，配对错了就会让每个窗口的最后一个小时在两张表里差一步。分页沿用 `PageHelper.startPage` + `admin/dto/Page.fromPageInfo`（现例 `AgentToolController.kt:26-39` 与 `AgentToolServiceImpl.kt:26-31`）。
 
 响应形状受 admin 既有出参约定约束：`application.yml` 的 `default-property-inclusion: non_null` 让 Jackson 3 丢掉值为 null 的键，DTO 一律给非空默认值；业务错误是 HTTP 200 带 `code`。
 
-`subjectId` 的 0 就落在这条约定上。聚合表里 `subject_id` 的定义是「`kind=mcp` 时是 `mcp_id`、`kind=cli` 时是 `cli_id`、其余为 `0`」（DDL `V3__tool_invocation_metrics.sql:40`），三个来源共用一个字段承载同一个值；服务侧出参前把 `0` 折成 null（`ToolMetricsServiceImpl.kt:340` 的 `subjectIdOf`），配上 `non_null`，所以 builtin / shell / framework 那一档的 JSON 里**没有 `subjectId` 这个键**，而不是它等于 `null`。
+`subjectId` 的 0 就落在这条约定上。聚合表里 `subject_id` 的定义是「`kind=mcp` 时是 `mcp_id`、`kind=cli` 时是 `cli_id`、其余为 `0`」（DDL `V3__tool_invocation_metrics.sql`），三个来源共用一个字段承载同一个值；服务侧出参前把 `0` 折成 null（`ToolMetricsServiceImpl.subjectIdOf`），配上 `non_null`，所以 builtin / shell / framework 那一档的 JSON 里**没有 `subjectId` 这个键**，而不是它等于 `null`。`subjectKey` 是这一行的归属键：`tool` 档就是工具名本身，其余四档是 id 的字符串形式（会话档是 `session_id` 字符串）。`parentName` 只在 `kind` 为 `mcp` 或 `cli` 的行上有值——工具档带它才说得出这一行是哪台服务器/哪个包答的。
 
 ## 8. 前端
 
@@ -229,12 +235,13 @@ ToolInvocationMiddleware → ToolInvocationAdaptor(harnax-tools-sdk 定义)
 
 - 路由：`config/routes.ts` 的 `monitor` 分组（本分支 `:137-168`，页面条目 `:147-151`）挂 `{ name: 'call.metrics', path: '/monitor/call-metrics', component: './call-metrics' }`。monitor 子项一律不带 `access`（全仓只有 `/system/*` 三条有门禁）。
 - 菜单：`src/locales/{zh-CN,en-US}/menu.ts:26` 补 `menu.monitor.call.metrics`（「调用监控」/「Call Metrics」）。`layout.locale = true`，缺 key 会在侧栏直接渲染出裸 key。
-- 服务：`src/services/ant-design-pro/toolMetrics.ts`，三个函数 `getToolMetricsSummary` / `getToolMetricsTimeSeries` / `getToolInvocations`，窗口一律是 `start` / `end` 两个 `yyyy-MM-dd` 参数，形状照 `skillUsage.ts`（`// @ts-ignore` + `/* eslint-disable */` + `request<API.Result<T>>('/api/admin/...')`，不写 baseUrl，路径由 `config/proxy.ts` 的 `/api/admin/` 通配与生产 nginx 承接）。
+- 服务：`src/services/ant-design-pro/toolMetrics.ts`，三个函数 `getToolMetricsSummary` / `getToolMetricsTimeSeries` / `getToolInvocations`，窗口一律是 `start` / `end` 两个 `yyyy-MM-dd HH:mm` 参数（缺省、夹取、上限都在服务端，见 §7），形状照 `skillUsage.ts`（`// @ts-ignore` + `/* eslint-disable */` + `request<API.Result<T>>('/api/admin/...')`，不写 baseUrl，路径由 `config/proxy.ts` 的 `/api/admin/` 通配与生产 nginx 承接）。
 - 类型：写 `src/typings.d.ts` 的 `API` 命名空间（`src/services/**` 被 `biome.json` 排除，类型放服务文件里等于没被检查）。
-- 页面：`src/pages/call-metrics/index.tsx`。工具 / MCP / CLI 三个 tab 共用一套形状——四张卡（调用量、成功率、P95、失败数）、一张 `@ant-design/plots` 的 `Line` 趋势、一张主体表，失败行的 `error_message` 直接展开。骨架对齐 `src/pages/skill/usage.tsx`（`PageContainer` + `Row/Col + Card + Statistic` + `Spin` + `className="styled-pro-table"` 的 `Table` + `response.code === 200` 判成功）。
-- 两个抽屉挂在两列上，互斥：`主体` 列开 `SubjectDrawer.tsx`，`调用量` 列开调用记录抽屉（`/invocations`，带同一区间，分页 20 条）；开一枚即关另一枚，区间一变就关掉记录抽屉——它列的是旧区间数出来的行，换区间继续翻页会把两批混在一起。主体抽屉上半是这一行本身的四项计数（调用量、成功率、P95、最近调用，直接取自行本身，不再发第二次指标请求），下半是档案，档案取自行本身已带的 `subjectId` / `subjectKey`。档案来源是纯函数 `subjectProfile.ts` 的 `profileTargetOf(row, groupBy)`，取值 `agent` / `mcp` / `cli` / `session` / `tool` / `none`，用例钉在 `subjectProfile.test.ts`；`none` 就是 `shell` / `framework` 与注册表里已不存在的工具，此时抽屉只给计数并用一条 `Alert` 明说没有档案——读失败与没登记是两种答案，分别落 `Alert type=error` 与 `type=info`，都不渲染空态占位。档案接口按来源各一个：`/api/admin/agents/{id}`、`/api/admin/mcp/{id}`、`/api/admin/clis/{id}`、`/api/admin/sessions/{sessionId}/config`（会话只有这一条按 id 字符串查的读端点）、`/api/admin/tools/builtin`（列表按名匹配，没有按名单查的端点）。抽屉形状照 `src/pages/cli/components/CliDetailDrawer.tsx`（`Drawer` + `Spin` + `Descriptions bordered size=small column=1`）。
-- 图表用 plots v2 形状：**`colorField` 而不是 `seriesField`**，数据是 `flatMap` 出的长表 `{ date, type, value }`，配色走 `scale.color.range` 的字面 hex（现例 `src/pages/token-monitor/index.tsx:615`、`:667`），空态 `<Empty>`。文本/边框/背景用 `var(--vip-*)` 令牌自动跟深色主题，凡要与透明度拼接的颜色必须写十六进制。
-- 窗口是一条 `DatePicker.RangePicker`，四个预设（近 7 / 30 / 90 / 365 天）由 `presets` 给出、算的是显式日期，晚于今天的日期不可选、不允许清空。选中的区间是页面唯一的时间状态，同时喂 `/summary`、`/time-series` 与下钻的 `/invocations`，所以四张卡、趋势线、主体表和抽屉里的记录永远同一个窗口。
+- 页面：`src/pages/call-metrics/index.tsx`。工具 / MCP / CLI 三个 tab 共用一套形状——四张卡（调用量、成功率、P95、失败数）、一张 `@ant-design/plots` 的 `Line` 趋势、一张第一列按当前档位命名的行表，失败行的 `error_message` 直接展开。骨架对齐 `src/pages/skill/usage.tsx`（`PageContainer` + `Row/Col + Card + Statistic` + `Spin` + `className="styled-pro-table"` 的 `Table` + `response.code === 200` 判成功）。
+- 档位与列名：`src/pages/call-metrics/dimensions.ts` 是唯一一处「哪个 tab 有哪几档」（`TAB_DIMENSIONS`）与「哪几档读聚合」（`readsAggregate`）的表。分组下拉由当前 tab 的三档生成，切 tab 时当前档位不在矩阵里就收敛到该 tab 第一档；行表第一列的标题随档位取 `pages.callMetrics.dim.*`，格子里显示服务端带出的 `subjectName`（缺失时回落 `subjectKey`），`tool` 档上这一行是 MCP / CLI 提供的工具时把 `parentName` 作灰色限定跟在名字后。`readsAggregate` 供两处判断：受保留窗口限制的提示只在读明细的两档显示，「最近调用」的精度也按它分档。
+- 两个抽屉挂在两列上，互斥：行名列（标题随档位是「工具 / MCP / CLI / 智能体 / 会话」）开 `SubjectDrawer.tsx`，`调用量` 列开调用记录抽屉（`/invocations`，带同一区间，分页 20 条）；开一枚即关另一枚，区间一变就关掉记录抽屉——它列的是旧区间数出来的行，换区间继续翻页会把两批混在一起。两枚抽屉的标题都拼上这一行的 `subjectName`（回落 `subjectKey`）。行名抽屉上半是这一行本身的四项计数（调用量、成功率、P95、最近调用，直接取自行本身，不再发第二次指标请求），下半是档案，档案取自行本身已带的 `subjectId` / `subjectKey`。档案来源是纯函数 `subjectProfile.ts` 的 `profileTargetOf(row, groupBy)`，取值 `agent` / `mcp` / `cli` / `session` / `tool` / `none`，用例钉在 `subjectProfile.test.ts`；`none` 就是 `shell` / `framework` 与注册表里已不存在的工具，此时抽屉只给计数并用一条 `Alert` 明说没有档案——读失败与没登记是两种答案，分别落 `Alert type=error` 与 `type=info`，都不渲染空态占位。档案接口按来源各一个：`/api/admin/agents/{id}`、`/api/admin/mcp/{id}`、`/api/admin/clis/{id}`、`/api/admin/sessions/{sessionId}/config`（会话只有这一条按 id 字符串查的读端点）、`/api/admin/tools/builtin`（列表按名匹配，没有按名单查的端点）。抽屉形状照 `src/pages/cli/components/CliDetailDrawer.tsx`（`Drawer` + `Spin` + `Descriptions bordered size=small column=1`）。
+- 图表用 plots v2 形状：**`colorField` 而不是 `seriesField`**，数据是 `flatMap` 出的长表 `{ date, type, value }`，配色走 `scale.color.range` 的字面 hex（现例 `src/pages/token-monitor/index.tsx:615`、`:667`），空态 `<Empty>`。文本/边框/背景用 `var(--vip-*)` 令牌自动跟深色主题，凡要与透明度拼接的颜色必须写十六进制。X 轴标签按响应回出的 `granularity` 选格式（小时档 `MM-DD HH:00`，其余档 `MM-DD`），页面不自己按跨度重选一次档；趋势读失败时把桶清成空而不是留着旧档——卡片与表已经移到新区间，还画着上一个区间的线等于画一条谁都不是的趋势。
+- 窗口是一条 `DatePicker.RangePicker`，挂在页首 `Tabs` 那一行的右侧（`tabBarExtraContent.right`），因为它驱动的是整页四张卡、趋势与两枚抽屉，放在下面那张表的头上会被读成只管这张表。`showTime` 只开小时（`format: 'HH:mm'`，分钟与秒都不给），四个预设（近 7 / 30 / 90 / 365 天）由 `presets` 给出、算的是显式时间，选中的值和预设都向下取整到整点，晚于当前小时的不可选、不允许清空。选中的区间是页面唯一的时间状态，同时喂 `/summary`、`/time-series` 与下钻的 `/invocations`，所以四张卡、趋势线、行表和抽屉里的记录永远同一个窗口。
 - 文案全走 `pages.callMetrics.*`，中英两个 locale 都必须加，缺一侧算未完成。
 
 ## 9. 技能用量的连带改动
@@ -269,13 +276,13 @@ ToolInvocationMiddleware → ToolInvocationAdaptor(harnax-tools-sdk 定义)
 
 - 单测：`kind` 判定纯函数穷举五种输入形状与优先级冲突；CLI 命令解析（管道、`&&`、绝对路径、带空格的引号）；`ToolResultState` → `outcome` 映射；未终态补 `INTERRUPTED`；截断与关闭开关；丢弃计数。纯函数测试用 JUnit5 `org.junit.jupiter.api.Assertions` + 反引号句子的方法名（现例 `harnax-agent/harnax-harness-core/src/test/kotlin/com/agnetix/harnax/harness/skill/TenantSkillVisibilityFilterTest.kt`）；中间件流测用模块已有的 `reactor-test`。
 - 持久层测（`harnax-entity`，真实 MySQL 8 容器）：`harnax-entity` 没有 failsafe，也没有 `integration-test` profile，所以这一层的容器测叫 `*MapperTest`，形状照 `TokenStatsMapperTest.kt:33-61`（`@Testcontainers @MybatisTest @AutoConfigureTestDatabase(NONE) @ActiveProfiles("test")` + companion 里每类一个 `MySQLContainer("mysql:8.0").withInitScript("schema-test.sql")`）。闸门：同一会话三次调用必须落三行且三个不同时刻；`batchInsert` 一批 N 行返回 N 且空批不发 SQL；upsert 重算两次结果不变；六桶之和 = `calls` = 四终态计数之和。
-- 端到端持久化测（`harnax-admin/src/test/kotlin/com/agnetix/harnax/admin/it/`，继承 `BaseAdminIT`）：聚合、读侧租户谓词与清理三条闸门放这里，因为只有 admin 侧 IT 重放真实的 `db/migration` 全套（基线加三条前向增量；共享容器、schema 由迁移建；夹具自造私有租户号如 `931_931`，不碰 tenant 1 也不与邻居 IT 的时间窗重叠）。
-  - 读侧：租户谓词必须把自己的数据滤出来；窗口边界那天不能出现在另一个租户的行里。日期区间的四条夹取各有用例：`end` 晚于今天夹到今天、`start` 晚于 `end` 夹到 `end`、跨度超 365 天把 `start` 推到 `end - 364`、两个值解析不出来整体按默认 30 天窗口走；四条都在响应回出的 `from` / `to` 上断而不是在日志上断。
-  - 聚合与清理：`retention-days=0` 够不着——它被夹回下限 1（`ToolInvocationRollupService.kt:104-110`），所以这一层的门不是「窗口多小」而是「未折算即不删」。四条都写成了用例：过期一天但聚合还没有它时删除必须不动它（`ToolInvocationRollupIT.kt:185`，在 mapper 接缝上证明，因为正常一轮会先折算再释放）；窗口内刚过一天的行存活（`:212`）；无租户的过期行不等聚合就被释放（`:200`）；日期在将来的行不进折算（`:157`）。
-  - `SchemaBaselineDriftIT` 是隐形闸门：新表只进迁移（V3）不进 `schema-test.sql` 会让它六条断言全红；反过来被 DROP 掉的表（V4 的 `tool_call_log`）留在 `schema-test.sql` 里，等于夹具带着一张生产建不出来的表——`DROP TABLE` 是它已建模的语句形状，两边同删它就仍然绿。
-  - 时区陷阱：Testcontainers 的 MySQL 是 UTC，Java 侧 `LocalDateTime` 按 JVM 时区写 `datetime`，按 `DATE(ts)` 分桶的用例要么固定 UTC 要么用相对当天而不是绝对日期。
+- 端到端持久化测（`harnax-admin/src/test/kotlin/com/agnetix/harnax/admin/it/`，继承 `BaseAdminIT`）：聚合、读侧租户谓词与清理三条闸门放这里，因为只有 admin 侧 IT 重放真实的 `db/migration` 全套（基线加四条前向增量；共享容器、schema 由迁移建）。两个类都在 `@BeforeEach` 清空两张指标表再自造夹具，读侧另写一行 `agent`、一行 `mcp_server`、一行 `cli`——admin 的 IT 库除 `skill_repository` 外不种子任何登记行，名称解析那条闸门无夹具可借，用完必须删干净（共享容器重跑会撞唯一键，别的类读这三张表时只 expect 自己插的那几行）。读侧写进 tenant 1 并另开邻居 `950_500`，两个方向都断才证明租户谓词真在收敛而不是恰好只有一批数据。
+  - 读侧：租户谓词必须把自己的数据滤出来——邻居租户那两行就落在与本页数据同一天的另一个整点小时里，所以缺一次租户谓词的响应会把它的两行一起答出来。整点区间的四条夹取各有用例：`end` 晚于当前小时夹到当前小时（`futureEndClampsToTheCurrentHour`）、`start` 晚于 `end` 塌到 `end`（塌比翻好，翻过来的区间答一张空表却还声称一个窗口）、跨度超上限时保住 `end` 把 `start` 推到往前第 8759 个小时（拒答会因为一个读者不会去要的区间而清空整排卡片）、两个值都解析不出来整体按默认 720 小时窗口走并断 `totalCalls` 非零，证明坏选择器答的是图而不是错误卡。四条都在响应回出的 `from` / `to` 上断而不是在日志上断，两个回显本身必须落在整点上：回显请求原值等于告诉页面「你问的那个边界我答了」，而它并不存在。粒度这条另有一用例，在 48 小时与 92 天两条边界各取两侧（边界归更细那一档），并证明显式 `granularity` 压过区间。夹具里 `start` / `end` 用裸日期、其余用 `HH:mm`，两条解析路径都在这一个类里过。
+  - 聚合与清理：`retention-days=0` 够不着——它被 `ToolInvocationRollupService.clampToWindow` 夹回下限 1，所以这一层的门不是「窗口多小」而是「未折算即不删」。折算与清理各写了成套用例（`ToolInvocationRollupIT`，全部按方法名认）：整小时缺失由下一轮补上（`missedHourIsCaughtUp`，顺带断半开桶——120 ms 落 `(100,500]` 不落 `<=100ms`）；当前小时被重算且后写的行在下一次带进来（`currentHourIsRerolled`）；已折算那一小时之后迟到的行靠上一小时的强制重算捞回（`lateRowOfTheClosingHourIsFolded`）；无租户的明细根本不进折算（`tenantlessRowIsNeverRolled`——聚合表 `tenant_id NOT NULL`，把它算进待折集会让差集永不空、饿死能折的小时）；小时在将来的行不折（`futureDatedRowIsNotFolded`，取六小时之后保证它对本用例的每一轮都是将来，而不只是晚于午夜）；过窗一小时在同一轮里既被折算又被释放且顺序不可颠倒（`expiredRowWaitsForItsRollup`）；未折算的小时删除语句碰不到（`unrolledHourIsNeverReleased`，在 mapper 接缝上证明，因为正常一轮会先折再释放）；无租户的过期行不等聚合就被释放（`tenantlessExpiredRowsAreReleased`）；窗口内刚过一小时的行存活（`rowInsideWindowSurvives`，这条让保留窗口的值可观测而不是测试与 `application-it.yml` 之间抄来的数）；小时行相加等于它们折出来的明细且桶跟着小时走（`hourlyRowsSumToTheirDetail`）；同一小时折两次结果不变（`foldingTheSameHourTwiceChangesNothing`）；开关关掉两张表都不动（`killSwitchWritesNothing`，`rollUpHourly()` 是 `rollup-enabled` 唯一读者）。
+  - `SchemaBaselineDriftIT` 是隐形闸门：新表只进迁移（V3）不进 `schema-test.sql` 会让它六条断言全红；反过来被 DROP 掉的表（V4 的 `tool_call_log`）留在 `schema-test.sql` 里，等于夹具带着一张生产建不出来的表——`DROP TABLE` 是它已建模的语句形状，两边同删它就仍然绿。列名与索引这两侧也各自双向比：V5 把 `stat_date` 改名成 `stat_hour` 并换掉两条键，任何一侧没跟上都会红在「迁移有而基线没有」和「基线有而迁移没有」两条上，一次改漏不可能只红一条。
+  - 时区陷阱：Testcontainers 的 MySQL 是 UTC，Java 侧 `LocalDateTime` 按 JVM 时区写 `datetime`，所以折算与清理的用例一律从 `LocalDateTime.now().truncatedTo(ChronoUnit.HOURS)` 往前往后推相对整点，不写绝对日期——写死的日子在 UTC 与 JVM 时区之间会漂出一个小时，而漂移一小时的夹具刚好落在「未折算」那一侧，用例会以一种谁也解释不了的方式红。
 - 跑法：`mvn -o test -pl harnax-entity`；admin 侧 `mvn -o verify -pl harnax-admin -am -Pintegration-test -Dit.test=<类名> -Dtest=<类名> -Dsurefire.failIfNoSpecifiedTests=false -Dfailsafe.failIfNoSpecifiedTests=false`（`-am` 与两个 `failIfNoSpecifiedTests` 都不能少，`docs/unit-test-cases.md:799-810`）。删过源文件的模块跑 IT 前必须 `clean`，残留 `.class` 会进 jar 造出假绿。
-- 前端：`npm run build`（`max build`）与 `npx @biomejs/biome lint src/pages src/locales` 各自单独跑并落日志再看退出码；`npm run lint` 会串 `tsc --noEmit`，本仓有一批既有噪声，不作为闸门。
+- 前端：`npm run build`（`max build`）与 `npx @biomejs/biome lint <改过的文件>` 各自单独跑并落日志再看退出码；`biome check --write` 会把上千行既有文件一起铺开，不许当闸门用；`npm run lint` 会串 `tsc --noEmit`，本仓有一批既有噪声，也不作为闸门。页面里的纯函数各有用例（`lastSeen.test.ts`、`subjectProfile.test.ts`），`dimensions.ts` 那张 tab→维度矩阵是给页面直接读的常量，不另立用例；`npm test` 走 jest，本仓的 `jest.config.ts` 在新检出里加载不起来（主检出同样如此），跑单测要直接把配置内联喂给 jest。
 - 端到端（harnax-deploy 真栈）：一个装了 MCP、勾了一个 CLI 和一个技能的 agent 跑一轮，页面上 `mcp` tab 有非零调用、`cli` tab 记到该命令、技能用量的 USE 从 0 变正。
 
 ## 12. 已知边界与不做
@@ -284,18 +291,18 @@ ToolInvocationMiddleware → ToolInvocationAdaptor(harnax-tools-sdk 定义)
 - CLI 命令别名只来自 `name` + `checkCommand` 每个分段的首词（去掉路径前缀）：别名集在装配期算出（`HarnessAgentLauncher.kt:619-623`），包物化在同一个方法的更后面（同文件 `:686` 的 `resolveImage`），所以不存在「按未物化的别名集先判一次」这条分支。包内二进制若既不在包名里、也不在 `checkCommand` 任一分段的首词里，就归因不到，落 `kind=shell`。`checkCommand` 是清单必填项（缺它直接判解析失败，`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/registrar/CliPackageParser.kt:252-253`）且在镜像内执行，它的首词按构造就在 PATH 上——这也是当初否掉「扫 `/bin` 目录补别名」的理由。
 - 两个 MCP server 暴露同名工具时，按名覆盖发生在上游的 `io.agentscope.core.tool.ToolRegistry`——它以工具名为键（`tools` 是名字到工具的 map，`registerTool` 直接 `tools.put(toolName, tool)`），`Toolkit` 只是持有并转调它，所以模型侧本来就只能看见后注册的那一个。归因跟着这份注册表的枚举结果走（`HarnessAgentBuilder.kt:305-307`），因此记给活下来的那个 server，与运行时实际调用的是谁一致。本项目的 `com.agnetix.harnax.tools.sdk.registry.ToolRegistry` 是另一个同名的类：它按 Spring bean 名键控 admin 下发的 `ToolBox`（`harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/registry/ToolRegistry.kt:23`、`:29-30`），不参与 MCP 注册。
 - harness 自带的 `read_file` / `memory_*` 不进 MCP 枚举（build 时才挂上），也不在 admin 下发的 `toolSpecs` 里，因此落 `kind=framework` 而不是 `builtin`；页面上这两个档位的名字按 D16 是「可选工具」（admin 下发的那份名单）与「系统内置」（harness 自己带的）。`execute` 是这一条的例外：shell 判定排在 `builtinToolNames` 之前（`ToolInvocationClassifier.kt:50-58`），所以它先试 CLI 归因、没命中就落 `kind=shell`，两边都不会是 framework。
-- 主体详情抽屉只在「注册表里真有一行」时才有内容：`agent` 维度查 `agent` 表、`mcp` / `cli` 维度查 `mcp_server` / `cli` 表、`session` 维度查会话配置，四者都由 admin 既有读端答出。`kind` 为 `shell` / `framework` 的行，以及 `builtin` 里未在 admin 工具注册表命中的名字，压根没有一行可查——抽屉这时只给这一行本身的计数，另起一条说明「该主体没有登记信息」而不是编一份，因为系统内置工具的身份只存在于装配期的 Toolkit 里。`tool` 维度不按名查注册表（`AgentToolController` 的 `/{id}` 是 Long），走的是列表按名匹配，匹配不到同样落「没有登记信息」。
-- 时间序列的粒度固定为 `day`，区间拉到上限 365 天就是 365 个格子；不提供 week / month 切换，因为页面上没有任何一条读端按周月对齐过 `stat_date`，加了就是多一套口径。
-- 不做按小时聚合（窗口超过保留期就没有小时粒度）；不做 OTel / 分布式 trace；不做工具级成本核算；不给 `mcp_call_log` 加指标读端；不引入 ClickHouse 之类外部指标存储；不给 admin 引分布式锁。
+- 行名抽屉只在「注册表里真有一行」时才有内容：`agent` 维度查 `agent` 表、`mcp` / `cli` 维度查 `mcp_server` / `cli` 表、`session` 维度查会话配置，四者都由 admin 既有读端答出。`kind` 为 `shell` / `framework` 的行，以及 `builtin` 里未在 admin 工具注册表命中的名字，压根没有一行可查——抽屉这时只给这一行本身的计数，另起一条 `pages.callMetrics.profile.empty`（「这一项没有登记信息」）而不是编一份，因为系统内置工具的身份只存在于装配期的 Toolkit 里。`tool` 维度不按名查注册表（`AgentToolController` 的 `/{id}` 是 Long），走的是列表按名匹配，匹配不到同样落「没有登记信息」。
+- 时间序列的桶由服务端按区间选（`granularity=auto`），显式 `hour` / `day` / `week` / `month` 压过区间；页面上不给档位选择器，因为这条读端的桶从来不是读者要的口径，他要的是一条看得清的线。区间拉到 365 天上限时是 53 个周格而不是 8760 个小时格。
+- 不做 OTel / 分布式 trace；不做工具级成本核算；不给 `mcp_call_log` 加指标读端；不引入 ClickHouse 之类外部指标存储；不给 admin 引分布式锁。
 - 明细里的 `args_json` 可能含敏感字面值，默认截断 + 可用 `capture-payload=false` 整体关闭；本设计不做字段级脱敏。
-- 读侧：`/summary` 的 `agent` / `session` 两档行取自明细表，所选区间落在保留窗口（默认 90 天）之外的那几天必然答不全——明细按「已折算即释放」清理，`end` 拉到半年前时那一段只剩聚合；同一份响应里的卡片合计走 `selectWindowTotals`（聚合表），是这两档唯一不受窗口影响的数，下钻抽屉同样受区间限制。页面的提示按**维度**给而不是按区间长度给（`groupBy` 不是 `tool` 即显示，`harnax-webui/src/pages/call-metrics/index.tsx:436-443`）——区间整体落在 90 天内的 agent/session 也只看得到明细，这条口径不该被读成「区间 ≤ 90 天就完整」。
-- 团队主管的调用没有 `agent` 可归：`AgentSpec.attributableAgentId` 把 `LEAD_ID` 折成 null（`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/AgentSpec.kt:64-72`），主管背后本来就没有一行 `agent`，所以它的调用只出现在 `session` 维度与窗口卡片里。`agent` 维度那条 SQL 的 `HAVING subjectKey IS NOT NULL`（`harnax-entity/src/main/resources/mapper/ToolInvocationLogMapper.xml:103`）把这一整组排除在外，于是同一份 `/summary` 里「各行 calls 相加」会小于卡片的合计，差的正是主管那部分。
-- 折算：`rollUp()` 只重算「聚合表里还没有的那天」加上今天与昨天，`deleteRolledOut` 只看窗口，所以一个**已经折算过的日子后来才迟到的明细行会被直接释放、永不计入聚合**。这是有意付的代价：要造出迟到行得有时钟回拨超过一天，而为了它重开每个已折的日子等于每小时重读整张明细表（取舍写在 `ToolInvocationRollupService.kt:67-71`）。集成测试看不见这条——清理永远够不到还在窗口内的行。
+- 读侧：`/summary` 的 `agent` / `session` 两档行取自明细表，所选区间落在保留窗口（默认 90 天）之外的那几个小时必然答不全——明细按「已折算即释放」清理，区间往前推过窗口时那一段只剩聚合；同一份响应里的卡片合计走 `selectWindowTotals`（聚合表），是这两档唯一不受窗口影响的数，下钻抽屉同样受区间限制。`tool` / `mcp` / `cli` 三档读聚合，不受这条限制。页面的提示按**维度**给而不是按区间长度给（`harnax-webui/src/pages/call-metrics/dimensions.ts` 的 `readsAggregate` 为假才显示）——区间整体落在 90 天内的 agent/session 也只看得到明细，这条口径不该被读成「区间 ≤ 90 天就完整」。
+- 团队主管的调用没有 `agent` 可归：`AgentSpec.attributableAgentId` 把 `LEAD_ID` 折成 null（`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/AgentSpec.kt:64-72`），主管背后本来就没有一行 `agent`，所以它的调用只出现在 `session` 维度与窗口卡片里。`selectSubjectTotalsFromDetail` 在 agent 这条维度上的 `HAVING subjectKey IS NOT NULL`（`harnax-entity/src/main/resources/mapper/ToolInvocationLogMapper.xml`）把这一整组排除在外，于是同一份 `/summary` 里「各行 calls 相加」会小于卡片的合计，差的正是主管那部分。
+- 折算：`rollUp()` 只重算「聚合表里还没有这个小时的那些小时」再加上当前小时与上一小时，`deleteRolledOut` 只看窗口，所以一个**已经折算过、且已不再是当前小时或上一小时的那个整点后来才迟到的明细行会被直接释放、永不计入聚合**。这是有意付的代价：要造出迟到行得有时钟回拨超过一小时，而为了它重开每个已折的小时等于每小时重读整张保留窗口内的明细表（取舍写在 `ToolInvocationRollupService.rollUp()` 的 KDoc）。集成测试看不见这条——清理永远够不到还在窗口内的行。
 
 ## 13. 落点
 
 | 动作 | 位置 |
 |---|---|
-| 新增 | 中间件 `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/provider/middleware/ToolInvocationMiddleware.kt` + 同目录的 `ToolInvocationClassifier.kt`（`kind` 判定与 CLI 归因纯函数）；写入契约 `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/adaptor/ToolInvocationAdaptor.kt`；实现 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/ToolInvocationAdaptorImpl.kt`；两张表 `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/{ToolInvocationLog,ToolInvocationStats}.kt`（新实体跟 `TokenStats.kt`、`SkillUsage.kt` 一致，不带 `Entity` 后缀）+ `.../mapper/{ToolInvocationLogMapper,ToolInvocationStatsMapper}.kt` + `harnax-entity/src/main/resources/mapper/*.xml`；读端 `harnax-admin/.../controller/ToolMetricsController.kt` + `.../service/ToolMetricsService.kt` + `.../service/impl/ToolMetricsServiceImpl.kt` + `.../service/ToolInvocationRollupService.kt` + `admin/dto/` 的响应 DTO，IT 落 `harnax-admin/src/test/kotlin/com/agnetix/harnax/admin/it/`；DDL 落 `harnax-admin/src/main/resources/db/migration/V3__tool_invocation_metrics.sql`（前向增量，理由见 §2）与 `V4__drop_tool_call_log.sql`（同形状的第二条，`DROP TABLE IF EXISTS`）；前端 `harnax-webui/src/pages/call-metrics/index.tsx`（区间 `RangePicker` + 两枚抽屉）+ `.../call-metrics/lastSeen.ts` + `lastSeen.test.ts` + `.../call-metrics/subjectProfile.ts` + `subjectProfile.test.ts` + `.../call-metrics/SubjectDrawer.tsx` + `src/services/ant-design-pro/toolMetrics.ts` + `src/typings.d.ts` 的 `API.CallMetrics*` / `API.CallInvocationRow` / `API.AgentToolItem` 类型 + 两份 locale |
-| 修改 | `schema-test.sql`（并入两张新表的建表块、并删掉 `tool_call_log` 的建表块与它的三行夹具；`V1__init_schema.sql` 逐字未动）、`HarnessAgentLauncher`、`HarnessAgentBuilder`（toolkit 只读访问器）、`HarnessAutoConfiguration`、`SkillUsageAdaptor` / `SkillUsageAdaptorImpl` / `AdminApiClient`、`HarnaxAdminApplication`（`@EnableScheduling`）、两侧 `application.yml`、`config/routes.ts`、`src/services/ant-design-pro/session.ts`（新增 `getSessionConfig`：会话档案只有 `/api/admin/sessions/{sessionId}/config` 这一条按 id 字符串查的读端点）、技能用量页文案、`prod_doc` 双语包（工具能力 / MCP 管理 / CLI 包 / 技能）与 `docs/deploy-harnax-admin.md`（保留窗口、两条前向增量与既有库免重建、`tool_call_log` 由 V4 代清因此无手工步骤） |
+| 新增 | 中间件 `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/provider/middleware/ToolInvocationMiddleware.kt` + 同目录的 `ToolInvocationClassifier.kt`（`kind` 判定与 CLI 归因纯函数）；写入契约 `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/adaptor/ToolInvocationAdaptor.kt`；实现 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/ToolInvocationAdaptorImpl.kt`；两张表 `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/{ToolInvocationLog,ToolInvocationStats}.kt`（新实体跟 `TokenStats.kt`、`SkillUsage.kt` 一致，不带 `Entity` 后缀）+ `.../mapper/{ToolInvocationLogMapper,ToolInvocationStatsMapper}.kt` + `harnax-entity/src/main/resources/mapper/*.xml`；读端 `harnax-admin/.../controller/ToolMetricsController.kt` + `.../service/ToolMetricsService.kt` + `.../service/impl/ToolMetricsServiceImpl.kt` + `.../service/ToolInvocationRollupService.kt` + `admin/dto/` 的响应 DTO，IT 落 `harnax-admin/src/test/kotlin/com/agnetix/harnax/admin/it/`；DDL 落 `harnax-admin/src/main/resources/db/migration/V3__tool_invocation_metrics.sql`（前向增量，理由见 §2）、`V4__drop_tool_call_log.sql`（同形状的第二条，`DROP TABLE IF EXISTS`）与 `V5__tool_invocation_stats_hourly.sql`（第三条：先清空聚合表再把 `stat_date` 改名成 `stat_hour` 并换上小时的两条键，形状与理由见 §2.2）；前端 `harnax-webui/src/pages/call-metrics/index.tsx`（区间 `RangePicker` + 两枚抽屉）+ `.../call-metrics/dimensions.ts`（tab→维度矩阵与「这一档读哪张表」）+ `.../call-metrics/lastSeen.ts` + `lastSeen.test.ts` + `.../call-metrics/subjectProfile.ts` + `subjectProfile.test.ts` + `.../call-metrics/SubjectDrawer.tsx` + `src/services/ant-design-pro/toolMetrics.ts` + `src/typings.d.ts` 的 `API.CallMetrics*` / `API.CallInvocationRow` / `API.AgentToolItem` 类型 + 两份 locale |
+| 修改 | `schema-test.sql`（并入两张新表的建表块、并删掉 `tool_call_log` 的建表块与它的三行夹具；聚合表那块要与 V5 同步成 `stat_hour` 和小时的两条键，改漏由 `SchemaBaselineDriftIT` 双向拦下；`V1__init_schema.sql` 逐字未动）、`HarnessAgentLauncher`、`HarnessAgentBuilder`（toolkit 只读访问器）、`HarnessAutoConfiguration`、`SkillUsageAdaptor` / `SkillUsageAdaptorImpl` / `AdminApiClient`、`HarnaxAdminApplication`（`@EnableScheduling`）、两侧 `application.yml`、`config/routes.ts`、`src/services/ant-design-pro/session.ts`（新增 `getSessionConfig`：会话档案只有 `/api/admin/sessions/{sessionId}/config` 这一条按 id 字符串查的读端点）、技能用量页文案、`prod_doc` 双语包（工具能力 / MCP 管理 / CLI 包 / 技能）与 `docs/deploy-harnax-admin.md`（保留窗口、三条前向增量与既有库免重建、`tool_call_log` 由 V4 代清因此无手工步骤、V5 会清空 `tool_invocation_stats` 并从保留窗口重新折出小时行） |
 | 删除 | §10 清单 |

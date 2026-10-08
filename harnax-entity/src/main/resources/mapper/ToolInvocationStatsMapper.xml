@@ -8,28 +8,29 @@
         sum would stop equalling `calls` (I4).
 
         `subject_id` is written with a COALESCE rather than left null, because the unique key treats two
-        NULLs as different rows: a NULL subject would let the same day insert twice.
+        NULLs as different rows: a NULL subject would let the same hour insert twice.
         The subject is also part of the grouping key, because it is what an operator reads the row as: one
         agent mounts several MCP servers, and a single `mcp` group per tenant would leave the highest server
-        id holding every call of that day. The tool name is part of it too, and for every kind: one server
+        id holding every call of that hour. The tool name is part of it too, and for every kind: one server
         exposes several tools and one agent has several builtins, so a group that dropped the name would fold
         tools the page lists apart into one row, and a reader could not tell which tool of a server answered.
         The same expression is selected and grouped, so the value is the group's own key rather than an
         aggregate taken over it.
-        The day is bounded by an instant range rather than by `DATE(l.ts) = #{statDate}`: a function over the
-        column is not sargable, so the optimizer cannot use it to narrow the scan.
+        The hour is bounded by an instant range rather than by `DATE_FORMAT(l.ts, '%Y-%m-%d %H:00:00') =
+        #{statHour}`: a function over the column is not sargable, so the optimizer cannot use it to narrow
+        the scan.
         The update list covers every column the SELECT produces, including the counters, because this is a
         recompute and not an increment.
     -->
-    <insert id="upsertDay">
+    <insert id="upsertHour">
         INSERT INTO tool_invocation_stats (
-        stat_date, tenant_id, kind, subject_id, tool_name,
+        stat_hour, tenant_id, kind, subject_id, tool_name,
         calls, successes, errors, denials, interruptions,
         sum_duration_ms, max_duration_ms,
         le_100ms, le_500ms, le_2s, le_10s, le_30s, gt_30s
         )
         SELECT
-        #{statDate},
+        #{statHour},
         l.tenant_id,
         l.kind,
         CASE
@@ -52,8 +53,8 @@
         SUM(CASE WHEN l.duration_ms &gt; 10000 AND l.duration_ms &lt;= 30000 THEN 1 ELSE 0 END),
         SUM(CASE WHEN l.duration_ms &gt; 30000 THEN 1 ELSE 0 END)
         FROM tool_invocation_log l
-        WHERE l.ts &gt;= #{statDate}
-        AND l.ts &lt; DATE_ADD(#{statDate}, INTERVAL 1 DAY)
+        WHERE l.ts &gt;= #{statHour}
+        AND l.ts &lt; DATE_ADD(#{statHour}, INTERVAL 1 HOUR)
         AND l.tenant_id IS NOT NULL
         GROUP BY l.tenant_id, l.kind,
         CASE
@@ -80,7 +81,9 @@
 
     <!--
         The three reads the metrics page answers from this table. Each names a tenant, and each bounds the
-        window through `stat_date` rather than through an instant, because that column is a DATE.
+        window with the same two hour starts the detail reads are given: `stat_hour` is a DATETIME whose
+        minutes and seconds are always zero, so the bounds compare directly against the column, and its
+        inclusive upper hour is the same sixty minutes the detail side covers with `< to + 1 hour`.
 
         The thirteen aggregate columns live in one fragment, and one fragment only: the grouped read and the
         window read have to count the same thing in the same way, because the page shows a card beside rows
@@ -112,19 +115,50 @@
         SELECT
         s.kind AS kind,
         s.subject_id AS subjectId,
-        s.tool_name AS toolName,
+        <!-- The mcp and cli dimensions group away from the tool name, and a constant keeps the column in the
+             result without joining the GROUP BY: under ONLY_FULL_GROUP_BY a bare s.tool_name that is not
+             grouped would fail the whole statement, while omitting the column would break the map keys the
+             service reads. -->
+        <choose>
+            <when test="dimension == 'mcp' or dimension == 'cli'">'' AS toolName,</when>
+            <otherwise>s.tool_name AS toolName,</otherwise>
+        </choose>
+        <!-- The subject's own registered name, with the id as text behind it: a server or package that was
+             deleted leaves the page no name at all, and an empty cell there reads as a bug in the count. -->
+        <choose>
+            <when test="dimension == 'mcp'">COALESCE(MAX(m.name), CAST(s.subject_id AS CHAR)) AS subjectName,</when>
+            <when test="dimension == 'cli'">COALESCE(MAX(c.name), CAST(s.subject_id AS CHAR)) AS subjectName,</when>
+            <otherwise>s.tool_name AS subjectName,</otherwise>
+        </choose>
+        <!-- Every row says which server or package answered it, so a tool row under the MCP tab is not just a
+             tool name. Rows of another kind get the empty string, since they have no owner to name. -->
+        CASE
+        WHEN s.kind = 'mcp' THEN COALESCE(MAX(m.name), '')
+        WHEN s.kind = 'cli' THEN COALESCE(MAX(c.name), '')
+        ELSE ''
+        END AS parentName,
         <include refid="subjectTotalsColumns"/>,
-        <!-- CAST keeps this a DATETIME so the map hands back a LocalDateTime rather than a java.sql.Date,
-             which would be read through the JVM default zone. -->
-        CAST(MAX(s.stat_date) AS DATETIME) AS lastSeenAt
+        <!-- A real hour now: the column is already a DATETIME, so no CAST is needed to keep the map handing
+             back a LocalDateTime rather than a java.sql.Date read through the JVM default zone — and a CAST
+             back to DATE would drop the hour the page is reading this for. -->
+        MAX(s.stat_hour) AS lastSeenAt
         FROM tool_invocation_stats s
+        <!-- Both joins are on a primary key and are guarded by `kind`, so a row can meet at most one of them
+             and neither can add a row to a group. The name is wrapped in MAX because ONLY_FULL_GROUP_BY wants
+             every selected column grouped or aggregated, and an aggregate over a column that is already one
+             value per group is the same value — this leaves the GROUP BY naming only the grouping keys. Each
+             table is bound to the row's own tenant where it has a tenant_id; `cli` is a global package
+             registry and carries none, so its join has no tenant predicate to write. -->
+        LEFT JOIN mcp_server m ON s.kind = 'mcp' AND m.id = s.subject_id AND m.tenant_id = s.tenant_id
+        LEFT JOIN cli c ON s.kind = 'cli' AND c.id = s.subject_id
         WHERE s.tenant_id = #{tenantId}
-        AND s.stat_date &gt;= #{from}
-        AND s.stat_date &lt;= #{to}
+        AND s.stat_hour &gt;= #{from}
+        AND s.stat_hour &lt;= #{to}
         <if test="kind != null and kind != ''">
             AND s.kind = #{kind}
         </if>
-        GROUP BY s.kind, s.subject_id, s.tool_name
+        GROUP BY s.kind, s.subject_id
+        <if test="dimension == 'tool'">, s.tool_name</if>
         ORDER BY calls DESC, lastSeenAt DESC
     </select>
 
@@ -133,8 +167,8 @@
         <include refid="subjectTotalsColumns"/>
         FROM tool_invocation_stats s
         WHERE s.tenant_id = #{tenantId}
-        AND s.stat_date &gt;= #{from}
-        AND s.stat_date &lt;= #{to}
+        AND s.stat_hour &gt;= #{from}
+        AND s.stat_hour &lt;= #{to}
         <if test="kind != null and kind != ''">
             AND s.kind = #{kind}
         </if>
@@ -143,14 +177,17 @@
     <select id="selectTimeSeries" resultType="map">
         SELECT
         <choose>
+            <when test="granularity == 'hour'">
+                CAST(DATE_FORMAT(s.stat_hour, '%Y-%m-%d %H:00:00') AS DATETIME) AS timePoint
+            </when>
             <when test="granularity == 'week'">
-                CAST(DATE_FORMAT(DATE_SUB(s.stat_date, INTERVAL WEEKDAY(s.stat_date) DAY), '%Y-%m-%d 00:00:00') AS DATETIME) AS timePoint
+                CAST(DATE_FORMAT(DATE_SUB(s.stat_hour, INTERVAL WEEKDAY(s.stat_hour) DAY), '%Y-%m-%d 00:00:00') AS DATETIME) AS timePoint
             </when>
             <when test="granularity == 'month'">
-                CAST(DATE_FORMAT(s.stat_date, '%Y-%m-01 00:00:00') AS DATETIME) AS timePoint
+                CAST(DATE_FORMAT(s.stat_hour, '%Y-%m-01 00:00:00') AS DATETIME) AS timePoint
             </when>
             <otherwise>
-                CAST(DATE_FORMAT(s.stat_date, '%Y-%m-%d 00:00:00') AS DATETIME) AS timePoint
+                CAST(DATE_FORMAT(s.stat_hour, '%Y-%m-%d 00:00:00') AS DATETIME) AS timePoint
             </otherwise>
         </choose>
         ,
@@ -165,8 +202,8 @@
         COALESCE(SUM(s.sum_duration_ms), 0) AS sumDurationMs
         FROM tool_invocation_stats s
         WHERE s.tenant_id = #{tenantId}
-        AND s.stat_date &gt;= #{from}
-        AND s.stat_date &lt;= #{to}
+        AND s.stat_hour &gt;= #{from}
+        AND s.stat_hour &lt;= #{to}
         <if test="kind != null and kind != ''">
             AND s.kind = #{kind}
         </if>

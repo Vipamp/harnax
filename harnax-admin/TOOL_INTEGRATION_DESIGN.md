@@ -101,9 +101,9 @@
 
 写入经 `ToolInvocationAdaptor`（tools-sdk 的 `fun interface`）到 `harnax-agent-service` 的 `ToolInvocationAdaptorImpl`，那是一个带界队列的后台批量写线程：队列满即丢弃并计数，不阻塞回合。
 
-`harnax-admin` 每小时把过完的那天折进日聚合 `tool_invocation_stats`（唯一键 `(stat_date, tenant_id, kind, subject_id, tool_name)`，六个耗时桶 + 四终态计数 + `sum_duration_ms`），明细按保留天数清理，聚合永久保留。
+`harnax-admin` 每小时把「聚合表里还没有的那些小时」逐小时折进小时聚合 `tool_invocation_stats`（每次再带上当前小时与上一小时；唯一键 `(stat_hour, tenant_id, kind, subject_id, tool_name)`，六个耗时桶 + 四终态计数 + `sum_duration_ms`），明细按保留天数清理，聚合永久保留。
 
-读侧是三个 GET：`/api/admin/tool-metrics/summary`、`/time-series`、`/invocations`，租户一律取自令牌而不是查询参数；按工具维度读聚合表，按智能体 / 会话维度读明细表，后者受保留窗口限制。`mcp_call_log` 不在这条链上，它是 MCP 按用户授权的账本，不是指标源。
+读侧是三个 GET：`/api/admin/tool-metrics/summary`、`/time-series`、`/invocations`，租户一律取自令牌而不是查询参数，窗口由 `start` / `end` 给到小时；按工具 / MCP / CLI 三个档位读聚合表，按智能体 / 会话两个档位读明细表，后者受保留窗口限制。`mcp_call_log` 不在这条链上，它是 MCP 按用户授权的账本，不是指标源。
 
 ### 2.5 五张表的写入方与生命周期
 
@@ -112,8 +112,8 @@
 | `agent_tool` | 一个 `@Tool` 方法 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/registrar/BuiltinToolAutoRegistrar.kt:134-179` | 插入与刷新，从不删除：Mapper 接口没有 delete 方法（`harnax-entity/src/main/kotlin/com/agnetix/harnax/mapper/AgentToolMapper.kt:14-39`），XML 没有 delete 语句（`harnax-entity/src/main/resources/mapper/AgentToolMapper.xml`） |
 | `agent_tool_env_param` | 工具的一个环境参数定义 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/registrar/BuiltinToolAutoRegistrar.kt:228-301` | 随定义同步：命中则改（`:259-266`）、新增则插（`:267-280`）、当前声明集合里没有的则删（`:284-292`） |
 | `agent_tool_binding` | 一个 agent 对一个工具的授权与取值 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AgentServiceImpl.kt:403-436` | 保存 agent 时整组重写（`:404`、`:434`）；删除 agent 时随 agent 清理（`:249`） |
-| `tool_invocation_log` | 一次工具调用 | `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/ToolInvocationAdaptorImpl.kt:167-171`（`batchInsert`），事件由 `harnax-agent/harnax-harness-core` 的 `ToolInvocationMiddleware` 发出 | 超出保留窗口的行由 admin 的每小时任务删除（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/ToolInvocationRollupService.kt:94`，`deleteRolledOut`）：带租户归属的以「那一天已折进聚合」为前提，`tenant_id IS NULL` 的行没有聚合可等、过窗即删；两种都不随 session 或 agent 清理 |
-| `tool_invocation_stats` | 一天 × 租户 × 来源 × 归属主体 × 工具 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/ToolInvocationRollupService.kt:89`（`upsertDay`） | 永久保留；重算某天时该天的行整行重写，无删除路径 |
+| `tool_invocation_log` | 一次工具调用 | `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/ToolInvocationAdaptorImpl.kt`（`batchInsert`），事件由 `harnax-agent/harnax-harness-core` 的 `ToolInvocationMiddleware` 发出 | 超出保留窗口的行由 admin 的每小时任务删除（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/ToolInvocationRollupService.kt` 的 `deleteRolledOut`）：带租户归属的以「那个小时已折进聚合」为前提，`tenant_id IS NULL` 的行没有聚合可等、过窗即删；两种都不随 session 或 agent 清理 |
+| `tool_invocation_stats` | 一个小时 × 租户 × 来源 × 归属项 × 工具 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/ToolInvocationRollupService.kt` 的 `rollUp` 走 `upsertHour` | 永久保留；重算某小时时该小时的行整行重写，无删除路径 |
 
 工具行永不消失，`agent_tool` 因此会随代码声明的累积变长；页面按 `active = 1` 全量列出（`harnax-entity/src/main/resources/mapper/AgentToolMapper.xml:65-67`），其中可能包含交付侧挡下的名字（见 3.4）。
 
@@ -259,7 +259,7 @@ SPI 的实现两跳：契约 `ToolConfigAdaptor.getToolConfig(toolId)`（`harnax
 
 事件经 `ToolInvocationAdaptor`（tools-sdk 的 `fun interface`，`harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/adaptor/ToolInvocationAdaptor.kt:17-19`）到 `harnax-agent-service` 的 `ToolInvocationAdaptorImpl`：一个带界队列加一条后台批量写线程，默认容量 512、每 200 毫秒一趟、每批 64 行（`harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/ToolInvocationAdaptorImpl.kt:36-40`）。队列满或写线程已停即丢弃新事件并计数（`:82-86`），不阻塞回合；`emit` 不等数据库也不抛异常。入参与结果正文在写入侧按 `harness.metrics.invocation.capture-max-chars`（默认 2000）截断（`:40`），关掉 `harness.metrics.invocation.capture-payload` 则两列留 NULL（`:39`）。这四个数值都在构造期夹进合法区间并记 WARN，越界不会让服务起不来（`:57-64`）。
 
-`tool_invocation_log` 一行一次调用（`harnax-admin/src/main/resources/db/migration/V1__init_schema.sql:759-784`）：`kind` 标来源，`tool_name` 是模型看到的那个名字（`kind=cli` 时是命中的命令名），`mcp_id` / `cli_id` 只在对应来源上填，`start_time` / `end_time` / `ts` 是 `datetime(3)`——秒级精度会把同一秒里的两次调用塌成一瞬。生命周期见 2.5：admin 每小时把过完的那天折进 `tool_invocation_stats`，超出保留窗口的行随后释放——带租户归属的以「那一天已折进聚合」为前提，`tenant_id IS NULL` 的行过窗即删。敏感值应当在工具方法内部避免回显，因为入参与结果正文都会进库。
+`tool_invocation_log` 一行一次调用（建表在 `harnax-admin/src/main/resources/db/migration/V3__tool_invocation_metrics.sql`）：`kind` 标来源，`tool_name` 是模型看到的那个名字（`kind=cli` 时是命中的命令名），`mcp_id` / `cli_id` 只在对应来源上填，`start_time` / `end_time` / `ts` 是 `datetime(3)`——秒级精度会把同一秒里的两次调用塌成一瞬。生命周期见 2.5：admin 每小时把过完的那一小时折进 `tool_invocation_stats`，超出保留窗口的行随后释放——带租户归属的以「那个小时已折进聚合」为前提，`tenant_id IS NULL` 的行过窗即删。敏感值应当在工具方法内部避免回显，因为入参与结果正文都会进库。
 
 ## 六、对外 API 面
 
@@ -301,7 +301,7 @@ SPI 的实现两跳：契约 `ToolConfigAdaptor.getToolConfig(toolId)`（`harnax
 
 ### 6.6 调用指标的读接口
 
-三个只读 GET 挂在 `/api/admin/tool-metrics`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/ToolMetricsController.kt:27`、`:29`）：`/summary`（`:35`）按主体给窗口内合计，`groupBy` 取 `tool`（默认）/ `agent` / `session`；`/time-series`（`:54`）按 `day` / `week` / `month` 分档给趋势，空档补零；`/invocations`（`:75`）给单次调用明细。三个端点都没有租户形参，租户一律取自令牌；`days` 都是 1..365。`tool` 维度读日聚合 `tool_invocation_stats`，`agent` 与 `session` 两个维度读明细 `tool_invocation_log`，因此后两者受保留窗口限制——窗口之外的调用已在折算之后释放，页面只能问到窗口内的。页面在 `harnax-webui` 的「监控与治理」分组下（`harnax-webui/src/pages/call-metrics`）。
+三个只读 GET 挂在 `/api/admin/tool-metrics`（声明在 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/ToolMetricsController.kt` 的类上）：`getSummary`（`/summary`）按分组档位给窗口内合计，`getTimeSeries`（`/time-series`）给趋势，`getInvocations`（`/invocations`）给单次调用明细。三个端点都没有租户形参，租户一律取自令牌；窗口都由 `start` / `end` 给到小时（`yyyy-MM-dd HH:mm`，两端都含），缺省 `end` 是当前小时、`start` 是它之前第 720 小时。`groupBy` 取 `tool`（默认）/ `mcp` / `cli` / `agent` / `session`，`granularity` 取 `auto`（默认）/ `hour` / `day` / `week` / `month`，`auto` 按跨度选桶（48 小时内按小时、92 天内按天、更长按周），空档补零。`tool` / `mcp` / `cli` 三档读小时聚合 `tool_invocation_stats`，`agent` 与 `session` 两档读明细 `tool_invocation_log`，因此后两者受保留窗口限制——窗口之外的调用已在折算之后释放，页面只能问到窗口内的。页面在 `harnax-webui` 的「监控与治理」分组下（`harnax-webui/src/pages/call-metrics`），三个 tab 各自给出本 tab 的档位，表格首列按当前档位实名。
 
 ## 七、环境参数绑定
 

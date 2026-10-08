@@ -287,7 +287,7 @@ fun chat(@RequestBody request: ChatRequest): Flux<ChatEvent>
    - ProcessLogEntity: 过程日志实体
    - TokenStats: Token 统计实体
    - ToolInvocationLog: 工具调用明细实体
-   - ToolInvocationStats: 工具调用日聚合实体
+   - ToolInvocationStats: 工具调用小时聚合实体
    - SysUser: 用户实体
    - SysTokenBlacklist: Token 黑名单实体
    - Tenant: 租户实体

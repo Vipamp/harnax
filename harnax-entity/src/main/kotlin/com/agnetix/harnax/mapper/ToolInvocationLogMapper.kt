@@ -12,6 +12,11 @@ import org.apache.ibatis.annotations.Param
  * is no value that means "all tenants". The rollup's three statements are the exception and are commented
  * at their own methods, because they run over the whole server rather than over one caller's window.
  *
+ * The two window reads share one pair of bounds, both `yyyy-MM-dd HH:mm:ss`: `from` is the window's opening
+ * hour and `to` is one hour past its closing hour, compared with `>=` and `<`. That exclusive upper side
+ * is what makes this table answer the same sixty minutes as one `stat_hour` row of the aggregate, whose own
+ * bound is the closing hour itself.
+ *
  * SQL lives in `resources/mapper/ToolInvocationLogMapper.xml`.
  */
 @Mapper
@@ -28,20 +33,20 @@ interface ToolInvocationLogMapper {
     ): Int
 
     /**
-     * Days whose details have no aggregate row yet, oldest first.
+     * Hours whose details have no aggregate row yet, oldest first.
      *
-     * This is a membership test and not a work queue: a day folded earlier is not named again even when its
-     * details have moved on since, so the fold stays complete for the current and the previous day only
+     * This is a membership test and not a work queue: an hour folded earlier is not named again even when its
+     * details have moved on since, so the fold stays complete for the current and the previous hour only
      * because the hourly job of Task 10 rolls both on every run, whatever this list returns.
      *
      * Detail rows with no tenant are excluded on purpose: the aggregate table's `tenant_id` is `NOT NULL`,
-     * so no such day would ever gain a row to be compared against, and every hourly run would report it
-     * pending. Those rows are still pruned by [deleteRolledOut], which names them as its one exception.
+     * so no such hour would ever gain a row to be compared against, and every run would report it pending.
+     * Those rows are still pruned by [deleteRolledOut], which names them as its one exception.
      *
-     * @param floor Oldest day to consider, `yyyy-MM-dd`; normally the retention window's edge
-     * @return Pending days, oldest first, as `yyyy-MM-dd`
+     * @param floor Oldest hour to consider, `yyyy-MM-dd HH:mm:ss`; normally the retention window's edge
+     * @return Pending hours, oldest first, as `yyyy-MM-dd HH:mm:ss`
      */
-    fun selectUnrolledDates(
+    fun selectUnrolledHours(
         @Param("floor") floor: String,
     ): List<String>
 
@@ -49,7 +54,7 @@ interface ToolInvocationLogMapper {
      * Prune detail rows older than [before], and only those the rollup has already folded.
      *
      * The gate is the aggregate table rather than the date arithmetic because that is the only way I6
-     * survives a missed run: a day that never got rolled up stays queryable instead of vanishing. Rows
+     * survives a missed run: an hour that never got rolled up stays queryable instead of vanishing. Rows
      * with no tenant are the exception and leave on the window alone — nothing will ever fold them.
      *
      * @param before Cutoff instant, `yyyy-MM-dd HH:mm:ss`
