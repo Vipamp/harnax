@@ -56,7 +56,7 @@
 - I1 `stat_hour` 恒为整点：写入侧只有 `upsertHour` 一处产行，它的 `SELECT` 直接把参数列写成传入整点。
 - I2 一小时一 (tenant, kind, subject, tool) 至多一行：由唯一键与 upsert 一起保证。
 - I3 任一跨度的窗口，`calls = successes + errors + denials + interruptions`：四种终局互斥且穷尽，粒度换档不动这条。
-- I4 桶半开区间（下闭上开）不动，桶和恒等于 `calls`。
+- I4 桶闭右开左不动，桶和恒等于 `calls`。
 
 ## 3. 折算与清理
 

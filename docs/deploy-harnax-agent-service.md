@@ -155,7 +155,7 @@
 | `HARNAX_AUTH_TOKEN_TTL_SECONDS` | `300` | 出向服务间 token 有效期 |
 | `JAVA_OPTS` | compose 里 `-Xms256m -Xmx1g …` | 只作用于容器（Dockerfile 的 ENTRYPOINT 引用它）；注意 compose 同时给该容器 2048M 内存上限，堆外还要留余量 |
 
-上面四行覆盖六个变量，它们在 `application.yml` 里都有默认值，compose 只注入前两行那两枚开关；其余四项要覆盖就直接设同名环境变量——yml 侧本来就写成了 `${HARNESS_METRICS_INVOCATION_QUEUE_CAPACITY:512}` 这种占位形状，宽松绑定认它们。明细行由 `harnax-admin` 侧的每小时任务折进日聚合，保留窗口与折算开关都在对面，见 `docs/deploy-harnax-admin.md` 的「调用指标折算」。
+上面四行覆盖六个变量，它们在 `application.yml` 里都有默认值，compose 只注入前两行那两枚开关；其余四项要覆盖就直接设同名环境变量——yml 侧本来就写成了 `${HARNESS_METRICS_INVOCATION_QUEUE_CAPACITY:512}` 这种占位形状，宽松绑定认它们。明细行由 `harnax-admin` 侧的每小时任务折进小时聚合，保留窗口与折算开关都在对面，见 `docs/deploy-harnax-admin.md` 的「调用指标折算」。
 
 ---
 

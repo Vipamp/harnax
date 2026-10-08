@@ -189,7 +189,7 @@ Bean 名称**必须**显式指定，遵循 `{name}-tool-box` 命名模式：
 
 ## 调用记录
 
-工具方法不需要为留痕做任何包装：一次调用的入参、结果、耗时与终态由 `harnax-harness-core` 的 `ToolInvocationMiddleware` 记录。它在 `onActing` 里先拿到模型请求的调用，再在同一条结果流上等到终态事件，两半都在手边，不需要工具配合。终态到达时组一行 `ToolInvocationEvent` 交 `ToolInvocationAdaptor`，落到明细 `tool_invocation_log`，再由 admin 每小时把过完的那天折进日聚合 `tool_invocation_stats`；页面「调用监控」的汇总与趋势读聚合表，下钻单次调用读明细表。工具正常返回结果即可；方法抛出的异常由框架收敛成 `ERROR` 终态，那一行照样记下来，终态只取 `SUCCESS` / `ERROR` / `DENIED` / `INTERRUPTED` 四个。
+工具方法不需要为留痕做任何包装：一次调用的入参、结果、耗时与终态由 `harnax-harness-core` 的 `ToolInvocationMiddleware` 记录。它在 `onActing` 里先拿到模型请求的调用，再在同一条结果流上等到终态事件，两半都在手边，不需要工具配合。终态到达时组一行 `ToolInvocationEvent` 交 `ToolInvocationAdaptor`，落到明细 `tool_invocation_log`，再由 admin 每小时把过完的那一小时折进小时聚合 `tool_invocation_stats`；页面「调用监控」的汇总与趋势读聚合表，下钻单次调用读明细表。工具正常返回结果即可；方法抛出的异常由框架收敛成 `ERROR` 终态，那一行照样记下来，终态只取 `SUCCESS` / `ERROR` / `DENIED` / `INTERRUPTED` 四个。
 
 ```kotlin
 // 有入参的工具：入参由中间件从调用请求里取，不需要方法自己交出去
