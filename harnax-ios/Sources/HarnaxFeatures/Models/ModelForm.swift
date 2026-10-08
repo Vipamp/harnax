@@ -26,6 +26,7 @@ public final class ModelFormModel: ObservableObject {
     /// The price as typed, kept as text because a half-typed "1." is not a number yet but is not an error
     /// worth complaining about on every keystroke.
     @Published public var priceText: String
+    @Published public var contextWindowText: String
     @Published public var thinking: ThinkingMode
     @Published public var supportsInternet = false
     @Published public var supportsTool = false
@@ -51,12 +52,13 @@ public final class ModelFormModel: ObservableObject {
         detail = editing?.description ?? ""
         modelType = editing?.modelType ?? ModelType.defaultValue.rawValue
         priceText = ModelPresenter.priceText(editing?.price) ?? ""
+        contextWindowText = editing?.contextWindow.map(String.init) ?? ""
         thinking = editing?.thinking ?? .off
         supportsInternet = editing?.supportsInternet ?? false
         supportsTool = editing?.supportsTool ?? false
         supportsMcp = editing?.supportsMcp ?? false
         supportsVision = editing?.supportsVision ?? false
-        // A create is private to its creator, as the console's model form does (`ModelForm.tsx:60`); the
+        // A create is private to its creator, as the console's model form does (`ModelForm.tsx:61`); the
         // provider form defaults to shared with the rest of the tenant instead, and that asymmetry is the
         // console's, not a slip. Either way the tenant itself is the outer wall.
         isPublic = editing?.isShared ?? false
@@ -104,9 +106,19 @@ public final class ModelFormModel: ObservableObject {
         return Double(text.replacingOccurrences(of: ",", with: "."))
     }
 
+    /// Blank is a legal answer and means *no answer*: a create leaves the window to the runtime's inference
+    /// and an update keeps the stored value (`ModelServiceImpl.kt:132,186`). Digits only, because the column
+    /// is an `Int` and the server floors it at 1 — a truncated `12.8k` would be a different number than the
+    /// one typed.
+    public var parsedContextWindow: Int? {
+        let text = contextWindowText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        return Int(text)
+    }
+
     /// The local half of the create DTO's constraints: both names `@NotBlank @Size 1-100`, the price
-    /// `@DecimalMin 0.0`, the description capped by the column
-    /// (`ModelCreateRequest.kt:11-22,52-54`).
+    /// `@DecimalMin 0.0`, the window `@Min 1`, the description capped by the column
+    /// (`ModelCreateRequest.kt:11-22,52-54,56-58`).
     public func validate() -> String? {
         guard let title = hxPresented(name) else { return hx("model.validation.name") }
         if title.count > 100 { return hx("model.validation.name.maxLength", 100) }
@@ -114,6 +126,10 @@ public final class ModelFormModel: ObservableObject {
         if technical.count > 100 { return hx("model.validation.technicalName.maxLength", 100) }
         guard let price = parsedPrice else { return hx("model.validation.price") }
         if price < 0 { return hx("model.validation.price.negative") }
+        let window = contextWindowText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !window.isEmpty, (parsedContextWindow ?? 0) < 1 {
+            return hx("model.validation.contextWindow")
+        }
         if detail.count > 500 { return hx("model.validation.description.maxLength", 500) }
         return nil
     }
@@ -133,6 +149,7 @@ public final class ModelFormModel: ObservableObject {
             supportsMcp: supportsMcp,
             supportsVision: supportsVision,
             price: parsedPrice ?? 0,
+            contextWindow: parsedContextWindow,
             isPublic: isPublic
         )
     }
@@ -201,6 +218,10 @@ public struct ModelFormSheet: View {
                     HXField("model.field.technicalName", text: $vm.technicalName, systemImage: "cpu")
                     typePicker
                     HXField("model.field.price", text: $vm.priceText, systemImage: "number", kind: .number)
+                    HXField("model.field.contextWindow", text: $vm.contextWindowText, systemImage: "ruler", kind: .number)
+                    HXText("model.field.contextWindow.note")
+                        .font(.caption)
+                        .foregroundStyle(Color.hx(.textTertiary))
                     HXField("model.field.description", text: $vm.detail, systemImage: "text.justify")
 
                     HXSectionHeader("model.section.capabilities")

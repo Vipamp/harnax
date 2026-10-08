@@ -65,6 +65,11 @@ public struct ModelSaveRequest: Encodable, Equatable, Sendable {
     public var supportTool: Int
     public var supportMcp: Int
     public var supportVision: Int
+    /// Token budget of one call. Optional and nil-dropped on purpose: an empty field means *no answer*, which
+    /// a create reads as "infer it from the model name" (`ModelServiceImpl.kt:132`) and an update reads as
+    /// "leave the stored window alone" (`:186`). A 0 in its place would be refused outright
+    /// (`@field:Min(value = 1)` on both DTOs).
+    public var contextWindow: Int?
     public var price: Double
     public var isPublic: Int
 
@@ -80,6 +85,7 @@ public struct ModelSaveRequest: Encodable, Equatable, Sendable {
         supportsMcp: Bool,
         supportsVision: Bool,
         price: Double,
+        contextWindow: Int?,
         isPublic: Bool
     ) {
         self.name = name
@@ -97,6 +103,7 @@ public struct ModelSaveRequest: Encodable, Equatable, Sendable {
         self.supportMcp = isChat ? supportsMcp.hxInt : 0
         self.supportVision = isChat ? supportsVision.hxInt : 0
         self.price = price
+        self.contextWindow = contextWindow
         self.isPublic = isPublic.hxInt
     }
 

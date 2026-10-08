@@ -554,6 +554,8 @@
 "model.field.technicalName" = "模型名称";
 "model.field.modelType" = "模型类型";
 "model.field.price" = "单价（元 / 百万 token）";
+"model.field.contextWindow" = "上下文窗口（token）";
+"model.field.contextWindow.note" = "留空表示由运行时按模型名推断；修改已有模型时，留空会保留已存的窗口。";
 "model.field.description" = "描述";
 "model.field.public" = "公开";
 "model.validation.name" = "请填写名称。";
@@ -566,6 +568,7 @@
 "model.validation.url" = "基础地址格式不正确。";
 "model.validation.price" = "请填写单价，留空按 0 计。";
 "model.validation.price.negative" = "单价不能为负数。";
+"model.validation.contextWindow" = "上下文窗口需为不小于 1 的整数 token 数。";
 
 /* ---- 技能：来源类型 ---- */
 "skill.type.git" = "Git";

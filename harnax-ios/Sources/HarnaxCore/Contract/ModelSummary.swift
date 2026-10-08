@@ -2,7 +2,7 @@ import Foundation
 
 /// One row of `GET /api/admin/models/page` — the second level of the model screen.
 ///
-/// Backend: `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ModelResponse.kt:11-51` declares
+/// Backend: `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ModelResponse.kt:11-53` declares
 /// every field `var x: T? = null`, so each key may arrive as `null` or go missing entirely under
 /// `default-property-inclusion: non_null`. Optionality is therefore mirrored field by field, and a row
 /// with no id still renders.
@@ -19,7 +19,7 @@ public struct ModelSummary: Decodable, Identifiable, Equatable, Sendable {
     public let providerName: String?
     public let description: String?
     public let modelType: String?
-    /// Server-computed from the five capability columns (`ModelResponse.kt:79-87`); iOS reads the columns
+    /// Server-computed from the five capability columns (`ModelResponse.kt:82-89`); iOS reads the columns
     /// themselves, which is the same rule and survives a page that omits the computed key.
     public let tags: [String]?
     public let supportInternet: Int?
@@ -28,7 +28,11 @@ public struct ModelSummary: Decodable, Identifiable, Equatable, Sendable {
     public let supportTool: Int?
     public let supportMcp: Int?
     public let supportVision: Int?
-    /// CNY per million tokens (`ModelCreateRequest.kt:52-54` only floors it at 0).
+    /// Token budget of one call, and the denominator of the occupancy readout. The key is absent whenever the
+    /// row was left to the runtime's inference (`ModelServiceImpl.kt:132` assigns a create's null as-is), so a
+    /// missing window reads as no answer rather than as 0.
+    public let contextWindow: Int?
+    /// CNY per million tokens (`ModelCreateRequest.kt:56-58` only floors it at 0).
     public let price: Double?
     public let status: Int?
     public let isPublic: Int?
@@ -55,7 +59,7 @@ public struct ModelSummary: Decodable, Identifiable, Equatable, Sendable {
     }
 
     /// The capability tags in the order the backend appends them
-    /// (`ModelResponse.kt:79-87`), so a row and the filter chips cannot list the same set differently.
+    /// (`ModelResponse.kt:82-89`), so a row and the filter chips cannot list the same set differently.
     public var capabilities: [ModelCapability] {
         ModelCapability.allCases.filter { $0.isSet(on: self) }
     }

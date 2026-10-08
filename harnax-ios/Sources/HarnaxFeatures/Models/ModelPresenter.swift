@@ -98,7 +98,7 @@ enum ModelPresenter {
 
     /// CNY per million tokens with the trailing zeros cut: `0.0000` on the wire reads as `0`, and a
     /// four-decimal price keeps its four
-    /// (`harnax-webui/src/pages/model/components/ModelForm.tsx:176-182` steps by 0.0001).
+    /// (`harnax-webui/src/pages/model/components/ModelForm.tsx:178-184` steps by 0.0001).
     static func priceText(_ price: Double?) -> String? {
         guard let price else { return nil }
         var text = String(format: "%.4f", price)

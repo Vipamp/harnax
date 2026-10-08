@@ -7,7 +7,7 @@ import HarnaxCore
 /// Both forms send `isPublic` on every create, so the value they seed is the value the row is born with — the
 /// server's own `?: 1` never gets a chance to speak. That makes the seed a cross-client contract rather than a
 /// local default, and the two forms do not agree with each other: the console seeds a model private
-/// (`harnax-webui/src/pages/model/components/ModelForm.tsx:60`) and a provider public
+/// (`harnax-webui/src/pages/model/components/ModelForm.tsx:61`) and a provider public
 /// (`ProviderForm.tsx:56`). The asymmetry is the console's, and these cases exist so a later "let's make both
 /// forms consistent" edit has to break one of them on purpose.
 @MainActor

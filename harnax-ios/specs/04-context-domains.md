@@ -63,8 +63,8 @@ totalModels / enabledModels / disabledModels。
 - 列：名称、技术名、类型、能力标签、价格、是否公开、创建人、状态开关；操作列按权限门控：`harnax-webui/src/pages/model/components/ModelListTable.tsx:178-255`。
 - 能力标签渲染：`harnax-webui/src/pages/model/components/ModelListTable.tsx:137-176`。`thinkingMode === 2` 渲染红色"必需思考"标签。
 
-模型响应字段 `ModelResponse`：`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ModelResponse.kt:11-51`
-id / name / modelName / providerId / providerName / description / modelType / supportInternet / supportReasoning / thinkingMode / supportTool / supportMcp / supportVision / price / status / isPublic / creator / createTime / updateTime，外加**计算字段 tags**：`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ModelResponse.kt:79-87`（由 support_* 整数推导 internet/reasoning/tool/mcp/vision）。
+模型响应字段 `ModelResponse`：`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ModelResponse.kt:11-53`
+id / name / modelName / providerId / providerName / description / modelType / supportInternet / supportReasoning / thinkingMode / supportTool / supportMcp / supportVision / contextWindow / price / status / isPublic / creator / createTime / updateTime，外加**计算字段 tags**：`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ModelResponse.kt:82-89`（`calculateTags`，由 support_* 整数推导 internet/reasoning/tool/mcp/vision）。
 
 ### 模型表单：thinkingMode 与四个能力开关
 
@@ -77,14 +77,15 @@ id / name / modelName / providerId / providerName / description / modelType / su
 
 前端交互规则（必须逐条复刻）：
 1. 能力开关**仅 chat 模型可用**；`modelType` 非 chat 时重置全部能力位为 0：`harnax-webui/src/pages/model/components/ModelForm.tsx:67-78`。
-2. 四个开关 = reasoning / internet / vision / tool（+ mcp），`harnax-webui/src/pages/model/components/ModelForm.tsx:191-218`；thinkingMode 下拉（0/1/2）同样仅 chat 显示：`harnax-webui/src/pages/model/components/ModelForm.tsx:220-235`。
+2. 四个开关 = reasoning / internet / vision / tool（+ mcp），`harnax-webui/src/pages/model/components/ModelForm.tsx:206-233`；thinkingMode 下拉（0/1/2）同样仅 chat 显示：`harnax-webui/src/pages/model/components/ModelForm.tsx:235-250`。
 3. 编辑回填时 thinkingMode 的**兼容推导**：`thinkingMode ?? (supportReasoning === 1 ? 1 : 0)`：`harnax-webui/src/pages/model/components/ModelForm.tsx:33-65`。旧数据只有 supportReasoning 时据此还原。
-4. 提交时**反向推导**：`supportReasoning = (thinkingMode ?? 0) >= 1 ? 1 : 0`：`harnax-webui/src/pages/model/components/ModelForm.tsx:84-99`。即 thinkingMode 1/2 都会把 supportReasoning 置 1；iOS 必须保留这一耦合，否则后端 tags 计算（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ModelResponse.kt:79-87`）与 Agent 侧选模型逻辑会不一致。
-5. providerId 为隐藏字段（由选中厂商注入）：`harnax-webui/src/pages/model/components/ModelForm.tsx:147-149`。
-6. modelName 必填：`harnax-webui/src/pages/model/components/ModelForm.tsx:158-163`；后端 `@NotBlank @Size 1-100`：`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ModelCreateRequest.kt:16`。
-7. price 步进 0.0001，含义"元 / 百万 token"：`harnax-webui/src/pages/model/components/ModelForm.tsx:176-182`；后端 `@DecimalMin 0.0` 默认 0.0：`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ModelCreateRequest.kt:53`。
+4. 提交时**反向推导**：`supportReasoning = (thinkingMode ?? 0) >= 1 ? 1 : 0`：`harnax-webui/src/pages/model/components/ModelForm.tsx:84-99`。即 thinkingMode 1/2 都会把 supportReasoning 置 1；iOS 必须保留这一耦合，否则后端 tags 计算（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ModelResponse.kt:82-89`）与 Agent 侧选模型逻辑会不一致。
+5. providerId 为隐藏字段（由选中厂商注入）：`harnax-webui/src/pages/model/components/ModelForm.tsx:149-151`。
+6. modelName 必填：`harnax-webui/src/pages/model/components/ModelForm.tsx:160-165`；后端 `@NotBlank @Size 1-100`：`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ModelCreateRequest.kt:16`。
+7. price 步进 0.0001，含义"元 / 百万 token"：`harnax-webui/src/pages/model/components/ModelForm.tsx:178-184`；后端 `@DecimalMin 0.0` 默认 0.0：`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ModelCreateRequest.kt:56-58`。
+8. contextWindow 是数字输入（`step 1`、`min 1`、示例 128000），仅 tooltip 说明留空语义：`harnax-webui/src/pages/model/components/ModelForm.tsx:186-197`；提交时 `contextWindow ? parseInt(contextWindow, 10) : null`：`:92`，回填直接取 `values.contextWindow`：`:43`。后端两侧都可空且 `@Min 1`：`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ModelCreateRequest.kt:52-54`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ModelUpdateRequest.kt:48-50`；create 直接赋值（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ModelServiceImpl.kt:132`，null 即留给运行时推断），update 走 `?.let`（`:186`，键缺席即保留已存值）。iOS 复刻：数字键盘、留空就不带这个键（不得填 0）、填了必须是不小于 1 的整数、编辑从行数据回填。
 
-其余后端校验：name `@NotBlank @Size 1-100` `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ModelCreateRequest.kt:11`；providerId `@NotNull` `:22`；modelType `@NotBlank` `:29`；support* 五个 `Int? = 0` `:33/:36/:44/:47/:50`；isPublic `= 1` `:57`。
+其余后端校验：name `@NotBlank @Size 1-100` `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ModelCreateRequest.kt:11`；providerId `@NotNull` `:22`；modelType `@NotBlank` `:29`；support* 五个 `Int? = 0` `:33/:36/:44/:47/:50`；isPublic `= 1` `:61`。
 
 ### 启停 / 删除 / 连通性测试
 
@@ -563,7 +564,7 @@ Web 那条链路的形状 iOS 全部保留，只有「谁去接回跳」这一�
 9. **重启与陈旧都不在客户端兜**：state 只在内存、刻意不落库（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/McpOAuthStateStore.kt:32-43`），用户停在同意页时后端恰好重启，exchange 就答 "unknown or expired"；iOS 不单独识别这一条也不重发，只把后端 message 显示出来（`harnax-ios/Sources/HarnaxFeatures/Mcp/McpDetailViewModel.swift:527-528`），用户重新点一次授权即可。`McpOAuthDiscovery.isCallbackStale` 比的是库里 `callbackUrl` 与本次部署的 `defaultCallbackUrl`（`harnax-ios/Sources/HarnaxCore/Contract/McpOAuth.swift:168-171`），不一致只警告不改写：AS 按逐字串拒绝，新地址要先在 AS 那边登记过，那是运维的动作（对齐 `harnax-webui/src/pages/mcp/components/OAuthPanel.tsx:390-517`）。
 
 ### 5. 小屏重排清单
-- 模型页两级结构：Web 是"卡片流 + 下方表格"同屏（`harnax-webui/src/pages/model/index.tsx:580-586`）。iOS 改为 **push**：厂商列表 → 该厂商模型列表（`ModelListTable` 转成 `List`）。隐藏 providerId 的注入方式（`harnax-webui/src/pages/model/components/ModelForm.tsx:147-149`）变成列表上下文传参，表单用 `.sheet`。
+- 模型页两级结构：Web 是"卡片流 + 下方表格"同屏（`harnax-webui/src/pages/model/index.tsx:580-586`）。iOS 改为 **push**：厂商列表 → 该厂商模型列表（`ModelListTable` 转成 `List`）。隐藏 providerId 的注入方式（`harnax-webui/src/pages/model/components/ModelForm.tsx:149-151`）变成列表上下文传参，表单用 `.sheet`。
 - 模型表"一次 100 条且不分页"（`harnax-webui/src/pages/model/components/ModelListTable.tsx:57-88`）在 iPhone 上首屏成本过高 → 改为 `pageSize: 20` + 触底加载；能力标签（`harnax-webui/src/pages/model/components/ModelListTable.tsx:137-176`）压成一行 `chip`，`thinkingMode === 2` 的红色"必需思考"保留在最前。
 - 价格区间两个 Input（`harnax-webui/src/pages/model/index.tsx:559-576`）在 iOS 用 `.sheet` 里的筛选表单（数字键盘 + 校验 min ≤ max），不要塞导航栏。
 - MCP 卡片的 endpoint（stdio→command，否则→url，`harnax-webui/src/pages/mcp/index.tsx:44`）常超长 → 单行中间截断 + 长按复制。

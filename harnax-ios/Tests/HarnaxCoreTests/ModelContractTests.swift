@@ -9,7 +9,7 @@ import XCTest
 /// be *absent* rather than null, and where a value is derived instead of stored:
 /// - the provider row's `apiKey` is a mask the server computed, never a secret;
 /// - `tags` is computed from the five capability columns
-///   (`ModelResponse.kt:79-87`), so iOS reads the columns and must agree with the tag list;
+///   (`ModelResponse.kt:82-89`), so iOS reads the columns and must agree with the tag list;
 /// - `thinkingMode` may be missing on a row written before the column existed, in which case
 ///   `supportReasoning` is the answer (`harnax-webui/src/pages/model/components/ModelForm.tsx:33-65`).
 final class ModelContractTests: XCTestCase {
@@ -108,7 +108,7 @@ final class ModelContractTests: XCTestCase {
         XCTAssertFalse(legacy.isEnabled)
     }
 
-    /// Every field of `ModelResponse.kt:11-51` is `var x: T? = null`, so a row with nothing but an id is a
+    /// Every field of `ModelResponse.kt:11-53` is `var x: T? = null`, so a row with nothing but an id is a
     /// legal row.
     func testModelRowOfOnlyAnIdDecodes() throws {
         let row = try decode(ModelSummary.self, #"{"id": 1}"#)
@@ -117,6 +117,17 @@ final class ModelContractTests: XCTestCase {
         XCTAssertNil(row.status)
         XCTAssertTrue(row.isEnabled, "only an explicit 0 means stopped")
         XCTAssertFalse(row.isShared)
+    }
+
+    /// `ModelResponse.kt:41,70` carries `contextWindow` as a nullable Int, and the key is absent rather than
+    /// null whenever the row was left to the runtime — so both shapes have to read, and neither may be
+    /// guessed at as a window of zero.
+    func testModelRowReadsItsContextWindow() throws {
+        let sized = try decode(ModelSummary.self, #"{"id": 1, "name": "qwen-max", "contextWindow": 128000}"#)
+        XCTAssertEqual(sized.contextWindow, 128000)
+
+        let inferred = try decode(ModelSummary.self, #"{"id": 1, "name": "qwen-max"}"#)
+        XCTAssertNil(inferred.contextWindow, "no window on the row is not a window of 0")
     }
 
     func testThinkingModeFallsBackForUnreadableStoredValues() {
@@ -180,6 +191,7 @@ final class ModelContractTests: XCTestCase {
                     supportsMcp: true,
                     supportsVision: true,
                     price: 0.0001,
+                    contextWindow: nil,
                     isPublic: true
                 )
             )
@@ -199,6 +211,39 @@ final class ModelContractTests: XCTestCase {
         for key in ["thinkingMode", "supportReasoning", "supportInternet", "supportTool", "supportMcp", "supportVision"] {
             XCTAssertEqual(embedding[key] as? Int, 0, "\(key) must be off for a non-chat model")
         }
+    }
+
+    /// The window is the one field whose *absence* means something on both routes: a create without it lets
+    /// the runtime infer the value (`ModelServiceImpl.kt:132`) and an update without it leaves the stored one
+    /// alone (`:186`, `request.contextWindow?.let`). So a blank field has to travel as no key at all —
+    /// neither the create (where a 0 is refused by `@field:Min(1)`) nor the update (where it would overwrite
+    /// a real window with a rejected count) may see a zero.
+    func testModelBodyLeavesAnUnsetWindowOffTheWire() throws {
+        func body(_ window: Int?) throws -> [String: Any] {
+            try jsonDictionary(
+                ModelSaveRequest(
+                    name: "演示",
+                    modelName: "demo-model",
+                    providerId: 3,
+                    description: "",
+                    modelType: "chat",
+                    thinking: .off,
+                    supportsInternet: false,
+                    supportsTool: false,
+                    supportsMcp: false,
+                    supportsVision: false,
+                    price: 0,
+                    contextWindow: window,
+                    isPublic: false
+                )
+            )
+        }
+
+        let unset = try body(nil)
+        XCTAssertNil(unset["contextWindow"], "a blank field must not become a 0 on the wire")
+
+        let sized = try body(32_000)
+        XCTAssertEqual(sized["contextWindow"] as? Int, 32_000)
     }
 
     // MARK: - helpers

@@ -553,6 +553,8 @@
 "model.field.technicalName" = "Model name";
 "model.field.modelType" = "Model type";
 "model.field.price" = "Price per million tokens";
+"model.field.contextWindow" = "Context window (tokens)";
+"model.field.contextWindow.note" = "Leave this empty and the runtime infers the window from the model name. On an existing model, empty keeps the stored value.";
 "model.field.description" = "Description";
 "model.field.public" = "Public";
 "model.validation.name" = "A name is required.";
@@ -565,6 +567,7 @@
 "model.validation.url" = "That base URL does not look right.";
 "model.validation.price" = "Enter a price, or leave it empty for zero.";
 "model.validation.price.negative" = "The price cannot be negative.";
+"model.validation.contextWindow" = "The context window must be a whole number of tokens, 1 or more.";
 
 /* ---- skills: source types ---- */
 "skill.type.git" = "Git";
