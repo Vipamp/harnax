@@ -174,7 +174,7 @@ admin 的业务接口本身是无状态的，但**多副本部署有两处例外
 
 > **定时任务域在本服务里只剩转发**。`/api/admin/agent-tasks/**` 的 12 个端点、请求体形状、`Page` 的 7 个键与 `records[*]` 的字段名、以及 `40901`/`40902`/`40903` 三个业务码的含义**对三客户端保持稳定**；调用背后做的事都在对面：11 条走 `SchedulerClientImpl.forward` 打到 `http://scheduler:8084`（`HARNAX_SCHEDULER_URL`），只有 `/agents` 是 admin 自己的域（agent 表在它手上）。**本服务对 `agent_task` / `agent_task_log` / `agent_task_execution` / `QRTZ_*` 这四张表发不出任何一条 SQL**——实体与 mapper 都不在 `harnax-entity` 里，`grep -rn "agentTaskMapper\|agentTaskLogMapper\|AgentTaskExecution" harnax-admin/src/main` 是零命中。每一发转发带三样东西：一枚 `typ=internal` 的 JWT（`HARNAX_AUTH_SECRET` 签）、`X-Forwarded-User`、`X-Tenant-Id`；scheduler 侧的门禁认这三样，所以 **admin 与 scheduler 必须同窗口升级**，只升一边的话，没带上这一枚 bearer 的转发一律 401（症状见 `docs/deploy-harnax-scheduler.md` 的「常见问题」）。
 >
-> **本服务内没有 Quartz**（`harnax-admin/pom.xml` 无该依赖），**面向用户的定时任务全在独立服务 `harnax-scheduler`**，部署与容量事项见 `docs/deploy-harnax-scheduler.md`。**本服务自己有一条 `@Scheduled`**：调用指标的每小时折算（`ToolInvocationRollupService`，见下文「调用指标折算」）——它是服务器内部的维护动作，不进 Quartz 集群，多副本同跑由「按天全量重算」兜住，因此不需要锁。本服务重启只会打断内存里那两处状态（OAuth 待授权、验证码），任务定义与执行历史都在库里不受影响——而且它们在 scheduler 的库里，本服务重启碰不到；重启漏掉的那一次折算由下一小时的补齐补回。
+> **本服务内没有 Quartz**（`harnax-admin/pom.xml` 无该依赖），**面向用户的定时任务全在独立服务 `harnax-scheduler`**，部署与容量事项见 `docs/deploy-harnax-scheduler.md`。**本服务自己有一条 `@Scheduled`**：调用指标的每小时折算（`ToolInvocationRollupService`，见下文「调用指标折算」）——它是服务器内部的维护动作，不进 Quartz 集群，多副本同跑由「按小时全量重算」兜住，因此不需要锁。本服务重启只会打断内存里那两处状态（OAuth 待授权、验证码），任务定义与执行历史都在库里不受影响——而且它们在 scheduler 的库里，本服务重启碰不到；重启漏掉的那一次折算由下一小时的补齐补回。
 
 > **会话数据库**：admin 的会话数据（`session.*` 配置）默认使用 `harnax_admin` 数据库，与业务数据在同一个库中。这与 agent-service 不同（agent-service 使用独立的 `agentscope` 数据库）。
 

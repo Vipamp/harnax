@@ -35,16 +35,16 @@ class ToolMetricsController(
     @GetMapping("/summary")
     @Operation(
         summary = "Call counts per subject",
-        description = "Totals over the window; the tool view reads the hourly aggregate, agent and session read the detail table",
+        description = "Totals over the window; tool, mcp and cli read the hourly aggregate, agent and session read the detail table",
     )
     fun getSummary(
-        @Parameter(description = "First hour, yyyy-MM-dd HH:mm or yyyy-MM-dd (inclusive); defaults to the 720 hours before `end`")
+        @Parameter(description = "First hour, yyyy-MM-dd HH:mm or yyyy-MM-dd (inclusive); defaults to the 720 hour buckets ending at `end`")
         @RequestParam(name = "start", required = false) start: String?,
         @Parameter(description = "Last hour, yyyy-MM-dd HH:mm or yyyy-MM-dd (inclusive); defaults to the current hour")
         @RequestParam(name = "end", required = false) end: String?,
         @Parameter(description = "Origin filter: builtin / mcp / cli / shell / framework")
         @RequestParam(name = "kind", required = false) kind: String?,
-        @Parameter(description = "Subject dimension: tool (default) / mcp / cli / agent / session; the first three read the hourly aggregate, the last two the detail table")
+        @Parameter(description = "Subject dimension: tool (default) / mcp / cli / agent / session; the first three read the hourly aggregate, the last two the detail table. The mcp and cli dimensions are origin buckets themselves, so `kind` cannot widen them past their own rows")
         @RequestParam(name = "groupBy", required = false, defaultValue = "tool") groupBy: String,
     ): ResultVo<ToolMetricsSummaryResponse> = try {
         ResultVo.success(toolMetricsService.getSummary(start, end, kind, groupBy))

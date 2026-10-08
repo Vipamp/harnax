@@ -130,8 +130,9 @@
             <when test="dimension == 'cli'">COALESCE(MAX(c.name), CAST(s.subject_id AS CHAR)) AS subjectName,</when>
             <otherwise>s.tool_name AS subjectName,</otherwise>
         </choose>
-        <!-- Every row says which server or package answered it, so a tool row under the MCP tab is not just a
-             tool name. Rows of another kind get the empty string, since they have no owner to name. -->
+        <!-- Which server or package owns the row, so a caller who reads the tool dimension scoped to
+             kind='mcp' or kind='cli' can tell two same-named tools of two servers apart. Rows of another kind
+             get the empty string, since they have no owner to name. -->
         CASE
         WHEN s.kind = 'mcp' THEN COALESCE(MAX(m.name), '')
         WHEN s.kind = 'cli' THEN COALESCE(MAX(c.name), '')
@@ -154,9 +155,16 @@
         WHERE s.tenant_id = #{tenantId}
         AND s.stat_hour &gt;= #{from}
         AND s.stat_hour &lt;= #{to}
-        <if test="kind != null and kind != ''">
-            AND s.kind = #{kind}
-        </if>
+        <!-- The mcp and cli dimensions ARE an origin bucket, so they own their `kind` rather than taking it
+             from the caller: grouping by (kind, subject_id) without the predicate would add one row per
+             builtin, shell and framework call to the list of servers, and those three all carry subject_id 0,
+             so the row would come back named `0` and its drill-down would answer every builtin call. The tool
+             dimension has no bucket of its own, so there the caller's kind stays the filter. -->
+        <choose>
+            <when test="dimension == 'mcp'">AND s.kind = 'mcp'</when>
+            <when test="dimension == 'cli'">AND s.kind = 'cli'</when>
+            <when test="kind != null and kind != ''">AND s.kind = #{kind}</when>
+        </choose>
         GROUP BY s.kind, s.subject_id
         <if test="dimension == 'tool'">, s.tool_name</if>
         ORDER BY calls DESC, lastSeenAt DESC

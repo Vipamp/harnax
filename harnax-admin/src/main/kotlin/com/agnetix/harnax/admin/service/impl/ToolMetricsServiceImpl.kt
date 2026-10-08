@@ -26,9 +26,9 @@ import kotlin.math.ceil
  * The three reads behind `/api/admin/tool-metrics`.
  *
  * Two tables answer, and which one depends on the dimension the page asked for: the hourly aggregate carries
- * the tool dimension and the six duration buckets, while an agent or a session only exists in the detail
- * rows. The four cards never follow the rows, because on the detail path the rows carry no buckets and a
- * percentile would have to be borrowed from a maximum — a number that reads as a distribution and is one
+ * the tool, mcp and cli dimensions and the six duration buckets, while an agent or a session only exists in
+ * the detail rows. The four cards never follow the rows, because on the detail path the rows carry no buckets
+ * and a percentile would have to be borrowed from a maximum — a number that reads as a distribution and is one
  * observation.
  *
  * Nothing here resolves a tenant from a request value. [JwtUtil] says whose workspace this call is, and a
@@ -53,8 +53,11 @@ class ToolMetricsServiceImpl(
         val dimension = dimension(groupBy)
         val tenantId = currentTenantId()
         // One ungrouped aggregate row, whatever the rows below come from: the cards and the window P95 are
-        // properties of the window, not of the dimension the page happens to be grouped by.
-        val totals = toolInvocationStatsMapper.selectWindowTotals(window.fromStr, window.toStr, tenantId, kind)
+        // properties of the window, not of the dimension the page happens to be grouped by. The two dimensions
+        // that ARE an origin bucket are the exception — the row list pins its kind to them, so the cards get
+        // that bucket too rather than counting a different one beside it.
+        val totalsKind = if (dimension == DIM_MCP || dimension == DIM_CLI) dimension else kind
+        val totals = toolInvocationStatsMapper.selectWindowTotals(window.fromStr, window.toStr, tenantId, totalsKind)
         val totalCalls = totals.longOf("calls")
         val totalSuccesses = totals.longOf("successes")
         // Added up from the three failure columns rather than taken as calls minus successes, so that the sum
@@ -414,6 +417,7 @@ class ToolMetricsServiceImpl(
         toolName = stringOf("toolName"),
         agentId = (this?.get("agentId") as? Number)?.toLong(),
         sessionId = stringOf("sessionId"),
+        sessionName = textOf("sessionName"),
         userId = (this?.get("userId") as? Number)?.toLong(),
         mcpId = (this?.get("mcpId") as? Number)?.toLong(),
         cliId = (this?.get("cliId") as? Number)?.toLong(),

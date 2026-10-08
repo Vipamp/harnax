@@ -1,11 +1,11 @@
 -- Mapper integration test baseline (harnax-entity, Testcontainers MySQLContainer + withInitScript)
 --
 -- The DDL below is the table-definition block of harnax-admin's schema at its last version - the baseline
--- (harnax-admin/src/main/resources/db/migration/V1__init_schema.sql) plus the forward increments stacked on
--- it (V2__agent_session_memory.sql, V3__tool_invocation_metrics.sql) - copied so this file and the
--- production schema cannot drift apart the way the hand-maintained version did. What matters is the shape
--- Flyway ends at, because that is what SchemaBaselineDriftIT replays and compares. Regenerate this file's
--- DDL block whenever the baseline or any increment changes.
+-- (harnax-admin/src/main/resources/db/migration/V1__init_schema.sql) plus every forward increment stacked on
+-- it in that directory - copied so this file and the production schema cannot drift apart the way the
+-- hand-maintained version did. What matters is the shape Flyway ends at, because that is what
+-- SchemaBaselineDriftIT replays and compares. Regenerate this file's DDL block whenever the baseline or any
+-- increment changes.
 --
 -- Production's initial-data INSERTs are deliberately absent: the fixtures below allocate their own
 -- users, tenants, agents and sessions, and seeded rows with fixed ids would collide with them.

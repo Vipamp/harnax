@@ -37,7 +37,7 @@
 | 唯一键 | `uk_tool_invocation_stats_day (stat_date, tenant_id, kind, subject_id, tool_name)` | `uk_tool_invocation_stats_hour (stat_hour, tenant_id, kind, subject_id, tool_name)` |
 | 二级索引 | `idx_tool_invocation_stats_tenant_date (tenant_id, stat_date)` | `idx_tool_invocation_stats_tenant_hour (tenant_id, stat_hour)` |
 
-其余列一字不动：`kind`、`subject_id`、`tool_name`、五个计数、`sum_duration_ms`、`max_duration_ms`、六个耗时桶。
+其余列的类型与取值不动：`kind`、`subject_id`、`tool_name`、五个计数、`sum_duration_ms`、`max_duration_ms`、六个耗时桶。V5 里另有三段 `MODIFY COLUMN`（`subject_id`、`tool_name`、`max_duration_ms`）和一条表注释，改的都是注释文本——V3 把它们写成了日档口径（「按天保留」「当天最长一次」），改列时不一起重写就会在 schema 里留下一份说错粒度的文档，取值与类型一个都不动。
 
 ### 2.2 为什么只留小时一档
 
@@ -47,16 +47,18 @@
 
 ### 2.3 迁移形状
 
-`harnax-admin/src/main/resources/db/migration/V5__tool_invocation_stats_hourly.sql`：`ALTER TABLE` 改列、换唯一键、换索引。`tool_invocation_stats` 由 V3 建，V3 与 V4 都已在现网应用且 Flyway 逐次校验和，已应用的迁移连注释都不改，因此走前向增量。
+`harnax-admin/src/main/resources/db/migration/V5__tool_invocation_stats_hourly.sql`：先 `DELETE FROM tool_invocation_stats`，再一条 `ALTER TABLE` 把 `stat_date` 改名成 `stat_hour`、换掉唯一键与二级索引、重写 §2.1 说的那四处注释。清表不是丢数据，且不清不行：旧的一天一行原样搬成小时档会被读作「00:00 这一小时装了一天的量」，而待折算集合按 `(stat_hour, tenant_id)` 认定那一小时已经折过，`deleteRolledOut` 于是放掉它背后的明细，那些小时再也重折不出来。明细在保留窗口内全在，`selectUnrolledHours` 不设下限、每轮把缺的小时全补上，所以 V5 之后第一次 :05 折算就把窗口内的小时行重新折出，窗口本身有界。`tool_invocation_stats` 由 V3 建，V3 与 V4 都已在现网应用且 Flyway 逐次校验和，已应用的迁移连注释都不改，因此走前向增量。
 
 `harnax-entity/src/test/resources/schema-test.sql` 同步成 V5 之后的形状（它是 admin 库重放到最新版的 schema 副本），漂移由 `SchemaBaselineDriftIT` 守。
 
-### 2.4 不变量
+### 2.4 小时档不变量
 
-- I1 `stat_hour` 恒为整点：写入侧只有 `upsertHour` 一处产行，它的 `SELECT` 直接把参数列写成传入整点。
-- I2 一小时一 (tenant, kind, subject, tool) 至多一行：由唯一键与 upsert 一起保证。
-- I3 任一跨度的窗口，`calls = successes + errors + denials + interruptions`：四种终局互斥且穷尽，粒度换档不动这条。
-- I4 桶闭右开左不动，桶和恒等于 `calls`。
+编号只用 H 起头：本域另有一份覆盖两张表的 I1~I6，四个字母撞名会让「I3」在两份文档里指不同的规则。
+
+- H1 `stat_hour` 恒为整点：写入侧只有 `upsertHour` 一处产行，它的 `SELECT` 直接把参数列写成传入整点。
+- H2 一小时一 (tenant, kind, subject, tool) 至多一行：由唯一键与 upsert 一起保证。
+- H3 任一跨度的窗口，`calls = successes + errors + denials + interruptions`：四种终局互斥且穷尽，粒度换档不动这条。
+- H4 桶闭右开左不动，桶和恒等于 `calls`。
 
 ## 3. 折算与清理
 
@@ -106,7 +108,7 @@
 
 | 维度 | 名称列 | 取法 |
 |---|---|---|
-| `tool` | `tool_name` 本身 | 无；但在 MCP／CLI tab 下这一档还要带出所属服务器／包名，取法同 `mcp`／`cli` 两行（按 `subject_id`） |
+| `tool` | `tool_name` 本身 | 无；来源为 `mcp`／`cli` 的行另带所属服务器／包名 `parentName`，取法同下面两行（按 `subject_id`） |
 | `mcp` | `mcp_server.name` | `LEFT JOIN mcp_server m ON m.id = s.subject_id AND m.tenant_id = s.tenant_id` |
 | `cli` | `cli.name` | `LEFT JOIN cli c ON c.id = s.subject_id`（`cli` 表无租户列，登记模型本来不分租户） |
 | `agent` | `agent.name` | `LEFT JOIN agent a ON a.id = l.agent_id AND a.tenant_id = l.tenant_id` |
@@ -122,7 +124,7 @@
 
 - 第一列表头按当前维度给名：`工具`／`MCP`／`CLI`／`智能体`／`会话`。`pages.callMetrics.col.subject` 这条 key 撤掉，改成按维度取 key。
 - 卡片名「主体明细」→「明细」；抽屉标题「主体信息」→「登记信息」；提示语里「主体」全部换成具体维度名。
-- 工具维度在 MCP／CLI tab 下现在渲染成 `search_nodes #4`，改成主行显示服务器名、次级灰字显示工具名。`#id` 对读的人没有信息量，而服务器名正是那一行缺的东西。
+- `#id` 那一种渲染撤掉：第一列一律显示服务端带出的 `subjectName`，缺失时回落 `subjectKey`，`#4` 对读的人没有信息量。工具档的限定名 `parentName` 字段与那一格都留着，但 D6 的矩阵只在工具 tab 给「按工具」，而该 tab 的来源选择器只有 `builtin`／`shell`／`framework`，所以这一格在当前页面上取不到行——它等的是来源选择器给出跨来源的工具档。
 - 会话维度格子显示 `session.title`，无行时回落 `session_id`；智能体维度显示 `agent.name`，已删时回落 id 字符串。
 - 记录抽屉（点调用量列开的那只）里的「会话」列同样按 title 优先、id 兜底渲染。
 
@@ -143,17 +145,18 @@
 后端（`harnax-admin` 的 IT，跑法见本机配方）：
 
 - 折算幂等：同一整点跑两次 `rollUp()`，小时行的每个数逐字不变。
-- 迟到行取舍：落在已折算整点的迟到明细仍被 `deleteRolledOut` 放掉，这条既有取舍按小时重述并留用例钉住。
+- 迟到行取舍：待折算集合不再点名已折过的整点，兜住它的是每轮强制重折「上一个整点 + 当前整点」，这条由 `lateRowOfTheClosingHourIsFolded` 钉住；比这更早的整点折完又来一行时不进这一轮，明细按窗口到期即被 `deleteRolledOut` 放掉——那是接受的成本，只有时钟偏差超过一小时才出得来。
 - 新维度：`mcp`／`cli` 各一条，断言一个服务器多工具时收成一行且桶求和正确。
-- 名称：四个维度各一条命中；再加两条回落（登记行删掉、`chn-` 会话无 `session` 行）。
+- 维度不串味：`groupBy=mcp`／`cli` 而调用方不给 `kind` 时，这两档自己钉死来源桶，聚合里 `builtin`／`shell`／`framework` 的行不进结果。
+- 名称：五个维度各一条命中；再加回落（登记行删掉、`chn-` 会话无 `session` 行）。记录抽屉的会话列同一条用例里断言 title 优先、无登记行时回落到 id。
 - 不扇出：同一 `session_id` 造两行 `session`，断言会话维度的 `calls` 与四计数仍是明细行数本身、只多出一个标题选择。这条是标量子查询代替 JOIN 的唯一正面证据。
 - 窗口钳位：`end` 在未来、`start > end`、超 8760 小时、不可解析四种，断言解析后的窗口与日志档位。
 - 自动选档：48 小时／92 天两条边界两侧各一。
-- 跨粒度一致性：同一批明细，按小时求和到天的数与旧的按天折算逐字相等（这条是 D2 的正面证据）。
+- 粒度换档：`ToolInvocationRollupIT` 断言小时行的 `calls` 与桶和就是它折自的明细行数（这条是 D2 的正面证据——旧的按天折算已被 V5 清掉，没有第二份口径可比）。
 
 前端：`subjectProfile.test.ts`、`lastSeen.test.ts` 补新维度 case；`npx max build` 通过；改动文件逐个 `npx @biomejs/biome lint`（不许用 `check --write`）。
 
-现网：admin 起来后 `docker-compose logs admin` 见 `now at version v5`；等一次 :05 折算，看 `tool_invocation_stats` 出现小时行且当天小时和等于旧日行；页面在 MCP tab 切「按 MCP」能出一行一台服务器。
+现网：admin 起来后 `docker-compose logs admin` 见 `now at version v5`；V5 已清空聚合表，所以第一次 :05 折算会把保留窗口内所有还留着明细的小时重新折出，看 `tool_invocation_stats` 出现小时行且任一整点的 `calls` 与 `tool_invocation_log` 里同一整点、同一 `tenant_id`、同一 `kind` 的行数相等（没有旧日行可对了，能对的只有明细）；页面在 MCP tab 切「按 MCP」能出一行一台服务器。
 
 ## 8. 已知边界与不做
 

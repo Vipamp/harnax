@@ -258,7 +258,7 @@ export default {
   'pages.callMetrics.window.30': '近 30 天',
   'pages.callMetrics.window.90': '近 90 天',
   'pages.callMetrics.window.365': '近 365 天',
-  'pages.callMetrics.detailHint': '按智能体 / 会话统计读的是明细表，只覆盖保留窗口内的调用；更早的记录只有工具 / MCP / CLI 三档的小时聚合能答。',
+  'pages.callMetrics.detailHint': '按智能体 / 会话统计读的是明细表，只覆盖保留窗口内的调用；更早的记录只有工具 / MCP / CLI 三档的小时聚合能答。这两档数到当前一刻，顶部四张卡只数到上次整点折算，所以两边的调用总数会差出最多一个小时内的新记录。',
   'pages.callMetrics.profile.title': '登记信息',
   'pages.callMetrics.profile.empty': '这一项没有登记信息',
   'pages.callMetrics.detail.title': '调用记录',

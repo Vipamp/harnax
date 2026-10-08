@@ -79,7 +79,7 @@ class ToolInvocationRollupServiceTest {
             rollupEnabled = true,
         )
 
-        // Nothing is pending, so the run folds only the two days every run revisits — and reaches the sweep.
+        // Nothing is pending, so the run folds only the two hours every run revisits — and reaches the sweep.
         assertEquals(2, service.rollUp())
 
         // Asserted on the cutoff the mapper is actually handed, not on the constructor having survived: at the

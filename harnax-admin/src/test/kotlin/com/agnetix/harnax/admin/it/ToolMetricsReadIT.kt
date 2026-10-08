@@ -289,6 +289,30 @@ class ToolMetricsReadIT : BaseAdminIT() {
     }
 
     @Test
+    @DisplayName("the mcp and cli dimensions pin their own kind when the caller names none")
+    fun aggregateDimensionsPinTheirOwnKind() {
+        // The two aggregate dimensions ARE an origin bucket, so naming the dimension is enough to bound the
+        // row set. Without that pin the server list here answers three rows: the server, the CLI package, and
+        // a phantom one for the builtin bucket — every builtin call shares subject_id 0, so it comes back
+        // named `0` and its drill-down lists the tenant's builtins under a heading that says MCP.
+        val mcpRows = data("/api/admin/tool-metrics/summary?$SEVEN_DAYS&groupBy=mcp")["rows"]
+        assertEquals(1, mcpRows.size(), mcpRows.toString())
+        assertEquals("mcp", mcpRows[0]["kind"].asString())
+        assertEquals("77", mcpRows[0]["subjectKey"].asString())
+
+        val cliRows = data("/api/admin/tool-metrics/summary?$SEVEN_DAYS&groupBy=cli")["rows"]
+        assertEquals(1, cliRows.size(), cliRows.toString())
+        assertEquals("cli", cliRows[0]["kind"].asString())
+        assertEquals("88", cliRows[0]["subjectKey"].asString())
+
+        // The cards take the same bucket: a caller that names a foreign kind beside these dimensions still gets
+        // a total that adds up with the rows under it, not a card counting builtins beside a table of servers.
+        val crossed = data("/api/admin/tool-metrics/summary?$SEVEN_DAYS&groupBy=mcp&kind=builtin")
+        assertEquals(1, crossed["rows"].size(), crossed.toString())
+        assertEquals(crossed["rows"][0]["calls"].asLong(), crossed["totalCalls"].asLong())
+    }
+
+    @Test
     @DisplayName("every dimension names its subject and falls back to the key when nothing is registered")
     fun everyDimensionResolvesAName() {
         val hour = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS)
@@ -349,6 +373,18 @@ class ToolMetricsReadIT : BaseAdminIT() {
         assertEquals(2L, row["calls"].asLong())
         assertEquals(2L, row["successes"].asLong())
         assertEquals("标题乙", row["subjectName"].asString())
+
+        // The records drawer reads its session name off the same id and the same newest row.
+        val records = data("/api/admin/tool-metrics/invocations?sessionId=s-dup&pageSize=2")["records"]
+        assertEquals(2, records.size())
+        assertEquals("标题乙", records[0]["sessionName"].asString())
+        // The fixture's other session has no `session` row, so no title comes back and the drawer falls to the
+        // id it already holds rather than leaving the cell blank.
+        val unregistered = data("/api/admin/tool-metrics/invocations?toolName=send_email&pageSize=1")["records"][0]
+        // `non_null` serialisation drops the key rather than sending an empty one, and the drawer's `||` needs
+        // exactly that absence to reach the id it already holds.
+        assertFalse(unregistered.has("sessionName"), unregistered.toString())
+        assertEquals(SESSION, unregistered["sessionId"].asString())
         clearOwnedRegistrations()
     }
 

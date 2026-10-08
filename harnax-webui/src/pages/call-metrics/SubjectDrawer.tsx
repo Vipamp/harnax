@@ -139,7 +139,8 @@ const SubjectDrawer: React.FC<SubjectDrawerProps> = ({ row, groupBy, onClose }) 
     ? t('pages.callMetrics.loadFailed', 'Failed to load call metrics')
     : t('pages.callMetrics.profile.empty', 'This subject has no registered profile');
 
-  // The numbers the reader clicked: same range, same row, so the drawer and the table can never disagree.
+  // The numbers the reader clicked: same range, same row. The page closes this drawer on any range, origin or
+  // dimension change, which is what keeps that "same" true rather than this component's own reading.
   const metricItems: Item[] = row
     ? [
         { label: t('pages.callMetrics.col.calls', 'Calls'), node: row.calls },
