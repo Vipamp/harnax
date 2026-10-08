@@ -2101,7 +2101,7 @@ val session = sessionId?.trim()?.takeIf { it.isNotEmpty() }
 skillDraftMapper.selectDraftList(currentTenantId(), state, name?.trim()?.takeIf { it.isNotEmpty() }, session),
 ```
 
-`SkillDraftController.kt:55-79`：形参加一枚可选参数（`:69` 的 `name` 之后），并把 `:73` 那唯一一处调用补上第 3 个具名实参——其余不动，含 `:74` 把缺省 status 兜成 `PENDING` 的既有行为（会话页要的正是一样一份待启用清单）：
+`SkillDraftController.kt:55-79`：形参加一枚可选参数（`:68` 的 `name` 之后），并把 `:73` 那唯一一处调用补上第 3 个具名实参——其余不动，含 `:74` 把缺省 status 兜成 `PENDING` 的既有行为（会话页要的正是一样一份待启用清单）：
 
 ```kotlin
         @Parameter(description = "Narrow to one conversation's proposals") @RequestParam(
@@ -2122,7 +2122,7 @@ skillDraftMapper.selectDraftList(currentTenantId(), state, name?.trim()?.takeIf 
 
 - [ ] **Step 4: 加 IT —— 过滤只收会话，不松租户**
 
-追加到 `harnax-admin/src/test/kotlin/com/agnetix/harnax/admin/it/SkillDraftFlowIT.kt`。夹具全部复用该文件已有的私有成员：`ensureSession()` 建的是本租户一枚 `web-` 会话，`submit(name, skillmd, sessionId = …)` 走的正是沙箱上报那条内部入口（`sessionId` 是它推租户的唯一来源），`records(query)` 取队列表，`exchange(..., tenantId = otherTenant)` 换邻居租户读。第二会话需要一支同租户的兄弟会话，用同一枚 agent 现建：
+追加到 `harnax-admin/src/test/kotlin/com/agnetix/harnax/admin/it/SkillDraftFlowIT.kt`。夹具全部复用该文件已有的私有成员：`ensureSession()` 建的是本租户一枚 `web-` 会话，`submit(name, skillmd, sessionId = …)` 走的正是沙箱上报那条内部入口（`sessionId` 是它推租户的唯一来源），`records(query)` 取队列表，`exchange(..., tenantId = otherTenant)` 换邻居租户读。该文件 `:6-9` 只 import 了 `assertEquals`/`assertNotNull`/`assertNull`/`assertTrue`，下面这支用到 `assertFalse`，所以要同时补一行 `import org.junit.jupiter.api.Assertions.assertFalse`（同目录 `SkillVisibilityFlowIT.kt:12` 就是这么写的），漏了它整个文件编不过。第二会话需要一支同租户的兄弟会话，用同一枚 agent 现建：
 
 ```kotlin
     /** A second conversation of the same tenant, so a session filter has something it should exclude. */
