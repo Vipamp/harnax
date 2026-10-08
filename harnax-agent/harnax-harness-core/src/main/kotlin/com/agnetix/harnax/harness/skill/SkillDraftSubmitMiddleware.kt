@@ -68,10 +68,30 @@ class SkillDraftSubmitMiddleware(
         }
         if (names.isEmpty()) return
         val now = clock()
-        names.filter { claim(it, now) }.forEach { offer(it) }
+        names.forEach { name ->
+            val claimedAt = claim(name, now) ?: return@forEach
+            try {
+                offer(name, claimedAt)
+            } catch (e: Exception) {
+                // The scan is the only line inside offer that is not already caught, and a scanner that throws
+                // must cost this one draft its turn rather than every other draft's: slots were taken one name
+                // at a time, so the ones not reached yet are still unclaimed and this one gives its slot back.
+                log.warn(
+                    "Offering the staged draft {} of session {} raised {}: {}",
+                    name,
+                    sessionId,
+                    e.javaClass.simpleName,
+                    e.message,
+                )
+                lastOfferedAt.remove(name, claimedAt)
+            }
+        }
     }
 
-    private fun offer(name: String) {
+    private fun offer(
+        name: String,
+        claimedAt: Long,
+    ) {
         val draft = try {
             store.readDraft(sessionId, name)
         } catch (e: Exception) {
@@ -109,7 +129,7 @@ class SkillDraftSubmitMiddleware(
             // Not supposed to throw. One that does has told us nothing about whether the row landed, so the
             // cooldown slot is released and the next turn offers it again rather than letting it go stale.
             log.warn("Skill draft intake for {} raised {}: {}", name, e.javaClass.simpleName, e.message)
-            lastOfferedAt.remove(name)
+            lastOfferedAt.remove(name, claimedAt)
             return
         }
         when (intake) {
@@ -132,30 +152,31 @@ class SkillDraftSubmitMiddleware(
                     name,
                     intake.reason,
                 )
-                // Nothing was stored, so the window must not be what keeps this draft out of the queue: the
-                // slot is released and the next turn offers it again.
-                lastOfferedAt.remove(name)
+                // Nothing was stored, so the window must not be what keeps this draft out of the queue: this
+                // round's slot is released and the next turn offers it again. The two-arg remove leaves a slot
+                // a later turn installed while this one was reaching the queue.
+                lastOfferedAt.remove(name, claimedAt)
             }
         }
     }
 
     /**
-     * Takes this draft's slot in the window, so two turns ending at once cannot both offer it.
+     * Takes this draft's slot in the window and answers the timestamp it installed, or null while the slot is held.
      */
     private fun claim(
         name: String,
         now: Long,
-    ): Boolean {
-        var claimed = false
+    ): Long? {
+        var claimedAt: Long? = null
         lastOfferedAt.compute(name) { _, previous ->
             if (previous == null || now - previous >= cooldownMillis) {
-                claimed = true
+                claimedAt = now
                 now
             } else {
                 previous
             }
         }
-        return claimed
+        return claimedAt
     }
 
     companion object {

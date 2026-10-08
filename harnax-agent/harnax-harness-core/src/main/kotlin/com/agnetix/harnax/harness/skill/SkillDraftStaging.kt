@@ -66,8 +66,10 @@ class SkillDraftStaging : SkillDraftFilesReader {
      * Runs one draft through the promotion pipeline, which is where the gate — and therefore Admin's queue —
      * is reached. Null when no agent is bound yet.
      *
-     * The pipeline is upstream's, so the scan that guards what may go live runs here too: this is the only
-     * caller in harnax, and a draft the scanner blocks never reaches the queue.
+     * The pipeline is upstream's, so the scan that guards what may go live runs here too, and a draft the
+     * scanner blocks never reaches the queue. Nothing on the live path comes through it any more: the turn-end
+     * offer files a draft straight with the intake adaptor, so this is the promotion entry point for callers
+     * that promote one deliberately, and [SkillDraftSubmitMiddleware] is no longer among them.
      */
     fun promote(
         name: String,

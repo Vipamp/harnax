@@ -79,12 +79,22 @@ class SkillDraftSubmitMiddlewareTest {
      */
     @Test
     fun `the draft is filed straight into the queue instead of through the promotion gate`() {
+        // The queue accepts the first offer and cannot be reached for the second, so this case also pins that an
+        // unreachable queue gives its slot back rather than leaving the draft windowed out.
         staged(SessionDraft("invoice-fill", "fills an invoice", MD, mapOf("scripts/run.sh" to "echo hi\n")))
+        `when`(adaptor.submit(any()))
+            .thenReturn(SkillDraftIntake.Queued(7L), SkillDraftIntake.Unavailable("admin down"))
 
-        middleware().turn()
+        val mw = middleware()
+        mw.turn()
+
+        // The round the queue accepted keeps its slot, which is what the window cases pin, so the queue is only
+        // asked again once the window passes — and that is the round that cannot reach it.
+        now += COOLDOWN
+        mw.turn()
 
         val proposal = argumentCaptor<SkillDraftProposal>()
-        verify(adaptor).submit(proposal.capture())
+        verify(adaptor, times(2)).submit(proposal.capture())
         assertEquals("ses-1", proposal.firstValue.sessionId)
         assertEquals("invoice-fill", proposal.firstValue.name)
         assertEquals(MD, proposal.firstValue.skillmd)
@@ -94,6 +104,12 @@ class SkillDraftSubmitMiddlewareTest {
             "the verdict column has to carry the scan this path ran: ${proposal.firstValue.scanVerdict}",
         )
         verifyNoInteractions(agent)
+
+        // Nothing was stored, so the unreachable round handed its slot back: one millisecond later the draft is
+        // filed again. Delete that release and this third offer is windowed out.
+        now += 1
+        mw.turn()
+        verify(adaptor, times(3)).submit(any())
     }
 
     @Test
@@ -142,10 +158,26 @@ class SkillDraftSubmitMiddlewareTest {
 
     @Test
     fun `an empty draft list files nothing`() {
+        // A clock that counts its own reads is the whole judgement here: filtering an empty list is a no-op by
+        // itself, so without it deleting the early return would leave this case green. An empty listing must not
+        // even start the throttling bookkeeping.
+        var reads = 0
+        val mw = SkillDraftSubmitMiddleware(
+            sessionId = "ses-1",
+            store = store,
+            adaptor = adaptor,
+            cooldownMillis = COOLDOWN,
+            clock = {
+                reads++
+                now
+            },
+            scheduler = Schedulers.immediate(),
+        )
         staged()
 
-        middleware().turn()
+        mw.turn()
 
+        assertEquals(0, reads, "an empty listing must not read the clock at all")
         verifyNoInteractions(adaptor)
     }
 
@@ -159,9 +191,11 @@ class SkillDraftSubmitMiddlewareTest {
     }
 
     @Test
-    fun `a draft that cannot be read is left for the next turn`() {
+    fun `a draft with no text to review is not filed`() {
         // The listing answered and the read did not: the draft is either gone or has no text, and neither is
-        // something the queue can review, so nothing is filed.
+        // something the queue can review, so nothing is filed. The slot taken this turn is kept, so it is
+        // offered again once the window passes rather than on the next turn. One turn only — this shape
+        // cannot pin kept-vs-released, and it does not try to.
         `when`(store.listDraftNames("ses-1")).thenReturn(listOf("invoice-fill"))
         `when`(store.readDraft("ses-1", "invoice-fill")).thenReturn(null)
 
@@ -182,28 +216,68 @@ class SkillDraftSubmitMiddlewareTest {
     @Test
     fun `a pipeline that cannot start does not touch the answer`() {
         staged(SessionDraft("invoice-fill", "fills an invoice", MD, emptyMap()))
-        `when`(adaptor.submit(any())).thenThrow(IllegalStateException("workspace gone"))
-
         val mw = middleware()
+        var calls = 0
+        // Two intakes that die, both after a slot was taken. The first gives up at once; the second blocks for
+        // longer than the whole window — long enough for the next turn to claim the draft legitimately and file
+        // it — and only then dies. Neither release may hand back a slot it did not take.
+        `when`(adaptor.submit(any())).thenAnswer {
+            when (++calls) {
+                1 -> throw IllegalStateException("workspace gone")
+                3 -> {
+                    now += COOLDOWN + 1
+                    mw.turn()
+                    throw IllegalStateException("the intake died only after another turn had filed the draft")
+                }
+
+                else -> SkillDraftIntake.Queued(7L)
+            }
+        }
+
         assertDoesNotThrow { mw.turn() }
 
         // The offer reached the intake at all, which only happens on a normal completion of the answer stream,
         // and the throw came back out of it as a log line rather than as an error signal.
         verify(adaptor).submit(any())
 
-        // The throw told us nothing about whether the row landed, so the slot it burned is released: still
-        // inside the window, the next turn offers the same draft again rather than leaving it stale.
+        // That throw said nothing about whether the row landed, so the slot it burned is released: still inside
+        // the window measured from its own claim, the next turn offers the same draft again.
         now += 1
         assertDoesNotThrow { mw.turn() }
         verify(adaptor, times(2)).submit(any())
+
+        // The window passes and this round is the slow one: the turn it blocked in the meantime claimed the
+        // draft and filed it, so four submissions have happened and the newest slot belongs to that turn.
+        now += COOLDOWN
+        assertDoesNotThrow { mw.turn() }
+        verify(adaptor, times(4)).submit(any())
+
+        // One millisecond past the claim that filed turn made. A release that ignored which timestamp it was
+        // removing would have deleted that slot, and this turn would then file a second row for a name the
+        // queue already holds — the duplicate the window exists to prevent.
+        assertDoesNotThrow { mw.turn() }
+        verify(adaptor, times(4)).submit(any())
     }
 
     @Test
-    fun `a pipeline that fails after the answer is logged not rethrown`() {
-        staged(SessionDraft("invoice-fill", "fills an invoice", MD, emptyMap()))
-        `when`(store.listDraftNames("ses-1")).thenThrow(IllegalStateException("No active sandbox"))
+    fun `a draft whose text cannot be read files nothing and never reaches the answer`() {
+        // The branch the listing case cannot stand in for: the read died rather than the listing, so a slot was
+        // already taken and nothing is known about the draft. The throw must not escape the turn, and it must
+        // not give that slot back either — the read answers normally from the second call on, so a release here
+        // would show up as a filing one millisecond later.
+        `when`(store.listDraftNames("ses-1")).thenReturn(listOf("invoice-fill"))
+        `when`(store.readDraft("ses-1", "invoice-fill"))
+            .thenThrow(IllegalStateException("No active sandbox"))
+            .thenReturn(SessionDraft("invoice-fill", "fills an invoice", MD, emptyMap()))
+        `when`(adaptor.submit(any())).thenReturn(SkillDraftIntake.Queued(7L))
 
-        assertDoesNotThrow { middleware().turn() }
+        val mw = middleware()
+        assertDoesNotThrow { mw.turn() }
+
+        now += 1
+        assertDoesNotThrow { mw.turn() }
+
+        verifyNoInteractions(adaptor)
     }
 
     private companion object {
