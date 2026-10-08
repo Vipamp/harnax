@@ -49,15 +49,17 @@ class ToolMetricsReadIT : BaseAdminIT() {
         mcpId: Long? = null,
         cliId: Long? = null,
         session: String = SESSION,
+        agentId: Long = 1L,
     ) {
         jdbc.update(
             """
                 INSERT INTO tool_invocation_log
                 (tenant_id, agent_id, session_id, user_id, kind, tool_name, mcp_id, cli_id, outcome,
                  duration_ms, start_time, end_time, ts)
-                VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """.trimIndent(),
             tenantId,
+            agentId,
             session,
             1L,
             kind,
@@ -93,8 +95,22 @@ class ToolMetricsReadIT : BaseAdminIT() {
         value: LocalDateTime,
     ): String = value.format(HOUR_PARAM)
 
+    /**
+     * The registration rows this class seeds, under ids no seed data uses. Cleared before every test because
+     * the container is shared and a rerun would otherwise answer a duplicate key, and again when a test is
+     * done because another class reads these tables expecting only what it inserted itself — an agent row
+     * left behind here would show up in an agent list count.
+     */
+    private fun clearOwnedRegistrations() {
+        jdbc.update("DELETE FROM mcp_server WHERE id = 77")
+        jdbc.update("DELETE FROM cli WHERE id = 55")
+        jdbc.update("DELETE FROM agent WHERE id = 900001")
+        jdbc.update("DELETE FROM session WHERE session_id = 's-dup'")
+    }
+
     @BeforeEach
     fun seedRows() {
+        clearOwnedRegistrations()
         jdbc.update("DELETE FROM tool_invocation_stats")
         jdbc.update("DELETE FROM tool_invocation_log")
 
@@ -270,6 +286,70 @@ class ToolMetricsReadIT : BaseAdminIT() {
         assertEquals(3L, rows[0]["calls"].asLong())
         assertEquals(1L, rows[0]["denials"].asLong())
         assertEquals(1L, rows[1]["calls"].asLong())
+    }
+
+    @Test
+    @DisplayName("every dimension names its subject and falls back to the key when nothing is registered")
+    fun everyDimensionResolvesAName() {
+        val hour = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS)
+        // Every id here is named rather than left to the auto-increment: the name is matched on
+        // `id = subject_id`, and the sequence's next value is not a fact this test may assume. No agent row is
+        // seeded by the migrations, so the registered one is inserted here.
+        jdbc.update("INSERT INTO mcp_server (id, tenant_id, name, type) VALUES (77, ?, '文档检索服务', 'stdio')", TENANT_ID)
+        jdbc.update("INSERT INTO cli (id, name) VALUES (55, 'lark-cli')")
+        jdbc.update("INSERT INTO agent (id, tenant_id, name) VALUES (900001, ?, '取数助手')", TENANT_ID)
+        call(hour, TENANT_ID, ToolInvocationLog.KIND_MCP, "search_nodes", "SUCCESS", 80L, mcpId = 77L)
+        call(hour, TENANT_ID, ToolInvocationLog.KIND_CLI, "lark", "SUCCESS", 90L, cliId = 55L)
+        call(hour, TENANT_ID, ToolInvocationLog.KIND_BUILTIN, "read_file", "SUCCESS", 20L, agentId = 900001L)
+        rollup.rollUp()
+
+        assertEquals("文档检索服务", data("/api/admin/tool-metrics/summary?kind=mcp&groupBy=mcp")["rows"][0]["subjectName"].asString())
+        val cliRows = data("/api/admin/tool-metrics/summary?kind=cli&groupBy=cli")["rows"]
+        assertEquals("lark-cli", cliRows.first { it["subjectId"].asLong() == 55L }["subjectName"].asString())
+        // The mcp and cli keys are the ids themselves, so a page that keys its rows on one stays unique.
+        assertEquals("77", data("/api/admin/tool-metrics/summary?kind=mcp&groupBy=mcp")["rows"][0]["subjectKey"].asString())
+
+        // The tool dimension names the tool and still says which server answered it.
+        val toolRow = data("/api/admin/tool-metrics/summary?kind=mcp&groupBy=tool")["rows"][0]
+        assertEquals("search_nodes", toolRow["subjectName"].asString())
+        assertEquals("文档检索服务", toolRow["parentName"].asString())
+
+        // The agent dimension reads the detail table through a primary-key join: the registered one answers
+        // with its name, and the fixture's agent 1 — which has no row behind it — falls back to its id.
+        val agents = data("/api/admin/tool-metrics/summary?groupBy=agent")["rows"]
+        assertEquals("取数助手", agents.first { it["subjectKey"].asString() == "900001" }["subjectName"].asString())
+        assertEquals("1", agents.first { it["subjectKey"].asString() == "1" }["subjectName"].asString())
+
+        // The fixture's session has no `session` row, so its own id is the only name there is.
+        val sessions = data("/api/admin/tool-metrics/summary?groupBy=session")["rows"]
+        assertEquals(SESSION, sessions.first { it["subjectKey"].asString() == SESSION }["subjectName"].asString())
+
+        // Registration removed: the name falls back to the key instead of an empty cell the page cannot read.
+        jdbc.update("DELETE FROM mcp_server WHERE id = 77")
+        val orphan = data("/api/admin/tool-metrics/summary?kind=mcp&groupBy=mcp")["rows"][0]
+        assertEquals(orphan["subjectKey"].asString(), orphan["subjectName"].asString())
+        clearOwnedRegistrations()
+    }
+
+    @Test
+    @DisplayName("two session rows sharing one id name the row without doubling its counts")
+    fun duplicateSessionRowsDoNotFanOut() {
+        val hour = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS)
+        call(hour, TENANT_ID, ToolInvocationLog.KIND_BUILTIN, "read_file", "SUCCESS", 10L, session = "s-dup")
+        call(hour.plusMinutes(5L), TENANT_ID, ToolInvocationLog.KIND_BUILTIN, "read_file", "SUCCESS", 10L, session = "s-dup")
+        // `session.session_id` is only documented as unique and carries no unique index, so one id really can
+        // own several rows. The title is read by a scalar subquery that picks the newest row.
+        jdbc.update("INSERT INTO session (tenant_id, session_id, title) VALUES (?, 's-dup', '标题甲')", TENANT_ID)
+        jdbc.update("INSERT INTO session (tenant_id, session_id, title) VALUES (?, 's-dup', '标题乙')", TENANT_ID)
+        rollup.rollUp()
+
+        val row = data("/api/admin/tool-metrics/summary?groupBy=session")["rows"]
+            .first { it["subjectKey"].asString() == "s-dup" }
+        // Had the title been joined rather than subqueried, this group would be two rows of two calls each.
+        assertEquals(2L, row["calls"].asLong())
+        assertEquals(2L, row["successes"].asLong())
+        assertEquals("标题乙", row["subjectName"].asString())
+        clearOwnedRegistrations()
     }
 
     @Test

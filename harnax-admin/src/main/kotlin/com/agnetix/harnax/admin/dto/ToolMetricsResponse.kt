@@ -18,15 +18,29 @@ import io.swagger.v3.oas.annotations.media.Schema
 data class ToolMetricsRow(
     @Schema(description = "Origin bucket: builtin / mcp / cli / shell / framework; empty when grouped by agent or session")
     val kind: String = "",
-    @Schema(description = "The row's key: the tool name when grouped by tool, the agent id or session id otherwise")
+    @Schema(
+        description = "The row's key: the tool name when grouped by tool, the session id when grouped by " +
+            "session, the id as text when grouped by mcp or cli, the agent id as text otherwise",
+    )
     val subjectKey: String = "",
     @Schema(
         description = "MCP server id or CLI package id when kind is mcp or cli, the agent id when grouped by " +
             "agent, absent otherwise. This is the value the drill-down predicate is built from.",
     )
     val subjectId: Long? = null,
-    @Schema(description = "Tool name; empty when grouped by agent or session")
+    @Schema(description = "Tool name; empty when grouped by mcp, cli, agent or session")
     val toolName: String = "",
+    @Schema(
+        description = "This row's own subject as its registered name: the MCP server, CLI package or agent " +
+            "name, the session title, or the tool name when grouped by tool. Falls back to subjectKey when " +
+            "nothing is registered behind the id.",
+    )
+    val subjectName: String = "",
+    @Schema(
+        description = "Owning MCP server or CLI package name, present only on a row whose kind is mcp or cli; " +
+            "a tool row keeps its name and adds the server that answered, so the row says which one ran it",
+    )
+    val parentName: String = "",
     val calls: Long = 0L,
     val successes: Long = 0L,
     val errors: Long = 0L,

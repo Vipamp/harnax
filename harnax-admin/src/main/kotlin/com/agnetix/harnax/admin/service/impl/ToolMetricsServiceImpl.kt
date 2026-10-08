@@ -171,13 +171,17 @@ class ToolMetricsServiceImpl(
             row ?: continue
             val calls = row.longOf("calls")
             val successes = row.longOf("successes")
+            val subjectId = row.subjectIdOf("subjectId")
             val (operator, ms) = p95(row, calls)
             rows.add(
                 ToolMetricsRow(
                     kind = row.stringOf("kind"),
-                    subjectKey = row.stringOf("toolName"),
-                    subjectId = row.subjectIdOf("subjectId"),
+                    // A server or a package has no single tool name to key on, so its id is the key.
+                    subjectKey = if (dimension == DIM_TOOL) row.stringOf("toolName") else subjectId?.toString().orEmpty(),
+                    subjectId = subjectId,
                     toolName = row.stringOf("toolName"),
+                    subjectName = row.stringOf("subjectName"),
+                    parentName = row.stringOf("parentName"),
                     calls = calls,
                     successes = successes,
                     errors = row.longOf("errors"),
@@ -199,9 +203,10 @@ class ToolMetricsServiceImpl(
      *
      * Only `agent` and `session` arrive: `mcp` and `cli` are subjects the aggregate already folds per hour, and
      * [getSummary] sends those three to [toolRows]. A row here spans every tool the subject ran, so the tool
-     * name and the origin stay empty; the key is the grouped column itself. The P95 has no bucket to answer
-     * from on this path, so it reports the longest call actually measured, and the window's percentile beside
-     * it comes from the aggregate instead.
+     * name and the origin stay empty; the key is the grouped column itself and `subjectName` is its registered
+     * agent name or session title, already fallen back to that key by the SQL. There is no owner to name on
+     * this path, so `parentName` stays empty. The P95 has no bucket to answer from here, so it reports the
+     * longest call actually measured, and the window's percentile beside it comes from the aggregate instead.
      */
     private fun detailRows(
         window: Window,
@@ -218,6 +223,7 @@ class ToolMetricsServiceImpl(
                 ToolMetricsRow(
                     subjectKey = row.stringOf("subjectKey"),
                     subjectId = row.subjectIdOf("subjectId"),
+                    subjectName = row.stringOf("subjectName"),
                     calls = calls,
                     successes = successes,
                     errors = row.longOf("errors"),

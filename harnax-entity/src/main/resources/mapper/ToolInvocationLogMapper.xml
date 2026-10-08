@@ -75,6 +75,22 @@
             <otherwise>l.agent_id</otherwise>
         </choose>
         AS subjectId,
+        <!-- The subject's own name. An agent row joins `agent` by primary key and wraps the column in MAX:
+             one id is one name, so the aggregate answers that name and ONLY_FULL_GROUP_BY stays satisfied
+             without widening the GROUP BY. A session row has to read its title through a scalar subquery
+             instead of a join, because `session.session_id` carries no unique index — the column comment calls
+             it unique, the index list has neither a unique nor a plain index on it — so a join would fan one
+             grouped row into one per duplicate and double every count below. ORDER BY ss.id DESC LIMIT 1 picks
+             the newest row's title, and the subquery returns at most one value whatever the table holds.
+             Both branches fall back to the row's own key when nothing is registered. -->
+        <choose>
+            <when test="groupBy == 'session'">
+                COALESCE((SELECT ss.title FROM session ss
+                WHERE ss.session_id = l.session_id AND ss.tenant_id = l.tenant_id
+                ORDER BY ss.id DESC LIMIT 1), l.session_id) AS subjectName,
+            </when>
+            <otherwise>COALESCE(MAX(a.name), CAST(l.agent_id AS CHAR)) AS subjectName,</otherwise>
+        </choose>
         COUNT(*) AS calls,
         SUM(l.outcome = 'SUCCESS') AS successes,
         SUM(l.outcome = 'ERROR') AS errors,
@@ -84,14 +100,19 @@
         COALESCE(MAX(l.duration_ms), 0) AS maxDurationMs,
         MAX(l.ts) AS lastSeenAt
         FROM tool_invocation_log l
+        <!-- Only the agent dimension has a table to name, and the join is on a primary key with the row's own
+             tenant, so it cannot add a row to any group. -->
+        <if test="groupBy != 'session'">
+            LEFT JOIN agent a ON a.id = l.agent_id AND a.tenant_id = l.tenant_id
+        </if>
         WHERE l.tenant_id = #{tenantId}
         AND l.ts &gt;= #{from}
         AND l.ts &lt; #{to}
         <if test="kind != null and kind != ''">
             AND l.kind = #{kind}
         </if>
-        <!-- The grouped column is the one named in SELECT, and the session dimension selects no other
-             non-aggregated column at all. -->
+        <!-- The grouped column is the one named in SELECT, and every other selected column is either an
+             aggregate or a subquery bound to that grouped column. -->
         <!-- `agent_id` and `session_id` are both nullable, so the grouping collects one NULL key of its own.
              A call with no agent can neither be counted under an agent nor opened in the drill-down, so that
              group stays out of the response. It is not hypothetical: a team's lead has no `agent` row, so a lead
