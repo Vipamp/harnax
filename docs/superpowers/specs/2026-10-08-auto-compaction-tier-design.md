@@ -1,6 +1,6 @@
 # 自动压缩档位显式化 · 设计
 
-日期：2026-10-08　状态：已获用户批准，进入实现
+日期：2026-10-08　状态：已实现。本文件是当天的规划稿，落地后的口径以 `prod_doc/harness-compaction.zh-CN.md` / `.en-US.md` 为准，两份不一致时读那一对。
 
 ## 0. 一句话
 
@@ -69,11 +69,12 @@ internal object AutoCompactionTier {
 }
 ```
 
-三个消费点，没有第四处：
+四处改动：一处是必需的透传，三处是这套数的消费点。`HarnessAgentBuilder`（harnax 自己的装配 builder）今天没有 `compaction(...)` 透传——`:225-243` 那一段只有 disable 系列，`:247` 直接 `build()`——所以档位要能递到上游，先得把这层接上。
 
 | 落点 | 改法 |
 |---|---|
-| `HarnessAgentLauncher.kt`，`disableTranscript()`（`:870`）那一段之后 | 加 `agentBuilder.compaction(AutoCompactionTier.auto())`；注释把 `offloadBeforeCompact=false` 的理由挂到同一段已有的 `disableTranscript()` 与 `removeTool("session_search")`（`:942`）判据上 |
+| `HarnessAgentBuilder.kt`，`disableTranscript()`（`:243`）之前 | 加透传 `fun compaction(config: CompactionConfig): HarnessAgentBuilder = apply { builder.compaction(config) }`，指向 `HarnessAgent.java:1873` |
+| `HarnessAgentLauncher.kt`，`disableTranscript()`（`:870`）那一段之后 | 加 `agentBuilder.compaction(AutoCompactionTier.auto())`；注释把 `offloadBeforeCompact=false` 的理由挂到同段已有的 `disableTranscript()` 与 `removeTool("session_search")`（`:942`）判据上 |
 | `HarnessAgentWrapper.kt:433-452` `contextUsage()` | 删掉 `:436` 那行自建默认件，改读 `AutoCompactionTier.RESERVED_TOKENS` 与 `TRIGGER_MESSAGES`；KDoc `:427-428` 的「上游默认」改口为「harnax 钉的档位」 |
 | `ContextCompactionService.kt:144-149` `commandConfig()` | 一行委托 `AutoCompactionTier.command(keepTokens)`，手动与自动的数从此同源 |
 
@@ -105,7 +106,7 @@ internal object AutoCompactionTier {
 
 ## 6. 文档回写
 
-不新开第三份 harness 方案件。as-built 结果折回既有那两份成对文档 `prod_doc/harness-compaction.zh-CN.md` / `.en-US.md`：档位那段并进 §5 `/compact` 命令压缩 的末尾（不新增编号章节，免得与别处对 § 的引用撞号），§6 只把「那个阈值是推出来的」改口成「钉出来的」并给出钉住的减数，§7 改动清单加一行，§10 加本轮真栈记录，§11 把「自动压缩档位的显式化」这条划出。
+不新开第三份 harness 方案件。as-built 结果折回既有那两份成对文档 `prod_doc/harness-compaction.zh-CN.md` / `.en-US.md`：档位那段落在 §5 下的 `### 5.1 自动压缩档位`（与该文既有的 10.1/10.2 同形，§5、§6、§7 都指得到它），§2 事实一改成「上游那份初值 + harnax 在装配层钉成自己的档位」，§6 把「那个阈值是推出来的」改口成「钉出来的」并给出钉住的减数，§7 改动清单加一行，§10 加本轮真栈记录，§11 把「自动压缩档位的显式化」这条划出。
 
 ## 7. 验收清单
 

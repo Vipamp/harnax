@@ -31,8 +31,8 @@
 
 ## 2. 三条事实决定方案形状
 
-**事实一：压缩本来就在跑，harnax 从没配过它。**
-`HarnessAgent.Builder` 的字段初值是 `compactionConfig = CompactionConfig.builder().build()`、`disableCompaction = false`（`HarnessAgent.java:1227,1230`），`CompactionMiddleware` 在「未关压缩 ∧ `compactionConfig` 非空 ∧ 摘要模型（config 自带否则取 builder 的 model）非空」三条同时成立时装上，默认装配下三条全部成立（`HarnessAgent.java:2600-2609`）。默认档：`triggerMessages=50`、`triggerTokens=0`（动态档 = 模型窗口 − `reserved=20_000`，模型报不出窗口时回落 `FALLBACK_TRIGGER_TOKENS=160_000`）、`keepMessages=20`、`keepTokens=-1`（动态档 = `min(8_000, max(2_000, 可用量 × 0.25))`）、`flushBeforeCompact=true`、`offloadBeforeCompact=true`（`CompactionConfig.java:273-286`、`:67`）。窗口值由 core 按模型名前缀推断（`ModelContextWindows.java:151`），harnax 从未显式设置。
+**事实一：压缩本来就在跑，harnax 要做的只是给它受控的入口和读数。**
+`HarnessAgent.Builder` 的字段初值是 `compactionConfig = CompactionConfig.builder().build()`、`disableCompaction = false`（`HarnessAgent.java:1227,1230`），`CompactionMiddleware` 在「未关压缩 ∧ `compactionConfig` 非空 ∧ 摘要模型（config 自带否则取 builder 的 model）非空」三条同时成立时装上，默认装配下三条全部成立（`HarnessAgent.java:2600-2609`）。上游那份初值是：`triggerMessages=50`、`triggerTokens=0`（动态档 = 模型窗口 − `reserved=20_000`，模型报不出窗口时回落 `FALLBACK_TRIGGER_TOKENS=160_000`）、`keepMessages=20`、`keepTokens=-1`（动态档 = `min(8_000, max(2_000, 可用量 × 0.25))`）、`flushBeforeCompact=true`、`offloadBeforeCompact=true`（`CompactionConfig.java:273-286`、`:67`）。这套数 harnax 在装配链逐字钉成自己的档位（5.1），钉住的唯一取值差别是 `offloadBeforeCompact = false`。窗口值优先取模型行填的 `context_window`（第 6 节），留空时由 core 按模型名前缀推断（`ModelContextWindows.java:151`）—— 窗口是每个模型不同的量，档位里钉的是触发/保留/裁剪那套旋钮。
 所以"支持压缩功能"不是引入一个新机制，而是**给一个已在跑的机制补上受控的入口和可见度**。
 
 **事实二：harnax 的用户可见历史就是模型上下文本身。**
@@ -116,15 +116,38 @@ CREATE TABLE IF NOT EXISTS session_message (
 
 | 判定点 | 取定 |
 |---|---|
-| 压缩档位 | `CompactionConfig.builder().triggerMessages(1).flushBeforeCompact(false).offloadBeforeCompact(false).build()`。`triggerMessages(1)` 与上游溢出兜底逐字同构（`HarnessAgent.java:1071`），含义是"用户既然发了命令就别拿阈值挡我"；真正的"值不值得压"由 cutoff 判定把关 —— 消息数不足以留出 `keepMessages=20` 的尾部时上游直接返回 `Optional.empty()`（`ConversationCompactor.java:112,118`），我们据此回"当前会话还短，没有可压缩的内容" |
+| 压缩档位 | `AutoCompactionTier.command(keepTokens)`，就是 5.1 那套数改掉三项（取值见 5.1 的表）。`triggerMessages(1)` 与上游溢出兜底逐字同构（`HarnessAgent.java:1071`），含义是"用户既然发了命令就别拿阈值挡我"；真正的"值不值得压"由 cutoff 判定把关 —— 消息数不足以留出 `keepMessages=20` 的尾部时上游直接返回 `Optional.empty()`（`ConversationCompactor.java:112,118`），我们据此回"当前会话还短，没有可压缩的内容" |
 | `args` 语义 | `/compact <N>` → `keepTokens = N`（保留尾部约 N token）。缺省走动态档。非数字或 ≤0 → 忽略并照默认档，`message` 里说明被忽略 |
-| flush / offload | **两条都关**。代码上确认可关：两步各由 `config.isFlushBeforeCompact()`（`ConversationCompactor.java:136`）/ `isOffloadBeforeCompact()`（`:156`）把守，关了就是一句空 `Mono`，不付 LLM 调用也不落文件。取舍：开着能留下 `sessions/<id>.jsonl` 原文副本，但那份文件既不在 harnax 的产物可见范围也不在清会话的删除清单里，lead 侧还落在宿主 `user.dir` 子树，用户和运维都取不到；同时 flush 会多付一次模型调用、写出的日报没有任何读回入口。所以手动压缩只出摘要那一次调用。第 3 节第 1 行的 `disableTranscript()` 与这条同源：默认路径留下的文件产物一律按"取不到就不算收益"处理 |
+| flush / offload | **两条都关**。代码上确认可关：两步各由 `config.isFlushBeforeCompact()`（`ConversationCompactor.java:136`）/ `isOffloadBeforeCompact()`（`:156`）把守，关了就是一句空 `Mono`，不付 LLM 调用也不落文件。取舍：开着能留下 `sessions/<id>.jsonl` 原文副本，但那份文件既不在 harnax 的产物可见范围也不在清会话的删除清单里，lead 侧还落在宿主 `user.dir` 子树，用户和运维都取不到；同时 flush 会多付一次模型调用、写出的日报没有任何读回入口。所以手动压缩只出摘要那一次调用。第 3 节第 1 行的 `disableTranscript()` 与这条同源：默认路径留下的文件产物一律按"取不到就不算收益"处理。自动路径同一对旋钮取 `flush = true` / `offload = false`，判据见 5.1 |
 | 并发闸 | 该会话有在跑的流或阻塞调用即拒（`activeStreams` 在 `DefaultAgentRunner.kt:87`、`activeCalls` 在 `:96`，同一对判据的现有用法见 `:110`）。mid-turn 覆写 `context` 会和轮次结束时的 `saveStateToSession`（`ReActAgent.java:475`）抢同一个对象。压缩自己也在这一次写入的整个跨度里 `registerCall`/`unregisterCall`（与阻塞轮同款，`DefaultAgentRunner.kt:134-141`），于是同一会话的第二次压缩被同一条闸挡在外面，压缩期间该会话的 agent 也不会被驱逐后释放；仍未闭合的是反方向——压缩在跑时新起一轮对话不会因此被拒，见第 11 节 |
 | 会话范围 | 只压 root 会话。`task-` 前缀直接拒（同 `:1078` 能力开关那条的先例）；team 成员各自的子会话不在本轮 —— 成员的上下文由成员自己跑完时的自动压缩负责 |
 | 摘要失败 | **不落库，直接回 failure。** 上游把摘要调用的异常吞成字符串 `"(Summarization failed: …)"` / `"(Summary unavailable)"` 并照常返回一个"压缩结果"（`ConversationCompactor.java:375,382`）。自动路径下这是可接受的降级，手动路径下等于用一坨错误文本把模型上下文换掉、且因为第 4 节的分离用户看不见、下一次轮就照着它答 —— 判据是结果首条 `name == __compaction_summary__` 且正文**包含** `(Summarization failed` 或 `(Summary unavailable)`。取"包含"而非"开头"是因为标记并不写在开头：`buildSummaryMessage` 先拼固定引导语 `"Here is a summary of the conversation to date:\n\n"`（`ConversationCompactor.java:467`），标记只会落在它后面；而"包含"带来的唯一代价是把一句真提到该字样的成功摘要也判为失败，这个方向上误判便宜（命令重试一次、上下文原样保留），反向漏判才贵 |
 | 无缓存 agent | 照 `getOrCreateAgent` 正常重建（`:774-787` 的 `cachedAgent` 判空后由 `:794` 建），压缩不必是"活跃会话"专属 |
 | 阻塞与超时 | 命令这条链全程同步返回 `ResultVo<CommandResponse>`（router `AgentProxyController.kt:105-113`、agent-service `AgentController.kt:77-86`），而 `compactIfNeeded` 回的是 `Mono`，所以实现就地 `block()` 等那一次摘要调用。够用：router 对 JSON 代理的读超时 600s（`harnax-session-router/src/main/resources/application.yml:103`）、webflux `request-timeout` 1800s（同文件 `:22`），一次摘要远在其内，与 `HarnessConfig.turnTimeoutSeconds = 300`（`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/config/HarnessConfig.kt:33`）同一量级。不为它另开异步通道 |
 | 走 store 兜底副本 | 禁止。`HarnessAgentWrapper.kt:293-314` 的 `getLiveAgentState()` 在 delegate 缺席时会返回从库里反序列化出来的副本，改它再 `saveAgentState` 会静默 no-op（只保存 cache 里已有的 slot）。压缩这条路径只认 delegate |
+
+### 5.1 自动压缩档位
+
+两条路共用一份档位，落在 `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/compaction/AutoCompactionTier.kt`：装配链 `HarnessAgentLauncher.kt` 在 `disableTranscript()` 那一段之后调 `agentBuilder.compaction(AutoCompactionTier.auto())`，命令路径调 `AutoCompactionTier.command(keepTokens)`。取值的判据是"这就是本运行时会走的那套数"，不是"上游现在是多少"——`AutoCompactionTierTest` 里有一条漂移哨兵把 `auto()` 与 `CompactionConfig.builder().build()` 逐字段比，上游哪天动任何一个默认值它就转红，那是要人裁决的信号而不是要修的 bug。
+
+| 常量 | 值 | 含义 |
+|---|---|---|
+| `TRIGGER_MESSAGES` | 50 | 消息数那条线 |
+| `TRIGGER_TOKENS` | 0 | 0＝按模型窗口动态。窗口是每模型不同的量（`model.contextWindowSize`，操作者在模型行填的 `context_window` 经 `ModelHelper.kt:64/82/104` 进到模型件），钉绝对值会让小窗口模型永远够不着线 |
+| `RESERVED_TOKENS` | 20 000 | 动态触发线让出的余量，也就是第 6 节那行阈值的减数 |
+| `KEEP_MESSAGES` | 20 | 没有窗口可推时的保留条数 |
+| `KEEP_TOKENS` | -1 | -1＝动态尾档 |
+| `KEEP_TOKENS_MIN` / `_MAX` / `_RATIO` | 2 000 / 8 000 / 0.25 | 动态尾档 `min(MAX, max(MIN, usable × RATIO))` 的三个参数 |
+| `PRUNE_PROTECT_TOKENS` | 40 000 | 最近这么多 token 的工具结果不参与裁剪 |
+| `PRUNE_MINIMUM_TOKENS` | 20 000 | 可裁总量越过这条才真裁 |
+| `PRUNE_MAX_OUTPUT_CHARS` | 2 000 | 裁完只留头尾预览时的每份字符数 |
+| `PRUNE_EXCLUDED_TOOLS` | `read_file, memory_search, memory_get, session_search` | 后三件在这里要么只读要么已摘除，裁它们换不到余量 |
+
+`auto()` 与 `command()` 的差**恰好三项**：`triggerMessages`（1）、`flushBeforeCompact`（false）、`offloadBeforeCompact`（false），另加 `keepTokens` 那一个可选入参。`AutoCompactionTierTest` 把这三项之外逐字段比平，所以两条路不会再各长出一个旋钮。
+
+三项显式写出但不钉值，各带理由：`summaryPrompt` **引用** `CompactionConfig.DEFAULT_SUMMARY_PROMPT`（摘要措辞的改进该跟，这一跟是写在代码里的跟）；`model` 留 null（摘要用 agent 自己的模型）；`truncateArgs` 留 null（工具入参截断没开，上游开它是 500/1000 字符常量、不可配，那正是第 3 节否掉 transcript 通道的理由之一）。
+
+自动路径 `offloadBeforeCompact = false` 的三条判据：上游这一步走的是 `MemoryFlushManager.offloadMessages`（`MemoryFlushManager.java:207-216`）里 `new SessionTranscriptWriter(...).appendMessages(...)`，与 `disableTranscript()` 关掉的每轮 transcript 是**同一个写入器**、同一个键布局（`agents/<agentId>/sessions/<sessionId>`，`SessionTranscriptWriter.java:86`）；它在 harnax 里唯一的消费方 `session_search` 已被显式摘除（`HarnessAgentLauncher.kt` 的 `removeTool("session_search")`）；这份副本也不在 `clearSession` 的删除范围内。`flushBeforeCompact` 保持 true：压缩前把即将被裁掉的前缀抽进当日记忆账，memory 域吃这一路。关掉 offload 不引入新的失败面——上游本来就把它的异常静默吞掉继续走（`ConversationCompactor.java:153`）。
 
 ---
 
@@ -138,7 +161,7 @@ CREATE TABLE IF NOT EXISTS session_message (
 | `lastCallInputTokens` | `token_stats.input_token` 该会话最近一行 | 账单真值，由 `TokenStatsMiddleware.kt:41-67` 每次模型调用写一行。它含系统提示与工具清单而 `context` 不含，且它反映上一轮，压缩之后要到下一轮才降。**它与估算不成比例**：真栈同一会话同一轮并排取到的六组数是 669/4245、2330/4604、4974/4961、3770/4934、7573/4868、3807/5157，另一会话 3618/6278 与 447/4468 —— 估算最低只有账单的一成、最高略超账单，因为估算计入的思考内容并不会回放进后续轮次、而账单带着估算永远看不到的系统提示与工具清单。所以这两个数不能互相换算，只能各答各的问题 |
 | `contextWindow` | 三级回退：模型域新列 `model.context_window` → 上游 `getContextWindowSize()`（`ChatModelBase.java:38-40`；builder 没给值时由 `ModelContextWindows.lookup` 按模型名做最长前缀匹配，未命中返回 0，`ModelContextWindows.java:151`）→ `160_000` | `windowSource` 取 `MODEL_FIELD` / `UPSTREAM_TABLE` / `FALLBACK`，让调用方知道这个分母是配的还是猜的 |
 | `ratio` | 有账单行时 `lastCallInputTokens / contextWindow`，该会话还没有账单行时回退 `estimatedTokens / contextWindow` | 展示用，也是"还要不要手动压"的判据 —— 它回答的是"真实请求把窗口占了多满"，所以分子必须用账单那个真数而不是自算的估算。回退只覆盖"装配完但一次模型都没调过"那一格，此时估算就是唯一可读的量。用例 `the ratio divides the billed number while the estimate keeps answering for the trigger` 守这一条；`estimatedTokens` 本身不动，继续与触发判据同数 |
-| `triggerTokens` | 用**模型自己报的窗口** `model.getContextWindowSize()` 走 `CompactionMiddleware.java:164-190` 那段算法：>0 时 `窗口 - reserved(20_000)`，该值 ≤0 时上游钳成 `max(1, 窗口/2)`；窗口报不出（≤0）时取 `160_000`。另带 `triggerMessages = 50` | "自动压缩还差多少兜底"。这里刻意不用上一行的三级回退值当被减数：中间件只看得到模型自己报的数，两者一旦分叉，三级都拿不到时就会报出一个 `160_000 - 20_000 = 140_000` 而实际兜底是 `160_000` —— 报错的阈值比报不了更糟 |
+| `triggerTokens` | 用**模型自己报的窗口** `model.getContextWindowSize()` 走 `CompactionMiddleware.java:164-190` 那段算法：>0 时 `窗口 - RESERVED_TOKENS`，该值 ≤0 时上游钳成 `max(1, 窗口/2)`；窗口报不出（≤0）时取 `160_000`。减数与 `triggerMessages` 都取 5.1 那份常量，`HarnessAgentWrapper` 直接读常量而不是另建一个配置件，所以读数与运行时 middleware consult 的那份 config 同源 | "自动压缩还差多少兜底"。这里刻意不用上一行的三级回退值当被减数：中间件只看得到模型自己报的数，两者一旦分叉，三级都拿不到时就会报出一个 `160_000 - 20_000 = 140_000` 而实际兜底是 `160_000` —— 报错的阈值比报不了更糟 |
 | `messageCount` | `context.size` | 与 `triggerMessages` 同判据 |
 
 新增读接口 `GET /api/agent/context/{sessionId}`，挂在 `AgentController.kt`（同类已有 `:105` 的 `/chat/history/{sessionId}`），鉴权形状照它：`@InternalOnly` + sessionId 作用域、不带租户谓词 —— 这是既有先例，照用并在此标明。注意 `@InternalOnly` 打在类上（`:33`，同处 `@RequestMapping("/api/agent")` 在 `:32`），新方法挂在同一个 controller 里就自动继承，不需要逐个方法标注。真实 token 那条查询因此只按 `session_id` 过滤。响应体沿用 `ResultVo`。
@@ -159,7 +182,7 @@ CREATE TABLE IF NOT EXISTS session_message (
 | admin 模型表单 | 一个可选数字输入框（单位：token） |
 | 已部署环境 | 基线折进 V1 意味着**清库重建**；不想清库的话就改出前向增量 `V2__model_context_window.sql`。两条都写得出来，默认走清库重建 |
 
-**本轮不改自动压缩的默认档**（不显式钉 `triggerTokens`、不动 `flushBeforeCompact` 在自动路径上的取值），也不动 `disableMemoryTools()` / `disableToolsConfig()`。它们与压缩共用配置对象，混在一批里改会让"命令压缩上线"这件事的回归面变得没法判定。
+**自动压缩的档位是钉出来的**：装配链把 5.1 那份 `AutoCompactionTier.auto()` 经 `HarnessAgentBuilder.compaction(...)` 交给上游，命令路径取同源的 `command(keepTokens)`，本节这个阈值的减数读的也是同一份常量。`disableMemoryTools()` / `disableToolsConfig()` 的收口排在第 11 节。
 
 ---
 
@@ -171,6 +194,7 @@ CREATE TABLE IF NOT EXISTS session_message (
 - **harnax-entity**：`Model.kt` 加列映射；`ModelConfigDto` 加 `contextWindow`；`TokenStatsMapper.kt` + `.xml` 加一条按 sessionId 的最新 `input_token` select；`schema-test.sql` 跟基线。
 - **harnax-admin**：`V1__init_schema.sql` 加列；模型 CRUD 的校验与表单加一个可选字段。
 - **harnax-harness-core**：`agent/session/` 新增 `MysqlSessionMessageStore`（自建表、幂等写、按会话读、按会话删、按桶问一句有没有档，纯 JDBC，照 `MysqlAgentStateStore.kt` 的形状）；`HarnessAgentLauncher.kt:1035` 的 `loadSessionMessages` 改读归档并保留两级回退；`HarnessAgentWrapper.kt` 新增四个能力 —— 归档当前 context、装配时给还没有档的桶补一次（`backfillArchive`，`:331` 起，判据是 `store.hasArchive(userId, sessionId)` 这条 `LIMIT 1` 存在性查询）、按命令压缩（`compactManually`：agent / sessionId / user 桶三个值一律取自 wrapper 自身，就是为守住第 4 节末条那条隐藏不变量）、算占用比例；`HarnessAgentLauncher` 把归档表与 `context_window` 原值带到 wrapper，并在唯一的构造点（`:891-916`）建好 wrapper 之后调一次 `wrapper.backfillArchive()`（`:919`）；`HarnessAgentBuilder.kt` 加 `disableTranscript()` 透传（disable 一族在 `:224-242`），并在 `HarnessAgentLauncher.kt:809` 三条装配分支合流之后无条件调用它一次（第 3 节第 1 行）—— 一处调用覆盖全部分支，没有能绕过它的分支。
+- **harnax-harness-core（档位）**：新增 `harness/compaction/AutoCompactionTier.kt` 作两条路唯一的档位来源 —— `auto()` 给装配链、`command(keepTokens)` 给 `/compact`，两者只差 5.1 那三项；`HarnessAgentBuilder.kt` 加 `compaction(CompactionConfig)` 透传（上游 `HarnessAgent.java:1873`，传 null 即等价于 `disableCompaction`）；`HarnessAgentLauncher.kt` 在 `disableTranscript()` 之后一处调用把档位钉上，与 transcript 那条同样没有能绕过它的装配分支；`HarnessAgentWrapper.contextUsage` 的 `triggerTokens`/`triggerMessages` 与 `ContextCompactionService.commandConfig` 都改读这份常量，两处不再各自 `CompactionConfig.builder().build()`。
 - **harnax-harness-core（team 侧）**：`team/TeamOrchestrator.kt` 的成员轮次以 `collectTurn` 的轮末 `finally` 归档该成员子会话 —— 成员会话没有别的收尾点，且它必须与委派成功与否无关：到达过 context 的就是页面已经给用户看过的内容。`team/TeamRuntimeSpec.kt` 的 `TeamSessions` 加成员子会话谓词（键的拼法只有这一个所有者，判定不能由调用方自己拼字符串），由 `HarnessAgentLauncher.isMemberChildSession` 转发给 runner 做 `/compact` 的前置拒绝。
 - **harnax-agent-service**：`DefaultAgentRunner.kt:264` 的 COMPACT 分支接 `handleCompact`（`:917`），替掉原来那句 `Compact not yet implemented`；归档挂在三条轮次收尾处 —— 阻塞轮的 `finally`（`:163`）、流式轮的 `doFinally`（`:195`）、HITL 确认续跑那轮的 `doFinally`（`:425`，它是 `confirm` 那条独立流，`:376-446`）。三处都排在 `drainPendingRelease`／`unregisterCall` 之前：deferred 的 `release()` 会清掉归档要读的那份 state cache，一前一后决定归档有没有内容可读。`AgentController.kt` 加 `GET /api/agent/context/{sessionId}`，其账单口径的分子由 `DefaultAgentRunner` 现读 `token_stats` 该会话最近一行 —— 这张表就在 agent-service 的主库里，不必经 admin；wrapper 只接受这个数，不自己碰库。`clearSession`（`:480-489`）连带删档。
 - **harnax-session-router**：新接口按会话绑定转发一条 —— 转发调用落在 `src/main/kotlin/com/agnetix/harnax/router/proxy/SessionRouterService.kt`（照 `:361` 的 `proxyLoadHistory` 同款，新增的 `proxyLoadContext` 在 `:397`），对外端点落在 `src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt`（照 `:105-113` 的 `/command` 代理形状，新端点 `GET /context/{sessionId}` 在 `:183`）。该端点同样是 `suspend fun`，所以它的路径 `/api/router/agent/context` 要登记进 `router/config/ApiCallLogFilter.kt` 的 `SUSPEND_ENDPOINTS`：漏了这一条，`ContentCachingResponseWrapper` 会在协程写响应体之前就把空 body 刷出去，调用方拿到一个成功但没有内容的读取。
@@ -227,7 +251,7 @@ CREATE TABLE IF NOT EXISTS session_message (
 
 ## 10. 真栈复验记录与仍未验条目
 
-复验环境：harnax-deploy 全栈（MySQL 8 + Redis + minio + 六个业务容器），后端镜像是清库重建后按 2.0.4 编出来的那一份，模型走真实 qwen 端点，`model.context_window` 由 admin 接口按需改写（4000 / 200000 两档），会话数据留在 `agentscope` 库与 `harnax_admin.token_stats` 里可回查。下面"已成立"的每条都注明判据取自哪一层：真栈读数、容器级测试，还是产物级核对。
+复验环境：harnax-deploy 全栈（MySQL 8 + Redis + minio + 六个业务容器），后端镜像是清库重建后按 2.0.4 编出来的那一份，模型走真实 qwen 端点，`model.context_window` 按探针需要改写（4000 / 200000 两档），取完读数再改回空值，会话数据留在 `agentscope` 库与 `harnax_admin.token_stats` 里可回查。下面"已成立"的每条都注明判据取自哪一层：真栈读数、容器级测试、产物级核对，还是单测与源码级闸。
 
 ### 10.1 已成立
 
@@ -243,6 +267,10 @@ CREATE TABLE IF NOT EXISTS session_message (
 10. **占用读数的两种报不出形状。** 同一个端点换两种会话各取到一次：绑定过但本实例不持有 agent 时 `code: 500` 加 `No context held for session ... - usage needs the live agent`；会话从未绑定过任何实例时 `code: 200` 且 `data: null`，因为 `proxyLoadContext` 在 `boundInstance(sessionId)` 缺失那一步直接回空信封。两种都不该读成"占用为 0"，第 8 节那两行就是对这两次读数的记录。判据：真栈读数。
 11. **第 7 节 webui 那两处在真浏览器里成立，且主断言在页面路径上重取到一次。** 浏览器打开的是本地 dev server（`:8000`，代理指向部署栈的 28xxx 端口），页面加载的就是工作树这一份代码。登录进既有会话后：标题栏读到 `11% · 账单`，同一份响应里 `ratio 0.1058807373046875 × contextWindow 131072 = 13878` 与 `lastCallInputTokens 13878` 逐字相等（`windowSource = UPSTREAM_TABLE`、`triggerTokens 111072`），分子走的确实是账单那一路；换到第 10 条那两种报不出的会话，标题栏整块不渲染，页面上没有出现 `0%`。输入点"压缩上下文"后落下"已压缩上下文：28 条 → 21 条"，随后按页面读路径重取历史仍是 28 条（USER 8 / ASSISTANT 14 / TOOL 6）、摘要气泡命中 0，而同一时刻 `/context` 报 `messageCount: 21` —— 第 1 节的主断言在 UI 这条链上又对上一次。压缩被后端拒掉的形状取到的是**信封**：在页面上下文里实发一次 `task-` 前缀会话的 COMPACT，回 `code: 500`、`data: null`、顶层 `message` 为 `Privileged session prefix requires an internal caller` —— 拒绝原因带在信封自己身上，而前端那一支取文案的次序是 `data.message` → 信封 `message` → 本地兜底，所以这句原因顶替得掉泛化的"压缩失败"。这一支的 DOM 呈现本轮没单独取到：服务端库里当时只有一个会话，页面上点不出被拒的那一屏。前端容器随后按同一份工作树重建，`compose ps frontend` 回 `(healthy)`，`harnax-deploy/dist/frontend` 与容器内 `/usr/share/nginx/html` 两处都 grep 到新增的 `pages.session.context.*` key（落在 `p__session__index.*.async.js` 与 `umi.*.js`）。判据：浏览器 DOM + 真栈读数 + 产物级核对。
 12. **第 7 节 iOS 那两处成立在单测与源码级闸上，没到真机现场。** 契约层（`ContextUsage`：账单分子优先、无账单才回落估算、窗口三级、只有拿到真窗口才算"有读数"）22 条用例——含显式 `null` 与缺键同解码一支（agent-service 与 session-router 没开 `default-property-inclusion: non_null`，两种形状线上都有），和比值越出 `Int` 范围时钳位而不是崩一支（钳位之前 `Int(percent)` 直接把整个测试进程带崩：`Fatal error: Double value cannot be converted to Int because the result would be greater than Int.max`，signal 5；`isFinite` 挡不住乘上一百之后才溢出）。`COMPACT` 回包的三态读数另 7 条（成败只认 `success` 旗标，旗标为真时两边计数不同才算压成、相等是"还太短没得压"，另钉"没带旗标的回包"读成失败而不是成功、"单边计数"不读成没得压）；传输层 6 条把线上三种形状各钉一次——`ResultVo.success(null)` 落成"报不出"而不是失败、HTTP 200 里的业务码 500 落成带着服务端那句原文的失败、缺字段的半截 body 落成解码失败（落成 `0%` 就是第 8 节那条破防），另断言请求落在 router base 的 `/api/router/agent/context/{sessionId}` 且含斜杠的会话键先编码再进路径；视图模型层 14 条钉住读取的落地规则：任何一次读取都覆盖上一次的读数（与 webui 的 `loadContextUsage` 同判据，那里也是直接覆写，"这次没读到"本身就是新信息，画 `0%` 就是第 8 节那条破防），而两次询问重叠时落地的只能是最后一次的答案（压缩前那次读得慢，盖不掉压缩之后的新数）；读数在进页、一轮回答之后、一次压缩之后各重取一次，其中压缩那一支含"用户在请求中途按了停止"——命令已在服务端跑掉，停止只放弃回答，读数照样补取，而横幅与气泡都不出现；再加四支文案分支、没带旗标那一支转警告、点按与手敲两条落点；归档不失真另 1 条：四条存档气泡过一次 `40 → 12` 的成功压缩，逐条文本与角色都不动、屏幕不出现摘要气泡（这条把第 2 节的硬要求钉在屏幕能证的最高一层）；展示层 7 条把菜单里五行的标签与取值逐条配死（另两条钉四个 token 行走 token 页同档 M/K、消息条数保持裸条数），其中"账单那一行读 `lastCallInputTokens` 而不是 `estimatedTokens`"做过变异核验——把账单行换成估算值后恰好两条用例转红；另外窗口档位出现线上没见过的**非空**取值时保留其拼写，不回落成"兜底"字样（空串不在这一支，它按 webui 的 `usage.windowSource || 'FALLBACK'` 读成兜底）。视图本身由 2 条源码级闸守：读数挂在 `ToolbarItem(placement: .primaryAction)`、解开只发生在 `if let usage = vm.contextUsage` 这一处（闸另断言胶囊那一段里不再出现 `vm.contextUsage`，即屏幕确实没有第二个判断点），达到自动压缩阈值时 chip 转 warning；压缩入口在 composer 那行的位置钉在权限之后、两个销毁类入口之前。`harnax-ios` 全量 `swift test` 2051 条 0 失败，本域 59 条（契约 22 + 回包读数 7 + 传输 6 + 视图模型 14 + 归档不失真 1 + 展示 7 + 源码级闸 2）。本域断言里做过变异核验的一共四组：把账单行换成估算值后恰好两条用例转红；去掉定序守卫、去掉停止后的补读、把"压缩后仍留全量存档"改成清空，这三条各自转红且没有连带——它们钉的是需求而不是代理指标。App target 另按 `generic/platform=iOS Simulator` 构建过并回 `** BUILD SUCCEEDED **`：`swift test` 只编四个包 target，App 层那份替身目录不在其内，"新依赖没接线"这一形只有这一跳测得出来（漏接时报的是 `missing argument for parameter 'contextUsage' in call`）。判据：单测 + 源码级闸 + 全量计数 + App target 模拟器构建；缺的那一屏见 10.2 第 8 条。
+13. **自动压缩档位钉住后的三条。** 单测层：档位相关四类共 32 条全绿（`AutoCompactionTierTest` 7 条 —— 自动档逐旋钮 4 条、命令档 2 条、外加盯上游默认值漂移的哨兵 1 条；`HarnessAgentBuilderCompactionTest` 3 条 —— 不钉时上游吃自己的默认件、钉了时装配后的档位逐字段等于 `auto()`、钉档位不会把自动压缩关掉；`HarnessAgentLauncherCompactionTest` 1 条 —— 装配链每一路都把档位递进去；`HarnessAgentContextArchiveAndUsageTest` 21 条 —— 归档 8 / 读数 10 / 压缩 3）；harness-core 全量 662 条 0 失败 1 跳过（跳过的是既有 `MemoryPromotionRealModelTest`，缺 `HARNAX_REAL_MODEL_API_KEY`），agent-service 全量 257 条 0 失败。
+    读数那一跳按 5.1 的算式给出，两支都取到：同一把模型（`harnax_admin.model` id 2）先把 `context_window` 填 200000 建会话问一句话，`/context` 回 `triggerTokens` 180000（= 200000 − `RESERVED_TOKENS` 20000）、`triggerMessages` 50、`windowSource` `MODEL_FIELD`；再填 4000 另建一个会话，回 `triggerTokens` 2000 —— 20000 的余量把这个窗口吃穿了，落的是 `max(1, 窗口/2)` 那道钳，与运行时 middleware consult 的那份 config 同一个算法。两个会话的 `$.context` 都还是 2 条、首条 `name = "user"`，即这一档下没触发压缩。
+    offload 的取舍在同一通道前后各取到一次：钉之前那次自动压缩在会话沙箱里落下 `/workspace/agents/测试/sessions/` 三份文件 —— `<sid>.jsonl` 88216 字节 136 行、`<sid>.log.jsonl` 38955 字节 71 行、`sessions.json` 记 "transcript updated (71 entries)"，写盘时刻 12:00:22 UTC，与 `agent_state` 被覆写的 12:00:54 是同一次压缩的两条腿；钉之后那条确实压缩过的会话（`web-219f7e7b-9f51-426f-983f-57fc2c31d0c5`）的沙箱 `/workspace` 只有 `output/`（空）与 `skills/harnax/SKILL.md`，`agents/` 整段不出现。这一对照只隔离 offload 一项：memory flush 那一路在两份镜像上都不写这个目录（改动前那棵树里同样没有 `MEMORY.md` 与 `memory/`），而 `flushBeforeCompact` 钉的仍是 true。
+    页面全量那一条在同一条形上重取：窗口填 4000 的会话跑五轮，账单 `token_stats.input_token` 依次 7765 / 8073 / 8593 / 8210 / 8848；`agentscope.agent_state` 的 `$.context` 剩 5 条且首条 `name = __compaction_summary__`；页面读路径回 10 条，逐条正文长度 USER 32/41/37/31/36、ASSISTANT 784/916/845/1069/827，`summaryHits` 0；`agentscope.session_message` 10 行、最长正文 78000 字节；同一时刻 `/context` 报 `messageCount` 5、`estimatedTokens` 3165、`lastCallInputTokens` 8848、`ratio` 2.212。顺带量到一条地板：压到 5 条之后账单仍从 7765 涨到 8848，压不穿的那部分是系统提示与工具模式（估算 3165 对账单 8848），所以档位裁的是尾部对话而不是这一轮账单的全部 —— 读数报的仍是真数，与第 6 节「比例按账单算」不冲突。判据：单测 + 全量计数 + 产物级核对 + 真栈读数 + `agentscope.agent_state` 与 `agentscope.session_message` 直查。
 
 ### 10.2 仍未验
 
@@ -261,7 +289,6 @@ CREATE TABLE IF NOT EXISTS session_message (
 
 ## 11. 明确不在本轮
 
-- 自动压缩档位的显式化（给装配层钉 `triggerTokens`/`keepTokens`/`prune`），以及 `flushBeforeCompact` 在自动路径上的取舍。
 - `disableMemoryTools()` / `disableToolsConfig()` / `disableAtPathExpansion()` 三项收口。
 - 把 `session_message` 用于跨会话检索（`session_search` 那类能力）。
 - 用上游 transcript 或 `TranscriptStore` 承载用户可见历史 —— 第 3 节第 1 行已给出否决理由（截断常量不可配、且它记的是压缩后的 live context）。
