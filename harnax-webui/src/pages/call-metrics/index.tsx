@@ -356,16 +356,16 @@ const CallMetrics: React.FC = () => {
             right: (
               <RangePicker
                 value={range}
-                showTime={{ format: 'HH:mm', showMinute: true, showSecond: false }}
-                format="YYYY-MM-DD HH:mm"
+                showTime={{ format: 'HH', showMinute: false, showSecond: false }}
+                format="YYYY-MM-DD HH:00"
                 presets={rangePresets}
                 allowClear={false}
                 style={{ width: 330 }}
                 disabledDate={(current) => current.isAfter(dayjs().endOf('day'))}
                 onChange={(dates) => {
                   if (!dates?.[0] || !dates?.[1]) return;
-                  // The server folds any minute down to the hour it belongs to; snapping here means the box
-                  // shows the window that was actually counted instead of one the reader has to translate.
+                  // The window is hour grain at both ends, so a typed minute folds back into the hour it
+                  // belongs to here rather than reaching the server as a boundary it cannot answer.
                   setRange([dates[0].startOf('hour'), dates[1].startOf('hour')]);
                   // The records an open drawer lists belong to the range they were counted over; paging them
                   // under a new range would silently mix the two.
