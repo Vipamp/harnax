@@ -3,6 +3,7 @@ package com.agnetix.harnax.router.proxy
 import com.agnetix.harnax.auth.AuthContext
 import com.agnetix.harnax.auth.AuthContextHolder
 import com.agnetix.harnax.common.dto.ResultVo
+import com.agnetix.harnax.router.controller.AgentProxyController
 import com.agnetix.harnax.router.entity.AgentInstance
 import com.agnetix.harnax.router.service.AgentServiceClient
 import com.agnetix.harnax.router.service.IdempotencyService
@@ -12,17 +13,21 @@ import com.agnetix.harnax.router.service.SessionEvictor
 import com.agnetix.harnax.router.service.SessionMappingService
 import com.agnetix.harnax.router.service.impl.LocalInstanceCircuitBreaker
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
+import jakarta.servlet.http.HttpServletRequest
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.mockito.kotlin.any
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.isNull
+import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.RequestBody
 import java.time.Instant
+import kotlin.coroutines.Continuation
 
 /**
  * An unbound session answers empty instead of being placed on some other instance: the enabled skills are
@@ -42,16 +47,19 @@ class SessionRouterServiceSessionSkillTest {
     fun `a session with no bound instance lists nothing and calls nobody`() = runBlocking {
         val (service, client) = fixture(bound = false)
         val result = service.proxySessionSkills("ses-1")
-        assertNotNull(result)
         assertEquals(200, result.code)
+        // The name promises "lists nothing", so the payload is what has to be pinned: `assertNotNull(result)`
+        // on a non-null return type said nothing, and a success carrying rows for a session that was never
+        // bound anywhere would have stayed green, as would a null data the clients read as an empty box.
+        assertEquals(emptyList<Map<String, Any>>(), result.data, "an unbound session must answer an empty list")
         Mockito.verifyNoInteractions(client)
     }
 
     /**
-     * Both enable cases are block-bodied on purpose. `fun x() = runBlocking { … }` gives the method the type
+     * Every enable case here is block-bodied on purpose. `fun x() = runBlocking { … }` gives the method the type
      * of the block's last expression, and these end on a mocked call that answers with a `ResultVo` — a
      * `@Test` that returns a value is not a test candidate, so Jupiter drops the case without a word. This
-     * class ran one of its three cases for exactly that reason until it was pinned below.
+     * class ran only one of its three original cases for exactly that reason, until the check below pinned it.
      */
     @Test
     fun `an enable travels to the instance that holds the session and carries its operator`() {
@@ -80,6 +88,74 @@ class SessionRouterServiceSessionSkillTest {
             service.proxyEnableSessionSkill("ses-1", "invoice-fill")
             Mockito.verify(client).sessionSkillEnable(any(), eq("ses-1"), eq("invoice-fill"), isNull())
         }
+    }
+
+    /**
+     * The property this proxy exists for: an upstream refusal is the agent's verdict, not the router's guess,
+     * and it rides in the envelope's `code` while HTTP stays 200. The two enable cases that were here before
+     * this one threw the returned value away, so nothing pinned it — deleting the pass-through (normalising
+     * 403 to 200, re-minting it as 500, inventing a payload) kept all of them green. Stubbing a refusal and
+     * asserting the code, the reason and the absent data falsifies every such edit, in the shape
+     * `SessionRouterServiceTest."proxyCommandRequest passes a failed command through untouched"` already uses.
+     */
+    @Test
+    fun `the agent's refusal arrives with the code and the reason the agent gave`() {
+        runBlocking {
+            val (service, client) = fixture(bound = true)
+            AuthContextHolder.set(AuthContext("webui-caller", userId = 42L))
+            Mockito.`when`(client.sessionSkillEnable(any(), eq("ses-1"), eq("invoice-fill"), eq(42L)))
+                .thenReturn(ResultVo.error(403, "the security scan says DANGEROUS: rm -rf"))
+
+            val result = service.proxyEnableSessionSkill("ses-1", "invoice-fill")
+
+            assertEquals(403, result.code, "the proxy remapped the agent's refusal code")
+            assertEquals(
+                "the security scan says DANGEROUS: rm -rf",
+                result.message,
+                "the proxy replaced the agent's reason with its own",
+            )
+            assertNull(result.data, "a refusal must not carry a payload the agent did not send")
+        }
+    }
+
+    /**
+     * D11 names the operator of an enable from this request's own auth context, which means the endpoint must
+     * not offer the caller a place to type one. Spring fills a handler parameter from the request body either
+     * when it carries `@RequestBody` or when it is an unannotated complex type the body-argument resolver picks
+     * up, and both shapes change this method's parameter list — so the whole list is pinned, not just the
+     * annotation. The list also refuses a caller-typed operator that arrives as a query parameter, which carries
+     * no body annotation at all and would otherwise pass the first check.
+     * Derived from the controller by reflection the way `ApiCallLogFilterTest` derives the suspend
+     * endpoint paths from its annotations, so it cannot drift from the handler it guards.
+     */
+    @Test
+    fun `no parameter of the enable handler can carry a body that would name an operator`() {
+        val handlers = AgentProxyController::class.java.declaredMethods
+            .filter { !it.isSynthetic && it.name == "proxyEnableSessionSkill" }
+        // Without this the assertions below would pass vacuously on a renamed or moved handler.
+        assertEquals(
+            1,
+            handlers.size,
+            "AgentProxyController must have exactly one enable handler, found ${handlers.map { it.name }}",
+        )
+        val handler = handlers.first()
+        // A check on the check: reflection sees parameter annotations on this method at all, so the absence
+        // of @RequestBody below is a finding rather than an artefact of the view.
+        assertTrue(
+            handler.parameterAnnotations.any { annotations -> annotations.any { it is PathVariable } },
+            "reflection saw no parameter annotations on the enable handler",
+        )
+        val bodyBound = handler.parameterAnnotations
+            .mapIndexedNotNull { index, annotations -> index.takeIf { annotations.any { it is RequestBody } } }
+        assertTrue(
+            bodyBound.isEmpty(),
+            "the enable handler binds the request body at parameters $bodyBound; the operator may then be caller-typed",
+        )
+        assertEquals(
+            listOf(String::class.java, String::class.java, HttpServletRequest::class.java, Continuation::class.java),
+            handler.parameterTypes.toList(),
+            "the enable handler takes more than the two path variables, the request and the continuation",
+        )
     }
 
     /**

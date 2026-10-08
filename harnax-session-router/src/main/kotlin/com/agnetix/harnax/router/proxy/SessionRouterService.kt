@@ -519,8 +519,8 @@ class SessionRouterService(
      * Copy one draft into this session's enabled set.
      *
      * The agent's answer is returned as it arrived. Its refusals ride in the envelope's `code` (403 blocked,
-     * 409 full, 404 no draft, 500 failed) while HTTP stays 200, and the webui and the app are the two that
-     * turn those codes into wording — mapping them here would replace the reason with a guess.
+     * 409 full, 404 no draft, 410 no sandbox, 500 failed) while HTTP stays 200, and the webui and the app are
+     * the two that turn those codes into wording — mapping them here would replace the reason with a guess.
      */
     suspend fun proxyEnableSessionSkill(
         sessionId: String,
