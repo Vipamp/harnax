@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - 基线（本 worktree 实测）：harness-core **662** 例（1 skipped）、admin **2430** 例、12 模块合计 **3645** 例，`BUILD SUCCESS`。任何任务收尾都要能重跑且不新增失败。
-- harness-core 实到数：Task 1 +2 = 664，Task 2 +3 = **667**（`42d10261` 上控制器实测 667 / 1 skipped / 0 failed）。后面的任务按「667 + 自己新增」核，不要拿 662 当基线。
+- harness-core 实到数：Task 1 +2 = 664，Task 2 +3 = 667（`42d10261`），Task 3 +2 = 669（`9285688e`），Task 2 修复轮 +3 = **672**（`dc2cfeee`，1 skipped）。后面的任务按「672 + 自己新增」核，不要拿 662/664 当基线。
 - **每个任务结束时它自己的 HEAD 必须能编译、模块门禁必须能跑。** 谁改了一个签名，谁就在同一个任务里把所有调用点一起改掉——不许留「下一个任务会修」的编译失败。（计划里 Task 6/7 的中间件装配就是按这条重新切开的：Task 6 只把安装点搬到 launcher 并沿用旧构造，Task 7 换构造并跟着改那一行调用。）
 - 代码注释、KDoc、日志字符串一律英文；面向用户的界面文案走 i18n（webui `pages.session.*`，iOS `chat.*`），中英两份同步。
 - Maven 用全局路径 `/Users/heqingsong/software/apache-maven-3.9.12/bin/mvn`，`JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home`；`-am` 必带；`-pl` 对 agent 子模块要写路径形（`harnax-agent/harnax-harness-core`）；spotless 绑在 compile 上，改过 Kotlin 先 `mvn -q spotless:apply -pl <module>`（不带 `-am`）。单跑 `-Dtest=X` 时 `-am` 要配 `-Dsurefire.failIfNoSpecifiedTests=false`，否则上游模块会以「no tests matching pattern」先把 reactor 打断。
@@ -615,7 +615,11 @@ class SessionSkillStoreEnableTest {
         // Widest stubs first: Mockito resolves a call that matches several stubbings to the last one declared.
         Mockito.`when`(fs.glob(any(), anyString(), anyString())).thenReturn(GlobResult.fail("none"))
         Mockito.`when`(fs.glob(any(), eq("SKILL.md"), eq("${SkillDraftStaging.DRAFTS_DIR}/$name")))
-            .thenReturn(GlobResult.success(listOf(FileInfo.ofFile("$name/SKILL.md", 10L, "2026-10-08T10:00:00Z"))))
+            .thenReturn(
+                GlobResult.success(
+                    listOf(FileInfo.ofFile("${SkillDraftStaging.DRAFTS_DIR}/$name/SKILL.md", 10L, "2026-10-08T10:00:00Z")),
+                ),
+            )
         Mockito.`when`(fs.read(any(), eq("${SkillDraftStaging.DRAFTS_DIR}/$name/SKILL.md"), anyInt(), anyInt()))
             .thenReturn(ReadResult.success(FileData(MD, "utf-8")))
     }
@@ -644,7 +648,9 @@ class SessionSkillStoreEnableTest {
         stubDraftExists("invoice-fill")
         val filled = (1..10).toList().map { "s$it" }
         Mockito.`when`(fs.glob(any(), eq("SKILL.md"), eq(SkillDraftStaging.SESSION_ENABLED_DIR))).thenAnswer {
-            GlobResult.success(filled.map { FileInfo.ofDir("$it/SKILL.md", "t") })
+            GlobResult.success(
+                filled.map { FileInfo.ofDir("${SkillDraftStaging.SESSION_ENABLED_DIR}/$it/SKILL.md", "t") },
+            )
         }
         val other = store().enable("ses-1", "invoice-fill")
         assertTrue(other is EnableOutcome.Full, "got $other")
@@ -658,7 +664,9 @@ class SessionSkillStoreEnableTest {
             .thenReturn(ExecResult(0, "", "", false))
         val filled = listOf("invoice-fill") + (1..9).toList().map { "s$it" }
         Mockito.`when`(fs.glob(any(), eq("SKILL.md"), eq(SkillDraftStaging.SESSION_ENABLED_DIR))).thenAnswer {
-            GlobResult.success(filled.map { FileInfo.ofDir("$it/SKILL.md", "t") })
+            GlobResult.success(
+                filled.map { FileInfo.ofDir("${SkillDraftStaging.SESSION_ENABLED_DIR}/$it/SKILL.md", "t") },
+            )
         }
         val replay = store().enable("ses-1", "invoice-fill")
         assertTrue(replay is EnableOutcome.Enabled, "re-enabling a name already in the ten has to work: got $replay")
@@ -709,8 +717,10 @@ class SessionSkillStoreEnableTest {
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=SessionSkillStoreEnableTest`
-Expected: 编译失败 —— `pinnedFilesystem` 还不是构造参数，且 `listEnabledNames` 依赖 `filesystemFor`。
+三条落地事实决定了上面的夹具形状，别在实现时把它们「简化」回去：`listDraftSkillNames` 用 `path.substringAfter("$draftsDir/", "")` 解析名字，所以每一条 `FileInfo` 路径都必须带上所在目录前缀，裸 `name/SKILL.md` 会被整条丢掉（表现为 `listEnabledNames` 返回空，`Full` 永远测不到）；`dc2cfeee` 起 `readSkillMarkdown` 除了一次 `read` 还会对 `$draftsDir/$name` 发一次 `SKILL.md` 的 glob 取时间戳，`stubDraftExists` 里那枚 per-name glob 桩正是它消费的，取不到只影响 `modifiedAt` 不影响本任务断言；`sandbox` 是接口 mock，非零退出码直接以 `ExecResult` 返回，故 `Failed.reason` 读到的是 stderr 而非异常消息（真实 `DockerSandbox` 抛 `ExecException`，消息会经 `execRaw` 的 catch 变成 reason，两支在这一点上同形）。
+
+Run: `... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=SessionSkillStoreEnableTest -Dsurefire.failIfNoSpecifiedTests=false`
+Expected: 编译失败 —— `pinnedFilesystem` 还不是构造参数（落地的 `SessionSkillStore` 只有 4 个参数，`filesystemFor` 直接 `PinnedSandboxFilesystem(it)`）。
 
 - [ ] **Step 3: 把 pin 的构造抽成可注入**
 
