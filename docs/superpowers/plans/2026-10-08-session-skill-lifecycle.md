@@ -1203,6 +1203,8 @@ val sessionSkillStore: SessionSkillStore by lazy {
 
 这一腿刻意不用 `attachToExisting`：`KeepAliveSandboxManager.kt:560-563` 对停着的容器会 `docker start`，而本会话技能列表是一支只读 GET——同仓 `SandboxWorkspaceController.kt:321-327` 逐字禁过这件事（一次状态查询把手工停掉的沙箱一直显示成 Running），设计给的 410 `chat.skills.noSandbox` 也说明「没有活沙箱」是预期答案，不该被一次读操作悄悄撤销。要在 `KeepAliveSandboxManager` 上新增 `fun attachIfRunning(sessionId: String): DockerSandbox?`：**复用 `attachToExisting` 已有的那次 `docker inspect`，但 `running != true` 直接回 null，绝不 `docker start`**；容器在跑而内存表里没有（服务重启）时照常接管，这半是 `DefaultAgentRunner.kt:697-698` 的既有语义。两支用例：running 才接管；stopped 回 null 且断言命令序列里**没有出现 `docker start`**（既有那套 dockerExecutor 假件就够）。
 
+这条 provider 同时服务 `enable` 那支写腿与中间件的草稿读写，这是有意的而不是漏改：enable 撞上「容器停着」本来就设计成 410 `chat.skills.noSandbox`（Task 8 那句拒因原文就是「this session has no running sandbox」），把沙箱悄悄启动再写进去，等于用一次按钮把用户没要求唤醒的东西唤起来；而会话真在用的时候，`DefaultAgentRunner.kt:697-698` 在进 `call` 之前已经用 `attachToExisting` 接管过，草稿落盘与读回都不受这条 provider 影响。列表腿在沙箱停着时回空表，Task 8 控制器的 KDoc 已把「看起来一样、只有一条是真死路」写成交付口径。
+
 - [ ] **Step 5: 跑该测试与全模块**
 
 Run: `... mvn -q spotless:apply -pl harnax-agent/harnax-harness-core && ... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=HarnessAgentLauncherSkillSelfWriteTest` -Dsurefire.failIfNoSpecifiedTests=false
