@@ -1754,6 +1754,8 @@ git commit -m "feat(agent-service): 会话技能列出与启用两条内部端�
 - Modify: `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/service/AgentServiceClient.kt:202-250`
 - Modify: `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/proxy/SessionRouterService.kt:409-455`
 - Modify: `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:193-221`
+- Modify: `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/config/ApiCallLogFilter.kt`（`SUSPEND_ENDPOINTS` 是主源码里的穷举豁免表，它的守卫用例从控制器注解反推路径集，新增的 suspend 路由不登记就红——因为漏登记的后果是包装层把流式响应写成空体、调用方读到一份「成功的空答案」）
+- Test: `harnax-session-router/src/test/kotlin/com/agnetix/harnax/router/proxy/SessionRouterServiceTest.kt`（`PROXY_ENTRY_POINTS` 断言「每个 public `proxy*` 方法都在这张表里点名」，即进入别人会话的每一条路都要被登记；两支新方法不登记就红）
 - Test: `harnax-session-router/src/test/kotlin/com/agnetix/harnax/router/proxy/SessionRouterServiceSessionSkillTest.kt`
 
 **Interfaces:**
@@ -1812,28 +1814,45 @@ class SessionRouterServiceSessionSkillTest {
     }
 
     @Test
-    fun `an enable travels to the instance that holds the session and carries its operator`() = runBlocking {
-        val (service, client) = fixture(bound = true)
-        AuthContextHolder.set(AuthContext("webui-caller", userId = 42L))
-        Mockito.`when`(client.sessionSkillEnable(any(), eq("ses-1"), eq("invoice-fill"), eq(42L)))
-            .thenReturn(ResultVo.success(mapOf("ok" to true)))
-        service.proxyEnableSessionSkill("ses-1", "invoice-fill")
-        Mockito.verify(client).sessionSkillEnable(
-            eq("http://agent:8082"),
-            eq("ses-1"),
-            eq("invoice-fill"),
-            eq(42L),
-        )
+    fun `an enable travels to the instance that holds the session and carries its operator`() {
+        // Block body, not `= runBlocking { … }`: the last statement here yields the mocked client's return type,
+        // Kotlin then compiles a @Test method WITH a return type, and Jupiter silently refuses to discover it —
+        // no failure, no skip, the case just is not run. The fourth case below is the falsifier for that.
+        runBlocking {
+            val (service, client) = fixture(bound = true)
+            AuthContextHolder.set(AuthContext("webui-caller", userId = 42L))
+            Mockito.`when`(client.sessionSkillEnable(any(), eq("ses-1"), eq("invoice-fill"), eq(42L)))
+                .thenReturn(ResultVo.success(mapOf("ok" to true)))
+            service.proxyEnableSessionSkill("ses-1", "invoice-fill")
+            Mockito.verify(client).sessionSkillEnable(
+                eq("http://agent:8082"),
+                eq("ses-1"),
+                eq("invoice-fill"),
+                eq(42L),
+            )
+        }
     }
 
     @Test
-    fun `a caller with no auth context forwards no operator rather than an invented one`() = runBlocking {
-        val (service, client) = fixture(bound = true)
-        assertNull(AuthContextHolder.get())
-        Mockito.`when`(client.sessionSkillEnable(any(), any(), any(), isNull()))
-            .thenReturn(ResultVo.success(mapOf("ok" to true)))
-        service.proxyEnableSessionSkill("ses-1", "invoice-fill")
-        Mockito.verify(client).sessionSkillEnable(any(), eq("ses-1"), eq("invoice-fill"), isNull())
+    fun `a caller with no auth context forwards no operator rather than an invented one`() {
+        runBlocking {
+            val (service, client) = fixture(bound = true)
+            assertNull(AuthContextHolder.get())
+            Mockito.`when`(client.sessionSkillEnable(any(), any(), any(), isNull()))
+                .thenReturn(ResultVo.success(mapOf("ok" to true)))
+            service.proxyEnableSessionSkill("ses-1", "invoice-fill")
+            Mockito.verify(client).sessionSkillEnable(any(), eq("ses-1"), eq("invoice-fill"), isNull())
+        }
+    }
+
+    @Test
+    fun `every case in this class is one Jupiter can discover`() {
+        // The first two cases are the D11 audit identity; a version of this file that shipped them as
+        // value-returning methods would have looked green while pinning nothing.
+        val hidden = SessionRouterServiceSessionSkillTest::class.java.declaredMethods
+            .filter { it.isAnnotationPresent(Test::class.java) && it.returnType != Void.TYPE }
+            .map { it.name }
+        assertEquals(emptyList<String>(), hidden, "these @Test methods return a value and are never run")
     }
 
     private fun fixture(bound: Boolean): Pair<SessionRouterService, AgentServiceClient> {
@@ -2010,7 +2029,7 @@ suspend fun proxyEnableSessionSkill(
 - [ ] **Step 5: 跑测试与全模块**
 
 Run: `... mvn -q spotless:apply -pl harnax-session-router && ... mvn -o test -pl harnax-session-router -am`
-Expected: `BUILD SUCCESS`，0 失败
+Expected: `BUILD SUCCESS`，0 失败；聚合行按模块读，本模块基线 **`Tests run: 546, Failures: 0, Errors: 0, Skipped: 0`**（上游 common 15 / auth 97 / protocol 103）。546 的来路要先知道 541 这个进场数：本任务净加 5 支——新类 4 支（Step 1 那三支加一支反射守卫）＋ `PROXY_ENTRY_POINTS` 两支新方法各计一次断言。若新类只被发现 1 支而总数少了 3，先查 Step 1 那两支的 `@Test` 是不是又编成了带返回值的方法。
 
 - [ ] **Step 6: 提交**
 
@@ -2018,6 +2037,8 @@ Expected: `BUILD SUCCESS`，0 失败
 git add harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/service/AgentServiceClient.kt \
         harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/proxy/SessionRouterService.kt \
         harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt \
+        harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/config/ApiCallLogFilter.kt \
+        harnax-session-router/src/test/kotlin/com/agnetix/harnax/router/proxy/SessionRouterServiceTest.kt \
         harnax-session-router/src/test/kotlin/com/agnetix/harnax/router/proxy/SessionRouterServiceSessionSkillTest.kt
 git commit -m "feat(router): 会话技能两条代理路由——归属判定继承 boundInstance 的会话守卫"
 ```
