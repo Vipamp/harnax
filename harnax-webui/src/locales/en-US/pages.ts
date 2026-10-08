@@ -1378,11 +1378,11 @@ export default {
   'pages.memory.dailyCount': 'Daily Notes',
   'pages.memory.pendingCount': 'Unmerged',
   'pages.memory.pendingTooltip':
-    'The memory of {count} conversation(s) has not been merged into the long-term layer yet',
+    'The memory of {count} conversation(s) is waiting to be approved into the long-term layer',
   'pages.memory.sessionLayerStopped':
-    'This agent also remembers per conversation, so its long-term notes stop at {date} until a merge runs',
+    'This agent also remembers per conversation, so its long-term notes stop at {date} until you approve the merge',
   'pages.memory.sessionLayerNoNotes':
-    'This agent also remembers per conversation, so nothing has reached its long-term notes yet',
+    'This agent also remembers per conversation, so nothing has reached its long-term notes yet — a merge only lands once you approve it',
   'pages.memory.updatedAt': 'Last Updated',
   'pages.memory.noData': 'None of your agents has long-term memory',
   'pages.memory.loadFailed': 'Failed to load your agent memory, please retry',
@@ -1401,6 +1401,89 @@ export default {
   'pages.memory.emptyCurated': 'This agent has not curated any long-term memory yet',
   'pages.memory.emptyDaily': 'No daily notes',
   'pages.memory.emptyDailyEntry': 'This day has an empty note',
+
+  // Review queue for conversation memory merging into agent memory
+  'pages.memory.draft.title': 'Memory merges to review',
+  'pages.memory.draft.subtitle': 'Only merges proposed by your own conversations are listed here',
+  'pages.memory.draft.loadFailed': 'Failed to load the memory review queue',
+  'pages.memory.draft.agent': 'Agent memory',
+  'pages.memory.draft.session': 'From session',
+  'pages.memory.draft.sessionHint':
+    'The conversation whose own memory was merged into this agent',
+  'pages.memory.draft.baseVersion': 'Merged against',
+  'pages.memory.draft.baseVersionHint':
+    'The version of the long-term layer this merge read. 0 means the agent had none yet, so approving gives it its first memory.',
+  'pages.memory.draft.firstLayer': 'first memory',
+  'pages.memory.draft.sourceCount': 'Source files',
+  'pages.memory.draft.sourcesHint':
+    'How many of that conversation memory files this merge took material out of. An approval clears them once the new layer is written.',
+  'pages.memory.draft.mergedChars': 'New length',
+  'pages.memory.draft.proposedAt': 'First proposed',
+  'pages.memory.draft.lastMerge': 'Last merge',
+  'pages.memory.draft.rewrittenHint':
+    'The conversation keeps merging while a candidate is open, so a later time means the text changed after the first proposal',
+  'pages.memory.draft.rewritten': 'rewritten',
+  'pages.memory.draft.decidedBy': 'Decided by',
+  'pages.memory.draft.review': 'Review',
+  'pages.memory.draft.searchPlaceholder': 'Search by agent',
+  'pages.memory.draft.emptyPending': 'No conversation memory is waiting to be merged',
+  'pages.memory.draft.emptyDecided': 'No decided merge',
+  'pages.memory.draft.queueHint':
+    'Nothing in this table has reached an agent yet: a merge only rewrites its long-term layer when you approve it here, and the layer replaces the whole text the agent is told in every later conversation.',
+  'pages.memory.draft.status.PENDING': 'Pending',
+  'pages.memory.draft.status.APPROVED': 'Approved',
+  'pages.memory.draft.status.REJECTED': 'Rejected',
+  'pages.memory.draft.detail.title': 'Memory merge for review',
+  'pages.memory.draft.detail.loadFailed': 'Failed to load this memory merge',
+  'pages.memory.draft.detail.notFound': 'This merge is no longer in your queue',
+  'pages.memory.draft.tab.merged': 'What the agent would be told',
+  'pages.memory.draft.tab.base': 'What it is told now',
+  'pages.memory.draft.tab.sources': 'Conversation files',
+  'pages.memory.draft.mergedHint':
+    'The complete MEMORY.md the merge produced — {count} characters. Approving writes this text as a whole, so an item the merge dropped leaves the agent.',
+  'pages.memory.draft.baseHint':
+    'The owner text this merge started from, at version {version} — {count} characters.',
+  'pages.memory.draft.base.empty':
+    'This agent has no long-term memory yet, so this merge would be the first text it is told',
+  'pages.memory.draft.sources.empty': 'The merge recorded no conversation memory files',
+  'pages.memory.draft.sources.path': 'Path',
+  'pages.memory.draft.sources.chars': 'Characters',
+  'pages.memory.draft.sources.hint':
+    'The text each file held when the merge read it. An approval clears a file only while it still holds those bytes.',
+  'pages.memory.draft.digestHint':
+    'Approving sends this digest ({digest}); if the conversation merges again first, the approval is refused and this page reloads to the new text.',
+  'pages.memory.draft.decidedHint':
+    '{reviewer} decided this on {at}. The long-term layer is read-only from here — the only way it changes is another merge you approve.',
+  'pages.memory.draft.digestMissing':
+    'This merge carries no content digest; reload the page before approving',
+  'pages.memory.draft.decisionFailed': 'The decision was refused',
+  'pages.memory.draft.approve': 'Approve',
+  'pages.memory.draft.approve.confirmTitle': 'Merge this into the agent memory?',
+  'pages.memory.draft.approve.confirmBody':
+    'The text below replaces the whole long-term layer of {agent}, and every conversation that agent starts afterwards is told it. The conversation memory files this merge read are cleared once the write lands.',
+  'pages.memory.draft.approved.title': 'Merged into the agent memory',
+  'pages.memory.draft.approved.body':
+    'The long-term layer is now version {version}, and every conversation this agent starts from here on is told that text. {cleared} conversation memory file(s) were cleared.{kept}',
+  'pages.memory.draft.approved.kept':
+    ' {count} were left for the next candidate because their bytes moved after the merge read them.',
+  'pages.memory.draft.approved.openMemory': 'Open memory page',
+  'pages.memory.draft.reject': 'Reject',
+  'pages.memory.draft.reject.title': 'Reject this merge',
+  'pages.memory.draft.reject.done': 'Merge rejected, both memory layers are untouched',
+  'pages.memory.draft.rejectReason': 'Reason',
+  'pages.memory.draft.reject.reasonRequired': 'A rejection needs a reason',
+  'pages.memory.draft.reject.tooLong': 'Keep the reason under {count} characters',
+  'pages.memory.draft.reject.reasonHint':
+    'Rejecting closes this candidate and leaves both layers alone, so the same material comes back next merge window. This reason is the only thing that carries over.',
+  'pages.memory.draft.refused.reviewedTitle': 'Already decided',
+  'pages.memory.draft.refused.reviewed':
+    '{reviewer} closed this merge on {at}. {reason}',
+  'pages.memory.draft.refused.changedTitle': 'The merge has been rewritten',
+  'pages.memory.draft.refused.changed':
+    'This conversation merged its memory again after you opened the candidate, so nothing was written. Read the new text, then approve it again.',
+  'pages.memory.draft.refused.staleTitle': 'This merge is out of date',
+  'pages.memory.draft.refused.stale':
+    'The long-term layer is at version {version}, but this candidate was merged against an older one, so nothing was written. The conversation will propose against the current layer next time its merge window opens.',
 
   // Dashboard overview
   'pages.welcome.greeting': 'Hi {nickname}',

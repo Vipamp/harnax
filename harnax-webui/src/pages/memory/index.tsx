@@ -1,5 +1,6 @@
 import { PageContainer } from '@ant-design/pro-components';
 import {
+  AuditOutlined,
   BookOutlined,
   ReloadOutlined,
   WarningOutlined,
@@ -16,7 +17,7 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import React, { useEffect, useState } from 'react';
-import { useIntl } from '@umijs/max';
+import { history, useIntl } from '@umijs/max';
 import DeleteButton from '@/components/DeleteButton';
 import { deleteMemory, getMemoryList } from '@/services/ant-design-pro/memory';
 import MemoryDetailDrawer from './components/MemoryDetailDrawer';
@@ -32,9 +33,10 @@ const { Text } = Typography;
  * is editable: the only write this page offers is the deletion, and it goes through the same
  * `DeleteButton` confirmation the rest of the destructive admin actions use.
  *
- * Only the long-term layer is ever shown as text, but an agent may also keep a memory layer per conversation,
- * so the page reports that layer twice without displaying it: how many conversations are still waiting to be
- * merged, and — for an agent that has the second layer switched on — why its long-term notes stop short.
+ * Only the long-term layer is ever shown as text, but every agent also keeps a memory layer per conversation,
+ * so the page reports that layer twice without displaying it: how many conversations hold memory that has
+ * not been approved into the long-term layer yet, and why an agent's long-term notes stop short. Approving
+ * one of those merges is the sibling page's job, so the header links there rather than duplicating it.
  */
 const MyAgentMemory: React.FC = () => {
   const intl = useIntl();
@@ -150,9 +152,9 @@ const MyAgentMemory: React.FC = () => {
    * The one thing the daily column cannot say by itself.
    *
    * An agent that also remembers per conversation writes its days there first, and they only reach this
-   * listing when a merge has run, so its notes stop on the day the second layer started. Left as a bare
-   * count that reads as the agent forgetting, which is the one wrong answer this page may give about somebody's
-   * own memory. Every agent listed here has that second layer, so the note has nothing left to check.
+   * listing once its owner approves the merge, so its notes stop on the day the second layer started. Left as
+   * a bare count that reads as the agent forgetting, which is the one wrong answer this page may give about
+   * somebody's own memory. Every agent listed here has that second layer, so the note has nothing left to check.
    */
   const sessionLayerNote = (record?: API.MemoryAgentItem): string | undefined => {
     const last = record.dates?.[record.dates.length - 1];
@@ -161,14 +163,14 @@ const MyAgentMemory: React.FC = () => {
           {
             id: 'pages.memory.sessionLayerStopped',
             defaultMessage:
-              'This agent also remembers per conversation, so its long-term notes stop at {date} until a merge runs',
+              'This agent also remembers per conversation, so its long-term notes stop at {date} until you approve the merge',
           },
           { date: last },
         )
       : intl.formatMessage({
           id: 'pages.memory.sessionLayerNoNotes',
           defaultMessage:
-            'This agent also remembers per conversation, so nothing has reached its long-term notes yet',
+            'This agent also remembers per conversation, so nothing has reached its long-term notes yet — a merge only lands once you approve it',
         });
   };
 
@@ -257,7 +259,7 @@ const MyAgentMemory: React.FC = () => {
               {
                 id: 'pages.memory.pendingTooltip',
                 defaultMessage:
-                  'The memory of {count} conversation(s) has not been merged into the long-term layer yet',
+                  'The memory of {count} conversation(s) is waiting to be approved into the long-term layer',
               },
               { count },
             )}
@@ -337,6 +339,16 @@ const MyAgentMemory: React.FC = () => {
           </span>
         ),
         extra: [
+          <Button
+            key="drafts"
+            icon={<AuditOutlined />}
+            onClick={() => history.push('/agent/memory-drafts')}
+          >
+            {intl.formatMessage({
+              id: 'pages.memory.draft.title',
+              defaultMessage: 'Memory merges to review',
+            })}
+          </Button>,
           <Button
             key="refresh"
             icon={<ReloadOutlined />}

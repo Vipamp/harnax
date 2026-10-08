@@ -17,6 +17,7 @@ export default {
   'menu.agent.session': 'Session',
   'menu.agent.task': 'Scheduled Tasks',
   'menu.agent.memory': 'My Agent Memory',
+  'menu.agent.memory.drafts': 'Memory Merge Approvals',
 
   // Job
 
