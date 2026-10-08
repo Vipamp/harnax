@@ -152,11 +152,9 @@ const MyAgentMemory: React.FC = () => {
    * An agent that also remembers per conversation writes its days there first, and they only reach this
    * listing when a merge has run, so its notes stop on the day the second layer started. Left as a bare
    * count that reads as the agent forgetting, which is the one wrong answer this page may give about somebody's
-   * own memory. No note for a single-layer agent, and none when admin could not tell either: absence of the
-   * answer is not an answer that the second layer never existed.
+   * own memory. Every agent listed here has that second layer, so the note has nothing left to check.
    */
   const sessionLayerNote = (record?: API.MemoryAgentItem): string | undefined => {
-    if (record?.sessionMemory !== true) return undefined;
     const last = record.dates?.[record.dates.length - 1];
     return last
       ? intl.formatMessage(

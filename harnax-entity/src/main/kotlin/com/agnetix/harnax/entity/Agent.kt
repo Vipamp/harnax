@@ -85,13 +85,6 @@ class Agent : Serializable {
     var memoryEnabled: Int = 1
 
     /**
-     * Whether this agent also keeps a memory layer scoped to one conversation (0: no, 1: yes). Off by
-     * default: two layers is what the wizard turns on per agent, and every row written before the switch
-     * existed has to keep today's single long-term layer.
-     */
-    var sessionMemoryEnabled: Int = 0
-
-    /**
      * Creator
      */
     @Schema(description = "Creator")

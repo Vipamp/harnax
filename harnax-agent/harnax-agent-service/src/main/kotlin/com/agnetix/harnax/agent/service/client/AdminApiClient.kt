@@ -1,5 +1,7 @@
 package com.agnetix.harnax.agent.service.client
 
+import com.agnetix.harnax.agent.adaptor.MemoryDraftIntake
+import com.agnetix.harnax.agent.adaptor.MemoryDraftProposal
 import com.agnetix.harnax.agent.adaptor.SkillDraftIntake
 import com.agnetix.harnax.agent.adaptor.SkillDraftProposal
 import com.agnetix.harnax.agent.adaptor.mcp.McpAuthRequiredException
@@ -332,6 +334,71 @@ class AdminApiClient(
                 val reason = if (code == null) "no response from admin" else "admin returned code $code: ${response?.message}"
                 log.warn("[Agent←Admin] Draft '{}' was not queued: sessionId={}, {}", proposal.name, proposal.sessionId, reason)
                 SkillDraftIntake.Unavailable(reason)
+            }
+        }
+    }
+
+    /**
+     * File one conversation's merged memory layer with Admin's review queue.
+     *
+     * The session id decides whose queue this lands in, exactly as it does for [submitSkillDraft]: admin
+     * resolves the owner and tenant from that id and refuses anything it cannot place, so a runtime cannot
+     * propose memory into somebody else's long-term layer by naming an agent it likes. The agent name travels
+     * only so admin can check the conversation really belongs to it.
+     *
+     * `baseVersion` is the version of the owner's `MEMORY.md` this merge read, and it travels because the
+     * approval is a write to that one object: without it, a reviewer approving an hour-old candidate would
+     * overwrite whatever a sibling conversation's approval put there in between.
+     */
+    fun submitMemoryDraft(proposal: MemoryDraftProposal): MemoryDraftIntake {
+        val url = "$adminUrl/api/admin/internal/memory/drafts"
+        log.debug("[Agent→Admin] POST {} - queuing memory draft for agent '{}'", url, proposal.agentName)
+
+        val body = mapOf(
+            "sessionId" to proposal.sessionId,
+            "agentName" to proposal.agentName,
+            "mergedMarkdown" to proposal.mergedMarkdown,
+            "baseMarkdown" to proposal.baseMarkdown,
+            "baseVersion" to proposal.baseVersion,
+            "sources" to proposal.sources.map { mapOf("path" to it.path, "content" to it.content) },
+        )
+        val responseType = object : ParameterizedTypeReference<ResultVo<Long>>() {}
+        val response = try {
+            restTemplate.exchange(url, HttpMethod.POST, HttpEntity(body), responseType).body
+        } catch (e: Exception) {
+            log.warn(
+                "[Agent←Admin] Failed to queue memory draft: sessionId={}, {}",
+                proposal.sessionId,
+                e.message,
+            )
+            return MemoryDraftIntake.Unavailable(e.message ?: "admin internal API did not answer")
+        }
+
+        val code = response?.code
+        val draftId = response?.data
+        return when {
+            code == 200 && draftId != null && draftId > 0L -> MemoryDraftIntake.Queued(draftId)
+
+            // 400 is a validation refusal, 404 a session admin cannot place in a tenant. Both answer the
+            // same way on retry, which is the definition of a refusal rather than of an outage.
+            code == 400 || code == 404 -> {
+                val reason = response?.message ?: "memory draft rejected by admin"
+                log.warn(
+                    "[Agent←Admin] Memory draft refused: sessionId={}, {}",
+                    proposal.sessionId,
+                    reason,
+                )
+                MemoryDraftIntake.Refused(reason)
+            }
+
+            else -> {
+                val reason = if (code == null) "no response from admin" else "admin returned code $code: ${response?.message}"
+                log.warn(
+                    "[Agent←Admin] Memory draft was not queued: sessionId={}, {}",
+                    proposal.sessionId,
+                    reason,
+                )
+                MemoryDraftIntake.Unavailable(reason)
             }
         }
     }

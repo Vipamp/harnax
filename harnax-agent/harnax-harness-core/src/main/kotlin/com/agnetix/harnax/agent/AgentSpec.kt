@@ -56,18 +56,12 @@ data class AgentSpec(
      * are available here, this flag says whether the agent at hand wants them. Both have to hold before a
      * bucket, an extraction hook or one of the four memory tools shows up — a tool offered against a memory
      * nobody fills is the half-open shape this domain keeps falling into.
+     *
+     * This one answer now covers both layers: an agent that has memory also gives every one of its
+     * conversations a layer of its own, since which of those deserve the long-term layer is decided by a
+     * person on the review queue, not by a per-agent capability toggle.
      */
     val memoryEnabled: Boolean = true,
-
-    /**
-     * Whether this agent also keeps a memory layer scoped to one conversation, as granted on admin's
-     * `agent` row.
-     *
-     * Off by default: today's assembly is the single long-term layer, and the extra pair of routes keyed one
-     * segment deeper has to be asked for per agent rather than arrive with the upgrade. It means nothing when
-     * [memoryEnabled] is false — the whole memory domain stays off, this flag included.
-     */
-    val sessionMemoryEnabled: Boolean = false,
 ) {
 
     /**
@@ -109,7 +103,6 @@ class AgentSpecBuilder {
     private var planSpec: PlanSpec = PlanSpec(false)
     private var skillSelfWrite: Boolean = false
     private var memoryEnabled: Boolean = true
-    private var sessionMemoryEnabled: Boolean = false
 
     fun id(id: Long) = apply { this.id = id }
     fun tenantId(tenantId: Long?) = apply { this.tenantId = tenantId }
@@ -129,7 +122,6 @@ class AgentSpecBuilder {
     fun planSpec(planSpec: PlanSpec) = apply { this.planSpec = planSpec }
     fun skillSelfWrite(skillSelfWrite: Boolean) = apply { this.skillSelfWrite = skillSelfWrite }
     fun memoryEnabled(memoryEnabled: Boolean) = apply { this.memoryEnabled = memoryEnabled }
-    fun sessionMemoryEnabled(sessionMemoryEnabled: Boolean) = apply { this.sessionMemoryEnabled = sessionMemoryEnabled }
 
     fun build(): AgentSpec {
         // 0 is a team's lead: its configuration is the `team` row and no agent record stands behind it
@@ -154,7 +146,6 @@ class AgentSpecBuilder {
             planSpec = planSpec,
             skillSelfWrite = skillSelfWrite,
             memoryEnabled = memoryEnabled,
-            sessionMemoryEnabled = sessionMemoryEnabled,
         )
     }
 }

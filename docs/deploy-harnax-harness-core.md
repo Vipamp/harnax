@@ -96,7 +96,7 @@ harness:
     modelId: 0                      # 抽取与合并用的模型，取模型域行 id；0 沿用各智能体自己的主模型
     flushTrigger: throttled         # always=每轮一次抽取调用，throttled=每 flushMinGap 至多一次，never=台账不再增长
     flushMinGap: 5m
-    consolidationMinGap: 30m        # 两次后台整理共用的窗口：台账合并进 MEMORY.md，以及会话层晋升到长期层（只在智能体开了会话记忆时发生）
+    consolidationMinGap: 30m        # 两次后台整理共用的窗口：台账合并进 MEMORY.md，以及会话层晋升到长期层（凡有记忆的智能体，每一段对话都有自己的会话层）
     toolsEnabled: true              # memory_search / memory_get / memory_save 给不给模型
     tenantScoped: true              # 桶键 store/tenants/<tenantId>/users/<userId>/agents/<智能体名>/… 是否含租户对；admin 的 harnax.memory.tenant-scoped 必须同值
 ```

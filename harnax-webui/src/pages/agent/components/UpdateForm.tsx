@@ -42,9 +42,6 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
   const [isPublic, setIsPublic] = useState(values?.isPublic === 1);
   const [skillSelfWrite, setSkillSelfWrite] = useState(values?.skillSelfWrite === 1);
   const [memoryEnabled, setMemoryEnabled] = useState(values?.memoryEnabled !== 0);
-  // The inverse polarity, matching the runtime's `== 1`: this layer is opted into, so only an explicit yes
-  // reads as on and both a missing key and a stray value read as the single layer the row had.
-  const [sessionMemoryEnabled, setSessionMemoryEnabled] = useState(values?.sessionMemoryEnabled === 1);
   const { username, isAdmin } = getCurrentUserInfo();
 
   const [mcpConfigs, setMcpConfigs] = useState<McpConfigState[]>([{}]);
@@ -79,7 +76,6 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
       setIsPublic(values.isPublic === 1);
       setSkillSelfWrite(values.skillSelfWrite === 1);
       setMemoryEnabled(values.memoryEnabled !== 0);
-      setSessionMemoryEnabled(values.sessionMemoryEnabled === 1);
 
       // Initialize MCP configs
       if (values.mcpList && values.mcpList.length > 0) {
@@ -270,7 +266,6 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
           isPublic: isPublic ? 1 : 0,
           skillSelfWrite: skillSelfWrite ? 1 : 0,
           memoryEnabled: memoryEnabled ? 1 : 0,
-          sessionMemoryEnabled: sessionMemoryEnabled ? 1 : 0,
           mcpList: mcpConfigs.filter(c => c.mcpId).map(c => ({
             id: c.mcpId,
             envBindings: (c.envBindings || []).map(({ customInput, ...b }) => ({
@@ -398,20 +393,6 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
               <Switch
                 checked={memoryEnabled}
                 onChange={setMemoryEnabled}
-                checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
-                unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
-              />
-            </Form.Item>
-            <Form.Item
-              label={intl.formatMessage({ id: 'pages.agent.sessionMemoryEnabled', defaultMessage: 'Session memory' })}
-              extra={intl.formatMessage({
-                id: 'pages.agent.sessionMemoryEnabledHint',
-                defaultMessage: 'On gives each conversation its own memory as well, which is merged into long-term memory and cleared once enough time has passed. Needs long-term memory to be on; off here keeps the single long-term layer, as today.',
-              })}
-            >
-              <Switch
-                checked={sessionMemoryEnabled}
-                onChange={setSessionMemoryEnabled}
                 checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
                 unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
               />

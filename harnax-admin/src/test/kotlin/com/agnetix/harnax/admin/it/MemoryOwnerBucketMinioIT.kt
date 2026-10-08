@@ -23,7 +23,6 @@ import java.nio.charset.StandardCharsets
 import kotlin.random.Random
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -303,8 +302,8 @@ class MemoryOwnerBucketMinioIT : BaseAdminIT() {
         put(curatedKey(DELETABLE_AGENT), envelope("/MEMORY.md", CURATED))
         put(ledgerKey("2026-10-05", DELETABLE_AGENT), envelope("/2026-10-05.md", LEDGER_SECOND))
 
-        // The session layer of both agents: keys the runtime writes when a conversation is allowed to keep
-        // its own memory. Under the page they must stay invisible; under the delete they must go.
+        // The session layer of both agents: the keys every conversation of an agent with memory writes into
+        // its own layer. Under the page they must stay invisible; under the delete they must go.
         put(sessionCuratedKey(LISTED_AGENT), envelope("/MEMORY.md", SESSION_DRAFT))
         put(sessionLedgerKey(SESSION_DATE, LISTED_AGENT), envelope("/$SESSION_DATE.md", SESSION_LEDGER))
         put(sessionCuratedKey(DELETABLE_AGENT), envelope("/MEMORY.md", SESSION_DRAFT))
@@ -522,10 +521,6 @@ class MemoryOwnerBucketMinioIT : BaseAdminIT() {
             "one conversation holds a draft and a ledger, and the page counts the merge that is waiting, not " +
                 "the objects that make it up: $row",
         )
-        // No agent row answers for this name — the seed wrote memory, not an agent — so the switch is unknown
-        // rather than off. Admin's mapper drops the null key, and the page has to read that absence as
-        // "nothing to explain" instead of telling the owner this agent never had a conversation layer.
-        assertNull(row["sessionMemory"], "an unknown layer switch is not reported as a single-layer agent: $row")
     }
 
     @Test

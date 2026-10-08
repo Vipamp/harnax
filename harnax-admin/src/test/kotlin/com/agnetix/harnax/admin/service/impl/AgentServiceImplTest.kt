@@ -63,7 +63,6 @@ import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.never
 import org.mockito.quality.Strictness
 import org.springframework.mock.web.MockHttpServletRequest
-import org.springframework.test.util.ReflectionTestUtils
 import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.context.request.ServletRequestAttributes
 import java.time.LocalDateTime
@@ -443,65 +442,6 @@ class AgentServiceImplTest {
             // Then
             verify(agentMapper).insert(captor.capture())
             assertEquals(1, captor.firstValue.memoryEnabled, "every agent gets memory by default")
-            assertEquals(
-                0,
-                captor.firstValue.sessionMemoryEnabled,
-                "and none gets the session layer until it asks, so one request answering neither still answers both",
-            )
-        }
-
-        @Test
-        @DisplayName("createAgent - A deployment started on the session layer seeds it")
-        fun `createAgent should seed the session layer from the deployment default`() {
-            // The knob decides only this moment. It is read while the row is made, and never comes back to
-            // re-decide an agent that was already saved.
-            val request = AgentCreateRequest(
-                name = "Seeded Agent",
-                description = "Seeded description",
-                systemPrompt = "Seeded prompt",
-                modelId = 1L,
-                owner = "admin",
-            )
-            val captor = argumentCaptor<Agent>()
-            `when`(agentMapper.insert(any())).thenReturn(1)
-            ReflectionTestUtils.setField(agentService, "sessionMemoryDefault", true)
-
-            // When
-            assertTrue(agentService.createAgent(request))
-
-            // Then
-            verify(agentMapper).insert(captor.capture())
-            assertEquals(
-                1,
-                captor.firstValue.sessionMemoryEnabled,
-                "a caller silent about the layer gets what this deployment starts with",
-            )
-            assertEquals(1, captor.firstValue.memoryEnabled, "and it does not cost the layer it already had")
-        }
-
-        @Test
-        @DisplayName("createAgent - The answer on the request overrules the deployment default")
-        fun `createAgent should let the request overrule the deployment default`() {
-            // Per agent stays authoritative: were a deployment-wide seed able to outvote an explicit off, the
-            // switch on the agent row would stop meaning anything.
-            val request = AgentCreateRequest(
-                name = "Refused Agent",
-                description = "Refused description",
-                systemPrompt = "Refused prompt",
-                modelId = 1L,
-                owner = "admin",
-                sessionMemoryEnabled = 0,
-            )
-            val captor = argumentCaptor<Agent>()
-            `when`(agentMapper.insert(any())).thenReturn(1)
-            ReflectionTestUtils.setField(agentService, "sessionMemoryDefault", true)
-
-            // When
-            assertTrue(agentService.createAgent(request))
-
-            // Then
-            verify(agentMapper).insert(captor.capture())
-            assertEquals(0, captor.firstValue.sessionMemoryEnabled)
         }
 
         @Test
@@ -524,31 +464,6 @@ class AgentServiceImplTest {
             // Then
             verify(agentMapper).insert(captor.capture())
             assertEquals(0, captor.firstValue.memoryEnabled)
-        }
-
-        @Test
-        @DisplayName("createAgent - Write the session layer answer the agent gave")
-        fun `createAgent should honour an agent that asked for a session layer`() {
-            // Two answers, one row: admin records what the wizard was told and leaves the combination to the
-            // assembly, so switching the session layer on here must not disturb the long-term answer.
-            val request = AgentCreateRequest(
-                name = "Layered Agent",
-                description = "Layered description",
-                systemPrompt = "Layered prompt",
-                modelId = 1L,
-                owner = "admin",
-                sessionMemoryEnabled = 1,
-            )
-            val captor = argumentCaptor<Agent>()
-            `when`(agentMapper.insert(any())).thenReturn(1)
-
-            // When
-            assertTrue(agentService.createAgent(request))
-
-            // Then
-            verify(agentMapper).insert(captor.capture())
-            assertEquals(1, captor.firstValue.sessionMemoryEnabled)
-            assertEquals(1, captor.firstValue.memoryEnabled, "and the layer it already had by default stays")
         }
 
         @Test
@@ -967,7 +882,6 @@ class AgentServiceImplTest {
             val request = AgentUpdateRequest(
                 name = "Updated Agent",
                 memoryEnabled = 0,
-                sessionMemoryEnabled = 1,
             )
             val captor = argumentCaptor<Agent>()
             `when`(agentMapper.selectById(1L)).thenReturn(testAgent)
@@ -979,20 +893,18 @@ class AgentServiceImplTest {
             // Then
             verify(agentMapper).updateById(captor.capture())
             assertEquals(0, captor.firstValue.memoryEnabled)
-            assertEquals(1, captor.firstValue.sessionMemoryEnabled)
         }
 
         @Test
         @DisplayName("updateAgent - An omitted memory answer leaves the row alone")
         fun `updateAgent should leave memory untouched when the request omits it`() {
             // Given - a wizard edit that only touches the prompt must not read as "turn memory back on" for an
-            // agent that had it off; the same null also arrives from a client that predates the switch.
+            // agent that had it off; the same null also arrives from a client that never sent the field.
             val withoutMemory = Agent().apply {
                 id = 1L
                 name = "Forgetful Agent"
                 modelId = 1L
                 memoryEnabled = 0
-                sessionMemoryEnabled = 1
             }
             val request = AgentUpdateRequest(name = "Renamed Forgetful Agent")
             val captor = argumentCaptor<Agent>()
@@ -1005,11 +917,6 @@ class AgentServiceImplTest {
             // Then
             verify(agentMapper).updateById(captor.capture())
             assertEquals(0, captor.firstValue.memoryEnabled, "silence about memory is not an answer about memory")
-            assertEquals(
-                1,
-                captor.firstValue.sessionMemoryEnabled,
-                "and the same for the session layer: an edit that says nothing about it keeps the grant it had",
-            )
         }
 
         @Test
@@ -1531,10 +1438,9 @@ class AgentServiceImplTest {
         @DisplayName("convertToResponse - Convert agent with all associations")
         fun `convertToResponse should convert agent with all associations`() {
             // Given
-            // Both memory answers are set to values the other one does not share: a read path that dropped
-            // either would then show the wizard one switch on this screen and the other on the next.
+            // Set to the value the column default does not share: a read path that dropped it would leave the
+            // wizard showing the default rather than what the row says.
             testAgent.memoryEnabled = 0
-            testAgent.sessionMemoryEnabled = 1
             val model = Model().apply {
                 id = 1L
                 modelName = "gpt-4"
@@ -1578,11 +1484,6 @@ class AgentServiceImplTest {
             assertEquals(0.05, result.modelPrice)
             assertEquals(1, result.sessionCount)
             assertEquals(testAgent.memoryEnabled, result.memoryEnabled, "the wizard reads the switch state back from here")
-            assertEquals(
-                testAgent.sessionMemoryEnabled,
-                result.sessionMemoryEnabled,
-                "and the session layer's answer from the same place, or the edit screen shows one switch and not the other",
-            )
             assertNotNull(result.mcpList)
             assertEquals(1, result.mcpList?.size)
             verify(modelService).getVisibleModel(1L)

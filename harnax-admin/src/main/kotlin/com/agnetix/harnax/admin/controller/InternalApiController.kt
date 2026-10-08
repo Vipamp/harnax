@@ -441,7 +441,6 @@ class InternalApiController(
             permissionMode = session.permissionMode,
             skillSelfWrite = agent.skillSelfWrite,
             memoryEnabled = agent.memoryEnabled,
-            sessionMemoryEnabled = agent.sessionMemoryEnabled,
         )
     }
 
@@ -467,7 +466,6 @@ class InternalApiController(
             enablePlan = channel.enablePlan,
             skillSelfWrite = agent.skillSelfWrite,
             memoryEnabled = agent.memoryEnabled,
-            sessionMemoryEnabled = agent.sessionMemoryEnabled,
         )
     }
 
@@ -506,7 +504,6 @@ class InternalApiController(
             permissionMode = "BYPASS",
             skillSelfWrite = agent.skillSelfWrite,
             memoryEnabled = agent.memoryEnabled,
-            sessionMemoryEnabled = agent.sessionMemoryEnabled,
         )
     }
 
@@ -605,7 +602,6 @@ class InternalApiController(
             permissionMode = permissionMode,
             skillSelfWrite = agent.skillSelfWrite,
             memoryEnabled = agent.memoryEnabled,
-            sessionMemoryEnabled = agent.sessionMemoryEnabled,
         )
     }
 
@@ -639,11 +635,8 @@ class InternalApiController(
             enablePlan = enablePlan,
             permissionMode = permissionMode,
             // No agent row stands behind a lead, so there is no switch to read and nothing to turn off here:
-            // what keeps a lead out of the memory domain is the runtime's own `!isLead` guard. The session
-            // layer is answered off for the same reason — there is no row to answer from, and it is the
-            // opt-in one.
+            // what keeps a lead out of the memory domain is the runtime's own `!isLead` guard.
             memoryEnabled = 1,
-            sessionMemoryEnabled = 0,
             toolBindings = emptyList(),
             mcpBindings = emptyList(),
             skillIds = teamSkillBindingMapper.selectByTeamId(team.id).map { it.skillId },
@@ -683,9 +676,6 @@ class InternalApiController(
         // Required rather than defaulted: a new call site that never names it would otherwise deliver the
         // default to every agent and the wizard's "no memory" answer would die silently at that site.
         memoryEnabled: Int,
-        // Same reason and same shape — this one is the opt-in layer, so a forgotten name would have been
-        // read as "nobody wants two layers", which no row was asked about.
-        sessionMemoryEnabled: Int,
         permissionMode: String = "DEFAULT",
         toolBindings: List<AgentToolBinding> = toolBindingMapper.selectByAgentId(agentId),
         mcpBindings: List<AgentMcpBinding> = mcpBindingMapper.selectByAgentId(agentId),
@@ -945,7 +935,6 @@ class InternalApiController(
             enablePlan = enablePlan,
             skillSelfWrite = skillSelfWrite,
             memoryEnabled = memoryEnabled,
-            sessionMemoryEnabled = sessionMemoryEnabled,
             permissionMode = permissionMode,
             modelSupportInternet = model?.supportInternet ?: 0,
             modelSupportReasoning = model?.supportReasoning ?: 0,

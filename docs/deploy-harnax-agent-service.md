@@ -132,7 +132,7 @@
 | `HARNAX_MEMORY_MODEL_ID` | `0` | 做抽取与合并的模型，取模型域的行 id；`0` 沿用各智能体自己的主模型 |
 | `HARNAX_MEMORY_FLUSH_TRIGGER` | `throttled` | `always` 每轮多付一次模型调用；`throttled` 每 `HARNAX_MEMORY_FLUSH_MIN_GAP` 至多一次，靠 store 的比较并写保证不互相覆盖；`never` 台账不再增长 |
 | `HARNAX_MEMORY_FLUSH_MIN_GAP` | `5m` | 上一项的间隔 |
-| `HARNAX_MEMORY_CONSOLIDATION_MIN_GAP` | `30m` | 两次后台整理共用的一个窗口（配置项 `harness.memory.consolidation-min-gap`）：把按天台账合并进 `MEMORY.md`，以及把一个会话自己的记忆层晋升进它主人的长期层。后者只在智能体开了「会话记忆」时发生，晋升靠 store 的比较并写，撞车的那一次放弃本轮、下一轮重来。调大省模型调用，代价是会话把自己的那份留得更久 |
+| `HARNAX_MEMORY_CONSOLIDATION_MIN_GAP` | `30m` | 两次后台整理共用的一个窗口（配置项 `harness.memory.consolidation-min-gap`）：把按天台账合并进 `MEMORY.md`，以及把一个会话自己的记忆层晋升进它主人的长期层。后者对每一段对话都会发生，晋升靠 store 的比较并写，撞车的那一次放弃本轮、下一轮重来。调大省模型调用，代价是会话把自己的那份留得更久 |
 | `HARNAX_MEMORY_TOOLS_ENABLED` | `true` | 要不要把 `memory_search` / `memory_get` / `memory_save` 给模型；关掉后模型只读注入的那一份 |
 | `HARNAX_MEMORY_TENANT_SCOPED` | `true` | 桶键 `store/tenants/<tenantId>/users/<userId>/agents/<智能体名>/…` 是否含租户对（配置项 `harness.memory.tenant-scoped`）。**同一个变量也决定 admin 的 `harnax.memory.tenant-scoped`**，两侧不同值读到的是一个空前缀——整桶记忆表现为空，不会串到别人的桶 |
 | `HARNESS_ENABLE_SESSION_PERSISTENCE` | `true` | 会话持久化 |

@@ -38,7 +38,6 @@ class AgentSpecResolverTest {
         enableSearch: Int = 0,
         enablePlan: Int = 0,
         memoryEnabled: Int = 1,
-        sessionMemoryEnabled: Int = 0,
         modelSupportInternet: Int = 0,
         modelSupportReasoning: Int = 0,
         permissionMode: String = "DEFAULT",
@@ -61,7 +60,6 @@ class AgentSpecResolverTest {
         enableSearch = enableSearch,
         enablePlan = enablePlan,
         memoryEnabled = memoryEnabled,
-        sessionMemoryEnabled = sessionMemoryEnabled,
         permissionMode = permissionMode,
         modelSupportInternet = modelSupportInternet,
         modelSupportReasoning = modelSupportReasoning,
@@ -113,44 +111,6 @@ class AgentSpecResolverTest {
             val (agentSpec, _) = resolver.resolve("web-123")
 
             assertTrue(agentSpec.memoryEnabled)
-        }
-
-        @Test
-        fun `the session layer arrives on only for a delivery that says so`() {
-            val specResponse = buildSpecResponse(sessionMemoryEnabled = 1)
-            `when`(adminApiClient.getAgentSpec("web-123")).thenReturn(specResponse)
-
-            val (agentSpec, _) = resolver.resolve("web-123")
-
-            assertTrue(
-                agentSpec.sessionMemoryEnabled,
-                "the wizard asked this agent whether it wants a memory per conversation, and the delivery carries that answer",
-            )
-        }
-
-        @Test
-        fun `a delivery that never names the session layer leaves the agent on one layer`() {
-            // The mirror of the case above: this column's default is off, and so is the wire default, because
-            // an admin that has never heard of the key describes today's single long-term layer.
-            val specResponse = buildSpecResponse()
-            `when`(adminApiClient.getAgentSpec("web-123")).thenReturn(specResponse)
-
-            val (agentSpec, _) = resolver.resolve("web-123")
-
-            assertFalse(agentSpec.sessionMemoryEnabled)
-            assertTrue(agentSpec.memoryEnabled, "and the layer it already had is untouched")
-        }
-
-        @Test
-        fun `a session value this runtime never expected stays on the single-layer side`() {
-            // The flag opens a second pair of routes, so it compares like skillSelfWrite: only the exact
-            // grant means two layers, and anything else is refused rather than guessed at.
-            val specResponse = buildSpecResponse(sessionMemoryEnabled = 2)
-            `when`(adminApiClient.getAgentSpec("web-123")).thenReturn(specResponse)
-
-            val (agentSpec, _) = resolver.resolve("web-123")
-
-            assertFalse(agentSpec.sessionMemoryEnabled)
         }
 
         @Test

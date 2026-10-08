@@ -33,6 +33,7 @@ import io.minio.MakeBucketArgs
 import io.minio.MinioClient
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -49,14 +50,16 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 /**
- * The plan's headline assertion, measured end to end on the real store: one conversation's extraction
- * lands in the owner's bucket, a consolidation pass curates it into `MEMORY.md`, and a *different*
- * session of the same owner gets that line injected as `<memory_context>` on its very first turn.
+ * The memory addresses measured end to end on the real store: a conversation's extraction lands in that
+ * conversation's own bucket, a consolidation pass curates it into that bucket's `MEMORY.md`, and the
+ * owner's long-term layer — which nothing here writes, because reaching it takes an approved merge — still
+ * reaches a brand-new conversation of the same owner.
  *
  * This is the seam where the mount could quietly fail: the flush path appends through
  * `WorkspaceManager`, the read path falls back to the host disk when a route answers nothing, and the
  * store is shared while the workspace directory is not. Only a real MinIO behind a real built agent can
- * tell "the memory moved to the owner bucket" from "it stayed on this replica and looked fine".
+ * tell "the memory moved to the bucket these routes point at" from "it stayed on this replica and looked
+ * fine".
  */
 @Testcontainers
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -68,6 +71,8 @@ class MemoryBucketPipelineTest {
         private const val ACCESS_KEY = "minioadmin"
         private const val SECRET_KEY = "minioadmin"
         private const val EXTRACTED = "- the user wants replies in Chinese"
+        private const val AGENT_NAME = "Research"
+        private const val CLEARING_AGENT = "ResearchClearing"
 
         @Container
         @JvmStatic
@@ -79,8 +84,21 @@ class MemoryBucketPipelineTest {
     }
 
     // The owner is the `UserIdentifier` this agent was assembled for, not anything the call carries.
-    private val memoryNamespace = listOf("tenants", "4", "users", "1", "agents", "Research", "memory")
-    private val rootNamespace = listOf("tenants", "4", "users", "1", "agents", "Research", "root")
+    private fun memoryNamespace(agentName: String = AGENT_NAME) = listOf("tenants", "4", "users", "1", "agents", agentName, "memory")
+
+    private fun rootNamespace(agentName: String = AGENT_NAME) = listOf("tenants", "4", "users", "1", "agents", agentName, "root")
+
+    /** The two addresses one conversation's mounted routes answer from. */
+    private fun conversationLedgers(
+        sessionId: String,
+        agentName: String = AGENT_NAME,
+    ) = listOf("tenants", "4", "users", "1", "agents", agentName, "sessions", sessionId, "memory")
+
+    private fun conversationDraft(
+        sessionId: String,
+        agentName: String = AGENT_NAME,
+    ) = listOf("tenants", "4", "users", "1", "agents", agentName, "sessions", sessionId, "root")
+
     private val today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
 
     private fun store() = com.agnetix.harnax.harness.minio.MinioBaseStore(minioClient(), BUCKET, PREFIX)
@@ -114,7 +132,10 @@ class MemoryBucketPipelineTest {
     /** The launcher that built the agent under test; session-scoped operations live on it. */
     private lateinit var builtBy: HarnessAgentLauncher
 
-    private fun agent(workspace: Path): HarnessAgentWrapper {
+    private fun agent(
+        workspace: Path,
+        agentName: String = AGENT_NAME,
+    ): HarnessAgentWrapper {
         val launcher = HarnessAgentLauncher(
             chatModelConfigAdaptor = ChatModelConfigAdaptor { OpenAIChatModelConfig(modelName = "gpt-test", apiKey = "k") },
             mcpConfigAdaptor = McpConfigAdaptor { null },
@@ -142,7 +163,7 @@ class MemoryBucketPipelineTest {
             agentSpec = AgentSpec.builder()
                 .id(1L)
                 .tenantId(4L)
-                .name("Research")
+                .name(agentName)
                 .description("a research agent")
                 .systemPrompt("answer")
                 .chatModelId(100L)
@@ -168,7 +189,7 @@ class MemoryBucketPipelineTest {
     )
 
     @Test
-    fun `one session's extraction becomes the next session's memory`(@TempDir workspace: Path) {
+    fun `one conversation's memory stays in its own bucket while a new conversation still reads its owner's layer`(@TempDir workspace: Path) {
         val built = agent(workspace)
         val manager = built.harnessAgent.workspaceManager
 
@@ -176,38 +197,51 @@ class MemoryBucketPipelineTest {
             .flushMemories(rc("sess-A"), conversation())
             .block(Duration.ofSeconds(30))
 
-        val ledger = store().search(memoryNamespace, 10, 0)
+        val ledgers = store().search(conversationLedgers("sess-A"), 10, 0)
         assertTrue(
-            ledger.any { it.value()["content"]?.toString()?.contains(EXTRACTED) == true },
-            "the flush must land in the owner bucket, found ${ledger.map { it.key() }}",
+            ledgers.any { it.value()["content"]?.toString()?.contains(EXTRACTED) == true },
+            "the flush must land in this conversation's own bucket, found ${ledgers.map { it.key() }}",
         )
         assertNotNull(
-            store().get(memoryNamespace, "/$today.md"),
-            "the daily ledger is keyed by owner and day, not by session",
+            store().get(conversationLedgers("sess-A"), "/$today.md"),
+            "the daily ledger is keyed by owner, agent and conversation",
+        )
+        assertTrue(
+            store().search(memoryNamespace(), 10, 0).isEmpty(),
+            "one turn of one conversation cannot reach the ledgers every other conversation of this owner reads",
         )
 
         MemoryConsolidator(manager, ScriptedModel("$EXTRACTED\n"), 4_000)
             .consolidate(rc("sess-A"))
             .block(Duration.ofSeconds(30))
 
-        val curated = requireNotNull(store().get(rootNamespace, "/MEMORY.md")) {
-            "consolidation must curate the ledger into the bucket's MEMORY.md"
+        val curated = requireNotNull(store().get(conversationDraft("sess-A"), "/MEMORY.md")) {
+            "consolidation must curate the ledger into this conversation's MEMORY.md"
         }
         assertTrue(
             curated.value()["content"]?.toString()?.contains(EXTRACTED) == true,
             "got ${curated.value()["content"]}",
         )
+        assertNull(
+            store().get(rootNamespace(), "/MEMORY.md"),
+            "the long-term layer is a merge's output, not a turn's",
+        )
 
-        // A brand new session of the same owner: the reader is the workspace-context middleware, and the
-        // only thing it needs is the same bucket key.
+        // What an approved merge leaves behind, read back on the very first turn of a conversation that has
+        // nothing of its own yet: the long-term layer goes in as its own block because the mounted `MEMORY.md`
+        // route answers from this conversation's bucket.
+        val domain = MemoryDomain(store(), 4L, "1", AGENT_NAME, true)
+        domain.routes()
+            .getValue(MemoryFilesystemRoutes.MEMORY_MD_ROUTE)
+            .write(rc("sess-C"), MemoryFilesystemRoutes.CURATED_ITEM_KEY, "$EXTRACTED\n")
+
         val injected = requireNotNull(
-            WorkspaceContextMiddleware(manager)
-                .onSystemPrompt(built.harnessAgent, rc("sess-B"), "you are an agent")
+            LongTermMemoryContextMiddleware(domain)
+                .onSystemPrompt(built.harnessAgent, rc("sess-C"), "you are an agent")
                 .block(Duration.ofSeconds(30)),
-        ) { "the workspace-context middleware must answer with the injected prompt" }
+        ) { "the long-term reader must answer with the injected prompt" }
 
-        assertTrue(injected.contains("<memory_context>"), "got: $injected")
-        assertTrue(injected.contains(EXTRACTED), "a second session must read the first one's memory, got: $injected")
+        assertTrue(injected.contains(EXTRACTED), "a new conversation starts with its owner's curated memory, got: $injected")
     }
 
     @Test
@@ -225,7 +259,7 @@ class MemoryBucketPipelineTest {
             .consolidate(rc("sess-A"))
             .block(Duration.ofSeconds(30))
 
-        val agentDir = workspace.resolve("Research").resolve("sess-A")
+        val agentDir = workspace.resolve(AGENT_NAME).resolve("sess-A")
         assertTrue(
             java.nio.file.Files.notExists(agentDir.resolve("MEMORY.md")),
             "a MEMORY.md on the host disk answers every anonymous read: ${listHostMarkdown(agentDir)}",
@@ -237,7 +271,7 @@ class MemoryBucketPipelineTest {
     }
 
     @Test
-    fun `the ledger glob answers from the owner bucket`(@TempDir workspace: Path) {
+    fun `the ledger glob answers from the mounted bucket`(@TempDir workspace: Path) {
         // Maintenance expires ledgers by listing them (`MemoryMaintenanceMiddleware.expireDailyFiles`
         // globs `*.md` under `memory`), so if that listing kept answering from the session workspace the
         // bucket would grow one file per day forever and never archive. This is plan §9.1 measured.
@@ -296,8 +330,10 @@ class MemoryBucketPipelineTest {
     }
 
     @Test
-    fun `clearing the session leaves the owner bucket alone`(@TempDir workspace: Path) {
-        val built = agent(workspace)
+    fun `clearing the session leaves the memory buckets alone`(@TempDir workspace: Path) {
+        // Its own agent name: the container is shared for the whole class, and the object seeded below is the
+        // one another test asserts stays empty for its own agent.
+        val built = agent(workspace, CLEARING_AGENT)
         val manager = built.harnessAgent.workspaceManager
         MemoryFlushManager(manager, ScriptedModel(EXTRACTED), MemoryFlushManager.DEFAULT_FLUSH_PROMPT)
             .flushMemories(rc("sess-A"), conversation())
@@ -306,13 +342,27 @@ class MemoryBucketPipelineTest {
             .consolidate(rc("sess-A"))
             .block(Duration.ofSeconds(30))
 
+        // What a merge would have left behind, so the claim below is about a real object rather than an
+        // address that was never written.
+        val domain = MemoryDomain(store(), 4L, "1", CLEARING_AGENT, true)
+        domain.routes()
+            .getValue(MemoryFilesystemRoutes.MEMORY_MD_ROUTE)
+            .write(rc("sess-A"), MemoryFilesystemRoutes.CURATED_ITEM_KEY, "$EXTRACTED\n")
+
         builtBy.clearSession("sess-A")
 
         assertNotNull(
-            store().get(memoryNamespace, "/$today.md"),
+            store().get(conversationLedgers("sess-A", CLEARING_AGENT), "/$today.md"),
             "clearing one conversation must not cost the owner everything they told this agent",
         )
-        assertNotNull(store().get(rootNamespace, "/MEMORY.md"), "and the curated file stays either way")
+        assertNotNull(
+            store().get(conversationDraft("sess-A", CLEARING_AGENT), "/MEMORY.md"),
+            "the conversation's own curated draft is memory too, not conversation state",
+        )
+        assertNotNull(
+            store().get(rootNamespace(CLEARING_AGENT), "/MEMORY.md"),
+            "and neither path reclaims the long-term layer",
+        )
     }
 
     private fun listHostMarkdown(dir: Path): List<String> = if (!java.nio.file.Files.exists(dir)) {

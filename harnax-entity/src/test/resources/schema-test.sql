@@ -2,7 +2,8 @@
 --
 -- The DDL below is the table-definition block of harnax-admin's schema at its last version - the baseline
 -- (harnax-admin/src/main/resources/db/migration/V1__init_schema.sql) plus the forward increments stacked on
--- it (V2__agent_session_memory.sql, V3__tool_invocation_metrics.sql) - copied so this file and the
+-- it (V2__agent_session_memory.sql, V3__tool_invocation_metrics.sql and V5__drop_agent_session_memory.sql,
+-- the last one undoing the column the first added) - copied so this file and the
 -- production schema cannot drift apart the way the hand-maintained version did. What matters is the shape
 -- Flyway ends at, because that is what SchemaBaselineDriftIT replays and compares. Regenerate this file's
 -- DDL block whenever the baseline or any increment changes.
@@ -21,7 +22,6 @@ CREATE TABLE IF NOT EXISTS `agent` (
   `is_public` tinyint DEFAULT '0' COMMENT 'Public visibility (0: Private, 1: Public)',
   `skill_self_write` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Whether the agent may author skills itself (0: no, 1: yes)',
   `memory_enabled` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Whether the agent has long-term memory (0: no, 1: yes)',
-  `session_memory_enabled` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Whether the agent also keeps a per-session memory layer that is later promoted into the long-term one (0: no, 1: yes)',
   `creator` varchar(100) DEFAULT NULL,
   `active` tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
   `create_time` datetime DEFAULT CURRENT_TIMESTAMP,

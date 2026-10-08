@@ -5,9 +5,7 @@ import com.agnetix.harnax.admin.dto.MemoryAgentResponse
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.security.SecurityUtils
 import com.agnetix.harnax.admin.util.JwtUtil
-import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.SysUser
-import com.agnetix.harnax.mapper.AgentMapper
 import com.agnetix.harnax.mapper.SysUserMapper
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -37,9 +35,6 @@ import org.springframework.security.core.context.SecurityContextHolder
  * another person's memory is to resolve the caller wrongly — and the only way to reach another person's
  * *agent* is to let a path variable become a path segment. The assertions below capture the exact
  * `(tenantId, userId, agentId)` triple the gateway receives.
- *
- * The second thing they cover is the agent row each listing reads to explain its layers: it is read under the
- * same resolved tenant as the memory itself, and a failure there costs the explanation and not the memory.
  */
 @ExtendWith(MockitoExtension::class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -48,9 +43,6 @@ class MemoryServiceImplTest {
 
     @Mock
     private lateinit var memoryStoreGateway: MemoryStoreGateway
-
-    @Mock
-    private lateinit var agentMapper: AgentMapper
 
     @Mock
     private lateinit var jwtUtil: JwtUtil
@@ -62,7 +54,7 @@ class MemoryServiceImplTest {
 
     @BeforeEach
     fun setUp() {
-        service = MemoryServiceImpl(memoryStoreGateway, agentMapper, jwtUtil)
+        service = MemoryServiceImpl(memoryStoreGateway, jwtUtil)
     }
 
     @AfterEach
@@ -156,86 +148,6 @@ class MemoryServiceImplTest {
 
             verify(memoryStoreGateway).listAgents(4L, "8")
             verify(memoryStoreGateway, never()).listAgents(4L, "7")
-        }
-
-        /**
-         * The page has to be able to say why an agent's long-term ledger stops short.
-         *
-         * An agent whose conversation layer is on writes its recent days into that layer and only reaches
-         * `MEMORY.md` at a merge, so its long-term dates can look frozen while nothing is broken. Without the
-         * switch the page would have to explain that with a guess about the dates it has.
-         */
-        @Test
-        fun `an agent with the conversation layer on is reported as such`() {
-            loginAsMember()
-            `when`(memoryStoreGateway.listAgents(4L, "7")).thenReturn(
-                listOf(MemoryAgentResponse(agentId = "Research", dates = listOf("2026-09-01"))),
-            )
-            `when`(agentMapper.selectByName("Research", 4L)).thenReturn(Agent().apply { sessionMemoryEnabled = 1 })
-
-            assertEquals(true, service.listMyMemory().single().sessionMemory)
-        }
-
-        /**
-         * Off and unknown are different answers, and only one of them is a fact about the agent.
-         *
-         * A row that has the column at 0 was never given a second layer; no row at all means the agent was
-         * renamed or deleted since it wrote this memory, and calling that single-layer would tell the owner
-         * their memory is complete. Each row keeps its own answer: one lookup applied to the whole listing
-         * would make both of these wrong in the same way.
-         */
-        @Test
-        fun `a single-layer agent says off and an agent with no row says nothing`() {
-            loginAsMember()
-            `when`(memoryStoreGateway.listAgents(4L, "7")).thenReturn(
-                listOf(
-                    MemoryAgentResponse(agentId = "Ops"),
-                    MemoryAgentResponse(agentId = "Renamed away"),
-                ),
-            )
-            `when`(agentMapper.selectByName("Ops", 4L)).thenReturn(Agent().apply { sessionMemoryEnabled = 0 })
-            `when`(agentMapper.selectByName("Renamed away", 4L)).thenReturn(null)
-
-            val layers = service.listMyMemory().associate { it.agentId to it.sessionMemory }
-
-            assertEquals(mapOf("Ops" to false, "Renamed away" to null), layers)
-        }
-
-        /**
-         * The layer hint is decoration on a compliance listing.
-         *
-         * An owner has to be able to see and delete their memory while the agent table is having a bad day,
-         * so this lookup degrades to unknown instead of failing the page — and unknown costs the explanation,
-         * never the memory itself.
-         */
-        @Test
-        fun `an agent lookup that fails still lists the memory`() {
-            loginAsMember()
-            `when`(memoryStoreGateway.listAgents(4L, "7")).thenReturn(
-                listOf(MemoryAgentResponse(agentId = "Research", content = "# Memory")),
-            )
-            `when`(agentMapper.selectByName("Research", 4L)).thenThrow(RuntimeException("db unreachable"))
-
-            val rows = service.listMyMemory()
-
-            assertEquals(listOf("Research"), rows.map { it.agentId })
-            assertEquals("# Memory", rows.single().content)
-            assertNull(rows.single().sessionMemory)
-        }
-
-        /** Agent names are unique per tenant, not across tenants, so an unqualified lookup would answer for another workspace. */
-        @Test
-        fun `the layer lookup is names by the tenant the memory was read from`() {
-            loginAsMember()
-            TenantContext.setTenantId(9L)
-            `when`(memoryStoreGateway.listAgents(9L, "7")).thenReturn(
-                listOf(MemoryAgentResponse(agentId = "Research")),
-            )
-
-            service.listMyMemory()
-
-            verify(agentMapper).selectByName("Research", 9L)
-            verify(agentMapper, never()).selectByName("Research", 4L)
         }
     }
 
