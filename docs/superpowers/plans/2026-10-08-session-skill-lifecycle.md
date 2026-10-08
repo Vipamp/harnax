@@ -1674,7 +1674,7 @@ class SessionSkillController(
     fun enable(
         @PathVariable sessionId: String,
         @PathVariable name: String,
-        @RequestBody(required = false) actor: EnableActorRequest?,
+        @RequestBody(required = false) actor: EnableActorRequest? = null,
     ): ResultVo<EnableResultView> =
         when (val outcome = launcher.sessionSkillStore.enable(sessionId, name)) {
             is EnableOutcome.Enabled -> {
