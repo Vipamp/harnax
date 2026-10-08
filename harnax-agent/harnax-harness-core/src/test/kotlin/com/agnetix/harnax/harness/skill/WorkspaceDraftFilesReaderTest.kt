@@ -8,6 +8,7 @@ import io.agentscope.harness.agent.filesystem.model.GlobResult
 import io.agentscope.harness.agent.filesystem.model.ReadResult
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -176,6 +177,31 @@ class WorkspaceDraftFilesReaderTest {
         `when`(filesystem.glob(any(), eq("SKILL.md"), eq(DRAFTS))).thenThrow(RuntimeException("sandbox is gone"))
 
         assertTrue(reader().listDraftSkillNames(ctx).isEmpty())
+    }
+
+    @Test
+    fun `the draft's own SKILL markdown comes back with the timestamp the listing gave it`() {
+        `when`(filesystem.read(any(), eq("$DRAFTS/invoice-fill/SKILL.md"), anyInt(), anyInt())).thenReturn(
+            ReadResult.success(FileData("---\nname: invoice-fill\ndescription: fills\n---\nbody\n", "utf-8")),
+        )
+        val md = reader().readSkillMarkdown("invoice-fill", ctx)
+        assertNotNull(md)
+        assertEquals("body", md!!.content.trimEnd().substringAfter("\n---\n"))
+    }
+
+    @Test
+    fun `a draft with no readable SKILL markdown reads as no markdown rather than an empty one`() {
+        `when`(filesystem.read(any(), anyString(), anyInt(), anyInt()))
+            .thenReturn(ReadResult.fail("no such file"))
+        assertNull(reader().readSkillMarkdown("invoice-fill", ctx))
+    }
+
+    @Test
+    fun `the same reader pointed at the enabled directory reads the enabled copy`() {
+        val enabled = WorkspaceDraftFilesReader(filesystem, SkillDraftStaging.SESSION_ENABLED_DIR)
+        `when`(filesystem.read(any(), eq("${SkillDraftStaging.SESSION_ENABLED_DIR}/invoice-fill/SKILL.md"), anyInt(), anyInt()))
+            .thenReturn(ReadResult.success(FileData("---\nname: invoice-fill\ndescription: fills\n---\nbody\n", "utf-8")))
+        assertNotNull(enabled.readSkillMarkdown("invoice-fill", ctx))
     }
 
     private fun stubListing(vararg names: String) {

@@ -4,6 +4,9 @@ import io.agentscope.core.agent.RuntimeContext
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem
 import org.slf4j.LoggerFactory
 
+/** One draft's skill text and the moment its directory was written, which is what "enabled at" reports. */
+data class DraftMarkdown(val content: String, val modifiedAt: String?)
+
 /**
  * Reads the support files of one draft out of the workspace.
  *
@@ -100,6 +103,31 @@ class WorkspaceDraftFilesReader(
             }
         }
         return files
+    }
+
+    /**
+     * The draft's own `SKILL.md`, which [read] deliberately leaves out: it returns only the support files the
+     * review queue stores, while a skill has to be parsed from the text and a session's enabled list has to
+     * say when the copy was made.
+     *
+     * Null when there is nothing to read. A directory without a `SKILL.md` is not a skill by upstream's own
+     * discovery rule, so callers treat the absence as "no such draft" instead of inventing an empty skill.
+     */
+    fun readSkillMarkdown(
+        skillName: String,
+        ctx: RuntimeContext?,
+    ): DraftMarkdown? {
+        val path = "$draftsDir/$skillName/$SKILL_FILE"
+        return try {
+            val read = filesystem.read(ctx ?: RuntimeContext.empty(), path, 0, 0)
+            if (!read.isSuccess) return null
+            val data = read.fileData() ?: return null
+            val content = data.content() ?: return null
+            DraftMarkdown(content, data.modifiedAt())
+        } catch (e: Exception) {
+            log.warn("Could not read {} of draft {}: {}", path, skillName, e.message)
+            null
+        }
     }
 
     companion object {
