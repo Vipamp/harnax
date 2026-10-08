@@ -2716,7 +2716,12 @@ cd harnax-webui && npm run build
 cd harnax-ios && swift test --scratch-path /tmp/hx-ios-final
 ```
 
-Expected: 全部 `BUILD SUCCESS`，0 失败。计数按这条链对：harness-core **≥ 689**（662 进场 → 664/667/669/672/678 → Task 4 补强 682 → Task 5 685 → Task 6 687 → Task 7 689）；admin ≥ 2430（Task 10 若加用例则按它报告里的实数抬）；iOS **≥ 2086**（1884 是别的分支的数，本分支进场约 2059，Task 12 加 27 例）；webui 的 jest 与逐文件 biome 各跑一遍，`max build` 退 0。
+Expected: 全部 `BUILD SUCCESS`，0 失败。计数按这条链对，每一档都以已提交那轮的实跑数为准，别用「≥」糊过去：
+
+- harness-core **691**：进场 662 → Task 1/2/3 各抬一笔得 678 → Task 4 补强 682 → Task 5 685 → Task 6 687 → Task 7（`claim` 窗口两支）689 → 控制方自己那笔 attachIfRunning 句柄 provider 修复（`KeepAliveSandboxManagerTest` 追加的 `AttachIfRunning` 两支）691。Skipped 恒为 1。
+- harnax-admin **2432**：进场 2430 → Task 10 追加的两支单元用例（会话过滤 + 三个空谓词）抬到 2432。IT 的那支会话过滤只在 `-Pintegration-test` 下跑，不计入这个数。
+- harnax-ios **按本分支实测**：进场约 2059（1884 是别的分支的数），Task 12 的会话技能套件加 27 例；Task 12 复审把两份读改成各走各的失败后按它报告的实数写。
+- webui 的 jest 与逐文件 biome 各跑一遍，`npx max build` 退 0。
 
 - [ ] **Step 3: 合回 kotlin-dev（不 push）**
 
@@ -2741,5 +2746,5 @@ git log --oneline kotlin-dev..feat/session-skill-lifecycle
 - **§10 有一条按字面做不到**：「IT（harness-core）：……交付同名技能压住」。上游这两枚方法都是 `private`——`HarnessSkillMiddleware.skillsForCall`（`asrc-1008/io/agentscope/harness/agent/middleware/HarnessSkillMiddleware.java:321`）与 `mergeRepositories`（同文件 `:349`），本仓拿不到合并后的那张表，harness-core 现无任何 IT（`src/test/kotlin` 下 `*IT.kt` 为 0 支）。这一条拆成三处 discharge：名次本身由 Task 6 的 `skillRepositories` 顺序断言守住，会话区内容能否被读到由 Task 5 的 `getAllSkills` 守住，「交付那份压住会话那份」的真实合并只在 Task 13 Step 4 的真栈验收里观测。别为了这条去反射调用私有方法。
 - 测试框架核对过：`harnax-ios/Tests` 下 142 处 `import XCTest`、0 处 Swift Testing，所以 Task 12 用 `XCTestCase` + `XCTAssertEqual`；`harnax-webui` 用 jest 且有同目录 `*.test.ts` 先例（`src/pages/session/components/contextUsage.test.ts`），Task 11 沿用。`SkillDraftRow` 的成员式初始化器是 internal 且要填满 13 个存储属性，Task 12 的 Core 判据因此改吃 `SessionSkillRules.Draft`，不在测试里解码夹具。
 - 拒因码前后端对齐：后端 `EnableOutcome` 六支（Task 3）→ agent-service 信封码 403/409/404/410/500（Task 8；`ResultVo.error(code, message)` 只写信封 `code`、HTTP 恒 200，见 `harnax-common/src/main/kotlin/com/agnetix/harnax/common/dto/ResultVo.kt:55`，所以这枚码能原样穿过 Task 9 的代理）→ webui `refusalOf(code).id`（Task 11）与 iOS `SessionSkillRefusal.messageKey`（Task 12）各覆盖同一组码，未知码一律落通用文案，不许谎报「草稿不在了」。
-- 占位符：Task 9 Step 1 的 `fixture()` 里留了一个 `TODO`，它在 Step 2 被明确要求替换成真实夹具——这是唯一一处，且带着把它清掉的步骤。
+- 占位符已清零：Task 9 Step 1 的 `fixture()` 原先留了一个 `TODO` 等实现方补，3cbc07da 已换成能真跑的 `SessionRouterService` 十参构造夹具；Task 10 的两支用例原本要新建 `SkillDraftServiceImplPageTest.kt` 并重抄 771 行夹具，同一笔改动改成挂在既有 `SkillDraftServiceImplTest.kt` 的 `page is tenant scoped` 之后、复用它的 `storedDraft`/`skillDraftMapper` 桩。核对方式：全篇扫 `TODO`/`TBD`/`待补`，并扫一遍 Files 段里所有 `Create:` 看是不是真有同名新文件需要建。
 - 类型一致性：`EnableOutcome`（Task 3 定义、Task 4 补行为、Task 8 消费）、`SessionDraft`/`EnabledSkill`（Task 3 定义、Task 7/8 消费）、`SESSION_SKILL_SOURCE`（Task 5 定义、Task 6 断言）、`findingTexts`（Task 3 定义、Task 7 消费）四处名字一致；webui `sessionSkillsFor` 与 iOS `SessionSkillRules.merged` 是同一条合并规则的两端实现，字段名 `name/description/enabled/enabledAt` 对齐；mapper 与 XML 的真实位置在 `harnax-entity`（Task 10 已按全路径写）。
