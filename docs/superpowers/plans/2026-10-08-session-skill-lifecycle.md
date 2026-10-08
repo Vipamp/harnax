@@ -2086,16 +2086,36 @@ export function sessionSkillsFor(
   return rows;
 }
 
-export function refusalMessage(code: number): string {
-  if (code === 403) return 'the security scan says DANGEROUS, so this draft cannot be enabled';
-  if (code === 409) return 'this session already has ten skills enabled';
-  if (code === 410) return 'this session has no running sandbox';
-  if (code === 500) return 'the container refused the copy';
-  return 'this session has no draft with that name';
+```ts
+/** One table over the five refusal codes: the locale id and the copy that id falls back to. */
+const REFUSALS: Record<string, { id: string; en: string }> = {
+  '403': { id: 'pages.session.skills.refusal.dangerous', en: 'The security scan says DANGEROUS, so this draft cannot be enabled' },
+  '409': { id: 'pages.session.skills.refusal.limit', en: 'This session already has ten skills enabled' },
+  '410': { id: 'pages.session.skills.refusal.noSandbox', en: 'This session has no running sandbox' },
+  '404': { id: 'pages.session.skills.refusal.noDraft', en: 'This session has no draft with that name' },
+  '500': { id: 'pages.session.skills.refusal.container', en: 'The container refused the copy' },
+};
+
+const UNKNOWN_REFUSAL = {
+  id: 'pages.session.skills.refusal.unknown',
+  en: 'The enable request was refused for a reason this panel does not know; the draft itself is untouched',
+};
+
+/** 未知码不许谎报「草稿不在了」——它可能只是沙箱没起来、登录过期了。 */
+export function refusalOf(code: number): { id: string; en: string } {
+  return REFUSALS[String(code)] ?? UNKNOWN_REFUSAL;
 }
 ```
 
-Drawer 主体：`useEffect` 里并发取 `pageSkillDrafts({ status:'PENDING', sessionId, pageNum:1, pageSize:50 })` 与 `listSessionSkills(sessionId)`，业务失败按 `drafts.tsx:41-44` 的判据 `response.code !== 200 → throw`；`List` 渲染 `sessionSkillsFor` 的结果，每行右侧 `Button` 文案 `已启用 / 在本会话启用`，点击后 `enableSessionSkill` 再重拉两份；`code !== 200` 时 `message.error(refusalMessage(response.code))`。文案一律 `intl.formatMessage({ id: 'pages.session.skills.*', defaultMessage: '…' })`。
+`refusalOf` 是这五枚拒因在 webui 里的唯一一份表，一枚 `code` 同时给出 locale id 与它的 `defaultMessage`；**不许再并列写一枚返回英文字面量的 `refusalMessage`**（两张 switch 加两份 locale 就是三处手工同步，而测试只能断言到不参与渲染的那一半）。测试因此断言 `refusalOf(code).id` 的落点与未知码的去向，不断言英文字面量本身。
+
+Drawer 主体：`useEffect` 里并发取 `pageSkillDrafts({ status:'PENDING', sessionId, pageNum:1, pageSize:50 })` 与 `listSessionSkills(sessionId)`，业务失败按 `drafts.tsx:41-44` 的判据 `response.code !== 200 → throw`；`List` 渲染 `sessionSkillsFor` 的结果，每行右侧 `Button` 文案 `已启用 / 在本会话启用`，点击后 `enableSessionSkill` 再重拉两份。
+
+两次读的失败与一次写的失败必须分开说：
+- **取列表失败**（`pageSkillDrafts` 或 `listSessionSkills` 任一非 200）：置 `unavailable = true`，空态 `Empty` 的 description 用 `pages.session.skills.loadFailed`；`pages.session.skills.empty` 只在两份读都成功而合并结果为空时才出现。一份读失败另一份成功时，成功的那一半照常渲染，别把已经拿到的提名丢掉。列表这条路上只可能出守卫（401/403）与传输错，把 403 说成「安全扫描判定危险」会把人支使去审核队列而不是去登录——`refusalOf` 只给启用那一次调用用。
+- **启用失败**（`enableSessionSkill` 返回非 200）：`message.error(intl.formatMessage({ id: refusalOf(response.code).id, defaultMessage: refusalOf(response.code).en }))`。
+
+文案一律 `intl.formatMessage({ id: 'pages.session.skills.*', defaultMessage: '…' })`。
 
 - [ ] **Step 5: 挂载点与 i18n**
 
@@ -2110,14 +2130,23 @@ Drawer 主体：`useEffect` 里并发取 `pageSkillDrafts({ status:'PENDING', se
 'pages.session.skills.enabled': '已在本会话启用' / 'Enabled in this session'
 'pages.session.skills.enabledAt': '启用时间' / 'Enabled at'
 'pages.session.skills.empty': '这个会话还没有自写的技能' / 'This session has not written a skill yet'
-'pages.session.skills.loadFailed': '本会话技能读不出来' / 'Could not load this session's skills'
+'pages.session.skills.loadFailed': '本会话技能读不出来' / "Could not load this session's skills"
 'pages.session.skills.enableFailed': '启用没有成功' / 'Could not enable it'
+'pages.session.skills.refresh': '刷新' / 'Refresh'
+'pages.session.skills.refusal.dangerous': '安全扫描判定危险，这个草稿不能在本会话启用' / 'The security scan says DANGEROUS, so this draft cannot be enabled'
+'pages.session.skills.refusal.limit': '本会话已启用十项技能，已达上限' / 'This session already has ten skills enabled'
+'pages.session.skills.refusal.noSandbox': '本会话没有运行中的沙箱' / 'This session has no running sandbox'
+'pages.session.skills.refusal.container': '容器拒绝了这次复制' / 'The container refused the copy'
+'pages.session.skills.refusal.noDraft': '本会话没有这个名字的草稿' / 'This session has no draft with that name'
+'pages.session.skills.refusal.unknown': '启用被拒绝，原因本面板不认识；草稿本身没有动' / 'The enable request was refused for a reason this panel does not know; the draft itself is untouched'
 ```
+
+英文侧含撇号的文案用双引号（`"Could not load this session's skills"`）；单引号包它会当场语法错。
 
 - [ ] **Step 6: 跑闸门**
 
-Run: `cd harnax-webui && npx jest src/pages/session/components/sessionSkills.test.ts && npm run tsc && npx @biomejs/biome lint src/pages/session/components/SessionSkillsDrawer.tsx src/services/ant-design-pro/sessionSkill.ts src/pages/session/index.tsx && npm run build`
-Expected: 测试 PASS、`tsc` 无错、lint 无 error、`max build` 成功。**不要 `biome check --write`。**
+Run: `cd harnax-webui && NODE_OPTIONS=--no-experimental-strip-types TS_NODE_PROJECT=../harnax-ui-test/tsconfig.json npx jest src/pages/session/components/sessionSkills.test.ts && npx @biomejs/biome lint src/pages/session/components/SessionSkillsDrawer.tsx src/services/ant-design-pro/sessionSkill.ts src/pages/session/index.tsx && npm run build`
+Expected: 测试 PASS、lint 无 error、`max build` 成功。类型接线以 `max build` 通过为准，**不跑 `npm run tsc`**（见 Global Constraints）。**不要 `biome check --write`。**
 
 - [ ] **Step 7: 提交**
 
@@ -2141,7 +2170,8 @@ git commit -m "feat(webui): 会话页挂出本会话自写技能——待启用�
 - Create: `harnax-ios/Sources/HarnaxAPI/SessionSkillClient.swift`
 - Create: `harnax-ios/Sources/HarnaxFeatures/Chat/SessionSkillsViewModel.swift`
 - Create: `harnax-ios/Sources/HarnaxFeatures/Chat/SessionSkillsSheet.swift`
-- Modify: `Sources/HarnaxFeatures/Chat/ChatView.swift:83-114`、`ChatViewModel.swift`、`Support/HarnaxDependencies.swift`
+- Modify: `Sources/HarnaxFeatures/Chat/ChatView.swift:83-114`、`Support/HarnaxDependencies.swift`（`ChatViewModel.swift` 不动：面板的数据归它自己的 `SessionSkillsViewModel`，见 Step 5）
+- Modify: `Sources/HarnaxCore/Contract/SkillDraftCataloging.swift:14-19`、`Sources/HarnaxAPI/SkillDraftClient.swift`、`Sources/HarnaxAPI/SkillDraftEndpoint.swift:15-24`（`page` 加一个 `sessionId: String? = nil` 形参与对应的 query item，Task 10 的 Admin 侧参数名就叫 `sessionId`；缺了这一枚，会话面板拿到的是全队列而不是本会话的提名）
 - Modify: `Sources/HarnaxKit/Resources/zh-Hans.lproj/Localizable.strings`、`en.lproj/Localizable.strings`
 - Modify: `App/HarnaxDebugScreens.swift`
 - Test: `Tests/HarnaxCoreTests/SessionSkillTests.swift`
@@ -2322,13 +2352,14 @@ enum SessionSkillEndpoint {
 }
 ```
 
-`SessionSkillClient.swift`：`extension AgentRouterClient: SessionSkillReading`（或 `AdminClient`，取 `HarnaxDependencies.swift:152-165` 里已装配 router 的那一枚），`rows` 取回 `pageSkillDrafts` 与 `listSessionSkills` 两份后，把每条 `SkillDraftRow` 收成 `SessionSkillRules.Draft(name:, description:)` 再交 Step 3 的 `SessionSkillRules.merged(drafts:enabled:)`；`enable` 非 200 一律 `throw SessionSkillRefusal(code:)`。合并规则只有 Core 里这一份实现，客户端只做传输与降形，别在两个地方各写一遍。
+`SessionSkillClient.swift`：`extension AdminClient: SessionSkillReading` —— router 与 admin 在 iOS 侧是同一个 `AdminClient`（`HarnaxDependencies.swift:152-165` 把 `contextUsage: admin`、`workspace: admin` 等都挂在同一枚实例上，`base: .router` 才是分路由的开关），照 `ContextUsageClient.swift:17-31` 与 `:36-44` 的形状写：`rows` 里两次 `await client.send(...)` 各取一份——本会话的提名取 `drafts.page(status: .pending, name: nil, sessionId: sessionId, num: 1, size: 50)`（`SkillDraftCataloging.page`，见 Files 那行新增的形参），已启用取 `GET /api/router/agent/session-skills/{sessionId}`——把每条 `SkillDraftRow` 收成 `SessionSkillRules.Draft(name:, description:)`，两份一起交 Step 3 的 `SessionSkillRules.merged(drafts:enabled:)`；`enable` 走 `APIError.business(code:message:)`（`HarnaxCore/Contract/APIError.swift:25`）落成 `SessionSkillRefusal(code:)`，非业务错（传输、解码）落 `SessionSkillRefusal(code: -1)`，两者都归 `chat.skills.enableFailed`。合并规则只有 Core 里这一份实现，客户端只做传输与降形，别在两个地方各写一遍。任何一份读失败都不许当成「这个会话没写过技能」：`rows` 失败时抛错，由 Step 5 的 `unavailable` 状态接手。
 
 - [ ] **Step 5: 界面与依赖**
 
 `HarnaxDependencies.swift`：加 `public let sessionSkills: (any SessionSkillReading)?`（形参默认 `nil`，live 装配补上）。
-`ChatView.swift` `.toolbar`（`:83-100`）内加第三个 `ToolbarItem(placement: .primaryAction) { sessionSkillsButton }`，并在 `:101-114` 加 `.sheet(isPresented: $vm.isSessionSkillsPresented) { SessionSkillsSheet(vm: …) }`；取数挂到 `.task(id: conversation)`（`:115-126`）现有序列之后。
-`SessionSkillsSheet.swift`：一行一名 + `Button(hx("chat.skills.enable"))`，失败 `toast(refusal.messageKey)`；`ChatViewModel.swift` 加 `@Published var isSessionSkillsPresented`、`@Published private(set) var sessionSkillRows: [SessionSkillRow]` 与 `refreshSessionSkills()`（照 `refreshContextUsage()` 的 generation 竞争保护形状，`:1471-1485`）。
+`ChatView.swift` `.toolbar`（`:83-100`，此刻两枚 `ToolbarItem(placement: .primaryAction)`）内加第三枚，并在 `:101-114` 加 `.sheet(isPresented: $showSessionSkills) { SessionSkillsSheet(vm: …) }`——`showSessionSkills` 是本 View 的 `@State`，不进 `ChatViewModel`；`.task(id: conversation)`（`:115-126`）也不取这份数，面板的数据只在面板打开时取。
+`SessionSkillsViewModel.swift`：`@Observable`（或本仓 Chat 目录里 ViewModel 的既有宏，逐字照同目录那几份）持 `rows: [SessionSkillRow]`、`isLoading`、`unavailable`、`notice: SessionSkillRefusal?`（Step 3 已有此型，它自带 `messageKey`，别再造一个），方法 `refresh()` 与 `enable(name:)`。`refresh()` 照 `ChatViewModel.refreshContextUsage()`（`:1471-1485`）的 generation 竞争保护形状：只把最新一次取数的答案留下。`reading` 为 `nil`（依赖未装配）与取数抛错都置 `unavailable = true` 而不是清空成「没有提名」；`enable` 的 `SessionSkillRefusal` 置 `notice`。
+`SessionSkillsSheet.swift`：一行一名 + `Button(hx("chat.skills.enable"))`，已启用的行显示 `chat.skills.enabled` 状态而不是再一枚按钮；`notice` 非空时用 `hx(notice.messageKey)` 落在行下方（本仓 Chat 目录没有 toast，拒因走 `SkillDraftDetailViewModel.swift:35,86,133` 那种 `notice` 状态形状）；`unavailable` 时空态文案取 `chat.skills.loadFailed`，`chat.skills.empty` 只在两份读都成功而合并结果为空时才出现。
 文案两份（zh 在 `skill.draft.*` 之前、en 同位）：
 
 ```
@@ -2337,6 +2368,7 @@ enum SessionSkillEndpoint {
 "chat.skills.enable" = "在本会话启用" / "Enable in this session"
 "chat.skills.enabled" = "已在本会话启用" / "Enabled in this session"
 "chat.skills.empty" = "这个会话还没有自写的技能" / "This session has not written a skill yet"
+"chat.skills.loadFailed" = "这个会话的技能读不出来" / "Could not load this session's skills"
 "chat.skills.blocked" = "安全扫描判定为危险，不能启用" / "The security scan says dangerous, so it cannot be enabled"
 "chat.skills.full" = "这个会话已启用十条技能" / "This session already has ten skills enabled"
 "chat.skills.noSandbox" = "这个会话的沙箱没有在运行" / "This session's sandbox is not running"
@@ -2361,7 +2393,9 @@ git add harnax-ios/Sources/HarnaxCore/Contract/SessionSkill.swift \
         harnax-ios/Sources/HarnaxFeatures/Chat/SessionSkillsViewModel.swift \
         harnax-ios/Sources/HarnaxFeatures/Chat/SessionSkillsSheet.swift \
         harnax-ios/Sources/HarnaxFeatures/Chat/ChatView.swift \
-        harnax-ios/Sources/HarnaxFeatures/Chat/ChatViewModel.swift \
+        harnax-ios/Sources/HarnaxCore/Contract/SkillDraftCataloging.swift \
+        harnax-ios/Sources/HarnaxAPI/SkillDraftClient.swift \
+        harnax-ios/Sources/HarnaxAPI/SkillDraftEndpoint.swift \
         harnax-ios/Sources/HarnaxFeatures/Support/HarnaxDependencies.swift \
         harnax-ios/Sources/HarnaxKit/Resources/zh-Hans.lproj/Localizable.strings \
         harnax-ios/Sources/HarnaxKit/Resources/en.lproj/Localizable.strings \
