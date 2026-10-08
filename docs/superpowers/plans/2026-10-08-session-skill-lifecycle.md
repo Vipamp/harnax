@@ -2701,12 +2701,30 @@ git commit -m "feat(ios): 会话页自写技能面板与启用动作——四类
 
 **Files:**
 - Modify: `docs/superpowers/specs/2026-10-08-session-skill-lifecycle-design.md`（只在实现偏离时回写，不写历史对照）
-- Modify: `harnax-ios/FEATURES.md`、`harnax-ios/FUNCTIONS.md`、`harnax-ios/specs/02-session-chat.md`、`harnax-ios/specs/07-skill-draft-review.md`
-- Modify: `prod_doc/self-improving*.md`（中英两份，若存在成对件）
+- Modify: `harnax-ios/FEATURES.md`、`harnax-ios/FUNCTIONS.md`、`harnax-ios/DESIGN.md`、`harnax-ios/HARNESS-NOTES.md`、`harnax-ios/specs/02-session-chat.md`、`harnax-ios/specs/07-skill-draft-review.md`
+- Modify: `prod_doc/self-improving-implementation.zh-CN.md`（本目录只有中文一份，无 en-US 成对件——`memory-engineering.*` 才是一对）
 
 - [ ] **Step 1: 现状文档写当前状态**
 
-iOS `FEATURES.md` 会话域加一行「本会话自写技能（启用/拒因）」；`FUNCTIONS.md` 加一节写清三步：模型写 `_drafts` → 答完自动进待审队列 → 会话页确认后 `session-enabled/` 里那份在下一轮进系统提示。口径与 webui 的「技能自我进化」保持一致。
+逐份改，每处只写「现在是什么样」：
+
+1. `harnax-ios/FEATURES.md` 会话域加一行「本会话自写技能（启用/拒因）」；§14 的测试计数按脚本重算，别手填。
+2. `harnax-ios/FUNCTIONS.md` 加一节写清三步：模型写 `_drafts` → 答完自动进待审队列 → 会话页确认后 `session-enabled/` 里那份在下一轮进系统提示。口径与 webui 的「技能自我进化」保持一致。
+3. `harnax-ios/DESIGN.md:365` 那条「服务端没有按会话过滤的能力」与同句里「webui 同样没有按会话筛，这不是 iOS 的偏离」在 Task 10 之后都不成立——队列现在有 `sessionId` 参数（`SkillDraftController.kt` 的 `page`），两份读各按自己的失败面处理。按新能力改写这两句，并说明 iOS 与会话页列表各自读什么。
+4. `harnax-ios/HARNESS-NOTES.md:11-12` 的单文件类型检查命令补上 `-D DEBUG`：`App/HarnaxDebugScreens.swift` 整份文件被 `#if DEBUG`（`:1`）到 `#endif`（`:2386`）包住，不带这枚旗标时 `swiftc -typecheck` 编的是一个空编译单元，过与不过都不说明任何事。`:29` 的 `HarnaxDebugScreen` case 数（文档写 65）按枚举自身范围重算并在提交信息里写明命令：
+   ```bash
+   awk '/enum HarnaxDebugScreen: String/{f=1} f&&/^    case /{c++} END{print c}' harnax-ios/App/HarnaxDebugScreens.swift
+   ```
+   本分支实测该值为 71。
+5. `harnax-ios/specs/02-session-chat.md`、`harnax-ios/specs/07-skill-draft-review.md` 各挂一句交叉引用：会话页那块自写技能列表的读走 `SessionSkillReading`，两份读各走各的失败，不会因为一份挂了就抹掉另一份答上来的那一半。
+6. `prod_doc/self-improving-implementation.zh-CN.md` 扩写不变量那一段（`:41` 附近）：加进「本会话即时可用」这一档，并写明审核通过的是审后正文、30 分钟快照过期后交付那份压住会话那份。
+
+收尾残扫（判据是命中数为 0，不是「看起来改完了」）：
+
+```bash
+grep -rn "按会话过滤\|同样没有按会话" harnax-ios/*.md harnax-ios/specs/*.md prod_doc/*.md
+grep -rn "65 个" harnax-ios/HARNESS-NOTES.md
+```
 
 - [ ] **Step 2: 全量门禁重跑**
 
