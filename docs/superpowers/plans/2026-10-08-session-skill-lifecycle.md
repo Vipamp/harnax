@@ -573,6 +573,7 @@ import io.agentscope.harness.agent.filesystem.model.ReadResult
 import io.agentscope.harness.agent.sandbox.ExecResult
 import io.agentscope.harness.agent.sandbox.Sandbox
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.anyInt
@@ -608,9 +609,10 @@ class SessionSkillStoreEnableTest {
     private fun stubDraftExists(name: String) {
         Mockito.`when`(sandbox.exec(isNull(), contains("test -f"), anyInt()))
             .thenReturn(ExecResult(0, "yes\n", "", false))
+        // Widest stubs first: Mockito resolves a call that matches several stubbings to the last one declared.
+        Mockito.`when`(fs.glob(any(), anyString(), anyString())).thenReturn(GlobResult.fail("none"))
         Mockito.`when`(fs.glob(any(), eq("SKILL.md"), eq("${SkillDraftStaging.DRAFTS_DIR}/$name")))
             .thenReturn(GlobResult.success(listOf(FileInfo.ofFile("$name/SKILL.md", 10L, "2026-10-08T10:00:00Z"))))
-        Mockito.`when`(fs.glob(any(), anyString(), anyString())).thenReturn(GlobResult.fail("none"))
         Mockito.`when`(fs.read(any(), eq("${SkillDraftStaging.DRAFTS_DIR}/$name/SKILL.md"), anyInt(), anyInt()))
             .thenReturn(ReadResult.success(FileData(MD, "utf-8")))
     }
@@ -635,10 +637,8 @@ class SessionSkillStoreEnableTest {
     }
 
     @Test
-    fun `a session already at the cap refuses a new name and still re-enables an old one`() {
+    fun `a session already at the cap refuses a new name`() {
         stubDraftExists("invoice-fill")
-        Mockito.`when`(fs.glob(any(), eq("SKILL.md"), eq("${SkillDraftStaging.SESSION_ENABLED_DIR}/a")))
-            .thenReturn(GlobResult.success(listOf(FileInfo.ofFile("a/SKILL.md", 1L, "t"))))
         val filled = (1..10).toList().map { "s$it" }
         Mockito.`when`(fs.glob(any(), eq("SKILL.md"), eq(SkillDraftStaging.SESSION_ENABLED_DIR))).thenAnswer {
             GlobResult.success(filled.map { FileInfo.ofDir("$it/SKILL.md", "t") })
@@ -646,6 +646,19 @@ class SessionSkillStoreEnableTest {
         val other = store().enable("ses-1", "invoice-fill")
         assertTrue(other is EnableOutcome.Full, "got $other")
         assertEquals(10, (other as EnableOutcome.Full).count)
+    }
+
+    @Test
+    fun `the cap blocks a new name but not replaying one that is already enabled`() {
+        stubDraftExists("invoice-fill")
+        Mockito.`when`(sandbox.exec(isNull(), contains("cp -R"), anyInt()))
+            .thenReturn(ExecResult(0, "", "", false))
+        val filled = listOf("invoice-fill") + (1..9).toList().map { "s$it" }
+        Mockito.`when`(fs.glob(any(), eq("SKILL.md"), eq(SkillDraftStaging.SESSION_ENABLED_DIR))).thenAnswer {
+            GlobResult.success(filled.map { FileInfo.ofDir("$it/SKILL.md", "t") })
+        }
+        val replay = store().enable("ses-1", "invoice-fill")
+        assertTrue(replay is EnableOutcome.Enabled, "re-enabling a name already in the ten has to work: got $replay")
     }
 
     @Test
@@ -724,7 +737,7 @@ Expected: `Failures: 0, Errors: 0`
 ```bash
 git add harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/skill/SessionSkillStore.kt \
         harnax-agent/harnax-harness-core/src/test/kotlin/com/agnetix/harnax/harness/skill/SessionSkillStoreEnableTest.kt
-git commit -m "test(skill): 启用三支拒因与十条上限各自可判——pin 视图留出注入口"
+git commit -m "test(skill): 启用四支拒因与十条上限各自可判、已满仍可重放旧名——pin 视图留出注入口"
 ```
 
 ---
