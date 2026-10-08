@@ -55,6 +55,9 @@ class SessionEnabledSkillRepositoryTest {
         assertEquals(SESSION_SKILL_SOURCE, skills[0].source)
         assertEquals(SESSION_SKILL_SOURCE, repo().source)
         assertFalse(repo().isWriteable, "the model must not be able to write into its own enabled area")
+        assertEquals(listOf("invoice-fill"), repo().allSkillNames)
+        assertTrue(repo().skillExists("invoice-fill"))
+        assertFalse(repo().skillExists("other-skill"))
     }
 
     @Test
