@@ -885,9 +885,13 @@ class SessionEnabledSkillRepositoryTest {
     }
 
     private fun stubEnabled(name: String, body: String) {
-        Mockito.`when`(fs.glob(any(), eq("SKILL.md"), eq(dir)))
-            .thenReturn(GlobResult.success(listOf(FileInfo.ofFile("$name/SKILL.md", 1L, "2026-10-08T10:00:00Z"))))
-        Mockito.`when`(fs.read(any(), eq("$dir/$name/SKILL.md"), anyInt(), anyInt()))
+        // The listing answers with paths relative to the workspace root, and the reader keeps only the two
+        // segments that follow the staging directory — a bare `<name>/SKILL.md` is dropped, not parsed.
+        val skillPath = "$dir/$name/SKILL.md"
+        val listed = GlobResult.success(listOf(FileInfo.ofFile(skillPath, 1L, "2026-10-08T10:00:00Z")))
+        Mockito.`when`(fs.glob(any(), eq("SKILL.md"), eq(dir))).thenReturn(listed)
+        Mockito.`when`(fs.glob(any(), eq("SKILL.md"), eq("$dir/$name"))).thenReturn(listed)
+        Mockito.`when`(fs.read(any(), eq(skillPath), anyInt(), anyInt()))
             .thenReturn(ReadResult.success(FileData(body, "utf-8")))
         listOf("scripts", "references", "templates", "assets").forEach {
             Mockito.`when`(fs.glob(any(), anyString(), eq("$dir/$name/$it"))).thenReturn(GlobResult.fail("none"))
@@ -945,14 +949,15 @@ import org.slf4j.LoggerFactory
  * The session's enabled skills, as a source the harness can load.
  *
  * A repository of harnax's own rather than an upstream `WorkspaceSkillRepository` pointed at the directory,
- * for one reason: when `skill_manage` is on, `HarnessAgent:2788-2807` walks the installed list backwards,
+ * for one reason: when `skill_manage` is on, `HarnessAgent:2789-2802` walks the installed list backwards,
  * finds the first *read-only* `WorkspaceSkillRepository` and rewrites it in place to point at the promotion
  * directory. A second one installed here would be a candidate for that rewrite, and the session's enabled
  * tree would silently become the place promoted skills land.
  *
  * Reads happen through the agent's bound workspace filesystem, so they are inside a call — which is exactly
  * where the catalog asks ([HarnessSkillMiddleware:322] rebuilds it per call and hands the context to
- * repositories of this kind). Enabling, by contrast, happens out of a call and goes through
+ * repositories of this kind, re-merging because harnax never builds that middleware with `frozen(...)`).
+ * Enabling, by contrast, happens out of a call and goes through
  * [SessionSkillStore]; the two never need the same handle at the same time.
  *
  * Never writeable. `skill_manage` has its own drafts repository, and a model that could write into the
@@ -1027,7 +1032,7 @@ class SessionEnabledSkillRepository(
 /**
  * The marker these skills carry.
  *
- * Distinct from `in-memory` on purpose: [SkillUtil.createFrom]'s fifth argument becomes `AgentSkill.source`
+ * Distinct from `in-memory` on purpose: [SkillUtil.createFrom]'s third argument becomes `AgentSkill.source`
  * and therefore part of `getSkillId()`, and anything that later selects skills by source must be able to
  * tell Admin's delivered ones from a session's own.
  */
@@ -1037,9 +1042,9 @@ const val SESSION_SKILL_SOURCE = "session-enabled"
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `... mvn -q spotless:apply -pl harnax-agent/harnax-harness-core && ... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=SessionEnabledSkillRepositoryTest`
-Expected: `Failures: 0, Errors: 0`
+Expected: `Tests run: 685, Failures: 0, Errors: 0, Skipped: 1`（682 + 本任务 3 支）。
 
-若 `getAllSkills(RuntimeContext)` 的 override 报签名不符（上游形参可能是非空标注），把可空改回非空并删掉 `?: RuntimeContext.empty()`，同时把测试里的 `repo().getAllSkills(RuntimeContext.empty())` 保留不变。
+已核实（不必再猜）：上游 `RuntimeContextSkillRepository` 只额外声明 `List<AgentSkill> getAllSkills(RuntimeContext)`，`getSkill(name, ctx)` 是 default，形参是 Java 平台类型，所以 Kotlin 侧把 override 形参收成 `RuntimeContext?` 合法；`AgentSkillRepository` 的非 default 方法正好 10 个（`close()` 有 default），照 `InMemorySkillRepository` 的形状 override 即可。
 
 - [ ] **Step 5: 提交**
 
