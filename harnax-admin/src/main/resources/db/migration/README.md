@@ -8,8 +8,8 @@ db/
     ├── V1__init_schema.sql           # the module's whole schema, in final form
     ├── V2__agent_session_memory.sql  # forward increments; see "Changing the Schema"
     ├── V3__tool_invocation_metrics.sql
-    ├── V5__drop_agent_session_memory.sql
-    ├── V6__memory_draft.sql
+    ├── V6__drop_agent_session_memory.sql
+    ├── V7__memory_draft.sql
     └── README.md                     # this file
 ```
 
@@ -47,8 +47,8 @@ re-enter. There the change ships as the next forward `V<n>__*.sql`, holding the 
 records, so it is left byte-for-byte alone; the increment ends the schema at the same shape a rebuilt
 database reaches, so a fresh install runs baseline then increment and lands where the live one already
 is; and the increment folds back into the baseline at the next rebuild, which is when it is deleted.
-`V2__agent_session_memory.sql`, `V3__tool_invocation_metrics.sql`, `V5__drop_agent_session_memory.sql`
-and `V6__memory_draft.sql` are that shape of change — the fifth undoing what the first added, which is
+`V2__agent_session_memory.sql`, `V3__tool_invocation_metrics.sql`, `V6__drop_agent_session_memory.sql`
+and `V7__memory_draft.sql` are that shape of change — the sixth undoing what the first added, which is
 what a withdrawn switch looks like when the database cannot be rebuilt.
 
 Along with editing the baseline:

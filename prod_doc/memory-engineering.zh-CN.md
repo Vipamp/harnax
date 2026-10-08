@@ -242,7 +242,7 @@ core 的长期记忆接口整族标了 `@Deprecated(forRemoval = true, since = "
 | 关 | 整台 agent 没有记忆域，两层一起没有 |
 | 开 | 双层：抽取先进会话层，按 11.4 并成候选待人审批，两层都进模型上下文 |
 
-也就是说这一层不逐台选，也没有"整份部署翻成双层"的那种部署侧缺省：`agent` 行上没有与会话层有关的列，下发报文里也没有，向导上只有一枚「长期记忆」。库里的形状因此是两条前向增量对着一列的往返——`harnax-admin/src/main/resources/db/migration/V2__agent_session_memory.sql` 加过 `session_memory_enabled`，`harnax-admin/src/main/resources/db/migration/V5__drop_agent_session_memory.sql` 把它删掉，而 `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` 从未含它（这一列走的是增量而不是基线，理由见 11.11 的迁移那一行）。`harnax-entity/src/test/resources/schema-test.sql` 那份逐字副本跟着同一个终点。
+也就是说这一层不逐台选，也没有"整份部署翻成双层"的那种部署侧缺省：`agent` 行上没有与会话层有关的列，下发报文里也没有，向导上只有一枚「长期记忆」。库里的形状因此是两条前向增量对着一列的往返——`harnax-admin/src/main/resources/db/migration/V2__agent_session_memory.sql` 加过 `session_memory_enabled`，`harnax-admin/src/main/resources/db/migration/V6__drop_agent_session_memory.sql` 把它删掉，而 `harnax-admin/src/main/resources/db/migration/V1__init_schema.sql` 从未含它（这一列走的是增量而不是基线，理由见 11.11 的迁移那一行）。`harnax-entity/src/test/resources/schema-test.sql` 那份逐字副本跟着同一个终点。
 
 会话层与长期层之间没有可翻的档：想让一台 agent 只留一层，唯一的办法是不给它记忆。
 
@@ -364,7 +364,7 @@ core 的长期记忆接口整族标了 `@Deprecated(forRemoval = true, since = "
 | harnax-entity | `entity/MemoryDraft.kt`＋`mapper/MemoryDraftMapper.kt`＋`resources/mapper/MemoryDraftMapper.xml`（新） | 候选行的读写：按会话取未决、只改正文的条件更新、按状态转档的条件更新（抢行），以及页面清单的动态筛选（全部按 `tenant_id` 与 `user_id` 谓词） |
 | | `entity/Agent.kt`＋`resources/mapper/AgentMapper.xml`＋`src/test/resources/schema-test.sql` | 记忆只剩 `memory_enabled` 一列；`schema-test.sql` 是基线加全部前向增量的逐字副本，因此它带着 `memory_draft` 而不带 `session_memory_enabled` |
 | | `entity/dto/AgentSpecInfoResponse.kt` | 下发报文里记忆只有 `memoryEnabled` 一枚 |
-| harnax-admin | `resources/db/migration/V2__agent_session_memory.sql`＋`V5__drop_agent_session_memory.sql`＋`V6__memory_draft.sql`＋`README.md` | 三条前向增量：V2 加过那一列、V5 把它删掉、V6 建 `memory_draft`。V1 基线里这一列从未出现，`memory_draft` 也不在基线里——这个库持有一枚只有人能重填的模型 provider key，不能随 schema 变更清库重建，所以变更走增量而不是就地改基线（README 的"Changing the Schema"那一节写的就是这条例外，V5 是"撤掉一枚开关"在不能重建的库上长成的样子） |
+| harnax-admin | `resources/db/migration/V2__agent_session_memory.sql`＋`V6__drop_agent_session_memory.sql`＋`V7__memory_draft.sql`＋`README.md` | 三条前向增量：V2 加过那一列、V6 把它删掉、V7 建 `memory_draft`。V1 基线里这一列从未出现，`memory_draft` 也不在基线里——这个库持有一枚只有人能重填的模型 provider key，不能随 schema 变更清库重建，所以变更走增量而不是就地改基线（README 的"Changing the Schema"那一节写的就是这条例外，V6 是"撤掉一枚开关"在不能重建的库上长成的样子） |
 | | `dto/MemoryDraftSubmitRequest.kt`＋`MemoryDraftSource.kt`＋`MemoryDraftApproveRequest.kt`＋`MemoryDraftRejectRequest.kt`＋`MemoryDraftResponse.kt`＋`MemoryDraftDecisionResponse.kt` | 入队报文（不含租户与用户）、清单行与详情（`MemoryDraftDetailResponse` 与清单行同住这一格）、决策回执 |
 | | `service/MemoryDraftService.kt`＋`service/impl/MemoryDraftServiceImpl.kt` | 两半：入账那半从会话 id 反解主人／agent／租户（三种会话形状，`chn-` 拒），核 agent 名与行一致、同租户、每条来源路径解析得出键，并保证一段会话只有一条未决候选；决定那半按 11.4 管理侧的顺序走——三道拒绝都在写之前、抢行、条件落库、逐对象正文复核清理 |
 | | `util/MemoryDraftCodec.kt`（新） | `sources` 的规范形（按路径排序）与覆盖整份决定的摘要（逐字段长度前缀），入队、页面显示与批准校验三处共用同一份实现 |
