@@ -16,6 +16,9 @@ public struct ChatView: View {
     /// The height the composer is capped against. Only ever the largest measured value: the keyboard takes
     /// this layer down when it comes up, and 「half the screen」 means the screen.
     @State private var screenHeight: CGFloat = 0
+    /// Whether the occupancy panel is open. A `Menu` cannot host it: iOS flattens menu content to one leaf per
+    /// row, so the two columns collapse back into a list (`ChatView.contextUsageTag`).
+    @State private var showsContextUsagePanel = false
     /// The conversation the host asked for, kept beside the view model so a parameter change can be noticed
     /// and handed to `bind`. `@StateObject` keeps the first value it was given, which is exactly why the
     /// switch has to be observed rather than rebuilt.
@@ -140,11 +143,14 @@ public struct ChatView: View {
 
     /// The header readout: how full the context the agent holds is, and which number that is.
     ///
-    /// The console draws it as a tag with a hover tooltip (`harnax-webui/src/pages/session/index.tsx:32-83`);
-    /// a phone has no hover, so the same reading is a `Menu` — the chip for the headline, five static rows for
-    /// what the tooltip lists. Both halves come from `ContextUsageReadout`, so which number answers which
+    /// The console draws it as a tag with a hover tooltip (`harnax-webui/src/pages/session/index.tsx:32-83`); a
+    /// phone has no hover, so the same reading opens from the chip — the chip for the headline, the tooltip's
+    /// five rows for what it lists. Both halves come from `ContextUsageReadout`, so which number answers which
     /// question is decided once and not in a view. The rows open and close nothing: the readout reports, it
     /// decides no part of the context.
+    ///
+    /// A popover, not the `Menu` this first used: iOS gives every leaf of menu content its own row, so a word
+    /// and the number it bills cannot share one there, whatever is nested in between.
     ///
     /// Absent rather than `0%`, the way the console hides its tag
     /// (`index.tsx:361`): `ChatViewModel.contextUsage` only ever holds a reading that passed
@@ -152,17 +158,7 @@ public struct ChatView: View {
     /// session was never bound — say the router cannot see this context, never that the context is empty.
     @ViewBuilder
     private func contextUsageTag(_ usage: ContextUsage) -> some View {
-        Menu {
-            HXText("chat.context.usage")
-            Divider()
-            ForEach(ContextUsageReadout.rows(for: usage), id: \.label) { row in
-                HStack(spacing: 10) {
-                    Text(verbatim: row.label)
-                    Spacer(minLength: 8)
-                    Text(verbatim: row.value)
-                }
-            }
-        } label: {
+        Button { showsContextUsagePanel = true } label: {
             // `orange` for a context that has reached the automatic trigger, neutral for one that has not
             // (`index.tsx:74`): at that point the next turn compacts this context whether or not anyone
             // asks, and a quiet pill would be the readout withholding the only news it has.
@@ -171,8 +167,48 @@ public struct ChatView: View {
                 tone: usage.isAtAutoTrigger ? .warning : nil
             )
         }
+        .popover(isPresented: $showsContextUsagePanel, arrowEdge: .bottom) {
+            // `.popover` rather than the sheet iPhone would otherwise pick for a compact window: the reading
+            // belongs beside the chip it explains.
+            contextUsagePanel(usage)
+                .presentationCompactAdaptation(.popover)
+        }
         .accessibilityLabel(hx("chat.context.usage"))
         .accessibilityValue(ContextUsageReadout.headline(for: usage))
+    }
+
+    /// The five readings as a two-column table: the word on the left, the number it bills right-aligned
+    /// against the other four.
+    ///
+    /// `Grid` does the alignment the console's tooltip gets from a table (`index.tsx:61-71`): each column sizes
+    /// off its widest cell, so the numbers share a right edge without a fixed width a longer locale would clip.
+    /// The floor on the panel is what makes it read as two columns rather than as a list with a number glued to
+    /// each word, and the word column is the one that swallows the slack: with the numbers held to their own
+    /// width, that column keeps the right edge of the table wherever the panel lands.
+    ///
+    /// `.footnote`, not `.subheadline`, because of the widest row measured at both sizes — the English word for
+    /// the window row and the English `not recorded yet` together need 382pt at 15pt against a 375pt phone, and
+    /// 344pt at 13pt.
+    private func contextUsagePanel(_ usage: ContextUsage) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HXText("chat.context.usage")
+                .font(.subheadline.weight(.medium))
+            Divider()
+            Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 8) {
+                ForEach(ContextUsageReadout.rows(for: usage), id: \.label) { row in
+                    GridRow {
+                        Text(verbatim: row.label)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .foregroundStyle(Color.hx(.textSecondary))
+                        Text(verbatim: row.value)
+                            .gridColumnAlignment(.trailing)
+                    }
+                }
+            }
+            .font(.footnote)
+        }
+        .padding(16)
+        .frame(minWidth: 320, alignment: .leading)
     }
 
     // MARK: - transcript

@@ -1,7 +1,7 @@
 import HarnaxCore
 import HarnaxKit
 
-/// One line of the occupancy readout's detail list — a label and the value under it.
+/// One line of the occupancy readout's detail list — a word and the number it bills.
 public struct ContextUsageDetail: Equatable, Sendable {
     public let label: String
     public let value: String
@@ -15,7 +15,7 @@ public struct ContextUsageDetail: Equatable, Sendable {
 /// What the header readout says about one `ContextUsage`, as data.
 ///
 /// The console draws the same two pieces as a `Tag` and a hover `Tooltip`
-/// (`harnax-webui/src/pages/session/index.tsx:32-83`); the phone has no hover, so the chip opens a menu of the
+/// (`harnax-webui/src/pages/session/index.tsx:32-83`); the phone has no hover, so the chip opens a panel of the
 /// same five rows. Either way the two screens are meant to put the same number against the same word for the
 /// same session, which is why the pairing lives here rather than in a view: which of the two travelling token
 /// counts answers which question is a judgement, and one that lives inside `Text(...)` calls drifts silently.

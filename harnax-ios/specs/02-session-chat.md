@@ -392,9 +392,9 @@
 |---|---|---|
 | 契约判据 | `Sources/HarnaxCore/Contract/ContextUsage.swift:86-147` | `isReadable`／`basis`／`isAtAutoTrigger`／`percentText` 四条与 `contextUsage.ts` 一一对应；`percentText` 在比值越出整数范围时钳到 `Int.max` 而不是 `Int(Double)` 崩溃（`:119-134`） |
 | 读端点 | `Sources/HarnaxAPI/ContextUsageClient.swift` | 独立协议 `ContextUsageReading`，不与历史/计划共用；`sessionId` 先按路径段编码 |
-| 读数组装 | `Sources/HarnaxFeatures/Chat/ContextUsageReadout.swift:26-59` | 芯片两句 + 五行明细；账单行缺失时写「尚未记录」而不是 `0`；四个 token 行走 `TokenFigures.token` 的 M/K 档，消息条数不缩写 |
-| 标题栏 | `Sources/HarnaxFeatures/Chat/ChatView.swift:89-90`、`:154` | 单点 unwrap `vm.contextUsage`——模型里不留读不到的读数，缺席本身就是判据；`Menu` 承载 webui 的 hover Tooltip；排在 workspace 入口之前 |
-| 输入区 | `Sources/HarnaxFeatures/Chat/ChatView.swift:507-519` | `chat.composer.compact` 芯片，排在权限芯片之后、停沙箱与清空之前（对齐 `harnax-webui/src/pages/session/components/ChatWindow.tsx:3716-3765`）；无二次确认；`isMuted: vm.isStreaming`；hover 文案换成读屏提示 `chat.context.compactTip` |
+| 读数组装 | `Sources/HarnaxFeatures/Chat/ContextUsageReadout.swift:26-58` | 芯片两句 + 名／数两列的五行明细，读序即 `rows` 的序；账单行缺失时写「尚未记录」而不是 `0`；四个 token 行走 `TokenFigures.token` 的 M/K 档，消息条数不缩写 |
+| 标题栏 | `Sources/HarnaxFeatures/Chat/ChatView.swift:92-93`、芯片 `:160`、面板 `:192` | 单点 unwrap `vm.contextUsage`——模型里不留读不到的读数，缺席本身就是判据；webui 的 hover Tooltip 在 iOS 用 `popover` 承载（`Menu` 会把内容摊成一个叶子一行，名与数进不了同一行）；数那一列按自己最宽的一格撑开并右对齐、名那一列吃掉余量，面板宽度有下限，行字取 13 点档（15 点档下英文最宽一行 382 点 > 最窄手机 375 点）；排在 workspace 入口之前 |
+| 输入区 | `Sources/HarnaxFeatures/Chat/ChatView.swift:543-555` | `chat.composer.compact` 芯片，排在权限芯片之后、停沙箱与清空之前（对齐 `harnax-webui/src/pages/session/components/ChatWindow.tsx:3716-3765`）；无二次确认；`isMuted: vm.isStreaming`；hover 文案换成读屏提示 `chat.context.compactTip` |
 | 定序 | `Sources/HarnaxFeatures/Chat/ChatViewModel.swift:1471-1486`、计数器 `:149` | 每次询问递增代数，落地时同时校验会话 id 与代数：后问先答的旧读数丢弃，切走后的答复不挂到新会话标题下 |
 | 补读时机 | 进入会话 `Sources/HarnaxFeatures/Chat/ChatView.swift:115`（`.task(id: conversation)`）；本轮结束 `Sources/HarnaxFeatures/Chat/ChatViewModel.swift:733`、`:764`；压缩返回 `:1573`；**压缩被取消也补读** `:1540` | 取消丢掉的只是横幅与气泡：命令已在服务端跑过 |
 | 应答文案 | `Sources/HarnaxFeatures/Chat/ChatViewModel.swift:1613-1630`（点按四支）；手敲走通用链 `:1587-1595` | 点按以横幅呈现（压成与「还太短」平静色、被拒警示色），手敲作为一行助手说明进气泡 |
