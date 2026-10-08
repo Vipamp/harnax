@@ -2280,6 +2280,7 @@ export function sessionSkillsFor(
   );
   return rows;
 }
+```
 
 ```ts
 /** One table over the five refusal codes: the locale id and the copy that id falls back to. */
