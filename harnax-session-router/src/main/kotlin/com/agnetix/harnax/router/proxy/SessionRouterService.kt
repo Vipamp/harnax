@@ -8,6 +8,7 @@ import com.agnetix.harnax.agent.protocol.CommandResponse
 import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
 import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
+import com.agnetix.harnax.auth.AuthContextHolder
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.router.entity.AgentInstance
@@ -491,6 +492,49 @@ class SessionRouterService(
             val instance = boundInstance(sessionId) ?: return null
             return callBound(sessionId, "workspaceDownload", instance) { targetInstance ->
                 agentServiceClient.workspaceDownload(targetInstance.getBaseUrl(), sessionId, path)
+            }
+        } finally {
+            clearMDC()
+        }
+    }
+
+    // ---- Session skill proxy methods ----
+
+    /**
+     * The skills one session has enabled. Read-only, so it follows the binding instead of placing the session.
+     */
+    suspend fun proxySessionSkills(sessionId: String): ResultVo<List<Map<String, Any>>> {
+        setMDC(sessionId, null)
+        try {
+            val instance = boundInstance(sessionId) ?: return ResultVo.success(emptyList())
+            return callBound(sessionId, "sessionSkills", instance) { target ->
+                agentServiceClient.sessionSkillList(target.getBaseUrl(), sessionId)
+            }
+        } finally {
+            clearMDC()
+        }
+    }
+
+    /**
+     * Copy one draft into this session's enabled set.
+     *
+     * The agent's answer is returned as it arrived. Its refusals ride in the envelope's `code` (403 blocked,
+     * 409 full, 404 no draft, 500 failed) while HTTP stays 200, and the webui and the app are the two that
+     * turn those codes into wording — mapping them here would replace the reason with a guess.
+     */
+    suspend fun proxyEnableSessionSkill(
+        sessionId: String,
+        name: String,
+    ): ResultVo<Map<String, Any>> {
+        setMDC(sessionId, null)
+        try {
+            val instance = boundInstance(sessionId)
+                ?: return ResultVo.error(410, "Session $sessionId is not bound to an agent instance, so it has no sandbox to enable a skill into")
+            // The operator comes from this request's own auth context, the same source resolveUserId reads
+            // (AgentProxyController.kt:50-56). Nothing a caller typed into a body can name who pressed the button.
+            val actorUserId = AuthContextHolder.get()?.userId
+            return callBound(sessionId, "enableSessionSkill", instance) { target ->
+                agentServiceClient.sessionSkillEnable(target.getBaseUrl(), sessionId, name, actorUserId)
             }
         } finally {
             clearMDC()

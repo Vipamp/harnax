@@ -1389,6 +1389,10 @@ class SessionRouterServiceTest {
          *
          * `proxyWorkspaceStatus` takes a comma-separated list rather than one id; the entry passes a
          * single id, and the endpoint's own list-handling cases above pin that every element is checked.
+         *
+         * `proxyEnableSessionSkill` takes a skill name besides the id; the name is not a session
+         * identifier and cannot be leaked, so its entry passes one literal and the guard still owes only
+         * the id.
          */
         private val PROXY_ENTRY_POINTS = listOf(
             ProxyEntryPoint("proxyChatRequest") { target, id ->
@@ -1420,6 +1424,12 @@ class SessionRouterServiceTest {
             },
             ProxyEntryPoint("proxyWorkspaceDownload") { target, id ->
                 runBlocking { target.proxyWorkspaceDownload(id, "/workspace/notes.md") }
+            },
+            ProxyEntryPoint("proxySessionSkills") { target, id ->
+                runBlocking { target.proxySessionSkills(id) }
+            },
+            ProxyEntryPoint("proxyEnableSessionSkill") { target, id ->
+                runBlocking { target.proxyEnableSessionSkill(id, "invoice-fill") }
             },
         )
 
