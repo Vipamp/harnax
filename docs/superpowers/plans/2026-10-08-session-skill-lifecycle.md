@@ -1194,12 +1194,14 @@ The middleware moves here in this task and gets its new constructor in Task 7 �
 val sessionSkillStore: SessionSkillStore by lazy {
     SessionSkillStore(
         handles = SandboxHandleProvider { id ->
-            keepAliveSandboxManager?.let { it.getSandbox(id) ?: it.attachToExisting(id) }
+            keepAliveSandboxManager?.let { it.getSandbox(id) ?: it.attachIfRunning(id) }
         },
         workspaceRoot = harnessConfig.sandbox.workspaceRoot,
     )
 }
 ```
+
+这一腿刻意不用 `attachToExisting`：`KeepAliveSandboxManager.kt:560-563` 对停着的容器会 `docker start`，而本会话技能列表是一支只读 GET——同仓 `SandboxWorkspaceController.kt:321-327` 逐字禁过这件事（一次状态查询把手工停掉的沙箱一直显示成 Running），设计给的 410 `chat.skills.noSandbox` 也说明「没有活沙箱」是预期答案，不该被一次读操作悄悄撤销。要在 `KeepAliveSandboxManager` 上新增 `fun attachIfRunning(sessionId: String): DockerSandbox?`：**复用 `attachToExisting` 已有的那次 `docker inspect`，但 `running != true` 直接回 null，绝不 `docker start`**；容器在跑而内存表里没有（服务重启）时照常接管，这半是 `DefaultAgentRunner.kt:697-698` 的既有语义。两支用例：running 才接管；stopped 回 null 且断言命令序列里**没有出现 `docker start`**（既有那套 dockerExecutor 假件就够）。
 
 - [ ] **Step 5: 跑该测试与全模块**
 
