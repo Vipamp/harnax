@@ -12,6 +12,11 @@ import org.apache.ibatis.annotations.Param
  * is no value that means "all tenants". The rollup's three statements are the exception and are commented
  * at their own methods, because they run over the whole server rather than over one caller's window.
  *
+ * The two window reads share one pair of bounds, both `yyyy-MM-dd HH:mm:ss`: `from` is the window's opening
+ * hour and `to` is one hour past its closing hour, compared with `>=` and `<`. That exclusive upper side
+ * is what makes this table answer the same sixty minutes as one `stat_hour` row of the aggregate, whose own
+ * bound is the closing hour itself.
+ *
  * SQL lives in `resources/mapper/ToolInvocationLogMapper.xml`.
  */
 @Mapper

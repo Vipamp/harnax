@@ -35,12 +35,12 @@ class ToolMetricsController(
     @GetMapping("/summary")
     @Operation(
         summary = "Call counts per subject",
-        description = "Totals over the window; the tool view reads the daily aggregate, agent and session read the detail table",
+        description = "Totals over the window; the tool view reads the hourly aggregate, agent and session read the detail table",
     )
     fun getSummary(
-        @Parameter(description = "First day, yyyy-MM-dd (inclusive); defaults to 30 days before `end`")
+        @Parameter(description = "First hour, yyyy-MM-dd HH:mm or yyyy-MM-dd (inclusive); defaults to the 720 hours before `end`")
         @RequestParam(name = "start", required = false) start: String?,
-        @Parameter(description = "Last day, yyyy-MM-dd (inclusive); defaults to today")
+        @Parameter(description = "Last hour, yyyy-MM-dd HH:mm or yyyy-MM-dd (inclusive); defaults to the current hour")
         @RequestParam(name = "end", required = false) end: String?,
         @Parameter(description = "Origin filter: builtin / mcp / cli / shell / framework")
         @RequestParam(name = "kind", required = false) kind: String?,
@@ -56,19 +56,19 @@ class ToolMetricsController(
     @GetMapping("/time-series")
     @Operation(
         summary = "Call counts per time bucket",
-        description = "Zero-filled buckets so a quiet day does not make the trend line skip",
+        description = "Zero-filled buckets so a quiet hour does not make the trend line skip",
     )
     fun getTimeSeries(
-        @Parameter(description = "First day, yyyy-MM-dd (inclusive); defaults to 30 days before `end`")
+        @Parameter(description = "First hour, yyyy-MM-dd HH:mm or yyyy-MM-dd (inclusive); defaults to the 720 hours before `end`")
         @RequestParam(name = "start", required = false) start: String?,
-        @Parameter(description = "Last day, yyyy-MM-dd (inclusive); defaults to today")
+        @Parameter(description = "Last hour, yyyy-MM-dd HH:mm or yyyy-MM-dd (inclusive); defaults to the current hour")
         @RequestParam(name = "end", required = false) end: String?,
         @Parameter(description = "Origin filter: builtin / mcp / cli / shell / framework")
         @RequestParam(name = "kind", required = false) kind: String?,
         @Parameter(description = "MCP server or CLI package id")
         @RequestParam(name = "subjectId", required = false) subjectId: Long?,
-        @Parameter(description = "Bucket size: day (default) / week / month")
-        @RequestParam(name = "granularity", required = false, defaultValue = "day") granularity: String,
+        @Parameter(description = "Bucket size: auto (default) / hour / day / week / month; auto picks by span — hour up to 48 hours, day up to 92 days, then week")
+        @RequestParam(name = "granularity", required = false, defaultValue = "auto") granularity: String,
     ): ResultVo<ToolMetricsTimeSeriesResponse> = try {
         ResultVo.success(toolMetricsService.getTimeSeries(start, end, kind, subjectId, granularity))
     } catch (e: Exception) {
@@ -82,9 +82,9 @@ class ToolMetricsController(
         description = "Real durations and failure reasons, inside the retention window only",
     )
     fun getInvocations(
-        @Parameter(description = "First day, yyyy-MM-dd (inclusive); defaults to 30 days before `end`")
+        @Parameter(description = "First hour, yyyy-MM-dd HH:mm or yyyy-MM-dd (inclusive); defaults to the 720 hours before `end`")
         @RequestParam(name = "start", required = false) start: String?,
-        @Parameter(description = "Last day, yyyy-MM-dd (inclusive); defaults to today")
+        @Parameter(description = "Last hour, yyyy-MM-dd HH:mm or yyyy-MM-dd (inclusive); defaults to the current hour")
         @RequestParam(name = "end", required = false) end: String?,
         @Parameter(description = "Origin filter: builtin / mcp / cli / shell / framework")
         @RequestParam(name = "kind", required = false) kind: String?,

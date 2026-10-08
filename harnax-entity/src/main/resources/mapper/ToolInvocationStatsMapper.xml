@@ -81,7 +81,9 @@
 
     <!--
         The three reads the metrics page answers from this table. Each names a tenant, and each bounds the
-        window through `stat_date` rather than through an instant, because that column is a DATE.
+        window with the same two hour starts the detail reads are given: `stat_hour` is a DATETIME whose
+        minutes and seconds are always zero, so the bounds compare directly against the column, and its
+        inclusive upper hour is the same sixty minutes the detail side covers with `< to + 1 hour`.
 
         The thirteen aggregate columns live in one fragment, and one fragment only: the grouped read and the
         window read have to count the same thing in the same way, because the page shows a card beside rows
@@ -115,13 +117,14 @@
         s.subject_id AS subjectId,
         s.tool_name AS toolName,
         <include refid="subjectTotalsColumns"/>,
-        <!-- CAST keeps this a DATETIME so the map hands back a LocalDateTime rather than a java.sql.Date,
-             which would be read through the JVM default zone. -->
-        CAST(MAX(s.stat_date) AS DATETIME) AS lastSeenAt
+        <!-- A real hour now: the column is already a DATETIME, so no CAST is needed to keep the map handing
+             back a LocalDateTime rather than a java.sql.Date read through the JVM default zone — and a CAST
+             back to DATE would drop the hour the page is reading this for. -->
+        MAX(s.stat_hour) AS lastSeenAt
         FROM tool_invocation_stats s
         WHERE s.tenant_id = #{tenantId}
-        AND s.stat_date &gt;= #{from}
-        AND s.stat_date &lt;= #{to}
+        AND s.stat_hour &gt;= #{from}
+        AND s.stat_hour &lt;= #{to}
         <if test="kind != null and kind != ''">
             AND s.kind = #{kind}
         </if>
@@ -134,8 +137,8 @@
         <include refid="subjectTotalsColumns"/>
         FROM tool_invocation_stats s
         WHERE s.tenant_id = #{tenantId}
-        AND s.stat_date &gt;= #{from}
-        AND s.stat_date &lt;= #{to}
+        AND s.stat_hour &gt;= #{from}
+        AND s.stat_hour &lt;= #{to}
         <if test="kind != null and kind != ''">
             AND s.kind = #{kind}
         </if>
@@ -144,14 +147,17 @@
     <select id="selectTimeSeries" resultType="map">
         SELECT
         <choose>
+            <when test="granularity == 'hour'">
+                CAST(DATE_FORMAT(s.stat_hour, '%Y-%m-%d %H:00:00') AS DATETIME) AS timePoint
+            </when>
             <when test="granularity == 'week'">
-                CAST(DATE_FORMAT(DATE_SUB(s.stat_date, INTERVAL WEEKDAY(s.stat_date) DAY), '%Y-%m-%d 00:00:00') AS DATETIME) AS timePoint
+                CAST(DATE_FORMAT(DATE_SUB(s.stat_hour, INTERVAL WEEKDAY(s.stat_hour) DAY), '%Y-%m-%d 00:00:00') AS DATETIME) AS timePoint
             </when>
             <when test="granularity == 'month'">
-                CAST(DATE_FORMAT(s.stat_date, '%Y-%m-01 00:00:00') AS DATETIME) AS timePoint
+                CAST(DATE_FORMAT(s.stat_hour, '%Y-%m-01 00:00:00') AS DATETIME) AS timePoint
             </when>
             <otherwise>
-                CAST(DATE_FORMAT(s.stat_date, '%Y-%m-%d 00:00:00') AS DATETIME) AS timePoint
+                CAST(DATE_FORMAT(s.stat_hour, '%Y-%m-%d 00:00:00') AS DATETIME) AS timePoint
             </otherwise>
         </choose>
         ,
@@ -166,8 +172,8 @@
         COALESCE(SUM(s.sum_duration_ms), 0) AS sumDurationMs
         FROM tool_invocation_stats s
         WHERE s.tenant_id = #{tenantId}
-        AND s.stat_date &gt;= #{from}
-        AND s.stat_date &lt;= #{to}
+        AND s.stat_hour &gt;= #{from}
+        AND s.stat_hour &lt;= #{to}
         <if test="kind != null and kind != ''">
             AND s.kind = #{kind}
         </if>

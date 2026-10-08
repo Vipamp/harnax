@@ -13,6 +13,8 @@ import org.springframework.jdbc.core.JdbcTemplate
 import tools.jackson.databind.JsonNode
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 
 /**
  * The three read endpoints over a seeded pair of tables.
@@ -83,6 +85,14 @@ class ToolMetricsReadIT : BaseAdminIT() {
 
     private fun names(rows: JsonNode): List<String> = rows.map { it["subjectKey"].asString() }
 
+    /**
+     * An hour as the picker sends it, with the space left raw: the request path is treated as a URI template
+     * and encoded once, so a hand-written `%20` would arrive as the literal text `%20` and count as unparseable.
+     */
+    private fun hour(
+        value: LocalDateTime,
+    ): String = value.format(HOUR_PARAM)
+
     @BeforeEach
     fun seedRows() {
         jdbc.update("DELETE FROM tool_invocation_stats")
@@ -126,17 +136,19 @@ class ToolMetricsReadIT : BaseAdminIT() {
         // The tool dimension's key is the tool name itself, and a builtin call has no subject id to carry.
         assertEquals("send_email", emails["subjectKey"].asString())
         assertFalse(emails.has("subjectId"), emails.toString())
-        assertEquals("$DAY1 00:00:00", emails["lastSeenAt"].asString())
+        // The newest hour that has a row, not its day: read through the aggregate this still answers 10:00.
+        assertEquals("$DAY1 10:00:00", emails["lastSeenAt"].asString())
 
-        // The card block reads the daily aggregate on its own, so its counts cover every subject.
+        // The card block reads the hourly aggregate on its own, so its counts cover every subject.
         assertEquals(7, body["totalCalls"].asInt())
         assertEquals(4, body["totalSuccesses"].asInt())
         assertEquals(3, body["failingCalls"].asInt())
         assertEquals("tool", body["groupBy"].asString())
-        // The bounds come back as the request named them: a response that swapped them, or widened them to the
-        // default span, would otherwise only show up as a chart drawn over the wrong days.
-        assertEquals(LocalDate.now().minusDays(6L).toString(), body["from"].asString())
-        assertEquals(LocalDate.now().toString(), body["to"].asString())
+        // The bounds come back as the request named them, now as hours: a bare day is read as its 00:00
+        // opening. A response that swapped them, or widened them to the default span, would otherwise only
+        // show up as a chart drawn over the wrong days.
+        assertEquals("${LocalDate.now().minusDays(6L)} 00:00:00", body["from"].asString())
+        assertEquals("${LocalDate.now()} 00:00:00", body["to"].asString())
         // The four terminal outcomes partition the calls, so the card's two numbers have to add back up.
         assertEquals(body["totalCalls"].asInt(), body["totalSuccesses"].asInt() + body["failingCalls"].asInt())
         // Rows tie at one call each, so only the unique maximum is a safe ordering claim.
@@ -194,7 +206,7 @@ class ToolMetricsReadIT : BaseAdminIT() {
         assertEquals(7, session["calls"].asInt())
         // A session id is not a row id, so there is nothing to hand back for the drill-down besides the key.
         assertFalse(session.has("subjectId"), session.toString())
-        // The detail path carries the exact instant; the aggregate path can only carry a day.
+        // The detail path carries the call's own instant; the aggregate path carries the hour it fell in.
         assertEquals("$DAY1 10:00:00", session["lastSeenAt"].asString())
 
         val agents = data("/api/admin/tool-metrics/summary?$SEVEN_DAYS&groupBy=agent")
@@ -236,35 +248,72 @@ class ToolMetricsReadIT : BaseAdminIT() {
     }
 
     @Test
-    @DisplayName("the requested range is clamped and echoed back as from / to")
-    fun windowClampsEchoTheAnsweredRange() {
-        val today = LocalDate.now()
+    @DisplayName("an end the clock has not reached clamps to the current hour")
+    fun futureEndClampsToTheCurrentHour() {
+        val currentHour = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS)
+        // Both bounds echo as whole hours. An echo of the requested instant instead would tell the page it
+        // answered a range it never queried. The window is six hours wide and the fixture sits two days
+        // back, so only the range is claimed here.
+        val body = data(
+            "/api/admin/tool-metrics/summary?start=${hour(currentHour.minusHours(6L))}&end=${hour(currentHour.plusHours(9L))}",
+        )
+        assertEquals(currentHour.minusHours(6L).format(HOUR_STAMP), body["from"].asString())
+        assertEquals(currentHour.format(HOUR_STAMP), body["to"].asString())
+    }
 
-        // Only `end`, and a day the clock has not reached: it clamps to today and the missing start takes the
-        // default span from there, so the page reads a 30-day window ending today.
-        val future = data("/api/admin/tool-metrics/summary?end=${today.plusDays(3L)}")
-        assertEquals(today.minusDays(29L).toString(), future["from"].asString())
-        assertEquals(today.toString(), future["to"].asString())
-        assertEquals(7, future["totalCalls"].asInt())
+    @Test
+    @DisplayName("start after end collapses onto the end hour, an unparseable pair falls back to the default span")
+    fun invertedAndUnparseableWindows() {
+        val currentHour = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS)
+        // The shape a hand-edited URL arrives in. Collapsing beats reversing: a reversed range answers an
+        // empty table while still claiming a window.
+        val collapsed = data(
+            "/api/admin/tool-metrics/summary?start=${hour(currentHour.plusHours(3L))}&end=${hour(currentHour)}",
+        )
+        assertEquals(collapsed["to"].asString(), collapsed["from"].asString())
 
-        // A start after the end collapses onto it rather than reversing the range, which is the shape a
-        // hand-edited URL arrives in. The day is one the fixture has no rows on, so only the range is claimed.
-        val reversed = data("/api/admin/tool-metrics/summary?start=${today.minusDays(1L)}&end=${today.minusDays(4L)}")
-        assertEquals("${today.minusDays(4L)}", reversed["from"].asString())
-        assertEquals("${today.minusDays(4L)}", reversed["to"].asString())
+        // Neither value parses, which is a bug on the page rather than in the data: the default span answers,
+        // so a broken picker still shows a chart instead of an error card. The fixture sits inside that span.
+        val defaulted = data("/api/admin/tool-metrics/summary?start=also-not-an-hour&end=not-a-day")
+        val from = LocalDateTime.parse(defaulted["from"].asString(), HOUR_STAMP)
+        val to = LocalDateTime.parse(defaulted["to"].asString(), HOUR_STAMP)
+        assertEquals(719L, ChronoUnit.HOURS.between(from, to))
+        assertEquals(7, defaulted["totalCalls"].asInt())
+    }
 
-        // Wider than the tables can answer: the end stays, the start is pushed to the first day covered.
-        val wide = data("/api/admin/tool-metrics/summary?start=${today.minusYears(2L)}&end=$today")
-        assertEquals(today.minusDays(364L).toString(), wide["from"].asString())
-        assertEquals(today.toString(), wide["to"].asString())
+    @Test
+    @DisplayName("a span wider than the tables can answer keeps its end and pushes its start forward")
+    fun wideWindowPushesTheStartForward() {
+        val currentHour = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS)
+        val wide = data("/api/admin/tool-metrics/summary?start=${hour(currentHour.minusYears(2L))}&end=${hour(currentHour)}")
+        // Ten years is the ceiling, so the start lands on the 8760th hour back rather than the request being
+        // refused — refusing would blank the whole card row over a range no reader can ask.
+        assertEquals(currentHour.minusHours(8759L).format(HOUR_STAMP), wide["from"].asString())
+        assertEquals(currentHour.format(HOUR_STAMP), wide["to"].asString())
         assertEquals(7, wide["totalCalls"].asInt())
+    }
 
-        // Neither value parses, which is a bug on the page rather than in the data: the default range answers,
-        // so a broken picker still shows a chart instead of an error card.
-        val garbage = data("/api/admin/tool-metrics/summary?start=not-a-day&end=also-not-a-day")
-        assertEquals(today.minusDays(29L).toString(), garbage["from"].asString())
-        assertEquals(today.toString(), garbage["to"].asString())
-        assertEquals(7, garbage["totalCalls"].asInt())
+    @Test
+    @DisplayName("the trend bucket follows the span on both sides of each boundary")
+    fun granularityFollowsTheSpan() {
+        val currentHour = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS)
+        fun granularityOf(hours: Long): String = data(
+            "/api/admin/tool-metrics/time-series?start=${hour(currentHour.minusHours(hours - 1L))}&end=${hour(currentHour)}",
+        )["granularity"].asString()
+
+        // Both sides of the 48-hour cut, and both sides of the 92-day one. The boundary itself belongs to the
+        // finer bucket, because the page asks for a readable number of points, not for a range of days.
+        assertEquals("hour", granularityOf(48L))
+        assertEquals("day", granularityOf(49L))
+        assertEquals("day", granularityOf(24L * 92L))
+        assertEquals("week", granularityOf(24L * 93L))
+        // An explicit request still speaks louder than the span.
+        assertEquals(
+            "month",
+            data(
+                "/api/admin/tool-metrics/time-series?start=${hour(currentHour.minusHours(72L))}&end=${hour(currentHour)}&granularity=month",
+            )["granularity"].asString(),
+        )
     }
 
     private companion object {
@@ -277,5 +326,9 @@ class ToolMetricsReadIT : BaseAdminIT() {
         val DAY2: String = LocalDate.now().minusDays(2L).toString()
         val DAY1: String = LocalDate.now().minusDays(1L).toString()
         val QUIET_DAY: String = LocalDate.now().minusDays(5L).toString()
+
+        /** The shape the picker sends an hour in, and the shape the server echoes a bound back as. */
+        val HOUR_PARAM: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+        val HOUR_STAMP: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
     }
 }

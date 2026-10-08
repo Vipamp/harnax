@@ -21,9 +21,10 @@ import org.apache.ibatis.annotations.Param
  * would fold only the workspace that happens to run the job.
  *
  * The three reads share one contract: each names a tenant, because there is no value that means "every
- * workspace", and each bounds the window with `yyyy-MM-dd` rather than an instant, since `stat_date` is a
- * DATE column. The detail table's reads in `ToolInvocationLogMapper` take instant bounds instead, and the
- * service computes both precisions from one window.
+ * workspace", and each bounds the window with two inclusive hour starts, `yyyy-MM-dd HH:mm:ss`, against
+ * `stat_hour`. The detail table's reads in `ToolInvocationLogMapper` take that same lower bound and one hour
+ * past the upper one, because an aggregate hour row covers sixty minutes; the service derives both forms from
+ * one window.
  *
  * SQL lives in `resources/mapper/ToolInvocationStatsMapper.xml`.
  */
@@ -42,7 +43,7 @@ interface ToolInvocationStatsMapper {
     ): Int
 
     /**
-     * One row per subject over a day range, summed across days, with the six duration buckets so the P95 can
+     * One row per subject over an hour range, summed across hours, with the six duration buckets so the P95 can
      * be answered without touching the detail table. Aliases are the wire contract: the service reads the map
      * by these keys.
      */
@@ -67,7 +68,13 @@ interface ToolInvocationStatsMapper {
         @Param("kind") kind: String?,
     ): MutableMap<String?, Any?>?
 
-    /** The same totals per bucket, for the trend line. */
+    /**
+     * The same totals per bucket, for the trend line.
+     *
+     * `granularity` is one of `hour`, `day`, `week` or `month`, and each floors `stat_hour` to its own origin.
+     * The service walks the window with the same four alignments: a bucket expression and a walk that disagree
+     * make every zero-filled point look up under a key the query never produces, and the line answers zeros.
+     */
     fun selectTimeSeries(
         @Param("from") from: String,
         @Param("to") to: String,

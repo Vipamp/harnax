@@ -39,14 +39,14 @@ data class ToolMetricsRow(
     val p95Operator: String = "<=",
     @Schema(description = "Upper bound of the bucket p95Operator points at, in ms")
     val p95Ms: Long = 0L,
-    @Schema(description = "`yyyy-MM-dd HH:mm:ss`; day precision on the aggregate path, second precision on the detail path")
+    @Schema(description = "`yyyy-MM-dd HH:mm:ss`; hour precision on the aggregate path, second precision on the detail path")
     val lastSeenAt: String? = null,
 )
 
 data class ToolMetricsSummaryResponse(
-    @Schema(description = "First day answered, `yyyy-MM-dd`, after the clamps")
+    @Schema(description = "First hour answered, `yyyy-MM-dd HH:mm:ss`, after the clamps")
     val from: String = "",
-    @Schema(description = "Last day answered, inclusive, `yyyy-MM-dd`, after the clamps")
+    @Schema(description = "Last hour answered, inclusive, `yyyy-MM-dd HH:mm:ss`, after the clamps")
     val to: String = "",
     @Schema(description = "The dimension answered, after an unrecognised value falls back to tool")
     val groupBy: String = "tool",
@@ -77,12 +77,13 @@ data class ToolMetricsPoint(
 
 data class ToolMetricsTimeSeriesResponse(
     @Schema(
-        description = "First day answered, `yyyy-MM-dd`; week and month buckets align backwards, so the " +
-            "first point can open before this day",
+        description = "First hour answered, `yyyy-MM-dd HH:mm:ss`; week and month buckets align backwards, so " +
+            "the first point can open before this hour",
     )
     val from: String = "",
-    @Schema(description = "Last day answered, inclusive, `yyyy-MM-dd`")
+    @Schema(description = "Last hour answered, inclusive, `yyyy-MM-dd HH:mm:ss`")
     val to: String = "",
+    @Schema(description = "Bucket the trend was folded to: hour / day / week / month")
     val granularity: String = "day",
     val points: List<ToolMetricsPoint> = emptyList(),
 )

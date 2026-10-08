@@ -56,9 +56,12 @@
     </delete>
 
     <!--
-        The two reads the metrics page answers from the detail rows. Both bind the window with instants
-        rather than with days, because `ts` is a `datetime(3)` column, and both name a tenant: this table
-        holds every workspace's single calls, and a read without a predicate would answer with all of them.
+        The two reads the metrics page answers from the detail rows. Both take the window's opening hour as
+        `>=` and one hour past its closing hour as `<`, because the aggregate row of that closing hour covers
+        sixty minutes: the pair here answers exactly the range `stat_hour >= from AND stat_hour <= to` answers
+        on the aggregate side, so the two reads cannot disagree on the last hour of every window. Both name a
+        tenant: this table holds every workspace's single calls, and a read without a predicate would answer
+        with all of them.
     -->
     <select id="selectSubjectTotalsFromDetail" resultType="map">
         SELECT
@@ -83,7 +86,7 @@
         FROM tool_invocation_log l
         WHERE l.tenant_id = #{tenantId}
         AND l.ts &gt;= #{from}
-        AND l.ts &lt;= #{to}
+        AND l.ts &lt; #{to}
         <if test="kind != null and kind != ''">
             AND l.kind = #{kind}
         </if>
@@ -127,7 +130,7 @@
              caller that asks for every row it holds, and the upper bound is what keeps a call recorded after
              the window from reading as one taken inside it. -->
         AND l.ts &gt;= #{from}
-        AND l.ts &lt;= #{to}
+        AND l.ts &lt; #{to}
         <if test="kind != null and kind != ''">
             AND l.kind = #{kind}
         </if>
