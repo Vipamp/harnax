@@ -1766,26 +1766,30 @@ struct HarnaxDebugSessionExtras: SessionCreating, SessionConfiguring, SessionWor
     /// away, which keeps its name and its stamp and has no description to show), plus a second waiting row that
     /// carries no description at all so the subtitle has to drop rather than print a placeholder. Skill seeds
     /// carry no dot: a dotted literal here reads as a copy key to the localization gate.
-    func rows(sessionId: String) async throws -> [SessionSkillRow] {
-        [
-            SessionSkillRow(
-                name: "weekly-digest",
-                description: "Collect the closed runs, group them by owner, keep the two slips at the top.",
-                enabled: true,
-                enabledAt: "2026-09-27 09:12:04"
-            ),
-            SessionSkillRow(
-                name: "changelog-format",
-                description: "Reformat the changelog into the two sections the channel expects.",
-                enabled: false
-            ),
-            SessionSkillRow(name: "mail-relay-check", enabled: false),
-            SessionSkillRow(
-                name: "glossary-lookup",
-                enabled: true,
-                enabledAt: "2026-09-26 22:05:00"
-            )
-        ]
+    func read(sessionId: String) async -> SessionSkillRead {
+        SessionSkillRead(
+            rows: [
+                SessionSkillRow(
+                    name: "weekly-digest",
+                    description: "Collect the closed runs, group them by owner, keep the two slips at the top.",
+                    enabled: true,
+                    enabledAt: "2026-09-27 09:12:04"
+                ),
+                SessionSkillRow(
+                    name: "changelog-format",
+                    description: "Reformat the changelog into the two sections the channel expects.",
+                    enabled: false
+                ),
+                SessionSkillRow(name: "mail-relay-check", enabled: false),
+                SessionSkillRow(
+                    name: "glossary-lookup",
+                    enabled: true,
+                    enabledAt: "2026-09-26 22:05:00"
+                )
+            ],
+            // Both legs of this fixture answer, so the capture photographs the list, not the missing-half banner.
+            unavailable: false
+        )
     }
 
     /// The one action the panel offers stays refused, like every other write here: a capture that reached the

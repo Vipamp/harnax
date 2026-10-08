@@ -92,6 +92,22 @@ public enum SessionSkillRules {
     }
 }
 
+/// What one panel read answered: the merged rows, and whether every leg that feeds them actually spoke.
+///
+/// The two travel together rather than one replacing the other. A list is what the user can act on; the flag is
+/// what this screen is not entitled to claim about it — and neither one may erase the other, because the panel
+/// that dropped the answered half would say 「这个会话的技能读不出来」 over rows it had in its hand.
+public struct SessionSkillRead: Equatable, Sendable {
+    public let rows: [SessionSkillRow]
+    /// At least one of the two reads did not answer. Never collapses to「这个会话没写过技能」.
+    public let unavailable: Bool
+
+    public init(rows: [SessionSkillRow], unavailable: Bool) {
+        self.rows = rows
+        self.unavailable = unavailable
+    }
+}
+
 /// The two reads behind the session's own skill panel, and the one action it offers.
 ///
 /// Its own protocol rather than a member of `SkillDraftCataloging`: the queue is a reviewer's surface on the
@@ -99,12 +115,19 @@ public enum SessionSkillRules {
 /// one conversation and one of them is not an admin route at all. `ContextUsageReading` set the precedent for
 /// a session-scoped router read with a protocol of its own (`ContextUsage.swift:171-179`).
 public protocol SessionSkillReading: Sendable {
-    /// Both reads merged (`SessionSkillRules.merged`).
+    /// Both reads merged (`SessionSkillRules.merged`), each carrying its own failure.
     ///
-    /// A failure of *either* leg throws. Neither leg may answer "this session wrote no skill" on its own behalf:
-    /// the queue is a read the reviewer's service can be down for and the directory is a read the router can
-    /// refuse to answer, and either one swallowed into an empty list would look like a conversation whose agent
-    /// never proposed anything.
+    /// Does not throw: 两份读各走各的失败. A leg that did not answer hands the merge an empty list of its own and
+    /// flips `unavailable`, and the other leg's rows still reach the panel — the console's drawer decides the same
+    /// way for the same two routes (`harnax-webui/src/pages/session/components/SessionSkillsDrawer.tsx`'s
+    /// `Promise.allSettled`, pinned by `sessionSkills.test.ts:82-126`). Collapsing one failed leg into a throw would
+    /// discard the half that answered, and on the first open that is a panel that says it can read nothing while
+    /// holding rows it could not have got any other way.
+    ///
+    /// A failure of *either* leg still may not be swallowed into "this session wrote no skill": the queue is a read
+    /// the reviewer's service can be down for and the directory is a read the router can refuse to answer, and
+    /// either one silenced would leave an empty list that looks like a conversation whose agent never proposed
+    /// anything. That is what `unavailable` is for, and it is why `rows.isEmpty` alone is never the whole answer.
     ///
     /// A session with no running sandbox is **not** such a failure. The directory answers an unbound or stopped
     /// session with an empty list — an answer, not a refusal — and 410 belongs to `enable` alone, the only call
@@ -112,7 +135,7 @@ public protocol SessionSkillReading: Sendable {
     /// the directory answer empty for an absent container and for an unbound session, §10 verifies that read as
     /// empty against the enable's 410, and `harnax-webui/src/services/ant-design-pro/sessionSkill.ts` says the
     /// same about the same two routes).
-    func rows(sessionId: String) async throws -> [SessionSkillRow]
+    func read(sessionId: String) async -> SessionSkillRead
 
     /// Copy one of this session's drafts into its enabled set.
     ///

@@ -3,22 +3,27 @@ import HarnaxCore
 
 @testable import HarnaxAPI
 
-/// The session panel's two legs as they actually go out, and the two ways each can come back wrong.
+/// The session panel's two legs as they actually go out, and the way each one fails on its own.
 ///
 /// The panel is built from one admin route and one router route at once, so its drift is silent in a way a
 /// single-route read is not: a queue read that loses its `sessionId` answers with the whole tenant's nominations
 /// while still looking like a healthy list (`SkillDraftController.kt`'s `sessionId` parameter is what Task 10
-/// binds), and a leg that fails has to stay a failure rather than becoming the empty half of a merge — an empty
-/// merge is the sentence 「这个会话还没有自写的技能」 on screen.
+/// binds). The other half of the rule is what a failing leg *costs*: only itself. `read` never throws, because a
+/// throw would make the client drop the half that did answer, and the panel would say 「这个会话的技能读不出来」 over
+/// rows it actually has — the console's drawer answers the same failure with those rows still on screen
+/// (`harnax-webui/src/pages/session/components/SessionSkillsDrawer.tsx`'s `Promise.allSettled`, pinned by
+/// `sessionSkills.test.ts:82-126`).
 ///
-/// The two halves of that rule are not the same shape, and this file keeps them apart: a leg that did not answer
-/// is a failure, while an enabled set that answered with nothing is exactly what a stopped or unbound session
-/// says. Refusal codes belong to the enable call — the only one that changes anything.
+/// Failing and answering empty are still not the same shape: a leg that did not answer flips `unavailable`, while
+/// an enabled set that answered with nothing is exactly what a stopped or unbound session says and leaves the flag
+/// alone. Refusal codes belong to the enable call — the only one that changes anything.
 ///
 /// The enable matters for the same reason in the other direction: the panel has one sentence per server code, and
 /// a request that never reached a server must not borrow one of them.
 final class SessionSkillWireTests: XCTestCase {
     private let admin = "https://harnax.example.com"
+    private let queuePath = "/api/admin/skill-drafts"
+    private let directoryPath = "/api/router/agent/session-skills/s-1"
 
     private func harness() async -> APIHarness {
         let harness = APIHarness()
@@ -85,15 +90,20 @@ final class SessionSkillWireTests: XCTestCase {
 
     /// The one parameter this task adds, and the one whose absence is invisible: without it the panel still draws
     /// a list, it just draws somebody else's conversation.
+    ///
+    /// The two legs go out together (`async let`), so which one reaches the transport first belongs neither to the
+    /// client nor to this test: the requests are picked by path and each reply is routed to the path that waits for
+    /// it, so the fixture cannot land on the wrong leg.
     func testTheQueueLegAsksForThisSessionsPendingNominations() async throws {
         let harness = await harness()
-        harness.transport.enqueue(200, queue("", total: 0))
-        harness.transport.enqueue(200, Wire.success("[]"))
+        harness.transport.enqueue(forPath: queuePath, queue("", total: 0))
+        harness.transport.enqueue(forPath: directoryPath, Wire.success("[]"))
 
-        _ = try await harness.agents.rows(sessionId: "s-7")
+        _ = await harness.agents.read(sessionId: "s-7")
 
-        XCTAssertEqual(harness.transport.requests.count, 2, "the panel is two reads, not one")
-        let queueURL = try XCTUnwrap(harness.transport.requests[0].url)
+        let sent = harness.transport.requests.compactMap(\.url)
+        XCTAssertEqual(sent.count, 2, "the panel is two reads, not one")
+        let queueURL = try XCTUnwrap(sent.first { $0.path == queuePath })
         let items = Dictionary(uniqueKeysWithValues: queryItems(of: queueURL).map { ($0.name, $0.value ?? "") })
         XCTAssertEqual(items["sessionId"], "s-7", "without this the panel lists the tenant, not this conversation")
         XCTAssertEqual(items["status"], "PENDING", "the queue only ever nominates what is still waiting")
@@ -101,7 +111,7 @@ final class SessionSkillWireTests: XCTestCase {
         XCTAssertEqual(items["pageSize"], "50")
         XCTAssertNil(items["name"], "no term is being sent, so the key stays off the URL")
         XCTAssertEqual(
-            try XCTUnwrap(harness.transport.requests[1].url).path,
+            sent.first { $0.path.hasPrefix("/api/router/agent/session-skills/") }?.path,
             "/api/router/agent/session-skills/s-7",
             "the enabled set is read for the same conversation the nominations were"
         )
@@ -120,112 +130,171 @@ final class SessionSkillWireTests: XCTestCase {
         )
     }
 
+    /// The legs are independent, so they are issued at once: awaiting one before sending the other buys the panel a
+    /// second round trip on every open for two answers nobody needs in order.
+    ///
+    /// The gate parks whichever leg reaches the transport first, and the second request only appears while that one
+    /// is still outstanding if both were issued before either answered. Two sequential `await`s leave exactly one
+    /// request on the wire, and the wait fails with the armed reply still held.
+    func testTheTwoLegsGoOutTogetherRatherThanInTurn() async throws {
+        let harness = await harness()
+        harness.transport.enqueue(forPath: queuePath, queue(oneNomination, total: 1))
+        harness.transport.enqueue(forPath: directoryPath, Wire.success("[]"))
+        harness.transport.replyGate.arm()
+
+        async let pending = harness.agents.read(sessionId: "s-1")
+        try await waitUntil { harness.transport.requests.count == 2 }
+        harness.transport.replyGate.release()
+        let read = await pending
+
+        XCTAssertEqual(read.rows.map(\.name), ["invoice-fill"])
+        XCTAssertFalse(read.unavailable, "a leg that was merely slow on the way out is not a leg that failed")
+    }
+
+    /// Polls until both legs really are on the wire, the same way `AuthFlowTests` polls for the one it parks
+    /// (`AuthFlowTests.swift:510-518`).
+    private func waitUntil(_ condition: @escaping @Sendable () -> Bool) async throws {
+        for _ in 0..<400 {
+            if condition() { return }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTFail("the second leg never went out while the first was still outstanding")
+    }
+
     // MARK: - the merge over the wire
 
     /// One admin page and one router list become one list: the queue's order and text, the directory's enabled
     /// state and stamp, and an enabled skill whose draft has already left the queue still on screen.
     func testBothLegsMergeIntoOneRowPerName() async throws {
         let harness = await harness()
-        harness.transport.enqueue(200, queue("""
+        harness.transport.enqueue(forPath: queuePath, queue("""
         \(oneNomination),\
         {"id":2,"name":"csv-clean","status":"PENDING","upstreamFindingCount":0}
         """, total: 2))
-        harness.transport.enqueue(200, Wire.success("""
+        harness.transport.enqueue(forPath: directoryPath, Wire.success("""
         [{"name":"invoice-fill","description":"the copy taken at enable time","enabledAt":"2026-10-08 10:00:00"},\
         {"name":"weekly-digest","enabledAt":"2026-10-07 18:30:00"}]
         """))
 
-        let rows = try await harness.agents.rows(sessionId: "s-1")
+        let read = await harness.agents.read(sessionId: "s-1")
 
-        XCTAssertEqual(rows.map(\.name), ["invoice-fill", "csv-clean", "weekly-digest"])
-        XCTAssertEqual(rows[0].description, "fills an invoice", "the live draft text wins over the copied one")
-        XCTAssertTrue(rows[0].enabled)
-        XCTAssertEqual(rows[0].enabledAt, "2026-10-08 10:00:00")
-        XCTAssertFalse(rows[1].enabled)
-        XCTAssertNil(rows[1].enabledAt)
-        XCTAssertNil(rows[1].description)
-        XCTAssertTrue(rows[2].enabled, "the directory only lists what the session may already use")
+        XCTAssertFalse(read.unavailable, "both legs answered, so the panel is not missing anything")
+        XCTAssertEqual(read.rows.map(\.name), ["invoice-fill", "csv-clean", "weekly-digest"])
+        XCTAssertEqual(read.rows[0].description, "fills an invoice", "the live draft text wins over the copied one")
+        XCTAssertTrue(read.rows[0].enabled)
+        XCTAssertEqual(read.rows[0].enabledAt, "2026-10-08 10:00:00")
+        XCTAssertFalse(read.rows[1].enabled)
+        XCTAssertNil(read.rows[1].enabledAt)
+        XCTAssertNil(read.rows[1].description)
+        XCTAssertTrue(read.rows[2].enabled, "the directory only lists what the session may already use")
     }
 
     /// A row the panel cannot address is dropped rather than drawn: the name is the enable route's path segment,
     /// so keeping it would put a button on screen whose only possible answer is a wrong URL.
     func testANamelessRowDropsRatherThanBecomingADeadButton() async throws {
         let harness = await harness()
-        harness.transport.enqueue(200, queue("""
+        harness.transport.enqueue(forPath: queuePath, queue("""
         \(oneNomination),\
         {"id":9,"status":"PENDING","upstreamFindingCount":0}
         """, total: 2))
-        harness.transport.enqueue(200, Wire.success(#"[{"enabledAt":"2026-10-08 10:00:00"}]"#))
+        harness.transport.enqueue(forPath: directoryPath, Wire.success(#"[{"enabledAt":"2026-10-08 10:00:00"}]"#))
 
-        let rows = try await harness.agents.rows(sessionId: "s-1")
+        let read = await harness.agents.read(sessionId: "s-1")
 
-        XCTAssertEqual(rows.map(\.name), ["invoice-fill"])
+        XCTAssertEqual(read.rows.map(\.name), ["invoice-fill"])
+        XCTAssertFalse(read.unavailable, "a row nobody can name is not a leg that failed")
     }
 
-    /// A queue that would not load must not read as a conversation whose agent proposed nothing — that is the
-    /// difference between 「读不出来」 and 「还没有自写的技能」 on screen, and it is decided here.
-    func testAFailedQueueLegThrowsRatherThanAnsweringAnEmptyHalf() async throws {
+    /// 两份读各走各的失败, in the direction the throw used to get wrong: a queue that would not load costs the
+    /// panel its nominations and nothing else. The directory's rows still reach the screen beside the sentence
+    /// saying half the read is missing — the console answers the same failure with the same rows
+    /// (`sessionSkills.test.ts:82-92`), and a throw would have left an empty list under 「这个会话的技能读不出来」 for
+    /// rows this panel is holding in its hand.
+    func testAFailedQueueLegCostsTheNominationsAndNotTheEnabledRows() async throws {
         let harness = await harness()
-        harness.transport.enqueue(200, Wire.business(500, "draft queue is down"))
+        harness.transport.enqueue(forPath: queuePath, Wire.business(500, "draft queue is down"))
+        harness.transport.enqueue(
+            forPath: directoryPath,
+            Wire.success(#"[{"name":"weekly-digest","enabledAt":"2026-10-07 18:30:00"}]"#)
+        )
 
-        do {
-            _ = try await harness.agents.rows(sessionId: "s-1")
-            XCTFail("a leg that failed is not news that nothing was nominated")
-        } catch let error as APIError {
-            XCTAssertEqual(error, .business(code: 500, message: "draft queue is down"))
-        }
+        let read = await harness.agents.read(sessionId: "s-1")
+
+        XCTAssertTrue(read.unavailable, "the queue did not answer, and the panel has to say so")
+        XCTAssertEqual(
+            read.rows.map(\.name),
+            ["weekly-digest"],
+            "a leg that failed is not news that nothing was nominated — the half that answered stays"
+        )
+        XCTAssertTrue(read.rows[0].enabled)
+        XCTAssertEqual(read.rows[0].enabledAt, "2026-10-07 18:30:00")
     }
 
-    /// The rule: a directory leg that did not answer stays a failure, rather than becoming the empty half of the
-    /// merge. It is refused here the way the stack refuses a read — HTTP 200 carrying an envelope code — because
-    /// a stopped or unbound session is **not** this shape: that one answers `data: []`, and the panel has to draw
-    /// 「还没有自写的技能」 for it (`testAnEmptyDirectoryBesideNominationsIsAnAnswerRatherThanAFailure`). 410 belongs
-    /// to the enable leg alone.
-    func testAFailedDirectoryLegThrowsRatherThanAnsweringAnEmptyHalf() async throws {
+    /// The same rule seen from the other leg. The directory's rows are the ones carrying `enabled`, so losing it
+    /// leaves the queue's nomination in the merge without an enabled answer — the shape the console lands for the
+    /// identical failure (`sessionSkills.test.ts:112-114`), and why `unavailable` has to travel with it rather than
+    /// the row being drawn as a verdict.
+    func testAFailedDirectoryLegCostsTheEnabledAnswersAndNotTheNominations() async throws {
         let harness = await harness()
-        harness.transport.enqueue(200, queue(oneNomination, total: 1))
-        harness.transport.enqueue(200, Wire.business(500, "agent-service is down"))
+        harness.transport.enqueue(forPath: queuePath, queue(oneNomination, total: 1))
+        harness.transport.enqueue(forPath: directoryPath, Wire.business(500, "agent-service is down"))
 
-        do {
-            _ = try await harness.agents.rows(sessionId: "s-1")
-            XCTFail("an unreadable enabled set is not an unenabled one")
-        } catch let error as APIError {
-            XCTAssertEqual(error, .business(code: 500, message: "agent-service is down"))
-        }
+        let read = await harness.agents.read(sessionId: "s-1")
+
+        XCTAssertTrue(read.unavailable, "an unreadable enabled set is said out loud")
+        XCTAssertEqual(
+            read.rows.map(\.name),
+            ["invoice-fill"],
+            "the nomination the queue did answer is the row the user can still act on"
+        )
+        XCTAssertFalse(read.rows[0].enabled, "the only leg that knew is the one that did not answer")
+        XCTAssertNil(read.rows[0].enabledAt)
     }
 
     /// An empty enabled set is an answer. A session whose sandbox is stopped, or which was never bound to one,
-    /// gives back `data: []` on this leg — and the nominations the queue did return still have to reach the
-    /// panel, which is the difference between a row that can be enabled and a screen that claims it cannot read.
+    /// gives back `data: []` on this leg — and that is not a leg missing: `unavailable` stays off, or every session
+    /// without a running container would read as one the panel cannot see into.
     func testAnEmptyDirectoryBesideNominationsIsAnAnswerRatherThanAFailure() async throws {
         let harness = await harness()
-        harness.transport.enqueue(200, queue(oneNomination, total: 1))
-        harness.transport.enqueue(200, Wire.success("[]"))
+        harness.transport.enqueue(forPath: queuePath, queue(oneNomination, total: 1))
+        harness.transport.enqueue(forPath: directoryPath, Wire.success("[]"))
 
-        let rows = try await harness.agents.rows(sessionId: "s-1")
+        let read = await harness.agents.read(sessionId: "s-1")
 
+        XCTAssertFalse(read.unavailable, "nothing enabled is an answer, not a leg that went missing")
         XCTAssertEqual(
-            rows.map(\.name),
+            read.rows.map(\.name),
             ["invoice-fill"],
             "nothing enabled is not nothing nominated; the queue's row stays on screen"
         )
-        XCTAssertFalse(rows[0].enabled)
-        XCTAssertNil(rows[0].enabledAt)
+        XCTAssertFalse(read.rows[0].enabled)
+        XCTAssertNil(read.rows[0].enabledAt)
     }
 
-    /// Half a merge is worse than none: a body that is not the list shape fails the whole read instead of quietly
-    /// returning the nominations that did decode.
-    func testAnUnparseableDirectoryBodyFailsTheReadRatherThanLosingThatLeg() async throws {
+    /// Both legs failing is the one case an empty list is honest about: nothing answered, so the panel may claim
+    /// nothing about this conversation — and it claims 「读不出来」, not 「还没有自写的技能」.
+    func testBothLegsFailingAnswerNothingRatherThanAnEmptySession() async throws {
         let harness = await harness()
-        harness.transport.enqueue(200, queue(oneNomination, total: 1))
-        harness.transport.enqueue(200, Wire.success(#"{"name":"invoice-fill"}"#))
+        harness.transport.enqueue(forPath: queuePath, Wire.business(500, "draft queue is down"))
+        harness.transport.enqueue(forPath: directoryPath, Wire.business(500, "agent-service is down"))
 
-        do {
-            _ = try await harness.agents.rows(sessionId: "s-1")
-            XCTFail("expected the read to fail")
-        } catch let error as APIError {
-            XCTAssertEqual(error, .decoding)
-        }
+        let read = await harness.agents.read(sessionId: "s-1")
+
+        XCTAssertTrue(read.unavailable)
+        XCTAssertTrue(read.rows.isEmpty, "nothing answered, so no row may be invented from a failure")
+    }
+
+    /// Half a merge is worse than none *for that leg*: a body that is not the list shape is the directory's own
+    /// failure, and the nominations the queue answered still reach the panel beside it.
+    func testAnUnparseableDirectoryBodyCostsOnlyItsOwnLeg() async throws {
+        let harness = await harness()
+        harness.transport.enqueue(forPath: queuePath, queue(oneNomination, total: 1))
+        harness.transport.enqueue(forPath: directoryPath, Wire.success(#"{"name":"invoice-fill"}"#))
+
+        let read = await harness.agents.read(sessionId: "s-1")
+
+        XCTAssertTrue(read.unavailable, "a body this side cannot read is a leg that did not answer")
+        XCTAssertEqual(read.rows.map(\.name), ["invoice-fill"])
     }
 
     // MARK: - the enable's answers

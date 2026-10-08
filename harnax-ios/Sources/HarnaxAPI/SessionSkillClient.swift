@@ -22,28 +22,48 @@ extension AdminClient: SessionSkillReading {
     /// `GET /api/router/agent/session-skills/{sessionId}`, which lists only what the session may already use
     /// (`SessionSkillController.list`) — hence `enabled: true` for every row that read supplies.
     ///
-    /// A leg that fails is thrown, never answered with an empty half: a queue that would not load otherwise
-    /// reads as a conversation whose agent proposed nothing, and that is the one thing this panel must not say
-    /// about a failure. `SessionSkillsViewModel` turns the throw into `unavailable`.
-    public func rows(sessionId: String) async throws -> [SessionSkillRow] {
-        let nominations: [SessionSkillRules.Draft]
+    /// Each leg carries its own failure. The queue going down costs the nominations and nothing else, the
+    /// directory going down costs the enabled answers and nothing else: a leg that did not answer hands the merge an
+    /// empty list of its own and flips `unavailable`, because the rows the other leg did answer are still rows the
+    /// operator can act on. What no leg may do is answer "this conversation's agent proposed nothing" on behalf of
+    /// a failure — that is the one sentence this panel must not say about something that broke, and `unavailable`
+    /// is what keeps an empty list from being read as it. Both legs failing is the single case where the empty list
+    /// is the honest answer.
+    ///
+    /// Both go out before either is awaited: the two hosts are unrelated, and waiting on one to start the other
+    /// makes the panel's open as slow as the sum of them.
+    public func read(sessionId: String) async -> SessionSkillRead {
+        async let nominations = nominationLeg(sessionId: sessionId)
+        async let enabled = enabledLeg(sessionId: sessionId)
+        let (drafts, directory) = await (nominations, enabled)
+        return SessionSkillRead(
+            rows: SessionSkillRules.merged(drafts: drafts.rows, enabled: directory.rows),
+            unavailable: drafts.failed || directory.failed
+        )
+    }
+
+    /// `GET /api/admin/skill-drafts?status=PENDING&sessionId=`, reduced to what the merge needs.
+    private func nominationLeg(sessionId: String) async -> (rows: [SessionSkillRules.Draft], failed: Bool) {
         switch await page(status: .pending, name: nil, sessionId: sessionId, num: 1, size: Self.nominatedPageSize) {
         case let .success(page):
             // A queue row with no name cannot be enabled — the name is the enable route's path segment — so it
             // drops out rather than becoming a row the panel offers a dead button for.
-            nominations = page.records.compactMap { row in
+            let rows: [SessionSkillRules.Draft] = page.records.compactMap { row in
                 guard let name = hxPresented(row.name) else { return nil }
                 return SessionSkillRules.Draft(name: name, description: hxPresented(row.description))
             }
-        case let .failure(error):
-            throw error
+            return (rows, false)
+        case .failure:
+            return ([], true)
         }
+    }
 
-        let directory: [SessionSkillRow]
+    /// The directory leg: `GET /api/router/agent/session-skills/{sessionId}`.
+    private func enabledLeg(sessionId: String) async -> (rows: [SessionSkillRow], failed: Bool) {
         switch await client.send([SessionSkillViewRow].self, SessionSkillEndpoint.rows(sessionId: sessionId)) {
         case let .success(enabled):
             // `SessionSkillView` has no `enabled` key: presence in this list *is* the flag.
-            directory = enabled.compactMap { row in
+            let rows: [SessionSkillRow] = enabled.compactMap { row in
                 guard let name = hxPresented(row.name) else { return nil }
                 return SessionSkillRow(
                     name: name,
@@ -52,11 +72,10 @@ extension AdminClient: SessionSkillReading {
                     enabledAt: hxPresented(row.enabledAt)
                 )
             }
-        case let .failure(error):
-            throw error
+            return (rows, false)
+        case .failure:
+            return ([], true)
         }
-
-        return SessionSkillRules.merged(drafts: nominations, enabled: directory)
     }
 
     /// `POST /api/router/agent/session-skills/{sessionId}/{name}/enable`, with no body: the router names the

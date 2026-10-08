@@ -5,35 +5,45 @@ import HarnaxFeatures
 /// The session's own skill panel: what its three answers have to say, and which of them it is allowed to say
 /// before a read has arrived.
 ///
-/// The panel reads two routes at once (`SessionSkillReading.rows` merges them), so the interesting failures here
-/// are all about *which sentence the screen is entitled to*. A queue that would not load and a conversation
-/// whose agent proposed nothing look identical in `[SessionSkillRow]` — both are an empty list — and only one of
-/// them is a statement about the conversation. Same for an enable: the server's own code names the cause, and
-/// anything that never carried a code may not borrow one.
+/// The panel reads two routes at once and gets one `SessionSkillRead` back (`SessionSkillReading.read` merges
+/// them and never throws, each leg carrying its own failure), so the interesting failures here are all about
+/// *which sentence the screen is entitled to*. A queue that would not load and a conversation whose agent proposed
+/// nothing both end up as a list of rows — and only one of them is a statement about the conversation. The model's
+/// job is to land the half that answered *while* saying the other is missing, rather than letting either of the
+/// two erase the other. Same for an enable: the server's own code names the cause, and anything that never carried
+/// a code may not borrow one.
 @MainActor
 final class SessionSkillsViewModelTests: XCTestCase {
-    /// The double's replies are `Result`s rather than thrown errors because `PageReadGate` parks a *value*, and
-    /// the gate is what makes two overlapping reads real instead of sequential (`ListAppendIdentityTests:845-876`).
-    private typealias RowsReply = Result<[SessionSkillRow], Error>
+    private typealias ReadReply = SessionSkillRead
     private typealias EnableReply = Result<Void, Error>
+
+    /// Both legs answered.
+    private func answered(_ rows: [SessionSkillRow] = []) -> SessionSkillRead {
+        SessionSkillRead(rows: rows, unavailable: false)
+    }
+
+    /// At least one leg did not answer; the rows are the half that did.
+    private func missing(_ rows: [SessionSkillRow] = []) -> SessionSkillRead {
+        SessionSkillRead(rows: rows, unavailable: true)
+    }
 
     private final class StubSessionSkills: SessionSkillReading, @unchecked Sendable {
         /// One reply per read, in call order; the last entry repeats, so a test that only cares about the second
         /// read does not have to enumerate the first.
-        var rowsReplies: [RowsReply] = []
-        let rowsGate = PageReadGate<RowsReply>()
+        var readReplies: [ReadReply] = []
+        let rowsGate = PageReadGate<ReadReply>()
         private(set) var reads: [String] = []
 
         var enableReply: EnableReply = .success(())
         let enableGate = PageReadGate<EnableReply>()
         private(set) var enables: [(sessionId: String, name: String)] = []
 
-        func rows(sessionId: String) async throws -> [SessionSkillRow] {
+        func read(sessionId: String) async -> SessionSkillRead {
             reads.append(sessionId)
-            let reply = rowsReplies.isEmpty
-                ? .success([])
-                : rowsReplies[min(reads.count - 1, rowsReplies.count - 1)]
-            return try await rowsGate.absorb(reply).get()
+            let reply = readReplies.isEmpty
+                ? SessionSkillRead(rows: [], unavailable: false)
+                : readReplies[min(reads.count - 1, readReplies.count - 1)]
+            return await rowsGate.absorb(reply)
         }
 
         func enable(sessionId: String, name: String) async throws {
@@ -42,9 +52,9 @@ final class SessionSkillsViewModelTests: XCTestCase {
         }
     }
 
-    private func stub(_ replies: [RowsReply]) -> StubSessionSkills {
+    private func stub(_ replies: [ReadReply]) -> StubSessionSkills {
         let reading = StubSessionSkills()
-        reading.rowsReplies = replies
+        reading.readReplies = replies
         return reading
     }
 
@@ -59,7 +69,7 @@ final class SessionSkillsViewModelTests: XCTestCase {
     // MARK: - what the screen may say before an answer arrives
 
     func testThePanelOpensOnASpinnerNotOnAnEmptyPromise() {
-        let vm = SessionSkillsViewModel(reading: stub([.success([])]), sessionId: "s-1")
+        let vm = SessionSkillsViewModel(reading: stub([answered()]), sessionId: "s-1")
         XCTAssertTrue(
             vm.isLoading,
             "the sheet's first frame has no read behind it yet: an empty list here prints 「这个会话还没有自写的技能」, "
@@ -80,26 +90,53 @@ final class SessionSkillsViewModelTests: XCTestCase {
     // MARK: - empty versus unreadable
 
     func testAnAnsweredEmptyMergeIsTheOnlyThingThatMayCallTheSessionEmpty() async {
-        let vm = SessionSkillsViewModel(reading: stub([.success([])]), sessionId: "s-1")
+        let vm = SessionSkillsViewModel(reading: stub([answered()]), sessionId: "s-1")
         await vm.refresh()
         XCTAssertTrue(vm.rows.isEmpty)
         XCTAssertFalse(vm.unavailable, "both reads answered — this really is a conversation that wrote nothing")
     }
 
-    func testAReadThatFailsSaysTheLoadFailedRatherThanThatTheSessionWroteNothing() async {
-        let vm = SessionSkillsViewModel(reading: stub([.failure(APIError.decoding)]), sessionId: "s-1")
+    func testAReadThatAnsweredNothingSaysTheLoadFailedRatherThanThatTheSessionWroteNothing() async {
+        let vm = SessionSkillsViewModel(reading: stub([missing()]), sessionId: "s-1")
         await vm.refresh()
         XCTAssertTrue(vm.unavailable)
         XCTAssertTrue(vm.rows.isEmpty)
     }
 
-    /// The rows from the last read that did answer stay on screen when a re-read fails, with the failure said out
-    /// loud: the list the reader is looking at is now a statement about an older answer
-    /// (`TeamArtifactsViewModel.load()` keeps its rows for the same reason).
+    /// The finding this round exists for: one leg failing costs only itself, so the rows the other leg answered
+    /// land *together with* the flag, and neither one erases the other. On the first open that is the difference
+    /// between a list the user can act on under a banner and 「这个会话的技能读不出来」 over an empty panel — the
+    /// console answers the same failure with the same rows (`SessionSkillsDrawer.tsx`'s `Promise.allSettled`,
+    /// `sessionSkills.test.ts:82-92`).
+    func testAHalfAnsweredReadLandsTheHalfItAnsweredBesideTheMissingFlag() async {
+        let reading = stub([
+            missing([SessionSkillRow(name: "invoice-fill", description: "fills an invoice", enabled: false)]),
+            answered([SessionSkillRow(name: "invoice-fill", description: "fills an invoice", enabled: true)]),
+        ])
+        let vm = SessionSkillsViewModel(reading: reading, sessionId: "s-1")
+        await vm.refresh()
+
+        XCTAssertEqual(
+            vm.rows.map(\.name),
+            ["invoice-fill"],
+            "the half that answered is a row the user can still see and act on; dropping it is the whole defect"
+        )
+        XCTAssertTrue(vm.unavailable, "and the panel still says that the other half is missing")
+        XCTAssertFalse(vm.isLoading)
+
+        await vm.refresh()
+        XCTAssertEqual(vm.rows.map(\.name), ["invoice-fill"])
+        XCTAssertFalse(vm.unavailable, "a read where both legs answered retires the flag")
+    }
+
+    /// The rows from the last read that did answer stay on screen when a re-read comes back with nothing at all,
+    /// with the failure said out loud: the list the reader is looking at is now a statement about an older answer
+    /// (`TeamArtifactsViewModel.load()` keeps its rows for the same reason). A read that answered nothing is not an
+    /// answer of "no rows".
     func testAFailedReReadKeepsTheRowsItAlreadyHadAndSaysSo() async {
         let reading = stub([
-            .success([SessionSkillRow(name: "weekly-digest", enabled: true, enabledAt: "2026-10-08 10:00:00")]),
-            .failure(APIError.offline),
+            answered([SessionSkillRow(name: "weekly-digest", enabled: true, enabledAt: "2026-10-08 10:00:00")]),
+            missing(),
         ])
         let vm = SessionSkillsViewModel(reading: reading, sessionId: "s-1")
         await vm.refresh()
@@ -116,7 +153,7 @@ final class SessionSkillsViewModelTests: XCTestCase {
     /// Each refusal keeps the sentence its own code names, and the list re-reads afterwards: whether the row is
     /// enabled is the directory's answer, not something the tap may assume.
     func testARefusalKeepsItsOwnCauseAndNoReReadFollowsIt() async {
-        let reading = stub([.success([])])
+        let reading = stub([answered()])
         reading.enableReply = .failure(SessionSkillRefusal(code: 404))
         let vm = SessionSkillsViewModel(reading: reading, sessionId: "s-1")
         await vm.refresh()
@@ -133,7 +170,7 @@ final class SessionSkillsViewModelTests: XCTestCase {
     /// The one answer a transport failure may not borrow: 「这份草稿已经不在了」. Nothing said the draft was gone —
     /// the request never reached a server that could say so.
     func testATransportFailureNeverClaimsTheDraftIsGone() async {
-        let reading = stub([.success([])])
+        let reading = stub([answered()])
         reading.enableReply = .failure(APIError.offline)
         let vm = SessionSkillsViewModel(reading: reading, sessionId: "s-1")
 
@@ -149,8 +186,8 @@ final class SessionSkillsViewModelTests: XCTestCase {
     /// owns the enabled answer, so a success is only proven by asking it again.
     func testASuccessfulEnableReReadsAndClearsTheEarlierRefusal() async {
         let reading = stub([
-            .success([SessionSkillRow(name: "invoice-fill", enabled: false)]),
-            .success([SessionSkillRow(name: "invoice-fill", enabled: true, enabledAt: "2026-10-08 11:00:00")]),
+            answered([SessionSkillRow(name: "invoice-fill", enabled: false)]),
+            answered([SessionSkillRow(name: "invoice-fill", enabled: true, enabledAt: "2026-10-08 11:00:00")]),
         ])
         let vm = SessionSkillsViewModel(reading: reading, sessionId: "s-1")
         await vm.refresh()
@@ -175,7 +212,7 @@ final class SessionSkillsViewModelTests: XCTestCase {
     /// second can be refused by the ten-skill ceiling the first just filled — a 「这个会话已启用十条技能」 the user
     /// never caused, on a screen whose whole job is to say only what the server said.
     func testATapThatArrivesWhileAWriteIsInFlightIsNotSentTwice() async throws {
-        let reading = stub([.success([SessionSkillRow(name: "invoice-fill", enabled: false)])])
+        let reading = stub([answered([SessionSkillRow(name: "invoice-fill", enabled: false)])])
         let vm = SessionSkillsViewModel(reading: reading, sessionId: "s-1")
         await vm.refresh()
 
@@ -205,8 +242,8 @@ final class SessionSkillsViewModelTests: XCTestCase {
     /// (`ChatViewModel.refreshContextUsage()`'s generation guard, `:1471-1485`).
     func testAnOlderAskThatAnswersAfterANewerOneIsDiscarded() async throws {
         let reading = stub([
-            .success([SessionSkillRow(name: "stale-draft", enabled: false)]),
-            .success([SessionSkillRow(name: "fresh-draft", enabled: false)]),
+            answered([SessionSkillRow(name: "stale-draft", enabled: false)]),
+            answered([SessionSkillRow(name: "fresh-draft", enabled: false)]),
         ])
         let vm = SessionSkillsViewModel(reading: reading, sessionId: "s-1")
 

@@ -9,7 +9,9 @@ import HarnaxKit
 /// merge that decides which row says「已启用」is shared with it in Core (`SessionSkillRules.merged`) rather than
 /// re-derived here. Two things this screen therefore never does: it does not show a skill the session did not
 /// write (the published library is the context tab's job), and it does not offer an enable for a row the
-/// directory already answers as enabled — that button has one outcome, and it is a refusal.
+/// directory already answers as enabled — not because the route would refuse it (a re-enable re-copies the same
+/// draft and answers success, `SessionSkillStore.kt:125`/`:144`), but because there is no state left for the
+/// button to change.
 ///
 /// The panel is opened, not polled: both reads are asked when the sheet appears and again by the refresh row
 /// below, never by the conversation's own lifecycle (`ChatView`'s `.task(id: conversation)` stays untouched).
@@ -92,8 +94,8 @@ public struct SessionSkillsSheet: View {
         }
     }
 
-    /// The action, or the state that replaced it. An enabled row shows no button: the enable route's answer to a
-    /// second enable of the same name is not a fresh fact about the session.
+    /// The action, or the state that replaced it. An enabled row shows no button: the row is already live and the
+    /// route would only re-copy the same draft, so the button has nothing left to change.
     ///
     /// While a write is running every pending row's button goes off — the model drops a second tap
     /// (`SessionSkillsViewModel.enable`), and a button that ignores the finger it accepted is worse than a greyed

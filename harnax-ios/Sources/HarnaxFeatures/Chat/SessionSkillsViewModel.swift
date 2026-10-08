@@ -67,21 +67,20 @@ public final class SessionSkillsViewModel: ObservableObject {
         refreshGeneration += 1
         let generation = refreshGeneration
         isLoading = true
-        var merged: [SessionSkillRow]?
-        do {
-            merged = try await reading.rows(sessionId: sessionId)
-        } catch {
-            merged = nil
-        }
+        let read = await reading.read(sessionId: sessionId)
         // The generation is the order: an older ask that lands after a newer one would put the rows from before
         // that newer one back on screen, and a failed re-read would erase a list the user could still act on.
         guard generation == refreshGeneration else { return }
         isLoading = false
-        if let merged {
-            rows = merged
-            unavailable = false
-        } else {
+        if read.unavailable, read.rows.isEmpty {
+            // Not one leg answered. The list on screen becomes a statement about an older answer, and the only
+            // honest move is to keep it and say the read is missing — an unanswered re-read is not news that a
+            // skill went away, and rows that answered a moment ago are still rows the operator can act on
+            // (`TeamArtifactsViewModel.load()` keeps its rows for the same reason).
             unavailable = true
+        } else {
+            rows = read.rows
+            unavailable = read.unavailable
         }
     }
 

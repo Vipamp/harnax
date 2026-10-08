@@ -123,7 +123,7 @@ final class ReplyGate<Reply>: @unchecked Sendable {
     }
 }
 
-/// One reply per call, taken in order. Tests read the recorded requests to see what actually went out.
+/// One reply per call. Tests read the recorded requests to see what actually went out.
 final class StubTransport: HTTPRequesting, @unchecked Sendable {
     private struct Reply {
         let status: Int
@@ -131,35 +131,84 @@ final class StubTransport: HTTPRequesting, @unchecked Sendable {
         let error: Error?
     }
 
+    /// A reply that waits for the request that names its path rather than for its turn in a queue.
+    private struct RoutedReply {
+        let path: String
+        let reply: Reply
+    }
+
     /// Armed by the one test that needs a reply still outstanding when it ends the session.
     let replyGate = ReplyGate<Void>()
 
+    /// Guards `replies`, `routed` and `recorded`.
+    ///
+    /// A single-leg call never had to share them: `perform` takes its reply before anything it can suspend on, and
+    /// the tests drove one call at a time. A read that issues two legs at once (`async let`) breaks both halves of
+    /// that sentence — two executor threads reach `perform` while the other leg is still parked.
+    private let lock = NSLock()
     private var replies: [Reply] = []
+    private var routed: [RoutedReply] = []
     private var recorded: [URLRequest] = []
 
-    var requests: [URLRequest] { recorded }
+    var requests: [URLRequest] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recorded
+    }
 
-    var callCount: Int { recorded.count }
+    var callCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return recorded.count
+    }
 
     func enqueue(_ status: Int, _ body: String) {
+        lock.lock()
+        defer { lock.unlock() }
         replies.append(Reply(status: status, body: body, error: nil))
     }
 
+    /// A transport failure for the next request in call order — for the tests that drive one call at a time,
+    /// where there is no leg to route between.
     func enqueueFailure(_ error: Error) {
+        lock.lock()
+        defer { lock.unlock() }
         replies.append(Reply(status: 0, body: "", error: error))
     }
 
+    /// One reply for the request that goes to `path`, whichever leg sends it first.
+    ///
+    /// Two concurrent legs do not decide between themselves which one reaches the transport first, so a FIFO queue
+    /// would hand the nominations page to the directory call and back: the fixture stops matching the call the test
+    /// describes, and whichever leg lost the race fails for a reason that has nothing to do with the code.
+    func enqueue(forPath path: String, status: Int = 200, _ body: String) {
+        route(path: path, Reply(status: status, body: body, error: nil))
+    }
+
+    /// As `enqueue(forPath:status:_:)`, for the leg whose request never reached a server at all.
+    func enqueueFailure(forPath path: String, _ error: Error) {
+        route(path: path, Reply(status: 0, body: "", error: error))
+    }
+
+    private func route(path: String, _ reply: Reply) {
+        lock.lock()
+        defer { lock.unlock() }
+        routed.append(RoutedReply(path: path, reply: reply))
+    }
+
     func reset() {
+        lock.lock()
+        defer { lock.unlock() }
         replies.removeAll()
+        routed.removeAll()
         recorded.removeAll()
     }
 
-    /// No lock: `perform` takes its reply before anything it can suspend on, and the tests drive one call at a
-    /// time — the parked reply of an armed gate is the single exception, and it happens after the reply is
-    /// already taken. An exhausted queue answers 599 so a missing expectation fails loudly.
+    /// The reply is taken under the lock and nothing else is done there — an armed gate parks *after* it, and the
+    /// lock must not be held across a suspension. An exhausted queue answers 599 so a missing expectation fails
+    /// loudly.
     func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        recorded.append(request)
-        let reply = replies.isEmpty ? Reply(status: 599, body: "{}", error: nil) : replies.removeFirst()
+        let reply = takeReply(for: request)
         await replyGate.absorb(())
         if let error = reply.error { throw error }
         guard let url = request.url,
@@ -168,6 +217,17 @@ final class StubTransport: HTTPRequesting, @unchecked Sendable {
             throw URLError(.badURL)
         }
         return (Data(reply.body.utf8), http)
+    }
+
+    private func takeReply(for request: URLRequest) -> Reply {
+        lock.lock()
+        defer { lock.unlock() }
+        recorded.append(request)
+        let path = request.url?.path
+        if let index = routed.firstIndex(where: { $0.path == path }) {
+            return routed.remove(at: index).reply
+        }
+        return replies.isEmpty ? Reply(status: 599, body: "{}", error: nil) : replies.removeFirst()
     }
 }
 
