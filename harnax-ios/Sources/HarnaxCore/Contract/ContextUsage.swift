@@ -32,7 +32,7 @@ public struct ContextUsage: Decodable, Equatable, Sendable {
     /// The wire value of `ContextWindowSource`
     /// (`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/ContextUsageResponse.kt:7-16`)
     /// kept as the string the server sent, the way the console keeps it
-    /// (`harnax-webui/src/pages/session/index.tsx:40-44`): a fourth tier
+    /// (`harnax-webui/src/pages/session/index.tsx:46-50`): a fourth tier
     /// added upstream then shows up under its own name instead of being read as the fallback.
     public let windowSource: String?
     /// `lastCallInputTokens` over `contextWindow`, or `estimatedTokens` over it until there is a bill.
@@ -80,8 +80,8 @@ public struct ContextUsage: Decodable, Equatable, Sendable {
     /// and the session was never bound to one (`ResultVo.success(null)`,
     /// `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/proxy/SessionRouterService.kt:397-407`).
     /// The console hides its tag for both rather than showing a `0%`
-    /// (`harnax-webui/src/pages/session/index.tsx:136-147`,
-    /// `harnax-webui/src/pages/session/components/contextUsage.ts:20-24`), and a header slot that claims an
+    /// (`harnax-webui/src/pages/session/index.tsx:142-153`,
+    /// `harnax-webui/src/pages/session/components/contextUsage.ts:22-26`), and a header slot that claims an
     /// empty context on a session the router simply cannot see is the one thing this readout must never do.
     public var isReadable: Bool {
         contextWindow > 0 && ratio.isFinite
@@ -102,14 +102,14 @@ public struct ContextUsage: Decodable, Equatable, Sendable {
     ///
     /// A trigger of zero is the runtime saying it worked the number out for a model with no window, so nothing
     /// is "at" it — that is why the comparison is guarded rather than the raw `>=`
-    /// (`harnax-webui/src/pages/session/components/contextUsage.ts:35-39`).
+    /// (`harnax-webui/src/pages/session/components/contextUsage.ts:47-51`).
     public var isAtAutoTrigger: Bool {
         triggerTokens > 0 && numeratorTokens >= triggerTokens
     }
 
     /// The headline number, one header slot wide, so the decimals follow the magnitude instead of a fixed
     /// format: whole per cent above ten, one decimal down to one, two below that with the trailing zeros
-    /// dropped (`harnax-webui/src/pages/session/components/contextUsage.ts:42-48`).
+    /// dropped (`harnax-webui/src/pages/session/components/contextUsage.ts:54-60`).
     /// Zero and an unreadable ratio both read as `0%`.
     public var percentText: String {
         Self.percentText(ratio)
@@ -136,7 +136,7 @@ public struct ContextUsage: Decodable, Equatable, Sendable {
     /// The catalogue key naming where the denominator came from. An unknown tier keeps its own wording rather
     /// than borrowing the fallback's, which would say "the runtime had no idea" when it said something else.
     /// An empty tier is the fallback's answer, which is the console's own leg
-    /// (`harnax-webui/src/pages/session/index.tsx:42-43`, `usage.windowSource || 'FALLBACK'`).
+    /// (`harnax-webui/src/pages/session/index.tsx:48-49`, `usage.windowSource || 'FALLBACK'`).
     public var windowSourceTitleKey: String? {
         switch windowSource {
         case "MODEL_FIELD": return "chat.context.source.modelField"

@@ -138,8 +138,8 @@ public final class ChatViewModel: ObservableObject {
     /// `nil` is not an empty context. The runtime answers two ways when it cannot see one — a session never
     /// bound to an instance (`ResultVo.success(null)`) and a session bound elsewhere
     /// (`ResultVo.error("No context held for session …")`) — and the console hides its tag for both rather
-    /// than drawing `0%` (`harnax-webui/src/pages/session/index.tsx:136-147`,
-    /// `harnax-webui/src/pages/session/components/contextUsage.ts:20-24`). A read therefore *overwrites*,
+    /// than drawing `0%` (`harnax-webui/src/pages/session/index.tsx:142-153`,
+    /// `harnax-webui/src/pages/session/components/contextUsage.ts:22-26`). A read therefore *overwrites*,
     /// including with `nil`: the tag is the latest answer, and an old one belongs to a context the run has
     /// since changed.
     @Published public private(set) var contextUsage: ContextUsage?
@@ -251,7 +251,7 @@ public final class ChatViewModel: ObservableObject {
     ///
     /// `contextUsage` is the occupancy read behind the header's tag. Left unwired, the tag never appears —
     /// unlike the console, which has no unwired case because one client object serves every route
-    /// (`harnax-webui/src/pages/session/index.tsx:136-147`).
+    /// (`harnax-webui/src/pages/session/index.tsx:142-153`).
     ///
     /// Every screen a handset builds takes the platform's own background allowance; the initializer below is
     /// the one that takes it as an argument.
@@ -1463,7 +1463,7 @@ public final class ChatViewModel: ObservableObject {
 
     /// Ask the runtime how full this conversation's context is, and let the header's tag follow the answer.
     ///
-    /// The console's `loadContextUsage` (`harnax-webui/src/pages/session/index.tsx:136-148`) overwrites on
+    /// The console's `loadContextUsage` (`harnax-webui/src/pages/session/index.tsx:142-154`) overwrites on
     /// every read, including with null: a business failure means no instance holds this session, an absent
     /// `data` means it was never bound, and both hide the tag rather than showing a `0%` for a context the
     /// router cannot see. Nothing is said when the read fails — the tag not being there is a state, and the

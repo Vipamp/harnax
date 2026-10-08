@@ -83,7 +83,7 @@ public struct ChatView: View {
         .toolbar {
             // Declared first so it sits left of the workspace entry, which is where the console keeps the
             // readout — beside the title, ahead of the action buttons
-            // (`harnax-webui/src/pages/session/index.tsx:353-355`). This is the one unwrap of the reading:
+            // (`harnax-webui/src/pages/session/index.tsx:359-361`). This is the one unwrap of the reading:
             // the model keeps no reading for the legs that answer without one, so the absence here *is* the
             // judgement (`ContextUsageReadout`).
             if let usage = vm.contextUsage {
@@ -140,14 +140,14 @@ public struct ChatView: View {
 
     /// The header readout: how full the context the agent holds is, and which number that is.
     ///
-    /// The console draws it as a tag with a hover tooltip (`harnax-webui/src/pages/session/index.tsx:31-77`);
+    /// The console draws it as a tag with a hover tooltip (`harnax-webui/src/pages/session/index.tsx:32-83`);
     /// a phone has no hover, so the same reading is a `Menu` — the chip for the headline, five static rows for
     /// what the tooltip lists. Both halves come from `ContextUsageReadout`, so which number answers which
     /// question is decided once and not in a view. The rows open and close nothing: the readout reports, it
     /// decides no part of the context.
     ///
     /// Absent rather than `0%`, the way the console hides its tag
-    /// (`index.tsx:355`): `ChatViewModel.contextUsage` only ever holds a reading that passed
+    /// (`index.tsx:361`): `ChatViewModel.contextUsage` only ever holds a reading that passed
     /// `ContextUsage.isReadable`, and both legs that answer without one — no instance holds the session, the
     /// session was never bound — say the router cannot see this context, never that the context is empty.
     @ViewBuilder
@@ -164,7 +164,7 @@ public struct ChatView: View {
             }
         } label: {
             // `orange` for a context that has reached the automatic trigger, neutral for one that has not
-            // (`index.tsx:68`): at that point the next turn compacts this context whether or not anyone
+            // (`index.tsx:74`): at that point the next turn compacts this context whether or not anyone
             // asks, and a quiet pill would be the readout withholding the only news it has.
             HXChip(
                 ContextUsageReadout.headline(for: usage),

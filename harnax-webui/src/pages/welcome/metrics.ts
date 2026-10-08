@@ -12,21 +12,10 @@ export function formatCount(value: number | undefined | null): string {
 }
 
 /**
- * Token 的 M/K 口径，与 token-monitor 页面的 formatToken 同一条规则，抽出来与卡片共用（设计 §4.6）。
- * 1e6 走 M、1e3 走 K，各留两位小数；一千以下没有千分位可分，直接给整数。
+ * Token 的 M/K 口径，与 token-monitor 页面的 formatToken 同一条规则（设计 §4.6）。规则本身住在
+ * `@/utils/tokenFormat`，会话页的上下文占用读数用的也是那一份，这里按首页原来的名字转出。
  */
-export function formatTokens(value: number | undefined | null): string {
-  if (value === undefined || value === null || !Number.isFinite(value) || value === 0) {
-    return '0';
-  }
-  if (value >= 1_000_000) {
-    return `${(value / 1_000_000).toFixed(2)}M`;
-  }
-  if (value >= 1_000) {
-    return `${(value / 1_000).toFixed(2)}K`;
-  }
-  return Math.round(value).toLocaleString();
-}
+export { formatTokenCount as formatTokens } from '@/utils/tokenFormat';
 
 /** 环比的说法，四种：涨、跌、持平、新增。页面文案由 i18n 按这个枚举取（设计 §4.5）。 */
 export type DeltaTone = 'up' | 'down' | 'flat' | 'new';

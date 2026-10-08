@@ -8,7 +8,7 @@ import HarnaxKit
 ///
 /// The pairing is the thing under test. `ContextUsage` carries two token counts because they answer different
 /// questions, and the console's tooltip lists five rows in a fixed order
-/// (`harnax-webui/src/pages/session/index.tsx:33-51`); a readout that shows the estimate under 「billed」 is
+/// (`harnax-webui/src/pages/session/index.tsx:34-57`); a readout that shows the estimate under 「billed」 is
 /// not a layout slip but a wrong number about the user's money.
 final class ContextUsageReadoutTests: XCTestCase {
     /// Every number here is different on purpose, so a row that took another row's value cannot pass.
@@ -39,11 +39,34 @@ final class ContextUsageReadoutTests: XCTestCase {
                 hx("chat.context.trigger")
             ]
         )
-        XCTAssertEqual(rows.map(\.value), ["50000", "5504", "9", "200000", "180000"])
+        XCTAssertEqual(rows.map(\.value), ["50.00K", "5.50K", "9", "200.00K", "180.00K"])
+    }
+
+    /// The four token rows read on the token screen's tiers: millions above a million, thousands above a
+    /// thousand, plain below it (`TokenFigures.token`).
+    func testTheTokenRowsAbbreviateOnTheTokenScreensTiers() {
+        let rows = ContextUsageReadout.rows(
+            for: ContextUsage(
+                messageCount: 2,
+                estimatedTokens: 999,
+                lastCallInputTokens: 1_500_000,
+                contextWindow: 1_000,
+                ratio: 1_500,
+                triggerTokens: 0
+            )
+        )
+        XCTAssertEqual(rows.map(\.value), ["1.50M", "999", "2", "1.00K", "0"])
+    }
+
+    /// A count of messages is not a count of tokens, and `1.50K` would read as a window rather than as a
+    /// transcript length.
+    func testTheMessageCountStaysACount() {
+        let rows = ContextUsageReadout.rows(for: ContextUsage(messageCount: 1_500, ratio: 0.5))
+        XCTAssertEqual(rows[2].value, "1500")
     }
 
     /// A session whose calls have never been billed has no bill to show, and `0` there would read as a free
-    /// call rather than as nothing (`index.tsx:35-37`).
+    /// call rather than as nothing (`index.tsx:35-38`).
     func testABilllessSessionSaysThereIsNoBillAndRebasesTheChip() {
         let estimate = ContextUsage(
             messageCount: 3,

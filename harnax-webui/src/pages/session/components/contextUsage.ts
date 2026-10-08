@@ -1,10 +1,12 @@
 /**
  * Pure helpers behind the session page's context readout and compaction entry.
  *
- * Kept out of the components so the three judgements that actually matter — when a reading is a reading,
- * how the percentage is rounded for one narrow header slot, and whether a compaction command really
- * changed anything — are testable without rendering.
+ * Kept out of the components so the four judgements that actually matter — when a reading is a reading,
+ * how the percentage is rounded for one narrow header slot, how a token count is abbreviated, and whether a
+ * compaction command really changed anything — are testable without rendering.
  */
+
+import { formatTokenCount } from '@/utils/tokenFormat';
 
 /** Envelope as it arrives from the router: business failures come back as a code with a null data. */
 export type ContextUsageResponseLike = {
@@ -26,6 +28,16 @@ export function isContextUsageReadable(res?: ContextUsageResponseLike | null): b
 /** The readout says where its numerator came from; the billed count wins whenever the router has one. */
 export function contextUsageBasis(usage: API.ContextUsage): 'billed' | 'estimated' {
   return usage.lastCallInputTokens == null ? 'estimated' : 'billed';
+}
+
+/**
+ * The readout's token rows speak the token pages' abbreviation, so a 200000 window does not land in the
+ * tooltip as six ungrouped digits. Absent stays absent — `formatTokenCount` answers `0` for a number that is
+ * not there, and a session with no bill yet has no bill to show, not a free one.
+ */
+export function contextUsageTokenText(value: number | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  return formatTokenCount(value);
 }
 
 /**

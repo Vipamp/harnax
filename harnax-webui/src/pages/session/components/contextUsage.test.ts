@@ -1,6 +1,7 @@
 import {
   compactionOutcome,
   contextUsageBasis,
+  contextUsageTokenText,
   formatContextPercent,
   isAtAutoTrigger,
   isContextUsageReadable,
@@ -122,5 +123,25 @@ describe('compactionOutcome', () => {
   it('keeps a done reading when the reply carries no counts to compare', () => {
     expect(compactionOutcome({ success: true })).toBe('done');
     expect(compactionOutcome({ success: true, result: null })).toBe('done');
+  });
+});
+
+describe('contextUsageTokenText', () => {
+  it('reads the token pages\' abbreviation, not a run of ungrouped digits', () => {
+    expect(contextUsageTokenText(5598)).toBe('5.60K');
+    expect(contextUsageTokenText(5504)).toBe('5.50K');
+    expect(contextUsageTokenText(200_000)).toBe('200.00K');
+    expect(contextUsageTokenText(1_500_000)).toBe('1.50M');
+  });
+
+  it('keeps a number below the thousand line as the number it is', () => {
+    expect(contextUsageTokenText(999)).toBe('999');
+    expect(contextUsageTokenText(1000)).toBe('1.00K');
+    expect(contextUsageTokenText(0)).toBe('0');
+  });
+
+  it('leaves an absent count absent, so the caller still says "not recorded yet"', () => {
+    expect(contextUsageTokenText(null)).toBeNull();
+    expect(contextUsageTokenText(undefined)).toBeNull();
   });
 });

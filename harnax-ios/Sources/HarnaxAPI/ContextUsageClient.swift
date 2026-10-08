@@ -9,7 +9,7 @@ import HarnaxCore
 /// `ContextUsageResponse` through untouched, so the keys are that data class's property names
 /// (`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/ContextUsageResponse.kt:41-50`).
 /// The console reads the same route (`harnax-webui/src/services/ant-design-pro/chat.ts:50-60`,
-/// mounted at `harnax-webui/src/pages/session/index.tsx:136-147`).
+/// mounted at `harnax-webui/src/pages/session/index.tsx:142-153`).
 ///
 /// Its own file beside `AgentPlanClient.swift` for the same reason: one router controller answers for several
 /// screens, and this read failing has to leave the plan and the transcript untouched.

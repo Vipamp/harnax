@@ -7,6 +7,7 @@ import { getContextUsage } from '@/services/ant-design-pro/chat';
 import { getWorkspaceStatus } from '@/services/ant-design-pro/workspace';
 import {
   contextUsageBasis,
+  contextUsageTokenText,
   formatContextPercent,
   isAtAutoTrigger,
   isContextUsageReadable,
@@ -33,20 +34,25 @@ const ContextUsageTag: React.FC<{ usage: API.ContextUsage }> = ({ usage }) => {
   const rows: Array<[string, React.ReactNode]> = [
     [
       intl.formatMessage({ id: 'pages.session.context.billed', defaultMessage: 'Billed input' }),
-      usage.lastCallInputTokens ?? intl.formatMessage({ id: 'pages.session.context.noneYet', defaultMessage: 'not recorded yet' }),
+      contextUsageTokenText(usage.lastCallInputTokens) ??
+        intl.formatMessage({ id: 'pages.session.context.noneYet', defaultMessage: 'not recorded yet' }),
     ],
-    [intl.formatMessage({ id: 'pages.session.context.estimated', defaultMessage: 'Estimated' }), usage.estimatedTokens],
+    [
+      intl.formatMessage({ id: 'pages.session.context.estimated', defaultMessage: 'Estimated' }),
+      contextUsageTokenText(usage.estimatedTokens),
+    ],
+    // A count of messages is not a count of tokens: `1.50K` would read as a window, not as a transcript length.
     [intl.formatMessage({ id: 'pages.session.context.messages', defaultMessage: 'Messages' }), usage.messageCount],
     [
       `${intl.formatMessage({ id: 'pages.session.context.window', defaultMessage: 'Window' })} · ${intl.formatMessage({
         id: `pages.session.context.windowSource.${usage.windowSource || 'FALLBACK'}`,
         defaultMessage: usage.windowSource || 'FALLBACK',
       })}`,
-      usage.contextWindow,
+      contextUsageTokenText(usage.contextWindow),
     ],
     [
       intl.formatMessage({ id: 'pages.session.context.trigger', defaultMessage: 'Auto-compaction at' }),
-      usage.triggerTokens ?? '-',
+      contextUsageTokenText(usage.triggerTokens) ?? '-',
     ],
   ];
   return (

@@ -368,7 +368,7 @@
 
 `code 200 + data:null`（从未绑定）与 `code 500`（实例不持有 agent）都不是「上下文是空的」：两端在这两种形状下整块不显示读数，**绝不显示 `0%`**。
 
-- webui 判据 `harnax-webui/src/pages/session/components/contextUsage.ts:20-24`，挂载点 `harnax-webui/src/pages/session/index.tsx:136-147`。
+- webui 判据 `harnax-webui/src/pages/session/components/contextUsage.ts:22-26`，挂载点 `harnax-webui/src/pages/session/index.tsx:142-153`。
 - iOS 判据 `Sources/HarnaxCore/Contract/ContextUsage.swift:86-88`（`contextWindow > 0 && ratio.isFinite`）；空 `data` 靠 `ContextUsage: HarnaxVoid` 解成空值（`Sources/HarnaxAPI/ContextUsageClient.swift`），业务失败落进 `Result.failure`，调用侧两条同处理。
 
 ### 分子与分母的口径
@@ -377,12 +377,13 @@
 - 分子跟的是最近一次**已计费**调用，所以一次压缩不当场改变 `ratio`，要等下一轮结束后的重读才动。
 - 分母三档：`MODEL_FIELD`（模型域 `context_window` 列）→ `UPSTREAM_TABLE` → `FALLBACK`；未知档位的新名字保留服务端原词，不并入 `FALLBACK` 的说法。
 - 自动压缩触发线由 harnax 按上游算法现算：`triggerTokens = contextWindow - reserved`，`reserved` 取上游默认 20,000，`contextWindow <= 0` 时用上游 `FALLBACK_TRIGGER_TOKENS = 160_000`，算出非正数时钳到 `max(1, contextWindow / 2)`（`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentWrapper.kt:459-480`）；`triggerMessages` 用上游默认 50（`CompactionConfig.java:273-275`，harnax 读路径不覆写）。
+- 展示单位：四个 token 行（账单／本地估算／窗口／触发线）不写裸数字，按仓内既有的 M/K 口径缩写——≥1e6 记 `x.xxM`、≥1e3 记 `x.xxK`、不足 1000 原样，webui 走 `src/utils/tokenFormat.ts`（首页总览同源），iOS 走 `TokenFigures.token`（token 页同源），两端因此对同一个数说同一个样。缩写只改展示，`ratio` 与触发判据读的还是原始整数。缺失的账单仍写「尚未记录」而不是被缩写成 `0`；消息条数是条数，不缩写。
 
 ### 压缩命令
 
 入口与三种拒绝见上一节「后端行为差异」的 `COMPACT` 条。两条客户端共同的判据：
 
-- 成败**只认 `success` 旗标**。协议里 `CommandResponse.success: Boolean` 是非空（`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/CommandResponse.kt:13-17`），所以「读到命令体却没有旗标」不可能是线上形状，只能读本端没读到——webui `harnax-webui/src/pages/session/components/contextUsage.ts:61-68` 与 iOS `CompactionOutcome.compact`（`Sources/HarnaxCore/Contract/AgentStreaming.swift:81-87`）同判据，一律读成失败，绝不说「已压缩上下文」。
+- 成败**只认 `success` 旗标**。协议里 `CommandResponse.success: Boolean` 是非空（`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/CommandResponse.kt:13-17`），所以「读到命令体却没有旗标」不可能是线上形状，只能读本端没读到——webui `harnax-webui/src/pages/session/components/contextUsage.ts:73-80` 与 iOS `CompactionOutcome.compact`（`Sources/HarnaxCore/Contract/AgentStreaming.swift:81-87`）同判据，一律读成失败，绝不说「已压缩上下文」。
 - 计数只区分「压成」与「没得压」：`beforeMessages == afterMessages` 时报告还太短；计数缺失但旗标为真时只报告压成、不给数字。
 
 ### iOS 落点
@@ -391,7 +392,7 @@
 |---|---|---|
 | 契约判据 | `Sources/HarnaxCore/Contract/ContextUsage.swift:86-147` | `isReadable`／`basis`／`isAtAutoTrigger`／`percentText` 四条与 `contextUsage.ts` 一一对应；`percentText` 在比值越出整数范围时钳到 `Int.max` 而不是 `Int(Double)` 崩溃（`:119-134`） |
 | 读端点 | `Sources/HarnaxAPI/ContextUsageClient.swift` | 独立协议 `ContextUsageReading`，不与历史/计划共用；`sessionId` 先按路径段编码 |
-| 读数组装 | `Sources/HarnaxFeatures/Chat/ContextUsageReadout.swift:24-53` | 芯片两句 + 五行明细；账单行缺失时写「尚未记录」而不是 `0` |
+| 读数组装 | `Sources/HarnaxFeatures/Chat/ContextUsageReadout.swift:26-59` | 芯片两句 + 五行明细；账单行缺失时写「尚未记录」而不是 `0`；四个 token 行走 `TokenFigures.token` 的 M/K 档，消息条数不缩写 |
 | 标题栏 | `Sources/HarnaxFeatures/Chat/ChatView.swift:89-90`、`:154` | 单点 unwrap `vm.contextUsage`——模型里不留读不到的读数，缺席本身就是判据；`Menu` 承载 webui 的 hover Tooltip；排在 workspace 入口之前 |
 | 输入区 | `Sources/HarnaxFeatures/Chat/ChatView.swift:507-519` | `chat.composer.compact` 芯片，排在权限芯片之后、停沙箱与清空之前（对齐 `harnax-webui/src/pages/session/components/ChatWindow.tsx:3716-3765`）；无二次确认；`isMuted: vm.isStreaming`；hover 文案换成读屏提示 `chat.context.compactTip` |
 | 定序 | `Sources/HarnaxFeatures/Chat/ChatViewModel.swift:1471-1486`、计数器 `:149` | 每次询问递增代数，落地时同时校验会话 id 与代数：后问先答的旧读数丢弃，切走后的答复不挂到新会话标题下 |

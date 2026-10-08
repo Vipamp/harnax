@@ -4,7 +4,7 @@ import XCTest
 
 /// What one `COMPACT` reply actually did.
 ///
-/// The three-way reading is the console's (`harnax-webui/src/pages/session/components/contextUsage.ts:61-68`),
+/// The three-way reading is the console's (`harnax-webui/src/pages/session/components/contextUsage.ts:73-80`),
 /// and the leg worth the most care is the counted no-op: the runtime answers a session too short to keep a tail
 /// with `success: true` and the same count on both sides
 /// (`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/compaction/ContextCompactionService.kt:162-171`),
@@ -58,7 +58,7 @@ final class CompactionOutcomeTests: XCTestCase {
         XCTAssertEqual(outcome(AgentCommandReply(success: true, result: .init(afterMessages: 9))), .done)
     }
 
-    /// The flag has to say `true`, which is the console's rule (`contextUsage.ts:64`) and the safe one: the
+    /// The flag has to say `true`, which is the console's rule (`contextUsage.ts:76`) and the safe one: the
     /// command channel declares `success` non-null
     /// (`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/CommandResponse.kt:13-17`), so a body
     /// that does not carry it is one this side did not read rather than a compaction that ran. Reading it as a

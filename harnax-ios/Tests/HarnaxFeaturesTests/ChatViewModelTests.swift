@@ -835,7 +835,7 @@ final class ChatViewModelTests: XCTestCase {
 
     /// The tag is the latest answer and nothing else: the console's `loadContextUsage` overwrites on every
     /// read, including with null, because a session the router cannot see must not keep a number on screen
-    /// (`harnax-webui/src/pages/session/index.tsx:136-148`).
+    /// (`harnax-webui/src/pages/session/index.tsx:142-154`).
     func testTheOccupancyTagFollowsTheRead() async {
         let reader = ScriptedContextUsage()
         let (vm, _) = makeModel(contextUsage: reader)
