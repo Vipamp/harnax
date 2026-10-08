@@ -11,6 +11,10 @@ import HarnaxCore
 /// binds), and a leg that fails has to stay a failure rather than becoming the empty half of a merge — an empty
 /// merge is the sentence 「这个会话还没有自写的技能」 on screen.
 ///
+/// The two halves of that rule are not the same shape, and this file keeps them apart: a leg that did not answer
+/// is a failure, while an enabled set that answered with nothing is exactly what a stopped or unbound session
+/// says. Refusal codes belong to the enable call — the only one that changes anything.
+///
 /// The enable matters for the same reason in the other direction: the panel has one sentence per server code, and
 /// a request that never reached a server must not borrow one of them.
 final class SessionSkillWireTests: XCTestCase {
@@ -172,17 +176,41 @@ final class SessionSkillWireTests: XCTestCase {
         }
     }
 
+    /// The rule: a directory leg that did not answer stays a failure, rather than becoming the empty half of the
+    /// merge. It is refused here the way the stack refuses a read — HTTP 200 carrying an envelope code — because
+    /// a stopped or unbound session is **not** this shape: that one answers `data: []`, and the panel has to draw
+    /// 「还没有自写的技能」 for it (`testAnEmptyDirectoryBesideNominationsIsAnAnswerRatherThanAFailure`). 410 belongs
+    /// to the enable leg alone.
     func testAFailedDirectoryLegThrowsRatherThanAnsweringAnEmptyHalf() async throws {
         let harness = await harness()
         harness.transport.enqueue(200, queue(oneNomination, total: 1))
-        harness.transport.enqueue(200, Wire.business(410, "sandbox is not running"))
+        harness.transport.enqueue(200, Wire.business(500, "agent-service is down"))
 
         do {
             _ = try await harness.agents.rows(sessionId: "s-1")
             XCTFail("an unreadable enabled set is not an unenabled one")
         } catch let error as APIError {
-            XCTAssertEqual(error, .business(code: 410, message: "sandbox is not running"))
+            XCTAssertEqual(error, .business(code: 500, message: "agent-service is down"))
         }
+    }
+
+    /// An empty enabled set is an answer. A session whose sandbox is stopped, or which was never bound to one,
+    /// gives back `data: []` on this leg — and the nominations the queue did return still have to reach the
+    /// panel, which is the difference between a row that can be enabled and a screen that claims it cannot read.
+    func testAnEmptyDirectoryBesideNominationsIsAnAnswerRatherThanAFailure() async throws {
+        let harness = await harness()
+        harness.transport.enqueue(200, queue(oneNomination, total: 1))
+        harness.transport.enqueue(200, Wire.success("[]"))
+
+        let rows = try await harness.agents.rows(sessionId: "s-1")
+
+        XCTAssertEqual(
+            rows.map(\.name),
+            ["invoice-fill"],
+            "nothing enabled is not nothing nominated; the queue's row stays on screen"
+        )
+        XCTAssertFalse(rows[0].enabled)
+        XCTAssertNil(rows[0].enabledAt)
     }
 
     /// Half a merge is worse than none: a body that is not the list shape fails the whole read instead of quietly

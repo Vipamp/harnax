@@ -143,6 +143,10 @@ final class SessionSkillsViewModelTests: XCTestCase {
         XCTAssertEqual(vm.notice?.messageKey, "chat.skills.enableFailed")
     }
 
+    /// What the name claims, in both verbs. A refusal leaves its sentence on the panel, and the next tap that
+    /// answers has to retire it: leaving 「沙箱没有接受这次复制」 under a row the panel now shows as enabled would
+    /// be a claim about an attempt the user has already overtaken. The re-read is the other half — the directory
+    /// owns the enabled answer, so a success is only proven by asking it again.
     func testASuccessfulEnableReReadsAndClearsTheEarlierRefusal() async {
         let reading = stub([
             .success([SessionSkillRow(name: "invoice-fill", enabled: false)]),
@@ -152,11 +156,46 @@ final class SessionSkillsViewModelTests: XCTestCase {
         await vm.refresh()
         XCTAssertFalse(vm.rows[0].enabled)
 
+        // The earlier refusal the name promises: a first tap the sandbox refused.
+        reading.enableReply = .failure(SessionSkillRefusal(code: 500))
+        await vm.enable(name: "invoice-fill")
+        XCTAssertEqual(vm.notice?.messageKey, "chat.skills.copyFailed", "the refused tap says why it was refused")
+        XCTAssertEqual(reading.reads.count, 1, "a refusal changed nothing, so there is nothing to re-read")
+
+        // The same tap again, this time answered — the sentence from the failed one is now false.
+        reading.enableReply = .success(())
         await vm.enable(name: "invoice-fill")
 
-        XCTAssertNil(vm.notice)
+        XCTAssertNil(vm.notice, "a banner naming an attempt the panel has already superseded is a lie about this row")
         XCTAssertEqual(reading.reads.count, 2, "the directory owns the enabled answer, so it is asked again")
         XCTAssertTrue(vm.rows[0].enabled)
+    }
+
+    /// The panel's one mutator, tapped twice. Two POSTs copy the same `SKILL.md` twice, re-read twice, and the
+    /// second can be refused by the ten-skill ceiling the first just filled — a 「这个会话已启用十条技能」 the user
+    /// never caused, on a screen whose whole job is to say only what the server said.
+    func testATapThatArrivesWhileAWriteIsInFlightIsNotSentTwice() async throws {
+        let reading = stub([.success([SessionSkillRow(name: "invoice-fill", enabled: false)])])
+        let vm = SessionSkillsViewModel(reading: reading, sessionId: "s-1")
+        await vm.refresh()
+
+        reading.enableGate.arm()
+        let inFlight = Task { await vm.enable(name: "invoice-fill") }
+        try await waitUntil { reading.enables.count == 1 }
+        XCTAssertTrue(vm.isActing, "the row's button has to know a write is running, or it invites the tap the model drops")
+        XCTAssertEqual(vm.actingName, "invoice-fill", "and only the row being copied claims to be busy")
+
+        await vm.enable(name: "invoice-fill")
+        XCTAssertEqual(
+            reading.enables.count,
+            1,
+            "the second tap is a second sandbox copy, and its 409 would name a ceiling the first tap filled"
+        )
+
+        reading.enableGate.release()
+        await inFlight.value
+        XCTAssertFalse(vm.isActing, "the guard retires with the write, or the panel freezes on its only action")
+        XCTAssertNil(vm.actingName)
     }
 
     // MARK: - overlapping reads

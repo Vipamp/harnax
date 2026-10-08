@@ -32,6 +32,14 @@ public final class SessionSkillsViewModel: ObservableObject {
     /// this app has no toast, and a sentence that times out is no use to someone still looking at the row that
     /// produced it (`SkillDraftDetailViewModel.notice`).
     @Published public private(set) var notice: SessionSkillRefusal?
+    /// The row whose enable is in flight, or `nil` while the panel is not writing. The name rather than a bare
+    /// flag, because the sheet has one button per row and only the row that is being copied may claim to be busy
+    /// (`harnax-webui/src/pages/session/components/SessionSkillsDrawer.tsx`'s `busyName`).
+    @Published public private(set) var actingName: String?
+    /// Whether the panel's one mutator is already running — the guard every other write in the app carries
+    /// (`SkillDraftDetailViewModel.isActing`, `SkillSyncModel.isSubmitting`, `LoginViewModel.isSubmitting`), and
+    /// the reason the row's button can be disabled honestly rather than optimistically.
+    public var isActing: Bool { actingName != nil }
 
     /// `nil` for a host that carries no session-skill surface. The entry row is not offered then, and a panel
     /// opened some other way says it cannot read rather than that there is nothing to read.
@@ -81,12 +89,20 @@ public final class SessionSkillsViewModel: ObservableObject {
     /// directory, so the panel has to ask again rather than assume the tap worked
     /// (`harnax-webui/src/pages/session/components/SessionSkillsDrawer.tsx` re-pulls both reads for the same
     /// reason).
+    ///
+    /// One write at a time. This call copies `SKILL.md` into the session's enabled zone, so a second tap while
+    /// the first is outstanding copies it twice and can then be refused with 409 by the ceiling the first tap
+    /// filled — a sentence about a limit the user never reached. The flag covers the re-read too: until the
+    /// directory has answered, the row still does not know whether it is enabled.
     public func enable(name: String) async {
+        guard !isActing else { return }
         guard let reading else {
             notice = SessionSkillRefusal(code: -1)
             return
         }
         notice = nil
+        actingName = name
+        defer { actingName = nil }
         do {
             try await reading.enable(sessionId: sessionId, name: name)
         } catch let refusal as SessionSkillRefusal {

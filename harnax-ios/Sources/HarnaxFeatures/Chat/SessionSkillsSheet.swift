@@ -94,17 +94,32 @@ public struct SessionSkillsSheet: View {
 
     /// The action, or the state that replaced it. An enabled row shows no button: the enable route's answer to a
     /// second enable of the same name is not a fresh fact about the session.
+    ///
+    /// While a write is running every pending row's button goes off — the model drops a second tap
+    /// (`SessionSkillsViewModel.enable`), and a button that ignores the finger it accepted is worse than a greyed
+    /// one — and the row actually being copied shows the spinner, the same per-row answer the console's drawer
+    /// gives with `loading={busyName === entry.name}`. The spinner sits beside the label rather than replacing
+    /// it, so the row still says what it is busy with (`McpDetailView.swift:232-241` puts one in a row's
+    /// trailing slot for the same reason).
     @ViewBuilder
     private func trailing(_ row: SessionSkillRow) -> some View {
         if row.enabled {
             HXBadge("chat.skills.enabled", tone: .success)
         } else {
-            Button {
-                Task { await vm.enable(name: row.name) }
-            } label: {
-                HXText("chat.skills.enable")
+            HStack(spacing: 6) {
+                Button {
+                    Task { await vm.enable(name: row.name) }
+                } label: {
+                    HXText("chat.skills.enable")
+                }
+                .buttonStyle(.hxInline)
+                .disabled(vm.isActing)
+                if vm.actingName == row.name {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(Color.hx(.brand))
+                }
             }
-            .buttonStyle(.hxInline)
         }
     }
 

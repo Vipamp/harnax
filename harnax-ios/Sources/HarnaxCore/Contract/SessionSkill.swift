@@ -101,9 +101,17 @@ public enum SessionSkillRules {
 public protocol SessionSkillReading: Sendable {
     /// Both reads merged (`SessionSkillRules.merged`).
     ///
-    /// A failure of *either* leg throws. Neither leg may answer "this session wrote no skill": one read is a
-    /// queue the reviewer's service is down for and the other is a sandbox that is stopped, and both would
-    /// otherwise look like a conversation whose agent never proposed anything.
+    /// A failure of *either* leg throws. Neither leg may answer "this session wrote no skill" on its own behalf:
+    /// the queue is a read the reviewer's service can be down for and the directory is a read the router can
+    /// refuse to answer, and either one swallowed into an empty list would look like a conversation whose agent
+    /// never proposed anything.
+    ///
+    /// A session with no running sandbox is **not** such a failure. The directory answers an unbound or stopped
+    /// session with an empty list — an answer, not a refusal — and 410 belongs to `enable` alone, the only call
+    /// here that changes anything (`docs/superpowers/specs/2026-10-08-session-skill-lifecycle-design.md`: §7 has
+    /// the directory answer empty for an absent container and for an unbound session, §10 verifies that read as
+    /// empty against the enable's 410, and `harnax-webui/src/services/ant-design-pro/sessionSkill.ts` says the
+    /// same about the same two routes).
     func rows(sessionId: String) async throws -> [SessionSkillRow]
 
     /// Copy one of this session's drafts into its enabled set.
