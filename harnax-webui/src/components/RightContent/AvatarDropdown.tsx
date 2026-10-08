@@ -21,7 +21,8 @@ export const AvatarName = () => {
   const { initialState } = useModel('@@initialState');
   const { currentUser } = initialState || {};
   // 优先显示昵称，没有则显示用户名
- return <span className="anticon">{currentUser?.nickname || currentUser?.username}</span>;
+ // anticon sets line-height: 0, which stacks the wrapped lines of a long name on one baseline
+ return <span style={{ whiteSpace: 'nowrap' }}>{currentUser?.nickname || currentUser?.username}</span>;
 };
 
 const useStyles = createStyles(({ token }) => {
