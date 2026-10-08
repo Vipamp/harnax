@@ -13,8 +13,9 @@
 ## Global Constraints
 
 - 基线（本 worktree 实测）：harness-core **662** 例（1 skipped）、admin **2430** 例、12 模块合计 **3645** 例，`BUILD SUCCESS`。任何任务收尾都要能重跑且不新增失败。
+- **每个任务结束时它自己的 HEAD 必须能编译、模块门禁必须能跑。** 谁改了一个签名，谁就在同一个任务里把所有调用点一起改掉——不许留「下一个任务会修」的编译失败。（计划里 Task 6/7 的中间件装配就是按这条重新切开的：Task 6 只把安装点搬到 launcher 并沿用旧构造，Task 7 换构造并跟着改那一行调用。）
 - 代码注释、KDoc、日志字符串一律英文；面向用户的界面文案走 i18n（webui `pages.session.*`，iOS `chat.*`），中英两份同步。
-- Maven 用全局路径 `/Users/heqingsong/software/apache-maven-3.9.12/bin/mvn`，`JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home`；`-am` 必带；`-pl` 对 agent 子模块要写路径形（`harnax-agent/harnax-harness-core`）；spotless 绑在 compile 上，改过 Kotlin 先 `mvn -q spotless:apply -pl <module>`（不带 `-am`）。
+- Maven 用全局路径 `/Users/heqingsong/software/apache-maven-3.9.12/bin/mvn`，`JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home`；`-am` 必带；`-pl` 对 agent 子模块要写路径形（`harnax-agent/harnax-harness-core`）；spotless 绑在 compile 上，改过 Kotlin 先 `mvn -q spotless:apply -pl <module>`（不带 `-am`）。单跑 `-Dtest=X` 时 `-am` 要配 `-Dsurefire.failIfNoSpecifiedTests=false`，否则上游模块会以「no tests matching pattern」先把 reactor 打断。
 - 计数从聚合行 `awk` 求和，禁止 `grep FAIL`（会命中 `AUTH_FAILED`）。
 - webui 闸门只有 `max build` + `tsc --noEmit` + 逐文件 lint；**严禁 `biome check --write`**（会铺 1600+ 行无关改动）。
 - iOS 闸门 `swift build --build-tests` 与 `swift test`，**每次换新的 `--scratch-path`**；`ToolbarItem` 在 macOS 测试宿主只接受 `.primaryAction`；新增可见屏要在 `App/HarnaxDebugScreens.swift` 补一个 `-FIXTURE` case。
@@ -1054,13 +1055,12 @@ if (skillDraftIntake != null) {
         gate = AdminBackedPromotionGate(sessionId, skillDraftIntake, staging),
         sessionSkills = sessionSkills,
     )
-    agentBuilder.addMiddleware(
-        SkillDraftSubmitMiddleware(
-            sessionId = sessionId,
-            store = sessionSkillStore,
-            adaptor = skillDraftIntake,
-        ),
-    )
+    agentBuilder.addMiddleware(SkillDraftSubmitMiddleware(staging))
+```
+
+The middleware moves here in this task and gets its new constructor in Task 7 — so the call above still uses today's `SkillDraftSubmitMiddleware(staging)` signature on purpose. Writing Task 7's three-argument call here would leave this task's HEAD uncompilable.
+
+```kotlin
     log.info(
         "Agent '{}' may author skills: drafts stage in '{}', every one of them waits for review, and " +
             "the operator can enable one of them into this session",
@@ -1087,7 +1087,7 @@ val sessionSkillStore: SessionSkillStore by lazy {
 - [ ] **Step 5: 跑该测试与全模块**
 
 Run: `... mvn -q spotless:apply -pl harnax-agent/harnax-harness-core && ... mvn -o test -pl harnax-agent/harnax-harness-core -am -Dtest=HarnessAgentLauncherSkillSelfWriteTest`
-Expected: PASS。注意此时 `SkillDraftSubmitMiddleware` 的旧构造仍会编译失败 —— 若如此，先按 Task 7 Step 3 的新构造改掉再跑；两支任务在同一提交序列里落地是允许的，但提交必须分两次。
+Expected: PASS，且全模块 `mvn -o test -pl harnax-agent/harnax-harness-core -am` 仍然 664+ 全绿。本任务结束时 HEAD 必须能编译——中间件此刻仍按旧构造安装，签名换掉是 Task 7 的事。
 
 - [ ] **Step 6: 提交**
 
@@ -1104,6 +1104,7 @@ git commit -m "feat(skill): 可用区在交付技能之前注册并晚绑定—�
 
 **Files:**
 - Modify: `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/skill/SkillDraftSubmitMiddleware.kt:34-110`
+- Modify: `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt`（Task 6 装到 launcher 的那行跟着换新构造，见 Step 3 末）
 - Modify: `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/skill/AdminBackedPromotionGate.kt:104-105`
 - Test: `harnax-agent/harnax-harness-core/src/test/kotlin/com/agnetix/harnax/harness/skill/SkillDraftSubmitMiddlewareTest.kt`
 
@@ -1273,6 +1274,26 @@ class SkillDraftSubmitMiddleware(
 
 文件里的 `SYSTEM_REVIEWER` 常量与 `report(…)`/`staging.promote(…)` 路径整块删除（`report` 的三个 status 不再可达；gate 那条路仍由 `AdminBackedPromotionGate` 承担）。
 
+构造签名一改，唯一调用点立刻跟着换，否则本任务的 HEAD 编不过。`HarnessAgentLauncher.kt` 的 self-write 块里 Task 6 留下的那行：
+
+```kotlin
+agentBuilder.addMiddleware(SkillDraftSubmitMiddleware(staging))
+```
+
+换成：
+
+```kotlin
+agentBuilder.addMiddleware(
+    SkillDraftSubmitMiddleware(
+        sessionId = sessionId,
+        store = sessionSkillStore,
+        adaptor = skillDraftIntake,
+    ),
+)
+```
+
+`sessionId` 与 `skillDraftIntake` 在那个 `if (skillDraftIntake != null)` 块里都已在作用域内，`sessionSkillStore` 是 Task 6 立在 launcher 上的单例。
+
 - [ ] **Step 4: gate 用同一条 findingTexts**
 
 `AdminBackedPromotionGate.kt:104-105` 的私有 `describe` 删除，`:70` 改为：
@@ -1284,14 +1305,14 @@ scanFindings = findingTexts(candidate.securityScan()?.findings().orEmpty()),
 - [ ] **Step 5: 跑该模块全量**
 
 Run: `... mvn -q spotless:apply -pl harnax-agent/harnax-harness-core && ... mvn -o test -pl harnax-agent/harnax-harness-core -am`
-Expected: `Tests run: 662+, Failures: 0, Errors: 0`（基线 662 上加新数）
+Expected: `Failures: 0, Errors: 0`，总数不低于本任务开始时记下的模块基线（Task 1 之后为 664）
 
 - [ ] **Step 6: 提交**
 
 ```bash
 git add harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/skill/SkillDraftSubmitMiddleware.kt \
         harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/skill/AdminBackedPromotionGate.kt \
-        harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentBuilder.kt \
+        harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt \
         harnax-agent/harnax-harness-core/src/test/kotlin/com/agnetix/harnax/harness/skill/SkillDraftSubmitMiddlewareTest.kt
 git commit -m "fix(skill): 答完之后的上报改走容器句柄直连队列——解绑沙箱后读空导致待审队列始终为零"
 ```
