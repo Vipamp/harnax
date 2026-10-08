@@ -1431,6 +1431,6 @@
 /* 出处：现在这条技能是谁写进来的 */
 "skill.origin.agent" = "智能体晋升";
 "skill.origin.human" = "人工安装";
-"agent.wizard.selfWrite" = "自我进化";
+"agent.wizard.selfWrite" = "技能自我进化";
 "agent.wizard.selfWrite.hint" = "允许这个智能体自己提出技能草稿。每份草稿仍要人工批准才会成为技能。";
 

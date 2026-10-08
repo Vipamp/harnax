@@ -327,7 +327,7 @@ public struct AgentFormView: View {
         }
     }
 
-    /// The 自我进化 switch: whether this agent may write skill drafts of its own
+    /// The 技能自我进化 switch: whether this agent may write skill drafts of its own
     /// (`AgentResponse.kt:57-58`, `specs/07-skill-draft-review.md` §3).
     ///
     /// The switch is a *switch*, not a stored 0/1: an operator who opens the edit form and saves without

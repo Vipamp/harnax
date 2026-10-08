@@ -132,7 +132,7 @@
 | 批准晋升（先取摘要再确认，六种结果各有一句，未知结果走兜底） | 审核详情操作区 | v1 | `POST /skill-drafts/{id}/approve` | L |
 | 重名冲突处置（改名或覆盖，预选改名、改名限 100 字，取消即重读） | 冲突弹窗 | v1 | 同一批准接口的 `conflictResolution` 与 `newName` | M |
 | 驳回并留原话（理由必填、trim 后限 512 字） | 驳回弹窗 | v1 | `POST /skill-drafts/{id}/reject` | M |
-| 智能体的自我进化开关（基本信息里可见性开关之后那一项，不动即不发送这一位） | `/agent/manager` 表单基本区 | v1 | 智能体创建与更新体的 `skillSelfWrite` | S |
+| 智能体的技能自我进化开关（基本信息里可见性开关之后那一项，不动即不发送这一位） | `/agent/manager` 表单基本区 | v1 | 智能体创建与更新体的 `skillSelfWrite` | S |
 | 按会话过滤的待审计数 | 无 | v1.1 | 队列接口需后端补 `sessionId` 过滤参数 | M |
 
 ## 9. 上下文：CLI

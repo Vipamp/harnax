@@ -178,7 +178,7 @@ public final class AgentFormViewModel: ObservableObject {
     @Published public var systemPrompt: String = ""
     @Published public var modelID: Int64?
     @Published public var isPublic: Bool = false
-    /// The 自我进化 switch (`AgentSummary.skillSelfWrite`), and whether the operator has ever moved it. The
+    /// The 技能自我进化 switch (`AgentSummary.skillSelfWrite`), and whether the operator has ever moved it. The
     /// second half is the load-bearing one — see `buildDraft`.
     @Published public var skillSelfWrite: Bool = false
     @Published public private(set) var hasTouchedSelfWrite = false
@@ -630,7 +630,7 @@ public final class AgentFormViewModel: ObservableObject {
         isPublic = value
     }
 
-    /// The 自我进化 switch. Turning it off is as much a decision as turning it on, so the two are told apart
+    /// The 技能自我进化 switch. Turning it off is as much a decision as turning it on, so the two are told apart
     /// by the touch rather than by the value — see `buildDraft`.
     public func setSkillSelfWrite(_ value: Bool) {
         hasTouchedSelfWrite = true
