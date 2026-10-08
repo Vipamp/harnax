@@ -2114,6 +2114,10 @@ fun page(
 ): Page<SkillDraftResponse>
 ```
 
+上面这块只给到首段——`SkillDraftService.kt` 既有 KDoc 里那段 `@param status`（含「`EXPIRED` 是有列无码的取值，按它筛要拒」）与 `@throws` 两行**必须原样留在新段之下**，整块替换会把 EXPIRED 的契约从接口上摘掉，实现与用例还在守、接口却不认了。
+
+形参插在中间且**故意不给默认值**（调用点必须点名这一格），所以签名一改，`SkillDraftServiceImplTest.kt` 里既有 4 处 `service.page(...)` 会同时编不过：`page is tenant scoped`、`an unwritable status is refused`、`the internal service principal is refused at the gate`、`an unattributed review request is refused`。每处补 `sessionId = null`，断言一律不许动。全仓除这 4 处和 `SkillDraftController.kt` 的那一处调用之外没有别的 `service.page` 调用点，核实方式：`grep -rn "\.page(" --include=*.kt harnax-admin/src | grep -i draft`。
+
 `SkillDraftServiceImpl.kt:208-227`：形参加 `sessionId: String?`，在 `:220` 之后加一行，并把 `:225` 的调用补上第 4 个实参：
 
 ```kotlin
