@@ -7,6 +7,7 @@ import { DashboardOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import { useIntl } from '@umijs/max';
 import dayjs from 'dayjs';
 import { getToolInvocations, getToolMetricsSummary, getToolMetricsTimeSeries } from '@/services/ant-design-pro/toolMetrics';
+import { formatLastSeen } from './lastSeen';
 
 const CALLS_COLOR = '#4f6ef7';
 const SUCCESS_COLOR = '#10b981';
@@ -231,7 +232,7 @@ const CallMetrics: React.FC = () => {
       dataIndex: 'lastSeenAt',
       key: 'lastSeenAt',
       width: 170,
-      render: (time?: string) => (time ? dayjs(time).format('YYYY-MM-DD HH:mm:ss') : '-'),
+      render: (time?: string) => formatLastSeen(time, groupBy),
     },
   ];
 
