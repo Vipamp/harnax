@@ -45,28 +45,61 @@ export function sessionSkillsFor(
 }
 
 /**
- * What each enable refusal means, spelled apart so the human can tell which one they are looking at.
+ * What the two reads leave the panel able to say, decided apart from what an enable refusal says.
  *
- * 500 is the container refusing the copy — the draft is still there. An undocumented code therefore gets a copy
- * that names only the refusal, and never one that claims the draft is gone.
+ * Listing can only fail at the guard (401/403) or at the transport, so a failed read never borrows a code from the
+ * refusal table: calling a draft DANGEROUS because the queue could not be read sends the operator to the review
+ * queue instead of to the login screen. `unavailable` is the flag that separates "this session wrote nothing" from
+ * "nothing could be read". A half that did answer still contributes its rows, so one refusal does not hide the
+ * other half's truth.
  */
-export function refusalMessage(code: number): string {
-  if (code === 403) return 'the security scan says DANGEROUS, so this draft cannot be enabled';
-  if (code === 409) return 'this session already has ten skills enabled';
-  if (code === 410) return 'this session has no running sandbox';
-  if (code === 500) return 'the container refused the copy';
-  if (code === 404) return 'this session has no draft with that name';
-  return 'the enable request was refused for a reason this panel does not know; the draft itself is untouched';
+export function readOutcome(
+  drafts: API.Result<API.SkillDraftPage>,
+  enabled: API.Result<API.SessionSkillRow[]>,
+): { unavailable: boolean; rows: SessionSkillEntry[] } {
+  const draftRows = drafts.code === 200 ? (drafts.data?.records ?? []) : [];
+  const enabledRows = enabled.code === 200 ? (enabled.data ?? []) : [];
+  return {
+    unavailable: drafts.code !== 200 || enabled.code !== 200,
+    rows: sessionSkillsFor(draftRows, enabledRows),
+  };
 }
 
-/** Locale id suffix for a refusal code; anything undocumented lands on the copy that blames nobody. */
-function refusalKey(code: number): string {
-  if (code === 403) return 'dangerous';
-  if (code === 409) return 'limit';
-  if (code === 410) return 'noSandbox';
-  if (code === 500) return 'container';
-  if (code === 404) return 'noDraft';
-  return 'unknown';
+/** One table over the five refusal codes: the locale id and the copy that id falls back to. */
+const REFUSALS: Record<string, { id: string; en: string }> = {
+  '403': {
+    id: 'pages.session.skills.refusal.dangerous',
+    en: 'The security scan says DANGEROUS, so this draft cannot be enabled',
+  },
+  '409': {
+    id: 'pages.session.skills.refusal.limit',
+    en: 'This session already has ten skills enabled',
+  },
+  '410': {
+    id: 'pages.session.skills.refusal.noSandbox',
+    en: 'This session has no running sandbox',
+  },
+  '404': {
+    id: 'pages.session.skills.refusal.noDraft',
+    en: 'This session has no draft with that name',
+  },
+  '500': {
+    id: 'pages.session.skills.refusal.container',
+    en: 'The container refused the copy',
+  },
+};
+
+const UNKNOWN_REFUSAL = {
+  id: 'pages.session.skills.refusal.unknown',
+  en: 'The enable request was refused for a reason this panel does not know; the draft itself is untouched',
+};
+
+/**
+ * An undocumented code must not claim the draft is gone — it may only mean the sandbox is down or the login
+ * expired, so it lands on the copy that names nobody.
+ */
+export function refusalOf(code: number): { id: string; en: string } {
+  return REFUSALS[String(code)] ?? UNKNOWN_REFUSAL;
 }
 
 /** The zone stores an ISO instant; a raw one is unreadable next to a skill name. */
@@ -91,12 +124,15 @@ interface SessionSkillsDrawerProps {
 const SessionSkillsDrawer: React.FC<SessionSkillsDrawerProps> = ({ visible, sessionId, onClose }) => {
   const intl = useIntl();
   const [rows, setRows] = useState<SessionSkillEntry[]>([]);
+  const [unavailable, setUnavailable] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busyName, setBusyName] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!sessionId) return;
     setLoading(true);
+    // A retry reads afresh: the previous round's verdict must not survive into this one, not even while in flight.
+    setUnavailable(false);
     try {
       const [draftResponse, enabledResponse] = await Promise.all([
         pageSkillDrafts(
@@ -106,32 +142,23 @@ const SessionSkillsDrawer: React.FC<SessionSkillsDrawerProps> = ({ visible, sess
         listSessionSkills(sessionId, { skipErrorHandler: true }),
       ]);
       // A refusal arrives on HTTP 200 with the code in the envelope, so umi's errorThrower never fires here.
-      if (draftResponse.code !== 200) {
-        throw new Error(draftResponse.message || '');
-      }
-      if (enabledResponse.code !== 200) {
-        // The queue half still answers, so the nominations stay listed and only the enabled marks are unknown.
-        setRows(sessionSkillsFor(draftResponse.data?.records ?? [], []));
+      const outcome = readOutcome(draftResponse, enabledResponse);
+      setUnavailable(outcome.unavailable);
+      setRows(outcome.rows);
+      // When both halves are unreadable the empty state carries the load failure; a partial read renders rows,
+      // so that copy would never be seen and has to be said out loud instead.
+      if (outcome.unavailable && outcome.rows.length > 0) {
         message.error(
-          intl.formatMessage({
-            id: `pages.session.skills.refusal.${refusalKey(enabledResponse.code)}`,
-            defaultMessage: refusalMessage(enabledResponse.code),
-          }),
-        );
-        return;
-      }
-      setRows(sessionSkillsFor(draftResponse.data?.records ?? [], enabledResponse.data ?? []));
-    } catch (error: any) {
-      setRows([]);
-      // An unreadable panel must say why: an empty list would read as "this session wrote nothing".
-      message.error(
-        error?.message ||
-          error?.info?.errorMessage ||
           intl.formatMessage({
             id: 'pages.session.skills.loadFailed',
             defaultMessage: "Could not load this session's skills",
           }),
-      );
+        );
+      }
+    } catch {
+      // An unreadable panel must not read as "this session wrote nothing": that is the empty state's own claim.
+      setRows([]);
+      setUnavailable(true);
     } finally {
       setLoading(false);
     }
@@ -149,10 +176,7 @@ const SessionSkillsDrawer: React.FC<SessionSkillsDrawerProps> = ({ visible, sess
       const response = await enableSessionSkill(sessionId, name, { skipErrorHandler: true });
       if (response.code !== 200) {
         message.error(
-          intl.formatMessage({
-            id: `pages.session.skills.refusal.${refusalKey(response.code)}`,
-            defaultMessage: refusalMessage(response.code),
-          }),
+          intl.formatMessage({ id: refusalOf(response.code).id, defaultMessage: refusalOf(response.code).en }),
         );
       } else if (response.data && response.data.ok === false) {
         // The envelope said yes while the payload said no: never claim the skill is usable.
@@ -205,10 +229,17 @@ const SessionSkillsDrawer: React.FC<SessionSkillsDrawerProps> = ({ visible, sess
       <Spin spinning={loading}>
         {rows.length === 0 && !loading ? (
           <Empty
-            description={intl.formatMessage({
-              id: 'pages.session.skills.empty',
-              defaultMessage: 'This session has not written a skill yet',
-            })}
+            description={intl.formatMessage(
+              unavailable
+                ? {
+                    id: 'pages.session.skills.loadFailed',
+                    defaultMessage: "Could not load this session's skills",
+                  }
+                : {
+                    id: 'pages.session.skills.empty',
+                    defaultMessage: 'This session has not written a skill yet',
+                  },
+            )}
             style={{ marginTop: 60 }}
           />
         ) : (
