@@ -263,4 +263,97 @@ class MemoryObjectKeysTest {
             assertNull(MemoryObjectKeys.dateOf(location.itemKey), "so no row of the page ever carries it")
         }
     }
+
+    /**
+     * The paths a merge proposal names, resolved to the objects an approval would clear.
+     *
+     * `MemoryPromoter` writes each source as the route it read it through: `MEMORY.md` for the conversation's
+     * own curated draft and `memory/<file>.md` for its ledgers. Those strings are the only way the approval
+     * knows which objects the merge actually took material out of, so this resolves exactly them and refuses
+     * everything else — a path that resolved to something the merge never read would delete a conversation's
+     * memory on the strength of a proposal that does not describe it.
+     */
+    @Nested
+    @DisplayName("Resolving a merge proposal's source paths")
+    inner class SourcePaths {
+
+        private fun keyOf(path: String): String? = MemoryObjectKeys.sessionSourceKey(prefix, 4L, "7", "Research", "sess-1", path)
+
+        @Test
+        fun `the curated draft path is the conversation's own root object`() {
+            assertEquals(
+                "store/tenants/4/users/7/agents/Research/sessions/sess-1/root/MEMORY.md",
+                keyOf("MEMORY.md"),
+            )
+        }
+
+        @Test
+        fun `a ledger path is the conversation's own memory object`() {
+            assertEquals(
+                "store/tenants/4/users/7/agents/Research/sessions/sess-1/memory/2026-10-05.md",
+                keyOf("memory/2026-10-05.md"),
+            )
+        }
+
+        /** The same switch the write side reads: off moves the source keys exactly as it moves every other key. */
+        @Test
+        fun `with the tenant segment off a source key starts at users`() {
+            assertEquals(
+                "store/users/7/agents/Research/sessions/sess-1/memory/2026-10-05.md",
+                MemoryObjectKeys.sessionSourceKey(prefix, 4L, "7", "Research", "sess-1", "memory/2026-10-05.md", tenantScoped = false),
+            )
+        }
+
+        /**
+         * Every spelling the merge does not emit. The first group is the writer's own path under a different
+         * shape (a leading slash, a different case, the route name rather than the file), the second reaches
+         * to another level of the bucket, and the last two are bookkeeping objects that live in the ledger
+         * namespace but hold no conversation memory — clearing them would be a delete no proposal asked for.
+         */
+        @Test
+        fun `a path the merge never writes resolves to nothing`() {
+            listOf(
+                "",
+                " ",
+                "/MEMORY.md",
+                "MEMORY.md.md",
+                "root/MEMORY.md",
+                "memory/",
+                "memory/../MEMORY.md",
+                "memory/2026-10-05.md/extra",
+                "memory/archive/2026-01-01.md",
+                "notes.md",
+                "memory/.consolidation_state",
+                "memory/watermark",
+            ).forEach { path ->
+                assertNull(keyOf(path), "'$path' is not a path the merge emits, so it must not resolve to an object")
+            }
+        }
+
+        /**
+         * A ledger route holds whatever `.md` name the flush wrote under it, and the merge reads every one of
+         * those — so the shape rule is the writer's filter, not a list of names that look like dates. A file
+         * called `MEMORY.md` under `memory/` is odd but it is one conversation's own object, and refusing it
+         * would leave it in the bucket after the approval that describes it.
+         */
+        @Test
+        fun `any markdown file of the ledger route resolves`() {
+            assertEquals(
+                "store/tenants/4/users/7/agents/Research/sessions/sess-1/memory/MEMORY.md",
+                keyOf("memory/MEMORY.md"),
+            )
+            assertEquals(
+                "store/tenants/4/users/7/agents/Research/sessions/sess-1/memory/2026-10-05.md",
+                keyOf("memory/2026-10-05.md"),
+            )
+        }
+
+        /** The two ids a source key is built from are addressable or there is no key to build. */
+        @Test
+        fun `an unaddressable owner or conversation resolves to nothing`() {
+            assertNull(MemoryObjectKeys.sessionSourceKey(prefix, 4L, "7", "Research/x", "sess-1", "MEMORY.md"))
+            assertNull(MemoryObjectKeys.sessionSourceKey(prefix, 4L, "7", "Research", "sess-1/2", "MEMORY.md"))
+            assertNull(MemoryObjectKeys.sessionSourceKey(prefix, 4L, "7", "Research", "", "MEMORY.md"))
+        }
+    }
 }

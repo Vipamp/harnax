@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.controller
 
+import com.agnetix.harnax.admin.dto.MemoryDraftSubmitRequest
 import com.agnetix.harnax.admin.dto.SkillDraftSubmitRequest
 import com.agnetix.harnax.admin.dto.SkillUsageReportRequest
 import com.agnetix.harnax.admin.exception.BizException
@@ -7,6 +8,7 @@ import com.agnetix.harnax.admin.registrar.BuiltinToolAutoRegistrar
 import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.service.McpOAuthUserService
 import com.agnetix.harnax.admin.service.McpStdioPolicy
+import com.agnetix.harnax.admin.service.MemoryDraftService
 import com.agnetix.harnax.admin.service.SkillDraftService
 import com.agnetix.harnax.admin.service.SkillUsageService
 import com.agnetix.harnax.admin.skill.SkillBindingResolver
@@ -84,6 +86,7 @@ class InternalApiController(
     private val skillBindingResolver: SkillBindingResolver,
     private val skillUsageService: SkillUsageService,
     private val skillDraftService: SkillDraftService,
+    private val memoryDraftService: MemoryDraftService,
 ) {
 
     private val log = LoggerFactory.getLogger(InternalApiController::class.java)
@@ -314,6 +317,30 @@ class InternalApiController(
     } catch (e: Exception) {
         log.error("Skill draft intake failed for session {}", request.sessionId, e)
         ResultVo.error(500, "Skill draft intake failed")
+    }
+
+    /**
+     * Queues one conversation's merged memory layer for its owner to decide on.
+     *
+     * The same intake policy as [submitSkillDraft] for the same reason, and one more on top of it: the
+     * promotion pass keeps the conversation's own files untouched only when this call says the candidate did
+     * not land, so a swallowed refusal would leave a conversation believing its memory has been merged while
+     * no queue holds it and the same text silently never reaches the long-term layer. Every refusal therefore
+     * travels as an envelope code the runtime can turn into an outcome it reports.
+     *
+     * Nothing here takes a user id or a tenant. The session id is the whole identity claim, and
+     * [MemoryDraftService] resolves from it whose memory this is, which agent ran, and which bucket the
+     * approval will have to write.
+     */
+    @PostMapping("/memory/drafts")
+    fun submitMemoryDraft(@RequestBody request: MemoryDraftSubmitRequest): ResultVo<Long> = try {
+        ResultVo.success(memoryDraftService.submit(request))
+    } catch (e: BizException) {
+        log.warn("Memory draft intake refused for session {}: {}", request.sessionId, e.message)
+        ResultVo.error(e.code, e.message ?: "Memory draft intake failed")
+    } catch (e: Exception) {
+        log.error("Memory draft intake failed for session {}", request.sessionId, e)
+        ResultVo.error(500, "Memory draft intake failed")
     }
 
     // ========================================
