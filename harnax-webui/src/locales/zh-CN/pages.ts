@@ -634,7 +634,7 @@ export default {
   'pages.agent.owner': '所有者',
   'pages.agent.ownerPlaceholder': '自动填充为当前用户',
   'pages.agent.isPublic': '是否公开',
-  'pages.agent.skillSelfWrite': '技能自写',
+  'pages.agent.skillSelfWrite': '技能自我进化',
   'pages.agent.skillSelfWriteHint': '允许 agent 在自己的会话里起草技能。在待审草稿页有人批准之前，它不会被发布，也不会被任何其他 agent 看到。',
   'pages.agent.memoryEnabled': '长期记忆',
   'pages.agent.memoryEnabledHint': '关闭后这个 agent 不再从会话里提炼记忆，也不会在装配上下文时带上已有记忆。已经落盘的记忆文件不会删除，需要清理请到记忆管理页。',

@@ -375,7 +375,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
               <Switch checked={isPublic} onChange={setIsPublic} checkedChildren={intl.formatMessage({ id: 'pages.common.public', defaultMessage: 'Public' })} unCheckedChildren={intl.formatMessage({ id: 'pages.common.private', defaultMessage: 'Private' })} disabled={isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, false)} />
             </Form.Item>
             <Form.Item
-              label={intl.formatMessage({ id: 'pages.agent.skillSelfWrite', defaultMessage: 'Skill self-write' })}
+              label={intl.formatMessage({ id: 'pages.agent.skillSelfWrite', defaultMessage: 'Self-evolution' })}
               extra={intl.formatMessage({
                 id: 'pages.agent.skillSelfWriteHint',
                 defaultMessage: 'The agent may draft skills inside its own session. Nothing is published and no other agent sees it until a reviewer approves the draft on the draft review page.',

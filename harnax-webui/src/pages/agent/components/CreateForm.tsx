@@ -267,7 +267,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
                 {intl.formatMessage({ id: 'pages.agent.publicHint', defaultMessage: 'Other users can view this agent after making it public' })}
               </div>
             </Form.Item>
-            <Form.Item label={intl.formatMessage({ id: 'pages.agent.skillSelfWrite', defaultMessage: 'Skill self-write' })}>
+            <Form.Item label={intl.formatMessage({ id: 'pages.agent.skillSelfWrite', defaultMessage: 'Self-evolution' })}>
               <Switch
                 checked={skillSelfWrite}
                 onChange={setSkillSelfWrite}
