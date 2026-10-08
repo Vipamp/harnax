@@ -13,11 +13,14 @@
 ## Global Constraints
 
 - 基线（本 worktree 实测）：harness-core **662** 例（1 skipped）、admin **2430** 例、12 模块合计 **3645** 例，`BUILD SUCCESS`。任何任务收尾都要能重跑且不新增失败。
+- harness-core 实到数：Task 1 +2 = 664，Task 2 +3 = **667**（`42d10261` 上控制器实测 667 / 1 skipped / 0 failed）。后面的任务按「667 + 自己新增」核，不要拿 662 当基线。
 - **每个任务结束时它自己的 HEAD 必须能编译、模块门禁必须能跑。** 谁改了一个签名，谁就在同一个任务里把所有调用点一起改掉——不许留「下一个任务会修」的编译失败。（计划里 Task 6/7 的中间件装配就是按这条重新切开的：Task 6 只把安装点搬到 launcher 并沿用旧构造，Task 7 换构造并跟着改那一行调用。）
 - 代码注释、KDoc、日志字符串一律英文；面向用户的界面文案走 i18n（webui `pages.session.*`，iOS `chat.*`），中英两份同步。
 - Maven 用全局路径 `/Users/heqingsong/software/apache-maven-3.9.12/bin/mvn`，`JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home`；`-am` 必带；`-pl` 对 agent 子模块要写路径形（`harnax-agent/harnax-harness-core`）；spotless 绑在 compile 上，改过 Kotlin 先 `mvn -q spotless:apply -pl <module>`（不带 `-am`）。单跑 `-Dtest=X` 时 `-am` 要配 `-Dsurefire.failIfNoSpecifiedTests=false`，否则上游模块会以「no tests matching pattern」先把 reactor 打断。
 - 计数从聚合行 `awk` 求和，禁止 `grep FAIL`（会命中 `AUTH_FAILED`）。
-- webui 闸门只有 `max build` + `tsc --noEmit` + 逐文件 lint；**严禁 `biome check --write`**（会铺 1600+ 行无关改动）。
+- webui 闸门只有 `max build` + 逐文件 biome lint + 本任务测试文件的 jest；**严禁 `biome check --write`**（会铺 1600+ 行无关改动）。
+- `npx tsc --noEmit` **不是可用闸门**：2026-10-08 在 `feat/session-skill-lifecycle` 上实测 exit 2 / 480 条，其中 273 条 TS2307（全仓 `@/` 别名在裸 tsc 下不解析）、146 条 TS2305（`@umijs/max` 的 `request`/`useIntl` 等再导出类型缺失），新建文件必然再吃这两类；类型接线以 `max build` 通过为准。
+- 跑 webui 的 jest 要带 `NODE_OPTIONS=--no-experimental-strip-types TS_NODE_PROJECT=../harnax-ui-test/tsconfig.json`：`jest.config.ts` 在 Node 22 下加载即死（`@umijs/max/test` 只给 `.js`，且 `tsconfig.json` 的 `"watch": true` 被 ts-node 判 TS6266）。
 - iOS 闸门 `swift build --build-tests` 与 `swift test`，**每次换新的 `--scratch-path`**；`ToolbarItem` 在 macOS 测试宿主只接受 `.primaryAction`；新增可见屏要在 `App/HarnaxDebugScreens.swift` 补一个 `-FIXTURE` case。
 - 不新增表、不新增服务、不改 `promoted/` 语义、不碰 `skill` / `agent_skill_binding` / `SandboxSkillProjector`。
 - **不在 nginx 里开 `/api/agent/` location**。浏览器与 iOS 只经 `harnax-session-router` 的 `/api/router/agent/**`；agent-service 侧靠 `@InternalOnly` 注解守。
