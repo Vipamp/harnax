@@ -13,6 +13,10 @@ import UIKit
 /// following the tail is a scroll decision, not a segment decision.
 public struct ChatView: View {
     @StateObject private var vm: ChatViewModel
+    /// Whether the session's own skill panel is up. A flag on the screen rather than on the model: the panel's
+    /// two reads belong to `SessionSkillsViewModel`, which this sheet builds and throws away with itself, and
+    /// `ChatViewModel` has no business holding data it never draws.
+    @State private var showSessionSkills = false
     /// The height the composer is capped against. Only ever the largest measured value: the keyboard takes
     /// this layer down when it comes up, and 「half the screen」 means the screen.
     @State private var screenHeight: CGFloat = 0
@@ -20,6 +24,9 @@ public struct ChatView: View {
     /// and handed to `bind`. `@StateObject` keeps the first value it was given, which is exactly why the
     /// switch has to be observed rather than rebuilt.
     private let conversation: ChatConversation
+    /// The panel's two reads and its one action, held by the screen because the screen is what opens them.
+    /// `ChatViewModel` never sees it.
+    private let sessionSkills: (any SessionSkillReading)?
 
     /// The lines the text field may take before it scrolls instead of growing.
     private var composerLineCap: Int {
@@ -50,6 +57,7 @@ public struct ChatView: View {
         confirming: (any ToolConfirming)? = nil,
         plan: (any PlanReading)? = nil,
         contextUsage: (any ContextUsageReading)? = nil,
+        sessionSkills: (any SessionSkillReading)? = nil,
         conversation: ChatConversation
     ) {
         _vm = StateObject(wrappedValue: ChatViewModel(
@@ -64,6 +72,7 @@ public struct ChatView: View {
             conversation: conversation
         ))
         self.conversation = conversation
+        self.sessionSkills = sessionSkills
     }
 
     public var body: some View {
@@ -97,6 +106,17 @@ public struct ChatView: View {
             if vm.workspacePanel != nil, vm.sandboxIsRunning {
                 ToolbarItem(placement: .primaryAction) { workspaceButton }
             }
+            // The session's own skills, last in the row: the two before it report the conversation's state, this
+            // one opens something. Declared only when the host carries the reading, the same rule the workspace
+            // entry follows — an entry that can only say it could not load is worse than no entry.
+            if sessionSkills != nil {
+                ToolbarItem(placement: .primaryAction) { sessionSkillsButton }
+            }
+        }
+        .sheet(isPresented: $showSessionSkills) {
+            // The panel reads for itself, when the user opens it: neither read belongs to the transcript's
+            // lifecycle, and `ChatViewModel` holds no dependency it never draws.
+            SessionSkillsSheet(reading: sessionSkills, sessionId: conversation.id)
         }
         .sheet(isPresented: $vm.isWorkspacePresented) {
             // The panel the conversation owns, so a switch while the drawer is up cannot leave it listing the
@@ -134,6 +154,18 @@ public struct ChatView: View {
             Image(systemName: "folder")
         }
         .accessibilityLabel(hx("chat.workspace.title"))
+    }
+
+    // MARK: - session's own skills
+
+    /// The panel of skills this conversation's agent wrote. The glyph is the one the agent and team forms put on
+    /// a skill binding (`AgentFormView.swift:571`, `TeamFormView.swift:376`), so the corner says the same thing
+    /// here as it does one tab away.
+    private var sessionSkillsButton: some View {
+        Button { showSessionSkills = true } label: {
+            Image(systemName: "puzzlepiece.extension")
+        }
+        .accessibilityLabel(hx("chat.skills.entry"))
     }
 
     // MARK: - context occupancy

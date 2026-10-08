@@ -12,12 +12,13 @@ extension AdminClient: SkillDraftCataloging {
     public func page(
         status: SkillDraftStatus,
         name: String?,
+        sessionId: String?,
         num: Int,
         size: Int
     ) async -> Result<Page<SkillDraftRow>, APIError> {
         await client.send(
             Page<SkillDraftRow>.self,
-            SkillDraftEndpoint.page(status: status, name: name, num: num, size: size)
+            SkillDraftEndpoint.page(status: status, name: name, sessionId: sessionId, num: num, size: size)
         )
     }
 

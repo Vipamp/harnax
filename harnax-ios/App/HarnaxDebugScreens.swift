@@ -78,6 +78,10 @@ enum HarnaxDebugScreen: String {
     case sessionCreate
     case workspace
     case artifacts
+    /// The panel of skills this conversation's agent wrote. The one case here that carries its own raw value:
+    /// every other case types its flag as the camelCase case name, while the launch string this surface was
+    /// specced with is `session-skills`. The tab routing is unaffected — it keys off the `session` prefix.
+    case sessionSkills = "session-skills"
     case mcpForm
     case mcpClient
     case mcpWebAuth
@@ -312,6 +316,7 @@ struct HarnaxDebugView: View {
             tools: HarnaxDebugTools(),
             mcp: HarnaxDebugMcp(),
             skills: HarnaxDebugSkills(),
+            sessionSkills: HarnaxDebugSessionExtras(),
             clis: HarnaxDebugClis(),
             envVars: HarnaxDebugEnvVars(),
             apiKeys: HarnaxDebugApiKeys(),
@@ -569,7 +574,8 @@ struct HarnaxDebugView: View {
         case .mcpForm, .mcpClient, .mcpWebAuth, .modelProviderForm, .modelForm, .skillSync, .skillUpload,
              .skillRepoForm, .skillReport:
             presentedContext
-        case .planPanel, .sessionDetail, .sessionDetailTeam, .sessionCreate, .workspace, .artifacts:
+        case .planPanel, .sessionDetail, .sessionDetailTeam, .sessionCreate, .workspace, .artifacts,
+             .sessionSkills:
             presentedChat
         default:
             EmptyView()
@@ -698,7 +704,7 @@ struct HarnaxDebugView: View {
         }
     }
 
-    /// The chat tab's four drawers and the plan panel.
+    /// The chat tab's five drawers and the plan panel.
     @ViewBuilder
     private var presentedChat: some View {
         switch screen {
@@ -749,6 +755,15 @@ struct HarnaxDebugView: View {
         case .artifacts:
             if let session = HarnaxDebugRecord.session, let sessionId = hxPresented(session.sessionId) {
                 TeamArtifactsSheet(reading: model.dependencies.teamArtifacts, sessionId: sessionId)
+                    .background(HarnaxDebugScroll())
+            }
+        case .sessionSkills:
+            if let session = HarnaxDebugRecord.session, let sessionId = hxPresented(session.sessionId) {
+                // The one capture that shows all three row states the merge can produce — proposed and already
+                // enabled, proposed and waiting, enabled after its draft went away — because the panel has no
+                // filter of its own to hide them behind. The enable action stays refused, so a capture cannot
+                // photograph a promotion that never reached a server.
+                SessionSkillsSheet(reading: model.dependencies.sessionSkills, sessionId: sessionId)
                     .background(HarnaxDebugScroll())
             }
         default:
@@ -854,6 +869,9 @@ struct HarnaxDebugView: View {
                     workspace: model.dependencies.workspace,
                     confirming: model.dependencies.toolConfirm,
                     plan: model.dependencies.plan,
+                    // The toolbar entry for the session's own skills; the panel it opens is its own capture
+                    // (`-FIXTURE session-skills`), since a screenshot cannot tap the entry.
+                    sessionSkills: model.dependencies.sessionSkills,
                     conversation: ChatConversation(id: sessionId, title: session.displayName ?? "")
                 )
                 .background(HarnaxDebugScroll())
@@ -1496,18 +1514,19 @@ struct HarnaxDebugSaving: AgentWriting, TeamWriting {
     }
 }
 
-/// The session's four drawer reads and the detail sheet's executor read, and everything a capture cannot drive.
+/// The session's five drawer reads and the detail sheet's executor read, and everything a capture cannot drive.
 ///
 /// Split by what a screenshot is now able to name: the create form's executor groups, the workspace's status gate
-/// and root listing, the artifact list, the plan panel's two reads and the detail sheet's by-id agent and team
-/// reads all answer, because each has become a fixture of its own (`-FIXTURE sessionCreate`, `workspace`,
-/// `artifacts`, `planPanel`, `sessionDetail` / `sessionDetailTeam`) and a mounted surface
+/// and root listing, the artifact list, the plan panel's two reads, the session's own skill panel and the detail
+/// sheet's by-id agent and team reads all answer, because each has become a fixture of its own
+/// (`-FIXTURE sessionCreate`, `workspace`, `artifacts`, `planPanel`, `session-skills`,
+/// `sessionDetail` / `sessionDetailTeam`) and a mounted surface
 /// whose own read refuses photographs the refusal rather than the surface. Every write stays refused, along with
 /// the two reads that would need real bytes (a file's body, an artifact's download); `sessionConfig` answers on
 /// the chat fixture, because that screen's composer and its plan loop both read it and a refusal there is a
 /// banner the conversation never shows.
 struct HarnaxDebugSessionExtras: SessionCreating, SessionConfiguring, SessionWorkspaceReading,
-    TeamArtifactReading, PlanReading, ExecutorReading, ContextUsageReading {
+    TeamArtifactReading, PlanReading, ExecutorReading, ContextUsageReading, SessionSkillReading {
     /// The fixture being captured, where the capture needs a read to answer rather than to refuse.
     var screen: HarnaxDebugScreen?
 
@@ -1739,6 +1758,40 @@ struct HarnaxDebugSessionExtras: SessionCreating, SessionConfiguring, SessionWor
             triggerTokens: 111_072,
             triggerMessages: 50
         ))
+    }
+
+    /// The panel's merge already applied, in the order the panel shows it: the queue's nominations newest first,
+    /// then the directory's leftovers by name. Four rows — the three shapes the merge produces (proposed and
+    /// already enabled, where the queue's description wins; proposed and waiting; enabled after its draft went
+    /// away, which keeps its name and its stamp and has no description to show), plus a second waiting row that
+    /// carries no description at all so the subtitle has to drop rather than print a placeholder. Skill seeds
+    /// carry no dot: a dotted literal here reads as a copy key to the localization gate.
+    func rows(sessionId: String) async throws -> [SessionSkillRow] {
+        [
+            SessionSkillRow(
+                name: "weekly-digest",
+                description: "Collect the closed runs, group them by owner, keep the two slips at the top.",
+                enabled: true,
+                enabledAt: "2026-09-27 09:12:04"
+            ),
+            SessionSkillRow(
+                name: "changelog-format",
+                description: "Reformat the changelog into the two sections the channel expects.",
+                enabled: false
+            ),
+            SessionSkillRow(name: "mail-relay-check", enabled: false),
+            SessionSkillRow(
+                name: "glossary-lookup",
+                enabled: true,
+                enabledAt: "2026-09-26 22:05:00"
+            )
+        ]
+    }
+
+    /// The one action the panel offers stays refused, like every other write here: a capture that reached the
+    /// button has to photograph the refusal banner, not a promotion that never touched a server.
+    func enable(sessionId: String, name: String) async throws {
+        throw APIError.offline
     }
 
     /// The card at the panel's head: a plan mid-run whose four subtasks cover all four `PlanState`s, so the

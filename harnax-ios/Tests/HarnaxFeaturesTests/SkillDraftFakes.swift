@@ -16,7 +16,11 @@ import HarnaxCore
 final class FakeSkillDrafts: SkillDraftCataloging, @unchecked Sendable {
     /// The status is recorded as the enum and the name as the optional it goes out as, because both are the
     /// claim under test: the arm is always sent, and an emptied search must leave the key off entirely.
-    private(set) var pageRequests: [(status: SkillDraftStatus, name: String?, num: Int, size: Int)] = []
+    /// `sessionId` is recorded with them because the queue's two callers now differ by it — the reviewer's list
+    /// sends nothing and the session panel sends its own conversation.
+    private(set) var pageRequests: [
+        (status: SkillDraftStatus, name: String?, sessionId: String?, num: Int, size: Int)
+    ] = []
     var pageReplies: [Result<Page<SkillDraftRow>, APIError>] = []
     let pageGate = PageReadGate<Result<Page<SkillDraftRow>, APIError>>()
 
@@ -36,10 +40,11 @@ final class FakeSkillDrafts: SkillDraftCataloging, @unchecked Sendable {
     func page(
         status: SkillDraftStatus,
         name: String?,
+        sessionId: String?,
         num: Int,
         size: Int
     ) async -> Result<Page<SkillDraftRow>, APIError> {
-        pageRequests.append((status: status, name: name, num: num, size: size))
+        pageRequests.append((status: status, name: name, sessionId: sessionId, num: num, size: size))
         return await pageGate.absorb(next(from: \.pageReplies))
     }
 

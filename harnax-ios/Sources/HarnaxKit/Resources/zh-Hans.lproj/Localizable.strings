@@ -1321,6 +1321,20 @@
 /* ---- MCP 工具入参：描述可以为空，而空本身是一句话 ---- */
 "mcp.tool.noDescription" = "暂无描述";
 
+/* ---- 会话页自写技能：本会话的提名与已启用，以及启用的五种拒因 ---- */
+"chat.skills.entry" = "本会话技能";
+"chat.skills.title" = "本会话自写技能";
+"chat.skills.enable" = "在本会话启用";
+"chat.skills.enabled" = "已在本会话启用";
+"chat.skills.empty" = "这个会话还没有自写的技能";
+"chat.skills.loadFailed" = "这个会话的技能读不出来";
+"chat.skills.blocked" = "安全扫描判定为危险，不能启用";
+"chat.skills.full" = "这个会话已启用十条技能";
+"chat.skills.noSandbox" = "这个会话的沙箱没有在运行";
+"chat.skills.sourceGone" = "这份草稿已经不在了";
+"chat.skills.copyFailed" = "沙箱没有接受这次复制";
+"chat.skills.enableFailed" = "启用没有成功";
+
 /* ---- 技能草稿：自我进化的待审队列、审核页与两个决定 ---- */
 "skill.draft.entry" = "技能草稿";
 "skill.draft.entry.hint" = "智能体提出的技能改动，等人来审";
