@@ -27,12 +27,14 @@ class SessionSkillStore(
     private val workspaceRoot: String,
     private val maxEnabled: Int = MAX_ENABLED,
     private val execTimeoutSeconds: Int = EXEC_TIMEOUT_SECONDS,
+    /** Seam for tests: the pinned view is a final class the mockito inline agent will not stub. */
+    private val pinnedFilesystem: (Sandbox) -> AbstractFilesystem = { PinnedSandboxFilesystem(it) },
 ) {
 
     private val log = LoggerFactory.getLogger(SessionSkillStore::class.java)
 
     /** The same workspace filesystem the in-call reads use, pinned to this session's live container. */
-    fun filesystemFor(sessionId: String): AbstractFilesystem? = handles.handle(sessionId)?.let { PinnedSandboxFilesystem(it) }
+    fun filesystemFor(sessionId: String): AbstractFilesystem? = handles.handle(sessionId)?.let(pinnedFilesystem)
 
     private fun draftsReader(fs: AbstractFilesystem) = WorkspaceDraftFilesReader(fs, SkillDraftStaging.DRAFTS_DIR)
 
