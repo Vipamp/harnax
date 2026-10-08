@@ -15,29 +15,30 @@ import org.springframework.transaction.annotation.Transactional
 import org.testcontainers.containers.MySQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
-import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * The daily rollup recomputes a whole day in one statement.
+ * The hourly rollup recomputes a whole hour in one statement.
  *
  * These gates are the invariants the design claims for the aggregate table.
  * Buckets and counters both sum to `calls` (I4), and every group's row is the fold of its own detail rows
- * and of nothing else. An identical re-run changes nothing (I5). A detail day the rollup has not folded yet
- * survives the retention sweep (I6), with the tenantless day as that rule's one exception.
+ * and of nothing else. An identical re-run changes nothing (I5). A detail hour the rollup has not folded yet
+ * survives the retention sweep (I6), with the tenantless row as that rule's one exception.
  * One row never carries two subjects' calls, and never two tools' either.
- * Only a real MySQL answers them — `ON DUPLICATE KEY UPDATE` and the day range over a `datetime(3)` column
+ * Only a real MySQL answers them — `ON DUPLICATE KEY UPDATE` and the hour range over a `datetime(3)` column
  * are exactly what an in-memory engine gets wrong.
  *
  * `@MybatisTest` wraps each case in a transaction it rolls back, while the read-back below goes over a
  * second, independent MySQL session that cannot see another session's uncommitted rows and would read the
  * whole fixture as empty — a green run that asserts nothing. `NOT_SUPPORTED` lets each statement commit as
  * it is written, so what a case reads back is what the database stored. The price is that committed rows
- * outlive the case that wrote them, and these cases all share one tenant and one day, so the fixture the
+ * outlive the case that wrote them, and these cases all share one tenant and one hour, so the fixture the
  * next case counts would be the previous case's leftovers; the `@BeforeEach` sweep below is what keeps the
- * day holding exactly the rows the case just seeded.
+ * hour holding exactly the rows the case just seeded.
  */
 @Testcontainers
 @MybatisTest
@@ -63,6 +64,9 @@ open class ToolInvocationStatsMapperTest {
         /** The six duration buckets, whose sum the design also claims is `calls` (I4). */
         private val BUCKET_COLUMNS = listOf("le_100ms", "le_500ms", "le_2s", "le_10s", "le_30s", "gt_30s")
 
+        /** The shape the aggregate's `stat_hour` and the detail's `ts` are written and compared in. */
+        private val HOUR_STAMP: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+
         @JvmStatic
         @DynamicPropertySource
         fun properties(registry: DynamicPropertyRegistry) {
@@ -79,13 +83,14 @@ open class ToolInvocationStatsMapperTest {
     private lateinit var statsMapper: ToolInvocationStatsMapper
 
     /**
-     * One day for every case, read once instead of at each use: a run that crossed midnight between seeding
-     * and folding would otherwise fold a different day than the one it wrote, and see its own fixture gone.
+     * One hour for every case, read once instead of at each use: a run that crossed the hour boundary
+     * between seeding and folding would otherwise fold a different hour than the one it wrote, and its
+     * read-back would name an hour holding none of these rows.
      */
-    private val fixtureDay: LocalDate = LocalDate.now().minusDays(3)
+    private val fixtureHour: LocalDateTime = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS).minusHours(3)
 
-    /** A second day, equally past the retention cutoff, held by a row that names no tenant at all. */
-    private val orphanDay: LocalDate = fixtureDay.minusDays(1)
+    /** A second hour, equally past the retention cutoff, held by a row that names no tenant at all. */
+    private val orphanHour: LocalDateTime = fixtureHour.minusHours(1)
 
     /**
      * Rows commit under `NOT_SUPPORTED`, so without this every case would inherit the rows and the
@@ -98,12 +103,12 @@ open class ToolInvocationStatsMapperTest {
     }
 
     /**
-     * Nineteen calls on one day, over the seven groups the key can build, laid out so no column can cheat.
+     * Nineteen calls in one hour, over the seven groups the key can build, laid out so no column can cheat.
      *
      * Two builtin tools, plus a second tool on the `900` server, so a fold that dropped `tool_name` out of
      * the key would merge rows the page lists apart and every vector below would then disagree. Within
      * `read_file` the four outcome counters are 3, 2, 1 and 0 — pairwise distinct, so swapping any two
-     * outcome predicates changes that row even though the day's totals stay right. And every bucket
+     * outcome predicates changes that row even though the hour's totals stay right. And every bucket
      * boundary is seeded from both sides (100, 500, 2000, 10000 and 30000 ms inside, 501, 2001, 10001 and
      * 30001 ms outside), so a boundary that moves either way shows up as a wrong bucket, not as a wrong
      * total that the I4 sum check would still pass.
@@ -169,17 +174,20 @@ open class ToolInvocationStatsMapperTest {
         ),
     )
 
-    private fun at(day: LocalDate, hour: Int): LocalDateTime = day.atTime(hour, 0, 0)
+    private fun at(
+        hour: LocalDateTime,
+        minute: Int,
+    ): LocalDateTime = hour.plusMinutes(minute.toLong())
 
     private fun row(
-        hour: Int,
+        minute: Int,
         toolName: String,
         outcome: String,
         durationMs: Long,
         mcpId: Long? = null,
         cliId: Long? = null,
         tenantId: Long? = TENANT_ID,
-        day: LocalDate = fixtureDay,
+        hour: LocalDateTime = fixtureHour,
     ) = ToolInvocationLog().apply {
         this.tenantId = tenantId
         agentId = 7L
@@ -194,12 +202,12 @@ open class ToolInvocationStatsMapperTest {
         this.cliId = cliId
         this.outcome = outcome
         this.durationMs = durationMs
-        startTime = at(day, hour)
-        endTime = at(day, hour)
-        ts = at(day, hour)
+        startTime = at(hour, minute)
+        endTime = at(hour, minute)
+        ts = at(hour, minute)
     }
 
-    private fun seedDay() {
+    private fun seedHour() {
         logMapper.batchInsert(fixture)
     }
 
@@ -229,24 +237,28 @@ open class ToolInvocationStatsMapperTest {
     private fun count(sql: String): Long = (query(sql).first()["c"] as Number).toLong()
 
     /**
-     * Detail rows still in the table for [day] under [tenant] (null means the tenantless rows).
+     * Detail rows still in the table for [hour] under [tenant] (null means the tenantless rows).
      *
-     * Counted per tenant and per day on purpose: the sweep is a whole-server statement, so a total over the
+     * Counted per tenant and per hour on purpose: the sweep is a whole-server statement, so a total over the
      * table would answer for rows this class never seeded.
      */
-    private fun detailCount(tenant: Long?, day: LocalDate): Long {
+    private fun detailCount(
+        tenant: Long?,
+        hour: LocalDateTime,
+    ): Long {
         val owner = if (tenant == null) "tenant_id IS NULL" else "tenant_id = $tenant"
+        val stamp = hour.format(HOUR_STAMP)
         return count(
             "SELECT COUNT(*) AS c FROM tool_invocation_log WHERE $owner " +
-                "AND ts >= '$day' AND ts < DATE_ADD('$day', INTERVAL 1 DAY)",
+                "AND ts >= '$stamp' AND ts < DATE_ADD('$stamp', INTERVAL 1 HOUR)",
         )
     }
 
     private fun statsRows(): List<Map<String, Any?>> = query(
-        "SELECT * FROM tool_invocation_stats WHERE tenant_id = $TENANT_ID AND stat_date = '${day()}'",
+        "SELECT * FROM tool_invocation_stats WHERE tenant_id = $TENANT_ID AND stat_hour = '${hour()}'",
     )
 
-    /** The identity the aggregate's unique key gives a row, minus the date and the tenant this class fixes. */
+    /** The identity the aggregate's unique key gives a row, minus the hour and the tenant this class fixes. */
     private fun keyOf(row: Map<String, Any?>): String = "${row["kind"]}/${row["subject_id"]}/${row["tool_name"]}"
 
     private fun vectorOf(row: Map<String, Any?>): Vector {
@@ -275,10 +287,10 @@ open class ToolInvocationStatsMapperTest {
         return vectors
     }
 
-    private fun day(): String = fixtureDay.toString()
+    private fun hour(): String = fixtureHour.format(HOUR_STAMP)
 
-    /** The retention cutoff: the start of the day after [fixtureDay], so both seeded days sit behind it. */
-    private fun cutoff(): String = "${fixtureDay.plusDays(1)} 00:00:00"
+    /** The retention cutoff: the start of the hour after [fixtureHour], so both seeded hours sit behind it. */
+    private fun cutoff(): String = fixtureHour.plusHours(1).format(HOUR_STAMP)
 
     /** Every measured column of one aggregate row, so a case can assert the whole vector at once. */
     private data class Vector(
@@ -301,8 +313,8 @@ open class ToolInvocationStatsMapperTest {
     inner class Rollup {
         @Test
         fun `counters and buckets each sum to calls`() {
-            seedDay()
-            statsMapper.upsertDay(day())
+            seedHour()
+            statsMapper.upsertHour(hour())
             val rows = statsRows()
             assertTrue(rows.isNotEmpty(), "a fold that wrote no row makes every claim below vacuous")
             rows.forEach {
@@ -321,8 +333,8 @@ open class ToolInvocationStatsMapperTest {
 
         @Test
         fun `each group's row is the fold of its own detail rows`() {
-            seedDay()
-            statsMapper.upsertDay(day())
+            seedHour()
+            statsMapper.upsertHour(hour())
 
             assertEquals(
                 expectedVectors,
@@ -333,8 +345,8 @@ open class ToolInvocationStatsMapperTest {
 
         @Test
         fun `two tools of one subject stay two rows`() {
-            seedDay()
-            statsMapper.upsertDay(day())
+            seedHour()
+            statsMapper.upsertHour(hour())
             val keys = vectorsByKey().keys
 
             // The key is (kind, subject_id, tool_name), and `tool_name` is written by every kind. A fold that
@@ -343,7 +355,7 @@ open class ToolInvocationStatsMapperTest {
             assertEquals(
                 listOf("builtin/0/read_file", "builtin/0/send_email"),
                 keys.filter { it.startsWith("builtin/") }.sorted(),
-                "both builtin tools must keep their own row on one day and tenant",
+                "both builtin tools must keep their own row in one hour and tenant",
             )
             assertEquals(
                 listOf("mcp/900/fetch", "mcp/900/search"),
@@ -353,13 +365,13 @@ open class ToolInvocationStatsMapperTest {
         }
 
         @Test
-        fun `recomputing the same day twice changes nothing`() {
-            seedDay()
-            statsMapper.upsertDay(day())
+        fun `recomputing the same hour twice changes nothing`() {
+            seedHour()
+            statsMapper.upsertHour(hour())
             val first = statsRows().sortedBy { keyOf(it) }
             assertTrue(first.isNotEmpty(), "two empty lists are equal too, and that would prove nothing")
 
-            statsMapper.upsertDay(day())
+            statsMapper.upsertHour(hour())
             val second = statsRows().sortedBy { keyOf(it) }
             assertEquals(first.size, second.size, "a recompute must not add or lose a group")
             assertEquals(first, second, "the rollup must be idempotent, so a second replica is harmless")
@@ -367,8 +379,8 @@ open class ToolInvocationStatsMapperTest {
 
         @Test
         fun `each mcp server and each cli package gets its own row`() {
-            seedDay()
-            statsMapper.upsertDay(day())
+            seedHour()
+            statsMapper.upsertHour(hour())
             val callsBySubject = statsRows()
                 .filter { it["kind"] != ToolInvocationLog.KIND_BUILTIN }
                 .groupBy { "${it["kind"]}/${it["subject_id"]}" }
@@ -387,54 +399,54 @@ open class ToolInvocationStatsMapperTest {
         }
 
         @Test
-        fun `a day not yet rolled up survives the retention sweep`() {
-            seedDay()
-            val seeded = detailCount(TENANT_ID, fixtureDay)
+        fun `an hour not yet folded survives the retention sweep`() {
+            seedHour()
+            val seeded = detailCount(TENANT_ID, fixtureHour)
             assertEquals(fixture.size.toLong(), seeded, "the fixture must be committed before the sweep is judged")
-            // Everything is three days old, so a window of two days would delete it all if the sweep did
-            // not gate on "already rolled up" (I6).
+            // The cutoff is past every seeded row, so the sweep would delete them all if it did not gate on
+            // "already folded" (I6).
             logMapper.deleteRolledOut(cutoff())
-            assertEquals(seeded, detailCount(TENANT_ID, fixtureDay), "an unrolled day must stay queryable (I6)")
+            assertEquals(seeded, detailCount(TENANT_ID, fixtureHour), "an unfolded hour must stay queryable (I6)")
 
-            statsMapper.upsertDay(day())
+            statsMapper.upsertHour(hour())
             logMapper.deleteRolledOut(cutoff())
-            assertEquals(0L, detailCount(TENANT_ID, fixtureDay), "the folded day is released by the next sweep")
+            assertEquals(0L, detailCount(TENANT_ID, fixtureHour), "the folded hour is released by the next sweep")
         }
 
         @Test
         fun `the tenantless row is the one exception to the rolled out gate`() {
             logMapper.batchInsert(
-                listOf(row(2, "read_file", ToolInvocationLog.OUTCOME_SUCCESS, 80L, tenantId = null, day = orphanDay)),
+                listOf(row(2, "read_file", ToolInvocationLog.OUTCOME_SUCCESS, 80L, tenantId = null, hour = orphanHour)),
             )
 
-            // Nothing ever folds a tenantless day, so it cannot be owed to the rollup: the aggregate's
+            // Nothing ever folds a tenantless hour, so it cannot be owed to the rollup: the aggregate's
             // `tenant_id` is NOT NULL and the pending list is a difference against that table.
             assertEquals(
                 emptyList(),
-                logMapper.selectUnrolledDates(orphanDay.toString()),
-                "the tenantless day must never be named as pending",
+                logMapper.selectUnrolledHours(orphanHour.format(HOUR_STAMP)),
+                "the tenantless row must never be named as pending",
             )
 
             logMapper.deleteRolledOut(cutoff())
-            assertEquals(0L, detailCount(null, orphanDay), "the tenantless row leaves on the window alone")
+            assertEquals(0L, detailCount(null, orphanHour), "the tenantless row leaves on the window alone")
 
-            // A row of the same age that does name a tenant stays, because nothing has folded its day yet.
-            logMapper.batchInsert(listOf(row(3, "send_email", ToolInvocationLog.OUTCOME_SUCCESS, 90L, day = orphanDay)))
+            // A row of the same age that does name a tenant stays, because nothing has folded its hour yet.
+            logMapper.batchInsert(listOf(row(3, "send_email", ToolInvocationLog.OUTCOME_SUCCESS, 90L, hour = orphanHour)))
             logMapper.deleteRolledOut(cutoff())
-            assertEquals(0L, detailCount(null, orphanDay), "the tenantless row stays released")
-            assertEquals(1L, detailCount(TENANT_ID, orphanDay), "the tenant's own unfolded day survives (I6)")
+            assertEquals(0L, detailCount(null, orphanHour), "the tenantless row stays released")
+            assertEquals(1L, detailCount(TENANT_ID, orphanHour), "the tenant's own unfolded hour survives (I6)")
         }
 
         @Test
-        fun `the rollup only owes a day it has not folded yet`() {
-            seedDay()
-            // The pending list is how the hourly job finds work: it names the seeded day and nothing else.
-            assertEquals(listOf(day()), logMapper.selectUnrolledDates(day()))
+        fun `the rollup only owes an hour it has not folded yet`() {
+            seedHour()
+            // The pending list is how the job finds work: it names the seeded hour and nothing else.
+            assertEquals(listOf(hour()), logMapper.selectUnrolledHours(hour()))
 
-            statsMapper.upsertDay(day())
+            statsMapper.upsertHour(hour())
             assertTrue(
-                logMapper.selectUnrolledDates(day()).isEmpty(),
-                "a folded day must stop showing up as pending, or the job runs forever",
+                logMapper.selectUnrolledHours(hour()).isEmpty(),
+                "a folded hour must stop showing up as pending, or the job runs forever",
             )
         }
     }

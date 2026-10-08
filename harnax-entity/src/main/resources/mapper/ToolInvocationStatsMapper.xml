@@ -8,28 +8,29 @@
         sum would stop equalling `calls` (I4).
 
         `subject_id` is written with a COALESCE rather than left null, because the unique key treats two
-        NULLs as different rows: a NULL subject would let the same day insert twice.
+        NULLs as different rows: a NULL subject would let the same hour insert twice.
         The subject is also part of the grouping key, because it is what an operator reads the row as: one
         agent mounts several MCP servers, and a single `mcp` group per tenant would leave the highest server
-        id holding every call of that day. The tool name is part of it too, and for every kind: one server
+        id holding every call of that hour. The tool name is part of it too, and for every kind: one server
         exposes several tools and one agent has several builtins, so a group that dropped the name would fold
         tools the page lists apart into one row, and a reader could not tell which tool of a server answered.
         The same expression is selected and grouped, so the value is the group's own key rather than an
         aggregate taken over it.
-        The day is bounded by an instant range rather than by `DATE(l.ts) = #{statDate}`: a function over the
-        column is not sargable, so the optimizer cannot use it to narrow the scan.
+        The hour is bounded by an instant range rather than by `DATE_FORMAT(l.ts, '%Y-%m-%d %H:00:00') =
+        #{statHour}`: a function over the column is not sargable, so the optimizer cannot use it to narrow
+        the scan.
         The update list covers every column the SELECT produces, including the counters, because this is a
         recompute and not an increment.
     -->
-    <insert id="upsertDay">
+    <insert id="upsertHour">
         INSERT INTO tool_invocation_stats (
-        stat_date, tenant_id, kind, subject_id, tool_name,
+        stat_hour, tenant_id, kind, subject_id, tool_name,
         calls, successes, errors, denials, interruptions,
         sum_duration_ms, max_duration_ms,
         le_100ms, le_500ms, le_2s, le_10s, le_30s, gt_30s
         )
         SELECT
-        #{statDate},
+        #{statHour},
         l.tenant_id,
         l.kind,
         CASE
@@ -52,8 +53,8 @@
         SUM(CASE WHEN l.duration_ms &gt; 10000 AND l.duration_ms &lt;= 30000 THEN 1 ELSE 0 END),
         SUM(CASE WHEN l.duration_ms &gt; 30000 THEN 1 ELSE 0 END)
         FROM tool_invocation_log l
-        WHERE l.ts &gt;= #{statDate}
-        AND l.ts &lt; DATE_ADD(#{statDate}, INTERVAL 1 DAY)
+        WHERE l.ts &gt;= #{statHour}
+        AND l.ts &lt; DATE_ADD(#{statHour}, INTERVAL 1 HOUR)
         AND l.tenant_id IS NOT NULL
         GROUP BY l.tenant_id, l.kind,
         CASE

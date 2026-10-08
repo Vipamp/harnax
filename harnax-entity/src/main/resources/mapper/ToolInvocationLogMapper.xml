@@ -22,24 +22,24 @@
     </insert>
 
     <!--
-        The date set the rollup owes, oldest first. Grouping rather than a subquery against the aggregate
+        The hour set the rollup owes, oldest first. Grouping rather than a subquery against the aggregate
         keeps this one pass over the index on (tenant_id, ts). The floor is compared against `l.ts` and not
-        against `DATE(l.ts)` because a function over the column is not sargable; a `yyyy-MM-dd` bound reads
-        as the start of that day. The day expression stays a function of the column, since grouping is not
-        narrowed by it.
+        against a truncation of it because a function over the column is not sargable; a
+        `yyyy-MM-dd HH:mm:ss` bound reads as that instant. The hour expression stays a function of the
+        column, since grouping is not narrowed by it.
     -->
-    <select id="selectUnrolledDates" resultType="string">
-        SELECT DATE_FORMAT(l.ts, '%Y-%m-%d') AS stat_date
+    <select id="selectUnrolledHours" resultType="string">
+        SELECT DATE_FORMAT(l.ts, '%Y-%m-%d %H:00:00') AS stat_hour
         FROM tool_invocation_log l
         WHERE l.tenant_id IS NOT NULL
         AND l.ts &gt;= #{floor}
         AND NOT EXISTS (
             SELECT 1 FROM tool_invocation_stats s
-            WHERE s.stat_date = DATE(l.ts)
+            WHERE s.stat_hour = DATE_FORMAT(l.ts, '%Y-%m-%d %H:00:00')
             AND s.tenant_id = l.tenant_id
         )
-        GROUP BY DATE_FORMAT(l.ts, '%Y-%m-%d')
-        ORDER BY stat_date ASC
+        GROUP BY DATE_FORMAT(l.ts, '%Y-%m-%d %H:00:00')
+        ORDER BY stat_hour ASC
     </select>
 
     <delete id="deleteRolledOut">
@@ -49,7 +49,7 @@
             tenant_id IS NULL
             OR EXISTS (
                 SELECT 1 FROM tool_invocation_stats s
-                WHERE s.stat_date = DATE(tool_invocation_log.ts)
+                WHERE s.stat_hour = DATE_FORMAT(tool_invocation_log.ts, '%Y-%m-%d %H:00:00')
                 AND s.tenant_id = tool_invocation_log.tenant_id
             )
         )
