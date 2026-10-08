@@ -65,3 +65,6 @@ harnax-cli/harnax-cli
 harnax-ios/device-build/
 .hc-device/
 .hc-headcheck/
+
+# Generated image scratch
+vibe_images/
