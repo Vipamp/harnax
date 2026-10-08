@@ -1495,6 +1495,21 @@ agentBuilder.addMiddleware(
 
 `sessionId` 与 `skillDraftIntake` 在那个 `if (skillDraftIntake != null)` 块里都已在作用域内，`sessionSkillStore` 是 Task 6 立在 launcher 上的单例。
 
+同一个块里再加一条装配期告警。改直连之后，草稿的读写都从 `SandboxHandleProvider` 取句柄，而沙箱关掉时这条 provider 恒回 null（`KeepAliveSandboxManager` 是可空构造参数，`harnessConfig.sandbox.enabled=false` 时根本不建），于是 `SessionSkillStore.filesystemFor` 回 null、`listDraftNames` 回 `emptyList()`（`SessionSkillStore.kt:43-46`），上报这一跳从此什么也不投递且一行日志也没有——而被删掉的旧路径读的是 agent 自己的工作区文件系统，那种模式下本来是通的。这不是生产分支：`harnax-agent/harnax-agent-service/src/main/resources/application.yml:98` 的缺省是 `SANDBOX_ENABLED:false`，`harnax-deploy/docker-compose.yml:504` 显式设成 `"true"`，所以现网走的是沙箱那条；但本地按缺省起服务的人会踩到静默死路。在 `if (skillDraftIntake != null)` 块末尾追加：
+
+```kotlin
+if (!harnessConfig.sandbox.enabled) {
+    log.warn(
+        "Agent '{}' is granted skill self-write but the sandbox is disabled: drafts still stage on the " +
+            "workspace, but the out-of-call offer reads them through a sandbox handle that does not exist " +
+            "in this mode, so nothing reaches the review queue. Set SANDBOX_ENABLED=true to use this feature.",
+        agentSpec.name,
+    )
+}
+```
+
+只加告警，不给非沙箱模式另开一道门：那是产品边界（要不要支持、用什么文件系统读），不在本计划已批准的裁定里。
+
 - [ ] **Step 4: gate 用同一条 findingTexts**
 
 `AdminBackedPromotionGate.kt:104-105` 的私有 `describe` 删除，`:70` 改为：
