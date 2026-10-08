@@ -33,10 +33,11 @@ import java.util.function.Function
  * Nothing upstream calls the promotion pipeline once a draft is staged, so this is the only thing that moves a
  * draft out of a session's container and into a reviewer's list. It reads through [SessionSkillStore] rather
  * than through the agent's workspace because the offer runs after the answer, and by then the sandbox has been
- * unbound. Two properties matter more than the happy path: every draft the listing answers is filed, because a
- * session that wrote two skills in one turn has two rows to review and not one, and a pipeline that fails must
- * never be visible in the answer — the offer runs after the stream has produced everything the user is waiting
- * for, and it has no way to fix what broke.
+ * unbound. Three properties matter more than the happy path: every draft the listing answers is filed, because
+ * a session that wrote two skills in one turn has two rows to review and not one, one offer per draft per
+ * window, because a session that keeps chatting would otherwise re-file a name the reviewer has already
+ * decided, and a pipeline that fails must never be visible in the answer — the offer runs after the stream has
+ * produced everything the user is waiting for, and it has no way to fix what broke.
  */
 @ExtendWith(MockitoExtension::class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -46,6 +47,7 @@ class SkillDraftSubmitMiddlewareTest {
     private lateinit var agent: HarnessAgent
 
     private val ctx = RuntimeContext.empty()
+    private var now = 1_000_000L
 
     private val store = Mockito.mock(SessionSkillStore::class.java)
     private val adaptor = Mockito.mock(SkillDraftAdaptor::class.java)
@@ -61,6 +63,8 @@ class SkillDraftSubmitMiddlewareTest {
         sessionId = "ses-1",
         store = store,
         adaptor = adaptor,
+        cooldownMillis = COOLDOWN,
+        clock = { now },
         scheduler = Schedulers.immediate(),
     )
 
@@ -74,7 +78,7 @@ class SkillDraftSubmitMiddlewareTest {
      * sandbox`. So the offer takes a container handle, not the agent's filesystem.
      */
     @Test
-    fun `the draft is filed straight into the queue, not through the promotion gate`() {
+    fun `the draft is filed straight into the queue instead of through the promotion gate`() {
         staged(SessionDraft("invoice-fill", "fills an invoice", MD, mapOf("scripts/run.sh" to "echo hi\n")))
 
         middleware().turn()
@@ -111,6 +115,32 @@ class SkillDraftSubmitMiddlewareTest {
     }
 
     @Test
+    fun `a draft already offered inside the window is not offered again`() {
+        // Without this the queue fills with duplicates: Admin merges only a row that is still pending, so a
+        // name it has already decided comes back as a fresh row on the very next turn.
+        staged(SessionDraft("invoice-fill", "fills an invoice", MD, emptyMap()))
+        val mw = middleware()
+
+        mw.turn()
+        now += COOLDOWN - 1
+        mw.turn()
+
+        verify(adaptor, times(1)).submit(any())
+    }
+
+    @Test
+    fun `the same draft is offered again once the window has passed`() {
+        staged(SessionDraft("invoice-fill", "fills an invoice", MD, emptyMap()))
+        val mw = middleware()
+
+        mw.turn()
+        now += COOLDOWN
+        mw.turn()
+
+        verify(adaptor, times(2)).submit(any())
+    }
+
+    @Test
     fun `an empty draft list files nothing`() {
         staged()
 
@@ -141,7 +171,7 @@ class SkillDraftSubmitMiddlewareTest {
     }
 
     @Test
-    fun `a store that cannot list files nothing`() {
+    fun `a store that cannot list files nothing and never reaches the answer`() {
         `when`(store.listDraftNames("ses-1")).thenThrow(IllegalStateException("No active sandbox"))
 
         assertDoesNotThrow { middleware().turn() }
@@ -160,6 +190,12 @@ class SkillDraftSubmitMiddlewareTest {
         // The offer reached the intake at all, which only happens on a normal completion of the answer stream,
         // and the throw came back out of it as a log line rather than as an error signal.
         verify(adaptor).submit(any())
+
+        // The throw told us nothing about whether the row landed, so the slot it burned is released: still
+        // inside the window, the next turn offers the same draft again rather than leaving it stale.
+        now += 1
+        assertDoesNotThrow { mw.turn() }
+        verify(adaptor, times(2)).submit(any())
     }
 
     @Test
@@ -171,6 +207,9 @@ class SkillDraftSubmitMiddlewareTest {
     }
 
     private companion object {
+        /** The window the two window cases move the clock across. */
+        const val COOLDOWN = 60_000L
+
         /** Verbatim from [SessionSkillStoreEnableTest]: the scanner's answer for these two texts is settled. */
         const val MD = "---\nname: invoice-fill\ndescription: fills an invoice\n---\nRun the script.\n"
 

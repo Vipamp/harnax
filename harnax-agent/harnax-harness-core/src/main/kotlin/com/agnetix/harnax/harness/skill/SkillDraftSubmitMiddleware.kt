@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory
 import reactor.core.publisher.Flux
 import reactor.core.scheduler.Scheduler
 import reactor.core.scheduler.Schedulers
+import java.util.concurrent.ConcurrentHashMap
 import java.util.function.Function
 
 /**
@@ -30,21 +31,25 @@ import java.util.function.Function
  * sandbox by the time this runs, so every workspace read answers `No active sandbox` and the queue is never
  * fed. A container handle resolved out of call still answers on that turn.
  *
- * It is best-effort in every direction: a draft that cannot be offered this turn is still in the listing and
- * gets offered again on the next one, so nothing here may surface as a failure to the model or to the user.
+ * It is best-effort in every direction: a draft that cannot be offered this turn is still in the listing and is
+ * offered again once its slot opens, so nothing here may surface as a failure to the model or to the user.
  *
- * Everything the listing answers is offered, every turn: design §4.2 took the window out of this object, and a
- * resubmission of a name the queue still holds pending is merged into that row by Admin rather than stacked as
- * a second one.
+ * One offer per draft per [cooldownMillis]. A draft stays in the listing after a reviewer decides it — only the
+ * end of the session cleans it — and Admin merges a resubmission into the row it holds only while that row is
+ * still pending, so an unthrottled offer would turn one rejected skill into a fresh queue row with a fresh
+ * review-log entry on every following turn, and would put an approved one back in front of the reviewer.
  */
 class SkillDraftSubmitMiddleware(
     private val sessionId: String,
     private val store: SessionSkillStore,
     private val adaptor: SkillDraftAdaptor,
+    private val cooldownMillis: Long = DEFAULT_COOLDOWN_MILLIS,
+    private val clock: () -> Long = System::currentTimeMillis,
     private val scheduler: Scheduler = Schedulers.boundedElastic(),
 ) : MiddlewareBase {
 
     private val log = LoggerFactory.getLogger(SkillDraftSubmitMiddleware::class.java)
+    private val lastOfferedAt = ConcurrentHashMap<String, Long>()
 
     override fun onAgent(
         agent: Agent,
@@ -61,7 +66,9 @@ class SkillDraftSubmitMiddleware(
             log.warn("Could not list the staged drafts of session {}: {}", sessionId, e.message)
             return
         }
-        names.forEach { offer(it) }
+        if (names.isEmpty()) return
+        val now = clock()
+        names.filter { claim(it, now) }.forEach { offer(it) }
     }
 
     private fun offer(name: String) {
@@ -72,8 +79,13 @@ class SkillDraftSubmitMiddleware(
             return
         } ?: run {
             // Gone, or written without any text: the listing answered and the read did not. Nothing the queue
-            // can review, so nothing is filed — and the draft is still in the listing for the next turn.
-            log.warn("Staged draft {} has no text to file: it is either gone or was never written", name)
+            // can review, so nothing is filed; the slot taken this turn is kept, and the draft is offered again
+            // once the window passes.
+            log.warn(
+                "Staged draft {} of session {} has no text to file: it is either gone or was never written",
+                name,
+                sessionId,
+            )
             return
         }
         val scan = SkillSecurityScanner.scan(name, draft.skillmd, draft.resources)
@@ -94,15 +106,17 @@ class SkillDraftSubmitMiddleware(
                 ),
             )
         } catch (e: Exception) {
-            // Not supposed to throw. It is logged and dropped rather than re-raised: the answer has already
-            // been streamed, and this draft is still in the listing for the next turn.
+            // Not supposed to throw. One that does has told us nothing about whether the row landed, so the
+            // cooldown slot is released and the next turn offers it again rather than letting it go stale.
             log.warn("Skill draft intake for {} raised {}: {}", name, e.javaClass.simpleName, e.message)
+            lastOfferedAt.remove(name)
             return
         }
         when (intake) {
             is SkillDraftIntake.Queued -> log.info(
-                "Draft skill {} is queued for review as draft {}",
+                "Draft skill {} of session {} is queued for review as draft {}",
                 name,
+                sessionId,
                 intake.draftId,
             )
 
@@ -112,11 +126,40 @@ class SkillDraftSubmitMiddleware(
                 intake.reason,
             )
 
-            is SkillDraftIntake.Unavailable -> log.warn(
-                "Draft skill {} could not reach the review queue: {}",
-                name,
-                intake.reason,
-            )
+            is SkillDraftIntake.Unavailable -> {
+                log.warn(
+                    "Draft skill {} could not reach the review queue: {}",
+                    name,
+                    intake.reason,
+                )
+                // Nothing was stored, so the window must not be what keeps this draft out of the queue: the
+                // slot is released and the next turn offers it again.
+                lastOfferedAt.remove(name)
+            }
         }
+    }
+
+    /**
+     * Takes this draft's slot in the window, so two turns ending at once cannot both offer it.
+     */
+    private fun claim(
+        name: String,
+        now: Long,
+    ): Boolean {
+        var claimed = false
+        lastOfferedAt.compute(name) { _, previous ->
+            if (previous == null || now - previous >= cooldownMillis) {
+                claimed = true
+                now
+            } else {
+                previous
+            }
+        }
+        return claimed
+    }
+
+    companion object {
+        /** Long enough to collapse one working session's turns into a single offer per draft. */
+        const val DEFAULT_COOLDOWN_MILLIS = 60_000L
     }
 }
