@@ -3,7 +3,7 @@
 ## 0. Terminology and evidence baseline
 
 - This is a **decided but not yet built** design piece: the client has no memory surface today. What follows is the entry point, the cross-end contract and the acceptance clauses; once it is built, every clause here is re-checked against the same shape.
-- The evidence baseline is `fefe78ed` on `kotlin-dev`. The three admin read routes, the session-layer decision points on the assembly side, and the client's existing layering and gates were each read back from source; anchors are full repository-relative paths with line numbers.
+- The evidence baseline is `09b0422f` on `kotlin-dev`. The three admin read routes, the session-layer decision points on the assembly side, and the client's existing layering and gates were each read back from source; anchors are full repository-relative paths with line numbers.
 - Four nouns are fixed: the **long-term layer** is the owner's curated file across conversations (`root/MEMORY.md`) plus its daily ledger (`memory/<date>.md`); the **session layer** is one conversation's own layer, nested inside the agent segment, and every conversation has one as soon as this agent has long-term memory; a **candidate** is the new curated text the runtime merges out of one conversation's session layer, filed first in the table built by `harnax-admin/src/main/resources/db/migration/V7__memory_draft.sql` and written into the long-term layer only once the owner approves it; **pending merge** is how many **conversations** of this agent still hold content that has not been merged.
 
 ## 1. The client answers two blocks, not one
