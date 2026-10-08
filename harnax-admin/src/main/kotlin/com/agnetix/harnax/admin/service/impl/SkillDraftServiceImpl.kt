@@ -208,6 +208,7 @@ class SkillDraftServiceImpl(
     override fun page(
         status: String?,
         name: String?,
+        sessionId: String?,
         pageNum: Int,
         pageSize: Int,
     ): Page<SkillDraftResponse> {
@@ -218,11 +219,19 @@ class SkillDraftServiceImpl(
         if (state != null && state !in STATUSES) {
             throw BizException("status '$status' is not one of ${STATUSES.joinToString("/")}")
         }
+        // Narrowed here, not on the way back: PageHelper counts the rows this query hands it, so a session
+        // filter applied after paging would publish a total that does not match the page under it.
+        val session = sessionId?.trim()?.takeIf { it.isNotEmpty() }
         val safePageNum = pageNum.coerceAtLeast(1)
         val safePageSize = pageSize.coerceIn(1, MAX_PAGE_SIZE)
         PageHelper.startPage<SkillDraft>(safePageNum, safePageSize)
         return Page.fromPageInfo(
-            skillDraftMapper.selectDraftList(currentTenantId(), state, name?.trim()?.takeIf { it.isNotEmpty() }),
+            skillDraftMapper.selectDraftList(
+                currentTenantId(),
+                state,
+                name?.trim()?.takeIf { it.isNotEmpty() },
+                session,
+            ),
         ).mapRecords { it.toResponse() }
     }
 

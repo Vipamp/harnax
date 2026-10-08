@@ -479,7 +479,7 @@ class SkillDraftServiceImplTest {
         `when`(skillDraftMapper.selectDraftList(eq(3L), anyOrNull(), anyOrNull(), anyOrNull()))
             .thenReturn(listOf(storedDraft(tenantId = 3L)))
 
-        val page = service.page(status = "pending", name = " invoice ", pageNum = 1, pageSize = 20)
+        val page = service.page(status = "pending", name = " invoice ", sessionId = null, pageNum = 1, pageSize = 20)
 
         assertEquals(1, page.records.size)
         assertEquals("invoice-fill", page.records.first().name)
@@ -488,12 +488,36 @@ class SkillDraftServiceImplTest {
     }
 
     @Test
+    @DisplayName("a conversation filter is a SQL predicate, not a trim applied after paging")
+    fun `the session filter travels down to the query`() {
+        TenantContext.setTenantId(3L)
+        `when`(skillDraftMapper.selectDraftList(eq(3L), anyOrNull(), anyOrNull(), anyOrNull()))
+            .thenReturn(listOf(storedDraft(tenantId = 3L)))
+
+        service.page(status = "PENDING", name = null, sessionId = "ses-1", pageNum = 1, pageSize = 20)
+
+        verify(skillDraftMapper).selectDraftList(eq(3L), eq("PENDING"), anyOrNull(), eq("ses-1"))
+    }
+
+    @Test
+    @DisplayName("a blank conversation filter is dropped, not searched for")
+    fun `a blank session id filters nothing`() {
+        TenantContext.setTenantId(3L)
+        `when`(skillDraftMapper.selectDraftList(eq(3L), anyOrNull(), anyOrNull(), anyOrNull()))
+            .thenReturn(listOf(storedDraft(tenantId = 3L)))
+
+        service.page(status = null, name = null, sessionId = "  ", pageNum = 1, pageSize = 20)
+
+        verify(skillDraftMapper).selectDraftList(eq(3L), eq(null), eq(null), eq(null))
+    }
+
+    @Test
     @DisplayName("a status no code writes is refused, not answered with an empty queue")
     fun `an unwritable status is refused`() {
         TenantContext.setTenantId(TENANT)
 
         val refused = assertThrows(BizException::class.java) {
-            service.page(status = "EXPIRED", name = null, pageNum = 1, pageSize = 20)
+            service.page(status = "EXPIRED", name = null, sessionId = null, pageNum = 1, pageSize = 20)
         }
 
         assertTrue(refused.message!!.contains("PENDING"), "the refusal has to name the statuses that exist: ${refused.message}")
@@ -721,7 +745,9 @@ class SkillDraftServiceImplTest {
         authenticateInternalService()
 
         listOf(
-            assertThrows(BizException::class.java) { service.page(status = null, name = null, pageNum = 1, pageSize = 20) },
+            assertThrows(BizException::class.java) {
+                service.page(status = null, name = null, sessionId = null, pageNum = 1, pageSize = 20)
+            },
             assertThrows(BizException::class.java) { service.detail(DRAFT_ID) },
             assertThrows(BizException::class.java) {
                 service.approve(DRAFT_ID, SkillDraftApproveRequest(expectedDigest = SkillDraftCodec.contentDigest(draft)))
@@ -744,7 +770,7 @@ class SkillDraftServiceImplTest {
         `when`(skillDraftMapper.selectDraftList(eq(1L), anyOrNull(), anyOrNull(), anyOrNull())).thenReturn(emptyList())
 
         val refused = assertThrows(BizException::class.java) {
-            service.page(status = null, name = null, pageNum = 1, pageSize = 20)
+            service.page(status = null, name = null, sessionId = null, pageNum = 1, pageSize = 20)
         }
 
         assertEquals(403, refused.code)
