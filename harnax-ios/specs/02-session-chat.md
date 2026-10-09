@@ -97,7 +97,7 @@
 - iOS 已落地的形状（`Sources/HarnaxFeatures/Chat/WorkspaceSheet.swift`、`WorkspaceViewModel.swift`）：
   - 抽屉 → `sheet`；下载 → `URLSession` 取 `Data` 后交系统分享面板（`HXFileShare`），不落 `<a download>`。
   - 上传 → `.fileImporter` 选一个文档，落到**屏上当前那一层目录**（`WorkspaceSheet.swift:53-59`、`:285-302`）；上传中禁用按钮，失败在行上方一条红 banner 说原因，列表不动。
-  - 入口在会话页右上角，**只有状态读回答 running 才画**（`ChatView.swift:81-89`）。这是有意分叉：webui 的按钮常显、点下去才查，未运行弹 warning、查失败弹 error（`harnax-webui/src/pages/session/index.tsx:280-292`），而沙箱管理器没起时这五条路由全是 404（`harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/controller/SandboxWorkspaceController.kt:398-416`），一个只会失败的入口会被当成坏按钮。iOS 侧读失败同样按未运行处理，且不吭声。
+  - 入口在会话页右上角，**只有状态读回答 running 才画**（`ChatView.swift:104-111`）。这是有意分叉：webui 的按钮常显、点下去才查，未运行弹 warning、查失败弹 error（`harnax-webui/src/pages/session/index.tsx:280-292`），而沙箱管理器没起时这五条路由全是 404（`harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/controller/SandboxWorkspaceController.kt:398-416`），一个只会失败的入口会被当成坏按钮。iOS 侧读失败同样按未运行处理，且不吭声。
   - 状态读三个时机：进屏/换会话（`ChatView.swift` 的 `.task(id: conversation)`）、一轮的最后一句之后（`ChatViewModel.swift` 的 `readerClosed` / `readerFailed`，容器是被运行里的第一次工具调用建出来的，只在进屏读一次的话入口永远出不来）、切走会话时归零。答案按会话 id 判身份，迟到的旧会话答案不许点亮这一屏（`ChatViewModel.refreshSandboxStatus`）。
   - 面板与开着的抽屉都随会话换：`bind` 撤面板、收抽屉、按新 id 重建（`ChatViewModel.retireWorkspacePanel`）。
   - 单测：`Tests/HarnaxFeaturesTests/ChatViewModelTests.swift` 的「the sandbox workspace entry」5 条 + `WorkspaceViewModelTests.swift`。
@@ -393,10 +393,10 @@
 | 契约判据 | `Sources/HarnaxCore/Contract/ContextUsage.swift:86-147` | `isReadable`／`basis`／`isAtAutoTrigger`／`percentText` 四条与 `contextUsage.ts` 一一对应；`percentText` 在比值越出整数范围时钳到 `Int.max` 而不是 `Int(Double)` 崩溃（`:119-134`） |
 | 读端点 | `Sources/HarnaxAPI/ContextUsageClient.swift` | 独立协议 `ContextUsageReading`，不与历史/计划共用；`sessionId` 先按路径段编码 |
 | 读数组装 | `Sources/HarnaxFeatures/Chat/ContextUsageReadout.swift:26-58` | 芯片两句 + 名／数两列的五行明细，读序即 `rows` 的序；账单行缺失时写「尚未记录」而不是 `0`；四个 token 行走 `TokenFigures.token` 的 M/K 档，消息条数不缩写 |
-| 标题栏 | `Sources/HarnaxFeatures/Chat/ChatView.swift:92-93`、芯片 `:160`、面板 `:192` | 单点 unwrap `vm.contextUsage`——模型里不留读不到的读数，缺席本身就是判据；webui 的 hover Tooltip 在 iOS 用 `popover` 承载（`Menu` 会把内容摊成一个叶子一行，名与数进不了同一行）；数那一列按自己最宽的一格撑开并右对齐、名那一列吃掉余量，面板宽度有下限，行字取 13 点档（15 点档下英文最宽一行 382 点 > 最窄手机 375 点）；排在 workspace 入口之前 |
-| 输入区 | `Sources/HarnaxFeatures/Chat/ChatView.swift:543-555` | `chat.composer.compact` 芯片，排在权限芯片之后、停沙箱与清空之前（对齐 `harnax-webui/src/pages/session/components/ChatWindow.tsx:3716-3765`）；无二次确认；`isMuted: vm.isStreaming`；hover 文案换成读屏提示 `chat.context.compactTip` |
+| 标题栏 | `Sources/HarnaxFeatures/Chat/ChatView.swift:94-103`、芯片 `:192-210`、面板 `:224` | 单点 unwrap `vm.contextUsage`——模型里不留读不到的读数，缺席本身就是判据；webui 的 hover Tooltip 在 iOS 用 `popover` 承载（`Menu` 会把内容摊成一个叶子一行，名与数进不了同一行）；数那一列按自己最宽的一格撑开并右对齐、名那一列吃掉余量，面板宽度有下限，行字取 13 点档（15 点档下英文最宽一行 382 点 > 最窄手机 375 点）；排在 workspace 入口之前 |
+| 输入区 | `Sources/HarnaxFeatures/Chat/ChatView.swift:575-587` | `chat.composer.compact` 芯片，排在权限芯片之后、停沙箱与清空之前（对齐 `harnax-webui/src/pages/session/components/ChatWindow.tsx:3716-3765`）；无二次确认；`isMuted: vm.isStreaming`；hover 文案换成读屏提示 `chat.context.compactTip` |
 | 定序 | `Sources/HarnaxFeatures/Chat/ChatViewModel.swift:1471-1486`、计数器 `:149` | 每次询问递增代数，落地时同时校验会话 id 与代数：后问先答的旧读数丢弃，切走后的答复不挂到新会话标题下 |
-| 补读时机 | 进入会话 `Sources/HarnaxFeatures/Chat/ChatView.swift:115`（`.task(id: conversation)`）；本轮结束 `Sources/HarnaxFeatures/Chat/ChatViewModel.swift:733`、`:764`；压缩返回 `:1573`；**压缩被取消也补读** `:1540` | 取消丢掉的只是横幅与气泡：命令已在服务端跑过 |
+| 补读时机 | 进入会话 `Sources/HarnaxFeatures/Chat/ChatView.swift:138`（`.task(id: conversation)`）；本轮结束 `Sources/HarnaxFeatures/Chat/ChatViewModel.swift:733`、`:764`；压缩返回 `:1573`；**压缩被取消也补读** `:1540` | 取消丢掉的只是横幅与气泡：命令已在服务端跑过 |
 | 应答文案 | `Sources/HarnaxFeatures/Chat/ChatViewModel.swift:1613-1630`（点按四支）；手敲走通用链 `:1587-1595` | 点按以横幅呈现（压成与「还太短」平静色、被拒警示色），手敲作为一行助手说明进气泡 |
 
 ### 画面不变量
@@ -546,7 +546,7 @@
 | TextArea | — | `autoSize {minRows:2, maxRows:6}`；loading 时 placeholder 切换 | `harnax-webui/src/pages/session/components/ChatWindow.tsx:3480-3489` |
 | Enter 键 | `loading` | Enter 发送 / Shift+Enter 换行；loading 时禁止 | `harnax-webui/src/pages/session/components/ChatWindow.tsx:2432-2439` |
 
-- 输入框长文本：webui 是 `autoSize` 固定 6 行，iOS 改为**半屏封顶、超出内部滚动**。可容纳行数由测量高度推：`行数 = (屏高 × 0.5 − 20) / 正文行高`，下限 2 行；测不到屏高（尚未布局）时退回 6 行。阈值与公式在纯函数 `Sources/HarnaxFeatures/Chat/ChatComposerGrowth.swift`，单测 `Tests/HarnaxFeaturesTests/ChatComposerGrowthTests.swift`。屏高取本视图自身 bounds（`Sources/HarnaxFeatures/Chat/ChatView.swift:72-78` 的 `GeometryReader`），并只接受历史最大值——键盘把帧压缩时上限不跟着抖（`:18-31`），算出的行数交给 `ChatInputBar`（`:70`）落成 `.lineLimit(2 ... lineCap)`（`:287`）。
+- 输入框长文本：webui 是 `autoSize` 固定 6 行，iOS 改为**半屏封顶、超出内部滚动**。可容纳行数由测量高度推：`行数 = (屏高 × 0.5 − 20) / 正文行高`，下限 2 行；测不到屏高（尚未布局）时退回 6 行。阈值与公式在纯函数 `Sources/HarnaxFeatures/Chat/ChatComposerGrowth.swift`，单测 `Tests/HarnaxFeaturesTests/ChatComposerGrowthTests.swift`。屏高取本视图自身 bounds（`Sources/HarnaxFeatures/Chat/ChatView.swift:86-92` 的 `GeometryReader`），并只接受历史最大值——键盘把帧压缩时上限不跟着抖（`:22-37`），算出的行数交给 `ChatInputBar`（`:84`）落成 `.lineLimit(2 ... lineCap)`（`:418`）。
 - 空状态快捷建议 4 条，仅在无消息时显示，点击直接 `doSend`（**不填输入框**）。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:566-571`（文案）、`:3327-3333`（渲染条件）。
 - 主管气泡标签：团队会话用 `leadLabel = config.name`。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:720-738`、`:610`。
 
