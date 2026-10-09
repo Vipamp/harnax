@@ -23,7 +23,14 @@ import HarnaxCore
 final class SessionSkillWireTests: XCTestCase {
     private let admin = "https://harnax.example.com"
     private let queuePath = "/api/admin/skill-drafts"
-    private let directoryPath = "/api/router/agent/session-skills/s-1"
+    private var directoryPath: String { directoryPath(for: "s-1") }
+
+    /// The directory leg's path for one conversation. Routed replies are matched on the exact path, so a test that
+    /// reads a session other than `s-1` has to park its answer under that session's own path — otherwise the leg
+    /// falls through to the 599 fallback and the test reads a failure it never asked for.
+    private func directoryPath(for sessionId: String) -> String {
+        "/api/router/agent/session-skills/\(sessionId)"
+    }
 
     private func harness() async -> APIHarness {
         let harness = APIHarness()
@@ -97,7 +104,7 @@ final class SessionSkillWireTests: XCTestCase {
     func testTheQueueLegAsksForThisSessionsPendingNominations() async throws {
         let harness = await harness()
         harness.transport.enqueue(forPath: queuePath, queue("", total: 0))
-        harness.transport.enqueue(forPath: directoryPath, Wire.success("[]"))
+        harness.transport.enqueue(forPath: directoryPath(for: "s-7"), Wire.success("[]"))
 
         _ = await harness.agents.read(sessionId: "s-7")
 

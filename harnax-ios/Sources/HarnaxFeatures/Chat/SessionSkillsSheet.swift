@@ -9,9 +9,11 @@ import HarnaxKit
 /// merge that decides which row says「已启用」is shared with it in Core (`SessionSkillRules.merged`) rather than
 /// re-derived here. Two things this screen therefore never does: it does not show a skill the session did not
 /// write (the published library is the context tab's job), and it does not offer an enable for a row the
-/// directory already answers as enabled — not because the route would refuse it (a re-enable re-copies the same
-/// draft and answers success, `SessionSkillStore.kt:125`/`:144`), but because there is no state left for the
-/// button to change.
+/// directory already answers as enabled. That is not because the route would refuse it — a re-enable answers
+/// success (`SessionSkillStore.kt:125`, `:144`), and is refused only when the sandbox has stopped or the draft
+/// has been archived (`:103`, `:106`) — it is because it gets there by `rm -rf`ing the directory the session is
+/// using and re-copying whatever the draft holds at that moment (`:128-131`). The row is already live; the
+/// button would swap the bytes under it and still report nothing changed.
 ///
 /// The panel is opened, not polled: both reads are asked when the sheet appears and again by the refresh row
 /// below, never by the conversation's own lifecycle (`ChatView`'s `.task(id: conversation)` stays untouched).
@@ -94,8 +96,9 @@ public struct SessionSkillsSheet: View {
         }
     }
 
-    /// The action, or the state that replaced it. An enabled row shows no button: the row is already live and the
-    /// route would only re-copy the same draft, so the button has nothing left to change.
+    /// The action, or the state that replaced it. An enabled row shows no button: its enable has already happened,
+    /// and the route on that name only re-copies the draft over the live directory (see the type's note above),
+    /// so there is no state left for it to advance.
     ///
     /// While a write is running every pending row's button goes off — the model drops a second tap
     /// (`SessionSkillsViewModel.enable`), and a button that ignores the finger it accepted is worse than a greyed

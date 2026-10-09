@@ -96,6 +96,12 @@ final class TestClock: @unchecked Sendable {
 /// with the session. Same triad as the feature suite's `PageReadGate`
 /// (`Tests/HarnaxFeaturesTests/ListAppendIdentityTests.swift:845`): `arm()` parks the *next* reply until
 /// `release()`, and a transport nobody armed answers exactly as before.
+///
+/// At most one reply may ever be parked. The state below is deliberately unsynchronised, and `absorb`'s
+/// read-of-`armed`-then-clear is not atomic, so two legs parking at once would leave the second continuation
+/// overwriting the first and the gate hung. Two concurrent callers do exist now (the session panel's two legs),
+/// and what keeps them out of that window is that `arm()` is called once per test for a reply the test then
+/// releases — not by anything this class enforces.
 final class ReplyGate<Reply>: @unchecked Sendable {
     private var armed = false
     private var waiting: CheckedContinuation<Reply, Never>?
@@ -183,11 +189,6 @@ final class StubTransport: HTTPRequesting, @unchecked Sendable {
     /// describes, and whichever leg lost the race fails for a reason that has nothing to do with the code.
     func enqueue(forPath path: String, status: Int = 200, _ body: String) {
         route(path: path, Reply(status: status, body: body, error: nil))
-    }
-
-    /// As `enqueue(forPath:status:_:)`, for the leg whose request never reached a server at all.
-    func enqueueFailure(forPath path: String, _ error: Error) {
-        route(path: path, Reply(status: 0, body: "", error: error))
     }
 
     private func route(path: String, _ reply: Reply) {
