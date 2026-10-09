@@ -15,6 +15,11 @@ import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.mockito.kotlin.any
 import org.slf4j.LoggerFactory
+import org.springframework.http.MediaType
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import ch.qos.logback.classic.Logger as LogbackLogger
 
 /**
@@ -195,6 +200,76 @@ class SessionSkillControllerTest {
 
         val anonymous = lines.last()
         assertTrue(anonymous.contains("by user unknown"), anonymous)
+        assertFalse(anonymous.contains("by user null"), anonymous)
+    }
+
+    // ─── the hop the router actually crosses: JSON bytes on the wire → EnableActorRequest ───
+
+    /**
+     * `harnax-session-router` posts the body as literal JSON — `AgentServiceClient.sessionSkillEnable` sends
+     * `{"userId":<id>}` — and the whole D11 trail is written from whatever that binds to. Every case above
+     * builds [EnableActorRequest] in Kotlin, so none of them can see the wire name drift away from the field
+     * or the Kotlin module stop registering: binding then yields `userId = null`, the audit line degrades to
+     * `by user unknown` and the envelope still reads success, so no consumer notices. These two go through the
+     * real message converter over the controller this fixture wires.
+     */
+    @Test
+    fun `the body the router posts binds to the operator the audit line names`() {
+        Mockito.`when`(store.enable("ses-1", "invoice-fill"))
+            .thenReturn(EnableOutcome.Enabled("invoice-fill", "CAUTION", 2))
+        Mockito.`when`(store.listEnabledNames("ses-1")).thenReturn(listOf("invoice-fill"))
+        val mvc = MockMvcBuilders.standaloneSetup(controller()).build()
+
+        val lines = logging(Level.INFO) {
+            mvc.perform(
+                post("/api/agent/session-skills/ses-1/invoice-fill/enable")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"userId":42}"""),
+            )
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.ok").value(true))
+        }.map { it.formattedMessage }
+
+        assertEquals(1, lines.size, "one audit line for one enable over the wire, saw: $lines")
+
+        val named = lines.single()
+        // `by user 42 ` keeps its trailing space so no longer id and no shifted placeholder can pass for it.
+        for (fact in listOf("invoice-fill", "ses-1", "by user 42 ", "verdict CAUTION")) {
+            assertTrue(named.contains(fact), "the wire-bound audit line lost [$fact]: $named")
+        }
+        // The operator must be the number the router resolved, not the fallback an unread body leaves behind.
+        assertFalse(named.contains("by user unknown"), named)
+        assertFalse(named.contains("by user null"), named)
+    }
+
+    /**
+     * The fail-closed side on the same wire: a body that carries the key but no operator must read the literal
+     * `unknown`, and must never reach the trail as the word `null` — an audit line naming `null` cannot be
+     * told apart from a body nobody sent.
+     */
+    @Test
+    fun `a wire body with no operator in it reads unknown and never the word null`() {
+        Mockito.`when`(store.enable("ses-1", "invoice-fill"))
+            .thenReturn(EnableOutcome.Enabled("invoice-fill", "SAFE", 0))
+        Mockito.`when`(store.listEnabledNames("ses-1")).thenReturn(listOf("invoice-fill"))
+        val mvc = MockMvcBuilders.standaloneSetup(controller()).build()
+
+        val lines = logging(Level.INFO) {
+            mvc.perform(
+                post("/api/agent/session-skills/ses-1/invoice-fill/enable")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"userId":null}"""),
+            )
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.code").value(200))
+        }.map { it.formattedMessage }
+
+        assertEquals(1, lines.size, "one audit line for one enable over the wire, saw: $lines")
+
+        val anonymous = lines.single()
+        // The boundary after the fallback is part of the check: an empty field would render `by user  (verdict`.
+        assertTrue(anonymous.contains("by user unknown (verdict "), anonymous)
         assertFalse(anonymous.contains("by user null"), anonymous)
     }
 }
