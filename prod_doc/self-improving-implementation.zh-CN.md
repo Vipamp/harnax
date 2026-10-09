@@ -207,7 +207,7 @@ review(candidate, ctx):
   → 失败返回 Reject(reason, reviewerId = "gate")
 ```
 
-三条实现要求：必须走响应式客户端（不变量 5，闸门在事件循环里）；`tenant_id` 由 `ctx.sessionId` → `session` → `agent` 反查，不采信请求体（不变量 2）；同名 PENDING 草稿由服务端合并更新而不是堆叠，因为 agent 会反复 patch 同一份草稿。
+三条实现要求：必须走响应式客户端（不变量 5，闸门在事件循环里）；`tenant_id` 由 `ctx.sessionId` → `session` → `agent` 反查，不采信请求体（不变量 2）；重复提交由服务端归一——agent 每轮结束都会把本会话暂存的全部草稿重投一遍，同会话同名且 `name`/`description`/`skillmd`/`resources` 四列摘要逐字相同的那次算重投，直接回答已有行的 id，不动 `update_time`、不写轨迹；确有改动的才合并进仍 PENDING 的同名行（`selectPendingByTenantAndName` 跨会话取最近触碰者），该行已被裁决时另起一行。
 
 `Defer` 的实际语义是「草稿原地不动，等外部动作」：晋升器把它转成一条 `PromotionResult.deferred(reason, retryAfter)` 就结束（`SkillPromoter.java:132-134`），`retryAfter` 没有任何内置调度器消费；而 `promote(...)` 的唯一调用方是外部的 `HarnessAgent.promoteSkill`（`HarnessAgent.java:320`）。所以批准动作必须由 harnax 自己闭环，见 §9。
 

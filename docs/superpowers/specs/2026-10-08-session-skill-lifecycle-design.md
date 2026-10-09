@@ -35,7 +35,7 @@
 | 状态 | 落点 | 谁写 | 谁读 | 寿命 |
 |---|---|---|---|---|
 | 草稿（提名） | 容器内 `harnax-skill-staging/_drafts/<name>/` | 上游 `skill_manage`/`propose_skill`（`SkillManageTool:335`，写完扫，DANGEROUS 回滚归档） | 上报通道 → Admin | 到容器销毁 |
-| 待审队列行 | admin 库 `skill_draft(PENDING, source_session_id)` | `SkillDraftServiceImpl.kt:103-118`，按 (tenant, PENDING, name) 合并 | 审核页 / 会话页 | 到人工决定 |
+| 待审队列行 | admin 库 `skill_draft(PENDING, source_session_id)` | `SkillDraftServiceImpl.submit()`：同会话同名且摘要逐字相同即重投，回答已有行；有改动才按 (tenant, PENDING, name) 合并 | 审核页 / 会话页 | 到人工决定 |
 | 本会话可用 | 容器内 `harnax-skill-staging/session-enabled/<name>/` | 启用动作（§4） | 技能目录册（§3） | 到容器销毁 |
 
 平台技能仍是唯一权威：`skill` 表 + `agent_skill_binding` + `InMemorySkillRepository` 下发 + `SandboxSkillProjector` 投影 `skills/`。本设计不碰这四样。
@@ -67,7 +67,7 @@
 
 - 容器不在（被回收、从未起过）：warn 一条并跳过本轮，与现在的读失败姿态一致 —— 扫描失败说不了任何话，下一轮还会问一遍。
 - `AdminBackedPromotionGate` **保留**并继续挂在 gate 位上：上游自己触发 promote 时仍然只入队不晋升，它是兜底而不是主路径。
-- 重复上报安全：Admin intake 按 (tenant, PENDING, name) 合并（`SkillDraftServiceImpl.kt:103-118`），不会堆第二行。
+- 重复上报安全：Admin intake 先比内容——`(tenant, name, source_session_id)` 最近一行的摘要（`name`/`description`/`skillmd`/`resources` 四列）与本次逐字相同就是重投，直接回答那一行的 id，不重打 `update_time`、不写轨迹；内容有变才合并进同名仍 PENDING 的行（`selectPendingByTenantAndName`），该行已被裁决时另起一行。判据在 `SkillDraftServiceImpl.submit()`。
 - 这一跳修好之前，第 3、4 节的「可用」会在队列里看不见对应提案 —— 两者是同一条链的上下游，本轮一起改完。
 
 ## 6. 批准之后：不通知、不绑回、名次自动收敛
@@ -78,8 +78,8 @@
 
 ## 7. 接口契约
 
-- `GET /api/admin/skill-drafts` 增 `sessionId` 过滤：`SkillDraftController.kt:55-73` 加一个可选参数，服务层把它归一（`SkillDraftServiceImpl.kt:238`）后交 `harnax-entity/src/main/resources/mapper/SkillDraftMapper.xml:86-88` 的 `<if>` 落成一条 SQL 谓词，租户谓词不动。落在 SQL 而不是取回后再筛，是因为 PageHelper 数的是这条语句交回来的行。会话页用它取「本会话的待启用提名」。
-- `sessionId` 的**空值与缺席不是同一个问题**，服务端已定死判据（`SkillDraftServiceImpl.kt:225-237`）：缺席＝调用方没提名任何会话，回整租户队列（审核页一直的形状）；present-but-blank（`?sessionId=`／纯空白）＝调用方点名了一个会话，回**空页**，且早于 `startPage` 返回。所以客户端不许靠「丢掉这个键」来表达「这一页没有会话」——丢键得到的是别人的提名；会话面板宁可自己不发这一腿。
+- `GET /api/admin/skill-drafts` 增 `sessionId` 过滤：`SkillDraftController.kt:55-73` 加一个可选参数，服务层把它归一（`SkillDraftServiceImpl.kt:256`）后交 `harnax-entity/src/main/resources/mapper/SkillDraftMapper.xml:94-96` 的 `<if>` 落成一条 SQL 谓词，租户谓词不动。落在 SQL 而不是取回后再筛，是因为 PageHelper 数的是这条语句交回来的行。会话页用它取「本会话的待启用提名」。
+- `sessionId` 的**空值与缺席不是同一个问题**，服务端已定死判据（`SkillDraftServiceImpl.kt:243-255`）：缺席＝调用方没提名任何会话，回整租户队列（审核页一直的形状）；present-but-blank（`?sessionId=`／纯空白）＝调用方点名了一个会话，回**空页**，且早于 `startPage` 返回。所以客户端不许靠「丢掉这个键」来表达「这一页没有会话」——丢键得到的是别人的提名；会话面板宁可自己不发这一腿。
 - agent-service 两条会话级端点，与 `SandboxWorkspaceController` 同一鉴权形状（`/api/agent/**` internal-only，经 session-router 代理，`SandboxWorkspaceController.kt:22-25`；会话级句柄解析用同一族的 `resolveSandbox(sessionId)`，`:99`）：
   - `GET  /api/agent/session-skills/{sessionId}` → `[{name, description, enabledAt}]`（`SessionSkillController.kt:93` 的 `SessionSkillView`），读 `session-enabled/`；`enabledAt` 取目录 mtime，容器不在回空数组。收窄到三键的理由：目录里没有读者要 verdict/findings —— webui 抽屉与 iOS 面板都只搬 `enabledAt` —— 名字出现在这份目录里本身就是「已启用」，所以应答也不带开关；扫描结论走 enable 那条应答与审计日志，人确认时看的是队列行。
   - `POST /api/agent/session-skills/{sessionId}/{name}/enable` → `{ok, name, verdict, findings, count}`；五档拒因各带原因（`SessionSkillController.kt:72-89`）：404 源草稿不在、403 扫描判定拦、409 十枚上限、500 这次复制没有完成、410 无运行中沙箱。410 那一档 router 也会在把请求放出去之前自己回（`SessionRouterService.kt:531-532`）。
@@ -103,7 +103,7 @@
 ## 10. 验证
 
 - 单测（harness-core）：Layer 2 名次（`skillRepositories` 里可用区排在交付仓库之前）；`enable` 的四支拒因各一条（源不在／扫描拒／超上限／容器拒收复制）；复制那条命令只替换 `session-enabled/` 那一侧，不碰 `_drafts`；`SessionSkillStore` 在句柄为 null 时回空且不抛；目录条目数上限；可用区目录名与 `skills/` 不重叠的启动期断言。
-- IT（admin）：`SkillDraftFlowIT` 增一支 —— `sessionId` 过滤只回本租户本会话的行，邻居租户拿同一个 sessionId 仍取不到我们的行。（同 (tenant, name) 重复上报合并成一行已由 `SkillDraftServiceImplTest` 的 `an open draft of the same name is merged` 守住。）
+- IT（admin）：`SkillDraftFlowIT` 增一支 —— `sessionId` 过滤只回本租户本会话的行，邻居租户拿同一个 sessionId 仍取不到我们的行。（同 (tenant, name) 重复上报合并成一行已由 `SkillDraftServiceImplTest` 的 `an open draft of the same name is merged` 守住。）重投判据另有一支 `a turn that re-files a draft it did not change leaves the queue alone`：逐字未变的再提交回答同一行、`update_time` 不动、轨迹只有一条 PROPOSE，被裁决后拿同样的字节再投不回 PENDING，改了正文才另起一行，且换个会话拿同一份正文仍另起一行。
 - 上报与装载（harness-core 单测）：答完之后那一跳按 `SessionSkillStore` 读盘、复扫、交 `SkillDraftAdaptor`，DANGEROUS 不入队；读不到的草稿留到下一轮；`SessionEnabledSkillRepository.getAllSkills(ctx)` 含已启用那条，且未绑定文件系统时为空。合并后的那份目录册在本仓取不到——上游 `HarnessSkillMiddleware.skillsForCall`（`:321`）与 `mergeRepositories`（`:349`）都是 `private`，且 harness-core 无 IT 装置，因此名次与读取分两处断言，「交付同名技能压住会话内那份」的真实结果在真栈观测。
 - 代理链（session-router 单测）：两条新代理各一条 —— 转发出对应实例，且会话未绑定时读回空、启用回 410，都不改绑。
 - 真栈：清库与存量各跑一遍「测试会话2」路径 —— 队列出现行、会话页出现可点行、点完下一轮模型真的用上了它；同名交付技能存在时用的是审后正文。

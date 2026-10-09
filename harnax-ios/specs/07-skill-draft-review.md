@@ -6,7 +6,7 @@
 
 - 入口挂会话域：会话列表顶部一屏一行，带待审计数。队列页与审核详情页都从这一行进。
 - 队列的过滤参数是 `status` / `name` / `sessionId` 三个（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/SkillDraftController.kt:55-73`），**按会话筛是服务端能力**；本 spec 这两屏（队列页与审核详情页）自己不带会话条件，badge 因此是「本租户待审总数」，不是「本会话条数」——那行给的是审核链的导航。带 `sessionId` 的那次读在会话页的本技能列表（见 `02-session-chat.md`），webui 的会话抽屉走同一条件。
-- **`sessionId` 缺席与 `sessionId` 为空是两个问题**，服务端已分别定死（`SkillDraftServiceImpl.kt:225-237`）：不带这个键＝没提名任何会话，回整租户队列；带了但值是空白（`?sessionId=`／纯空格）＝点名为了一个会话，回**空页**。客户端因此不许用「丢掉这个键」来表达「这一页没有会话」——丢键拿回的是别的会话的提名，正是一块会话面板唯一不能做的事。会话 id trim 后为空时，这一腿根本不发，并按「读不出来」报（`harnax-ios/Sources/HarnaxAPI/SessionSkillClient.swift`）。
+- **`sessionId` 缺席与 `sessionId` 为空是两个问题**，服务端已分别定死（`SkillDraftServiceImpl.kt:243-255`）：不带这个键＝没提名任何会话，回整租户队列；带了但值是空白（`?sessionId=`／纯空格）＝点名为了一个会话，回**空页**。客户端因此不许用「丢掉这个键」来表达「这一页没有会话」——丢键拿回的是别的会话的提名，正是一块会话面板唯一不能做的事。会话 id trim 后为空时，这一腿根本不发，并按「读不出来」报（`harnax-ios/Sources/HarnaxAPI/SessionSkillClient.swift`）。
 - 技能可见性设置、用量分析页、独立审核历史页不在本轮范围。草稿详情自带的 `history` 轨迹在。
 
 ## 2. 后端契约：四条路由、两个拒绝通道
@@ -25,7 +25,7 @@
 
 拒绝分两类，界面处置完全相反：
 
-1. **谁都动不了的拒绝走错误信封**：未知草稿、`status` 传了不认识的值、批准不带 `expectedDigest`（`SkillDraftServiceImpl.kt:297-300`）、驳回不带理由或理由超长（`SkillDraftServiceImpl.kt:393-396`）。iOS 落到 `APIError.business`，按现有错误横幅渲染。
+1. **谁都动不了的拒绝走错误信封**：未知草稿、`status` 传了不认识的值、批准不带 `expectedDigest`（`SkillDraftServiceImpl.kt:315-318`）、驳回不带理由或理由超长（`SkillDraftServiceImpl.kt:411-414`）。iOS 落到 `APIError.business`，按现有错误横幅渲染。
 2. **界面必须据以再动作的拒绝随 HTTP 200 + `code:200` 回来**，判据是 `data.outcome` 而不是状态码：`PROMOTED` / `REJECTED` / `DRAFT_CHANGED` / `ALREADY_REVIEWED` / `NAME_TAKEN`（`SkillDraftDecisionResponse.kt:20,51-65`，KDoc `:9-16` 说明了为什么不并进错误分支）。
 3. **名字抢占是唯一一个走错误信封但界面要按 code 分支的拒绝**：HTTP 仍是 200，信封里 `code` 是 409（`SkillDraftController.kt:115-117` 在 `DuplicateKeyException` 上 `ResultVo.error(409, …)`）。含义是批准跑完一半名字被别的发布者占了，整笔回滚、草稿仍 PENDING，重读即修复。iOS 的 `ResponseMapper` 在信封判 code 的那一步把它映射成 `APIError.business(code: 409)`（`harnax-ios/Sources/HarnaxAPI/Transport/ResponseMapper.swift:22-24`），详情 VM 按 code 分这一支。
 
@@ -38,8 +38,8 @@
 | `id` | number | `Int64?` | `Identifiable.ID` 沿用可选 id 的既有约定 |
 | `name` | string | `String?` | |
 | `description` | 可缺 | `String?` | |
-| `status` | `PENDING`/`APPROVED`/`REJECTED`/`EXPIRED` | `String?` | 列上写着 EXPIRED 但**没有任何代码写入**，`STATUSES` 不含它（`SkillDraftServiceImpl.kt:601`，筛选项在 `:219-220` 校验） |
-| `scanVerdict` | `SAFE`/`CAUTION`/`DANGEROUS` | `String?` | 只有这三个值会被回显（`SCAN_VERDICTS`，`SkillDraftServiceImpl.kt:592`） |
+| `status` | `PENDING`/`APPROVED`/`REJECTED`/`EXPIRED` | `String?` | 列上写着 EXPIRED 但**没有任何代码写入**，`STATUSES` 不含它（`SkillDraftServiceImpl.kt:619`，筛选项在 `:237-238` 校验） |
+| `scanVerdict` | `SAFE`/`CAUTION`/`DANGEROUS` | `String?` | 只有这三个值会被回显（`SCAN_VERDICTS`，`SkillDraftServiceImpl.kt:610`） |
 | `upstreamFindingCount` | **必带**，缺省 0 | `Int` | DTO 有非空默认值（`SkillDraftResponse.kt:33`） |
 | `sourceSessionId` | string | `String?` | |
 | `agentId` | 可缺 | `Int64?` | |
@@ -73,7 +73,7 @@
 ## 4. 门面与传输
 
 - `Contract/SkillDraftCataloging.swift`（新）：四个方法 `page(status:name:num:size:)`、`detail(id:)`、`approve(id:payload:)`、`reject(id:payload:)`，返回 `Result<_, APIError>`。
-- `SkillDraftEndpoint.swift`（新，internal，仿 `SkillEndpoint.swift`）：`status` **一律显式发**（服务端缺省也是 PENDING，webui 也显式发，`harnax-webui/src/services/ant-design-pro/skillDraft.ts:6-8`）；`name` 先 trim、空串则整条参数省略；`pageSize` 上限 1000（`SkillDraftServiceImpl.kt:614`）。
+- `SkillDraftEndpoint.swift`（新，internal，仿 `SkillEndpoint.swift`）：`status` **一律显式发**（服务端缺省也是 PENDING，webui 也显式发，`harnax-webui/src/services/ant-design-pro/skillDraft.ts:6-8`）；`name` 先 trim、空串则整条参数省略；`pageSize` 上限 1000（`SkillDraftServiceImpl.kt:632`）。
 - `SkillDraftClient.swift`（新）：`extension AdminClient: SkillDraftCataloging`。
 - `Support/HarnaxDependencies.swift`：加 `drafts: (any SkillDraftCataloging)`，`live()` 里绑同一个 `admin`，位置紧邻 `skills`。
 
@@ -128,7 +128,7 @@
 
 ### 5.6 驳回流
 
-理由必填，校验判据逐字为：trim 后为空即拒；trim 后长度 > 512 即拒（等号成立即合法，512 字符合法）。提交发 trim 后的值（`draftDetail.tsx:245-262`、`SkillDraftServiceImpl.kt:393-396`）。webui 的输入框上限是 513 个字符，好让用户打出第 513 个字符从而看见校验错（`draftDetail.tsx:474`）；iOS 用不限长输入 + 同一判据的校验，**判据等价、不设第二套规则**。附一行说明「这是智能体再次提交同名技能时能看到的原话」。
+理由必填，校验判据逐字为：trim 后为空即拒；trim 后长度 > 512 即拒（等号成立即合法，512 字符合法）。提交发 trim 后的值（`draftDetail.tsx:245-262`、`SkillDraftServiceImpl.kt:411-414`）。webui 的输入框上限是 513 个字符，好让用户打出第 513 个字符从而看见校验错（`draftDetail.tsx:474`）；iOS 用不限长输入 + 同一判据的校验，**判据等价、不设第二套规则**。附一行说明「这是智能体再次提交同名技能时能看到的原话」。
 
 ### 5.7 跨语言计数判据（本轮最易错的一处）
 
@@ -153,5 +153,5 @@
 
 - 本会话级计数与提名：`sessionId` 过滤参数已在服务端交付，读它的是会话页那块本会话技能列表（`02-session-chat.md`），入口行与队列页仍按租户全量。会话 id 空白时那一腿不发（§1 末条）已实现并由 `Tests/HarnaxAPITests/SessionSkillWireTests.swift` 钉住，不在未做之列。
 - 无推送、无轮询：新草稿要下拉刷新才反映。webui 同样需要手动刷新，故不算偏离，但也不会更即时。
-- `EXPIRED` 不上筛选项：后端 `STATUSES` 不含它，按它筛会被拒（`SkillDraftServiceImpl.kt:601`，校验在 `:219-220`）。
+- `EXPIRED` 不上筛选项：后端 `STATUSES` 不含它，按它筛会被拒（`SkillDraftServiceImpl.kt:619`，校验在 `:237-238`）。
 - 详情正文渲染复用 `HXMarkdownText`，其离线解析器对表格/代码块的覆盖不及 webui 的 `ReactMarkdown + remarkGfm`；这是既有约束，不在本轮扩。
