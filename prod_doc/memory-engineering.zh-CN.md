@@ -387,7 +387,7 @@ core 的长期记忆接口整族标了 `@Deprecated(forRemoval = true, since = "
 
 ### 11.12 逐条对账：判定条款由谁断言
 
-用例名逐字取自测试源码，条数是本轮实跑的数：`harnax-harness-core` 本模块 699 项（真模型晋升那一档没有 provider key，按跳过记一次）、`harnax-admin` 2917 项（单元 2498 加真 `mysql:8.0` 与真 MinIO 上的集成档 419），两处都是零失败。
+用例名逐字取自测试源码，条数是本轮实跑的数：`harnax-harness-core` 本模块 702 项（真模型晋升那一档没有 provider key，按跳过记一次）、`harnax-admin` 2921 项（单元 2501 加真 `mysql:8.0` 与真 MinIO 上的集成档 420），两处都是零失败。
 
 | 条 | 断言落在哪 | 状态 |
 |---|---|---|
