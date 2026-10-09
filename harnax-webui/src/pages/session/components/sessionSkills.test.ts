@@ -1,6 +1,7 @@
 import enPages from '@/locales/en-US/pages';
 import zhPages from '@/locales/zh-CN/pages';
 import { readOutcome, refusalOf, sessionSkillsFor } from './SessionSkillsDrawer';
+import { enableGate, scopedSessionId } from './sessionSkills';
 
 const queue = (records: { name: string; description?: string | null }[]) => ({
   code: 200,
@@ -130,5 +131,35 @@ describe('the session skill panel', () => {
     // send the operator to the review queue. The read half therefore reports a flag, never a message.
     expect(Object.keys(readOutcome(refused(403), refused(500))).sort()).toEqual(['rows', 'unavailable']);
     expect(Object.keys(readOutcome(queue([]), zone([]))).sort()).toEqual(['rows', 'unavailable']);
+  });
+
+  it('sends no second enable while the first copy is still in flight', () => {
+    // The ten-skill ceiling is counted from the directory the previous copy wrote, so two presses in flight both
+    // read the old count and can push the session past its ten. The first press goes out; the second does not.
+    expect(enableGate(null, 'invoice-fill', false).maySend).toBe(true);
+    expect(enableGate('invoice-fill', 'other', false).maySend).toBe(false);
+    expect(enableGate('invoice-fill', 'invoice-fill', false).maySend).toBe(false);
+    // Greying out follows the same rule, on every pending row rather than only the one being copied — the shape
+    // the iOS panel already holds with `.disabled(vm.isActing)`.
+    const other = enableGate('invoice-fill', 'other', false);
+    expect(other.disabled).toBe(true);
+    expect(other.loading).toBe(false);
+    const copying = enableGate('invoice-fill', 'invoice-fill', false);
+    expect(copying.disabled).toBe(true);
+    expect(copying.loading).toBe(true);
+    // An enabled row stays disabled whatever the busy state is, and an idle panel still offers its pending rows.
+    expect(enableGate(null, 'invoice-fill', true)).toEqual({ maySend: false, disabled: true, loading: false });
+    expect(enableGate(null, 'other', false)).toEqual({ maySend: true, disabled: false, loading: false });
+  });
+
+  it('leaves a blank conversation id with no scope to query, and trims one that has it', () => {
+    // Blank is not unscoped: the queue read without a `sessionId` answers the reviewer's whole tenant, so an id
+    // that is present but whitespace must resolve to nothing the drawer may send rather than to that query.
+    expect(scopedSessionId('   ')).toBeNull();
+    expect(scopedSessionId('')).toBeNull();
+    expect(scopedSessionId(undefined)).toBeNull();
+    expect(scopedSessionId(null)).toBeNull();
+    expect(scopedSessionId(' ses-1 ')).toBe('ses-1');
+    expect(scopedSessionId('ses-1')).toBe('ses-1');
   });
 });

@@ -5,6 +5,7 @@ import { useIntl } from '@umijs/max';
 import dayjs from 'dayjs';
 import { pageSkillDrafts } from '@/services/ant-design-pro/skillDraft';
 import { enableSessionSkill, listSessionSkills } from '@/services/ant-design-pro/sessionSkill';
+import { enableGate, scopedSessionId } from './sessionSkills';
 
 const { Text } = Typography;
 
@@ -109,7 +110,8 @@ export function refusalOf(code: number): { id: string; en: string } {
 function formatEnabledAt(value: string | null): string {
   if (!value) return '-';
   const parsed = dayjs(value);
-  return parsed.isValid() ? parsed.format('YYYY-MM-DD HH:mm') : value;
+  // The value is the container's own string, so anything dayjs cannot read is not a time this panel may print as one.
+  return parsed.isValid() ? parsed.format('YYYY-MM-DD HH:mm') : '-';
 }
 
 interface SessionSkillsDrawerProps {
@@ -132,7 +134,15 @@ const SessionSkillsDrawer: React.FC<SessionSkillsDrawerProps> = ({ visible, sess
   const [busyName, setBusyName] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!sessionId) return;
+    // Blank is not unscoped: a queue read with no `sessionId` answers the reviewer's whole tenant, and its rows
+    // would land under this conversation's title. Reporting "could not read" is the only thing this panel may say
+    // for an id that names nothing — not "this session has not written a skill yet".
+    const scope = scopedSessionId(sessionId);
+    if (!scope) {
+      setRows([]);
+      setUnavailable(true);
+      return;
+    }
     setLoading(true);
     // A retry reads afresh: the previous round's verdict must not survive into this one, not even while in flight.
     setUnavailable(false);
@@ -142,10 +152,10 @@ const SessionSkillsDrawer: React.FC<SessionSkillsDrawerProps> = ({ visible, sess
       // router half had already returned; a rejection is a read that did not answer, and says nothing about the other.
       const [draftSettled, enabledSettled] = await Promise.allSettled([
         pageSkillDrafts(
-          { status: 'PENDING', sessionId, pageNum: 1, pageSize: 50 },
+          { status: 'PENDING', sessionId: scope, pageNum: 1, pageSize: 50 },
           { skipErrorHandler: true },
         ),
-        listSessionSkills(sessionId, { skipErrorHandler: true }),
+        listSessionSkills(scope, { skipErrorHandler: true }),
       ]);
       // A refusal on the envelope already arrives on HTTP 200 with the code in it; a rejection gets a code that names
       // nothing, which is all the read path is allowed to say about either.
@@ -182,10 +192,16 @@ const SessionSkillsDrawer: React.FC<SessionSkillsDrawerProps> = ({ visible, sess
   }, [visible, sessionId, load]);
 
   const handleEnable = async (name: string) => {
-    if (!sessionId) return;
+    const scope = scopedSessionId(sessionId);
+    if (!scope) return;
+    // One copy at a time: the ten-skill ceiling is counted from the directory the previous copy wrote, so two
+    // presses in flight both read the old count and can push this session past its ten. The buttons grey out on
+    // the same judgement (`enableGate`), so a row that cannot start a copy does not accept the finger either.
+    const pressed = rows.find((row) => row.name === name);
+    if (!enableGate(busyName, name, !!pressed?.enabled).maySend) return;
     setBusyName(name);
     try {
-      const response = await enableSessionSkill(sessionId, name, { skipErrorHandler: true });
+      const response = await enableSessionSkill(scope, name, { skipErrorHandler: true });
       if (response.code !== 200) {
         message.error(
           intl.formatMessage({ id: refusalOf(response.code).id, defaultMessage: refusalOf(response.code).en }),
@@ -265,52 +281,55 @@ const SessionSkillsDrawer: React.FC<SessionSkillsDrawerProps> = ({ visible, sess
           <List
             dataSource={rows}
             split={false}
-            renderItem={(entry) => (
-              <List.Item key={entry.name} style={{ padding: '10px 0' }}>
-                <List.Item.Meta
-                  title={<Text style={{ fontWeight: 500 }}>{entry.name}</Text>}
-                  description={
-                    <div>
-                      {entry.description ? (
-                        <div>
-                          <Text type="secondary" style={{ fontSize: 12 }}>
-                            {entry.description}
-                          </Text>
-                        </div>
-                      ) : null}
-                      {entry.enabled ? (
-                        <div>
-                          <Text type="secondary" style={{ fontSize: 11 }}>
-                            {intl.formatMessage({
-                              id: 'pages.session.skills.enabledAt',
-                              defaultMessage: 'Enabled at',
-                            })}{' '}
-                            · {formatEnabledAt(entry.enabledAt)}
-                          </Text>
-                        </div>
-                      ) : null}
-                    </div>
-                  }
-                />
-                <Button
-                  type={entry.enabled ? 'default' : 'primary'}
-                  size="small"
-                  disabled={entry.enabled}
-                  loading={busyName === entry.name}
-                  onClick={() => handleEnable(entry.name)}
-                >
-                  {entry.enabled
-                    ? intl.formatMessage({
-                        id: 'pages.session.skills.enabled',
-                        defaultMessage: 'Enabled in this session',
-                      })
-                    : intl.formatMessage({
-                        id: 'pages.session.skills.enable',
-                        defaultMessage: 'Enable in this session',
-                      })}
-                </Button>
-              </List.Item>
-            )}
+            renderItem={(entry) => {
+              const gate = enableGate(busyName, entry.name, entry.enabled);
+              return (
+                <List.Item key={entry.name} style={{ padding: '10px 0' }}>
+                  <List.Item.Meta
+                    title={<Text style={{ fontWeight: 500 }}>{entry.name}</Text>}
+                    description={
+                      <div>
+                        {entry.description ? (
+                          <div>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              {entry.description}
+                            </Text>
+                          </div>
+                        ) : null}
+                        {entry.enabled ? (
+                          <div>
+                            <Text type="secondary" style={{ fontSize: 11 }}>
+                              {intl.formatMessage({
+                                id: 'pages.session.skills.enabledAt',
+                                defaultMessage: 'Enabled at',
+                              })}{' '}
+                              · {formatEnabledAt(entry.enabledAt)}
+                            </Text>
+                          </div>
+                        ) : null}
+                      </div>
+                    }
+                  />
+                  <Button
+                    type={entry.enabled ? 'default' : 'primary'}
+                    size="small"
+                    disabled={gate.disabled}
+                    loading={gate.loading}
+                    onClick={() => handleEnable(entry.name)}
+                  >
+                    {entry.enabled
+                      ? intl.formatMessage({
+                          id: 'pages.session.skills.enabled',
+                          defaultMessage: 'Enabled in this session',
+                        })
+                      : intl.formatMessage({
+                          id: 'pages.session.skills.enable',
+                          defaultMessage: 'Enable in this session',
+                        })}
+                  </Button>
+                </List.Item>
+              );
+            }}
           />
         )}
       </Spin>

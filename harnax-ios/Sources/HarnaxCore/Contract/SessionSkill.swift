@@ -11,9 +11,12 @@ import Foundation
 /// (`GET /api/router/agent/session-skills/{sessionId}`,
 /// `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt`).
 ///
-/// `enabledAt` is kept as the server's own text and never re-formatted: the two stamps this app prints elsewhere
-/// come from `RowMeta`/`SkillDraftCopy` slicing rather than a `DateFormatter`, and this column has no rule of
-/// its own to add.
+/// This panel does not print `enabledAt`: `SessionSkillsSheet` draws the name, the description and the badge, and
+/// nothing under `HarnaxFeatures` reads the stamp. The field stays because the merge has to carry it across from
+/// the directory side — it is the only piece of information that read supplies (`SessionSkillRules.merged` takes
+/// `enabledAt` from the enabled row and nothing else) — and because the console's drawer does print it
+/// (`harnax-webui/src/pages/session/components/SessionSkillsDrawer.tsx`'s `formatEnabledAt`). Its text is the
+/// server's own ISO instant and is never re-formatted here.
 public struct SessionSkillRow: Identifiable, Hashable, Sendable {
     /// The skill's name — also the only handle the enable route takes, which is why it is the identity.
     public let name: String

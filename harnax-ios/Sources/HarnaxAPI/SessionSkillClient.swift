@@ -43,8 +43,15 @@ extension AdminClient: SessionSkillReading {
     }
 
     /// `GET /api/admin/skill-drafts?status=PENDING&sessionId=`, reduced to what the merge needs.
+    ///
+    /// A conversation id that trims to nothing is not asked about at all. `SkillDraftEndpoint.page` drops the
+    /// `sessionId` key for a blank value, and a queue query without it is the reviewer's whole tenant — somebody
+    /// else's nominations drawn under this conversation's title. Refusing to send is the only answer that cannot do
+    /// that, and it hands the merge the same `(empty, failed)` pair any other leg failure does.
     private func nominationLeg(sessionId: String) async -> (rows: [SessionSkillRules.Draft], failed: Bool) {
-        switch await page(status: .pending, name: nil, sessionId: sessionId, num: 1, size: Self.nominatedPageSize) {
+        let scope = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !scope.isEmpty else { return ([], true) }
+        switch await page(status: .pending, name: nil, sessionId: scope, num: 1, size: Self.nominatedPageSize) {
         case let .success(page):
             // A queue row with no name cannot be enabled — the name is the enable route's path segment — so it
             // drops out rather than becoming a row the panel offers a dead button for.

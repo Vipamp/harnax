@@ -10,10 +10,10 @@ import HarnaxKit
 /// re-derived here. Two things this screen therefore never does: it does not show a skill the session did not
 /// write (the published library is the context tab's job), and it does not offer an enable for a row the
 /// directory already answers as enabled. That is not because the route would refuse it — a re-enable answers
-/// success (`SessionSkillStore.kt:125`, `:144`), and is refused only when the sandbox has stopped or the draft
-/// has been archived (`:103`, `:106`) — it is because it gets there by `rm -rf`ing the directory the session is
-/// using and re-copying whatever the draft holds at that moment (`:128-131`). The row is already live; the
-/// button would swap the bytes under it and still report nothing changed.
+/// success (`SessionSkillStore.kt:148`, `:173`) and is refused only when the sandbox has stopped (`:123-124`) or
+/// the draft is no longer there to copy (`:133-134`, `:136`) — it is because it gets there by re-copying whatever
+/// the draft holds at that moment and renaming the result over the directory the session is using (`:159-160`).
+/// The row is already live; the button would swap the bytes under it and still report nothing changed.
 ///
 /// The panel is opened, not polled: both reads are asked when the sheet appears and again by the refresh row
 /// below, never by the conversation's own lifecycle (`ChatView`'s `.task(id: conversation)` stays untouched).

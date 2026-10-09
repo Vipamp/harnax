@@ -124,17 +124,42 @@ final class SessionSkillWireTests: XCTestCase {
         )
     }
 
+    /// The endpoint's own behaviour, unchanged by the client rule below: a blank value is dropped rather than sent
+    /// as an empty scope. What dropping it means is the server's answer — the whole tenant's queue, not a
+    /// conversation nobody named — which is why the client stops asking instead (`testABlankConversation…`).
     func testASessionIdNobodyHasIsLeftOffTheQueueQuery() {
         XCTAssertFalse(
             SkillDraftEndpoint.page(status: .pending, name: nil, sessionId: "   ", num: 1, size: 50)
                 .query.contains { $0.name == "sessionId" },
-            "a blank scope would ask for a conversation that does not exist, not for the tenant"
+            "a blank value loses the key, and a query without it is the reviewer's whole tenant"
         )
         XCTAssertEqual(
             SkillDraftEndpoint.page(status: .pending, name: nil, num: 1, size: 20).query.map(\.name),
             ["pageNum", "pageSize", "status"],
             "the reviewer's queue keeps exactly the query it always sent"
         )
+    }
+
+    /// The client half of the same rule, one level up: a conversation id that trims to nothing is not asked about.
+    ///
+    /// The endpoint above answers that query with the tenant's rows, and the merge would draw them under this
+    /// conversation's title as though they were its own nominations — the one thing a session panel may not do. So
+    /// the leg stays home and reports itself as not answered, which is what makes the panel say 「读不出来」 rather
+    /// than 「还没有自写的技能」.
+    func testABlankConversationDoesNotSendAnUnscopedQueueQuery() async throws {
+        let harness = await harness()
+        // Armed anyway: were the leg to go out, it would get a plausible page back and the panel would look healthy.
+        harness.transport.enqueue(forPath: queuePath, queue(oneNomination, total: 1))
+
+        let read = await harness.agents.read(sessionId: "   ")
+
+        let sent = harness.transport.requests.compactMap(\.url)
+        XCTAssertTrue(
+            sent.filter { $0.path == queuePath }.isEmpty,
+            "the nominations leg has to stay home for a conversation nobody named: \(sent.map(\.path))"
+        )
+        XCTAssertTrue(read.unavailable, "a leg that never went out did not answer")
+        XCTAssertTrue(read.rows.isEmpty, "the tenant's nominations must not be drawn as this conversation's")
     }
 
     /// The legs are independent, so they are issued at once: awaiting one before sending the other buys the panel a
