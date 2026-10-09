@@ -1332,7 +1332,7 @@
 "chat.skills.full" = "这个会话已启用十条技能";
 "chat.skills.noSandbox" = "这个会话的沙箱没有在运行";
 "chat.skills.sourceGone" = "这份草稿已经不在了";
-"chat.skills.copyFailed" = "沙箱没有接受这次复制";
+"chat.skills.copyFailed" = "这次复制没有完成";
 "chat.skills.enableFailed" = "启用没有成功";
 
 /* ---- 技能草稿：自我进化的待审队列、审核页与两个决定 ---- */

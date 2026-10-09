@@ -13,8 +13,8 @@ import Foundation
 ///
 /// This panel does not print `enabledAt`: `SessionSkillsSheet` draws the name, the description and the badge, and
 /// nothing under `HarnaxFeatures` reads the stamp. The field stays because the merge has to carry it across from
-/// the directory side — it is the only piece of information that read supplies (`SessionSkillRules.merged` takes
-/// `enabledAt` from the enabled row and nothing else) — and because the console's drawer does print it
+/// the directory side — the directory read contributes `name` and `enabledAt` to a row, and the name is already
+/// the row's identity — and because the console's drawer does print it
 /// (`harnax-webui/src/pages/session/components/SessionSkillsDrawer.tsx`'s `formatEnabledAt`). Its text is the
 /// server's own ISO instant and is never re-formatted here.
 public struct SessionSkillRow: Identifiable, Hashable, Sendable {
@@ -152,7 +152,7 @@ public protocol SessionSkillReading: Sendable {
 ///
 /// The five codes are `SessionSkillController`'s refusals plus the router's: 403 for a scan verdict that blocks
 /// (`EnableOutcome.Blocked`), 409 for the ten-skill ceiling (`EnableOutcome.Full`), 404 for a draft that is gone
-/// (`SourceMissing`), 500 for a container that refused the copy (`Failed`), and 410 for a session with no running
+/// (`SourceMissing`), 500 for a copy that did not complete (`Failed`), and 410 for a session with no running
 /// sandbox — either the store's `NoSandbox` or `SessionRouterService` answering it before the request is placed
 /// anywhere. Anything else, transport included, says only that the enable did not happen: a code this app has not
 /// been told the meaning of must not claim the draft is gone.

@@ -148,8 +148,9 @@ final class SessionSkillWireTests: XCTestCase {
     /// than 「还没有自写的技能」.
     func testABlankConversationDoesNotSendAnUnscopedQueueQuery() async throws {
         let harness = await harness()
-        // Armed anyway: were the leg to go out, it would get a plausible page back and the panel would look healthy.
+        // Armed anyway: were a leg to go out, it would get a plausible answer back and the panel would look healthy.
         harness.transport.enqueue(forPath: queuePath, queue(oneNomination, total: 1))
+        harness.transport.enqueue(forPath: directoryPath, Wire.success("[]"))
 
         let read = await harness.agents.read(sessionId: "   ")
 
@@ -158,8 +159,29 @@ final class SessionSkillWireTests: XCTestCase {
             sent.filter { $0.path == queuePath }.isEmpty,
             "the nominations leg has to stay home for a conversation nobody named: \(sent.map(\.path))"
         )
+        XCTAssertTrue(
+            sent.filter { $0.path == directoryPath }.isEmpty,
+            "so does the directory leg: \(sent.map(\.path))"
+        )
         XCTAssertTrue(read.unavailable, "a leg that never went out did not answer")
         XCTAssertTrue(read.rows.isEmpty, "the tenant's nominations must not be drawn as this conversation's")
+    }
+
+    /// The mutating leg obeys the same rule: a blank conversation id would go out as `/api/router/agent/
+    /// session-skills/%20/<name>/enable`, which the router answers as a session with no sandbox. Refusing locally
+    /// costs nothing and says the same thing the panel already has copy for.
+    func testABlankConversationSendsNoEnable() async throws {
+        let harness = await harness()
+        do {
+            try await harness.agents.enable(sessionId: " ", name: "invoice-fill")
+            XCTFail("a conversation nobody named must not have an enable placed")
+        } catch let refusal as SessionSkillRefusal {
+            XCTAssertEqual(refusal.code, -1, "no envelope answered, so no code this app can explain: \(refusal.code)")
+        }
+        XCTAssertTrue(
+            harness.transport.requests.compactMap(\.url).isEmpty,
+            "the enable must not reach the transport: \(harness.transport.requests.compactMap { $0.url?.path })"
+        )
     }
 
     /// The legs are independent, so they are issued at once: awaiting one before sending the other buys the panel a

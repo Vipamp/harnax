@@ -9,10 +9,12 @@ import HarnaxKit
 /// merge that decides which row says「已启用」is shared with it in Core (`SessionSkillRules.merged`) rather than
 /// re-derived here. Two things this screen therefore never does: it does not show a skill the session did not
 /// write (the published library is the context tab's job), and it does not offer an enable for a row the
-/// directory already answers as enabled. That is not because the route would refuse it — a re-enable answers
-/// success (`SessionSkillStore.kt:148`, `:173`) and is refused only when the sandbox has stopped (`:123-124`) or
-/// the draft is no longer there to copy (`:133-134`, `:136`) — it is because it gets there by re-copying whatever
-/// the draft holds at that moment and renaming the result over the directory the session is using (`:159-160`).
+/// directory already answers as enabled. That is not because the route would always take it — a re-enable answers
+/// success (`SessionSkillStore.kt:149`, `:183`) and is refused when the sandbox has stopped (`:123-124`), the
+/// draft is no longer there to copy (`:134-138`), the agent rewrote it into a verdict the scanner will not admit
+/// (`:146`), the session's ten filled in between (`:150`), or the copy did not complete (`:166-175`) — it is
+/// because on the way to that success it re-copies whatever the draft holds at that moment and renames the result
+/// over the directory the session is using (`:163-164`).
 /// The row is already live; the button would swap the bytes under it and still report nothing changed.
 ///
 /// The panel is opened, not polled: both reads are asked when the sheet appears and again by the refresh row

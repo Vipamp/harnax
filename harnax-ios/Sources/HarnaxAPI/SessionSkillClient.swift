@@ -27,14 +27,21 @@ extension AdminClient: SessionSkillReading {
     /// empty list of its own and flips `unavailable`, because the rows the other leg did answer are still rows the
     /// operator can act on. What no leg may do is answer "this conversation's agent proposed nothing" on behalf of
     /// a failure — that is the one sentence this panel must not say about something that broke, and `unavailable`
-    /// is what keeps an empty list from being read as it. Both legs failing is the single case where the empty list
-    /// is the honest answer.
+    /// is what keeps an empty list from being read as it. Both legs failing is the case where the empty list
+    /// is the honest answer, and the blank-conversation guard below answers the same way without asking anything.
     ///
     /// Both go out before either is awaited: the two hosts are unrelated, and waiting on one to start the other
     /// makes the panel's open as slow as the sum of them.
+    ///
+    /// A conversation id that trims to nothing asks nothing at all, on either leg. `SkillDraftEndpoint.page` drops
+    /// the `sessionId` key for a blank value, and a queue query without it is the reviewer's whole tenant —
+    /// somebody else's nominations drawn under this conversation's title. Refusing to send is the only answer that
+    /// cannot do that, and it hands the caller the same `(empty, unavailable)` pair any other failure does.
     public func read(sessionId: String) async -> SessionSkillRead {
-        async let nominations = nominationLeg(sessionId: sessionId)
-        async let enabled = enabledLeg(sessionId: sessionId)
+        let scope = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !scope.isEmpty else { return SessionSkillRead(rows: [], unavailable: true) }
+        async let nominations = nominationLeg(sessionId: scope)
+        async let enabled = enabledLeg(sessionId: scope)
         let (drafts, directory) = await (nominations, enabled)
         return SessionSkillRead(
             rows: SessionSkillRules.merged(drafts: drafts.rows, enabled: directory.rows),
@@ -43,15 +50,8 @@ extension AdminClient: SessionSkillReading {
     }
 
     /// `GET /api/admin/skill-drafts?status=PENDING&sessionId=`, reduced to what the merge needs.
-    ///
-    /// A conversation id that trims to nothing is not asked about at all. `SkillDraftEndpoint.page` drops the
-    /// `sessionId` key for a blank value, and a queue query without it is the reviewer's whole tenant — somebody
-    /// else's nominations drawn under this conversation's title. Refusing to send is the only answer that cannot do
-    /// that, and it hands the merge the same `(empty, failed)` pair any other leg failure does.
     private func nominationLeg(sessionId: String) async -> (rows: [SessionSkillRules.Draft], failed: Bool) {
-        let scope = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !scope.isEmpty else { return ([], true) }
-        switch await page(status: .pending, name: nil, sessionId: scope, num: 1, size: Self.nominatedPageSize) {
+        switch await page(status: .pending, name: nil, sessionId: sessionId, num: 1, size: Self.nominatedPageSize) {
         case let .success(page):
             // A queue row with no name cannot be enabled — the name is the enable route's path segment — so it
             // drops out rather than becoming a row the panel offers a dead button for.
@@ -92,8 +92,12 @@ extension AdminClient: SessionSkillReading {
     /// A refusal the panel can explain arrives as `APIError.business(code:message:)` — HTTP 200 with the code
     /// inside the envelope (`APIError.swift:24-25`), which is how the whole stack reports a business failure —
     /// and becomes the `SessionSkillRefusal` whose `messageKey` says which of the five it was. Everything else,
-    /// offline included, says only that the enable did not happen.
+    /// offline included, says only that the enable did not happen — and so does a conversation nobody named, which
+    /// never reaches the transport: this is the one call in the panel that writes.
     public func enable(sessionId: String, name: String) async throws {
+        guard !sessionId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw SessionSkillRefusal(code: -1)
+        }
         let reply = await client.send(EmptyResponse.self, SessionSkillEndpoint.enable(sessionId: sessionId, name: name))
         guard case let .failure(error) = reply else { return }
         if case let .business(code, _) = error {

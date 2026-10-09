@@ -1331,7 +1331,7 @@
 "chat.skills.full" = "This session already has ten skills enabled";
 "chat.skills.noSandbox" = "This session's sandbox is not running";
 "chat.skills.sourceGone" = "That draft is gone";
-"chat.skills.copyFailed" = "The sandbox refused the copy";
+"chat.skills.copyFailed" = "The copy did not complete";
 "chat.skills.enableFailed" = "Could not enable it";
 
 /* ---- skill drafts: the self-evolution queue, its review screen and the two decisions ---- */
