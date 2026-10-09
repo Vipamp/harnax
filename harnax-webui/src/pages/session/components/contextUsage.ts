@@ -25,9 +25,28 @@ export function isContextUsageReadable(res?: ContextUsageResponseLike | null): b
   return Number.isFinite(usage.ratio) && usage.contextWindow > 0;
 }
 
-/** The readout says where its numerator came from; the billed count wins whenever the router has one. */
+/**
+ * Whether the billed count describes the context the readout is measuring.
+ *
+ * An on-demand compaction rewrites the context and bills nothing of its own, so the newest bill is then the
+ * price of a request that no longer exists, and the server says so with `billIsCurrent: false` until the next
+ * real call outnumbers it. An answer that carries no such flag has voided nothing.
+ */
+function hasUsableBill(usage: API.ContextUsage): boolean {
+  return usage.lastCallInputTokens != null && usage.billIsCurrent !== false;
+}
+
+/** The readout says where its numerator came from; the billed count wins while it still stands. */
 export function contextUsageBasis(usage: API.ContextUsage): 'billed' | 'estimated' {
-  return usage.lastCallInputTokens == null ? 'estimated' : 'billed';
+  return hasUsableBill(usage) ? 'billed' : 'estimated';
+}
+
+/**
+ * The count `ratio` was taken over: the last billed call while that bill stands, the upstream estimate
+ * otherwise — which is also what it is until the session has a billed call at all.
+ */
+export function contextUsageNumerator(usage: API.ContextUsage): number {
+  return hasUsableBill(usage) ? (usage.lastCallInputTokens ?? usage.estimatedTokens) : usage.estimatedTokens;
 }
 
 /**
@@ -45,7 +64,7 @@ export function contextUsageTokenText(value: number | null | undefined): string 
  * a context at that point will be compacted by the next turn whether or not anyone asks.
  */
 export function isAtAutoTrigger(usage: API.ContextUsage): boolean {
-  const numerator = usage.lastCallInputTokens ?? usage.estimatedTokens;
+  const numerator = contextUsageNumerator(usage);
   const trigger = usage.triggerTokens;
   return typeof trigger === 'number' && trigger > 0 && numerator >= trigger;
 }

@@ -173,14 +173,18 @@ declare namespace API {
    * One readout of how full this session's model context is.
    *
    * `ratio` divides the billed input of the latest model call (`lastCallInputTokens`) when that session
-   * has one, and the upstream estimate otherwise — the two are not proportional, so both are reported and
-   * only the billed one drives the displayed percentage. The endpoint answers null when this instance does
-   * not hold the session's agent, which is a missing reading rather than an empty context.
+   * has one and that bill still describes the context (`billIsCurrent`), and the upstream estimate otherwise —
+   * the two are not proportional, so both are reported and only the billed one drives the displayed percentage.
+   * An on-demand compaction rewrites the context without billing a call of its own, and then says
+   * `billIsCurrent: false` until the next real call outranks it; the billed number keeps arriving as history.
+   * The endpoint answers null when this instance does not hold the session's agent, which is a missing reading
+   * rather than an empty context.
    */
   type ContextUsage = {
     messageCount: number;
     estimatedTokens: number;
     lastCallInputTokens?: number | null;
+    billIsCurrent?: boolean | null;
     contextWindow: number;
     windowSource?: 'MODEL_FIELD' | 'UPSTREAM_TABLE' | 'FALLBACK';
     ratio: number;

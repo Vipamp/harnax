@@ -51,6 +51,18 @@ describe('contextUsageBasis', () => {
     expect(contextUsageBasis(usage({ lastCallInputTokens: null }))).toBe('estimated');
     expect(contextUsageBasis(usage({ lastCallInputTokens: undefined }))).toBe('estimated');
   });
+
+  it('reads the estimate while the bill predates the last compaction', () => {
+    // The compaction rewrote the context without billing a call of its own, so that number is the price of a
+    // request that no longer exists. It stays in the rows as history; it stops being the basis.
+    expect(contextUsageBasis(usage({ billIsCurrent: false }))).toBe('estimated');
+  });
+
+  it('keeps the billed basis for an answer that says nothing about the bill', () => {
+    // The flag is newer than the payloads this page has always seen; an absent one voids nothing.
+    expect(contextUsageBasis(usage({ billIsCurrent: undefined }))).toBe('billed');
+    expect(contextUsageBasis(usage({ billIsCurrent: null }))).toBe('billed');
+  });
 });
 
 describe('isAtAutoTrigger', () => {
@@ -65,6 +77,16 @@ describe('isAtAutoTrigger', () => {
 
   it('compares the estimate only when there is no billed row to compare', () => {
     expect(isAtAutoTrigger(usage({ lastCallInputTokens: null, estimatedTokens: 181_000 }))).toBe(true);
+  });
+
+  it('compares the estimate once a compaction has voided the bill', () => {
+    // The same reason the basis moves: after a rewrite the billed size belongs to the context that was just
+    // folded away, and calling the next turn a certain compaction on the strength of it is a false alarm.
+    expect(
+      isAtAutoTrigger(
+        usage({ lastCallInputTokens: 190_000, estimatedTokens: 40_000, billIsCurrent: false }),
+      ),
+    ).toBe(false);
   });
 
   it('never fires without a usable threshold', () => {
