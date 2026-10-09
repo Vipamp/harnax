@@ -2,7 +2,7 @@ import Foundation
 
 /// How full one session's model context is, as the runtime answers it.
 ///
-/// Backend: `harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/ContextUsageResponse.kt:41-50`,
+/// Backend: `harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/ContextUsageResponse.kt:49-59`,
 /// reached through the router's proxy —
 /// `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:183-191` →
 /// `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/service/AgentServiceClient.kt:192-199` →
@@ -14,7 +14,8 @@ import Foundation
 /// automatic compaction triggers on and it moves on the turn a compaction runs, while `lastCallInputTokens`
 /// is the billed input of the last model call — the real size of that request, system prompt and tool list
 /// included, but it only moves on the turn *after* a compaction. They are not proportional, so `ratio` takes
-/// the billed numerator whenever the router has one, and the four judgements below follow `ratio` rather than
+/// the billed numerator whenever the router has one — and only while that bill still describes the context
+/// being measured, which is what `billIsCurrent` reports. The four judgements below follow `ratio` rather than
 /// re-deriving a second opinion. The same four rules live on the console side in
 /// `harnax-webui/src/pages/session/components/contextUsage.ts`; the two screens are meant to say the same
 /// number for the same session, so they are kept in step deliberately.
@@ -24,9 +25,13 @@ public struct ContextUsage: Decodable, Equatable, Sendable {
     public let messageCount: Int
     /// Upstream's token estimate over the context.
     public let estimatedTokens: Int
-    /// Billed input of this session's latest model call. Nil until the session has a billed call to report,
-    /// which is the only thing that decides the readout's basis.
+    /// Billed input of this session's latest model call. Nil until the session has a billed call to report; a
+    /// bill that priced a context an on-demand compaction has since rewritten still arrives here as the real
+    /// number, it just stops being the numerator (`billIsCurrent`).
     public let lastCallInputTokens: Int?
+    /// Whether that bill still describes this context. The server clears it when an on-demand compaction
+    /// rewrites the context, since the newest row then prices a request that no longer exists.
+    public let billIsCurrent: Bool?
     /// The denominator. Zero means the router answered without a reading rather than that the context is empty.
     public let contextWindow: Int
     /// The wire value of `ContextWindowSource`
@@ -35,7 +40,8 @@ public struct ContextUsage: Decodable, Equatable, Sendable {
     /// (`harnax-webui/src/pages/session/index.tsx:46-50`): a fourth tier
     /// added upstream then shows up under its own name instead of being read as the fallback.
     public let windowSource: String?
-    /// `lastCallInputTokens` over `contextWindow`, or `estimatedTokens` over it until there is a bill.
+    /// `lastCallInputTokens` over `contextWindow` while that bill stands, `estimatedTokens` over it until the
+    /// session has one or after a compaction has voided the one it had.
     public let ratio: Double
     /// Where the automatic compaction fires for this model.
     public let triggerTokens: Int
@@ -56,6 +62,7 @@ public struct ContextUsage: Decodable, Equatable, Sendable {
         messageCount: Int = 0,
         estimatedTokens: Int = 0,
         lastCallInputTokens: Int? = nil,
+        billIsCurrent: Bool? = true,
         contextWindow: Int = 0,
         windowSource: String? = nil,
         ratio: Double = 0,
@@ -65,6 +72,7 @@ public struct ContextUsage: Decodable, Equatable, Sendable {
         self.messageCount = messageCount
         self.estimatedTokens = estimatedTokens
         self.lastCallInputTokens = lastCallInputTokens
+        self.billIsCurrent = billIsCurrent
         self.contextWindow = contextWindow
         self.windowSource = windowSource
         self.ratio = ratio
@@ -90,26 +98,41 @@ public struct ContextUsage: Decodable, Equatable, Sendable {
     /// The numerator `ratio` actually used, so the detail rows can say where the headline came from instead of
     /// making the reader work it out.
     public var numeratorTokens: Int {
-        lastCallInputTokens ?? estimatedTokens
+        guard hasUsableBill, let bill = lastCallInputTokens else { return estimatedTokens }
+        return bill
     }
 
-    /// Where the numerator came from: the bill whenever the router has one, the estimate until it does.
+    /// Where the numerator came from: the bill whenever the router has one it still stands behind, the
+    /// estimate until it does.
     public var basis: ContextUsageBasis {
-        lastCallInputTokens == nil ? .estimated : .billed
+        hasUsableBill ? .billed : .estimated
+    }
+
+    /// Whether the bill is the number this readout reports — the router has one, and it still describes the
+    /// context that is live.
+    ///
+    /// An on-demand compaction rewrites the context without making a model call of its own, so the newest row
+    /// then prices a request that no longer exists; serving it as the numerator would keep the headline at the
+    /// pre-compaction figure until the next turn. The server voids such a bill with `billIsCurrent: false`
+    /// (`ContextUsageResponse.kt:53`) and the next real call writes a newer row, so this falls back on its
+    /// own. Only an explicit `false` voids: the default is `true` and a server that predates the field leaves
+    /// the key off the wire, and reading either silence as voided would move every session onto the estimate.
+    private var hasUsableBill: Bool {
+        lastCallInputTokens != nil && billIsCurrent != false
     }
 
     /// Whether the next turn is going to compact this context whether or not anyone asks.
     ///
     /// A trigger of zero is the runtime saying it worked the number out for a model with no window, so nothing
     /// is "at" it — that is why the comparison is guarded rather than the raw `>=`
-    /// (`harnax-webui/src/pages/session/components/contextUsage.ts:47-51`).
+    /// (`harnax-webui/src/pages/session/components/contextUsage.ts:66-70`).
     public var isAtAutoTrigger: Bool {
         triggerTokens > 0 && numeratorTokens >= triggerTokens
     }
 
     /// The headline number, one header slot wide, so the decimals follow the magnitude instead of a fixed
     /// format: whole per cent above ten, one decimal down to one, two below that with the trailing zeros
-    /// dropped (`harnax-webui/src/pages/session/components/contextUsage.ts:54-60`).
+    /// dropped (`harnax-webui/src/pages/session/components/contextUsage.ts:73-79`).
     /// Zero and an unreadable ratio both read as `0%`.
     public var percentText: String {
         Self.percentText(ratio)

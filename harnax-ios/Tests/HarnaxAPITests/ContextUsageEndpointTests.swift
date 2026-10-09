@@ -50,7 +50,7 @@ final class ContextUsageEndpointTests: XCTestCase {
     }
 
     /// The shape a session with a billed call answers with
-    /// (`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/ContextUsageResponse.kt:41-50`).
+    /// (`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/ContextUsageResponse.kt:49-59`).
     func testAFullPayloadBecomesAReading() async throws {
         let harness = await harness()
         harness.transport.enqueue(200, Wire.success("""

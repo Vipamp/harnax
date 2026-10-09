@@ -9,12 +9,13 @@ import XCTest
 /// same number for the same session. The expected strings below were written against that source rather than
 /// against this implementation's output, which is the only way the pair of them says anything.
 final class ContextUsageTests: XCTestCase {
-    /// The runtime answers all eight keys (`ContextUsageResponse.kt:41-50`), so a fixture spells the ones it is
+    /// The runtime answers all nine keys (`ContextUsageResponse.kt:49-59`), so a fixture spells the ones it is
     /// not interested in out instead of leaving them to be guessed at.
     private func payload(
         messageCount: Int = 0,
         estimatedTokens: Int = 0,
         lastCallInputTokens: Int? = nil,
+        billIsCurrent: Bool? = nil,
         contextWindow: Int = 0,
         windowSource: String? = nil,
         ratio: Double = 0,
@@ -22,9 +23,10 @@ final class ContextUsageTests: XCTestCase {
         triggerMessages: Int = 0
     ) -> String {
         let bill = lastCallInputTokens.map { "\"lastCallInputTokens\":\($0)," } ?? ""
+        let voided = billIsCurrent.map { "\"billIsCurrent\":\($0)," } ?? ""
         let tier = windowSource.map { "\"windowSource\":\"\($0)\"," } ?? ""
         return """
-        {"messageCount":\(messageCount),"estimatedTokens":\(estimatedTokens),\(bill)\
+        {"messageCount":\(messageCount),"estimatedTokens":\(estimatedTokens),\(bill)\(voided)\
         "contextWindow":\(contextWindow),\(tier)"ratio":\(ratio),"triggerTokens":\(triggerTokens),\
         "triggerMessages":\(triggerMessages)}
         """
@@ -40,13 +42,15 @@ final class ContextUsageTests: XCTestCase {
     /// to blanks rather than fail, and a blank window reads quietly as "no reading".
     func testTheRuntimePayloadFillsEveryField() throws {
         let decoded = try usage(#"""
-        {"messageCount":42,"estimatedTokens":1800,"lastCallInputTokens":36000,"contextWindow":128000,
-        "windowSource":"MODEL_FIELD","ratio":0.28125,"triggerTokens":108000,"triggerMessages":50}
+        {"messageCount":42,"estimatedTokens":1800,"lastCallInputTokens":36000,"billIsCurrent":true,
+        "contextWindow":128000,"windowSource":"MODEL_FIELD",
+        "ratio":0.28125,"triggerTokens":108000,"triggerMessages":50}
         """#)
 
         XCTAssertEqual(decoded.messageCount, 42)
         XCTAssertEqual(decoded.estimatedTokens, 1800)
         XCTAssertEqual(decoded.lastCallInputTokens, 36_000)
+        XCTAssertEqual(decoded.billIsCurrent, true)
         XCTAssertEqual(decoded.contextWindow, 128_000)
         XCTAssertEqual(decoded.windowSource, "MODEL_FIELD")
         XCTAssertEqual(decoded.ratio, 0.28125)
@@ -180,6 +184,42 @@ final class ContextUsageTests: XCTestCase {
         XCTAssertEqual(decoded.numeratorTokens, 0)
     }
 
+    /// An on-demand compaction rewrites the context without making a model call of its own, so the newest bill
+    /// row prices a request that no longer exists. `billIsCurrent: false` is the server saying that, and the
+    /// numerator falls back to the estimate — the one number that actually moved. The bill itself stays
+    /// readable as the history it is.
+    func testAVoidedBillFeedsTheEstimateToBothJudgements() throws {
+        let decoded = try usage(
+            payload(
+                estimatedTokens: 4_200, lastCallInputTokens: 90_000, billIsCurrent: false,
+                contextWindow: 128_000, ratio: 0.0328
+            )
+        )
+
+        XCTAssertEqual(decoded.lastCallInputTokens, 90_000, "the row still reports what was really billed")
+        XCTAssertEqual(decoded.basis, .estimated)
+        XCTAssertEqual(decoded.numeratorTokens, 4_200)
+    }
+
+    /// Only an explicit `false` voids a bill. A server that has not started answering the key leaves it off
+    /// the wire and the router's own default is `true`, so either silence has to keep the billed basis —
+    /// reading a silence as voided would drop every session's headline off the bill onto the estimate.
+    func testAnAbsentOrNullFlagKeepsTheBilledBasis() throws {
+        let withoutKey = try usage(
+            payload(estimatedTokens: 1_800, lastCallInputTokens: 36_000, contextWindow: 128_000)
+        )
+        let explicitNull = try usage(#"""
+        {"messageCount":2,"estimatedTokens":1800,"lastCallInputTokens":36000,"billIsCurrent":null,
+        "contextWindow":128000,"ratio":0.28125,"triggerTokens":108000,"triggerMessages":50}
+        """#)
+
+        XCTAssertNil(withoutKey.billIsCurrent)
+        for decoded in [withoutKey, explicitNull] {
+            XCTAssertEqual(decoded.basis, .billed)
+            XCTAssertEqual(decoded.numeratorTokens, 36_000)
+        }
+    }
+
     func testTheBasisWordsHaveTheirOwnKeys() {
         XCTAssertEqual(ContextUsageBasis.billed.titleKey, "chat.context.basis.billed")
         XCTAssertEqual(ContextUsageBasis.estimated.titleKey, "chat.context.basis.estimated")
@@ -209,6 +249,27 @@ final class ContextUsageTests: XCTestCase {
         XCTAssertFalse(decoded.isAtAutoTrigger)
     }
 
+    /// The colouring reads the same numerator the headline does, so it leaves the line with a bill a
+    /// compaction voided and comes onto it with an over-the-line estimate. A row that stayed red after the
+    /// compaction that emptied the context would say the opposite of what the user just asked for.
+    func testTheTriggerReadsTheEffectiveNumeratorRatherThanTheBill() throws {
+        let voidedBillOverLine = try usage(
+            payload(
+                estimatedTokens: 4_200, lastCallInputTokens: 120_000, billIsCurrent: false,
+                contextWindow: 128_000, triggerTokens: 108_000
+            )
+        )
+        let voidedBillUnderLine = try usage(
+            payload(
+                estimatedTokens: 120_000, lastCallInputTokens: 4_200, billIsCurrent: false,
+                contextWindow: 128_000, triggerTokens: 108_000
+            )
+        )
+
+        XCTAssertFalse(voidedBillOverLine.isAtAutoTrigger, "the bill is over the line but is no longer the numerator")
+        XCTAssertTrue(voidedBillUnderLine.isAtAutoTrigger)
+    }
+
     /// A trigger of zero is the runtime saying it could not work the number out for this model, so nothing is
     /// "at" it. Without the guard every unknown model would come back looking ready to compact.
     func testATriggerOfZeroMeansNothingIsAtIt() throws {
@@ -231,7 +292,7 @@ final class ContextUsageTests: XCTestCase {
     }
 
     /// An absent tier is the fallback's answer, which is the server's own default
-    /// (`ContextUsageResponse.kt:46`), and an empty string is the same answer — the console's leg is
+    /// (`ContextUsageResponse.kt:55`), and an empty string is the same answer — the console's leg is
     /// `usage.windowSource || 'FALLBACK'`, and a tier that reaches the window row as nothing would leave the
     /// label ending in a bare separator.
     func testAMissingTierReadsAsTheFallback() throws {

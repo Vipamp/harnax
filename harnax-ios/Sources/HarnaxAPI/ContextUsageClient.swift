@@ -7,7 +7,7 @@ import HarnaxCore
 /// (`harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:183-191`)
 /// forwards to whichever agent-service instance holds the session and passes the runtime's
 /// `ContextUsageResponse` through untouched, so the keys are that data class's property names
-/// (`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/ContextUsageResponse.kt:41-50`).
+/// (`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/ContextUsageResponse.kt:49-59`).
 /// The console reads the same route (`harnax-webui/src/services/ant-design-pro/chat.ts:50-60`,
 /// mounted at `harnax-webui/src/pages/session/index.tsx:142-153`).
 ///
