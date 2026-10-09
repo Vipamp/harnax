@@ -3,8 +3,8 @@
 ## 0. 口径与取证基线
 
 - 这一份是**取定但尚未实现**的设计件：客户端今天没有任何记忆界面，本文写的是入口归属、跨端契约与验收判据，实现落地后按同一形状逐条回核。
-- 取证基线是 `kotlin-dev` 的 `09b0422f`。服务端读侧三条路由、装配侧会话层的判点、客户端现有分层与门禁都逐条回源码核过，锚点写完整仓库相对路径与行号。
-- 四个名词固定：**长期层**＝主人跨会话的那份整理稿（`root/MEMORY.md`）与按天流水（`memory/<date>.md`）；**会话层**＝一次对话自己的那一层，嵌套在 agent 段之内，这台 agent 开了长期记忆就每场会话都有；**候选**＝运行侧把某一场会话的会话层合并出来的那份新整理稿全文，先记在 `harnax-admin/src/main/resources/db/migration/V7__memory_draft.sql` 建的那张表里，主人批准才写进长期层；**待并入**＝这台 agent 底下还有内容没被并走的**会话**个数。
+- 取证基线是 `kotlin-dev` 的 `dcd9fa28`。服务端读侧三条路由、装配侧会话层的判点、客户端现有分层与门禁都逐条回源码核过，锚点写完整仓库相对路径与行号。
+- 四个名词固定：**长期层**＝主人跨会话的那份整理稿（`root/MEMORY.md`）与按天流水（`memory/<date>.md`）；**会话层**＝一次对话自己的那一层，嵌套在 agent 段之内，这台 agent 开了长期记忆就每场会话都有；**候选**＝运行侧把某一场会话的会话层合并出来的那份新整理稿全文与它点名的按天并入目标，先记在 `harnax-admin/src/main/resources/db/migration/V7__memory_draft.sql` 建的那张表里（日目标在 `harnax-admin/src/main/resources/db/migration/V8__memory_draft_targets.sql` 补的 `targets` 列），主人批准才写进长期层；**待并入**＝这台 agent 底下还有内容没被并走的**会话**个数。
 
 ## 1. 客户端要回答的是两块，不是一块
 
@@ -18,9 +18,9 @@
 ## 2. 读侧给到哪一格（决定客户端能做什么）
 
 - 清单把两层一起分组（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/MemoryStoreGateway.kt:94`），减法落在分组之后（`:95`），所以只写过会话层的 agent 也占一行，正文与日期取的都是长期层。
-- 详情先做减法再取（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/MemoryStoreGateway.kt:122`），返回的整理稿与每日记录全部来自长期层。会话层的对象坐在同一个前缀之下，但没有任何一条路由按会话寻址它们；候选那一屏给的是合并出来的新整理稿全文，不是会话层的原文。
-- 会话层能在客户端落地的只有一枚信号：`pendingSessionLayers`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/MemoryStoreGateway.kt:108` 由 `:379` 数出来，判据是 admin 侧这一条 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/MemoryObjectKeys.kt:356`，注释写明它刻意与合并那一步的取舍对齐——整理进度对象与已归档的日记都不算还欠一次并入——并按会话去重；报文里的位置是 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/MemoryAgentResponse.kt:35`）。这一枚只给数量不给正文，且**不回答开关**：会话层常开，有没有这一层取决于这台 agent 的「长期记忆」，而那一名值只在智能体行上，不在这一份记忆报文里。
-- 客户端因此**不给会话层正文**。要给，服务端先加两条读路由（按会话列出、读某一个会话），键布局现成（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/MemoryObjectKeys.kt:199`），并且要接受两件事：会话层的正文随那一条候选被批准而清掉（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/MemoryStoreGateway.kt:308`，唯一调用点在 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/MemoryDraftServiceImpl.kt:234`），屏上显示的因此是待批的进度而不是存档；会员也装这一层，判据同样是这台 agent 的「长期记忆」（`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt:1220`），而它的会话键由根会话推导（`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/team/TeamRuntimeSpec.kt:56`），列出来因此成排，且每一排都要主人亲自批一次才走得掉。
+- 详情先做减法再取（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/MemoryStoreGateway.kt:122`），返回的整理稿与每日记录全部来自长期层。长期层那份按天流水的写者就是候选批准：批准先逐一写这条候选点名的那几天（运行侧提名时按日期升序取最旧的 7 天），再写整理稿。会话层的对象坐在同一个前缀之下，但没有任何一条路由按会话寻址它们；候选那一屏给的是合并出来的新整理稿全文与它点名的日目标，不是会话层的原文。
+- 会话层能在客户端落地的只有一枚信号：`pendingSessionLayers`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/MemoryStoreGateway.kt:108` 由 `:468` 数出来，判据是 admin 侧这一条 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/MemoryObjectKeys.kt:382`，注释写明它刻意与合并那一步的取舍对齐——整理进度对象与已归档的日记都不算还欠一次并入——并按会话去重；报文里的位置是 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/MemoryAgentResponse.kt:35`）。这一枚只给数量不给正文，且**不回答开关**：会话层常开，有没有这一层取决于这台 agent 的「长期记忆」，而那一名值只在智能体行上，不在这一份记忆报文里。
+- 客户端因此**不给会话层正文**。要给，服务端先加两条读路由（按会话列出、读某一个会话），键布局现成（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/util/MemoryObjectKeys.kt:199`），并且要接受两件事：会话层的正文随那一条候选被批准而清掉，清的动作排在日目标与整理稿都写完之后（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/MemoryStoreGateway.kt:397`，唯一调用点在 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/MemoryDraftServiceImpl.kt:287`），屏上显示的因此是待批的进度而不是存档；会员也装这一层，判据同样是这台 agent 的「长期记忆」（`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt:1259`），而它的会话键由根会话推导（`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/team/TeamRuntimeSpec.kt:56`），列出来因此成排，且每一排都要主人亲自批一次才走得掉。
 - 删除那一条（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/MemoryStoreGateway.kt:153`）按前缀列举原始对象名（`:162`），一次带走两层。确认文案必须把整理稿、全部每日记录与尚未并入的会话记忆三项都点出来，少报任何一项都是少报了它带走了什么。
 
 ## 3. 入口取定：四候选与推荐
@@ -73,7 +73,7 @@
 4. **这一枚开关的三态不破。** 打开向导没碰开关就保存，请求体里这个键整个缺席；碰过的按 `0`/`1` 写出，行上原值不参与。
 5. **寻址用名字。** 清单行到详情的跳转带的是 agent 名字，一台名字含点号或连字符的 agent 能读回自己的记忆，不落到"没有这台"。
 6. **主管屏上没有这一枚。** 团队向导的任何一档都不出现长期记忆的控件。
-7. **「待并入」不等于「等你批」。** 这一枚计数说的是还有几个会话层没并走，不是几条候选停在你面前：一次驳回不带走会话层（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/MemoryDraftServiceImpl.kt:260`），那一层的候选下一轮还会再提一次，所以屏上的文案只能写「还没并走」，不能写成候选条数。
+7. **「待并入」不等于「等你批」。** 这一枚计数说的是还有几个会话层没并走，不是几条候选停在你面前：一次驳回不带走会话层（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/MemoryDraftServiceImpl.kt:314`），那一层的候选下一轮还会再提一次，所以屏上的文案只能写「还没并走」，不能写成候选条数。
 
 ## 8. 不做与待拍板
 
@@ -85,5 +85,5 @@
 |---|---|
 | 入口 | 推荐 A（智能体 tab 第四段），次选 B（「我的」里单开一枚非管理行）；C、D 的否决理由见本文第 3 节那一表 |
 | 两块是否同批 | 推荐同批：这一枚开关的控件在智能体向导上有天然落点，读清那一屏是同一域的另半边，拆开只多一次回归 |
-| 候选审批屏上不上 iOS | 推荐先不上：那四条路由已经齐了（清单 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/MemoryDraftController.kt:56`、详情 `:94`、批准 `:111`、驳回 `:129`），但批准是把会话内容并进主人的长期层，是一个决策动作而不是自助读清，这一轮由网页那一屏承载；要给 iOS 加，形状是清单行上多一枚「有候选」的入口而不是再开一段 |
+| 候选审批屏上不上 iOS | 推荐先不上：那四条路由已经齐了（清单 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/MemoryDraftController.kt:56`、详情 `:94`、批准 `:111`、驳回 `:129`），但批准是把会话内容并进主人的长期层——整理稿连同它点名的那几天流水——是一个决策动作而不是自助读清，这一轮由网页那一屏承载；要给 iOS 加，形状是清单行上多一枚「有候选」的入口而不是再开一段 |
 | 会话层正文 | 推荐先不做：会员也装这一层（判据见本文第 2 节），按会话列出因此是一屏待批进度而不是存档，而候选本身已经有表承载 |
