@@ -2809,6 +2809,11 @@ git commit -m "feat(ios): 会话页自写技能面板与启用动作——四类
 6. `prod_doc/self-improving-implementation.zh-CN.md` 扩写不变量那一段（`:41` 附近）：加进「本会话即时可用」这一档，并写明审核通过的是审后正文、30 分钟快照过期后交付那份压住会话那份；同段补一句前提——草稿的答后上报经容器句柄读，`SANDBOX_ENABLED` 关掉时这条特性不工作（`application.yml:98` 缺省是 false，`harnax-deploy/docker-compose.yml:504` 设的 true），装配期会打一条 warn（`adc13684`）。
 7. `SkillDraftStaging.kt:15`、`:19-21`（类自己的 KDoc 头段）与 Task 7 改掉的 `:69-70` 是同一处 stale-caller 毛病：它仍把 `_drafts` 描述成「晋升管线读的地方」并把本类讲成队列的上游入口，而答后上报现在直投 intake。按 `83609c75` 之后的实际处境改写，别留第三种读法。
 8. `SkillDraftSubmitMiddleware.kt:76-78` 那句注释「the scan is the only line inside offer that is not already caught」说满了：`shouldAllow`（`:112`）与被拦那支的日志（`:113`）同样在 try 外。改成不夸大范围的写法（外层 catch 兜的是 scan 及其前后的判定与日志），并把这句与第 7 条一起在同一次提交里过 `spotless`＋本模块门禁（总数仍 **691**）。
+9. `SkillDraftService.kt` 的 `page` KDoc 在补 `sessionId` 那一段时把「within the caller's tenant」这半句挤掉了，而它正是这个队列的公开契约的一半。把限句补回首段（其余不动），补完仍是 2432 加第 10 条那一支＝**2433**。
+10. 同一段 KDoc 承诺「分页前收窄，所以 total 与页相符」，今天没有任何一支用例量得到这条：把 `session` 传下去、再在 `.mapRecords` 前补一句 `.filter`，全套用例仍全绿。在 `SkillDraftServiceImplTest.kt` 追加一支（`storedDraft` 加一枚 `sourceSessionId` 形参，缺省 `""`）：mapper 回两条、一条属于本会话一条不属于，断言 `page` 原样回两条——服务不在分页之后再筛一遍，筛的是 SQL。删掉这条承诺的唯一方式是让它可测。
+11. `SkillDraftFlowIT` 那支「排除兄弟会话」的用例只断言兄弟会话的行**不在**过滤页里，没有正对照：把过滤整片拿掉它照样绿。在同一个 `@Order` 里先读一次不带 `sessionId` 的队列、断言两行**都在**，再读带过滤的那次断言只剩一行。IT 只跑 `-Pintegration-test`，不进第 9/10 条那行数。
+
+记账（本计划不修，交给合回后的整枝评审或部署核对）：`SessionSkillControllerTest` 那两支线上绑定的用例走 `standaloneSetup` 的默认消息转换器，不是 Boot 装配好的那一枚——应用自身转换器配置漂移仍未被覆盖；router 把调用方给的 path 原样写进 INFO 日志、以及 router 读超时 60s 与 nginx 那 60s 打平（`SessionSkillStore.enable` 合法地可能超过）两条，归部署核对。
 
 收尾残扫（判据是命中数为 0，不是「看起来改完了」）：
 
