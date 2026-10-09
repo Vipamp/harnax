@@ -217,7 +217,7 @@ fun longTermSourceKey(keyPrefix, tenantId, userId, agentId, path, tenantScoped):
 | | 某日期 merge 答回长度不到现存一半⇒不提名（缩水闸按目标生效） | 需求（§3.1.4） |
 | | 长期日期对象 `store.get` 抛⇒`STORE_FAILED` 且 `propose` 零调用 | 需求 |
 | | 结论层的 merge 输入不含未入选的日期 | 需求（D9） |
-| `MemoryDraftCodecTest` | `targets` 变、其余全同⇒摘要变；同内容不同读入顺序⇒摘要与字节同 | 需求（T4） |
+| `MemoryDraftServiceImplTest`（Digest 一节） | `targets` 变、其余全同⇒摘要变；同内容不同读入顺序⇒摘要与字节同 | 需求（T4） |
 | `MemoryObjectKeysTest` | `longTermSourceKey` 收 `memory/2026-10-09.md`；拒 `MEMORY.md`/`memory/`/`memory/a/b.md`/`memory/x.md`/`memory/2026-02-30.md`/`../` 形 | 需求（§6.1） |
 | `MemoryDraftServiceImplTest` | 入账：重复 path、负版本、空白文本、`MEMORY.md` 作 path⇒各自拒绝；`targets` 缺省⇒通过且落库 `NULL` | 需求（D8） |
 | | 批准：第 2 个目标版本不符⇒`STALE_BASE` + `staleTarget` + 零次写 + 抢占未生效 | 需求（D4） |

@@ -981,6 +981,82 @@ class MemoryStoreGatewayTest {
             }
         }
 
+        /** One day of this owner's own ledger, the write target a candidate's `targets` entry names. */
+        private fun dailyKey(date: String) = "${ownerPrefix}agents/Research/memory/$date.md"
+
+        @Test
+        fun `a daily target addresses that day and carries its own item key`() {
+            val missing = missingObject()
+            `when`(minioClient.getObject(any<GetObjectArgs>())).thenThrow(missing)
+
+            assertTrue(gateway.writeDailyIfVersion(tenantId, userId, "Research", "memory/2026-10-05.md", 0L, "- that night"))
+
+            val (key, headers, body) = writes().single()
+            assertEquals(dailyKey("2026-10-05"), key, "the write addresses the one daily key of this owner and agent")
+            assertEquals("*", headers["If-None-Match"], "a day the agent never had is created conditionally, like the layer")
+            val envelope = objectMapper.readTree(body)
+            assertEquals(
+                "/2026-10-05.md",
+                envelope.path("key").asText(),
+                "the runtime reads the item key out of this field, so a daily object stamped /MEMORY.md would list back as a second curated file",
+            )
+            assertEquals(1L, envelope.path("version").asLong())
+            assertEquals("- that night", envelope.path("value").path("content").asText())
+        }
+
+        @Test
+        fun `an absent day reads as empty at version 0`() {
+            val missing = missingObject()
+            `when`(minioClient.getObject(any<GetObjectArgs>())).thenThrow(missing)
+
+            val day = gateway.readDailyLayer(tenantId, userId, "Research", "memory/2026-10-05.md")
+
+            assertEquals("", day.content)
+            assertEquals(0L, day.version, "0 is the version a first target for that day is filed against")
+        }
+
+        @Test
+        fun `a day merged against an older version never reaches the store`() {
+            val objects = mutableMapOf(dailyKey("2026-10-05") to wrapper("- the other conversation won", key = "/2026-10-05.md"))
+            fakeBucket(objects)
+
+            assertFalse(gateway.writeDailyIfVersion(tenantId, userId, "Research", "memory/2026-10-05.md", 0L, "- mine"))
+
+            verify(minioClient, never()).putObject(any<PutObjectArgs>())
+            assertEquals(
+                "- the other conversation won",
+                objectMapper.readTree(objects.getValue(dailyKey("2026-10-05"))).path("value").path("content").asText(),
+            )
+        }
+
+        @Test
+        fun `a path that is not a day of the long-term ledger never reaches the store`() {
+            listOf("MEMORY.md", "memory/notes.md", "memory/../2026-10-05.md", "root/MEMORY.md").forEach { path ->
+                reset(minioClient)
+
+                assertEquals(
+                    400,
+                    assertThrows(BizException::class.java) {
+                        gateway.writeDailyIfVersion(tenantId, userId, "Research", path, 0L, "- x")
+                    }.code,
+                    "'$path' is not a day an approval may write",
+                )
+                assertThrows(BizException::class.java) { gateway.readDailyLayer(tenantId, userId, "Research", path) }
+
+                verify(minioClient, never()).getObject(any<GetObjectArgs>())
+            }
+        }
+
+        @Test
+        fun `an unaddressable agent refuses a daily write the same way it refuses the layer`() {
+            reset(minioClient)
+
+            assertThrows(BizException::class.java) {
+                gateway.writeDailyIfVersion(tenantId, userId, "Research/x", "memory/2026-10-05.md", 0L, "- x")
+            }
+            verify(minioClient, never()).getObject(any<GetObjectArgs>())
+        }
+
         @Test
         fun `only a source that still holds the merged bytes is cleared`() {
             val matched = sessionKey("root", "MEMORY.md")

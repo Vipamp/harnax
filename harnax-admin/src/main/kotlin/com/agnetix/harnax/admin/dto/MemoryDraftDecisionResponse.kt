@@ -11,7 +11,9 @@ import java.time.LocalDateTime
  * information to be actionable: `DRAFT_CHANGED` needs the new digest so the screen can force a re-read,
  * `ALREADY_REVIEWED` needs who decided and why, `STALE_BASE` needs the version the owner's layer is at now —
  * without it the owner cannot tell whether the layer moved because they approved another candidate or because
- * a second conversation merged first. `ResultVo`'s error branch carries a message and no data, and a screen
+ * a second conversation merged first. [staleTarget] narrows that answer, because one approval covers the
+ * conclusion layer and every daily file the same merge writes: "the layer moved" alone would not say which
+ * of those objects nobody has read. `ResultVo`'s error branch carries a message and no data, and a screen
  * that has to re-fetch to recover what it was just refusing to do is a screen with a race in it.
  *
  * [outcome] is the stable contract; the wording in [reason] is not.
@@ -33,6 +35,12 @@ data class MemoryDraftDecisionResponse(
     @Schema(description = "Files already gone, so nothing was cleared for them", example = "0")
     val absentSources: Int = 0,
 
+    @Schema(
+        description = "Daily files of the agent's own ledger this approval wrote or found already holding its text",
+        example = "2",
+    )
+    val dailyTargetsApplied: Int = 0,
+
     @Schema(description = "Sentence describing a refusal or a rejection; not a contract, localize on outcome")
     val reason: String? = null,
 
@@ -41,6 +49,9 @@ data class MemoryDraftDecisionResponse(
 
     @Schema(description = "Version the owner's layer is at now, present on STALE_BASE", example = "5")
     val currentBaseVersion: Long? = null,
+
+    @Schema(description = "Daily file that moved, present on STALE_BASE when the conclusion layer did not", example = "memory/2026-10-08.md")
+    val staleTarget: String? = null,
 
     @Schema(description = "Owner who got there first, present on ALREADY_REVIEWED")
     val reviewedBy: String? = null,
@@ -65,7 +76,7 @@ data class MemoryDraftDecisionResponse(
         /** The owner, or a second tab of theirs, decided this one first; the candidate is no longer PENDING. */
         const val OUTCOME_ALREADY_REVIEWED = "ALREADY_REVIEWED"
 
-        /** The layer moved since the merge read it, so applying this text would overwrite a merge nobody read. */
+        /** One object this candidate writes moved since the merge read it, so the whole decision is refused. */
         const val OUTCOME_STALE_BASE = "STALE_BASE"
 
         fun approved(
@@ -73,15 +84,18 @@ data class MemoryDraftDecisionResponse(
             cleared: Int,
             kept: Int,
             absent: Int,
+            dailyTargetsApplied: Int = 0,
         ) = MemoryDraftDecisionResponse(
             outcome = OUTCOME_APPROVED,
             longTermVersion = longTermVersion,
             clearedSources = cleared,
             keptSources = kept,
             absentSources = absent,
+            dailyTargetsApplied = dailyTargetsApplied,
             reason = "Approved: the long-term layer is at version $longTermVersion, $cleared source file(s) cleared" +
                 (if (kept > 0) ", $kept kept for the next candidate" else "") +
-                (if (absent > 0) ", $absent already gone" else ""),
+                (if (absent > 0) ", $absent already gone" else "") +
+                (if (dailyTargetsApplied > 0) ", $dailyTargetsApplied daily file(s) merged" else ""),
         )
 
         /**
@@ -95,16 +109,19 @@ data class MemoryDraftDecisionResponse(
             cleared: Int,
             kept: Int,
             absent: Int,
+            dailyTargetsApplied: Int = 0,
         ) = MemoryDraftDecisionResponse(
             outcome = OUTCOME_APPROVED,
             longTermVersion = longTermVersion,
             clearedSources = cleared,
             keptSources = kept,
             absentSources = absent,
+            dailyTargetsApplied = dailyTargetsApplied,
             reason = "Approved: the long-term layer already held this text at version $longTermVersion, " +
                 "$cleared source file(s) cleared" +
                 (if (kept > 0) ", $kept kept for the next candidate" else "") +
-                (if (absent > 0) ", $absent already gone" else ""),
+                (if (absent > 0) ", $absent already gone" else "") +
+                (if (dailyTargetsApplied > 0) ", $dailyTargetsApplied daily file(s) merged" else ""),
         )
 
         fun rejected(reason: String) = MemoryDraftDecisionResponse(outcome = OUTCOME_REJECTED, reason = reason)
@@ -115,11 +132,17 @@ data class MemoryDraftDecisionResponse(
             currentDigest = currentDigest,
         )
 
-        fun staleBase(currentBaseVersion: Long) = MemoryDraftDecisionResponse(
+        fun staleBase(
+            currentBaseVersion: Long,
+            staleTarget: String? = null,
+        ) = MemoryDraftDecisionResponse(
             outcome = OUTCOME_STALE_BASE,
             reason = "The long-term layer is at version $currentBaseVersion, but this candidate was merged against " +
-                "an older one; approve the next candidate this conversation proposes instead",
+                "an older one" +
+                (staleTarget?.let { "; the day it read as '$it' has been written since" } ?: "") +
+                "; approve the next candidate this conversation proposes instead",
             currentBaseVersion = currentBaseVersion,
+            staleTarget = staleTarget,
         )
 
         fun alreadyReviewed(
