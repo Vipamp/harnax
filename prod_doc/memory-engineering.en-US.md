@@ -387,7 +387,7 @@ Column and key names, defaults and comments each have exactly one definition acr
 
 ### 11.12 Clause-by-clause reconciliation: who asserts each assertable clause
 
-Test names are taken verbatim from the test sources, and the counts are what this round actually ran: `harnax-harness-core` 699 cases in that module (the real-model promotion case has no provider key and is recorded once as skipped), `harnax-admin` 2917 cases (2498 unit plus 419 integration cases on a real `mysql:8.0` and a real MinIO), and both are at zero failures.
+Test names are taken verbatim from the test sources, and the counts are what this round actually ran: `harnax-harness-core` 702 cases in that module (the real-model promotion case has no provider key and is recorded once as skipped), `harnax-admin` 2921 cases (2501 unit plus 420 integration cases on a real `mysql:8.0` and a real MinIO), and both are at zero failures.
 
 | Clause | Where the assertion lands | Status |
 |---|---|---|
