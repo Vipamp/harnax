@@ -12,13 +12,19 @@ import reactor.core.publisher.Mono
  *
  * Two things are only knowable after `HarnessAgent.Builder.build()` — the workspace filesystem and the agent
  * itself — and both are needed by objects that must already exist to be handed to that builder: the promotion
- * gate reads a draft's support files off the filesystem, and offering a draft calls back into the agent. So
- * this is the placeholder they hold: [bind] fills it once the agent exists, and every read before that
- * answers as if nothing were staged.
+ * gate reads a draft's support files off the filesystem, and [promote] runs the upstream pipeline on the
+ * agent. So this is the placeholder they hold: [bind] fills it once the agent exists, and every read before
+ * that answers as if nothing were staged.
+ *
+ * Reaching Admin's queue at the end of a turn is not one of the paths through here. The turn-end offer reads
+ * the staged drafts through [SessionSkillStore] and files them with the intake adaptor itself, so it never
+ * touches this object. [promote] is the other way through, and the live path does not run it either: as
+ * [SkillDraftSubmitMiddleware] records, nothing on this deployment calls the upstream pipeline it enters.
  *
  * That ordering is not a nicety. [com.agnetix.harnax.harness.HarnessAgentBuilder.build] configures
- * `enableSkillManageTool` and then builds, so the gate is constructed against an unbound staging and the
- * first draft can only be offered by a middleware running on a later turn, by which time [bind] has run.
+ * `enableSkillManageTool` and then builds, so the gate is constructed against an unbound staging. The read
+ * that gate performs only happens inside a turn of the agent it was installed on, and by then [bind] has
+ * pointed this staging at that agent.
  *
  * Binding is one-way and the fields are `@Volatile`: the agent is built on the assembling thread and read
  * from a bounded-Elastic worker, and a session's staging is never re-pointed at another agent.

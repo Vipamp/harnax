@@ -73,9 +73,10 @@ class SkillDraftSubmitMiddleware(
             try {
                 offer(name, claimedAt)
             } catch (e: Exception) {
-                // The scan is the only line inside offer that is not already caught, and a scanner that throws
-                // must cost this one draft its turn rather than every other draft's: slots were taken one name
-                // at a time, so the ones not reached yet are still unclaimed and this one gives its slot back.
+                // This catch covers everything `offer` does outside the draft read and the intake call, which
+                // hold their own failures. A scanner that throws must cost this one draft its turn rather than
+                // every other draft's — slots were taken one name at a time, so the ones not reached yet are
+                // still unclaimed and this one gives its slot back.
                 log.warn(
                     "Offering the staged draft {} of session {} raised {}: {}",
                     name,

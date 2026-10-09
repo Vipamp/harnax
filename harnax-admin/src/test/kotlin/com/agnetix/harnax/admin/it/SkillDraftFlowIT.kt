@@ -480,9 +480,22 @@ class SkillDraftFlowIT : BaseAdminIT() {
         assertEquals(200, mine["code"].asInt(), mine.toString())
         assertEquals(200, sibling["code"].asInt(), sibling.toString())
 
+        // Positive control first: both rows are in this tenant's open queue at all, so the filtered read below
+        // narrows something rather than agreeing with a filter that was never applied.
+        val everything = records("pageSize=100").map { it["name"].asText() }
+        assertTrue(
+            everything.contains("it_draft_ses_mine_$suffix") && everything.contains("it_draft_ses_sibling_$suffix"),
+            "the unfiltered queue carries both conversations' nominations: $everything",
+        )
+
         val names = records("sessionId=$sessionUuid&pageSize=100").map { it["name"].asText() }
         assertTrue(names.contains("it_draft_ses_mine_$suffix"), "the session sees its own nomination: $names")
         assertFalse(names.contains("it_draft_ses_sibling_$suffix"), "and not another conversation's: $names")
+        assertEquals(
+            listOf("it_draft_ses_mine_$suffix"),
+            names.filter { it.startsWith("it_draft_ses_") },
+            "of the two rows this case filed, exactly its own conversation's survives",
+        )
 
         // The new predicate narrows inside the tenant clause rather than replacing it.
         val foreign = parseBody(

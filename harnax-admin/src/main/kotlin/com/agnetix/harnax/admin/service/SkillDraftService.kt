@@ -28,7 +28,7 @@ interface SkillDraftService {
     fun submit(request: SkillDraftSubmitRequest): Long
 
     /**
-     * The queue, newest first.
+     * The queue within the caller's tenant, newest touched first.
      *
      * [sessionId] narrows the queue to one conversation's proposals, which is what a session panel asks for;
      * it is a SQL predicate rather than a post-filter because PageHelper counts the rows it hands back, so a
