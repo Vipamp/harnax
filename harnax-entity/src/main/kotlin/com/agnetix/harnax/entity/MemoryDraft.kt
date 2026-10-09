@@ -5,18 +5,25 @@ import java.io.Serializable
 import java.time.LocalDateTime
 
 /**
- * One conversation's memory merge that a person has not decided on yet.
+ * One memory merge that a person has not decided on yet.
  *
- * A conversation's own memory layer is a buffer; the owner's long-term `MEMORY.md` is what every later
+ * A conversation's own memory layer is a buffer; the owner's long-term memory is what every later
  * conversation of that agent reads. Nothing crosses between the two automatically: the runtime merges, files
  * the result here, and only an approval of one of these rows writes the long-term layer. That is why the row
  * carries both texts — [mergedMd] is what the reviewer reads and what the approval writes, and [baseMd] is the
  * text the merge was made against, kept so the screen can show what the candidate changes rather than only
  * what it becomes.
  *
- * [baseVersion] is the precondition. The merge read the owner's layer at that store version, so an approval
- * applies this text to those bytes or says plainly that the layer moved in the meantime. A candidate approved
- * without it would let whoever decides first overwrite a merge nobody has read.
+ * The long-term layer is two things, so one row decides on both: the conclusion text above, and the agent's
+ * day-by-day ledger. [targets] carries the second half — one entry per daily file the merge produced, each
+ * with the text it started from and the text it would become. A row is therefore one decision over `1 + K`
+ * objects, not one text: approving writes every one of them or none, because a merge that landed half of its
+ * targets would leave the reviewer's queue showing a candidate that no longer describes the layer.
+ *
+ * [baseVersion] is the precondition for the conclusion text. The merge read the owner's layer at that store
+ * version, so an approval applies this text to those bytes or says plainly that the layer moved in the
+ * meantime. Each daily entry carries its own version for the same reason. A candidate approved without it
+ * would let whoever decides first overwrite a merge nobody has read.
  *
  * [userId] is `sys_user.id`, the same value the store buckets the owner's memory under, so the queue and the
  * objects it decides on belong to one person by construction — a workspace admin has no row to see here.
@@ -73,6 +80,9 @@ class MemoryDraft : Serializable {
 
     @Schema(description = "JSON array of {path, content}: every conversation-layer object the merge read, with the bytes it read there")
     var sources: String? = null
+
+    @Schema(description = "JSON array of {path, expectedVersion, baseText, mergedText}: each daily file this candidate writes in the agent's long-term layer; null when it has no daily target")
+    var targets: String? = null
 
     @Schema(description = "PENDING / APPROVED / REJECTED")
     var status: String = STATUS_PENDING

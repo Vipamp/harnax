@@ -1037,6 +1037,8 @@ message?: string;
     baseVersion: number;
     mergedChars: number;
     sourceCount: number;
+    /** 这次并入除结论层之外还要写的日期文件个数；列表页不展示这一列，它只是详情里目标条数的口径 */
+    targetCount: number;
     createTime?: string;
     updateTime?: string;
     reviewedBy?: string;
@@ -1063,6 +1065,20 @@ message?: string;
   };
 
   /**
+   * @zh-CN 这次并入除结论层之外还要写的一份日期记忆，路径形如 memory/2026-10-09.md
+   */
+  export type MemoryDraftTarget = {
+    /** 该日文件在长期层里的路径 */
+    path: string;
+    /** 合并读取时这个对象的存储版本；0 表示当时还没有这个文件，批准即新建 */
+    expectedVersion: number;
+    /** 那次读到的该日现有正文，对象不存在时服务端不下发这个键；它是审阅证据，用来看出这一天被折掉了多少 */
+    baseText?: string;
+    /** 批准后要写入该日文件的完整新正文 */
+    mergedText: string;
+  };
+
+  /**
    * @zh-CN 单条候选的全文。baseMd 是这次合并读到的现有长期层，没有则为空
    */
   export type MemoryDraftDetail = {
@@ -1074,6 +1090,8 @@ message?: string;
     baseMd?: string;
     baseVersion: number;
     sources: MemoryDraftSource[];
+    /** 这次并入还要写的日期文件，一个会话可能同时并写好几天；缺省表示这次只动结论层 */
+    targets?: MemoryDraftTarget[];
     /** 服务端对上面这些列现算的摘要，批准必须签回它 */
     contentDigest: string;
     createTime?: string;
@@ -1100,9 +1118,13 @@ message?: string;
     clearedSources?: number;
     keptSources?: number;
     absentSources?: number;
+    /** 批准成功时本次写成功、或写下去就是它原本的样子（未动）的日期天数；没有日期目标时不下发 */
+    dailyTargetsApplied?: number;
     reason?: string;
     currentDigest?: string;
     currentBaseVersion?: number;
+    /** STALE_BASE 时点出对不上的是哪一个对象——结论层还是某一个日期文件；键可能整个不存在 */
+    staleTarget?: string;
     reviewedBy?: string;
     reviewedAt?: string;
     rejectReason?: string;

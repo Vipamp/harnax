@@ -34,6 +34,9 @@ data class MemoryDraftResponse(
     @Schema(description = "How many conversation-layer objects the merge took material out of")
     val sourceCount: Int = 0,
 
+    @Schema(description = "How many daily long-term files the same approval would rewrite")
+    val targetCount: Int = 0,
+
     @Schema(description = "First proposal time")
     val createTime: LocalDateTime? = null,
 
@@ -54,11 +57,12 @@ data class MemoryDraftResponse(
  * The candidate with both texts, so the owner can see what the merge changes rather than only what it
  * becomes.
  *
- * [baseMd] and [mergedMd] are the whole decision: one is what every later conversation of this agent is
- * already told, the other is what it would be told instead. [sources] is the third part — the conversation
- * files this candidate was made from and what the approval will clear out of that conversation's own layer —
- * and each entry carries the exact bytes the merge read, because an approval clears a file only while it
- * still holds them.
+ * [baseMd] and [mergedMd] are the whole decision on the conclusion layer. [sources] is the third part — the
+ * conversation files this candidate was made from and what the approval will clear out of that conversation's
+ * own layer — and each entry carries the exact bytes the merge read, because an approval clears a file only
+ * while it still holds them. [targets] is the fourth: the agent's own day-by-day ledger this same approval
+ * rewrites, each day with the version and text it was merged against, so the owner reads every object the
+ * click touches rather than only the one that gets injected into later conversations.
  *
  * [contentDigest] is computed server-side over the fields on this response, and an approval sends it back.
  * Without that round trip, "approve the text I read" would be a claim about two documents rather than a check.
@@ -89,7 +93,10 @@ data class MemoryDraftDetailResponse(
     @Schema(description = "Every conversation-layer file the merge read, with the bytes found there")
     val sources: List<MemoryDraftSource> = emptyList(),
 
-    @Schema(description = "SHA-256 over agent, conversation, both texts, the base version and the sources as stored; required on approval")
+    @Schema(description = "Every daily long-term file this merge produced, with the version and bytes it merged against")
+    val targets: List<MemoryDraftTarget> = emptyList(),
+
+    @Schema(description = "SHA-256 over agent, conversation, both texts, the base version, the sources and the targets as stored; required on approval")
     val contentDigest: String = "",
 
     @Schema(description = "First proposal time")

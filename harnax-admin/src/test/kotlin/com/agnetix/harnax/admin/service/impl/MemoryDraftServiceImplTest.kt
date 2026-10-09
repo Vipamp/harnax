@@ -6,6 +6,7 @@ import com.agnetix.harnax.admin.dto.MemoryDraftDecisionResponse
 import com.agnetix.harnax.admin.dto.MemoryDraftRejectRequest
 import com.agnetix.harnax.admin.dto.MemoryDraftSource
 import com.agnetix.harnax.admin.dto.MemoryDraftSubmitRequest
+import com.agnetix.harnax.admin.dto.MemoryDraftTarget
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.security.SecurityUtils
 import com.agnetix.harnax.admin.util.JwtUtil
@@ -24,6 +25,7 @@ import com.github.pagehelper.PageHelper
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
@@ -41,6 +43,7 @@ import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.eq
+import org.mockito.kotlin.inOrder
 import org.mockito.quality.Strictness
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
 import org.springframework.security.core.context.SecurityContextHolder
@@ -54,12 +57,14 @@ import org.springframework.security.core.context.SecurityContextHolder
  * memory on the strength of a click.
  *
  * The decision tests hold the other half — that nothing reaches the memory bucket except an approval whose
- * three preconditions still hold. Two of those preconditions cannot be read from the row at all, only from
- * the store: the digest, which says the owner approved the text they read, and the layer version, which says
- * the merge was made against the bytes still there. The order between them and the store write is asserted
- * explicitly, because the two failure modes it prevents are different: a claim that lands before a refused
- * write closes a candidate nobody decided, and a clear that runs before a failed write deletes a
- * conversation's memory for a layer that never changed.
+ * preconditions still hold, one per object the candidate writes. Two of those preconditions cannot be read
+ * from the row at all, only from the store: the digest, which says the owner approved the text they read, and
+ * the version of each object, which says the merge was made against the bytes still there. The order between
+ * them and the store writes is asserted explicitly, because the two failure modes it prevents are different:
+ * a claim that lands before a refused write closes a candidate nobody decided, and a clear that runs before a
+ * failed write deletes a conversation's memory for a layer that never changed. The writes go days first and
+ * the conclusion layer last, which is what makes a part-way failure an unfinished approval rather than a
+ * half-merged memory.
  */
 @ExtendWith(MockitoExtension::class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -171,6 +176,19 @@ class MemoryDraftServiceImplTest {
         ).thenAnswer { invocation -> "store/tenants/4/users/7/agents/Research/sessions/web-1/${invocation.getArgument<String>(4)}" }
     }
 
+    /**
+     * The store's own reachability answer for a daily target: a `memory/<date>.md` path names a day of the
+     * agent's ledger, anything else — `MEMORY.md` above all — names no object an approval could write.
+     */
+    private fun stubResolvableTargets() {
+        `when`(
+            memoryStoreGateway.longTermSourceKey(eq(TENANT), eq(USER_SEGMENT), eq(AGENT), any()),
+        ).thenAnswer { invocation ->
+            val path = invocation.getArgument<String>(3)
+            if (path.startsWith("memory/") && path.endsWith(".md")) "store/tenants/4/users/7/agents/Research/$path" else null
+        }
+    }
+
     private fun submit(
         sessionId: String? = WEB_SESSION,
         agentName: String? = AGENT,
@@ -178,6 +196,7 @@ class MemoryDraftServiceImplTest {
         baseMarkdown: String? = BASE,
         baseVersion: Long = 3L,
         sources: List<MemoryDraftSource>? = SOURCES,
+        targets: List<MemoryDraftTarget>? = null,
     ): Long = service.submit(
         MemoryDraftSubmitRequest(
             sessionId = sessionId,
@@ -186,6 +205,7 @@ class MemoryDraftServiceImplTest {
             baseMarkdown = baseMarkdown,
             baseVersion = baseVersion,
             sources = sources,
+            targets = targets,
         ),
     )
 
@@ -202,6 +222,7 @@ class MemoryDraftServiceImplTest {
         baseMd: String? = BASE,
         baseVersion: Long = 3L,
         sources: List<MemoryDraftSource> = SOURCES,
+        targets: List<MemoryDraftTarget> = emptyList(),
         reviewedBy: String? = null,
         rejectReason: String? = null,
     ): MemoryDraft {
@@ -215,6 +236,7 @@ class MemoryDraftServiceImplTest {
         draft.baseMd = baseMd
         draft.baseVersion = baseVersion
         draft.sources = MemoryDraftCodec.sourcesJson(sources)
+        draft.targets = targets.takeIf { it.isNotEmpty() }?.let { MemoryDraftCodec.targetsJson(it) }
         draft.status = status
         draft.reviewedBy = reviewedBy
         draft.rejectReason = rejectReason
@@ -235,6 +257,16 @@ class MemoryDraftServiceImplTest {
     ) {
         `when`(memoryStoreGateway.readCuratedLayer(TENANT, USER_SEGMENT, AGENT))
             .thenReturn(MemoryStoreGateway.CuratedLayer(content, version))
+    }
+
+    /** What one day of the agent's own ledger holds when the approval reads it. */
+    private fun stubDailyLayer(
+        path: String,
+        content: String,
+        version: Long,
+    ) {
+        `when`(memoryStoreGateway.readDailyLayer(TENANT, USER_SEGMENT, AGENT, path))
+            .thenReturn(MemoryStoreGateway.DailyLayer(content, version))
     }
 
     @Nested
@@ -363,6 +395,97 @@ class MemoryDraftServiceImplTest {
             ).thenReturn(null)
 
             val refused = assertThrows(BizException::class.java) { submit() }
+
+            assertTrue(refused.message!!.contains("MEMORY.md"), "the refusal names the path it cannot address")
+            verify(memoryDraftMapper, never()).insert(any())
+        }
+
+        @Test
+        @DisplayName("a candidate with no daily target stores a NULL column")
+        fun `no daily target stores null`() {
+            stubWebSession()
+            stubResolvableSources()
+
+            submit()
+
+            assertNull(capturedInsert().targets, "NULL is the natural shape of a candidate that merged no day")
+        }
+
+        @Test
+        @DisplayName("daily targets are stored sorted, so two merges of one layer make the same digest")
+        fun `daily targets are stored canonically`() {
+            stubWebSession()
+            stubResolvableSources()
+            stubResolvableTargets()
+
+            submit(targets = listOf(TWO_TARGETS[1], TWO_TARGETS[0]))
+
+            assertEquals(
+                listOf(DAY_1, DAY_2),
+                MemoryDraftCodec.targetsOf(capturedInsert()).map { it.path },
+            )
+            assertEquals(
+                TWO_TARGETS,
+                MemoryDraftCodec.targetsOf(capturedInsert()),
+                "the texts an approval writes are the ones the owner read, so nothing may be lost or reordered on the way in",
+            )
+        }
+
+        @Test
+        @DisplayName("two targets for one day are refused: the approval could not write that day twice")
+        fun `a duplicate daily target is refused`() {
+            stubWebSession()
+            stubResolvableSources()
+            stubResolvableTargets()
+
+            val refused = assertThrows(BizException::class.java) { submit(targets = listOf(TWO_TARGETS[0], TARGETS[0])) }
+
+            assertTrue(refused.message!!.contains(DAY_1), "the refusal names the day it cannot place twice")
+            verify(memoryDraftMapper, never()).insert(any())
+        }
+
+        @Test
+        @DisplayName("a daily target with no text is refused: approving it would erase that day")
+        fun `a blank daily target is refused`() {
+            stubWebSession()
+            stubResolvableSources()
+            stubResolvableTargets()
+
+            val refused = assertThrows(BizException::class.java) {
+                submit(targets = listOf(TARGETS[0].copy(mergedText = "   ")))
+            }
+
+            assertTrue(refused.message!!.contains(DAY_1))
+            verify(memoryDraftMapper, never()).insert(any())
+        }
+
+        @Test
+        @DisplayName("a daily target that expects a negative version is refused")
+        fun `a negative daily target version is refused`() {
+            stubWebSession()
+            stubResolvableSources()
+            stubResolvableTargets()
+
+            val refused = assertThrows(BizException::class.java) {
+                submit(targets = listOf(TARGETS[0].copy(expectedVersion = -1L)))
+            }
+
+            assertTrue(refused.message!!.contains("-1"), "the refusal quotes the version that is not one")
+            verify(memoryDraftMapper, never()).insert(any())
+        }
+
+        @Test
+        @DisplayName("a target path that addresses no day of this agent's ledger is refused by the store's own rule")
+        fun `an unresolvable daily target is refused`() {
+            stubWebSession()
+            stubResolvableSources()
+            stubResolvableTargets()
+
+            val refused = assertThrows(BizException::class.java) {
+                // The conclusion layer has one writer and no path of its own; a proposal naming it as a target
+                // would ask an approval to write MEMORY.md twice, once from the base columns and once from here.
+                submit(targets = listOf(TARGETS[0].copy(path = "MEMORY.md")))
+            }
 
             assertTrue(refused.message!!.contains("MEMORY.md"), "the refusal names the path it cannot address")
             verify(memoryDraftMapper, never()).insert(any())
@@ -515,6 +638,109 @@ class MemoryDraftServiceImplTest {
             assertEquals(MemoryDraftDecisionResponse.OUTCOME_STALE_BASE, answer.outcome)
             assertEquals(9L, answer.currentBaseVersion, "the owner needs the version that moved to know what to re-run")
             verify(memoryDraftMapper, never()).markReviewed(any(), any(), any(), anyOrNull())
+            verify(memoryStoreGateway, never()).writeCuratedIfVersion(any(), any(), any(), any(), any())
+            verify(memoryStoreGateway, never()).clearSessionSources(any(), any(), any(), any(), any())
+        }
+
+        @Test
+        @DisplayName("a day of the ledger that moved since the merge read it refuses the whole candidate")
+        fun `a stale daily target is refused and named`() {
+            loginAsMember()
+            val draft = pendingDraft(targets = TWO_TARGETS)
+            stubDraftOnRow(draft)
+            stubStoreReady()
+            stubLayer(content = BASE!!, version = 3L)
+            stubDailyLayer(DAY_1, content = "", version = 0L)
+            // A second conversation's approval landed this day in the meantime.
+            stubDailyLayer(DAY_2, content = "- somebody else merged this day", version = 5L)
+
+            val answer = service.approve(DRAFT_ID, MemoryDraftApproveRequest(expectedDigest = MemoryDraftCodec.contentDigest(draft)))
+
+            assertEquals(MemoryDraftDecisionResponse.OUTCOME_STALE_BASE, answer.outcome)
+            assertEquals(DAY_2, answer.staleTarget, "the owner has to see which of the objects moved, not just that one did")
+            verify(memoryDraftMapper, never()).markReviewed(any(), any(), any(), anyOrNull())
+            // Half a candidate is not a decision: the day that was still at its version is left alone too.
+            verify(memoryStoreGateway, never()).writeDailyIfVersion(any(), any(), any(), any(), any(), any())
+            verify(memoryStoreGateway, never()).writeCuratedIfVersion(any(), any(), any(), any(), any())
+            verify(memoryStoreGateway, never()).clearSessionSources(any(), any(), any(), any(), any())
+        }
+
+        @Test
+        @DisplayName("an approval writes every day it names, then the conclusion layer, then clears")
+        fun `the days land before the conclusion layer`() {
+            loginAsMember()
+            val draft = pendingDraft(targets = TWO_TARGETS)
+            stubDraftOnRow(draft)
+            stubStoreReady()
+            stubLayer(content = BASE!!, version = 3L)
+            stubDailyLayer(DAY_1, content = "", version = 0L)
+            stubDailyLayer(DAY_2, content = DAY_2_BASE, version = 2L)
+            `when`(memoryDraftMapper.markReviewed(eq(DRAFT_ID), eq(MemoryDraft.STATUS_APPROVED), eq(MEMBER), anyOrNull())).thenReturn(1)
+            `when`(memoryStoreGateway.writeDailyIfVersion(TENANT, USER_SEGMENT, AGENT, DAY_1, 0L, DAY_1_MERGED)).thenReturn(true)
+            `when`(memoryStoreGateway.writeDailyIfVersion(TENANT, USER_SEGMENT, AGENT, DAY_2, 2L, DAY_2_MERGED)).thenReturn(true)
+            `when`(memoryStoreGateway.writeCuratedIfVersion(TENANT, USER_SEGMENT, AGENT, 3L, MERGED)).thenReturn(true)
+            `when`(memoryStoreGateway.clearSessionSources(eq(TENANT), eq(USER_SEGMENT), eq(AGENT), eq(WEB_SESSION), any()))
+                .thenReturn(MemoryStoreGateway.ClearedSources(cleared = 2, kept = 0, absent = 0))
+
+            val answer = service.approve(DRAFT_ID, MemoryDraftApproveRequest(expectedDigest = MemoryDraftCodec.contentDigest(draft)))
+
+            assertEquals(MemoryDraftDecisionResponse.OUTCOME_APPROVED, answer.outcome)
+            assertEquals(2, answer.dailyTargetsApplied)
+            assertEquals(4L, answer.longTermVersion, "the conclusion layer's version says nothing about the days")
+            // The order is the whole half-failure story: the days have no reader, the layer goes into every
+            // conversation, so a run that stops part-way must stop with the readable object still untouched.
+            val order = inOrder(memoryStoreGateway)
+            order.verify(memoryStoreGateway).writeDailyIfVersion(TENANT, USER_SEGMENT, AGENT, DAY_1, 0L, DAY_1_MERGED)
+            order.verify(memoryStoreGateway).writeDailyIfVersion(TENANT, USER_SEGMENT, AGENT, DAY_2, 2L, DAY_2_MERGED)
+            order.verify(memoryStoreGateway).writeCuratedIfVersion(TENANT, USER_SEGMENT, AGENT, 3L, MERGED)
+            order.verify(memoryStoreGateway).clearSessionSources(eq(TENANT), eq(USER_SEGMENT), eq(AGENT), eq(WEB_SESSION), any())
+        }
+
+        @Test
+        @DisplayName("a day already holding this candidate's text is finished, not written twice")
+        fun `a day already landed counts without a second write`() {
+            loginAsMember()
+            val draft = pendingDraft(targets = TWO_TARGETS)
+            stubDraftOnRow(draft)
+            stubStoreReady()
+            stubLayer(content = BASE!!, version = 3L)
+            // A previous attempt of this same approval wrote DAY_1 and then lost the store mid-run.
+            stubDailyLayer(DAY_1, content = DAY_1_MERGED, version = 1L)
+            stubDailyLayer(DAY_2, content = DAY_2_BASE, version = 2L)
+            `when`(memoryDraftMapper.markReviewed(eq(DRAFT_ID), eq(MemoryDraft.STATUS_APPROVED), eq(MEMBER), anyOrNull())).thenReturn(1)
+            `when`(memoryStoreGateway.writeDailyIfVersion(TENANT, USER_SEGMENT, AGENT, DAY_2, 2L, DAY_2_MERGED)).thenReturn(true)
+            `when`(memoryStoreGateway.writeCuratedIfVersion(TENANT, USER_SEGMENT, AGENT, 3L, MERGED)).thenReturn(true)
+            `when`(memoryStoreGateway.clearSessionSources(eq(TENANT), eq(USER_SEGMENT), eq(AGENT), eq(WEB_SESSION), any()))
+                .thenReturn(MemoryStoreGateway.ClearedSources(cleared = 2, kept = 0, absent = 0))
+
+            val answer = service.approve(DRAFT_ID, MemoryDraftApproveRequest(expectedDigest = MemoryDraftCodec.contentDigest(draft)))
+
+            assertEquals(MemoryDraftDecisionResponse.OUTCOME_APPROVED, answer.outcome)
+            assertEquals(2, answer.dailyTargetsApplied, "both days are in the ledger now, whichever attempt put them there")
+            verify(memoryStoreGateway, never()).writeDailyIfVersion(any(), any(), any(), eq(DAY_1), any(), any())
+        }
+
+        @Test
+        @DisplayName("a day the store refuses mid-approval costs the claim and leaves the conclusion layer alone")
+        fun `a lost daily race rolls the claim back`() {
+            loginAsMember()
+            val draft = pendingDraft(targets = TWO_TARGETS)
+            stubDraftOnRow(draft)
+            stubStoreReady()
+            stubLayer(content = BASE!!, version = 3L)
+            stubDailyLayer(DAY_1, content = "", version = 0L)
+            stubDailyLayer(DAY_2, content = DAY_2_BASE, version = 2L)
+            `when`(memoryDraftMapper.markReviewed(eq(DRAFT_ID), eq(MemoryDraft.STATUS_APPROVED), eq(MEMBER), anyOrNull())).thenReturn(1)
+            `when`(memoryStoreGateway.writeDailyIfVersion(TENANT, USER_SEGMENT, AGENT, DAY_1, 0L, DAY_1_MERGED)).thenReturn(true)
+            // DAY_2 moved between the preflight and its own conditional write.
+            `when`(memoryStoreGateway.writeDailyIfVersion(TENANT, USER_SEGMENT, AGENT, DAY_2, 2L, DAY_2_MERGED)).thenReturn(false)
+
+            val lost = assertThrows(BizException::class.java) {
+                service.approve(DRAFT_ID, MemoryDraftApproveRequest(expectedDigest = MemoryDraftCodec.contentDigest(draft)))
+            }
+
+            assertEquals(409, lost.code)
+            assertTrue(lost.message!!.contains(DAY_2), "the refusal says which day the owner has to re-read")
             verify(memoryStoreGateway, never()).writeCuratedIfVersion(any(), any(), any(), any(), any())
             verify(memoryStoreGateway, never()).clearSessionSources(any(), any(), any(), any(), any())
         }
@@ -690,6 +916,17 @@ class MemoryDraftServiceImplTest {
                     pendingDraft(sources = listOf(MemoryDraftSource(path = "MEMORY.md", content = "- a changed file"))),
                 ),
             )
+            assertNotEquals(
+                digest,
+                MemoryDraftCodec.contentDigest(pendingDraft(targets = TARGETS)),
+                "the daily texts are written by this same approval, so a candidate whose ledger half moved is a different decision",
+            )
+            assertNotEquals(
+                digest,
+                MemoryDraftCodec.contentDigest(
+                    pendingDraft(targets = listOf(MemoryDraftTarget(path = "memory/2026-10-05.md", expectedVersion = 4L, baseText = "- other", mergedText = "- ships on Fridays"))),
+                ),
+            )
             assertEquals(digest, MemoryDraftCodec.contentDigest(pendingDraft()), "the same row must digest the same way twice")
         }
 
@@ -723,9 +960,33 @@ class MemoryDraftServiceImplTest {
         private const val BASE = "# Memory\n- the user likes terse answers"
         private const val MERGED = "# Memory\n- the user likes terse answers\n- no trailing summaries"
 
+        private const val DAY_1 = "memory/2026-10-05.md"
+        private const val DAY_2 = "memory/2026-10-06.md"
+        private const val DAY_1_MERGED = "- ships on Fridays\n- the release train leaves at 18:00"
+        private const val DAY_2_BASE = "- the store gate went red"
+        private const val DAY_2_MERGED = "- the store gate went red\n- it passed on the second run"
+
         private val SOURCES = listOf(
             MemoryDraftSource(path = "MEMORY.md", content = "- the user likes terse answers"),
-            MemoryDraftSource(path = "memory/2026-10-05.md", content = "- ships on Fridays"),
+            MemoryDraftSource(path = DAY_1, content = "- ships on Fridays"),
+        )
+
+        /** One day of the agent's own ledger, merged out of the second source above on a layer that had none. */
+        private val TARGETS = listOf(
+            MemoryDraftTarget(
+                path = DAY_1,
+                expectedVersion = 0L,
+                baseText = "",
+                mergedText = DAY_1_MERGED,
+            ),
+        )
+
+        /** Two days, the second one already in the ledger at version 2, so per-day preconditions are distinct. */
+        private val TWO_TARGETS = TARGETS + MemoryDraftTarget(
+            path = DAY_2,
+            expectedVersion = 2L,
+            baseText = DAY_2_BASE,
+            mergedText = DAY_2_MERGED,
         )
     }
 }

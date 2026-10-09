@@ -12,6 +12,7 @@
         <result column="base_md" property="baseMd"/>
         <result column="base_version" property="baseVersion"/>
         <result column="sources" property="sources"/>
+        <result column="targets" property="targets"/>
         <result column="status" property="status"/>
         <result column="reviewed_by" property="reviewedBy"/>
         <result column="reviewed_at" property="reviewedAt"/>
@@ -23,9 +24,9 @@
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO memory_draft (tenant_id, user_id, agent_name, session_id, merged_md, base_md,
-                                  base_version, sources, status)
+                                  base_version, sources, targets, status)
         VALUES (#{tenantId}, #{userId}, #{agentName}, #{sessionId}, #{mergedMd}, #{baseMd},
-                #{baseVersion}, #{sources}, #{status})
+                #{baseVersion}, #{sources}, #{targets}, #{status})
     </insert>
 
     <!-- selectById -->
@@ -42,12 +43,13 @@
     </select>
 
     <!--
-        updateContent: the four columns a proposal carries are all reassigned together, because the merged text,
-        the base it was merged against and the objects it came out of are one answer — a reviewer approving the
-        new text while the old precondition stayed behind would write the owner's layer against bytes the merge
-        never read. The owner tuple and the conversation are not touched: they identify the candidate, and a
-        proposal cannot move somebody's queue into somebody else's. `status = 'PENDING'` is the guard: a
-        candidate the owner has already decided never accepts another proposal.
+        updateContent: the five columns a proposal carries are all reassigned together, because the merged text,
+        the base it was merged against, the daily targets it produced and the objects it came out of are one
+        answer — a reviewer approving the new text while an old precondition or an old target stayed behind
+        would write the owner's layer against bytes the merge never read. The owner tuple and the conversation
+        are not touched: they identify the candidate, and a proposal cannot move somebody's queue into somebody
+        else's. `status = 'PENDING'` is the guard: a candidate the owner has already decided never accepts
+        another proposal.
     -->
     <update id="updateContent">
         UPDATE memory_draft
@@ -55,6 +57,7 @@
             base_md = #{baseMd},
             base_version = #{baseVersion},
             sources = #{sources},
+            targets = #{targets},
             update_time = CURRENT_TIMESTAMP
         WHERE id = #{id} AND status = 'PENDING'
     </update>

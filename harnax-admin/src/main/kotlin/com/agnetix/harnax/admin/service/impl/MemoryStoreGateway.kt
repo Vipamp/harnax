@@ -200,6 +200,19 @@ class MemoryStoreGateway(
     )
 
     /**
+     * One day of the agent's long-term ledger: its text and the version the store answers for that day.
+     *
+     * Same two numbers as [CuratedLayer] and the same reading of an absent object — empty text and version 0,
+     * which is what a create is filed against — but deliberately its own type: the conclusion layer is what
+     * gets injected into every later conversation, while a day here is history the owner reads by date, and an
+     * approval checks the two preconditions separately.
+     */
+    data class DailyLayer(
+        val content: String,
+        val version: Long,
+    )
+
+    /**
      * What an approval did to one conversation's own layer.
      *
      * Three counts because all three are true answers about a bucket the runtime keeps writing into:
@@ -271,7 +284,83 @@ class MemoryStoreGateway(
                 return false
             }
         }
-        return writeEnvelope(objectKey, content, version + 1, current?.createdAt, precondition)
+        return writeEnvelope(objectKey, MemoryObjectKeys.MEMORY_MD_ITEM_KEY, content, version + 1, current?.createdAt, precondition)
+    }
+
+    /**
+     * The object one candidate's daily [path] says it would write in the agent's own layer, or null when no
+     * merge could have produced it.
+     *
+     * The same reason [sessionSourceKey] is here rather than beside the pure resolver: this class owns the
+     * `harnax.memory.tenant-scoped` switch and the store prefix, and a queued target and a written object have
+     * to be the same file. Intake asks this before it stores a target so a proposal cannot name a path whose
+     * bytes no approval can reach.
+     */
+    fun longTermSourceKey(
+        tenantId: Long,
+        userId: String,
+        agentId: String,
+        path: String?,
+    ): String? = MemoryObjectKeys.longTermSourceKey(keyPrefix(), tenantId, userId, agentId, path, tenantScoped)
+
+    /**
+     * One day of the agent's long-term ledger as the store holds it now.
+     *
+     * An absent day answers as [DailyLayer] with empty text and version 0, the same reading a create is filed
+     * against, and it is the common answer here rather than the rare one: the agent's ledger only grows days
+     * once an approval has written them. A path that cannot be addressed is thrown rather than answered that
+     * way, because "no such day yet" about a bucket this call cannot name would let an approval create an
+     * object the page cannot list.
+     */
+    fun readDailyLayer(
+        tenantId: Long,
+        userId: String,
+        agentId: String,
+        path: String,
+    ): DailyLayer {
+        val objectKey = dailyKey(tenantId, userId, agentId, path)
+        val record = loadWrapper(objectKey) ?: return DailyLayer("", CREATE_IF_ABSENT)
+        return DailyLayer(record.content, record.version)
+    }
+
+    /**
+     * Replaces one day of the agent's ledger, but only while it still holds [expectedVersion].
+     *
+     * The guards, the 412-is-an-answer rule and the version arithmetic are [writeCuratedIfVersion]'s, and for
+     * the same reason: two conversations merged the same day, and whichever approval got there first owns that
+     * day until the other one is re-merged against it. [path] is the candidate's own target path, so a day
+     * whose bytes moved is refused by name and the rest of the approval can still be checked.
+     */
+    fun writeDailyIfVersion(
+        tenantId: Long,
+        userId: String,
+        agentId: String,
+        path: String,
+        expectedVersion: Long,
+        content: String,
+    ): Boolean {
+        val objectKey = dailyKey(tenantId, userId, agentId, path)
+        val itemKey = objectKey.substringAfterLast("/")
+        val current = loadWrapper(objectKey)
+        val version = current?.version ?: CREATE_IF_ABSENT
+        if (version != expectedVersion) {
+            log.warn(
+                "[memory] Refused to replace {} at version {}: the day is at {} now",
+                objectKey,
+                expectedVersion,
+                version,
+            )
+            return false
+        }
+        val precondition = when {
+            current == null -> mapOf("If-None-Match" to "*")
+            current.etag != null -> mapOf("If-Match" to current.etag)
+            else -> {
+                log.warn("[memory] Object {} answered no ETag, so its replacement cannot be made conditional", objectKey)
+                return false
+            }
+        }
+        return writeEnvelope(objectKey, "/$itemKey", content, version + 1, current?.createdAt, precondition)
     }
 
     /**
@@ -421,6 +510,22 @@ class MemoryStoreGateway(
     }
 
     /**
+     * One day of the owner's long-term ledger, addressed by the candidate's own target path.
+     *
+     * The single source of that key for the daily writes above, for the same reason [curatedKey] is: a path
+     * that resolves to nothing is refused here rather than producing a key for a day no listing can answer.
+     * Intake has already run the same resolver over every target it accepted, so reaching this line with an
+     * unresolvable path means the row was written around intake.
+     */
+    private fun dailyKey(
+        tenantId: Long,
+        userId: String,
+        agentId: String,
+        path: String,
+    ): String = longTermSourceKey(tenantId, userId, agentId, path)
+        ?: throw BizException("Invalid memory day path: $path")
+
+    /**
      * One store object, read the way a write needs it read.
      *
      * @param etag the server's answer for this exact body, which is what the replacement is made conditional
@@ -502,11 +607,17 @@ class MemoryStoreGateway(
      * runtime reads this object back through that class, and `MemoryOwnerBucketMinioIT` pins the shape on
      * both sides the way every other memory key string is pinned in this repo.
      *
+     * [itemKey] is part of that contract rather than decoration: `MinioBaseStore.search()` hands back the
+     * envelope's own `key` as the item key of each listed object, so a daily file written with
+     * `MemoryObjectKeys.MEMORY_MD_ITEM_KEY` would be reported to the runtime as a second `/MEMORY.md` in the
+     * same namespace — invisible on the page, which lists object keys, and wrong on every read side.
+     *
      * A 412 is the conditional write having been refused, which is an answer about the bucket and comes back
      * as false; anything else the store complains about is thrown.
      */
     private fun writeEnvelope(
         objectKey: String,
+        itemKey: String,
         content: String,
         version: Long,
         createdAt: String?,
@@ -516,7 +627,7 @@ class MemoryStoreGateway(
         val now = Instant.now().toString()
         val json = objectMapper.writeValueAsString(
             linkedMapOf(
-                "key" to MemoryObjectKeys.MEMORY_MD_ITEM_KEY,
+                "key" to itemKey,
                 "value" to linkedMapOf<String, Any>(
                     "created_at" to (createdAt ?: now),
                     "encoding" to "utf-8",

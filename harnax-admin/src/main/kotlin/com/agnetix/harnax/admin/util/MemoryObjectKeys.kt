@@ -229,6 +229,32 @@ object MemoryObjectKeys {
     }
 
     /**
+     * One daily target of a merge proposal as the agent's own long-term key, or null when the path is not a
+     * day the approval may write.
+     *
+     * The conclusion layer is not here on purpose: its text and its precondition are the candidate row itself
+     * ([MEMORY_MD_ITEM_KEY] under [ROOT_SEGMENT] has exactly one writer, the approval, and no path to name it
+     * by). Everything else the approval writes is a day of the ledger, and the writer of those is the merge
+     * that proposed them, so the accepted shape is one file directly under `memory/` whose name parses as a
+     * real date — the same two rules [dailyKey] and [dateOf] already answer the page with. [isValidAgentId]
+     * gates the segment first, because a key built from an unaddressable one points at a bucket nobody owns.
+     */
+    fun longTermSourceKey(
+        keyPrefix: String,
+        tenantId: Long,
+        userId: String,
+        agentId: String,
+        path: String?,
+        tenantScoped: Boolean = true,
+    ): String? {
+        if (!isValidAgentId(agentId) || path == null || !path.startsWith(LEDGER_SOURCE_PREFIX)) return null
+        val name = path.removePrefix(LEDGER_SOURCE_PREFIX)
+        if (name.contains('/') || name.contains("..")) return null
+        val date = dateOf("/$name") ?: return null
+        return dailyKey(keyPrefix, tenantId, userId, agentId, date, tenantScoped)
+    }
+
+    /**
      * Whether [sessionId] may be used as a namespace segment.
      *
      * The same shapes [isValidAgentId] refuses, bounded by the `session.session_id` column the value comes
