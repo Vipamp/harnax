@@ -38,9 +38,11 @@ function buildRouterOptions(extraOptions?: { [key: string]: any }) {
 /**
  * GET /api/router/agent/session-skills/{sessionId} — the skills this session has enabled in its own zone.
  *
- * An empty list is an answer rather than a refusal: it covers both "this session has enabled nothing" and
- * "this session has no running sandbox to read from", because the store answers empty when its handle is null.
- * Refusal codes belong to the enable call below, which is the only one that changes anything.
+ * An empty list is the answer to one question only: this session has a running container and nothing in its
+ * enabled zone. A session with no running container is refused with 410 — the same code the enable below uses
+ * for the same cause — so the panel can say the sandbox is stopped instead of denying drafts it cannot read.
+ * A conversation the router has not bound to an instance still arrives as an empty list, from the router
+ * rather than from the agent-service.
  */
 export async function listSessionSkills(sessionId: string, options?: { [key: string]: any }) {
   return request<API.Result<API.SessionSkillRow[]>>(

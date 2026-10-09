@@ -56,15 +56,21 @@ export function sessionSkillsFor(
  * that separates "this session wrote nothing" from "nothing could be read", and a half that did answer contributes its
  * rows whatever the other half did — which is why a payload riding on a failure envelope is dropped here rather than
  * trusted.
+ *
+ * `noSandbox` is the one state the read leg is refused *by name*: 410 says this conversation has no running
+ * container, which the operator fixes by restarting it, while every other non-200 leaves the panel unable to say
+ * anything more than that the read did not come back. It rides beside `unavailable` rather than replacing it,
+ * because the enabled half is unreadable in both cases and the queue's rows still land either way.
  */
 export function readOutcome(
   drafts: API.Result<API.SkillDraftPage>,
   enabled: API.Result<API.SessionSkillRow[]>,
-): { unavailable: boolean; rows: SessionSkillEntry[] } {
+): { unavailable: boolean; noSandbox: boolean; rows: SessionSkillEntry[] } {
   const draftRows = drafts.code === 200 ? (drafts.data?.records ?? []) : [];
   const enabledRows = enabled.code === 200 ? (enabled.data ?? []) : [];
   return {
     unavailable: drafts.code !== 200 || enabled.code !== 200,
+    noSandbox: enabled.code === 410,
     rows: sessionSkillsFor(draftRows, enabledRows),
   };
 }
@@ -106,6 +112,24 @@ export function refusalOf(code: number): { id: string; en: string } {
   return REFUSALS[String(code)] ?? UNKNOWN_REFUSAL;
 }
 
+/**
+ * The sentence a read that did not answer is entitled to, chosen from the flags alone.
+ *
+ * The drawer renders it in two places — the empty state's description, and the toast that goes out when the other
+ * half did answer and left rows on screen — so it is decided once here rather than as a ternary at each site. The
+ * sandbox copy is the refusal table's own entry, so the read leg and the enable leg cannot drift on what a 410 says.
+ */
+export function readCopy(noSandbox: boolean): { id: string; defaultMessage: string } {
+  if (!noSandbox) {
+    return {
+      id: 'pages.session.skills.loadFailed',
+      defaultMessage: "Could not load this session's skills",
+    };
+  }
+  const refusal = refusalOf(410);
+  return { id: refusal.id, defaultMessage: refusal.en };
+}
+
 /** The zone stores an ISO instant; a raw one is unreadable next to a skill name. */
 function formatEnabledAt(value: string | null): string {
   if (!value) return '-';
@@ -130,6 +154,7 @@ const SessionSkillsDrawer: React.FC<SessionSkillsDrawerProps> = ({ visible, sess
   const intl = useIntl();
   const [rows, setRows] = useState<SessionSkillEntry[]>([]);
   const [unavailable, setUnavailable] = useState(false);
+  const [noSandbox, setNoSandbox] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busyName, setBusyName] = useState<string | null>(null);
 
@@ -141,11 +166,14 @@ const SessionSkillsDrawer: React.FC<SessionSkillsDrawerProps> = ({ visible, sess
     if (!scope) {
       setRows([]);
       setUnavailable(true);
+      // Nothing went out, so nothing was told: a leg that never reached a server cannot name a stopped sandbox.
+      setNoSandbox(false);
       return;
     }
     setLoading(true);
     // A retry reads afresh: the previous round's verdict must not survive into this one, not even while in flight.
     setUnavailable(false);
+    setNoSandbox(false);
     try {
       // Both reads go out together, but neither may take the other's payload down with it. The admin queue answers an
       // expired JWT with an HTTP status rather than an envelope, so `Promise.all` would throw away the enabled rows the
@@ -165,22 +193,19 @@ const SessionSkillsDrawer: React.FC<SessionSkillsDrawerProps> = ({ visible, sess
         enabledSettled.status === 'fulfilled' ? enabledSettled.value : { code: 0 };
       const outcome = readOutcome(draftResponse, enabledResponse);
       setUnavailable(outcome.unavailable);
+      setNoSandbox(outcome.noSandbox);
       setRows(outcome.rows);
       // When both halves are unreadable the empty state carries the load failure; a partial read renders rows,
       // so that copy would never be seen and has to be said out loud instead.
       if (outcome.unavailable && outcome.rows.length > 0) {
-        message.error(
-          intl.formatMessage({
-            id: 'pages.session.skills.loadFailed',
-            defaultMessage: "Could not load this session's skills",
-          }),
-        );
+        message.error(intl.formatMessage(readCopy(outcome.noSandbox)));
       }
     } catch {
       // Both reads are settled by here, so reaching this line means the panel itself broke. It still must not read as
       // "this session wrote nothing": that is the empty state's own claim.
       setRows([]);
       setUnavailable(true);
+      setNoSandbox(false);
     } finally {
       setLoading(false);
     }
@@ -266,10 +291,7 @@ const SessionSkillsDrawer: React.FC<SessionSkillsDrawerProps> = ({ visible, sess
           <Empty
             description={intl.formatMessage(
               unavailable
-                ? {
-                    id: 'pages.session.skills.loadFailed',
-                    defaultMessage: "Could not load this session's skills",
-                  }
+                ? readCopy(noSandbox)
                 : {
                     id: 'pages.session.skills.empty',
                     defaultMessage: 'This session has not written a skill yet',
