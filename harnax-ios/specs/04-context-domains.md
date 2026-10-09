@@ -374,7 +374,7 @@ installed / updated / failed[{name,reason}] / flagged[{name,reasons}] / sourceEr
 - 只有一个数据源：`GET /api/admin/skills/{id}`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/SkillController.kt:64`）。前端调用后 **`JSON.parse(res.data.resources)`** 得到 `Record<path, content>` 扁平映射，并自动选中第一个 key：`harnax-webui/src/pages/skill/detail.tsx:192-224`。
 - **规格修正（以代码为准）**：任务描述提到"文件内容读取接口"，实际不存在独立内容读取接口 —— 文件内容随 `{resources}` 一次性返回。iOS 不要预留二次拉取。
 - Tab 两项：`skillmd`（Markdown 正文）与 `resources`（资源文件树）：`harnax-webui/src/pages/skill/detail.tsx:291-354`（skillmd）、`:355-523`（resources）。
-- Markdown 正文字段即技能实体的 `skillmd`；类型定义里 resources 为 `Record<string,string>`：`harnax-webui/src/typings.d.ts:461-468`（`SkillSyncItem.resources?: Record<string,string>`）。
+- Markdown 正文字段即技能实体的 `skillmd`；类型定义里 resources 为 `Record<string,string>`：`harnax-webui/src/typings.d.ts:461-468`（`SkillSyncItem.resources?: Record<string,string>`）。正文只取开头 frontmatter 块（`---` 起、`---` 止）之后的部分，`name` / `description` 由页头给出；剥除判据与服务端 `SkillFileParser.stripFrontmatter`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/skill/loader/SkillFileParser.kt:138-143`）逐字一致，首行是 `---` 但找不到闭合分隔线时按原文展示。
 - 页头 `DetailPageHeader` 带来源名 / 来源 URL / 分支：`harnax-webui/src/pages/skill/detail.tsx:560-582`。
 
 ### 文件树数据结构与呈现

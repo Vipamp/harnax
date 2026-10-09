@@ -169,6 +169,8 @@ ZIP 来源的归档在安装请求结束后即被删除，因此 `SkillSourcePol
 - 资源取自技能目录下的 `resources/`，读成 `相对路径 -> 内容`；单文件超过 512 KiB、整个技能累计超过 4 MiB、或无法按严格 UTF-8 解码（二进制）的文件被跳过并告警，中断的是那一个文件而不是整个技能的导入；
 - 附在失败项上的原因文本截断到 200 字符，因为异常消息里可能嵌着整个文件。
 
+展示侧读同一道边界：管理面与 iOS 的技能详情页、草稿审核页在渲染正文前剥掉开头的 frontmatter 块（`harnax-webui/src/utils/skillMarkdown.ts`、`harnax-ios/Sources/HarnaxCore/Contract/SkillMarkdown.swift`），`name` / `description` 由页头给出。库里那一列始终带块——装载、扫描结论与内容摘要都按带块的原文算，剥除只发生在渲染这一步。
+
 一个目录算不算技能，判据是它有没有 `SKILL.md`。没有该文件的目录（`node_modules`、共享资产、`docs`）不被记为失败项：npm 包和归档里例行存在大量从来没打算当技能的目录，报出来会埋掉真正的少数几条。
 
 三条路径的目录发现规则：

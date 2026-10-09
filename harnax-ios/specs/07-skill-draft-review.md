@@ -99,7 +99,7 @@
 
 ### 5.3 详情页
 
-骨架：顶部摘要卡（name / proposed / description（空则占位符）/ last patched）+ 状态标签 + 操作区；下面六个 Tab 的 `TabView`：正文（`skillmd`，Markdown 走 `HXMarkdownText`）· 文件（`resources` 的 path→content，空则空态）· 脚本（`relPath` / 行数 / `sha256` 前 16 位 + 可复制全文，展开看 `headPreview`；说明这组数由 harnax 对落库字节现算，不是沙箱报的，`draftDetail.tsx:559-605`）· 内容扫描（两份清单并置，见下）· 来源（`sourceSessionId` 可复制、`agentId`、`contentDigest`、说明「来源是上下文不是条件」）· 轨迹（`history`，action/actor/when/note，`draftDetail.tsx:709-725`）。
+骨架：顶部摘要卡（name / proposed / description（空则占位符）/ last patched）+ 状态标签 + 操作区；下面六个 Tab 的 `TabView`：正文（`skillmd` 去掉开头 frontmatter 块后的部分，Markdown 走 `HXMarkdownText`；空态按剥除后的正文判断，剥除判据同服务端 `SkillFileParser.stripFrontmatter`）· 文件（`resources` 的 path→content，空则空态）· 脚本（`relPath` / 行数 / `sha256` 前 16 位 + 可复制全文，展开看 `headPreview`；说明这组数由 harnax 对落库字节现算，不是沙箱报的，`draftDetail.tsx:559-605`）· 内容扫描（两份清单并置，见下）· 来源（`sourceSessionId` 可复制、`agentId`、`contentDigest`、说明「来源是上下文不是条件」）· 轨迹（`history`，action/actor/when/note，`draftDetail.tsx:709-725`）。
 
 **两份扫描不可混为一谈**：上卡是 harnax 内容扫描（`localFindings`），非空即红、并标注「这一份决定启用与否」，空则「无命中，批准后将启用」；下卡是沙箱上报（`scanVerdict` + `scanFindings`），非空即橙、并标注「仅展示，永远不会因此把技能存成禁用」（`draftDetail.tsx:607-673`）。
 

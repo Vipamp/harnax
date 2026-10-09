@@ -169,6 +169,8 @@ A ZIP source's archive is deleted once the install request finishes, so `SkillSo
 - resources are read from the skill directory's `resources/` subdirectory into `relative path -> content`; files over 512 KiB, files that push a skill past 4 MiB in total, and anything that fails a strict UTF-8 decode (binary) are skipped with a warning, so the aborted unit is one file rather than the whole skill;
 - a failure reason string is truncated to 200 characters, because an exception message can embed whole files.
 
+The display side reads the same boundary: the console's skill detail page and draft review page, and their iOS counterparts, drop the leading frontmatter block before rendering the body (`harnax-webui/src/utils/skillMarkdown.ts`, `harnax-ios/Sources/HarnaxCore/Contract/SkillMarkdown.swift`), because `name` and `description` come from the page header. The stored column keeps the block — loading, scanning and the content digest all work on the document as saved, and the strip happens only at render time.
+
 Whether a directory counts as a skill turns on one thing: does it hold a `SKILL.md`. Directories without that file (`node_modules`, shared assets, a `docs` folder) are not recorded as failures — npm packages and archives routinely hold many directories that were never meant to be skills, and reporting them would bury the handful of real problems.
 
 Directory discovery per loader:
