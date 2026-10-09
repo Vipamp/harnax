@@ -369,8 +369,8 @@ class DefaultAgentRunner(
      */
     override fun loadContextUsage(sessionId: String): ContextUsageResponse? {
         val agent = agentCache.getIfPresent(sessionId)?.agent ?: return null
-        val billed = tokenStatsMapper.selectLatestInputTokenBySession(sessionId)?.toInt()
-        return agent.contextUsage(billed)
+        val latest = tokenStatsMapper.selectLatestCallUsage(sessionId)
+        return agent.contextUsage(latest?.inputTokens?.toInt(), latest?.rowId)
     }
 
     override fun confirm(request: ConfirmAgentRequest): Flux<ChatEvent> {
@@ -943,9 +943,16 @@ class DefaultAgentRunner(
         registerCall(sessionId)
         return try {
             val agent = getOrCreateAgent(sessionId, UserIdentifier(userId))
+            // Read before the rewrite, not after: the compaction bills nothing of its own, so this is the newest
+            // row that was priced against the context as it stands. A session with no row has nothing to void.
+            val billRowId = tokenStatsMapper.selectLatestCallUsage(sessionId)?.rowId
             when (val outcome = agent.compactManually(keepTokens)) {
                 is CompactionOutcome.Failed -> CommandResponse.failure(sessionId, outcome.message)
                 is CompactionOutcome.Success -> {
+                    // Only a rewrite voids the bill: the "too short to keep a tail" answer is a success that
+                    // changed nothing, and voiding on it would move the percentage under a banner saying the
+                    // context was left alone.
+                    if (outcome.compacted) billRowId?.let { agent.markContextCompacted(it) }
                     // Read once: the window comes from the same live context the compaction just rewrote.
                     val usage = agent.contextUsage(null)
                     CommandResponse.success(

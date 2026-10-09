@@ -22,6 +22,7 @@ import com.agnetix.harnax.agent.service.runner.TeamHistoryReplay
 import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.common.error.HarnaxException
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
+import com.agnetix.harnax.entity.dto.LatestCallUsage
 import com.agnetix.harnax.harness.HarnessAgentLauncher
 import com.agnetix.harnax.harness.HarnessAgentWrapper
 import com.agnetix.harnax.harness.compaction.CompactionOutcome
@@ -170,7 +171,7 @@ class DefaultAgentRunnerTest {
         private fun stubCompact(outcome: CompactionOutcome) {
             stubAgentCreation()
             `when`(agentWrapper.compactManually(anyOrNull())).thenReturn(outcome)
-            `when`(agentWrapper.contextUsage(anyOrNull())).thenReturn(
+            `when`(agentWrapper.contextUsage(anyOrNull(), anyOrNull())).thenReturn(
                 ContextUsageResponse(
                     messageCount = 21,
                     estimatedTokens = 640,
@@ -190,6 +191,86 @@ class DefaultAgentRunnerTest {
             afterTokens = 640,
             compacted = true,
         )
+
+        /** The newest bill of the session being compacted, so the cutoff has a concrete row id to name. */
+        private fun stubBilledRow(rowId: Long) {
+            `when`(tokenStatsMapper.selectLatestCallUsage("session-1")).thenReturn(
+                LatestCallUsage().apply {
+                    this.rowId = rowId
+                    inputTokens = 9_000L
+                },
+            )
+        }
+
+        /**
+         * A compaction summarizes through the model directly and never passes the billing middleware, so it
+         * rewrites the context without writing a row of its own. The newest bill is then the price of a request
+         * that no longer exists, and the wrapper has to be told where the rewrite happened or the page keeps the
+         * pre-compaction percentage until the next turn.
+         */
+        @Test
+        fun `a compaction voids the bill that predates the rewrite`() {
+            stubCompact(compacted())
+            stubBilledRow(rowId = 41L)
+
+            runner.executeCommand(
+                CommandAgentRequest(sessionId = "session-1", command = CommandType.COMPACT),
+            )
+
+            verify(agentWrapper).markContextCompacted(41L)
+        }
+
+        /**
+         * The runtime's documented third answer: a conversation too short to leave a tail is a successful
+         * command that rewrites nothing. Voiding on it would drop the page to the estimate — and lower the
+         * headline — under a banner that says there was nothing to compact.
+         */
+        @Test
+        fun `a compaction that rewrote nothing voids nothing`() {
+            stubCompact(
+                CompactionOutcome.Success(
+                    beforeMessages = 4,
+                    afterMessages = 4,
+                    beforeTokens = 3_096,
+                    afterTokens = 3_096,
+                    compacted = false,
+                ),
+            )
+            stubBilledRow(rowId = 41L)
+
+            val response = runner.executeCommand(
+                CommandAgentRequest(sessionId = "session-1", command = CommandType.COMPACT),
+            )
+
+            assertTrue(response.success, "a no-op is still a successful command")
+            verify(agentWrapper, never()).markContextCompacted(any())
+        }
+
+        @Test
+        fun `a refused compaction voids nothing`() {
+            stubCompact(
+                CompactionOutcome.Failed("The summary model did not return a summary; the conversation is unchanged."),
+            )
+            stubBilledRow(rowId = 41L)
+
+            val response = runner.executeCommand(
+                CommandAgentRequest(sessionId = "session-1", command = CommandType.COMPACT),
+            )
+
+            assertFalse(response.success)
+            verify(agentWrapper, never()).markContextCompacted(any())
+        }
+
+        @Test
+        fun `a session nothing has billed for has no row to void`() {
+            stubCompact(compacted())
+
+            runner.executeCommand(
+                CommandAgentRequest(sessionId = "session-1", command = CommandType.COMPACT),
+            )
+
+            verify(agentWrapper, never()).markContextCompacted(any())
+        }
 
         /**
          * `/compact` on a session with something to compact: the numbers the user asked for, and the window
@@ -1086,22 +1167,29 @@ class DefaultAgentRunnerTest {
          * Every reading assertion needs that now, because a session nobody holds is no longer assembled just
          * to be read.
          */
-        private fun liveSession(billed: Long?) {
+        private fun liveSession(billed: Long?, rowId: Long = 41L) {
             stubAgentCreation()
             `when`(agentWrapper.call(any<String>(), any()))
                 .thenReturn(ChatResponse(sessionId = "session-1", content = "hi"))
-            `when`(tokenStatsMapper.selectLatestInputTokenBySession("session-1")).thenReturn(billed)
+            `when`(tokenStatsMapper.selectLatestCallUsage("session-1")).thenReturn(
+                billed?.let {
+                    LatestCallUsage().apply {
+                        this.rowId = rowId
+                        inputTokens = it
+                    }
+                },
+            )
             runner.process(ChatAgentRequest(sessionId = "session-1", message = "hello", userId = 7L))
         }
 
         @Test
-        fun `the reading carries this session's last billed call into the wrapper`() {
-            liveSession(billed = 9_000L)
+        fun `the reading carries this session's last billed call and its row into the wrapper`() {
+            liveSession(billed = 9_000L, rowId = 41L)
             val expected = usage()
-            `when`(agentWrapper.contextUsage(9_000)).thenReturn(expected)
+            `when`(agentWrapper.contextUsage(9_000, 41L)).thenReturn(expected)
 
             assertEquals(expected, runner.loadContextUsage("session-1"))
-            verify(agentWrapper).contextUsage(9_000)
+            verify(agentWrapper).contextUsage(9_000, 41L)
         }
 
         @Test
@@ -1109,17 +1197,17 @@ class DefaultAgentRunnerTest {
             liveSession(billed = null)
             // What the store answers when the session has no row at all, asserted in TokenStatsMapperTest.
             val expected = usage().copy(lastCallInputTokens = null)
-            `when`(agentWrapper.contextUsage(null)).thenReturn(expected)
+            `when`(agentWrapper.contextUsage(null, null)).thenReturn(expected)
 
             assertEquals(expected, runner.loadContextUsage("session-1"))
-            verify(agentWrapper).contextUsage(null)
+            verify(agentWrapper).contextUsage(null, null)
         }
 
         @Test
         fun `an agent this process still holds answers, even one built for another user`() {
             liveSession(billed = null)
             val expected = usage()
-            `when`(agentWrapper.contextUsage(anyOrNull())).thenReturn(expected)
+            `when`(agentWrapper.contextUsage(anyOrNull(), anyOrNull())).thenReturn(expected)
 
             assertEquals(expected, runner.loadContextUsage("session-1"))
             // A rebuild here would mean the read evicted the live agent over a bucket mismatch.
@@ -1139,13 +1227,13 @@ class DefaultAgentRunnerTest {
 
             assertNull(runner.loadContextUsage("session-1"))
             verify(launcher, never()).createSingleAgent(any(), any(), any<Boolean>(), any(), any())
-            verify(agentWrapper, never()).contextUsage(anyOrNull())
+            verify(agentWrapper, never()).contextUsage(anyOrNull(), anyOrNull())
         }
 
         @Test
         fun `no context at all reports no usage`() {
             liveSession(billed = null)
-            `when`(agentWrapper.contextUsage(anyOrNull())).thenReturn(null)
+            `when`(agentWrapper.contextUsage(anyOrNull(), anyOrNull())).thenReturn(null)
 
             assertNull(runner.loadContextUsage("session-1"))
         }

@@ -1,6 +1,7 @@
 package com.agnetix.harnax.mapper
 
 import com.agnetix.harnax.entity.TokenStats
+import com.agnetix.harnax.entity.dto.LatestCallUsage
 import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
 
@@ -13,7 +14,7 @@ import org.apache.ibatis.annotations.Param
  * sits once in the shared `tenantAndTimeWindow` fragment that all 20 aggregations include, which is the
  * only reason adding a 21st aggregation cannot quietly come out unscoped.
  *
- * The one exception is [selectLatestInputTokenBySession]: it answers a question about a single conversation and
+ * The one exception is [selectLatestCallUsage]: it answers a question about a single conversation and
  * is served by the same session-scoped, internal-only read path as the chat history, so its predicate is the
  * session id. Nothing else here may follow that shape.
  *
@@ -28,17 +29,19 @@ interface TokenStatsMapper {
     fun insert(tokenStats: TokenStats): Int
 
     /**
-     * The billed input tokens of the most recent model call recorded for one session.
+     * The most recent model call billed for one session, with the row that says so.
      *
      * Ordered by `id` rather than `ts` because several calls of one turn share a `ts` written to the second,
-     * and insertion order is the only thing that says which of them was last.
+     * and insertion order is the only thing that says which of them was last. That same order is what lets a
+     * reader tell a bill written before a context rewrite from one written after it, which is why the row id
+     * travels with the number instead of this answering the number alone.
      *
      * @param sessionId Session to read; no tenant predicate — see the interface comment
-     * @return `input_token` of that session's newest row, or null when nothing has been recorded for it
+     * @return that session's newest row, or null when nothing has been recorded for it
      */
-    fun selectLatestInputTokenBySession(
+    fun selectLatestCallUsage(
         @Param("sessionId") sessionId: String,
-    ): Long?
+    ): LatestCallUsage?
 
     /**
      * Aggregate query Token consumption by model

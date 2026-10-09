@@ -32,9 +32,16 @@
       conversation's last model call", and the endpoint that serves it authenticates by session id the same way
       the chat-history read does. Ordered by `id` because a turn writes several rows sharing one second-
       precision `ts`, and only insertion order says which call came last.
+      That same order is what the answer carries, not just sorts by: a caller that has to tell whether this
+      bill predates something else — a context a compaction rewrote, say — has nothing else to compare by.
     -->
-    <select id="selectLatestInputTokenBySession" resultType="java.lang.Long">
-        SELECT input_token
+    <resultMap id="LatestCallUsageMap" type="com.agnetix.harnax.entity.dto.LatestCallUsage">
+        <id column="row_id" property="rowId"/>
+        <result column="input_token" property="inputTokens"/>
+    </resultMap>
+
+    <select id="selectLatestCallUsage" resultMap="LatestCallUsageMap">
+        SELECT id AS row_id, input_token
         FROM token_stats
         WHERE session_id = #{sessionId}
         ORDER BY id DESC

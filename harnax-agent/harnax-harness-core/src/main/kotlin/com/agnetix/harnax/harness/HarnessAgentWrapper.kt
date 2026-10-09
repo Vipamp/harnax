@@ -156,6 +156,14 @@ class HarnessAgentWrapper(
     private var pendingToolCalls: List<ToolUseBlock> = emptyList()
 
     /**
+     * The newest `token_stats` row this session had when an on-demand compaction last rewrote its context, and
+     * null until one has. [contextUsage] voids a bill at or below it, because such a row is the price of a
+     * request whose context no longer exists.
+     */
+    @Volatile
+    private var compactedBillRowId: Long? = null
+
+    /**
      * Buffer for accumulating TOOL_CALL_DELTA fragments.
      * Key: toolCallId, Value: accumulated JSON string.
      */
@@ -420,6 +428,22 @@ class HarnessAgentWrapper(
     }
 
     /**
+     * Records that this session's context was just rewritten by an on-demand compaction, whose newest bill
+     * row at that moment was [billRowId].
+     *
+     * A compaction summarizes straight through the model rather than through the middleware that bills a call,
+     * so it writes no row of its own. Left alone, the reading would then keep dividing by a request that no
+     * longer exists until this session's next turn outnumbered it — the one percentage a page has no way to
+     * explain. Here the caller names that bill because this module reads no `token_stats` of its own.
+     *
+     * Nothing clears the cutoff: row ids are insertion order, so the next call's row outnumbers it and the
+     * billed numerator comes back on its own.
+     */
+    fun markContextCompacted(billRowId: Long) {
+        compactedBillRowId = billRowId
+    }
+
+    /**
      * How full this session's model context is, or null when no context can be read for it.
      *
      * Reads through [getLiveAgentState], including its state-store fallback: this is a read, and after a restart
@@ -430,19 +454,25 @@ class HarnessAgentWrapper(
      *
      * @param lastCallInputTokens billed input tokens of this session's latest model call, read by the caller
      *   from `token_stats`; null when nothing has been recorded yet
+     * @param lastCallRowId `token_stats` id of the row [lastCallInputTokens] came from, or null when the caller
+     *   cannot say which row it was — an unattributed bill is then trusted, since nothing dates it
      */
-    fun contextUsage(lastCallInputTokens: Int?): ContextUsageResponse? {
+    fun contextUsage(lastCallInputTokens: Int?, lastCallRowId: Long? = null): ContextUsageResponse? {
         val context = getLiveAgentState()?.context ?: return null
         val estimated = TokenCounterUtil.calculateToken(context)
         val modelWindow = harnessAgent.model.contextWindowSize
         val (window, source) = resolveContextWindow(modelWindow)
+        val cutoff = compactedBillRowId
+        val billIsStale = cutoff != null && lastCallRowId != null && lastCallRowId <= cutoff
         // The ratio answers "how full is the window", so it goes on the real request size. [estimatedTokens]
-        // stays the trigger's own number, reported as-is rather than used here.
-        val numerator = (lastCallInputTokens ?: estimated).toDouble()
+        // stays the trigger's own number, reported as-is rather than used here — except against a bill the last
+        // compaction rewrote away, which is the price of a context that no longer exists.
+        val numerator = (lastCallInputTokens?.takeIf { !billIsStale } ?: estimated).toDouble()
         return ContextUsageResponse(
             messageCount = context.size,
             estimatedTokens = estimated,
             lastCallInputTokens = lastCallInputTokens,
+            billIsCurrent = !billIsStale,
             contextWindow = window,
             windowSource = source,
             ratio = if (window > 0) numerator / window else 0.0,

@@ -164,35 +164,32 @@ open class TokenStatsMapperTest {
     }
 
     @Nested
-    @DisplayName("Latest billed input of one session")
-    inner class LatestInputTokenTests {
+    @DisplayName("Latest billed call of one session")
+    inner class LatestCallUsageTests {
 
         @Test
-        @DisplayName("the last recorded call wins even when its ts is older")
+        @DisplayName("the last recorded call wins even when its ts is older, and its row id travels with it")
         fun `should take the last inserted row rather than the latest ts`() {
             // One turn bills several calls inside the same second, so insertion order — not ts — is what says
             // which call the context was last sized by. Reversing the ts proves the read follows `id`.
+            // The id travels because the only way a reader can tell such a row from one written after a context
+            // was rewritten is that the two are comparable in insertion order.
             val ts = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
-            assertEquals(
-                1,
-                tokenStatsMapper.insert(
-                    stat("it-usage-order", ts.minusHours(1)).apply {
-                        agentId = null
-                        inputToken = 4000L
-                    },
-                ),
-            )
-            assertEquals(
-                1,
-                tokenStatsMapper.insert(
-                    stat("it-usage-order", ts.minusHours(2)).apply {
-                        agentId = null
-                        inputToken = 9000L
-                    },
-                ),
-            )
+            val superseded = stat("it-usage-order", ts.minusHours(1)).apply {
+                agentId = null
+                inputToken = 4000L
+            }
+            val latest = stat("it-usage-order", ts.minusHours(2)).apply {
+                agentId = null
+                inputToken = 9000L
+            }
+            assertEquals(1, tokenStatsMapper.insert(superseded))
+            assertEquals(1, tokenStatsMapper.insert(latest))
 
-            assertEquals(9000L, tokenStatsMapper.selectLatestInputTokenBySession("it-usage-order"))
+            val row = tokenStatsMapper.selectLatestCallUsage("it-usage-order")!!
+
+            assertEquals(9000L, row.inputTokens)
+            assertEquals(latest.id, row.rowId)
         }
 
         @Test
@@ -218,13 +215,13 @@ open class TokenStatsMapperTest {
                 ),
             )
 
-            assertEquals(22L, tokenStatsMapper.selectLatestInputTokenBySession("it-usage-own"))
+            assertEquals(22L, tokenStatsMapper.selectLatestCallUsage("it-usage-own")!!.inputTokens)
         }
 
         @Test
         @DisplayName("a session nothing has been billed for reports nothing")
         fun `should return null for a session with no rows`() {
-            assertNull(tokenStatsMapper.selectLatestInputTokenBySession("it-usage-never-called"))
+            assertNull(tokenStatsMapper.selectLatestCallUsage("it-usage-never-called"))
         }
     }
 }

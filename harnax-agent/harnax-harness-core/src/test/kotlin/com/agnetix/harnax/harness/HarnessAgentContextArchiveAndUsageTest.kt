@@ -19,8 +19,10 @@ import io.agentscope.harness.agent.memory.compaction.ConversationCompactor
 import org.h2.jdbcx.JdbcDataSource
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
@@ -282,6 +284,46 @@ class HarnessAgentContextArchiveAndUsageTest {
 
             assertEquals(4_000.0 / 100_000.0, usage.ratio, 0.0)
             assertEquals(29, usage.estimatedTokens)
+        }
+
+        @Test
+        @DisplayName("a bill older than the last compaction is voided and the estimate carries the ratio")
+        fun compactionVoidsTheBillThatPredatesIt() {
+            // Compaction rewrites the context without a model call of its own, so the newest row is the price of a
+            // request that no longer exists. It stays reportable as history; it stops being the numerator.
+            val (agent, _) = liveAgent(listOf(msg("m1")))
+            val usageWrapper = wrapper(agent, configured = 100_000)
+            usageWrapper.markContextCompacted(10)
+
+            val usage = usageWrapper.contextUsage(4_000, lastCallRowId = 10)!!
+
+            assertEquals(29.0 / 100_000.0, usage.ratio, 0.0)
+            assertEquals(4_000, usage.lastCallInputTokens)
+            assertFalse(usage.billIsCurrent)
+        }
+
+        @Test
+        @DisplayName("the first bill written after a compaction takes the ratio back")
+        fun laterBillRestoresTheBilledNumerator() {
+            val (agent, _) = liveAgent(listOf(msg("m1")))
+            val usageWrapper = wrapper(agent, configured = 100_000)
+            usageWrapper.markContextCompacted(10)
+
+            val usage = usageWrapper.contextUsage(4_000, lastCallRowId = 11)!!
+
+            assertEquals(4_000.0 / 100_000.0, usage.ratio, 0.0)
+            assertTrue(usage.billIsCurrent)
+        }
+
+        @Test
+        @DisplayName("a bill is never voided when no compaction has run on this session")
+        fun nothingIsVoidedWithoutACompaction() {
+            val (agent, _) = liveAgent(listOf(msg("m1")))
+
+            val usage = wrapper(agent, configured = 100_000).contextUsage(4_000, lastCallRowId = 10)!!
+
+            assertEquals(4_000.0 / 100_000.0, usage.ratio, 0.0)
+            assertTrue(usage.billIsCurrent)
         }
 
         @Test
