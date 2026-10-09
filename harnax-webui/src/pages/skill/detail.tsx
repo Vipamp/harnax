@@ -20,6 +20,7 @@ import { getSkillById, getSkillReviewHistory } from '@/services/ant-design-pro/s
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import BackButton from '@/components/BackButton';
+import { skillBodyForRendering } from '@/utils/skillMarkdown';
 import DetailPageHeader from '@/components/DetailPageHeader';
 import { useIsMobile } from '@/utils/responsive';
 
@@ -334,6 +335,8 @@ const SkillDetail: React.FC = () => {
     },
   ];
 
+  const skillBody = skillBodyForRendering(skillInfo?.skillmd);
+
   const tabItems = [
     {
       key: 'skillmd',
@@ -369,7 +372,7 @@ const SkillDetail: React.FC = () => {
                 overflow: 'auto'
               }}
             >
-              {skillInfo?.skillmd ? (
+              {skillBody ? (
                 <ReactMarkdown 
                   remarkPlugins={[remarkGfm]}
                   components={{
@@ -385,7 +388,7 @@ const SkillDetail: React.FC = () => {
                     }
                   }}
                 >
-                  {skillInfo.skillmd}
+                  {skillBody}
                 </ReactMarkdown>
               ) : (
                 <Empty 

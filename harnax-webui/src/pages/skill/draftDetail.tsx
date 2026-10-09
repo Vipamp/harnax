@@ -30,6 +30,7 @@ import dayjs from 'dayjs';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import BackButton from '@/components/BackButton';
+import { skillBodyForRendering } from '@/utils/skillMarkdown';
 import {
   approveSkillDraft,
   getSkillDraft,
@@ -280,7 +281,7 @@ const SkillDraftDetail: React.FC = () => {
         label: intl.formatMessage({ id: 'pages.skill.draft.tab.content', defaultMessage: 'Body' }),
         children: (
           <div style={{ padding: 16, maxHeight: 'calc(100vh - 420px)', overflow: 'auto' }}>
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{draft.skillmd || ''}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{skillBodyForRendering(draft.skillmd)}</ReactMarkdown>
           </div>
         ),
       },
