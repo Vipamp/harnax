@@ -40,6 +40,7 @@ public struct ChatTabView: View {
                 confirming: dependencies.toolConfirm,
                 plan: dependencies.plan,
                 contextUsage: dependencies.contextUsage,
+                sessionSkills: dependencies.sessionSkills,
                 conversation: conversation
             )
         }

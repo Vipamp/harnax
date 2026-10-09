@@ -4,6 +4,9 @@ import io.agentscope.core.agent.RuntimeContext
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem
 import org.slf4j.LoggerFactory
 
+/** One draft's skill text and the moment its directory was written, which is what "enabled at" reports. */
+data class DraftMarkdown(val content: String, val modifiedAt: String?)
+
 /**
  * Reads the support files of one draft out of the workspace.
  *
@@ -102,11 +105,77 @@ class WorkspaceDraftFilesReader(
         return files
     }
 
+    /**
+     * The draft's own `SKILL.md`, which [read] deliberately leaves out: it returns only the support files the
+     * review queue stores, while a skill has to be parsed from the text and a session's enabled list has to
+     * say when the copy was made.
+     *
+     * Null when there is nothing to read. A directory without a `SKILL.md` is not a skill by upstream's own
+     * discovery rule, so callers treat the absence as "no such draft" instead of inventing an empty skill —
+     * which covers the placeholder both filesystems hand back for a file with no text, since forwarding it
+     * would hand the parser a system reminder as the skill's body.
+     *
+     * The timestamp comes from the directory listing, not from the read. Every text read builds its `FileData`
+     * with the two-argument constructor, which leaves `createdAt` and `modifiedAt` null
+     * (`BaseSandboxFilesystem.java:191`, `LocalFilesystem.java:317`), so on the sandbox and local filesystems
+     * in use here the read's own timestamp is dead; only the listing fills it, from the `stat -c '%Y'` its
+     * `find` pipeline runs. A read that does carry one — `RemoteFilesystem.java:256` does — keeps its own value
+     * and costs no listing.
+     */
+    fun readSkillMarkdown(
+        skillName: String,
+        ctx: RuntimeContext?,
+    ): DraftMarkdown? {
+        val path = "$draftsDir/$skillName/$SKILL_FILE"
+        val effectiveCtx = ctx ?: RuntimeContext.empty()
+        val read =
+            try {
+                filesystem.read(effectiveCtx, path, 0, 0)
+            } catch (e: Exception) {
+                log.warn("Could not read {} of draft {}: {}", path, skillName, e.message)
+                return null
+            }
+        if (!read.isSuccess) return null
+        val data = read.fileData() ?: return null
+        val content = data.content() ?: return null
+        if (content == EMPTY_FILE_MARKER) return null
+        return DraftMarkdown(content, data.modifiedAt() ?: listingModifiedAt(skillName, effectiveCtx))
+    }
+
+    /**
+     * The mtime the listing gives this file.
+     *
+     * `read` cannot supply one: every text read builds `FileData` with its two-argument constructor, which
+     * leaves both timestamps null, so the listing is the only live source on the sandbox and local filesystems.
+     * A listing that will not answer reads as no timestamp — the text is still a skill, and a panel that shows
+     * no time beats a panel that refuses to show the skill.
+     */
+    private fun listingModifiedAt(
+        skillName: String,
+        ctx: RuntimeContext,
+    ): String? {
+        val path = "$draftsDir/$skillName/$SKILL_FILE"
+        return try {
+            val glob = filesystem.glob(ctx, SKILL_FILE, "$draftsDir/$skillName")
+            if (!glob.isSuccess) {
+                null
+            } else {
+                glob.matches()?.firstOrNull { it.path()?.replace('\\', '/') == path }?.modifiedAt()
+            }
+        } catch (e: Exception) {
+            log.warn("Could not list {} of draft {}: {}", SKILL_FILE, skillName, e.message)
+            null
+        }
+    }
+
     companion object {
         /** Upstream's own list, from `SkillPromoter.loadDraftResources`. */
         private val SUPPORT_DIRS = listOf("scripts", "references", "templates", "assets")
 
         /** Upstream's own marker for "this directory is a skill", the file `WorkspaceSkillRepository` globs for. */
         private const val SKILL_FILE = "SKILL.md"
+
+        /** What both filesystems hand back for a file that exists but has no text (`BaseSandboxFilesystem.java:185`). */
+        private const val EMPTY_FILE_MARKER = "System reminder: File exists but has empty contents"
     }
 }

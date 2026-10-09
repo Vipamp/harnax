@@ -261,7 +261,7 @@ M3 与 M4 可并行拆分给不同人。开工前必须先落 §14 的 R1：开�
 
 ## 13. 各页面字段级规格
 
-逐字段的全量清单落在同目录 `specs/` 的七份文件里，每份都带 `路径:行号` 锚点。计数口径是「形如 `文件名.扩展名:行号` 的出现次数，一处并列写多个行号（`:42,50,88`）算一条」：`specs/` 七份合计 1630 条（01 为 411、02 为 433、03 为 159、04 为 360、05 为 199、06 为 5、07 为 63），本文件 87 条，`FEATURES.md` 与 `FUNCTIONS.md` 各 0 条——后两份一份是档位清单、一份只写行为，都不带锚点。其中带目录的全路径锚点 1651 条已用脚本逐条核过「文件存在 + 行号在文件行数内」，无一条指向不存在的文件或越界的行号；只写裸文件名的 66 条不在这条判据里（其中 07 那一份占 52 条），它们靠仓库内同名文件唯一来定位，例外是 `CompactionConfig.java` 那一处指向上游 sources jar、本来就不在仓库里。另有 12 处本文件以行内代码点名 `specs/` 里的某份文档（本章表格七行、§1 一处、§3.1 一处、本章 13.3 一处、本章 13.7 一处、§15 的 O7 一处），七份文档都被点到、文件都已在位。本章给的是写码时要对照的口径摘要；两者冲突以代码为准，代码与 `specs/` 冲突时以 `specs/` 里更细的锚点为准。
+逐字段的全量清单落在同目录 `specs/` 的七份文件里，每份都带 `路径:行号` 锚点。计数口径是「形如 `文件名.扩展名:行号` 的出现次数，一处并列写多个行号（`:42,50,88`）算一条」：`specs/` 七份合计 1637 条（01 为 411、02 为 436、03 为 159、04 为 364、05 为 199、06 为 5、07 为 63），本文件 87 条，`FEATURES.md` 与 `FUNCTIONS.md` 各 0 条——后两份一份是档位清单、一份只写行为，都不带锚点。其中带目录的全路径锚点 1657 条已用脚本逐条核过「文件存在 + 行号在文件行数内」，无一条指向不存在的文件或越界的行号；只写裸文件名的 67 条不在这条判据里（其中 07 那一份占 52 条），它们靠仓库内同名文件唯一来定位，例外是 `CompactionConfig.java` 那一处指向上游 sources jar、本来就不在仓库里。另有 12 处本文件以行内代码点名 `specs/` 里的某份文档（本章表格七行、§1 一处、§3.1 一处、本章 13.3 一处、本章 13.7 一处、§15 的 O7 一处），七份文档都被点到、文件都已在位。本章给的是写码时要对照的口径摘要；两者冲突以代码为准，代码与 `specs/` 冲突时以 `specs/` 里更细的锚点为准。
 
 重跑这两个计数用同一段脚本（在 `harnax-ios/` 下执行），免得下一次改动把数字留在旧值上：
 
@@ -291,12 +291,12 @@ print('all', len(all_t), 'with-dir', len(q), 'bare', len(all_t) - len(q),
       'unresolved', sum(1 for x in q if not exists(x)))
 ```
 
-`exists` 里两个根是必要的：锚点有两种写法，`harnax-admin/...`、`harnax-webui/...` 从仓库根算起（脚本里的 `..`），`Sources/...`、`Tests/...`、`Package.swift` 从 `harnax-ios/` 算起（脚本里的 `.`）。最后一行的实测输出是 `specs 1630 / all 1717 / with-dir 1651 / bare 66 / unresolved 0`。
+`exists` 里两个根是必要的：锚点有两种写法，`harnax-admin/...`、`harnax-webui/...` 从仓库根算起（脚本里的 `..`），`Sources/...`、`Tests/...`、`Package.swift` 从 `harnax-ios/` 算起（脚本里的 `.`）。最后一行的实测输出是 `specs 1637 / all 1724 / with-dir 1657 / bare 67 / unresolved 0`。
 
 | 文件 | 覆盖页面 | 「未确认」条数 / 其中已回代码核实 |
 |---|---|---|
 | `specs/01-agent-team.md` | 智能体列表与 5 步向导、团队列表与 3 步向导、四类绑定与刷新会话弹窗 | 10 / 4 |
-| `specs/02-session-chat.md` | 会话列表与外壳、新建与详情、Workspace 与产物抽屉、五类可见分段、工具确认、计划与权限、slash、上下文占用读数与压缩 | 8 / 3 |
+| `specs/02-session-chat.md` | 会话列表与外壳、新建与详情、Workspace 与产物抽屉、五类可见分段、工具确认、计划与权限、slash、上下文占用读数与压缩、本会话自写技能 | 8 / 3 |
 | `specs/03-system-domain.md` | 渠道与微信扫码、API Key、环境变量、Token 监控、租户切换 | 8 / 6 |
 | `specs/04-context-domains.md` | 模型两级、工具、MCP 与 OAuth、技能仓库与技能、技能详情、CLI | 11 / 4 |
 | `specs/05-task-domain.md` | 任务列表与轮询、新建/编辑表单与 cron 互斥、写侧拒绝的 code 对照、执行日志与停止语义 | 5 / 0 |
@@ -362,7 +362,7 @@ print('all', len(all_t), 'with-dir', len(q), 'bare', len(all_t) - len(q),
 ### 13.7 自我进化：技能草稿审核
 
 - 队列口没有 `/page` 后缀（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/SkillDraftController.kt:50`），与本 app 其余分页列表（`/api/admin/skills/page` 等）形状不同，照抄必错。
-- 队列只有 `status` 与 `name` 两个过滤参数，**服务端没有按会话过滤的能力**（`SkillDraftController.kt:55`-`:68`）。会话列表顶部入口行上的计数因此是「本租户待审总数」，不是「本会话条数」；webui 同样没有按会话筛，这不是 iOS 的偏离。
+- 队列的过滤参数是 `status` / `name` / `sessionId` 三个（`SkillDraftController.kt:55`-`:72`），**按会话筛是服务端能力**，不是界面自己兜的：`sessionId` 是一条 SQL 谓词而不是取回后再筛，因为 PageHelper 数的是它交回来的行，筛在分页之后就会报出与页不符的 total。会话列表顶部入口行上那枚计数仍取「本租户待审总数」——那行给的是整条审核链的导航，不分会话；真正带 `sessionId` 的读是对话页那块本会话技能列表（3.17）：一路按会话取提名（`GET /api/admin/skill-drafts?status=PENDING&sessionId=`），一路取本会话已启用的目录（`GET /api/router/agent/session-skills/{sessionId}`，出现即启用，应答不带开关）。webui 的会话抽屉读同两条（`harnax-webui/src/pages/session/components/SessionSkillsDrawer.tsx`），合并规则两端各写一份但判据同源；iOS 这一份把两路读各做成独立失败——一路挂了只丢它那半，另一路答上来的行照常可点，只有两路都没答才说读不出来。
 - 拒绝有三条通道，界面处置完全相反：① 谁都动不了的走错误信封（未知草稿、`status` 传了不认识的值、批准不带 `expectedDigest`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/SkillDraftServiceImpl.kt:274`-`:276`）、驳回不带理由或理由超长（`:370`-`:374`））；② 界面必须据以再动作的随 HTTP 200 + `code:200` 回来，判据是 `data.outcome` 而不是状态码（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/SkillDraftDecisionResponse.kt:20`、`:51`-`:65`）；③ 晋升名被抢是唯一的例外——HTTP 仍 200，信封 `code` 是 409（`SkillDraftController.kt:115`-`:117`），界面要按 code 分这一支。
 - `EXPIRED` 在列定义里存在但没有任何代码写入，`STATUSES` 不含它（`SkillDraftServiceImpl.kt:578`，校验在 `:218`-`:219`），按它筛会被拒——筛选项因此只有三档，iOS 不加第四档。
 - 两份扫描永远不合并：`localFindings` 是 harnax 对落库字节现算的，非空即意味着批准技能会存成禁用（界面判据是 `skillStatus` 严格 `== 1`）；`scanFindings` / `scanVerdict` 是沙箱上报的，只展示，永远不会因此把技能存成禁用。

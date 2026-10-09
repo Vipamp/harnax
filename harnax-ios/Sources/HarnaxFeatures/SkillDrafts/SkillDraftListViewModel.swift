@@ -116,7 +116,9 @@ public final class SkillDraftListViewModel: ObservableObject {
         isRefreshing = true
         defer { isRefreshing = false }
         inlineError = nil
-        switch await drafts.page(status: status, name: name, num: 1, size: pages.pageSize) {
+        // `sessionId: nil`: this queue is the tenant's, not one conversation's — the screen that wants the
+        // session's own nominations is `SessionSkillsViewModel`, on `SessionSkillReading`.
+        switch await drafts.page(status: status, name: name, sessionId: nil, num: 1, size: pages.pageSize) {
         case let .success(page):
             guard generation == refreshGeneration else { return }
             pages.replace(with: page)
@@ -149,7 +151,9 @@ public final class SkillDraftListViewModel: ObservableObject {
         let generation = refreshGeneration
         isAppending = true
         defer { isAppending = false }
-        switch await drafts.page(status: status, name: name, num: pages.pageNum + 1, size: pages.pageSize) {
+        switch await drafts.page(
+            status: status, name: name, sessionId: nil, num: pages.pageNum + 1, size: pages.pageSize
+        ) {
         case let .success(page):
             guard generation == refreshGeneration else { return }
             inlineError = nil

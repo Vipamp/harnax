@@ -433,6 +433,7 @@ class SkillDraftServiceImplTest {
         id: Long = DRAFT_ID,
         tenantId: Long = TENANT,
         name: String = "invoice-fill",
+        sourceSessionId: String = WEB_SESSION,
         skillmd: String = "# invoice-fill\n\nFill an invoice from a table.",
         resources: Map<String, String> = emptyMap(),
         state: String = SkillDraft.STATUS_PENDING,
@@ -448,7 +449,7 @@ class SkillDraftServiceImplTest {
         this.resources = SkillDraftCodec.resourcesJson(resources)
         scriptPreviews = SkillDraftCodec.scriptPreviewsJson(resources)
         status = state
-        sourceSessionId = WEB_SESSION
+        this.sourceSessionId = sourceSessionId
         agentId = 3L
         this.reviewedBy = reviewedBy
         this.reviewedAt = reviewedAt
@@ -479,7 +480,7 @@ class SkillDraftServiceImplTest {
         `when`(skillDraftMapper.selectDraftList(eq(3L), anyOrNull(), anyOrNull(), anyOrNull()))
             .thenReturn(listOf(storedDraft(tenantId = 3L)))
 
-        val page = service.page(status = "pending", name = " invoice ", pageNum = 1, pageSize = 20)
+        val page = service.page(status = "pending", name = " invoice ", sessionId = null, pageNum = 1, pageSize = 20)
 
         assertEquals(1, page.records.size)
         assertEquals("invoice-fill", page.records.first().name)
@@ -488,12 +489,62 @@ class SkillDraftServiceImplTest {
     }
 
     @Test
+    @DisplayName("a conversation filter is a SQL predicate, not a trim applied after paging")
+    fun `the session filter travels down to the query`() {
+        TenantContext.setTenantId(3L)
+        `when`(skillDraftMapper.selectDraftList(eq(3L), anyOrNull(), anyOrNull(), anyOrNull()))
+            .thenReturn(listOf(storedDraft(tenantId = 3L)))
+
+        service.page(status = "PENDING", name = null, sessionId = "ses-1", pageNum = 1, pageSize = 20)
+
+        verify(skillDraftMapper).selectDraftList(eq(3L), eq("PENDING"), anyOrNull(), eq("ses-1"))
+    }
+
+    @Test
+    @DisplayName("a blank conversation filter is dropped, not searched for")
+    fun `a blank session id filters nothing`() {
+        TenantContext.setTenantId(3L)
+        `when`(skillDraftMapper.selectDraftList(eq(3L), anyOrNull(), anyOrNull(), anyOrNull()))
+            .thenReturn(listOf(storedDraft(tenantId = 3L)))
+
+        service.page(status = null, name = null, sessionId = "  ", pageNum = 1, pageSize = 20)
+
+        verify(skillDraftMapper).selectDraftList(eq(3L), eq(null), eq(null), eq(null))
+    }
+
+    @Test
+    @DisplayName("a conversation filter narrows before paging, so the page is exactly what the query returned")
+    fun `a conversation page hands back every row the query returned`() {
+        TenantContext.setTenantId(3L)
+        // Two rows as the query under the session predicate answers them: this conversation's own draft and a
+        // neighbour's. The service has to publish both, because a filter it ran a second time after paging
+        // would drop the neighbour row here while total kept counting the rows the query handed back — and the
+        // promise that total and the page agree is what makes the queue's own count readable.
+        `when`(skillDraftMapper.selectDraftList(eq(3L), anyOrNull(), anyOrNull(), anyOrNull()))
+            .thenReturn(
+                listOf(
+                    storedDraft(tenantId = 3L, sourceSessionId = "ses-1"),
+                    storedDraft(id = DRAFT_ID + 1, tenantId = 3L, name = "timesheet-sum", sourceSessionId = "ses-2"),
+                ),
+            )
+
+        val page = service.page(status = "PENDING", name = null, sessionId = "ses-1", pageNum = 1, pageSize = 20)
+
+        assertEquals(
+            listOf("invoice-fill", "timesheet-sum"),
+            page.records.map { it.name },
+            "nothing is filtered away on the way back, the narrowing is the SQL's",
+        )
+        assertEquals(2L, page.total, "total counts the same rows the page carries: $page")
+    }
+
+    @Test
     @DisplayName("a status no code writes is refused, not answered with an empty queue")
     fun `an unwritable status is refused`() {
         TenantContext.setTenantId(TENANT)
 
         val refused = assertThrows(BizException::class.java) {
-            service.page(status = "EXPIRED", name = null, pageNum = 1, pageSize = 20)
+            service.page(status = "EXPIRED", name = null, sessionId = null, pageNum = 1, pageSize = 20)
         }
 
         assertTrue(refused.message!!.contains("PENDING"), "the refusal has to name the statuses that exist: ${refused.message}")
@@ -721,7 +772,9 @@ class SkillDraftServiceImplTest {
         authenticateInternalService()
 
         listOf(
-            assertThrows(BizException::class.java) { service.page(status = null, name = null, pageNum = 1, pageSize = 20) },
+            assertThrows(BizException::class.java) {
+                service.page(status = null, name = null, sessionId = null, pageNum = 1, pageSize = 20)
+            },
             assertThrows(BizException::class.java) { service.detail(DRAFT_ID) },
             assertThrows(BizException::class.java) {
                 service.approve(DRAFT_ID, SkillDraftApproveRequest(expectedDigest = SkillDraftCodec.contentDigest(draft)))
@@ -744,7 +797,7 @@ class SkillDraftServiceImplTest {
         `when`(skillDraftMapper.selectDraftList(eq(1L), anyOrNull(), anyOrNull(), anyOrNull())).thenReturn(emptyList())
 
         val refused = assertThrows(BizException::class.java) {
-            service.page(status = null, name = null, pageNum = 1, pageSize = 20)
+            service.page(status = null, name = null, sessionId = null, pageNum = 1, pageSize = 20)
         }
 
         assertEquals(403, refused.code)

@@ -6,6 +6,8 @@ import { request } from '@umijs/max';
  * GET /api/admin/skill-drafts — the review queue.
  *
  * `status` defaults to PENDING server-side, so the caller has to send it explicitly to see decided rows.
+ * `sessionId` narrows the queue to the one conversation that drafted them, which is what the session page's
+ * own panel shows.
  */
 export async function pageSkillDrafts(
   params: {
@@ -13,6 +15,7 @@ export async function pageSkillDrafts(
     pageSize?: number;
     status?: API.SkillDraftStatus;
     name?: string;
+    sessionId?: string;
   },
   options?: { [key: string]: any },
 ) {

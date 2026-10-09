@@ -9,7 +9,6 @@ import io.agentscope.harness.agent.skill.curator.SkillPromotionGate
 import io.agentscope.harness.agent.skill.curator.SkillPromotionGate.PromotionDecision
 import io.agentscope.harness.agent.skill.curator.SkillPromotionGate.PromotionDecision.Defer
 import io.agentscope.harness.agent.skill.curator.SkillPromotionGate.PromotionDecision.Reject
-import io.agentscope.harness.agent.skill.curator.SkillSecurityScanner
 import org.slf4j.LoggerFactory
 import reactor.core.publisher.Mono
 import reactor.core.scheduler.Schedulers
@@ -67,7 +66,7 @@ class AdminBackedPromotionGate(
             // the reviewer will later install, so they are read back off the workspace.
             resources = files.read(name, ctx),
             scanVerdict = candidate.securityScan()?.verdict()?.name,
-            scanFindings = candidate.securityScan()?.findings()?.map { describe(it) }.orEmpty(),
+            scanFindings = findingTexts(candidate.securityScan()?.findings().orEmpty()),
         )
         val intake = try {
             adaptor.submit(proposal)
@@ -100,9 +99,6 @@ class AdminBackedPromotionGate(
             }
         }
     }
-
-    private fun describe(finding: SkillSecurityScanner.Finding): String = "${finding.patternId()} [${finding.severity()}/${finding.category()}] " +
-        "${finding.file()}:${finding.line()} ${finding.description()}"
 
     companion object {
         /** Upstream's own interval for a gate that waits on a human; nothing schedules it, it is what a deferred draft reports. */

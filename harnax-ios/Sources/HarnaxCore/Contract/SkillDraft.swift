@@ -21,8 +21,10 @@ public struct SkillDraftRow: Decodable, Identifiable, Equatable, Sendable {
     /// (`SkillDraftServiceImpl.kt:569`). Kept as text: an unrecognised verdict still has to be readable.
     public let scanVerdict: String?
     public let upstreamFindingCount: Int
-    /// The conversation the agent proposed this skill in. Display and copy only — the console never links it
-    /// (`harnax-webui/src/pages/skill/draftDetail.tsx:709-713`), and the queue cannot be filtered by it.
+    /// The conversation the agent proposed this skill in. The review screen only ever displays it — the console
+    /// never links back to a session (`harnax-webui/src/pages/skill/draftDetail.tsx:709-713`) — but it is what the
+    /// session's own skill panel filters the queue by (`SkillDraftCataloging.page`'s `sessionId`), so that screen
+    /// lists one conversation's nominations rather than the tenant's.
     public let sourceSessionId: String?
     public let agentId: Int64?
     public let createTime: String?

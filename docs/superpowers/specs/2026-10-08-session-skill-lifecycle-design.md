@@ -2,7 +2,7 @@
 
 - 日期：2026-10-08
 - 状态：已批准，实现中
-- 范围：`harnax-agent/harnax-harness-core`、`harnax-agent/harnax-agent-service`、`harnax-admin`、`harnax-webui`、`harnax-ios`、`prod_doc`
+- 范围：`harnax-agent/harnax-harness-core`、`harnax-agent/harnax-agent-service`、`harnax-session-router`、`harnax-admin`、`harnax-webui`、`harnax-ios`、`prod_doc`
 - 上游引用一律是 agentscope 2.0.4 的类名 + 行号（`io.agentscope.harness.agent.*`），取证自 sources jar 解包件
 
 ## 0. 要解决的问题
@@ -82,7 +82,9 @@
 - agent-service 两条会话级端点，与 `SandboxWorkspaceController` 同一鉴权形状（`/api/agent/**` internal-only，经 session-router 代理，`SandboxWorkspaceController.kt:22-25`；会话级句柄解析用同一族的 `resolveSandbox(sessionId)`，`:99`）：
   - `GET  /api/agent/session-skills/{sessionId}` → `[{name, description, verdict, findings, enabledAt}]`，读 `session-enabled/`；`enabledAt` 取目录 mtime，容器不在回空数组。
   - `POST /api/agent/session-skills/{sessionId}/{name}/enable` → `{ok, verdict, findings, count}`；三类拒因（源不在 / 扫描拒 / 超上限）各带原因。
-- 两端不新开公网路由，走既有会话代理链。
+- 两端经 `harnax-session-router` 的 `AgentProxyController`（`@RequestMapping("/api/router/agent")`，`:28`）暴露给公网，浏览器与 iOS 只走这一条链，`/api/agent/**` 本身不给它们开路由：
+  - `GET  /api/router/agent/session-skills/{sessionId}`、`POST /api/router/agent/session-skills/{sessionId}/{name}/enable`，各对应 `SessionRouterService` 一个 `proxy*` 方法 + `AgentServiceClient` 一次转发，与 `/workspace/{sessionId}/files`（`AgentProxyController.kt:198-207` → `SessionRouterService.kt:411-421` → `agentServiceClient.workspaceListFiles`）同一条形状。
+  - 归属与租户判据不在新代码里重做：三个只读代理都经 `boundInstance(sessionId)`（`SessionRouterService.kt:509-521`），它第一行就是 `sessionAccessGuard.requireAccessible(sessionId)`，新端点从这条链继承。会话未绑定实例时按只读代理的既有姿态回空，不 reroute 到别的实例（`:500-507` 注释立的理由：别人的箱子里没有这份文件）。
 
 ## 8. 界面
 
@@ -99,11 +101,12 @@
 
 ## 10. 验证
 
-- 单测：Layer 2 名次（同名时 `inMemory` 胜）；`enableInSession` 三支护拒各一条；复制不动 `_drafts`；`SessionSkillStore.forSession` 在句柄为 null 时回空且不抛；目录条目数上限。
-- IT（admin）：`sessionId` 过滤只回本租户本会话的行；同 (tenant,name) 重复上报合并成一行。
-- IT（harness-core）：propose → 上报入队 → enable → 下一次 call 的目录册含该技能 → 交付同名技能压住。
-- 真栈：清库与存量各跑一遍「测试会话2」路径 —— 队列出现行、会话页出现可点行、点完下一轮模型真的用上了它。
-- 门禁：`mvn -pl harnax-agent/harnax-harness-core -am test`、admin 侧改动跑 admin 门禁、webui 用 `max build` + 逐文件 lint、iOS `swift build`/`swift test` 每次全新 scratch path。
+- 单测（harness-core）：Layer 2 名次（`skillRepositories` 里可用区排在交付仓库之前）；`enable` 的四支拒因各一条（源不在／扫描拒／超上限／容器拒收复制）；复制那条命令只替换 `session-enabled/` 那一侧，不碰 `_drafts`；`SessionSkillStore` 在句柄为 null 时回空且不抛；目录条目数上限；可用区目录名与 `skills/` 不重叠的启动期断言。
+- IT（admin）：`SkillDraftFlowIT` 增一支 —— `sessionId` 过滤只回本租户本会话的行，邻居租户拿同一个 sessionId 仍取不到我们的行。（同 (tenant, name) 重复上报合并成一行已由 `SkillDraftServiceImplTest` 的 `an open draft of the same name is merged` 守住。）
+- 上报与装载（harness-core 单测）：答完之后那一跳按 `SessionSkillStore` 读盘、复扫、交 `SkillDraftAdaptor`，DANGEROUS 不入队；读不到的草稿留到下一轮；`SessionEnabledSkillRepository.getAllSkills(ctx)` 含已启用那条，且未绑定文件系统时为空。合并后的那份目录册在本仓取不到——上游 `HarnessSkillMiddleware.skillsForCall`（`:321`）与 `mergeRepositories`（`:349`）都是 `private`，且 harness-core 无 IT 装置，因此名次与读取分两处断言，「交付同名技能压住会话内那份」的真实结果在真栈观测。
+- 代理链（session-router 单测）：两条新代理各一条 —— 转发出对应实例，且会话未绑定时读回空、启用回 410，都不改绑。
+- 真栈：清库与存量各跑一遍「测试会话2」路径 —— 队列出现行、会话页出现可点行、点完下一轮模型真的用上了它；同名交付技能存在时用的是审后正文。
+- 门禁：`mvn -pl harnax-agent/harnax-harness-core -am test`、admin 侧改动跑 admin 门禁、session-router 侧改动跑其门禁、webui 用 `max build` + 逐文件 lint、iOS `swift build`/`swift test` 每次全新 scratch path。
 
 ## 11. 本轮不做
 

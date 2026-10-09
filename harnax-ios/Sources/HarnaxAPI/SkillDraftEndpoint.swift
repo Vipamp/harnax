@@ -12,7 +12,16 @@ import HarnaxCore
 enum SkillDraftEndpoint {
     static let draftsPath = "/api/admin/skill-drafts"
 
-    static func page(status: SkillDraftStatus, name: String?, num: Int, size: Int) -> Endpoint {
+    /// The queue's one page. `status` and the two paging keys always go out; `name` and `sessionId` are sent only
+    /// when the caller has a value for them, because an empty `name` means 「no term」 to the service and an empty
+    /// `sessionId` would ask for a conversation that does not exist rather than for the whole tenant.
+    static func page(
+        status: SkillDraftStatus,
+        name: String?,
+        sessionId: String? = nil,
+        num: Int,
+        size: Int
+    ) -> Endpoint {
         var query = [
             URLQueryItem(name: "pageNum", value: String(num)),
             URLQueryItem(name: "pageSize", value: String(size)),
@@ -22,6 +31,10 @@ enum SkillDraftEndpoint {
         ]
         if let keyword = name?.trimmingCharacters(in: .whitespacesAndNewlines), !keyword.isEmpty {
             query.append(URLQueryItem(name: "name", value: keyword))
+        }
+        // The session panel's scoping leg; the reviewer's queue never sends it and so keeps counting the tenant.
+        if let session = sessionId?.trimmingCharacters(in: .whitespacesAndNewlines), !session.isEmpty {
+            query.append(URLQueryItem(name: "sessionId", value: session))
         }
         return Endpoint(.get, path: draftsPath, query: query)
     }

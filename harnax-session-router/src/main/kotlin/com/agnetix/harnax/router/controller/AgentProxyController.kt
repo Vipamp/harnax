@@ -190,6 +190,39 @@ class AgentProxyController(
         return sessionRouterService.proxyLoadContext(sessionId)
     }
 
+    // ---- Session skill proxy endpoints ----
+
+    /**
+     * List the skills this session may use. Ownership is checked where every other session-scoped read
+     * checks it: in `boundInstance`, on the first line.
+     */
+    @GetMapping("/session-skills/{sessionId}")
+    suspend fun proxySessionSkills(
+        @PathVariable sessionId: String,
+        httpRequest: HttpServletRequest,
+    ): ResultVo<List<Map<String, Any>>> {
+        httpRequest.setAttribute(SESSION_ID_ATTR, sessionId)
+        return sessionRouterService.proxySessionSkills(sessionId)
+    }
+
+    /**
+     * Enable one of this session's drafts for it.
+     *
+     * No request body: the operator is the authenticated caller of *this* request, which only the router
+     * can know, and whatever arrived from the client is not trusted for it. The agent's answer — granted or
+     * refused, with the reason in the envelope's `code` — is returned as the router received it.
+     */
+    @PostMapping("/session-skills/{sessionId}/{name}/enable")
+    suspend fun proxyEnableSessionSkill(
+        @PathVariable sessionId: String,
+        @PathVariable name: String,
+        httpRequest: HttpServletRequest,
+    ): ResultVo<Map<String, Any>> {
+        httpRequest.setAttribute(SESSION_ID_ATTR, sessionId)
+        log.info("Received enable-session-skill proxy request for session: $sessionId, skill: $name")
+        return sessionRouterService.proxyEnableSessionSkill(sessionId, name)
+    }
+
     // ---- Workspace proxy endpoints ----
 
     /**

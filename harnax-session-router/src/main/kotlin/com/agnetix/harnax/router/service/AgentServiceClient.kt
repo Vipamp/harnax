@@ -313,6 +313,60 @@ class AgentServiceClient(
         return Pair(body, response.headers.contentType?.toString() ?: MediaType.APPLICATION_OCTET_STREAM_VALUE)
     }
 
+    // ==================== Session skills ====================
+
+    /**
+     * List the skills one session has enabled.
+     *
+     * The envelope is handed over as agent-service wrote it, and the items stay a map: `description` and
+     * `enabledAt` are nullable and a serializer that drops null keys may leave them out entirely, which the
+     * clients read as "no description" rather than as a missing field they must invent.
+     */
+    suspend fun sessionSkillList(
+        baseUrl: String,
+        sessionId: String,
+    ): ResultVo<List<Map<String, Any>>> {
+        val url = agentUrl(baseUrl, "/api/agent/session-skills/${segment(sessionId)}")
+        return webClient.get()
+            .uri(url)
+            .retrieve()
+            .bodyToMono(object : ParameterizedTypeReference<ResultVo<List<Map<String, Any>>>>() {})
+            .awaitSingleOrNull()
+            ?: throw emptyBody(url.toString())
+    }
+
+    /**
+     * Copy one of a session's drafts into its enabled set.
+     *
+     * [userId] is the acting user as the router resolved it, not as the caller claimed it — D11 wants the
+     * operator named in agent-service's log, and this internal body is the same channel `proxyChatRequest`
+     * already uses for the user a request is acting for.
+     *
+     * The six outcomes agent-service distinguishes (granted, 403 blocked, 409 full, 404 no draft, 410 no
+     * sandbox, 500 failed) all come back in this envelope, and none of them is renamed on the way through:
+     * the two clients read the code themselves. A `null` field may simply be absent from the data on the
+     * wire, which is why it stays a map here instead of a typed view.
+     */
+    suspend fun sessionSkillEnable(
+        baseUrl: String,
+        sessionId: String,
+        name: String,
+        userId: Long?,
+    ): ResultVo<Map<String, Any>> {
+        val url = agentUrl(
+            baseUrl,
+            "/api/agent/session-skills/${segment(sessionId)}/${segment(name)}/enable",
+        )
+        return webClient.post()
+            .uri(url)
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(mapOf("userId" to userId))
+            .retrieve()
+            .bodyToMono(object : ParameterizedTypeReference<ResultVo<Map<String, Any>>>() {})
+            .awaitSingleOrNull()
+            ?: throw emptyBody(url.toString())
+    }
+
     // ==================== Internal helpers ====================
 
     /**

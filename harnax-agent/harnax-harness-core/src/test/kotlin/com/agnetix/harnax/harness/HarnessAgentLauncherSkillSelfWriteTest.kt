@@ -2,6 +2,7 @@ package com.agnetix.harnax.harness
 
 import com.agnetix.harnax.agent.AgentSpec
 import com.agnetix.harnax.agent.ChatSpec
+import com.agnetix.harnax.agent.SkillSpec
 import com.agnetix.harnax.agent.adaptor.ChatModelConfigAdaptor
 import com.agnetix.harnax.agent.adaptor.McpConfigAdaptor
 import com.agnetix.harnax.agent.adaptor.PlanNoteAdaptor
@@ -11,6 +12,7 @@ import com.agnetix.harnax.agent.adaptor.SkillDraftAdaptor
 import com.agnetix.harnax.agent.adaptor.SkillDraftIntake
 import com.agnetix.harnax.agent.adaptor.TokenStatAdaptor
 import com.agnetix.harnax.agent.adaptor.model.OpenAIChatModelConfig
+import com.agnetix.harnax.harness.skill.SESSION_SKILL_SOURCE
 import com.agnetix.harnax.harness.skill.SkillDraftStaging
 import com.agnetix.harnax.harness.skill.SkillDraftSubmitMiddleware
 import com.agnetix.harnax.tools.sdk.UserIdentifier
@@ -46,6 +48,10 @@ class HarnessAgentLauncherSkillSelfWriteTest {
         .systemPrompt("write")
         .chatModelId(100L)
         .skillSelfWrite(selfWrite)
+        // One delivered skill, so the fixture really installs the delivered repository: a claim about which
+        // of two sources wins a name clash is vacuous when only one of them is there. The skillAdaptor below
+        // answers any id with the same `pdf` skill.
+        .addSkill(SkillSpec(skillId = 1L, skillName = "pdf"))
         .build()
 
     private fun build(
@@ -137,9 +143,32 @@ class HarnessAgentLauncherSkillSelfWriteTest {
         assertTrue(locations.isEmpty(), "no grant means no filesystem repository at all: $locations")
     }
 
+    @Test
+    fun `the session's enabled area is installed below the delivered skills so delivered wins the name`(@TempDir workspace: Path) {
+        val sources = sources(build(workspace, selfWrite = true, draftAdaptor = intake))
+        val enabled = sources.indexOf(SESSION_SKILL_SOURCE)
+        val delivered = sources.indexOf(HarnessAgentBuilder.IN_MEMORY_SKILL_SOURCE)
+
+        assertTrue(enabled >= 0, "the enabled area has to be installed: $sources")
+        assertTrue(delivered >= 0, "the delivered skills are installed by name: $sources")
+        assertTrue(
+            enabled < delivered,
+            "the later repository wins a name clash, so the enabled area must be installed first: $sources",
+        )
+    }
+
+    @Test
+    fun `an agent without the grant gets no enabled area to read from`(@TempDir workspace: Path) {
+        val sources = sources(build(workspace, selfWrite = false, draftAdaptor = intake))
+
+        assertFalse(sources.contains(SESSION_SKILL_SOURCE), "no grant, no area: $sources")
+    }
+
     private fun filesystemLocations(agent: HarnessAgentWrapper): List<String> = checkNotNull(agent.harnessAgent).skillRepositories
         .filter { it.repositoryInfo.type == "filesystem" }
         .map { it.repositoryInfo.location }
+
+    private fun sources(agent: HarnessAgentWrapper): List<String> = checkNotNull(agent.harnessAgent).skillRepositories.map { it.source }
 
     private fun List<MiddlewareBase>.anySelfWrite(): Boolean = any { it is SkillDraftSubmitMiddleware }
 }

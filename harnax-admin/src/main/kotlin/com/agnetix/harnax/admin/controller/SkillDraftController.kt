@@ -66,6 +66,10 @@ class SkillDraftController(
             required = false,
         ) status: String?,
         @Parameter(description = "Skill name, partial match") @RequestParam(name = "name", required = false) name: String?,
+        @Parameter(description = "Narrow to one conversation's proposals") @RequestParam(
+            name = "sessionId",
+            required = false,
+        ) sessionId: String?,
     ): ResultVo<Page<SkillDraftResponse>> = try {
         // The open queue is the only thing a reviewer has a reason to ask for without naming a status, so
         // the default is the useful list rather than a page of decisions already made.
@@ -73,6 +77,7 @@ class SkillDraftController(
             skillDraftService.page(
                 status = status ?: SkillDraft.STATUS_PENDING,
                 name = name,
+                sessionId = sessionId,
                 pageNum = pageNum ?: 1,
                 pageSize = pageSize ?: DEFAULT_PAGE_SIZE,
             ),

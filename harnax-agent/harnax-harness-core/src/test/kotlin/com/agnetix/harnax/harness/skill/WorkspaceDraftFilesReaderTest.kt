@@ -8,6 +8,7 @@ import io.agentscope.harness.agent.filesystem.model.GlobResult
 import io.agentscope.harness.agent.filesystem.model.ReadResult
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mock
+import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
@@ -176,6 +178,83 @@ class WorkspaceDraftFilesReaderTest {
         `when`(filesystem.glob(any(), eq("SKILL.md"), eq(DRAFTS))).thenThrow(RuntimeException("sandbox is gone"))
 
         assertTrue(reader().listDraftSkillNames(ctx).isEmpty())
+    }
+
+    @Test
+    fun `the draft's own SKILL markdown comes back with the timestamp the listing gave it`() {
+        // A sandbox or local read builds FileData with its two-argument constructor, so both timestamps come
+        // back null from the read itself; the mtime only exists on the listing (BaseSandboxFilesystem.java:191
+        // versus the `find … | stat -c '%Y'` in its glob).
+        `when`(filesystem.read(any(), eq("$DRAFTS/invoice-fill/SKILL.md"), anyInt(), anyInt())).thenReturn(
+            ReadResult.success(FileData("---\nname: invoice-fill\ndescription: fills\n---\nbody\n", "utf-8")),
+        )
+        `when`(filesystem.glob(any(), eq("SKILL.md"), eq("$DRAFTS/invoice-fill"))).thenReturn(
+            GlobResult.success(listOf(FileInfo.ofFile("$DRAFTS/invoice-fill/SKILL.md", 10L, "2026-10-08T10:00:00Z"))),
+        )
+
+        val md = reader().readSkillMarkdown("invoice-fill", ctx)
+
+        assertNotNull(md)
+        assertEquals("body", md!!.content.trimEnd().substringAfter("\n---\n"))
+        assertEquals("2026-10-08T10:00:00Z", md.modifiedAt)
+    }
+
+    @Test
+    fun `a read that carries its own timestamp wins and costs no listing`() {
+        // RemoteFilesystem does fill the read's own timestamps (RemoteFilesystem.java:256), and its value is
+        // the file's, so a second round-trip to the listing would only be a cost.
+        `when`(filesystem.read(any(), eq("$DRAFTS/invoice-fill/SKILL.md"), anyInt(), anyInt())).thenReturn(
+            ReadResult.success(FileData("---\nname: invoice-fill\n---\nbody\n", "utf-8", null, "2026-10-06T08:00:00Z")),
+        )
+
+        val md = reader().readSkillMarkdown("invoice-fill", ctx)
+
+        assertEquals("2026-10-06T08:00:00Z", md?.modifiedAt)
+        verify(filesystem, never()).glob(any(), eq("SKILL.md"), eq("$DRAFTS/invoice-fill"))
+    }
+
+    @Test
+    fun `a listing that will not answer still returns the text with no timestamp`() {
+        // The absence of a time says nothing about whether the draft is a skill, so a failed listing must not
+        // take the body down with it — a panel showing no time beats a panel that cannot show the skill.
+        `when`(filesystem.read(any(), eq("$DRAFTS/invoice-fill/SKILL.md"), anyInt(), anyInt())).thenReturn(
+            ReadResult.success(FileData("---\nname: invoice-fill\n---\nbody\n", "utf-8")),
+        )
+        `when`(filesystem.glob(any(), eq("SKILL.md"), eq("$DRAFTS/invoice-fill"))).thenReturn(
+            GlobResult.fail("no such directory"),
+        )
+
+        val md = reader().readSkillMarkdown("invoice-fill", ctx)
+
+        assertNotNull(md)
+        assertNull(md!!.modifiedAt)
+    }
+
+    @Test
+    fun `a SKILL markdown with no text is no draft`() {
+        // Both filesystems substitute this one literal for a file that exists but is empty
+        // (BaseSandboxFilesystem.java:185, LocalFilesystem.java:294). Forwarded as the body it would reach
+        // upstream's skill parser and be refused there, so an empty SKILL.md reads as the absence it is.
+        `when`(filesystem.read(any(), eq("$DRAFTS/invoice-fill/SKILL.md"), anyInt(), anyInt())).thenReturn(
+            ReadResult.success(FileData("System reminder: File exists but has empty contents", "utf-8")),
+        )
+
+        assertNull(reader().readSkillMarkdown("invoice-fill", ctx))
+    }
+
+    @Test
+    fun `a draft with no readable SKILL markdown reads as no markdown rather than an empty one`() {
+        `when`(filesystem.read(any(), anyString(), anyInt(), anyInt()))
+            .thenReturn(ReadResult.fail("no such file"))
+        assertNull(reader().readSkillMarkdown("invoice-fill", ctx))
+    }
+
+    @Test
+    fun `the same reader pointed at the enabled directory reads the enabled copy`() {
+        val enabled = WorkspaceDraftFilesReader(filesystem, SkillDraftStaging.SESSION_ENABLED_DIR)
+        `when`(filesystem.read(any(), eq("${SkillDraftStaging.SESSION_ENABLED_DIR}/invoice-fill/SKILL.md"), anyInt(), anyInt()))
+            .thenReturn(ReadResult.success(FileData("---\nname: invoice-fill\ndescription: fills\n---\nbody\n", "utf-8")))
+        assertNotNull(enabled.readSkillMarkdown("invoice-fill", ctx))
     }
 
     private fun stubListing(vararg names: String) {

@@ -30,6 +30,10 @@ interface SkillDraftService {
     /**
      * The queue within the caller's tenant, newest touched first.
      *
+     * [sessionId] narrows the queue to one conversation's proposals, which is what a session panel asks for;
+     * it is a SQL predicate rather than a post-filter because PageHelper counts the rows it hands back, so a
+     * filter applied after paging would report a total that does not match the page.
+     *
      * @param status one of `PENDING` / `APPROVED` / `REJECTED`, or null for all of them. `EXPIRED` is a
      * documented column value that no code writes, so filtering by it is refused rather than answered with
      * an empty list that would read as "nothing to review".
@@ -38,6 +42,7 @@ interface SkillDraftService {
     fun page(
         status: String?,
         name: String?,
+        sessionId: String?,
         pageNum: Int,
         pageSize: Int,
     ): Page<SkillDraftResponse>

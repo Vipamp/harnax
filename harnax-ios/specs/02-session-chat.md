@@ -12,7 +12,7 @@
 
 - 桌面/平板双栏：左侧会话列表 + 右侧 `ChatWindow`；窄屏（移动端断点）单栏，列表页与聊天页互切，聊天页左上角有返回按钮。锚点 `harnax-webui/src/pages/session/index.tsx:106-109`（返回按钮渲染）、`harnax-webui/src/pages/session/index.tsx:255-263`（移动端单栏切换）、`harnax-webui/src/pages/session/index.tsx:152`、`harnax-webui/src/pages/session/index.tsx:229`（单/双栏容器分支）。
 - iOS 映射：`NavigationSplitView`（regular 宽度双栏 / compact 宽度单栏 push），返回即 `dismiss`。
-- iOS 独有的一行入口：会话列表顶部挂「技能草稿」行，通到本租户的草稿审核队列——Web 侧这一页在 `/context/skill-drafts`（`harnax-webui/config/routes.ts:107`-`:111`），不在会话列表里，所以这一行不对应 webui 的任何元素，只借会话列表的位置露出。行上的计数是租户级待审总数（队列接口没有按会话过滤的能力），读失败只隐藏数字不撤行；行的挂载位置与两级 push 形状见 `harnax-ios/specs/07-skill-draft-review.md` §5.1。
+- iOS 独有的一行入口：会话列表顶部挂「技能草稿」行，通到本租户的草稿审核队列——Web 侧这一页在 `/context/skill-drafts`（`harnax-webui/config/routes.ts:107`-`:111`），不在会话列表里，所以这一行不对应 webui 的任何元素，只借会话列表的位置露出。行上的计数是租户级待审总数（这一行给的是审核链的导航，队列的会话谓词由本 spec「本会话自写技能」那一节的那次读用），读失败只隐藏数字不撤行；行的挂载位置与两级 push 形状见 `harnax-ios/specs/07-skill-draft-review.md` §5.1。
 
 ### 列表数据加载
 
@@ -402,6 +402,16 @@
 ### 画面不变量
 
 压缩只重写 `AgentState.context`；页面气泡读逐条追加的归档，因此压缩后屏幕仍是全部原始消息，且不出现摘要气泡。iOS 侧由 `Tests/HarnaxFeaturesTests/ChatHistoryLoadTests.swift:217`（`testACompactionLeavesEveryStoredBubbleOnScreen`）钉住，其余判据的承载：旗标与计数 `Tests/HarnaxCoreTests/CompactionOutcomeTests.swift`、比值格式与钳位 `Tests/HarnaxCoreTests/ContextUsageTests.swift`、线上形状 `Tests/HarnaxAPITests/ContextUsageEndpointTests.swift`、明细行 `Tests/HarnaxFeaturesTests/ContextUsageReadoutTests.swift`、文案分支与定序 `Tests/HarnaxFeaturesTests/ChatViewModelTests.swift`、标题栏只 unwrap 一次 `Tests/HarnaxFeaturesTests/ContextUsageViewGateTests.swift`。
+
+---
+
+## 本会话自写技能（交叉引用）
+
+对话页标题栏最后一枚入口打开的那块列表，行为逐条写在 `FUNCTIONS.md` §3.17，队列侧的契约写在 `07-skill-draft-review.md`；本节只登记它跨的三条路由与一条读侧不变量。
+
+- 读走 `SessionSkillReading` 一个门面、两条腿：提名腿 `GET /api/admin/skill-drafts?status=PENDING&sessionId=`（admin 队列的会话谓词），目录腿 `GET /api/router/agent/session-skills/{sessionId}`（`harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:199` → `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/controller/SessionSkillController.kt:29`）。目录里出现即「已启用」，应答不带开关。
+- 写只有启用一条：`POST /api/router/agent/session-skills/{sessionId}/{name}/enable`（`AgentProxyController.kt:215`），没有请求体——操作者由 router 自己的鉴权上下文命名，这边发什么都是主张不是事实。
+- **两份读各走各的失败**：一条腿挂了只丢它那半，另一条腿答上来的行照常可点；只有两腿都没答才说「读不出来」。这条规矩存在是因为一份失败绝不能替另一份去回答「这个会话没提出过技能」。
 
 ---
 

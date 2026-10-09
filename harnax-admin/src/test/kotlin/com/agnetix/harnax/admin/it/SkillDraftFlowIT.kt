@@ -5,6 +5,7 @@ import com.agnetix.harnax.mapper.SkillDraftMapper
 import com.agnetix.harnax.mapper.SkillMapper
 import com.agnetix.harnax.mapper.SkillRepositoryMapper
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -60,6 +61,8 @@ class SkillDraftFlowIT : BaseAdminIT() {
 
     private var sessionUuid = ""
     private var sessionRowId = -1L
+    private var siblingSessionUuid = ""
+    private var siblingSessionRowId = -1L
     private var cleanDraftId = -1L
     private var cleanSkillId = -1L
     private var cleanDigest = ""
@@ -78,6 +81,22 @@ class SkillDraftFlowIT : BaseAdminIT() {
         // Deleting the session is by row id; the runtime and the draft's origin are keyed by the `web-` one.
         sessionRowId = session["id"].asLong()
         return sessionUuid
+    }
+
+    /** A second conversation of the same tenant, so a session filter has something it should exclude. */
+    private fun ensureSiblingSession(): String {
+        if (siblingSessionUuid.isNotEmpty()) return siblingSessionUuid
+        val agent = findInPage("/api/admin/agents/page", "name=it_draft_agent_$suffix") {
+            it["name"]?.asText() == "it_draft_agent_$suffix"
+        }
+        assertNotNull(agent, "the first session's agent has to still be here")
+        val title = "it_draft_session_sibling_$suffix"
+        assertOk(postJson("/api/admin/sessions", mapOf("title" to title, "agentId" to agent!!["id"].asLong())))
+        val session = findInPage("/api/admin/sessions/page", "keyword=$title") { it["title"]?.asText() == title }
+        assertNotNull(session, "prerequisite sibling session should exist")
+        siblingSessionUuid = session!!["sessionId"].asText()
+        siblingSessionRowId = session["id"].asLong()
+        return siblingSessionUuid
     }
 
     /**
@@ -451,6 +470,50 @@ class SkillDraftFlowIT : BaseAdminIT() {
 
     @Test
     @Order(11)
+    fun `the queue narrows to one conversation without loosening the tenant`() {
+        val mine = submit("it_draft_ses_mine_$suffix", "# mine\n\nThis conversation's own proposal.\n")
+        val sibling = submit(
+            "it_draft_ses_sibling_$suffix",
+            "# sibling\n\nAnother conversation's proposal.\n",
+            sessionId = ensureSiblingSession(),
+        )
+        assertEquals(200, mine["code"].asInt(), mine.toString())
+        assertEquals(200, sibling["code"].asInt(), sibling.toString())
+
+        // Positive control first: both rows are in this tenant's open queue at all, so the filtered read below
+        // narrows something rather than agreeing with a filter that was never applied.
+        val everything = records("pageSize=100").map { it["name"].asText() }
+        assertTrue(
+            everything.contains("it_draft_ses_mine_$suffix") && everything.contains("it_draft_ses_sibling_$suffix"),
+            "the unfiltered queue carries both conversations' nominations: $everything",
+        )
+
+        val names = records("sessionId=$sessionUuid&pageSize=100").map { it["name"].asText() }
+        assertTrue(names.contains("it_draft_ses_mine_$suffix"), "the session sees its own nomination: $names")
+        assertFalse(names.contains("it_draft_ses_sibling_$suffix"), "and not another conversation's: $names")
+        assertEquals(
+            listOf("it_draft_ses_mine_$suffix"),
+            names.filter { it.startsWith("it_draft_ses_") },
+            "of the two rows this case filed, exactly its own conversation's survives",
+        )
+
+        // The new predicate narrows inside the tenant clause rather than replacing it.
+        val foreign = parseBody(
+            exchange(HttpMethod.GET, "/api/admin/skill-drafts?sessionId=$sessionUuid&pageSize=100", tenantId = otherTenant),
+        )
+        assertEquals(200, foreign["code"].asInt())
+        assertTrue(
+            foreign["data"]["records"].none { it["name"].asText().startsWith("it_draft_ses_") },
+            "a neighbour tenant that guesses the session id still gets nothing of ours",
+        )
+
+        // This file has no @AfterAll: the session a test creates is the test's to remove. The primary session
+        // stays, because the invariant-3 case after this one is the thing that clears it on purpose.
+        assertOk(deleteJson("/api/admin/sessions/$siblingSessionRowId"))
+    }
+
+    @Test
+    @Order(12)
     fun `clearing the proposing session takes neither the approval nor the record of it`() {
         // Invariant 3, as a test rather than as a review note: a decision can land days after the run that
         // proposed it, and that run's cleanup is not a review action. The draft, the skill it became, the

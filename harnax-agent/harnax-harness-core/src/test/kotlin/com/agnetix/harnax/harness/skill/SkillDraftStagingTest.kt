@@ -10,6 +10,7 @@ import io.agentscope.harness.agent.filesystem.model.ReadResult
 import io.agentscope.harness.agent.skill.curator.SkillPromoter
 import io.agentscope.harness.agent.workspace.WorkspaceManager
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -135,6 +136,29 @@ class SkillDraftStagingTest {
 
         assertTrue(staging.listDraftNames(ctx).isEmpty())
         assertEquals(deferred, staging.promote("invoice-fill", "system", ctx)?.block())
+    }
+
+    @Test
+    fun `the session-enabled directory is one of the staged directories the guard covers`() {
+        assertEquals(
+            listOf(
+                SkillDraftStaging.DRAFTS_DIR,
+                SkillDraftStaging.PROMOTED_DIR,
+                SkillDraftStaging.SESSION_ENABLED_DIR,
+            ),
+            SkillDraftStaging.STAGING_DIRS,
+        )
+        assertEquals("harnax-skill-staging/session-enabled", SkillDraftStaging.SESSION_ENABLED_DIR)
+        SkillDraftStaging.STAGING_DIRS.forEach {
+            assertFalse(dirClashesWithSkillsDir(it), "'$it' would land inside the delivered-skills directory")
+        }
+    }
+
+    @Test
+    fun `the guard's own rule still rejects a directory under the delivered skills`() {
+        assertTrue(dirClashesWithSkillsDir("skills/session-enabled"))
+        assertTrue(dirClashesWithSkillsDir("skills"))
+        assertFalse(dirClashesWithSkillsDir("harnax-skill-staging/session-enabled/inner"))
     }
 
     private companion object {

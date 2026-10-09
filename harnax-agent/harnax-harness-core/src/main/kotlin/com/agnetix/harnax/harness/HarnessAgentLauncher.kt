@@ -48,7 +48,11 @@ import com.agnetix.harnax.harness.sandbox.CliImageBuilder
 import com.agnetix.harnax.harness.sandbox.CliPackageStore
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
 import com.agnetix.harnax.harness.skill.AdminBackedPromotionGate
+import com.agnetix.harnax.harness.skill.SandboxHandleProvider
+import com.agnetix.harnax.harness.skill.SessionEnabledSkillRepository
+import com.agnetix.harnax.harness.skill.SessionSkillStore
 import com.agnetix.harnax.harness.skill.SkillDraftStaging
+import com.agnetix.harnax.harness.skill.SkillDraftSubmitMiddleware
 import com.agnetix.harnax.harness.skill.TenantSkillVisibilityFilter
 import com.agnetix.harnax.harness.team.TeamLeadToolBox
 import com.agnetix.harnax.harness.team.TeamMemberSpec
@@ -181,6 +185,16 @@ class HarnessAgentLauncher(
         log.info("[harness] Shutdown hook triggered, persisting all sandbox snapshots...")
         keepAliveSandboxManager?.persistAll()
         log.info("[harness] Shutdown hook complete")
+    }
+
+    /** The out-of-call door onto any session's container, for whoever has no agent to bind to. */
+    val sessionSkillStore: SessionSkillStore by lazy {
+        SessionSkillStore(
+            handles = SandboxHandleProvider { id ->
+                keepAliveSandboxManager?.let { it.getSandbox(id) ?: it.attachIfRunning(id) }
+            },
+            workspaceRoot = harnessConfig.sandbox.workspaceRoot,
+        )
     }
 
     /**
@@ -573,15 +587,40 @@ class HarnessAgentLauncher(
         }
         if (skillDraftIntake != null) {
             val staging = SkillDraftStaging()
+            val sessionSkills = SessionEnabledSkillRepository()
             agentBuilder.skillSelfWrite(
                 staging = staging,
                 gate = AdminBackedPromotionGate(sessionId, skillDraftIntake, staging),
+                sessionSkills = sessionSkills,
+            )
+            // Registered here rather than by the builder: the middleware is the launcher's own wiring. It is
+            // handed the out-of-call store rather than the staging it used to read, because the offer runs
+            // after the answer, by which time the sandbox is unbound and a workspace read answers nothing.
+            agentBuilder.addMiddleware(
+                SkillDraftSubmitMiddleware(
+                    sessionId = sessionId,
+                    store = sessionSkillStore,
+                    adaptor = skillDraftIntake,
+                ),
             )
             log.info(
-                "Agent '{}' may author skills: drafts stage in '{}', every one of them waits for review",
+                "Agent '{}' may author skills: drafts stage in '{}', every one of them waits for review, and " +
+                    "the operator can enable one of them into this session",
                 agentSpec.name,
                 staging.draftsDir,
             )
+            // Said at assembly rather than left to the offer: without a sandbox `KeepAliveSandboxManager` is never
+            // built, so the handle provider answers null and the out-of-call read sees no draft at all. Supporting
+            // self-write in that mode is a product decision; what this class owes the operator is that the dead
+            // stop is not silent.
+            if (!harnessConfig.sandbox.enabled) {
+                log.warn(
+                    "Agent '{}' is granted skill self-write but the sandbox is disabled: drafts still stage on the " +
+                        "workspace, but the out-of-call offer reads them through a sandbox handle that does not exist " +
+                        "in this mode, so nothing reaches the review queue. Set SANDBOX_ENABLED=true to use this feature.",
+                    agentSpec.name,
+                )
+            }
         }
 
         // ----- Team tools -----

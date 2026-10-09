@@ -12,13 +12,19 @@ import reactor.core.publisher.Mono
  *
  * Two things are only knowable after `HarnessAgent.Builder.build()` — the workspace filesystem and the agent
  * itself — and both are needed by objects that must already exist to be handed to that builder: the promotion
- * gate reads a draft's support files off the filesystem, and offering a draft calls back into the agent. So
- * this is the placeholder they hold: [bind] fills it once the agent exists, and every read before that
- * answers as if nothing were staged.
+ * gate reads a draft's support files off the filesystem, and [promote] runs the upstream pipeline on the
+ * agent. So this is the placeholder they hold: [bind] fills it once the agent exists, and every read before
+ * that answers as if nothing were staged.
+ *
+ * Reaching Admin's queue at the end of a turn is not one of the paths through here. The turn-end offer reads
+ * the staged drafts through [SessionSkillStore] and files them with the intake adaptor itself, so it never
+ * touches this object. [promote] is the other way through, and the live path does not run it either: as
+ * [SkillDraftSubmitMiddleware] records, nothing on this deployment calls the upstream pipeline it enters.
  *
  * That ordering is not a nicety. [com.agnetix.harnax.harness.HarnessAgentBuilder.build] configures
- * `enableSkillManageTool` and then builds, so the gate is constructed against an unbound staging and the
- * first draft can only be offered by a middleware running on a later turn, by which time [bind] has run.
+ * `enableSkillManageTool` and then builds, so the gate is constructed against an unbound staging. The read
+ * that gate performs only happens inside a turn of the agent it was installed on, and by then [bind] has
+ * pointed this staging at that agent.
  *
  * Binding is one-way and the fields are `@Volatile`: the agent is built on the assembling thread and read
  * from a bounded-Elastic worker, and a session's staging is never re-pointed at another agent.
@@ -66,8 +72,10 @@ class SkillDraftStaging : SkillDraftFilesReader {
      * Runs one draft through the promotion pipeline, which is where the gate — and therefore Admin's queue —
      * is reached. Null when no agent is bound yet.
      *
-     * The pipeline is upstream's, so the scan that guards what may go live runs here too: this is the only
-     * caller in harnax, and a draft the scanner blocks never reaches the queue.
+     * The pipeline is upstream's, so the scan that guards what may go live runs here too, and a draft the
+     * scanner blocks never reaches the queue. Nothing on the live path comes through it any more: the turn-end
+     * offer files a draft straight with the intake adaptor, so this is the promotion entry point for callers
+     * that promote one deliberately, and [SkillDraftSubmitMiddleware] is no longer among them.
      */
     fun promote(
         name: String,
@@ -90,21 +98,33 @@ class SkillDraftStaging : SkillDraftFilesReader {
 
         const val PROMOTED_DIR = "$STAGING_ROOT/promoted"
 
+        /**
+         * Where a skill the operator confirmed for *this session* is copied to, so the model can use it on its
+         * next call. Not upstream's [PROMOTED_DIR]: the harness appends the writable repository it builds for
+         * promotion at the end of the repository list, which is the winning position on a name clash, so a
+         * directory loaded from there would shadow every skill Admin delivered.
+         */
+        const val SESSION_ENABLED_DIR = "$STAGING_ROOT/session-enabled"
+
+        /** Everything the guard below has to keep out of the delivered-skills tree. */
+        val STAGING_DIRS = listOf(DRAFTS_DIR, PROMOTED_DIR, SESSION_ENABLED_DIR)
+
         init {
             // The directories above are compile-time constants, so this can only fire once someone edits
             // them — which is the point: it runs on class load, before any agent is assembled and before
             // anything has been written where a model could read it.
-            val clash = listOf(DRAFTS_DIR, PROMOTED_DIR).firstOrNull { it.clashesWithTheSkillsDir() }
+            val clash = STAGING_DIRS.firstOrNull { dirClashesWithSkillsDir(it) }
             require(clash == null) {
                 "Skill staging directory '$clash' overlaps '" + SandboxSkillProjector.SKILLS_DIR +
                     "', the directory Admin's delivered skills are projected into; staged drafts would " +
                     "become a load source the model reads"
             }
         }
-
-        private fun String.clashesWithTheSkillsDir(): Boolean {
-            val skills = SandboxSkillProjector.SKILLS_DIR
-            return this == skills || startsWith("$skills/") || skills.startsWith("$this/")
-        }
     }
+}
+
+/** Whether [dir] sits inside [SandboxSkillProjector.SKILLS_DIR], in either direction. */
+internal fun dirClashesWithSkillsDir(dir: String): Boolean {
+    val skills = SandboxSkillProjector.SKILLS_DIR
+    return dir == skills || dir.startsWith("$skills/") || skills.startsWith("$dir/")
 }

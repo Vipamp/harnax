@@ -64,6 +64,9 @@ class ApiCallLogFilter(
             "/api/router/agent/chat/history",
             "/api/router/agent/context",
             "/api/router/agent/workspace",
+            // One entry covers both `/session-skills/{sessionId}` and `/session-skills/{id}/{name}/enable`.
+            // The `/api/router/agent/session` line above does not reach them: its prefix match needs the slash.
+            "/api/router/agent/session-skills",
         )
     }
 

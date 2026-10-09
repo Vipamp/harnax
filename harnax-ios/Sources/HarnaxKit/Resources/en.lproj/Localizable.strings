@@ -1320,6 +1320,20 @@
 /* ---- MCP tool parameter: the description column can be empty, and empty is a statement ---- */
 "mcp.tool.noDescription" = "No description";
 
+/* ---- the session page's own skills: this conversation's nominations and its enabled set, and the five reasons an enable is refused ---- */
+"chat.skills.entry" = "Session skills";
+"chat.skills.title" = "Skills written in this session";
+"chat.skills.enable" = "Enable in this session";
+"chat.skills.enabled" = "Enabled in this session";
+"chat.skills.empty" = "This session has not written a skill yet";
+"chat.skills.loadFailed" = "Could not load this session's skills";
+"chat.skills.blocked" = "The security scan says dangerous, so it cannot be enabled";
+"chat.skills.full" = "This session already has ten skills enabled";
+"chat.skills.noSandbox" = "This session's sandbox is not running";
+"chat.skills.sourceGone" = "That draft is gone";
+"chat.skills.copyFailed" = "The sandbox refused the copy";
+"chat.skills.enableFailed" = "Could not enable it";
+
 /* ---- skill drafts: the self-evolution queue, its review screen and the two decisions ---- */
 "skill.draft.entry" = "Skill drafts";
 "skill.draft.entry.hint" = "Skills the agents proposed, waiting for a human";

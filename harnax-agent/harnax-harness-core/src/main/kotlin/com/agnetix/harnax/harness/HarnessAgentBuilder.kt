@@ -1,8 +1,8 @@
 package com.agnetix.harnax.harness
 
 import com.agnetix.harnax.harness.permission.DangerousInputCheckingTool
+import com.agnetix.harnax.harness.skill.SessionEnabledSkillRepository
 import com.agnetix.harnax.harness.skill.SkillDraftStaging
-import com.agnetix.harnax.harness.skill.SkillDraftSubmitMiddleware
 import com.agnetix.harnax.tools.sdk.ToolBox
 import io.agentscope.core.middleware.MiddlewareBase
 import io.agentscope.core.model.ChatModelBase
@@ -53,6 +53,7 @@ class HarnessAgentBuilder {
     private var visibilityFilter: SkillVisibilityFilter? = null
     private var promotionGate: SkillPromotionGate? = null
     private var skillStaging: SkillDraftStaging? = null
+    private var sessionSkills: SessionEnabledSkillRepository? = null
 
     private val log = LoggerFactory.getLogger(HarnessAgentBuilder::class.java)
 
@@ -161,13 +162,19 @@ class HarnessAgentBuilder {
      * delivered. [staging] therefore points both halves at their own tree, and nothing on this path ever moves
      * a draft into it: [gate] files the draft with Admin and defers, which leaves the workspace directory as
      * scratch space and Admin's row as the only thing a reviewer can act on.
+     *
+     * [sessionSkills] is the repository of the tree a reviewer's confirmation writes into: the skills this
+     * session may use without any of them being promoted to a system skill. [build] installs it as a load
+     * source, ahead of the delivered ones, and binds it once the agent exists.
      */
     fun skillSelfWrite(
         staging: SkillDraftStaging,
         gate: SkillPromotionGate,
+        sessionSkills: SessionEnabledSkillRepository,
     ): HarnessAgentBuilder = apply {
         this.skillStaging = staging
         this.promotionGate = gate
+        this.sessionSkills = sessionSkills
     }
 
     /**
@@ -259,6 +266,13 @@ class HarnessAgentBuilder {
         // SKILL.md with the same name into its own sandbox. Admin is the only skill source here. Where a
         // self-write agent does get a writable repository, the directories below move it out of `skills`.
         builder.disableDefaultWorkspaceSkills()
+        // Installed before the delivered skills on purpose: composeSkillRepositories keeps Layer 2 in add order
+        // and mergeRepositories lets the later repository win a name clash, so a skill the operator approved
+        // outranks the session's own copy of the same name the moment the delivered list carries it.
+        val enabled = sessionSkills
+        if (enabled != null) {
+            builder.skillRepository(enabled)
+        }
         if (skills.isNotEmpty()) {
             builder.skillRepository(InMemorySkillRepository(skills.toList(), skillsReadListener))
         }
@@ -275,7 +289,6 @@ class HarnessAgentBuilder {
                     .mainDir(staging.promotedDir)
                     .build(),
             )
-            builder.middleware(SkillDraftSubmitMiddleware(staging))
         }
         // Outside the skills block on purpose: a filter set with no skills delivered is a valid state and
         // the harness installs its middleware from the composed repository list, not from this call
@@ -287,6 +300,7 @@ class HarnessAgentBuilder {
         // Last, because everything the staging stands for — the workspace filesystem, the agent the
         // promotion pipeline runs on — only exists once the framework has built it.
         staging?.bind(agent)
+        enabled?.bind(agent)
         return agent
     }
 
