@@ -207,14 +207,14 @@
 - UI 状态（关键）：弹窗挂起时执行 `await new Promise(resolve => setPendingConfirm({pendingCallTools, resolve}))`，**整个 SSE 读循环被阻塞**，弹窗期间消息流不再更新，`loading` 保持 true。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:1709-1714`；`pendingConfirm` state 定义 `harnax-webui/src/pages/session/components/ChatWindow.tsx:585-588`。
 - 用户作答后：把当前消息内**所有 `confirmStatus==='pending'` 的段一次性**改为 `confirmed` 或 `rejected`（同样批量、无逐个）。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:1720-1725`。
 - 提交：`POST /api/router/agent/confirm`，body `{type:'CONFIRM', sessionId, isConfirmed, toolInfoList:[{toolId, toolName}]}`。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:1730-1749`；协议 `harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/AgentRequest.kt:136-145`（`ConfirmAgentRequest`）、`:165-168`（`ToolInfo{toolId?,toolName?}`）。
-- **`alwaysAllow` 与 `toolResults` 前端完全不使用**：grep 整个 `harnax-webui/src` 无 `alwaysAllow` / `toolResults` 命中；协议虽有 `ToolConfirmResult{toolId,toolName,confirmed,alwaysAllow}`（`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/AgentRequest.kt:155-160`），但后端逐工具分支里 `ConfirmResult(tr.confirmed, toolUseBlock, null)` **第三参（alwaysAllow）传 null，即服务端忽略**。锚点 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:366-371`。iOS 可只实现 bulk 模式（`isConfirmed` 对全部 pending 生效，见 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:372-375`），**不要为「始终允许」做 UI**。
+- **`alwaysAllow` 与 `toolResults` 前端完全不使用**：grep 整个 `harnax-webui/src` 无 `alwaysAllow` / `toolResults` 命中；协议虽有 `ToolConfirmResult{toolId,toolName,confirmed,alwaysAllow}`（`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/AgentRequest.kt:155-160`），但后端逐工具分支里 `ConfirmResult(tr.confirmed, toolUseBlock, null)` **第三参（alwaysAllow）传 null，即服务端忽略**。锚点 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:401-404`。iOS 可只实现 bulk 模式（`isConfirmed` 对全部 pending 生效，见 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:407`），**不要为「始终允许」做 UI**。
 
 ### 确认流是一个独立的 SSE 流（嵌套读流）
 
 - `/confirm` 返回 SSE，前端对确认响应再做一次完整的分帧 + 事件解析，逻辑与主管主流同构。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:1753-2341`；后端 `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:118-126`（POST /confirm 返回 `Flux<ChatEvent>`）。
 - 在确认流内部还允许**第三层嵌套确认**（成员/主管再次请求确认）。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:2036-2331`。
 - 确认流内的断连检测：锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:2328-2331`、`:2344-2347`。
-- 无 pending 时后端直接回 `ErrorEvent` + `EndEvent`。锚点 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:355-364`。
+- 无 pending 时后端直接回 `ErrorEvent` + `EndEvent`。锚点 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:388-397`。
 
 ### 成员（member）确认：内联卡片 + childRunId
 
@@ -226,9 +226,9 @@
   - 状态色：green / red / orange。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:425`。
   - 每个工具一行：`toolName` + `isDangerous` 时红色「高危」Tag + JSON `<pre>`（`maxHeight 100`）。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:440-450`（高危 Tag 在 `:444`）。
   - **仅当 `onAnswer && status==='pending'` 才出现「拒绝 / 允许执行」按钮**；否则为纯展示。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:451-460`。
-- 成员确认整轮一次性（无单工具粒度），服务端判定 `approved = toolResults.isEmpty ? isConfirmed : toolResults.all { it.confirmed }`；成功时**只回一个 `EndEvent`**，前端不等内容。锚点 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:427`、`:436`、`:411-442`。
-- `confirm` 请求里 `childRunId` 会短路到 `confirmMemberRun`（走主管路径的前提是没有 childRunId）。锚点 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:346`。
-- 成员确认的失败态映射（iOS 需给出对应文案）：`NO_PENDING` / `ALREADY_ANSWERED` / `NOT_IN_THIS_TEAM` / `STOPPED`。锚点 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:429-435`。
+- 成员确认整轮一次性（无单工具粒度），服务端判定 `approved = toolResults.isEmpty ? isConfirmed : toolResults.all { it.confirmed }`；成功时**只回一个 `EndEvent`**，前端不等内容。锚点 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:463`、`:472`、`:447-478`。
+- `confirm` 请求里 `childRunId` 会短路到 `confirmMemberRun`（走主管路径的前提是没有 childRunId）。锚点 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:379`。
+- 成员确认的失败态映射（iOS 需给出对应文案）：`NO_PENDING` / `ALREADY_ANSWERED` / `NOT_IN_THIS_TEAM` / `STOPPED`。锚点 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:465-471`。
 - 前端对成员确认的处理：POST 后读取响应文本，若发现 `ErrorEvent` 就 warning「该确认已不在等待」；**不解析其余内容**。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:1295-1349`。
 - 组件卸载/收尾时把 `answerMemberConfirmRef` 置 null，避免向已卸载 UI 回写。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:606`（声明）、`:2375-2395`（finally 清理）。
 
@@ -236,7 +236,7 @@
 
 - 主管 run 卡片状态：`awaiting_confirm` 时 run 摘要头部显示「等待确认」文案与警告样式。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:2870-2889`（状态文案与样式映射）、`harnax-webui/src/pages/session/components/teamRun.ts:36-38`（`isRunOpen = running || awaiting_confirm`）。
 - 断流收尾：主流 `finally` 会 `closeAllMemberRuns(false)` 并把主管侧未收口的工具卡标记为 interrupted。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:2375-2395`；`markOpenToolCards` `:1148-1153`；`closeAllMemberRuns` `:1193-1197`。
-- 后端资源锁：上一轮团队 run 仍有成员在等确认时，新消息会返回 `RESOURCE_LOCKED`「The previous team run is still waiting for a member…」，前端作为普通文本错误呈现。锚点 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:215-222`。
+- 后端资源锁：上一轮团队 run 仍有成员在等确认时，新消息会返回 `RESOURCE_LOCKED`「The previous team run is still waiting for a member…」，前端作为普通文本错误呈现。锚点 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:234-241`。
 
 ---
 
@@ -286,15 +286,15 @@
 - 交互：同值直接 return；否则**先乐观 `setPermissionMode`，再发命令，失败回滚**。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:3601-3638`。
 - 底部说明文案 key：`pages.session.permissionMode.${permissionMode}`；非 DEFAULT 时高亮显示。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:3601-3638`。
 - 设置通道：**slash 命令 `/permission <mode>`**，即 `POST /api/router/agent/command` `{type:'COMMAND', command:'PERMISSION', args:<mode>}`（`sendSilentCommand('PERMISSION', key)`）。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:2408-2430`（`sendSilentCommand`）、`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/AgentRequest.kt:74-119`（`CommandAgentRequest`）；后端 `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:105-113`。
-- 服务端校验：`VALID_PERMISSION_MODES = setOf("DEFAULT","BYPASS","ACCEPT_EDITS","EXPLORE","DONT_ASK")`；非法值拒绝；`task-` 前缀会话拒绝改权限；改动通过 admin API 落库并失效 agent 缓存。锚点 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:1014-1040`（校验 `:1017`，task 拒绝 `:1025-1027`，写库 `:1030`，失效缓存 `:1036`）、白名单 `:1052-1053`。
+- 服务端校验：`VALID_PERMISSION_MODES = setOf("DEFAULT","BYPASS","ACCEPT_EDITS","EXPLORE","DONT_ASK")`；非法值拒绝；`task-` 前缀会话拒绝改权限；改动通过 admin API 落库并失效 agent 缓存。锚点 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:1147-1173`（校验 `:1150`，task 拒绝 `:1157-1160`，写库 `:1163`，失效缓存 `:1169`）、白名单 `:1186`。
 - 注意：存在 `PUT /api/admin/sessions/{sessionId}/config` 可直改 `enableThink/enableSearch/enablePlan/permissionMode`（后端 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/SessionController.kt:128-141`，DTO `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/SessionChatUpdateRequest.kt:5-17`，业务校验 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/SessionServiceImpl.kt:284-305`），但 **webui 从不调用它**，一律走 `/command`。iOS 应同样走 `/command`，以免绕过 `task-` 会话与 thinkingMode=2 的保护逻辑。
 
 ### 能力开关（思考/联网/计划）
 
-- 深度思考 Switch：`!modelSupportReasoning` → disabled 样式 + warning toast；`modelThinkingMode === 2` → info toast「当前模型必须深度思考，无法关闭」并 **直接 return 不发命令**；否则 toggle + `sendSilentCommand(ENABLE|DISABLE, 'thinking')`，失败回滚。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:3506-3572`。服务端同样有 `thinkingMode=2` 禁关保护。锚点 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:961-970`。
+- 深度思考 Switch：`!modelSupportReasoning` → disabled 样式 + warning toast；`modelThinkingMode === 2` → info toast「当前模型必须深度思考，无法关闭」并 **直接 return 不发命令**；否则 toggle + `sendSilentCommand(ENABLE|DISABLE, 'thinking')`，失败回滚。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:3506-3572`。服务端同样有 `thinkingMode=2` 禁关保护。锚点 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:1102-1107`。
 - 联网搜索 Switch：`!modelSupportInternet` → disabled + toast；否则 toggle + `ENABLE/DISABLE 'search'`。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:3573-3589`。
 - 启用计划 Switch：**无任何模型门控**；toggle + `ENABLE/DISABLE 'plan'`。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:3590-3600`。
-- 能力白名单：`SUPPORTED_CAPABILITIES = setOf("search","thinking","plan","bypass")`，其他 capability 名会被服务端拒绝。锚点 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:1052-1053`；校验入口 `:940-960`（`task-` 会话拒绝 `:952-954`）。
+- 能力白名单：`SUPPORTED_CAPABILITIES = setOf("search","thinking","plan","bypass")`，其他 capability 名会被服务端拒绝。锚点 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:1185`；校验入口 `:1073-1082`（`task-` 会话拒绝 `:1085`）。
 - 「思考过程」显示开关不走后端：右键 `contextMenu` 切 `showThinking`，**纯前端**。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:3506-3572`。
 - 会话切换时必须重置这三个开关（含 `enableThink/Search/Plan`）。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:683-705`。
 
@@ -362,35 +362,36 @@
 | router → agent | `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/service/AgentServiceClient.kt:190-199` | 转发 `GET /api/agent/context/{sessionId}` |
 | agent 侧 | `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/controller/AgentController.kt:123-136` | 本实例不持有该会话的 agent → `ResultVo.error("No context held for session … on this instance - usage needs the live agent")` `:134-135`，**HTTP 仍是 200，业务码是失败** |
 
-载荷 `ContextUsageResponse`（`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/ContextUsageResponse.kt:40-49`）与分母档位 `ContextWindowSource`（同文件 `:7-16`）。键名即 data class 属性名，camelCase，无命名策略参与。
+载荷 `ContextUsageResponse`（`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/ContextUsageResponse.kt:49-59`）与分母档位 `ContextWindowSource`（同文件 `:7-16`）。键名即 data class 属性名，camelCase，无命名策略参与。
 
 ### 两种「报不出来」的形状
 
 `code 200 + data:null`（从未绑定）与 `code 500`（实例不持有 agent）都不是「上下文是空的」：两端在这两种形状下整块不显示读数，**绝不显示 `0%`**。
 
 - webui 判据 `harnax-webui/src/pages/session/components/contextUsage.ts:22-26`，挂载点 `harnax-webui/src/pages/session/index.tsx:142-153`。
-- iOS 判据 `Sources/HarnaxCore/Contract/ContextUsage.swift:86-88`（`contextWindow > 0 && ratio.isFinite`）；空 `data` 靠 `ContextUsage: HarnaxVoid` 解成空值（`Sources/HarnaxAPI/ContextUsageClient.swift`），业务失败落进 `Result.failure`，调用侧两条同处理。
+- iOS 判据 `Sources/HarnaxCore/Contract/ContextUsage.swift:94-96`（`contextWindow > 0 && ratio.isFinite`）；空 `data` 靠 `ContextUsage: HarnaxVoid` 解成空值（`Sources/HarnaxAPI/ContextUsageClient.swift`），业务失败落进 `Result.failure`，调用侧两条同处理。
 
 ### 分子与分母的口径
 
-- `ratio` 由服务端算好下发：分子优先 `lastCallInputTokens`（账单真值），没有账单时取 `estimatedTokens`（上游估算），分母 `contextWindow`（`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/ContextUsageResponse.kt:21-38` 写明两个数为什么并存）。客户端不重算，只按 `lastCallInputTokens` 是否为 null 标口径。
-- 分子跟的是最近一次**已计费**调用，所以一次压缩不当场改变 `ratio`，要等下一轮结束后的重读才动。
+- `ratio` 由服务端算好下发：分子优先 `lastCallInputTokens`（账单真值），没有账单**或这笔账单已被一次压缩改写掉**时取 `estimatedTokens`（上游估算），分母 `contextWindow`（`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/ContextUsageResponse.kt:21-35` 写明两个数为什么并存、以及作废那一条例外为什么必要）。客户端不重算 `ratio`，只按同一枚旗标标口径：`lastCallInputTokens != null && billIsCurrent != false` 才算账单（webui `harnax-webui/src/pages/session/components/contextUsage.ts:35`、iOS `Sources/HarnaxCore/Contract/ContextUsage.swift:120`），到线判据读的是这同一个有效分子（iOS `:129`、webui `:66`）。
+- 作废只有一条例外：按需压缩改写掉内容的那一次。服务端把压缩当时最近那行 `token_stats` 的 id 记成水位线，id 不大于它的账单一律回 `billIsCurrent: false`，于是**点完压缩当场**占比从账单回落到估算；下一次真调用写一行 id 更大的，比较不再成立，口径自己回到账单，不需要任何清理。旗标缺失与显式 `null` 都不作废（还没上这个字段的服务端会把每条读数都判成估算）。回绝、摘要没回来、以及「会话太短一条没裁」那三种都不标水位线——一条没改写过内容的命令不该改口径。
+- 账单行本身在作废期间仍报它的原数：压缩不改历史也不改账，`lastCallInputTokens` 是那一轮真实花掉的量，只有 `ratio` 与口径后缀跟着例外走。
 - 分母三档：`MODEL_FIELD`（模型域 `context_window` 列）→ `UPSTREAM_TABLE` → `FALLBACK`；未知档位的新名字保留服务端原词，不并入 `FALLBACK` 的说法。
-- 自动压缩触发线由 harnax 按上游算法现算：`triggerTokens = contextWindow - reserved`，`reserved` 取上游默认 20,000，`contextWindow <= 0` 时用上游 `FALLBACK_TRIGGER_TOKENS = 160_000`，算出非正数时钳到 `max(1, contextWindow / 2)`（`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentWrapper.kt:459-480`）；`triggerMessages` 用上游默认 50（`CompactionConfig.java:273-275`，harnax 读路径不覆写）。
+- 自动压缩触发线由 harnax 按上游算法现算：`triggerTokens = contextWindow - reserved`，`reserved` 取上游默认 20,000，`contextWindow <= 0` 时用上游 `FALLBACK_TRIGGER_TOKENS = 160_000`，算出非正数时钳到 `max(1, contextWindow / 2)`（`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentWrapper.kt:498-507`）；`triggerMessages` 用上游默认 50（`CompactionConfig.java:273-275`，harnax 读路径不覆写）。
 - 展示单位：四个 token 行（账单／本地估算／窗口／触发线）不写裸数字，按仓内既有的 M/K 口径缩写——≥1e6 记 `x.xxM`、≥1e3 记 `x.xxK`、不足 1000 原样，webui 走 `src/utils/tokenFormat.ts`（首页总览同源），iOS 走 `TokenFigures.token`（token 页同源），两端因此对同一个数说同一个样。缩写只改展示，`ratio` 与触发判据读的还是原始整数。缺失的账单仍写「尚未记录」而不是被缩写成 `0`；消息条数是条数，不缩写。
 
 ### 压缩命令
 
 入口与三种拒绝见上一节「后端行为差异」的 `COMPACT` 条。两条客户端共同的判据：
 
-- 成败**只认 `success` 旗标**。协议里 `CommandResponse.success: Boolean` 是非空（`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/CommandResponse.kt:13-17`），所以「读到命令体却没有旗标」不可能是线上形状，只能读本端没读到——webui `harnax-webui/src/pages/session/components/contextUsage.ts:73-80` 与 iOS `CompactionOutcome.compact`（`Sources/HarnaxCore/Contract/AgentStreaming.swift:81-87`）同判据，一律读成失败，绝不说「已压缩上下文」。
+- 成败**只认 `success` 旗标**。协议里 `CommandResponse.success: Boolean` 是非空（`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/CommandResponse.kt:13-17`），所以「读到命令体却没有旗标」不可能是线上形状，只能读本端没读到——webui `harnax-webui/src/pages/session/components/contextUsage.ts:92-99` 与 iOS `CompactionOutcome.compact`（`Sources/HarnaxCore/Contract/AgentStreaming.swift:81-87`）同判据，一律读成失败，绝不说「已压缩上下文」。
 - 计数只区分「压成」与「没得压」：`beforeMessages == afterMessages` 时报告还太短；计数缺失但旗标为真时只报告压成、不给数字。
 
 ### iOS 落点
 
 | 位置 | 文件与行 | 要点 |
 |---|---|---|
-| 契约判据 | `Sources/HarnaxCore/Contract/ContextUsage.swift:86-147` | `isReadable`／`basis`／`isAtAutoTrigger`／`percentText` 四条与 `contextUsage.ts` 一一对应；`percentText` 在比值越出整数范围时钳到 `Int.max` 而不是 `Int(Double)` 崩溃（`:119-134`） |
+| 契约判据 | `Sources/HarnaxCore/Contract/ContextUsage.swift:94-157` | `isReadable`／`basis`／`isAtAutoTrigger`／`percentText` 四条与 `contextUsage.ts` 一一对应，其中 `basis` 与 `isAtAutoTrigger` 都经 `hasUsableBill`（`:120-122`）取同一个有效分子；`percentText` 在比值越出整数范围时钳到 `Int.max` 而不是 `Int(Double)` 崩溃（`:142-157`） |
 | 读端点 | `Sources/HarnaxAPI/ContextUsageClient.swift` | 独立协议 `ContextUsageReading`，不与历史/计划共用；`sessionId` 先按路径段编码 |
 | 读数组装 | `Sources/HarnaxFeatures/Chat/ContextUsageReadout.swift:26-58` | 芯片两句 + 名／数两列的五行明细，读序即 `rows` 的序；账单行缺失时写「尚未记录」而不是 `0`；四个 token 行走 `TokenFigures.token` 的 M/K 档，消息条数不缩写 |
 | 标题栏 | `Sources/HarnaxFeatures/Chat/ChatView.swift:94-103`、芯片 `:192-210`、面板 `:224` | 单点 unwrap `vm.contextUsage`——模型里不留读不到的读数，缺席本身就是判据；webui 的 hover Tooltip 在 iOS 用 `popover` 承载（`Menu` 会把内容摊成一个叶子一行，名与数进不了同一行）；数那一列按自己最宽的一格撑开并右对齐、名那一列吃掉余量，面板宽度有下限，行字取 13 点档（15 点档下英文最宽一行 382 点 > 最窄手机 375 点）；排在 workspace 入口之前 |
@@ -424,7 +425,7 @@
 - 移除图片：`handleRemoveImage`。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:2470-2476`。预览条 + 删除按钮：`:3463-3477`。
 - 隐藏文件选择：`<input type="file" accept="image/*" multiple>`。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:3692-3699`。图片按钮 gating：`!modelSupportVision` → disabled 样式 + warning toast，**不阻止已存在的 state，只阻止再选文件**。锚点 `harnax-webui/src/pages/session/components/ChatWindow.tsx:3493-3505`。
 - 协议侧字段语义确认：`ChatAgentRequest.imageUrls` 注释为「List of image URLs or base64 data URLs」。锚点 `harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/AgentRequest.kt:50-58`（字段与注释 `:53`）。
-- 后端解析（**不是远程 URL 下载**）：`HarnessAgentWrapper.imageBlock` 只在 `startsWith("data:image")` 时按 base64 解析（`url.split(",")`，part[0] 中 `:` 与 `;` 之间为 mimeType，part[1] 为 base64）；否则当**本地文件路径** `Files.readAllBytes(Paths.get(url))` 并硬编码 `image/png`。锚点 `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentWrapper.kt:814-829`；`callStream(prompt, imageUrls)` 入口 `:345-354`。
+- 后端解析（**不是远程 URL 下载**）：`HarnessAgentWrapper.imageBlock` 只在 `startsWith("data:image")` 时按 base64 解析（`url.split(",")`，part[0] 中 `:` 与 `;` 之间为 mimeType，part[1] 为 base64）；否则当**本地文件路径** `Files.readAllBytes(Paths.get(url))` 并硬编码 `image/png`。锚点 `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentWrapper.kt:1032-1046`；`callStream(prompt, imageUrls)` 入口 `:345-354`。
   - **因此 iOS 只能传 base64 data URL**；传 http(s) URL 会被服务端当本地路径读，必然失败。
 
 ### 图片不持久化
@@ -471,7 +472,7 @@
 
 ### 团队 childSession 合并规则（服务端已完成，前端只管 source）
 
-- 历史入口就是合并结果：`loadHistory = merge(lead)`。锚点 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:338-341`。
+- 历史入口就是合并结果：`loadHistory = merge(lead)`。锚点 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:353-356`。
 - `TeamHistoryReplay.merge`：member 日志**仅保留 ASSISTANT / TOOL**（丢弃 SYSTEM/USER）。锚点 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/TeamHistoryReplay.kt:36-56`（`:46`）；文档 `:12-23`。
 - `resolveSources`：为每条成员日志打 `source`，且 **`childRunId = childSessionId`**（历史没有真实 runId，用子会话 id 顶替）。锚点 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/TeamHistoryReplay.kt:65-89`（`:81-82`）；团队配置读不到时返回 null → **只回退 lead，成员历史整体消失** `:65-89`。
 - 子会话 id 格式：`"team-$rootSessionId-m$memberAgentId"`（即任务中的 `team-<root>-m<agentId>`）。锚点 `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/team/TeamRuntimeSpec.kt:55-63`。
@@ -633,7 +634,7 @@
 6. **KeepAlive 显式丢弃**：包括带 `childRunId` 的成员 KeepAlive（`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/team/TeamOrchestrator.kt:427`），否则会产生空成员气泡。
 7. **超时设计**：客户端 idle 超时应 > 120s（router idle `harnax-session-router/src/main/resources/application.yml:112`），整体上限可对齐 30min（`:113`、`:20-22`）；iOS `URLSessionConfiguration.timeoutIntervalForRequest` 需相应放宽，`timeoutIntervalForResource` ≥ 30min。
 8. **自动滚动**：复刻 120px「接近底部」阈值与浮钮；`ScrollView` 上用内容高度差判断，不要用 `withAnimation` 打断用户手势。
-9. **图片输入**：`PhotosPicker` → 读取为 JPEG/PNG Data → 拼 `data:image/<mime>;base64,<b64>`（与 `FileReader.readAsDataURL` 输出等价，`harnax-webui/src/pages/session/components/ChatWindow.tsx:2442-2468`）。**绝不可传 http URL**（后端会把非 `data:image` 串当本地路径并硬编码 image/png，`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentWrapper.kt:814-829`）。同时注意 base64 体积直接进 body，应限制单图尺寸。
+9. **图片输入**：`PhotosPicker` → 读取为 JPEG/PNG Data → 拼 `data:image/<mime>;base64,<b64>`（与 `FileReader.readAsDataURL` 输出等价，`harnax-webui/src/pages/session/components/ChatWindow.tsx:2442-2468`）。**绝不可传 http URL**（后端会把非 `data:image` 串当本地路径并硬编码 image/png，`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentWrapper.kt:1032-1046`）。同时注意 base64 体积直接进 body，应限制单图尺寸。
 10. **下载**：两处裸 fetch（workspace download 只 `X-Api-Key`；team-artifact download 只 `Bearer`）在 iOS 各自构造 `URLRequest` 并只加对应一个头，别统一加全家桶（尤其别给 router download 加 Bearer 之外的 Tenant 头，行为未定义）。
 11. **复制**：整条气泡与代码块都由长按菜单交给 `HXPasteboard.copy`（`Sources/HarnaxFeatures/Chat/ChatTranscriptRows.swift:704`）。气泡文案由 `ChatTurn.copyableText` 组装（`Sources/HarnaxFeatures/Chat/ChatTranscript.swift:229`）：按流式顺序取 text 段、以 `\n` 相连，thinking、工具卡、附件、计划块一律不进剪贴板；组装结果为空就不弹菜单。webui 只有代码块一个复制入口（`harnax-webui/src/pages/session/components/ChatWindow.tsx:180-184`）。
 12. **Markdown**：气泡正文由本仓的渲染器画——块结构 `Sources/HarnaxKit/Components/HXMarkdownParser.swift`，绘制 `Sources/HarnaxKit/Components/HXMarkdownText.swift`；GFM 表格、任务列表、两种围栏、引用、标题、行内样式与链接都在覆盖内。iOS 17 的 `AttributedString(markdown:)` 只吃行内语法，单独用它会把表格和围栏塌成一行平文，所以解析层不可省。会话侧的接线、围栏底色档与「正文不可选中 / 不做语法高亮」两条取舍见「分段渲染规格 · text 渲染（Markdown）」。
@@ -641,10 +642,10 @@
 14. **列表一次 100 条**：iOS 首版同样一次拉 100 且不实现搜索/排序/分组，避免与后端能力错配。锚点 `harnax-webui/src/pages/team/index.tsx:39`。
 15. **创建后无法拿到新会话 id**：必须重拉列表（`harnax-webui/src/pages/session/components/SettingsModal.tsx:107` + `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/SessionController.kt:80-89`）。
 16. **team 与 agent 互斥用字符串编码**：`"agent:<id>"` / `"team:<id>"` 是 webui 的 UI 层编码（`harnax-webui/src/pages/session/components/SettingsModal.tsx:92-94`），iOS 可用 enum 内部表示，但提交体必须是 agentId/teamId 二选一。
-17. **权限模式与能力开关都走 `/command`**，不要用 `PUT /config`（webui 从不调用，且 `/command` 侧有 `task-` 会话与 thinkingMode=2 保护，`harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:952-954`、`:961-970`、`:1025-1027`）。
+17. **权限模式与能力开关都走 `/command`**，不要用 `PUT /config`（webui 从不调用，且 `/command` 侧有 `task-` 会话与 thinkingMode=2 保护，`harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:1085`、`:1091-1094`、`:1157-1160`）。
 18. **本地化**：webui 依赖 `umi` 的 `useIntl`（`pages.session.*` 文案，含 `permissionMode.<MODE>` 与工具确认相关）；iOS 用 `String(localized:)` 且需保留 `zh-Hans`/`en` 两套，Accept-Language 语义参考 `harnax-webui/src/requestErrorConfig.ts:64-65`。
 19. **危险视觉语言**：`isDangerous` 在主管弹窗为「高危(红)/低危(绿)」两态（`harnax-webui/src/pages/session/components/ChatWindow.tsx:485-505`），在成员内联卡只有「高危」红 Tag（`:444`）——两处不一致，iOS 按各自位置照做。
-20. **不要实现「始终允许」**：`alwaysAllow` 前端不传、后端忽略（`harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:366-371`）。
+20. **不要实现「始终允许」**：`alwaysAllow` 前端不传、后端忽略（`harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:401-404`）。
 
 ---
 
