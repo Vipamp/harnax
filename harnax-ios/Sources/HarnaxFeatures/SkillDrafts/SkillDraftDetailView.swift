@@ -226,7 +226,7 @@ public struct SkillDraftDetailView: View {
     @ViewBuilder
     private func paneContent(_ draft: SkillDraftDetail) -> some View {
         switch vm.tab {
-        case .body: bodyPane(draft)
+        case .body: bodyPane()
         case .files: filesPane(draft)
         case .scripts: scriptsPane(draft)
         case .scans: scansPane(draft)
@@ -235,15 +235,15 @@ public struct SkillDraftDetailView: View {
         }
     }
 
-    private func bodyPane(_ draft: SkillDraftDetail) -> some View {
+    private func bodyPane() -> some View {
         Group {
-            if hxPresented(draft.skillmd) == nil {
-                HXStateView(.empty, message: hx("skill.draft.body.empty"))
-            } else {
+            if let text = vm.bodyMarkdown {
                 HXCard {
-                    HXMarkdownText(draft.skillmd)
+                    HXMarkdownText(text)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
+            } else {
+                HXStateView(.empty, message: hx("skill.draft.body.empty"))
             }
         }
     }

@@ -88,6 +88,15 @@ public final class SkillDraftDetailViewModel: ObservableObject {
         }
     }
 
+    /// The body tab's text: the stored document minus the manifest block every `SKILL.md` opens with
+    /// (`SkillFileParser.kt:138-143`, mirrored by `SkillMarkdown.body`). Emptiness is judged **after** the
+    /// strip, so a draft whose whole document is a manifest shows the pane's empty state rather than a blank card.
+    /// `nil` means there is no body to render.
+    public var bodyMarkdown: String? {
+        guard let raw = hxPresented(draft?.skillmd) else { return nil }
+        return hxPresented(SkillMarkdown.body(raw))
+    }
+
     /// The digest the next approval will send, straight off the row on screen. `nil` means this screen has
     /// nothing to approve with, which is a local refusal rather than a request the server would reject.
     public var expectedDigest: String? { hxPresented(draft?.contentDigest) }

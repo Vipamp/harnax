@@ -52,12 +52,14 @@ public final class SkillDetailViewModel: ObservableObject {
     public var hasFiles: Bool { !tree.isEmpty }
     public var fileCount: Int { files.count }
 
-    /// The body as the server wrote it. The screen hands it to `HXMarkdownText`, which reads the blocks with
-    /// `HXMarkdownParser` — iOS 17's `AttributedString(markdown:)` covers inline syntax only, so tables,
-    /// fences and lists come out of it flat (`specs/04-context-domains.md` iOS 适配注意点 2).
+    /// The body as the server wrote it, minus the manifest block every `SKILL.md` opens with — the screen already
+    /// prints `name` and `description` in its header, and the server's own reader drops the same block
+    /// (`SkillFileParser.kt:138-143`). The hand-off to `HXMarkdownText` reads the blocks with `HXMarkdownParser`
+    /// — iOS 17's `AttributedString(markdown:)` covers inline syntax only, so tables, fences and lists come out
+    /// of it flat (`specs/04-context-domains.md` iOS 适配注意点 2).
     public var body: String? {
         guard let raw = hxPresented(skill?.skillmd) else { return nil }
-        return raw
+        return hxPresented(SkillMarkdown.body(raw))
     }
 
     public var selectedContent: String? {
