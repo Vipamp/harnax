@@ -23,9 +23,10 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import ch.qos.logback.classic.Logger as LogbackLogger
 
 /**
- * The two calls a session panel makes. Both answer even when the container is gone, because "this session
- * has nothing enabled" and "this session's sandbox is stopped" look the same to a panel and only one of
- * them is a dead end for the operator.
+ * The two calls a session panel makes. The enable refuses by cause; the list now does too, but for one state only:
+ * a session with no live container cannot be listed at all, and 410 is the one answer that sends the operator to
+ * restarting the session instead of to the review queue. A container that is running with an empty enabled zone
+ * still answers 200 with an empty list — that is this session having written nothing yet, and it is not a failure.
  */
 class SessionSkillControllerTest {
 
@@ -60,9 +61,20 @@ class SessionSkillControllerTest {
     }
 
     @Test
-    fun `a stopped container lists nothing`() {
+    fun `a session with no running container is listed as 410, not as an empty list`() {
+        Mockito.`when`(store.listEnabled("ses-1")).thenReturn(null)
+        val vo = controller().list("ses-1")
+        assertEquals(410, vo.code)
+        assertTrue(vo.message.orEmpty().contains("no running sandbox"), vo.message)
+        assertNull(vo.data, "a refusal carries no list, so a client cannot read the empty half of it as an answer")
+    }
+
+    @Test
+    fun `a running container with nothing enabled lists empty rather than refusing`() {
         Mockito.`when`(store.listEnabled("ses-1")).thenReturn(emptyList())
-        assertTrue(controller().list("ses-1").isSuccess())
+        val vo = controller().list("ses-1")
+        assertTrue(vo.isSuccess())
+        assertEquals(emptyList<Any>(), vo.data)
     }
 
     @Test

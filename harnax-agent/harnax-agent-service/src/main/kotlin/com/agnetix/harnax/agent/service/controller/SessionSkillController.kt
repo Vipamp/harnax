@@ -35,13 +35,21 @@ class SessionSkillController(
 
     private val log = LoggerFactory.getLogger(SessionSkillController::class.java)
 
+    /**
+     * The skills this session may use.
+     *
+     * One state refuses rather than answering a list: no live container. It carries the same 410 as [enable]
+     * below, because it is the same cause, and both clients send「restart this conversation」for it — a browser
+     * tab that had the drafts listed a minute ago cannot be told the session wrote nothing. A container that is
+     * running with nothing enabled still answers 200 with an empty list.
+     */
     @GetMapping("/{sessionId}")
     @Operation(summary = "List enabled skills", description = "List the skills this session may use")
-    fun list(@PathVariable sessionId: String): ResultVo<List<SessionSkillView>> = ResultVo.success(
-        launcher.sessionSkillStore.listEnabled(sessionId).map {
-            SessionSkillView(it.name, it.description, it.enabledAt)
-        },
-    )
+    fun list(@PathVariable sessionId: String): ResultVo<List<SessionSkillView>> {
+        val enabled = launcher.sessionSkillStore.listEnabled(sessionId)
+            ?: return ResultVo.error(410, "this session has no running sandbox, so there is no enabled skill list to read")
+        return ResultVo.success(enabled.map { SessionSkillView(it.name, it.description, it.enabledAt) })
+    }
 
     @PostMapping("/{sessionId}/{name}/enable")
     @Operation(summary = "Enable one draft in this session", description = "Copy one draft into this session's enabled skills")
