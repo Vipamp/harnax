@@ -1,11 +1,12 @@
 # iOS 实现规格 07：自我进化（技能草稿审核）
 
-会话域内的技能草稿队列与人工审核，行为逐条对齐 harnax-webui 现存页面。所有锚点均为仓库内真实读过的行号（2026-10-06 逐条 `sed` 核过），格式 `相对路径:行号`。后端统一 `ResultVo<T>` 信封 `{code, message, data}`；admin 的 Jackson 3 **丢弃 null 键**，因此除注明「必带」外，iOS DTO 一律可选。
+会话域内的技能草稿队列与人工审核，行为逐条对齐 harnax-webui 现存页面。所有锚点均为仓库内真实读过的行号（2026-10-06 首次逐条核过，2026-10-09 因 `SkillDraftServiceImpl` 插入会话过滤而全部重核），格式 `相对路径:行号`。后端统一 `ResultVo<T>` 信封 `{code, message, data}`；admin 的 Jackson 3 **丢弃 null 键**，因此除注明「必带」外，iOS DTO 一律可选。
 
 ## 1. 范围与三条取舍
 
 - 入口挂会话域：会话列表顶部一屏一行，带待审计数。队列页与审核详情页都从这一行进。
-- 队列的过滤参数是 `status` / `name` / `sessionId` 三个（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/SkillDraftController.kt:55-72`），**按会话筛是服务端能力**；本 spec 这两屏（队列页与审核详情页）自己不带会话条件，badge 因此是「本租户待审总数」，不是「本会话条数」——那行给的是审核链的导航。带 `sessionId` 的那次读在会话页的本技能列表（见 `02-session-chat.md`），webui 的会话抽屉走同一条件。
+- 队列的过滤参数是 `status` / `name` / `sessionId` 三个（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/SkillDraftController.kt:55-73`），**按会话筛是服务端能力**；本 spec 这两屏（队列页与审核详情页）自己不带会话条件，badge 因此是「本租户待审总数」，不是「本会话条数」——那行给的是审核链的导航。带 `sessionId` 的那次读在会话页的本技能列表（见 `02-session-chat.md`），webui 的会话抽屉走同一条件。
+- **`sessionId` 缺席与 `sessionId` 为空是两个问题**，服务端已分别定死（`SkillDraftServiceImpl.kt:225-237`）：不带这个键＝没提名任何会话，回整租户队列；带了但值是空白（`?sessionId=`／纯空格）＝点名为了一个会话，回**空页**。客户端因此不许用「丢掉这个键」来表达「这一页没有会话」——丢键拿回的是别的会话的提名，正是一块会话面板唯一不能做的事。会话 id trim 后为空时，这一腿根本不发，并按「读不出来」报（`harnax-ios/Sources/HarnaxAPI/SessionSkillClient.swift`）。
 - 技能可见性设置、用量分析页、独立审核历史页不在本轮范围。草稿详情自带的 `history` 轨迹在。
 
 ## 2. 后端契约：四条路由、两个拒绝通道
@@ -146,11 +147,11 @@
 - `Tests/HarnaxCoreTests/`：`isPatched`（相等不标 / 缺 createTime 不标 / 晚于才标）、`utf16` 长度判据（512 合法、513 拒、emoji 串与服务端同判）、digest 截断 12/16、`origin == "agent_promoted"` 判定、`skillStatus` 严格 == 1、状态与 verdict 的颜色/键映射。
 - `Tests/HarnaxAPITests/`：endpoint 构造（路径无 `/page`、`status` 必发、`name` trim 且空则省略、分页参数）、两个 payload 的编码形状（首次批准恰好一个键、rename 三键、replace 两键且无 `newName`）、解码夹具（admin 丢 null 键的形状、`resources` 是对象、五种 outcome 各一份、第六个未知 outcome 走 `.unknown`）。
 - `Tests/HarnaxFeaturesTests/`：两个 VM 用 fake 门面。列表——筛选切换重置页码、搜索提交、触底翻页、pending 标签的两条件；详情——六个 outcome 的状态迁移（含 `NAME_TAKEN` **不重读**、其余都重读）、409 分支、无 digest 时不发请求、冲突框取消会重读、驳回 trim 值入参。
-- 门禁：worktree 内 `swift build --build-tests` + `swift test`（宿主 macOS，无外部依赖）。基线 2092 测试全绿，任何新增都必须保持全绿。
+- 门禁：worktree 内 `swift build --build-tests` + `swift test`（宿主 macOS，无外部依赖）。基线 2093 测试全绿，任何新增都必须保持全绿。
 
 ## 8. 记账（本轮不做或做不了）
 
-- 本会话级计数与提名：`sessionId` 过滤参数已在服务端交付，读它的是会话页那块本会话技能列表（`02-session-chat.md`），入口行与队列页仍按租户全量。
+- 本会话级计数与提名：`sessionId` 过滤参数已在服务端交付，读它的是会话页那块本会话技能列表（`02-session-chat.md`），入口行与队列页仍按租户全量。会话 id 空白时那一腿不发（§1 末条）已实现并由 `Tests/HarnaxAPITests/SessionSkillWireTests.swift` 钉住，不在未做之列。
 - 无推送、无轮询：新草稿要下拉刷新才反映。webui 同样需要手动刷新，故不算偏离，但也不会更即时。
 - `EXPIRED` 不上筛选项：后端 `STATUSES` 不含它，按它筛会被拒（`SkillDraftServiceImpl.kt:601`，校验在 `:219-220`）。
 - 详情正文渲染复用 `HXMarkdownText`，其离线解析器对表格/代码块的覆盖不及 webui 的 `ReactMarkdown + remarkGfm`；这是既有约束，不在本轮扩。

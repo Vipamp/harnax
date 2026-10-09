@@ -425,6 +425,7 @@ class SessionSkillStore(
         val safe = SandboxFileWriter.safeRelativePath(name) ?: return EnableOutcome.SourceMissing
         val drafts = "$workspaceRoot/${SkillDraftStaging.DRAFTS_DIR}/$safe"
         val target = "$workspaceRoot/${SkillDraftStaging.SESSION_ENABLED_DIR}/$safe"
+        val scratch = "$workspaceRoot/${SkillDraftStaging.SESSION_SCRATCH_DIR}/$safe"
 
         if (!exec(sandbox, "test -f '$drafts/$SKILL_FILE' && echo yes").contains("yes")) {
             return EnableOutcome.SourceMissing
@@ -441,12 +442,16 @@ class SessionSkillStore(
         }
         val copy = execRaw(
             sandbox,
-            "mkdir -p '${enabledRoot(workspaceRoot)}' && rm -rf '$target' && " +
-                "mkdir -p '$target' && cp -R '$drafts/.' '$target/'",
+            "mkdir -p '${enabledRoot(workspaceRoot)}' && rm -rf '$scratch' && mkdir -p '$scratch' && " +
+                "cp -R '$drafts/.' '$scratch/' && rm -rf '$target' && mv '$scratch' '$target'",
         )
         if (!copy.ok()) {
             log.warn("Could not enable draft {} for session {}: {}", safe, sessionId, copy.stderr())
-            return EnableOutcome.Failed(copy.stderr().orEmpty().ifEmpty { "the container refused the copy" })
+            return EnableOutcome.Failed(
+                copy.stderr().orEmpty().ifEmpty {
+                    "the copy did not complete; this session may now be missing that skill"
+                },
+            )
         }
         log.info("Draft {} enabled for session {} (verdict {}, {} findings)", safe, sessionId, scan.verdict(), scan.findings().size)
         return EnableOutcome.Enabled(safe, scan.verdict().name, scan.findings().size)
@@ -591,7 +596,7 @@ import org.mockito.kotlin.isNull
 /**
  * The refusals an operator has to be able to tell apart, because the panel says one of them back and
  * a wrong one sends them to the wrong place: no draft to enable, a draft the scanner will not let in, a
- * session that has already filled its ten, and a container that refused the copy itself.
+ * session that has already filled its ten, and a copy that did not complete.
  */
 class SessionSkillStoreEnableTest {
 
@@ -751,12 +756,12 @@ class SessionSkillStoreEnableTest {
     }
 
     @Test
-    fun `a copy failure with nothing to say still says the container refused`() {
+    fun `a copy that says nothing still says the copy did not complete`() {
         stubDraftExists("invoice-fill")
         Mockito.`when`(sandbox.exec(isNull(), contains("cp -R"), anyInt())).thenReturn(ExecResult(1, "", "", false))
         val outcome = store().enable("ses-1", "invoice-fill")
         assertTrue(outcome is EnableOutcome.Failed, "got $outcome")
-        assertEquals("the container refused the copy", (outcome as EnableOutcome.Failed).reason)
+        assertEquals("the copy did not complete; this session may now be missing that skill", (outcome as EnableOutcome.Failed).reason)
     }
 
     @Test
@@ -1708,7 +1713,7 @@ class SessionSkillController(
 
             EnableOutcome.SourceMissing -> ResultVo.error(404, "no draft named '$name' to enable")
 
-            is EnableOutcome.Failed -> ResultVo.error(500, "the container refused the copy: ${outcome.reason}")
+            is EnableOutcome.Failed -> ResultVo.error(500, "the copy into this session did not complete: ${outcome.reason}")
 
             EnableOutcome.NoSandbox -> ResultVo.error(
                 410,
@@ -2453,7 +2458,7 @@ const REFUSALS: Record<string, { id: string; en: string }> = {
   '409': { id: 'pages.session.skills.refusal.limit', en: 'This session already has ten skills enabled' },
   '410': { id: 'pages.session.skills.refusal.noSandbox', en: 'This session has no running sandbox' },
   '404': { id: 'pages.session.skills.refusal.noDraft', en: 'This session has no draft with that name' },
-  '500': { id: 'pages.session.skills.refusal.container', en: 'The container refused the copy' },
+  '500': { id: 'pages.session.skills.refusal.container', en: 'The copy did not complete' },
 };
 
 const UNKNOWN_REFUSAL = {
@@ -2496,7 +2501,7 @@ Drawer 主体：`useEffect` 里并发取 `pageSkillDrafts({ status:'PENDING', se
 'pages.session.skills.refusal.dangerous': '安全扫描判定 DANGEROUS，这份草稿不能启用' / 'The security scan says DANGEROUS, so this draft cannot be enabled'
 'pages.session.skills.refusal.limit': '这个会话已经启用了十个技能' / 'This session already has ten skills enabled'
 'pages.session.skills.refusal.noSandbox': '这个会话没有运行中的沙箱' / 'This session has no running sandbox'
-'pages.session.skills.refusal.container': '容器拒绝了这次复制' / 'The container refused the copy'
+'pages.session.skills.refusal.container': '这次复制没有完成' / 'The copy did not complete'
 'pages.session.skills.refusal.noDraft': '这个会话没有这个名字的草稿' / 'This session has no draft with that name'
 'pages.session.skills.refusal.unknown': '启用请求被拒绝，原因未登记；草稿本身没有受影响' / 'The enable request was refused for a reason this panel does not know; the draft itself is untouched'
 ```
@@ -2743,7 +2748,7 @@ enum SessionSkillEndpoint {
 "chat.skills.full" = "这个会话已启用十条技能" / "This session already has ten skills enabled"
 "chat.skills.noSandbox" = "这个会话的沙箱没有在运行" / "This session's sandbox is not running"
 "chat.skills.sourceGone" = "这份草稿已经不在了" / "That draft is gone"
-"chat.skills.copyFailed" = "沙箱没有接受这次复制" / "The sandbox refused the copy"
+"chat.skills.copyFailed" = "这次复制没有完成" / "The copy did not complete"
 "chat.skills.enableFailed" = "启用没有成功" / "Could not enable it"
 ```
 
@@ -2837,12 +2842,9 @@ cd harnax-ios && swift test --scratch-path /tmp/hx-ios-final
 
 Expected: 全部 `BUILD SUCCESS`，0 失败。计数按这条链对，每一档都以已提交那轮的实跑数为准，别用「≥」糊过去：
 
-- harness-core **691**：进场 662 → Task 1/2/3 各抬一笔得 678 → Task 4 补强 682 → Task 5 685 → Task 6 687 → Task 7（`claim` 窗口两支）689 → 控制方自己那笔 attachIfRunning 句柄 provider 修复（`KeepAliveSandboxManagerTest` 追加的 `AttachIfRunning` 两支）691。Skipped 恒为 1。
-- harnax-agent-service **272**：进场 269 → Task 8 的 12 支控制器用例 → fix1 补审计行捕获用例 13 支 → fix2 再补跨模块那跳的两支＝272（`SessionSkillControllerTest` 15 支）。
-- harnax-session-router **548**：进场 546 → Task 9 的 `SessionRouterServiceSessionSkillTest` 4 支，fix1 移掉一支重复＝548。
-- harnax-admin **2433**：进场 2430 → Task 10 追加的两支单元用例（会话过滤 + 三个空谓词）抬到 2432 → Step 1 第 9 项那支证伪器（先读不带 `sessionId` 的队列断两支都在，再读带过滤的断只剩一行）加一支＝2433。IT 的那支会话过滤只在 `-Pintegration-test` 下跑，不计入这个数。
-- harnax-ios **2092**（本分支实跑）：进场 2088 → Task 12 的会话技能套件净加 3 支。`swift test` 只覆盖四个 SwiftPM target，`App/` 不在内——那一份要用 HARNESS-NOTES.md 里带 `-D DEBUG` 的 `swiftc -typecheck` 单独验。
-- webui 的 jest 与逐文件 biome 各跑一遍，`npx max build` 退 0。
+- 计数取合流后 kotlin-dev 的实跑数（2026-10-09 11:46 一条链：`mvn -o test -pl harnax-agent/harnax-harness-core,harnax-agent/harnax-agent-service,harnax-session-router,harnax-admin -am`，14 模块 BUILD SUCCESS，逐模块聚合行 0 failures / 0 errors）：harness-core **691**（Skipped 恒为 1，那一支是 `HARNAX_REAL_MODEL_API_KEY` 环境门）、agent-service **269**、session-router **550**、admin **2479**。本支进场的基线是 662 / 269 / 546 / 2430，此后每一笔由 Task 与三轮复审各自抬动；合流后同一模块总数里还含着别的轨道的用例，分支内的加减算式因此不再等于模块总数。要按域核就点名单类：`SessionSkillStoreEnableTest` 12、`SkillDraftStagingTest` 7、`SessionSkillControllerTest` 15、`SessionRouterServiceSessionSkillTest` 8。
+- harnax-ios **2093**（`Executed 2093 tests, with 0 failures`）：本支进场 2088；会话技能那块本支自己新增的用例在 `Tests/HarnaxAPITests/SessionSkillWireTests.swift` 与 `Tests/HarnaxCoreTests/` 两处，合流后总数里同样含着别的轨道新增的用例。`swift test` 只覆盖四个 SwiftPM target，`App/` 不在内——那一份要用 HARNESS-NOTES.md 里带 `-D DEBUG` 的 `swiftc -typecheck` 单独验。
+- webui：`npx max build` 退 0，jest 12 支全绿，逐文件 `biome lint` 干净。`biome check` 会连 formatter 一起判，而它对全仓既有文件同样报红（本域一行未碰的 `src/pages/session/components/WorkspaceDrawer.tsx` 亦红），因此它不是本域的闸；`src/services/ant-design-pro/` 在 biome 配置里被 ignore，对它单独跑会得到「Checked 0 files」的假红。
 
 - [ ] **Step 3: 合回 kotlin-dev（不 push）**
 
@@ -2861,7 +2863,7 @@ git log --oneline kotlin-dev..feat/session-skill-lifecycle
 
 1. `git log --oneline -3`、`git diff --stat HEAD~1 HEAD` 看合并提交真的带上了本支全部改动。
 2. Maven 四档重跑（同 Step 2 那条 `-am` 链），计数不变才算并得干净。
-3. `swift build --build-tests` ＋ `swift test` 仍 2092，外加带 `-D DEBUG` 的那条 `App/` 类型检查——两侧都往对话页标题栏加了东西，只有编一次才知道合得起来。
+3. `swift build --build-tests` ＋ `swift test` 仍 2093，外加带 `-D DEBUG` 的那条 `App/` 类型检查——两侧都往对话页标题栏加了东西，只有编一次才知道合得起来。
 4. webui `npx max build` ＋ 逐文件 biome ＋ jest 各一遍：`pages.ts` 与 `typings.d.ts` 是两侧各自往同一个声明块里追加的，合完必须重新量一次产物。
 
 **第 4 条之外还有一条只有合完才暴露的文档洞**：kotlin-dev 那侧把 `ChatView.swift` 的标题栏面板从 `Menu` 换成 `popover`，为此起头就多了一枚状态——在第 18 行之后插 3 行（`@State private var showsContextUsagePanel` 连同它上面两行注释）。本支没碰过的那几处 `ChatView.swift:` 锚点因此整体往下错 3 行：`specs/02-session-chat.md:100` 的 `:81-89`、`:399` 的 `:115`、`:549` 的 `:72-78`／`:18-31`／`:70`／`:287`。DESIGN §13 的锚点脚本只判「文件存在＋行号不越界」，这种平移它测不出来，必须按合并后的 `ChatView.swift` 逐条回找构造所在行再改号，改完重跑脚本才算 `unresolved 0` 有意义。

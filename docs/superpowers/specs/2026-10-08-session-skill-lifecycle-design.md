@@ -78,13 +78,14 @@
 
 ## 7. 接口契约
 
-- `GET /api/admin/skill-drafts` 增 `sessionId` 过滤：`SkillDraftController.kt:55-79` 加一个可选参数，`SkillDraftMapper.xml` 加 `<if>`，租户谓词不动。会话页用它取「本会话的待启用提名」。
+- `GET /api/admin/skill-drafts` 增 `sessionId` 过滤：`SkillDraftController.kt:55-73` 加一个可选参数，服务层把它归一（`SkillDraftServiceImpl.kt:238`）后交 `harnax-entity/src/main/resources/mapper/SkillDraftMapper.xml:86-88` 的 `<if>` 落成一条 SQL 谓词，租户谓词不动。落在 SQL 而不是取回后再筛，是因为 PageHelper 数的是这条语句交回来的行。会话页用它取「本会话的待启用提名」。
+- `sessionId` 的**空值与缺席不是同一个问题**，服务端已定死判据（`SkillDraftServiceImpl.kt:225-237`）：缺席＝调用方没提名任何会话，回整租户队列（审核页一直的形状）；present-but-blank（`?sessionId=`／纯空白）＝调用方点名了一个会话，回**空页**，且早于 `startPage` 返回。所以客户端不许靠「丢掉这个键」来表达「这一页没有会话」——丢键得到的是别人的提名；会话面板宁可自己不发这一腿。
 - agent-service 两条会话级端点，与 `SandboxWorkspaceController` 同一鉴权形状（`/api/agent/**` internal-only，经 session-router 代理，`SandboxWorkspaceController.kt:22-25`；会话级句柄解析用同一族的 `resolveSandbox(sessionId)`，`:99`）：
   - `GET  /api/agent/session-skills/{sessionId}` → `[{name, description, enabledAt}]`（`SessionSkillController.kt:93` 的 `SessionSkillView`），读 `session-enabled/`；`enabledAt` 取目录 mtime，容器不在回空数组。收窄到三键的理由：目录里没有读者要 verdict/findings —— webui 抽屉与 iOS 面板都只搬 `enabledAt` —— 名字出现在这份目录里本身就是「已启用」，所以应答也不带开关；扫描结论走 enable 那条应答与审计日志，人确认时看的是队列行。
-  - `POST /api/agent/session-skills/{sessionId}/{name}/enable` → `{ok, name, verdict, findings, count}`；三类拒因（源不在 / 扫描拒 / 超上限）各带原因。
+  - `POST /api/agent/session-skills/{sessionId}/{name}/enable` → `{ok, name, verdict, findings, count}`；五档拒因各带原因（`SessionSkillController.kt:72-89`）：404 源草稿不在、403 扫描判定拦、409 十枚上限、500 这次复制没有完成、410 无运行中沙箱。410 那一档 router 也会在把请求放出去之前自己回（`SessionRouterService.kt:531-532`）。
 - 两端经 `harnax-session-router` 的 `AgentProxyController`（`@RequestMapping("/api/router/agent")`，`:28`）暴露给公网，浏览器与 iOS 只走这一条链，`/api/agent/**` 本身不给它们开路由：
-  - `GET  /api/router/agent/session-skills/{sessionId}`、`POST /api/router/agent/session-skills/{sessionId}/{name}/enable`，各对应 `SessionRouterService` 一个 `proxy*` 方法 + `AgentServiceClient` 一次转发，与 `/workspace/{sessionId}/files`（`AgentProxyController.kt:198-207` → `SessionRouterService.kt:411-421` → `agentServiceClient.workspaceListFiles`）同一条形状。
-  - 归属与租户判据不在新代码里重做：三个只读代理都经 `boundInstance(sessionId)`（`SessionRouterService.kt:509-521`），它第一行就是 `sessionAccessGuard.requireAccessible(sessionId)`，新端点从这条链继承。会话未绑定实例时按只读代理的既有姿态回空，不 reroute 到别的实例（`:500-507` 注释立的理由：别人的箱子里没有这份文件）。
+  - `GET  /api/router/agent/session-skills/{sessionId}`、`POST /api/router/agent/session-skills/{sessionId}/{name}/enable`，各对应 `SessionRouterService` 一个 `proxy*` 方法 + `AgentServiceClient` 一次转发，与 `/workspace/{sessionId}/files`（`AgentProxyController.kt:231` → `SessionRouterService.kt:412-418` → `agentServiceClient.workspaceListFiles`）同一条形状；新两条的落点是 `AgentProxyController.kt:199`/`:215` → `SessionRouterService.kt:506-516`/`:525-542`。
+  - 归属与租户判据不在新代码里重做：只读代理一律经 `boundInstance(sessionId)`（`SessionRouterService.kt:553-558`，全服务 11 个调用点），它第一行就是 `sessionAccessGuard.requireAccessible(sessionId)`，新端点从这条链继承。会话未绑定实例时按只读代理的既有姿态回空，不 reroute 到别的实例（`:544-552` 注释立的理由：别人的箱子里没有这份文件）。
 
 ## 8. 界面
 
