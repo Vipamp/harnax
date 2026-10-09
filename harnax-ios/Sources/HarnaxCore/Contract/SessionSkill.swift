@@ -104,10 +104,24 @@ public struct SessionSkillRead: Equatable, Sendable {
     public let rows: [SessionSkillRow]
     /// At least one of the two reads did not answer. Never collapses to「这个会话没写过技能」.
     public let unavailable: Bool
+    /// The directory refused for want of a running container: the conversation's sandbox has stopped or expired,
+    /// which is fixed by restarting this conversation and by nothing else the panel could offer.
+    ///
+    /// The one read failure this app may name, and only when the server said so — 410 on the directory leg. Every
+    /// other non-200 leaves this false, because「沙箱已经停了」over a 500 or an expired login sends the user to the
+    /// wrong screen. It sits beside `unavailable` rather than replacing it: the directory is unreadable either
+    /// way, and the queue's rows still land. The console's `readOutcome` carries the same flag for the same two
+    /// routes, so the two clients cannot drift on which failures have a name.
+    public let noSandbox: Bool
 
-    public init(rows: [SessionSkillRow], unavailable: Bool) {
+    public init(
+        rows: [SessionSkillRow],
+        unavailable: Bool,
+        noSandbox: Bool = false
+    ) {
         self.rows = rows
         self.unavailable = unavailable
+        self.noSandbox = noSandbox
     }
 }
 
@@ -132,12 +146,16 @@ public protocol SessionSkillReading: Sendable {
     /// either one silenced would leave an empty list that looks like a conversation whose agent never proposed
     /// anything. That is what `unavailable` is for, and it is why `rows.isEmpty` alone is never the whole answer.
     ///
-    /// A session with no running sandbox is **not** such a failure. The directory answers an unbound or stopped
-    /// session with an empty list — an answer, not a refusal — and 410 belongs to `enable` alone, the only call
-    /// here that changes anything (`docs/superpowers/specs/2026-10-08-session-skill-lifecycle-design.md`: §7 has
-    /// the directory answer empty for an absent container and for an unbound session, §10 verifies that read as
-    /// empty against the enable's 410, and `harnax-webui/src/services/ant-design-pro/sessionSkill.ts` says the
-    /// same about the same two routes).
+    /// A session with no running sandbox **is** such a failure, and it is the only one this app names: the directory
+    /// refuses it with 410 and `noSandbox` goes up beside `unavailable`. Three states sit on either side of that and
+    /// the merge keeps them apart — a container that is running with an empty enabled zone answers 200 with an
+    /// empty list, which is the honest「这个会话还没启用任何技能」and sets neither flag; a conversation the router has
+    /// not bound to an instance is answered by the router itself with an empty list, before the read reaches a
+    /// sandbox (`SessionRouterService.proxySessionSkills`), and also sets neither; and any other non-200 on either
+    /// leg sets `unavailable` alone. `docs/superpowers/specs/2026-10-08-session-skill-lifecycle-design.md` §7 is
+    /// the table and §10 the verification, and
+    /// `harnax-webui/src/pages/session/components/SessionSkillsDrawer.tsx`'s `readOutcome` decides the same three
+    /// cases for the same two routes.
     func read(sessionId: String) async -> SessionSkillRead
 
     /// Copy one of this session's drafts into its enabled set.

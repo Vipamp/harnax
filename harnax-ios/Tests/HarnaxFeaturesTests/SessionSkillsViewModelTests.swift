@@ -27,6 +27,12 @@ final class SessionSkillsViewModelTests: XCTestCase {
         SessionSkillRead(rows: rows, unavailable: true)
     }
 
+    /// The directory refused because this session has no running container, which is a reason the panel owns a
+    /// separate sentence for; the rows are still the half the queue did answer.
+    private func stopped(_ rows: [SessionSkillRow] = []) -> SessionSkillRead {
+        SessionSkillRead(rows: rows, unavailable: true, noSandbox: true)
+    }
+
     private final class StubSessionSkills: SessionSkillReading, @unchecked Sendable {
         /// One reply per read, in call order; the last entry repeats, so a test that only cares about the second
         /// read does not have to enumerate the first.
@@ -146,6 +152,45 @@ final class SessionSkillsViewModelTests: XCTestCase {
         await vm.refresh()
         XCTAssertEqual(vm.rows.map(\.name), ["weekly-digest"], "a failed refresh is not news that the skill went away")
         XCTAssertTrue(vm.unavailable)
+        XCTAssertFalse(vm.noSandbox, "a read that simply would not answer never said the sandbox is stopped")
+    }
+
+    /// The reason a refused read carries has to survive the merge and reach the sheet: 「这个会话的技能读不出来」 and
+    /// 「这个会话的沙箱没有在运行」 send the operator to two different places, and only the second one is a state a
+    /// restart of this conversation fixes. The rows the queue did answer stay beside it either way.
+    func testAReadRefusedForNoRunningSandboxNamesThatReasonAndKeepsTheNominations() async {
+        let reading = stub([
+            stopped([SessionSkillRow(name: "invoice-fill", description: "fills an invoice", enabled: false)]),
+            answered([SessionSkillRow(name: "invoice-fill", description: "fills an invoice", enabled: true)]),
+        ])
+        let vm = SessionSkillsViewModel(reading: reading, sessionId: "s-1")
+        await vm.refresh()
+
+        XCTAssertTrue(vm.noSandbox)
+        XCTAssertTrue(vm.unavailable, "the enabled half is still missing, reason or no reason")
+        XCTAssertEqual(vm.rows.map(\.name), ["invoice-fill"])
+
+        await vm.refresh()
+        XCTAssertFalse(vm.noSandbox, "a read the container answered retires the reason with the flag")
+    }
+
+    /// The other branch of the same rule: a re-read that found no sandbox keeps the rows from the last answer, so
+    /// the sentence printed over them has to be the one this re-read said. Leaving the generic failure here would
+    /// keep the panel claiming a read problem after the server named a stopped container.
+    func testAReReadThatFoundNoSandboxNamesThatReasonOverTheRowsItKept() async {
+        let reading = stub([
+            answered([SessionSkillRow(name: "weekly-digest", enabled: true, enabledAt: "2026-10-08 10:00:00")]),
+            stopped(),
+        ])
+        let vm = SessionSkillsViewModel(reading: reading, sessionId: "s-1")
+        await vm.refresh()
+        XCTAssertEqual(vm.rows.map(\.name), ["weekly-digest"])
+        XCTAssertFalse(vm.noSandbox)
+
+        await vm.refresh()
+        XCTAssertEqual(vm.rows.map(\.name), ["weekly-digest"])
+        XCTAssertTrue(vm.unavailable)
+        XCTAssertTrue(vm.noSandbox, "the banner over a kept list speaks for the read that just failed")
     }
 
     // MARK: - the enable action

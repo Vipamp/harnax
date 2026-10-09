@@ -10,11 +10,11 @@ import HarnaxKit
 /// re-derived here. Two things this screen therefore never does: it does not show a skill the session did not
 /// write (the published library is the context tab's job), and it does not offer an enable for a row the
 /// directory already answers as enabled. That is not because the route would always take it — a re-enable answers
-/// success (`SessionSkillStore.kt:149`, `:183`) and is refused when the sandbox has stopped (`:123-124`), the
-/// draft is no longer there to copy (`:134-138`), the agent rewrote it into a verdict the scanner will not admit
-/// (`:146`), the session's ten filled in between (`:150`), or the copy did not complete (`:166-175`) — it is
+/// success (`SessionSkillStore.kt:160`, `:194`) and is refused when the sandbox has stopped (`:134-135`), the
+/// draft is no longer there to copy (`:145-148`), the agent rewrote it into a verdict the scanner will not admit
+/// (`:157`), the session's ten filled in between (`:161`), or the copy did not complete (`:177-186`) — it is
 /// because on the way to that success it re-copies whatever the draft holds at that moment and renames the result
-/// over the directory the session is using (`:163-164`).
+/// over the directory the session is using (`:174-175`).
 /// The row is already live; the button would swap the bytes under it and still report nothing changed.
 ///
 /// The panel is opened, not polled: both reads are asked when the sheet appears and again by the refresh row
@@ -56,6 +56,15 @@ public struct SessionSkillsSheet: View {
         .refreshable { await vm.refresh() }
     }
 
+    /// Which sentence a read that did not answer may use. The stopped sandbox has one of its own because it is the
+    /// one state this screen's user can fix themselves — by restarting the conversation — while every other failure
+    /// is a service or a login this panel can say nothing about. `chat.skills.noSandbox` is the same key the
+    /// enable's refusal uses, so the two calls cannot name the state differently
+    /// (`SessionSkillRead.noSandbox`, and the console's `readCopy` for the same flag).
+    private var loadFailureKey: String {
+        vm.noSandbox ? "chat.skills.noSandbox" : "chat.skills.loadFailed"
+    }
+
     @ViewBuilder
     private var content: some View {
         if vm.isLoading, vm.rows.isEmpty {
@@ -64,7 +73,7 @@ public struct SessionSkillsSheet: View {
             // Two different sentences, and telling them apart is the whole of this screen's honesty: a queue
             // that would not load is not a conversation whose agent wrote nothing.
             if vm.unavailable {
-                HXStateView(.error, message: hx("chat.skills.loadFailed")) {
+                HXStateView(.error, message: hx(loadFailureKey)) {
                     Task { await vm.refresh() }
                 }
             } else {
@@ -148,7 +157,7 @@ public struct SessionSkillsSheet: View {
         if vm.unavailable, !vm.rows.isEmpty {
             HXBanner(
                 "state.error.title",
-                message: hx("chat.skills.loadFailed"),
+                message: hx(loadFailureKey),
                 systemImage: "exclamationmark.triangle",
                 tone: .danger
             )
