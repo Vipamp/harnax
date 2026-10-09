@@ -35,7 +35,14 @@ object SandboxFileWriter {
     private const val READ_TIMEOUT_SECONDS = 60
     private const val DELETE_TIMEOUT_SECONDS = 15
 
-    /** The only characters that stay literal inside a single-quoted shell argument. */
+    /**
+     * The characters this gate admits — deliberately narrower than what a single-quoted argument tolerates, since
+     * inside single quotes everything except the quote itself stays literal.
+     *
+     * What is refused is what could end the quote and re-open the command line: `'`, `$`, a backtick, a newline.
+     * A space is admitted, and is harmless exactly because the whole value goes into one quoted argument; tightening
+     * the class to exclude it would invalidate names that work today.
+     */
     private val SAFE_PATH = Regex("""[\p{L}\p{N}._\- /]+""")
 
     /**

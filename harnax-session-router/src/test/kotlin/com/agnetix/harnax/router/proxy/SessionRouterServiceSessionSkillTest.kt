@@ -56,6 +56,27 @@ class SessionRouterServiceSessionSkillTest {
     }
 
     /**
+     * The list leg's half of the rule the enable cases below pin: the read follows the existing binding and
+     * carries the agent's rows back unchanged. It needed its own case because the two legs are two methods,
+     * and only one of them had a test naming the destination — swapping this leg to `resolveInstance`, or
+     * hard-coding a base URL, kept every other case in the class green.
+     */
+    @Test
+    fun `a bound session's list travels to the instance that holds it`() {
+        runBlocking {
+            val (service, client) = fixture(bound = true)
+            val rows = listOf(mapOf("name" to "invoice-fill", "enabledAt" to "2026-10-09T01:02:03Z"))
+            Mockito.`when`(client.sessionSkillList(any(), eq("ses-1")))
+                .thenReturn(ResultVo.success(rows))
+
+            val result = service.proxySessionSkills("ses-1")
+
+            Mockito.verify(client).sessionSkillList(eq("http://agent:8082"), eq("ses-1"))
+            assertEquals(rows, result.data, "the proxy rewrote or dropped rows the agent sent")
+        }
+    }
+
+    /**
      * Every enable case here is block-bodied on purpose. `fun x() = runBlocking { … }` gives the method the type
      * of the block's last expression, and these end on a mocked call that answers with a `ResultVo` — a
      * `@Test` that returns a value is not a test candidate, so Jupiter drops the case without a word. This
@@ -115,6 +136,29 @@ class SessionRouterServiceSessionSkillTest {
                 "the proxy replaced the agent's reason with its own",
             )
             assertNull(result.data, "a refusal must not carry a payload the agent did not send")
+        }
+    }
+
+    /**
+     * The one refusal the router mints itself rather than inheriting: with no binding there is no container to
+     * copy into. Nothing pinned this arm — deleting the `?: return` handed a null target to `callBound`, and the
+     * class stayed green because every other enable case stubs a bound instance.
+     */
+    @Test
+    fun `an enable for a session with no bound instance is refused 410 without a hop`() {
+        runBlocking {
+            val (service, client) = fixture(bound = false)
+            AuthContextHolder.set(AuthContext("webui-caller", userId = 42L))
+
+            val result = service.proxyEnableSessionSkill("ses-1", "invoice-fill")
+
+            assertEquals(410, result.code, "an unbound enable lost the 410 the clients' tables have a row for")
+            assertTrue(
+                result.message.contains("no sandbox"),
+                "the refusal should name the missing container rather than fail generically: ${result.message}",
+            )
+            assertNull(result.data, "a refusal must not carry a payload")
+            Mockito.verifyNoInteractions(client)
         }
     }
 

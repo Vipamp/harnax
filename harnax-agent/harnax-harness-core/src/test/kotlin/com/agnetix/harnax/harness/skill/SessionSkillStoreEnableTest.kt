@@ -34,6 +34,9 @@ class SessionSkillStoreEnableTest {
     /** What the copy has to read from, and must never delete. */
     private val draftsRoot = "/workspace/${SkillDraftStaging.DRAFTS_DIR}"
 
+    /** The live directory the copy replaces, named here so the staging path is not spelled from the same constant. */
+    private val enabledTarget = "/workspace/${SkillDraftStaging.SESSION_ENABLED_DIR}/invoice-fill"
+
     private fun store(max: Int = 10) = SessionSkillStore(
         handles = SandboxHandleProvider { sandbox },
         workspaceRoot = "/workspace",
@@ -212,6 +215,46 @@ class SessionSkillStoreEnableTest {
             command.allValues.any { it.contains("rm -rf '$draftsRoot") },
             "D4: the draft stays put for the reviewer; only the enabled target may be replaced: ${command.allValues}",
         )
+    }
+
+    @Test
+    fun `the enabled tree is staged beside the live one and renamed in`() {
+        stubDraftExists("invoice-fill")
+        Mockito.`when`(sandbox.exec(isNull(), contains("cp -R"), anyInt()))
+            .thenReturn(ExecResult(0, "", "", false))
+        val command = argumentCaptor<String>()
+        val outcome = store().enable("ses-1", "invoice-fill")
+        assertTrue(outcome is EnableOutcome.Enabled, "got $outcome")
+        Mockito.verify(sandbox, Mockito.atLeastOnce()).exec(isNull(), command.capture(), anyInt())
+        val copy = command.allValues.first { it.contains("cp -R") }
+        // Ordered by index rather than by presence: `rm -rf '$target'` is a substring of the staging step, so
+        // "both appear" stays green on a command that removes the live tree before it copies anything.
+        val staging = copy.indexOf("rm -rf '$enabledTarget.tmp'")
+        val cp = copy.indexOf("cp -R '$draftsRoot/invoice-fill/.' '$enabledTarget.tmp/'")
+        val replace = copy.indexOf("rm -rf '$enabledTarget'")
+        val rename = copy.indexOf("mv '$enabledTarget.tmp' '$enabledTarget'")
+        assertTrue(staging >= 0 && cp > staging, "the scratch tree is emptied before it is filled: $copy")
+        assertTrue(replace > cp, "a half-copied draft must not be able to delete the live tree: $copy")
+        assertTrue(rename > replace, "the only destructive step is followed by the rename: $copy")
+    }
+
+    @Test
+    fun `a handle that goes away after the first one still runs the whole enable`() {
+        stubDraftExists("invoice-fill")
+        Mockito.`when`(sandbox.exec(isNull(), contains("cp -R"), anyInt()))
+            .thenReturn(ExecResult(0, "", "", false))
+        var lookups = 0
+        val once = SessionSkillStore(
+            handles = SandboxHandleProvider { if (lookups++ == 0) sandbox else null },
+            workspaceRoot = "/workspace",
+            maxEnabled = 10,
+            pinnedFilesystem = { fs },
+        )
+        val outcome = once.enable("ses-1", "invoice-fill")
+        // The body read and the cap used to re-resolve the handle, so a second lookup answering null came back as
+        // 404 "no draft of that name" for a row the panel had listed a minute ago.
+        assertTrue(outcome is EnableOutcome.Enabled, "one handle has to serve the whole call: got $outcome")
+        assertEquals(1, lookups, "the enable resolves the container exactly once: $lookups lookups")
     }
 
     private companion object {

@@ -121,6 +121,12 @@ class WorkspaceDraftFilesReader(
      * in use here the read's own timestamp is dead; only the listing fills it, from the `stat -c '%Y'` its
      * `find` pipeline runs. A read that does carry one — `RemoteFilesystem.java:256` does — keeps its own value
      * and costs no listing.
+     *
+     * That `stat` output is not what reaches the wire. The seconds are converted on the way into the listing:
+     * `BaseSandboxFilesystem.java:405` hands them to `parseEpochSeconds` (`:490-493`), which multiplies by 1000
+     * and passes the milliseconds to `FileInfo.ofFile(path, size, long)`, and that renders
+     * `Instant.ofEpochMilli(...).toString()` (`FileInfo.java:37-40`). So the string this returns is already
+     * ISO-8601 UTC, which is why both clients print it as-is instead of formatting a number.
      */
     fun readSkillMarkdown(
         skillName: String,
@@ -149,6 +155,9 @@ class WorkspaceDraftFilesReader(
      * leaves both timestamps null, so the listing is the only live source on the sandbox and local filesystems.
      * A listing that will not answer reads as no timestamp — the text is still a skill, and a panel that shows
      * no time beats a panel that refuses to show the skill.
+     *
+     * What comes back is the listing's own rendered instant, not the `stat`'s epoch seconds; see
+     * [readSkillMarkdown]'s note for where that conversion happens.
      */
     private fun listingModifiedAt(
         skillName: String,

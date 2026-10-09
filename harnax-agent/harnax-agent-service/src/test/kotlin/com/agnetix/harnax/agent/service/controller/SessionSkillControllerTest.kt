@@ -133,7 +133,7 @@ class SessionSkillControllerTest {
         Mockito.`when`(store.enable("ses-1", "invoice-fill")).thenReturn(EnableOutcome.NoSandbox)
         val vo = controller().enable("ses-1", "invoice-fill")
         assertEquals(410, vo.code)
-        assertTrue(vo.message.contains("sandbox"), vo.message)
+        assertTrue(vo.message.contains("no running sandbox"), vo.message)
     }
 
     // ─── what the panel renders ───

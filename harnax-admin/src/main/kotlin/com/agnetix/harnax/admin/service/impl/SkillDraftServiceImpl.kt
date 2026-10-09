@@ -221,6 +221,20 @@ class SkillDraftServiceImpl(
         }
         // Narrowed here, not on the way back: PageHelper counts the rows this query hands it, so a session
         // filter applied after paging would publish a total that does not match the page under it.
+        //
+        // Present-but-blank is not the same question as absent. A caller that names no session is the reviewer
+        // reading their whole tenant's queue, which is what this page has always answered. A caller that names
+        // one and sends only whitespace asked for a single conversation, and dropping the predicate here would
+        // hand that panel another conversation's pending nominations (design D11/§6: the session panel shows
+        // only what this session proposed). So the blank case answers empty, before `startPage` — a paging
+        // request started with no query behind it would leak its thread-local into the next call. No new code,
+        // no different status: an empty page is already a shape this endpoint speaks.
+        if (sessionId != null && sessionId.isBlank()) {
+            return Page<SkillDraftResponse>(
+                pageNum = pageNum.coerceAtLeast(1).toLong(),
+                pageSize = pageSize.coerceIn(1, MAX_PAGE_SIZE).toLong(),
+            )
+        }
         val session = sessionId?.trim()?.takeIf { it.isNotEmpty() }
         val safePageNum = pageNum.coerceAtLeast(1)
         val safePageSize = pageSize.coerceIn(1, MAX_PAGE_SIZE)

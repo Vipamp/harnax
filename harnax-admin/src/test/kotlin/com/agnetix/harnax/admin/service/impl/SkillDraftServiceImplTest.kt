@@ -501,15 +501,32 @@ class SkillDraftServiceImplTest {
     }
 
     @Test
-    @DisplayName("a blank conversation filter is dropped, not searched for")
-    fun `a blank session id filters nothing`() {
+    @DisplayName("a blank conversation filter answers empty rather than widening to the tenant")
+    fun `a blank session id is not the whole queue`() {
         TenantContext.setTenantId(3L)
         `when`(skillDraftMapper.selectDraftList(eq(3L), anyOrNull(), anyOrNull(), anyOrNull()))
             .thenReturn(listOf(storedDraft(tenantId = 3L)))
 
-        service.page(status = null, name = null, sessionId = "  ", pageNum = 1, pageSize = 20)
+        val page = service.page(status = null, name = null, sessionId = "  ", pageNum = 1, pageSize = 20)
 
-        verify(skillDraftMapper).selectDraftList(eq(3L), eq(null), eq(null), eq(null))
+        assertEquals(0, page.records.size, "a caller that named a conversation and sent only whitespace gets no rows")
+        assertEquals(0L, page.total)
+        // The query itself, not just its answer: dropping the predicate is what would hand this panel another
+        // conversation's PENDING nominations, and one neighbour row is enough to do that.
+        verify(skillDraftMapper, never()).selectDraftList(any(), anyOrNull(), anyOrNull(), anyOrNull())
+    }
+
+    @Test
+    @DisplayName("no conversation filter stays the reviewer's whole tenant")
+    fun `an absent session id keeps the tenant-wide queue`() {
+        TenantContext.setTenantId(3L)
+        `when`(skillDraftMapper.selectDraftList(eq(3L), anyOrNull(), anyOrNull(), anyOrNull()))
+            .thenReturn(listOf(storedDraft(tenantId = 3L, sourceSessionId = "ses-9")))
+
+        val page = service.page(status = "PENDING", name = null, sessionId = null, pageNum = 1, pageSize = 20)
+
+        assertEquals(1, page.records.size, "absent is not blank: the reviewer reads every conversation's rows")
+        verify(skillDraftMapper).selectDraftList(eq(3L), eq("PENDING"), anyOrNull(), eq(null))
     }
 
     @Test

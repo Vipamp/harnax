@@ -27,7 +27,7 @@ class SessionSkillStore(
     private val workspaceRoot: String,
     private val maxEnabled: Int = MAX_ENABLED,
     private val execTimeoutSeconds: Int = EXEC_TIMEOUT_SECONDS,
-    /** Seam for tests: the pinned view is constructed inside `filesystemFor`, so nothing else can swap in a double. */
+    /** Seam for tests: the pinned view is constructed inside this class — in `filesystemFor` and in `enable` — so nothing else can swap in a double. */
     private val pinnedFilesystem: (Sandbox) -> AbstractFilesystem = { PinnedSandboxFilesystem(it) },
 ) {
 
@@ -45,10 +45,15 @@ class SessionSkillStore(
         return draftsReader(fs).listDraftSkillNames(null)
     }
 
-    fun listEnabledNames(sessionId: String): List<String> {
-        val fs = filesystemFor(sessionId) ?: return emptyList()
-        return enabledReader(fs).listDraftSkillNames(null)
-    }
+    /**
+     * The names in this session's enabled zone.
+     *
+     * Resolves its own handle, which is what a standalone caller wants and what [enable] deliberately does not
+     * do — the cap there is counted on [enabledNames], over the handle the copy is about to use.
+     */
+    fun listEnabledNames(sessionId: String): List<String> = filesystemFor(sessionId)?.let(::enabledNames).orEmpty()
+
+    private fun enabledNames(fs: AbstractFilesystem): List<String> = enabledReader(fs).listDraftSkillNames(null)
 
     /**
      * One draft as the review queue and the enabling operator need it: text, support files, description.
@@ -57,8 +62,19 @@ class SessionSkillStore(
     fun readDraft(
         sessionId: String,
         name: String,
+    ): SessionDraft? = filesystemFor(sessionId)?.let { readDraft(it, name) }
+
+    /**
+     * The same draft off a filesystem the caller already holds.
+     *
+     * This is the half [enable] uses. Resolving a handle again in the middle of an enable would read the body and
+     * count the cap off a different container than the one the copy runs against — and a resolution that fails
+     * answers empty, which the enable then reports as "no such draft" for a draft the panel listed a minute ago.
+     */
+    private fun readDraft(
+        fs: AbstractFilesystem,
+        name: String,
     ): SessionDraft? {
-        val fs = filesystemFor(sessionId) ?: return null
         val md = draftsReader(fs).readSkillMarkdown(name, null) ?: return null
         val resources = draftsReader(fs).read(name, null)
         return SessionDraft(
@@ -94,6 +110,11 @@ class SessionSkillStore(
      * The scan runs again here rather than trusting that the write-time scan already ran: `SkillManageTool`
      * does roll a DANGEROUS skill back, but this is the moment a human agrees to let the skill into a model's
      * system prompt, and the verdict they are agreeing with has to be the one computed from these bytes.
+     *
+     * One container handle serves the whole call. The body read and the enabled-zone listing below used to
+     * re-resolve it through [filesystemFor], and a resolution that fails answers empty — so the cap could be
+     * counted off a stale or vanished handle, and a handle lost mid-call came back as `SourceMissing` for a draft
+     * the panel had listed a minute ago.
      */
     fun enable(
         sessionId: String,
@@ -101,16 +122,18 @@ class SessionSkillStore(
     ): EnableOutcome {
         val sandbox = handles.handle(sessionId)
             ?: return EnableOutcome.NoSandbox
-        // Names reach a shell. safeRelativePath is the repository's own gate for exactly that: it refuses
-        // quotes, `$`, backticks, newlines and whitespace, so the single quotes below cannot be escaped.
+        // Names reach a shell. safeRelativePath is the repository's own gate for exactly that: it refuses the
+        // characters that would close the single quotes below and re-open them — `'`, `$`, a backtick, a newline.
+        // Spaces are admitted, and stay inert because the whole value is wrapped in one quoted argument.
         val safe = SandboxFileWriter.safeRelativePath(name) ?: return EnableOutcome.SourceMissing
+        val fs = pinnedFilesystem(sandbox)
         val drafts = "$workspaceRoot/${SkillDraftStaging.DRAFTS_DIR}/$safe"
         val target = "$workspaceRoot/${SkillDraftStaging.SESSION_ENABLED_DIR}/$safe"
 
         if (!exec(sandbox, "test -f '$drafts/$SKILL_FILE' && echo yes").contains("yes")) {
             return EnableOutcome.SourceMissing
         }
-        val draft = readDraft(sessionId, safe) ?: return EnableOutcome.SourceMissing
+        val draft = readDraft(fs, safe) ?: return EnableOutcome.SourceMissing
         val scan = SkillSecurityScanner.scan(safe, draft.skillmd, draft.resources)
         if (!SkillSecurityScanner.shouldAllow(SkillSecurityScanner.TrustLevel.AGENT_CREATED, scan.verdict())) {
             log.warn(
@@ -121,14 +144,20 @@ class SessionSkillStore(
             )
             return EnableOutcome.Blocked(scan.verdict().name, findingTexts(scan.findings()))
         }
-        val enabled = listEnabledNames(sessionId)
+        val enabled = enabledNames(fs)
         if (enabled.size >= maxEnabled && !enabled.contains(safe)) {
             return EnableOutcome.Full(enabled.size)
         }
         val copy = execRaw(
             sandbox,
-            "mkdir -p '${enabledRoot(workspaceRoot)}' && rm -rf '$target' && " +
-                "mkdir -p '$target' && cp -R '$drafts/.' '$target/'",
+            // Staged, not replaced in place: a `cp` that dies half-way — the exec timeout, a full disk, a
+            // container losing the race — used to leave a truncated tree at `$target`, and the loader counts any
+            // directory holding a `SKILL.md` as a skill, so that half-tree still went into the system prompt.
+            // Nothing touches `$target` until the copy is whole, and the one destructive step is immediately
+            // followed by a rename inside the same directory. `$drafts` is never removed: the reviewer decides on
+            // that copy, and the next turn's rewrite has to find it.
+            "mkdir -p '${enabledRoot(workspaceRoot)}' && rm -rf '$target.tmp' && mkdir -p '$target.tmp' && " +
+                "cp -R '$drafts/.' '$target.tmp/' && rm -rf '$target' && mv '$target.tmp' '$target'",
         )
         if (!copy.ok()) {
             log.warn("Could not enable draft {} for session {}: {}", safe, sessionId, copy.stderr())
