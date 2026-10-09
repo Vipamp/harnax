@@ -81,16 +81,16 @@
 - `GET /api/admin/skill-drafts` 增 `sessionId` 过滤：`SkillDraftController.kt:55-73` 加一个可选参数，服务层把它归一（`SkillDraftServiceImpl.kt:256`）后交 `harnax-entity/src/main/resources/mapper/SkillDraftMapper.xml:94-96` 的 `<if>` 落成一条 SQL 谓词，租户谓词不动。落在 SQL 而不是取回后再筛，是因为 PageHelper 数的是这条语句交回来的行。会话页用它取「本会话的待启用提名」。
 - `sessionId` 的**空值与缺席不是同一个问题**，服务端已定死判据（`SkillDraftServiceImpl.kt:243-255`）：缺席＝调用方没提名任何会话，回整租户队列（审核页一直的形状）；present-but-blank（`?sessionId=`／纯空白）＝调用方点名了一个会话，回**空页**，且早于 `startPage` 返回。所以客户端不许靠「丢掉这个键」来表达「这一页没有会话」——丢键得到的是别人的提名；会话面板宁可自己不发这一腿。
 - agent-service 两条会话级端点，与 `SandboxWorkspaceController` 同一鉴权形状（`/api/agent/**` internal-only，经 session-router 代理，`SandboxWorkspaceController.kt:22-25`；会话级句柄解析用同一族的 `resolveSandbox(sessionId)`，`:99`）：
-  - `GET  /api/agent/session-skills/{sessionId}` → `[{name, description, enabledAt}]`（`SessionSkillController.kt:93` 的 `SessionSkillView`），读 `session-enabled/`；`enabledAt` 取目录 mtime，容器不在回空数组。收窄到三键的理由：目录里没有读者要 verdict/findings —— webui 抽屉与 iOS 面板都只搬 `enabledAt` —— 名字出现在这份目录里本身就是「已启用」，所以应答也不带开关；扫描结论走 enable 那条应答与审计日志，人确认时看的是队列行。
-  - `POST /api/agent/session-skills/{sessionId}/{name}/enable` → `{ok, name, verdict, findings, count}`；五档拒因各带原因（`SessionSkillController.kt:72-89`）：404 源草稿不在、403 扫描判定拦、409 十枚上限、500 这次复制没有完成、410 无运行中沙箱。410 那一档 router 也会在把请求放出去之前自己回（`SessionRouterService.kt:531-532`）。
+  - `GET  /api/agent/session-skills/{sessionId}` → `[{name, description, enabledAt}]`（`SessionSkillController.kt:101` 的 `SessionSkillView`），读 `session-enabled/`；`enabledAt` 取目录 mtime。**容器不在回 410**，与 enable 的无沙箱档同因同码（`SessionSkillStore.listEnabled` 在这种情况下回 `null`，只有它能把「没有可读的目录」和「目录是空的」分开交出去）；只有沙箱在跑而 `session-enabled/` 为空才回空数组。收窄到三键的理由：目录里没有读者要 verdict/findings —— webui 抽屉与 iOS 面板都只搬 `enabledAt` —— 名字出现在这份目录里本身就是「已启用」，所以应答也不带开关；扫描结论走 enable 那条应答与审计日志，人确认时看的是队列行。
+  - `POST /api/agent/session-skills/{sessionId}/{name}/enable` → `{ok, name, verdict, findings, count}`；五档拒因各带原因（`SessionSkillController.kt:80-97`）：404 源草稿不在、403 扫描判定拦、409 十枚上限、500 这次复制没有完成、410 无运行中沙箱。410 那一档 router 也会在把请求放出去之前自己回（`SessionRouterService.kt:535-536`）。
 - 两端经 `harnax-session-router` 的 `AgentProxyController`（`@RequestMapping("/api/router/agent")`，`:28`）暴露给公网，浏览器与 iOS 只走这一条链，`/api/agent/**` 本身不给它们开路由：
-  - `GET  /api/router/agent/session-skills/{sessionId}`、`POST /api/router/agent/session-skills/{sessionId}/{name}/enable`，各对应 `SessionRouterService` 一个 `proxy*` 方法 + `AgentServiceClient` 一次转发，与 `/workspace/{sessionId}/files`（`AgentProxyController.kt:231` → `SessionRouterService.kt:412-418` → `agentServiceClient.workspaceListFiles`）同一条形状；新两条的落点是 `AgentProxyController.kt:199`/`:215` → `SessionRouterService.kt:506-516`/`:525-542`。
-  - 归属与租户判据不在新代码里重做：只读代理一律经 `boundInstance(sessionId)`（`SessionRouterService.kt:553-558`，全服务 11 个调用点），它第一行就是 `sessionAccessGuard.requireAccessible(sessionId)`，新端点从这条链继承。会话未绑定实例时按只读代理的既有姿态回空，不 reroute 到别的实例（`:544-552` 注释立的理由：别人的箱子里没有这份文件）。
+  - `GET  /api/router/agent/session-skills/{sessionId}`、`POST /api/router/agent/session-skills/{sessionId}/{name}/enable`，各对应 `SessionRouterService` 一个 `proxy*` 方法 + `AgentServiceClient` 一次转发，与 `/workspace/{sessionId}/files`（`AgentProxyController.kt:231` → `SessionRouterService.kt:412-418` → `agentServiceClient.workspaceListFiles`）同一条形状；新两条的落点是 `AgentProxyController.kt:199`/`:215` → `SessionRouterService.kt:510-520`/`:529-546`。
+  - 归属与租户判据不在新代码里重做：只读代理一律经 `boundInstance(sessionId)`（`SessionRouterService.kt:557-569`，本文件 12 个调用点、其中 11 处直接传 sessionId），它第一行就是 `sessionAccessGuard.requireAccessible(sessionId)`，新端点从这条链继承。会话未绑定实例时按只读代理的既有姿态回空，不 reroute 到别的实例（`:548-556` 注释立的理由：别人的箱子里没有这份文件）。
 
 ## 8. 界面
 
-- webui 会话页一块「本会话自写技能」抽屉（`harnax-webui/src/pages/session/components/SessionSkillsDrawer.tsx`）：两路读（Admin 的本会话 PENDING 提名 + agent-service 的本会话已启用目录）合成**一张列表**，每行一枚「在本会话启用」，已启用的行灰显并带上启用时间；启用被拒走 antd 的 message toast，按 `code` 分拒因。i18n 中英文各一份 key。
-- iOS 会话页同一块是一张独立屏（`harnax-ios/Sources/HarnaxFeatures/Chat/SessionSkillsSheet.swift`）：行形跟随会话页既有 `HXRow` 规范，拒因不弹 toast，而是渲染在行列表**下方**的一段说明——那句话点名的是某一行的技能，读者要还能看着那行。
+- webui 会话页一块「本会话自写技能」抽屉（`harnax-webui/src/pages/session/components/SessionSkillsDrawer.tsx`）：两路读（Admin 的本会话 PENDING 提名 + agent-service 的本会话已启用目录）合成**一张列表**，每行一枚「在本会话启用」，已启用的行灰显并带上启用时间；启用被拒走 antd 的 message toast，按 `code` 分拒因。读失败分两档：目录腿回 410 时说「这个会话没有运行中的沙箱」（`readOutcome.noSandbox` 与 enable 的 410 同一句 key），其余失败只说泛化的读不出来。i18n 中英文各一份 key。
+- iOS 会话页同一块是一张独立屏（`harnax-ios/Sources/HarnaxFeatures/Chat/SessionSkillsSheet.swift`）：行形跟随会话页既有 `HXRow` 规范，拒因不弹 toast，而是渲染在行列表**下方**的一段说明——那句话点名的是某一行的技能，读者要还能看着那行。读失败同样两档，`SessionSkillRead.noSandbox` 与 `unavailable` 并列（410 不借拒因文案，也不把 unavailable 吞掉），两端各按自己的 `loadFailed`／`noSandbox` key 说话。
 - 会话内启用与「批准」在界面上必须用不同词：一个是本会话可用，一个是平台技能。
 
 ## 9. 边界与失败形状
@@ -102,7 +102,7 @@
 
 ## 10. 验证
 
-- 单测（harness-core）：Layer 2 名次（`skillRepositories` 里可用区排在交付仓库之前）；`enable` 的四支拒因各一条（源不在／扫描拒／超上限／容器拒收复制）；复制那条命令只替换 `session-enabled/` 那一侧，不碰 `_drafts`；`SessionSkillStore` 在句柄为 null 时回空且不抛；目录条目数上限；可用区目录名与 `skills/` 不重叠的启动期断言。
+- 单测（harness-core）：Layer 2 名次（`skillRepositories` 里可用区排在交付仓库之前）；`enable` 的四支拒因各一条（源不在／扫描拒／超上限／容器拒收复制）；复制那条命令只替换 `session-enabled/` 那一侧，不碰 `_drafts`；句柄为 null 时草稿侧三读（`listDrafts`／`listEnabledNames`／`readDraft`）回空且不抛，而 `listEnabled` 回 `null`——把「没有可读的目录」和「目录是空的」分开交出去，410 就来自这一档；目录条目数上限；可用区目录名与 `skills/` 不重叠的启动期断言。
 - IT（admin）：`SkillDraftFlowIT` 增一支 —— `sessionId` 过滤只回本租户本会话的行，邻居租户拿同一个 sessionId 仍取不到我们的行。（同 (tenant, name) 重复上报合并成一行已由 `SkillDraftServiceImplTest` 的 `an open draft of the same name is merged` 守住。）重投判据另有一支 `a turn that re-files a draft it did not change leaves the queue alone`：逐字未变的再提交回答同一行、`update_time` 不动、轨迹只有一条 PROPOSE，被裁决后拿同样的字节再投不回 PENDING，改了正文才另起一行，且换个会话拿同一份正文仍另起一行。
 - 上报与装载（harness-core 单测）：答完之后那一跳按 `SessionSkillStore` 读盘、复扫、交 `SkillDraftAdaptor`，DANGEROUS 不入队；读不到的草稿留到下一轮；`SessionEnabledSkillRepository.getAllSkills(ctx)` 含已启用那条，且未绑定文件系统时为空。合并后的那份目录册在本仓取不到——上游 `HarnessSkillMiddleware.skillsForCall`（`:321`）与 `mergeRepositories`（`:349`）都是 `private`，且 harness-core 无 IT 装置，因此名次与读取分两处断言，「交付同名技能压住会话内那份」的真实结果在真栈观测。
 - 代理链（session-router 单测）：两条新代理各一条 —— 转发出对应实例，且会话未绑定时读回空、启用回 410，都不改绑。

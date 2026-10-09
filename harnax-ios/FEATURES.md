@@ -65,7 +65,7 @@
 | 附件收取与下载（iOS 超出 Web 的一项：后端已下发，webui 全仓零处引用 `attachments`） | 无 | v1 | `EndEvent.attachments` + `GET /api/output-files/{sessionType}/{sessionId}/{fileId}`，该路由整控制器受 `minio.enabled=true` 开关控制：裸配置默认关（`${MINIO_ENABLED:false}`）、标准部署 compose 显式开启，未开启时整条路由不注册即 404（O8） | M |
 | 模型能力门控（推理 / 思考模式 / 联网 / 视觉） | 同上 | v1 | 会话配置字段 | M |
 | 联网搜索开关 | 同上 | v1 | `ENABLE`/`DISABLE` | S |
-| 本会话自写技能（一份列表两路读：待启用提名 + 已启用目录；启用一按即落，五种拒因各有一句——403 扫描拦住、409 满十、410 沙箱已停、404 原稿不在、500 拷贝失败；两份读各走各的失败，一份挂了不抹掉另一份答上来的那一半，两份都挂才说「这一轮读不出来」） | 会话页抽屉（`pages/session/components/SessionSkillsDrawer.tsx`） | v1 | `GET /api/admin/skill-drafts?status=PENDING&sessionId=`、router `GET /api/router/agent/session-skills/{sessionId}`、`POST /api/router/agent/session-skills/{sessionId}/{name}/enable` | L |
+| 本会话自写技能（一份列表两路读：待启用提名 + 已启用目录；启用一按即落，五种拒因各有一句——403 扫描拦住、409 满十、410 沙箱已停、404 原稿不在、500 拷贝失败；两份读各走各的失败，一份挂了不抹掉另一份答上来的那一半，两份都挂才说「这一轮读不出来」，那句按目录腿的码分档——410 同样说沙箱已停） | 会话页抽屉（`pages/session/components/SessionSkillsDrawer.tsx`） | v1 | `GET /api/admin/skill-drafts?status=PENDING&sessionId=`、router `GET /api/router/agent/session-skills/{sessionId}`、`POST /api/router/agent/session-skills/{sessionId}/{name}/enable` | L |
 | 断线自动重连 | 无（Web 也未做） | 否 | — | — |
 
 ## 4. 定时任务
