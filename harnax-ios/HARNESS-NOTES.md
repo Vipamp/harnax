@@ -8,8 +8,10 @@
 - 单个 `Package.swift`，四个模块依赖顺序固定：`HarnaxCore → HarnaxAPI → HarnaxKit → HarnaxFeatures`，
   四个 test target 同名对应。全部 `.swiftLanguageMode(.v5)`。
 - `App/` 不是 SwiftPM target：`swift build` 不编译它，它只被 `Harnax.xcodeproj` 使用。
-  单独验它能过类型检查：
-  `xcrun -sdk macosx swiftc -typecheck -I .build/arm64-apple-macosx/debug/Modules App/HarnaxDebugScreens.swift`
+  单独验它能过类型检查，`-D DEBUG` 必带：
+  `xcrun -sdk macosx swiftc -typecheck -D DEBUG -I .build/arm64-apple-macosx/debug/Modules App/HarnaxDebugScreens.swift`
+  不带这枚旗标时命令编的是一个空编译单元——本分支实测裸命令零诊断、退出 0，带上才会因为缺模块报错。
+  也就是说不带它的「过了」不说明任何事，只有带上的那次才是这条命令想守的东西。
 - 日常两条命令：`swift build --build-tests` 与 `swift test`。没有外部 SPM 依赖，离线可跑。
 
 ## 测试宿主是 macOS
@@ -26,7 +28,7 @@
 不接收任何合成输入，所以一屏只要不能由启动参数命名，就永远不会被看见——它能编译、有单测，但从不进截图。
 
 - 启动参数四个：`-FIXTURE <screen>`、`-THEME <system|light|dark>`、`-LANG <system|en|zh-Hans>`、
-  `-SCROLL <points>`。`<screen>` 就是 `HarnaxDebugScreen` 的 case 名（65 个），一个 case 一个表面：tab、
+  `-SCROLL <points>`。`<screen>` 就是 `HarnaxDebugScreen` 的 case 名（71 个），一个 case 一个表面：tab、
   三种列表态、被 push 的详情页、以及所有由列表 present 出来的表单与 sheet。`-SCROLL` 是长表单折到折叠线以下
   的唯一办法。
 - 一条命令一张图：`xcrun simctl launch <udid> com.agnetix.harnax.ios -FIXTURE mcpForm -THEME dark`，随后

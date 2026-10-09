@@ -5,7 +5,7 @@
 ## 1. 范围与三条取舍
 
 - 入口挂会话域：会话列表顶部一屏一行，带待审计数。队列页与审核详情页都从这一行进。
-- 队列接口只有 `status` 与 `name` 两个过滤参数（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/SkillDraftController.kt:55-68`），**没有按会话过滤的能力**，所以 badge 是「本租户待审总数」，不是「本会话条数」。这与 webui 一致——它也没有按会话筛。
+- 队列的过滤参数是 `status` / `name` / `sessionId` 三个（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/SkillDraftController.kt:55-72`），**按会话筛是服务端能力**；本 spec 这两屏（队列页与审核详情页）自己不带会话条件，badge 因此是「本租户待审总数」，不是「本会话条数」——那行给的是审核链的导航。带 `sessionId` 的那次读在会话页的本技能列表（见 `02-session-chat.md`），webui 的会话抽屉走同一条件。
 - 技能可见性设置、用量分析页、独立审核历史页不在本轮范围。草稿详情自带的 `history` 轨迹在。
 
 ## 2. 后端契约：四条路由、两个拒绝通道
@@ -150,7 +150,7 @@
 
 ## 8. 记账（本轮不做或做不了）
 
-- 本会话级计数需要后端加 `sessionId` 过滤参数；那会让 iOS 比 webui 多一个能力，且要重编部署，已记为后端可选后续。
+- 本会话级计数与提名：`sessionId` 过滤参数已在服务端交付，读它的是会话页那块本会话技能列表（`02-session-chat.md`），入口行与队列页仍按租户全量。
 - 无推送、无轮询：新草稿要下拉刷新才反映。webui 同样需要手动刷新，故不算偏离，但也不会更即时。
 - `EXPIRED` 不上筛选项：后端 `STATUSES` 不含它，按它筛会被拒（`SkillDraftServiceImpl.kt:578`，校验在 `:218-219`）。
 - 详情正文渲染复用 `HXMarkdownText`，其离线解析器对表格/代码块的覆盖不及 webui 的 `ReactMarkdown + remarkGfm`；这是既有约束，不在本轮扩。
