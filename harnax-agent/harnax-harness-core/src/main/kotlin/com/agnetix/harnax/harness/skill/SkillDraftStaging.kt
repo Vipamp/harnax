@@ -106,8 +106,18 @@ class SkillDraftStaging : SkillDraftFilesReader {
          */
         const val SESSION_ENABLED_DIR = "$STAGING_ROOT/session-enabled"
 
+        /**
+         * Where an enable builds the next copy of a [SESSION_ENABLED_DIR] entry before renaming it in.
+         *
+         * A sibling, deliberately not a subdirectory or a suffixed name inside [SESSION_ENABLED_DIR]: that tree is
+         * discovered by globbing for `SKILL.md` at exactly one level deep, so a scratch copy parked in it is one
+         * interrupted enable away from being listed as a skill, loaded into the system prompt and counted against
+         * the ten. Out here no skill name reaches it and nothing reads it.
+         */
+        const val SESSION_SCRATCH_DIR = "$STAGING_ROOT/_scratch"
+
         /** Everything the guard below has to keep out of the delivered-skills tree. */
-        val STAGING_DIRS = listOf(DRAFTS_DIR, PROMOTED_DIR, SESSION_ENABLED_DIR)
+        val STAGING_DIRS = listOf(DRAFTS_DIR, PROMOTED_DIR, SESSION_ENABLED_DIR, SESSION_SCRATCH_DIR)
 
         init {
             // The directories above are compile-time constants, so this can only fire once someone edits

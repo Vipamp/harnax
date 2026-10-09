@@ -145,10 +145,15 @@ class SkillDraftStagingTest {
                 SkillDraftStaging.DRAFTS_DIR,
                 SkillDraftStaging.PROMOTED_DIR,
                 SkillDraftStaging.SESSION_ENABLED_DIR,
+                SkillDraftStaging.SESSION_SCRATCH_DIR,
             ),
             SkillDraftStaging.STAGING_DIRS,
         )
         assertEquals("harnax-skill-staging/session-enabled", SkillDraftStaging.SESSION_ENABLED_DIR)
+        // The enabled zone is globbed for `SKILL.md` one level deep, so a scratch tree inside it would be listed,
+        // loaded and counted as a skill the moment an enable was interrupted. It is a sibling for that reason.
+        assertEquals("harnax-skill-staging/_scratch", SkillDraftStaging.SESSION_SCRATCH_DIR)
+        assertFalse(SkillDraftStaging.SESSION_SCRATCH_DIR.startsWith("${SkillDraftStaging.SESSION_ENABLED_DIR}/"))
         SkillDraftStaging.STAGING_DIRS.forEach {
             assertFalse(dirClashesWithSkillsDir(it), "'$it' would land inside the delivered-skills directory")
         }

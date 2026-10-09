@@ -23,7 +23,7 @@ import org.mockito.kotlin.isNull
 /**
  * The refusals an operator has to be able to tell apart, because the panel says one of them back and
  * a wrong one sends them to the wrong place: no draft to enable, a draft the scanner will not let in, a
- * session that has already filled its ten, and a container that refused the copy itself.
+ * session that has already filled its ten, and a copy that did not complete.
  */
 class SessionSkillStoreEnableTest {
 
@@ -34,8 +34,13 @@ class SessionSkillStoreEnableTest {
     /** What the copy has to read from, and must never delete. */
     private val draftsRoot = "/workspace/${SkillDraftStaging.DRAFTS_DIR}"
 
-    /** The live directory the copy replaces, named here so the staging path is not spelled from the same constant. */
-    private val enabledTarget = "/workspace/${SkillDraftStaging.SESSION_ENABLED_DIR}/invoice-fill"
+    /** The live directory the copy replaces. */
+    private val enabledRoot = "/workspace/${SkillDraftStaging.SESSION_ENABLED_DIR}"
+
+    private val enabledTarget = "$enabledRoot/invoice-fill"
+
+    /** Spelled out here rather than lifted from production, so a scratch path built from the enabled root fails. */
+    private val scratchTarget = "/workspace/harnax-skill-staging/_scratch/invoice-fill"
 
     private fun store(max: Int = 10) = SessionSkillStore(
         handles = SandboxHandleProvider { sandbox },
@@ -188,12 +193,14 @@ class SessionSkillStoreEnableTest {
     }
 
     @Test
-    fun `a copy failure with nothing to say still says the container refused`() {
+    fun `a copy that says nothing still says the copy did not complete`() {
         stubDraftExists("invoice-fill")
         Mockito.`when`(sandbox.exec(isNull(), contains("cp -R"), anyInt())).thenReturn(ExecResult(1, "", "", false))
         val outcome = store().enable("ses-1", "invoice-fill")
         assertTrue(outcome is EnableOutcome.Failed, "got $outcome")
-        assertEquals("the container refused the copy", (outcome as EnableOutcome.Failed).reason)
+        // A killed exec reports empty stderr too, and by then the destructive step may have run — so the sentence
+        // says only what both branches share, and leaves "refused" to a container that actually reported it.
+        assertEquals("the copy did not complete; this session may now be missing that skill", (outcome as EnableOutcome.Failed).reason)
     }
 
     @Test
@@ -218,7 +225,7 @@ class SessionSkillStoreEnableTest {
     }
 
     @Test
-    fun `the enabled tree is staged beside the live one and renamed in`() {
+    fun `the enabled tree is staged outside the loadable zone and renamed in`() {
         stubDraftExists("invoice-fill")
         Mockito.`when`(sandbox.exec(isNull(), contains("cp -R"), anyInt()))
             .thenReturn(ExecResult(0, "", "", false))
@@ -227,12 +234,22 @@ class SessionSkillStoreEnableTest {
         assertTrue(outcome is EnableOutcome.Enabled, "got $outcome")
         Mockito.verify(sandbox, Mockito.atLeastOnce()).exec(isNull(), command.capture(), anyInt())
         val copy = command.allValues.first { it.contains("cp -R") }
-        // Ordered by index rather than by presence: `rm -rf '$target'` is a substring of the staging step, so
-        // "both appear" stays green on a command that removes the live tree before it copies anything.
-        val staging = copy.indexOf("rm -rf '$enabledTarget.tmp'")
-        val cp = copy.indexOf("cp -R '$draftsRoot/invoice-fill/.' '$enabledTarget.tmp/'")
+        // This is the whole point of the scratch path: the enabled zone is discovered by globbing for `SKILL.md`
+        // one level deep, so whatever the command *writes* into it — `<name>.tmp`, `.tmp/<name>`, or a
+        // half-copied live tree — is a skill the loader will read, list and count against the ten until the next
+        // same-name enable sweeps it. Only the rename may establish a tree in there.
+        val copyDest = Regex("cp -R '[^']+' '([^']+)'").find(copy)?.groupValues?.get(1).orEmpty()
+        assertTrue(copyDest.isNotEmpty(), "the enable runs a copy step: $copy")
+        assertFalse(
+            copyDest.startsWith("$enabledRoot/"),
+            "the copy must land outside the loadable enabled zone: $copy",
+        )
+        // Ordered by index rather than by presence: presence alone stays green on a command that removes the live
+        // tree before it copies anything.
+        val staging = copy.indexOf("rm -rf '$scratchTarget'")
+        val cp = copy.indexOf("cp -R '$draftsRoot/invoice-fill/.' '$scratchTarget/'")
         val replace = copy.indexOf("rm -rf '$enabledTarget'")
-        val rename = copy.indexOf("mv '$enabledTarget.tmp' '$enabledTarget'")
+        val rename = copy.indexOf("mv '$scratchTarget' '$enabledTarget'")
         assertTrue(staging >= 0 && cp > staging, "the scratch tree is emptied before it is filled: $copy")
         assertTrue(replace > cp, "a half-copied draft must not be able to delete the live tree: $copy")
         assertTrue(rename > replace, "the only destructive step is followed by the rename: $copy")

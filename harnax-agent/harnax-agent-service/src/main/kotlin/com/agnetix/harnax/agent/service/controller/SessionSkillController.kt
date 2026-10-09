@@ -81,7 +81,7 @@ class SessionSkillController(
 
         EnableOutcome.SourceMissing -> ResultVo.error(404, "no draft named '$name' to enable")
 
-        is EnableOutcome.Failed -> ResultVo.error(500, "the container refused the copy: ${outcome.reason}")
+        is EnableOutcome.Failed -> ResultVo.error(500, "the copy into this session did not complete: ${outcome.reason}")
 
         EnableOutcome.NoSandbox -> ResultVo.error(
             410,

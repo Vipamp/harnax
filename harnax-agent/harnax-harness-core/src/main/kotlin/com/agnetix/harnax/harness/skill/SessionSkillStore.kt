@@ -129,6 +129,7 @@ class SessionSkillStore(
         val fs = pinnedFilesystem(sandbox)
         val drafts = "$workspaceRoot/${SkillDraftStaging.DRAFTS_DIR}/$safe"
         val target = "$workspaceRoot/${SkillDraftStaging.SESSION_ENABLED_DIR}/$safe"
+        val scratch = "$workspaceRoot/${SkillDraftStaging.SESSION_SCRATCH_DIR}/$safe"
 
         if (!exec(sandbox, "test -f '$drafts/$SKILL_FILE' && echo yes").contains("yes")) {
             return EnableOutcome.SourceMissing
@@ -153,15 +154,24 @@ class SessionSkillStore(
             // Staged, not replaced in place: a `cp` that dies half-way — the exec timeout, a full disk, a
             // container losing the race — used to leave a truncated tree at `$target`, and the loader counts any
             // directory holding a `SKILL.md` as a skill, so that half-tree still went into the system prompt.
-            // Nothing touches `$target` until the copy is whole, and the one destructive step is immediately
-            // followed by a rename inside the same directory. `$drafts` is never removed: the reviewer decides on
-            // that copy, and the next turn's rewrite has to find it.
-            "mkdir -p '${enabledRoot(workspaceRoot)}' && rm -rf '$target.tmp' && mkdir -p '$target.tmp' && " +
-                "cp -R '$drafts/.' '$target.tmp/' && rm -rf '$target' && mv '$target.tmp' '$target'",
+            // Within this command nothing touches `$target` until the copy is whole, and the one destructive
+            // step is immediately followed by a rename. The scratch tree is a sibling of the enabled zone rather
+            // than a suffixed name inside it, because the loader cannot tell a leftover `<name>.tmp` from a skill
+            // called `<name>.tmp`. Two enables of one name in one container still interleave on this scratch
+            // path; nothing here serialises them. `$drafts` is never removed: the reviewer decides on that copy,
+            // and the next turn's rewrite has to find it.
+            "mkdir -p '${enabledRoot(workspaceRoot)}' && rm -rf '$scratch' && mkdir -p '$scratch' && " +
+                "cp -R '$drafts/.' '$scratch/' && rm -rf '$target' && mv '$scratch' '$target'",
         )
         if (!copy.ok()) {
             log.warn("Could not enable draft {} for session {}: {}", safe, sessionId, copy.stderr())
-            return EnableOutcome.Failed(copy.stderr().orEmpty().ifEmpty { "the container refused the copy" })
+            // Empty stderr means the command never reported a reason, which is what a killed exec looks like —
+            // and after the destructive step that is a session missing a skill it had, not a refused copy.
+            return EnableOutcome.Failed(
+                copy.stderr().orEmpty().ifEmpty {
+                    "the copy did not complete; this session may now be missing that skill"
+                },
+            )
         }
         log.info(
             "Draft {} enabled for session {} (verdict {}, {} findings)",
@@ -196,6 +206,14 @@ class SessionSkillStore(
         /** Design D9: these all land in the system prompt of one session. */
         const val MAX_ENABLED = 10
 
+        /**
+         * Budget for one [Sandbox.exec], including the six-step enable chain that grew out of four steps.
+         *
+         * The four cheap steps (two `mkdir -p`, two `rm -rf` of a directory that is usually absent) ride alongside
+         * the one that actually costs: `cp -R` of a draft tree, which is a `SKILL.md` plus its support files.
+         * Being killed is now reported as an incomplete copy rather than a refusal, so a too-tight clock fails
+         * loudly instead of leaving the caller to guess.
+         */
         private const val EXEC_TIMEOUT_SECONDS = 15
 
         /** Parent directory of the enabled tree, for callers that need it in an absolute path. */
