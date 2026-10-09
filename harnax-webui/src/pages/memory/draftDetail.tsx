@@ -93,31 +93,50 @@ const MemoryDraftDetail: React.FC = () => {
 
   const showApproved = (decision: API.MemoryDraftDecision) => {
     const kept = decision.keptSources ?? 0;
+    const dailyApplied = decision.dailyTargetsApplied ?? 0;
     Modal.success({
       title: intl.formatMessage({
         id: 'pages.memory.draft.approved.title',
         defaultMessage: 'Merged into the agent memory',
       }),
-      content: intl.formatMessage(
-        {
-          id: 'pages.memory.draft.approved.body',
-          defaultMessage:
-            'The long-term layer is now version {version}, and every conversation this agent starts from here on is told that text. {cleared} conversation memory file(s) were cleared.{kept}',
-        },
-        {
-          version: decision.longTermVersion ?? '-',
-          cleared: decision.clearedSources ?? 0,
-          kept: kept
-            ? intl.formatMessage(
+      content: (
+        <Space direction="vertical" size={8} style={{ display: 'flex' }}>
+          <span>
+            {intl.formatMessage(
+              {
+                id: 'pages.memory.draft.approved.body',
+                defaultMessage:
+                  'The long-term layer is now version {version}, and every conversation this agent starts from here on is told that text. {cleared} conversation memory file(s) were cleared.{kept}',
+              },
+              {
+                version: decision.longTermVersion ?? '-',
+                cleared: decision.clearedSources ?? 0,
+                kept: kept
+                  ? intl.formatMessage(
+                      {
+                        id: 'pages.memory.draft.approved.kept',
+                        defaultMessage:
+                          ' {count} were left for the next candidate because their bytes moved after the merge read them.',
+                      },
+                      { count: kept },
+                    )
+                  : '',
+              },
+            )}
+          </span>
+          {/* One button now decides the day files too, so the receipt has to say how many were written. */}
+          {dailyApplied > 0 ? (
+            <span>
+              {intl.formatMessage(
                 {
-                  id: 'pages.memory.draft.approved.kept',
-                  defaultMessage:
-                    ' {count} were left for the next candidate because their bytes moved after the merge read them.',
+                  id: 'pages.memory.draft.approved.daily',
+                  defaultMessage: 'Memory for {count} date(s) was folded in alongside it.',
                 },
-                { count: kept },
-              )
-            : '',
-        },
+                { count: dailyApplied },
+              )}
+            </span>
+          ) : null}
+        </Space>
       ),
       okText: intl.formatMessage({
         id: 'pages.memory.draft.approved.openMemory',
@@ -197,13 +216,32 @@ const MemoryDraftDetail: React.FC = () => {
             id: 'pages.memory.draft.refused.staleTitle',
             defaultMessage: 'This merge is out of date',
           }),
-          content: intl.formatMessage(
-            {
-              id: 'pages.memory.draft.refused.stale',
-              defaultMessage:
-                'The long-term layer is at version {version}, but this candidate was merged against an older one, so nothing was written. The conversation will propose against the current layer next time its merge window opens.',
-            },
-            { version: decision.currentBaseVersion ?? '-' },
+          content: (
+            <Space direction="vertical" size={8} style={{ display: 'flex' }}>
+              <span>
+                {intl.formatMessage(
+                  {
+                    id: 'pages.memory.draft.refused.stale',
+                    defaultMessage:
+                      'The long-term layer is at version {version}, but this candidate was merged against an older one, so nothing was written. The conversation will propose against the current layer next time its merge window opens.',
+                  },
+                  { version: decision.currentBaseVersion ?? '-' },
+                )}
+              </span>
+              {/* The merge now spans 1 + K objects, so the refusal names the one that moved rather than assuming the layer did. */}
+              {decision.staleTarget ? (
+                <span>
+                  {intl.formatMessage(
+                    {
+                      id: 'pages.memory.draft.refused.staleTarget',
+                      defaultMessage:
+                        'The object that moved since the merge read it is: {path}',
+                    },
+                    { path: decision.staleTarget },
+                  )}
+                </span>
+              ) : null}
+            </Space>
           ),
         });
         break;
@@ -262,18 +300,38 @@ const MemoryDraftDetail: React.FC = () => {
       load();
       return;
     }
+    const dailyTargets = draft.targets || [];
     Modal.confirm({
       title: intl.formatMessage({
         id: 'pages.memory.draft.approve.confirmTitle',
         defaultMessage: 'Merge this into the agent memory?',
       }),
-      content: intl.formatMessage(
-        {
-          id: 'pages.memory.draft.approve.confirmBody',
-          defaultMessage:
-            'The text below replaces the whole long-term layer of {agent}, and every conversation that agent starts afterwards is told it. The conversation memory files this merge read are cleared once the write lands.',
-        },
-        { agent: draft.agentName },
+      content: (
+        <Space direction="vertical" size={8} style={{ display: 'flex' }}>
+          <span>
+            {intl.formatMessage(
+              {
+                id: 'pages.memory.draft.approve.confirmBody',
+                defaultMessage:
+                  'The text below replaces the whole long-term layer of {agent}, and every conversation that agent starts afterwards is told it. The conversation memory files this merge read are cleared once the write lands.',
+              },
+              { agent: draft.agentName },
+            )}
+          </span>
+          {/* Still one button for the whole decision, but the reviewer is told what else it writes. */}
+          {dailyTargets.length > 0 ? (
+            <span>
+              {intl.formatMessage(
+                {
+                  id: 'pages.memory.draft.approve.confirmDaily',
+                  defaultMessage:
+                    'This same approval also writes {count} day file(s) of memory. If any one of them moved since the merge read it, nothing is written at all.',
+                },
+                { count: dailyTargets.length },
+              )}
+            </span>
+          ) : null}
+        </Space>
       ),
       okText: intl.formatMessage({ id: 'pages.common.confirm', defaultMessage: 'OK' }),
       cancelText: intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' }),
@@ -319,6 +377,20 @@ const MemoryDraftDetail: React.FC = () => {
 
   const tabItems = () => {
     if (!draft) return [];
+    const dailyTargets = draft.targets || [];
+    // The count rides the label so a reviewer sees, before clicking, that one approval covers 1 + K objects.
+    const dailyLabel = dailyTargets.length
+      ? intl.formatMessage(
+          {
+            id: 'pages.memory.draft.tab.daily.count',
+            defaultMessage: 'Daily merges ({count})',
+          },
+          { count: dailyTargets.length },
+        )
+      : intl.formatMessage({
+          id: 'pages.memory.draft.tab.daily',
+          defaultMessage: 'Daily merges',
+        });
     const items: any[] = [
       {
         key: 'merged',
@@ -373,6 +445,11 @@ const MemoryDraftDetail: React.FC = () => {
               style={{ paddingTop: 40 }}
             />
           ),
+      },
+      {
+        key: 'daily',
+        label: dailyLabel,
+        children: <DailyTab targets={dailyTargets} />,
       },
       {
         key: 'sources',
@@ -637,6 +714,119 @@ const SourcesTab: React.FC<{ sources: API.MemoryDraftSource[] }> = ({ sources })
           id: 'pages.memory.draft.sources.hint',
           defaultMessage:
             'The text each file held when the merge read it. An approval clears a file only while it still holds those bytes.',
+        })}
+      </Typography.Paragraph>
+    </div>
+  );
+};
+
+/**
+ * The day files this same merge also writes, besides the conclusion layer.
+ *
+ * These are shown rather than folded away because the two cases look identical in the conclusion layer: a day
+ * whose memory was cut back to a quarter of itself, and a day that came through the merge intact, are told
+ * apart only by the day's own text the merge read. Expanding a row is evidence — it changes no state, and the
+ * decision stays the one approve button at the top of the page.
+ */
+const DailyTab: React.FC<{ targets: API.MemoryDraftTarget[] }> = ({ targets }) => {
+  const intl = useIntl();
+  if (targets.length === 0) {
+    return (
+      <Empty
+        description={intl.formatMessage({
+          id: 'pages.memory.draft.daily.empty',
+          defaultMessage: 'This merge writes the conclusion layer only, no day file is touched',
+        })}
+        style={{ paddingTop: 40 }}
+      />
+    );
+  }
+  const versionText = (target: API.MemoryDraftTarget) => {
+    if (!target.expectedVersion) {
+      // 0 is how the server says the object did not exist when the merge read it, so approving creates that day.
+      return (
+        <Tag color="blue">
+          {intl.formatMessage({
+            id: 'pages.memory.draft.daily.newDay',
+            defaultMessage: 'New for this day',
+          })}
+        </Tag>
+      );
+    }
+    return `v${target.expectedVersion}`;
+  };
+  const columns: ColumnsType<API.MemoryDraftTarget> = [
+    {
+      title: intl.formatMessage({ id: 'pages.memory.draft.daily.path', defaultMessage: 'Day file' }),
+      dataIndex: 'path',
+      key: 'path',
+      render: (path?: string) => <Typography.Text code>{path}</Typography.Text>,
+    },
+    {
+      title: intl.formatMessage({
+        id: 'pages.memory.draft.daily.expectedVersion',
+        defaultMessage: 'Merged against',
+      }),
+      key: 'expectedVersion',
+      width: 160,
+      render: (_: unknown, record) => versionText(record),
+    },
+    {
+      title: intl.formatMessage({ id: 'pages.memory.draft.daily.chars', defaultMessage: 'New length' }),
+      key: 'chars',
+      width: 120,
+      align: 'right',
+      render: (_: unknown, record) => (record.mergedText || '').length,
+    },
+  ];
+  return (
+    <div style={{ padding: 16, maxHeight: 'calc(100vh - 420px)', overflow: 'auto' }}>
+      <Table<API.MemoryDraftTarget>
+        rowKey={(record) => record.path || ''}
+        columns={columns}
+        dataSource={targets}
+        size="small"
+        pagination={false}
+        expandable={{
+          expandedRowRender: (record) => (
+            <Space direction="vertical" size={12} style={{ display: 'flex' }}>
+              <div>
+                <Typography.Paragraph strong style={{ marginBottom: 4, fontSize: 12 }}>
+                  {intl.formatMessage({
+                    id: 'pages.memory.draft.daily.baseHeading',
+                    defaultMessage: 'This day as it stands',
+                  })}
+                </Typography.Paragraph>
+                {(record.baseText || '').trim() ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{record.baseText || ''}</ReactMarkdown>
+                ) : (
+                  <Typography.Paragraph type="secondary" style={{ marginBottom: 0, fontSize: 12 }}>
+                    {intl.formatMessage({
+                      id: 'pages.memory.draft.daily.baseEmpty',
+                      defaultMessage:
+                        'This day has no memory yet, so this merge would be the first note it carries',
+                    })}
+                  </Typography.Paragraph>
+                )}
+              </div>
+              <div>
+                <Typography.Paragraph strong style={{ marginBottom: 4, fontSize: 12 }}>
+                  {intl.formatMessage({
+                    id: 'pages.memory.draft.daily.mergedHeading',
+                    defaultMessage: 'After the merge',
+                  })}
+                </Typography.Paragraph>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{record.mergedText || ''}</ReactMarkdown>
+              </div>
+            </Space>
+          ),
+        }}
+      />
+      <Typography.Paragraph type="secondary" style={{ marginTop: 8, fontSize: 12 }}>
+        {intl.formatMessage({
+          id: 'pages.memory.draft.daily.hint',
+          defaultMessage:
+            'Approving writes the conclusion layer and every day file above as one decision. If the stored version of any one of them no longer matches, the whole merge is refused and none of them is written.',
         })}
       </Typography.Paragraph>
     </div>

@@ -348,7 +348,9 @@ class AdminApiClient(
      *
      * `baseVersion` is the version of the owner's `MEMORY.md` this merge read, and it travels because the
      * approval is a write to that one object: without it, a reviewer approving an hour-old candidate would
-     * overwrite whatever a sibling conversation's approval put there in between.
+     * overwrite whatever a sibling conversation's approval put there in between. `targets` are the days of the
+     * owner's own ledger the same approval writes, and each carries *its* version for the same reason —
+     * `baseVersion` can only speak for one object.
      */
     fun submitMemoryDraft(proposal: MemoryDraftProposal): MemoryDraftIntake {
         val url = "$adminUrl/api/admin/internal/memory/drafts"
@@ -361,6 +363,14 @@ class AdminApiClient(
             "baseMarkdown" to proposal.baseMarkdown,
             "baseVersion" to proposal.baseVersion,
             "sources" to proposal.sources.map { mapOf("path" to it.path, "content" to it.content) },
+            "targets" to proposal.targets.map {
+                mapOf(
+                    "path" to it.path,
+                    "expectedVersion" to it.expectedVersion,
+                    "baseText" to it.baseText,
+                    "mergedText" to it.mergedText,
+                )
+            },
         )
         val responseType = object : ParameterizedTypeReference<ResultVo<Long>>() {}
         val response = try {

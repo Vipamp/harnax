@@ -29,9 +29,9 @@ import kotlin.test.assertTrue
  * already decided; the newest-touched merge target; and the `user_id` predicate, which is the whole reason a
  * queue of other people's memories cannot be read through this screen.
  *
- * The round trip matters here more than in most tables: `merged_md` and `base_md` are the two texts the
- * reviewer reads and the approval writes, and a resultMap that quietly drops one leaves an approval that
- * would write an empty long-term layer.
+ * The round trip matters here more than in most tables: `merged_md`, `base_md` and `targets` are the texts the
+ * reviewer reads and the approval writes — one candidate goes for the conclusion layer and every daily file it
+ * produced — and a resultMap that quietly drops one leaves an approval that writes half of what it showed.
  */
 @Testcontainers
 @MybatisTest
@@ -77,6 +77,7 @@ open class MemoryDraftMapperTest {
         mergedMd: String = "- prefers Chinese",
         baseMd: String? = "- already curated",
         baseVersion: Long = 3L,
+        targets: String? = null,
     ): MemoryDraft = MemoryDraft().apply {
         this.tenantId = tenantId
         this.userId = userId
@@ -86,12 +87,14 @@ open class MemoryDraftMapperTest {
         this.baseMd = baseMd
         this.baseVersion = baseVersion
         sources = """[{"path":"MEMORY.md","content":"- prefers Chinese"}]"""
+        this.targets = targets
     }.also { mapper.insert(it) }
 
     @Test
     @DisplayName("every column a candidate carries survives the round trip")
     fun `a stored candidate reads back whole`() {
-        val saved = store("web-round", mergedMd = "# owner layer\n- line two")
+        val daily = """[{"path":"memory/2026-10-08.md","expectedVersion":2,"baseText":"- that night","mergedText":"- that night, finished the store"}]"""
+        val saved = store("web-round", mergedMd = "# owner layer\n- line two", targets = daily)
 
         val read = assertNotNull(mapper.selectById(saved.id))
 
@@ -103,6 +106,7 @@ open class MemoryDraftMapperTest {
         assertEquals("- already curated", read.baseMd)
         assertEquals(3L, read.baseVersion, "the precondition the approval applies the candidate against")
         assertEquals("""[{"path":"MEMORY.md","content":"- prefers Chinese"}]""", read.sources)
+        assertEquals(daily, read.targets, "the daily texts are objects this same approval writes, so a dropped column means approving only half the candidate")
         assertEquals(MemoryDraft.STATUS_PENDING, read.status, "a proposal never arrives decided")
         assertNull(read.reviewedBy)
         assertNull(read.rejectReason)
@@ -171,6 +175,7 @@ open class MemoryDraftMapperTest {
                 baseMd = null
                 baseVersion = 0L
                 sources = """[{"path":"memory/2026-10-05.md","content":"- worked nights"}]"""
+                targets = """[{"path":"memory/2026-10-05.md","expectedVersion":0,"baseText":"","mergedText":"- worked nights"}]"""
             },
         )
 
@@ -180,10 +185,30 @@ open class MemoryDraftMapperTest {
         assertNull(read.baseMd, "a merge against a layer that has since been curated away must not keep the old base text")
         assertEquals(0L, read.baseVersion, "the stale precondition is the bug this column exists to prevent")
         assertEquals("""[{"path":"memory/2026-10-05.md","content":"- worked nights"}]""", read.sources)
+        assertEquals(
+            """[{"path":"memory/2026-10-05.md","expectedVersion":0,"baseText":"","mergedText":"- worked nights"}]""",
+            read.targets,
+        )
         assertEquals("web-patched", read.sessionId)
         assertEquals("Research", read.agentName)
         assertEquals(OWNER, read.userId)
         assertEquals(TENANT, read.tenantId)
+
+        // A proposal that merged no daily file has to clear the column, not leave the previous candidate's
+        // targets behind: those texts belong to a merge no reviewer of this one read.
+        assertEquals(
+            1,
+            mapper.updateContent(
+                MemoryDraft().apply {
+                    id = draft.id
+                    mergedMd = "- prefers Chinese"
+                    baseMd = "- already curated"
+                    baseVersion = 4L
+                    sources = """[{"path":"MEMORY.md","content":"- prefers Chinese"}]"""
+                },
+            ),
+        )
+        assertNull(assertNotNull(mapper.selectById(draft.id)).targets)
     }
 
     @Test

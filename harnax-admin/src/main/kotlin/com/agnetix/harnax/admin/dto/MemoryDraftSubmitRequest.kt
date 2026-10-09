@@ -17,6 +17,11 @@ import io.swagger.v3.oas.annotations.media.Schema
  *
  * [sources] are the conversation's own files the merge took its material out of, with the exact bytes it found
  * in each. Approval clears those and only those, and only while they still hold these bytes.
+ *
+ * [targets] are the other half of what the same approval writes: the agent's day-by-day ledger, one entry per
+ * day the merge put material into, each carrying the version and text that day was merged against. A proposal
+ * with no daily target sends an empty list, which is how a conversation that only touched its conclusion draft
+ * keeps the ledger alone.
  */
 @Schema(description = "A conversation's memory merge awaiting its owner's approval")
 data class MemoryDraftSubmitRequest(
@@ -37,4 +42,7 @@ data class MemoryDraftSubmitRequest(
 
     @Schema(description = "Every conversation-layer file the merge read, with the bytes found there")
     val sources: List<MemoryDraftSource>? = null,
+
+    @Schema(description = "Every daily long-term file this merge produced, with the version and bytes it merged against")
+    val targets: List<MemoryDraftTarget>? = null,
 )

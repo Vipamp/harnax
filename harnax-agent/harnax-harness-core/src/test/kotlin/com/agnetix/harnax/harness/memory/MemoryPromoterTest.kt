@@ -3,6 +3,7 @@ package com.agnetix.harnax.harness.memory
 import com.agnetix.harnax.agent.adaptor.MemoryDraftAdaptor
 import com.agnetix.harnax.agent.adaptor.MemoryDraftIntake
 import com.agnetix.harnax.agent.adaptor.MemoryDraftProposal
+import com.agnetix.harnax.agent.adaptor.MemoryDraftTarget
 import io.agentscope.core.agent.RuntimeContext
 import io.agentscope.core.message.ContentBlock
 import io.agentscope.core.message.Msg
@@ -35,6 +36,12 @@ import reactor.core.publisher.Flux
  * against, and [MemoryDraftProposal.sources] says which objects of the conversation's layer it may clear.
  * Both are checked against a store that moved underneath the model call, because that window is where a stale
  * candidate would otherwise let an approval overwrite or delete what no merge ever saw.
+ *
+ * The long-term layer is no longer one object: a candidate rewrites `MEMORY.md` and every day of the agent's
+ * own ledger this pass merged. A precondition that only names the conclusion layer would leave an approval
+ * blind to a sibling conversation that wrote one of those days in the meantime, so [MemoryDraftProposal.targets]
+ * carries one version per day, and this file checks them against a day that exists, a day that does not, and a
+ * day that answers badly.
  */
 class MemoryPromoterTest {
 
@@ -54,6 +61,8 @@ class MemoryPromoterTest {
 
     private fun longTermNamespace(store: BaseStore) = domain(store).curatedNamespace(null)
 
+    private fun longTermDayNamespace(store: BaseStore) = domain(store).ledgerNamespace(null)
+
     private fun writeCurated(store: BaseStore, sessionId: String, text: String) {
         domain(store).routes(sessionId).getValue(MemoryFilesystemRoutes.MEMORY_MD_ROUTE)
             // The leading slash is what the composite hands a route in production, on both spellings of the
@@ -68,6 +77,16 @@ class MemoryPromoterTest {
     private fun writeLongTerm(store: BaseStore, text: String) {
         domain(store).routes().getValue(MemoryFilesystemRoutes.MEMORY_MD_ROUTE)
             .write(rc(), MemoryFilesystemRoutes.CURATED_ITEM_KEY, text)
+    }
+
+    /**
+     * One day of the agent's own long-term ledger.
+     *
+     * Written through the store rather than a route because the promotion reads this object through the store
+     * too, and the version an approval will compare its precondition against is the one the store gives back.
+     */
+    private fun writeLongTermDay(store: BaseStore, name: String, text: String) {
+        store.put(longTermDayNamespace(store), "/$name", mapOf("content" to text))
     }
 
     /** Answers with one fixed merge and keeps what it was asked, so the prompt itself can be asserted. */
@@ -95,6 +114,43 @@ class MemoryPromoterTest {
 
         val systemText: String get() = asked.first { it.role == MsgRole.SYSTEM }.textContent
         val userText: String get() = asked.first { it.role == MsgRole.USER }.textContent
+    }
+
+    /**
+     * Answers one canned text per model call, in call order, and remembers every prompt it was sent.
+     *
+     * One merge per day means several calls with different jobs, so the fixture has to answer them
+     * separately — and an attempt that asks more times than the script holds is a bug the extra throw turns
+     * into a failing test rather than a candidate nobody meant to propose.
+     */
+    private class CannedModel(private val answers: List<String>) : Model {
+        val prompts = mutableListOf<Pair<String, String>>()
+        var failOnCall: Int? = null
+
+        override fun stream(
+            messages: List<Msg>,
+            tools: List<io.agentscope.core.model.ToolSchema>?,
+            options: io.agentscope.core.model.GenerateOptions?,
+        ): Flux<ChatResponse> {
+            prompts += (messages.first { it.role == MsgRole.SYSTEM }.textContent to messages.first { it.role == MsgRole.USER }.textContent)
+            val call = prompts.size
+            if (failOnCall == call) throw IllegalStateException("the model died on call $call")
+            val answer = answers.getOrNull(call - 1)
+                ?: throw AssertionError("call $call was not scripted (${answers.size} answer(s) given)")
+            return Flux.just(
+                ChatResponse.builder().content(listOf<ContentBlock>(TextBlock.builder().text(answer).build())).build(),
+            )
+        }
+
+        override fun getModelName(): String = "canned"
+
+        val calls: Int get() = prompts.size
+
+        /** The conclusion layer's own merge, which is always this pass's first call. */
+        val conclusionUser: String get() = prompts.first().second
+
+        /** The day merges, oldest day first, in the order the attempt asked for them. */
+        val dayPrompts: List<Pair<String, String>> get() = prompts.drop(1)
     }
 
     /** A queue that remembers what it was handed and answers with whatever the test needs. */
@@ -125,7 +181,8 @@ class MemoryPromoterTest {
     }
 
     /** Every object of the conversation's layer and of the owner's long-term layer, keyed and stamped. */
-    private fun snapshot(store: BaseStore): List<List<String>> = sessionNamespaces(store).map { layer(store, it) } + listOf(layer(store, longTermNamespace(store)))
+    private fun snapshot(store: BaseStore): List<List<String>> = sessionNamespaces(store).map { layer(store, it) } +
+        listOf(layer(store, longTermNamespace(store)), layer(store, longTermDayNamespace(store)))
 
     /** What no outcome of this pass is allowed to change: both layers, every object, every version. */
     private fun assertNothingMoved(store: BaseStore, before: List<List<String>>) {
@@ -544,6 +601,193 @@ class MemoryPromoterTest {
             model.systemText.contains("one conversation's own memory layer"),
             "the merge has to say what its input is, or the model curates a whole conversation away",
         )
+    }
+
+    @Test
+    fun `each day of this conversation gets its own merge and its own precondition`() {
+        // The agent's own ledger is a second object per day, so `baseVersion` cannot speak for it: a sibling
+        // conversation approved yesterday writes the same day, and the only thing that tells an approval the
+        // text it holds is stale is the version this pass read that day at.
+        val store = InMemoryStore()
+        writeLongTerm(store, "- prefers Chinese")
+        writeLongTermDay(store, "2026-10-05.md", "- the owner was at the conference")
+        writeLedger(store, sessionId, "2026-10-05.md", "- started with the arxiv tool")
+        writeLedger(store, sessionId, "2026-10-06.md", "- asked for terse answers")
+        writeLedger(store, sessionId, "2026-10-07.md", "- named the project harnax")
+        val before = snapshot(store)
+        val fifth = requireNotNull(store.get(longTermDayNamespace(store), "/2026-10-05.md"))
+        val model = CannedModel(
+            listOf(
+                "- prefers Chinese\n- the conference, the arxiv tool, terse answers, harnax",
+                "- the owner was at the conference\n- started with the arxiv tool",
+                "- asked for terse answers",
+                "- named the project harnax",
+            ),
+        )
+
+        val run = attempt(store, model)
+
+        assertEquals(MemoryPromoter.Outcome.QUEUED, run.outcome)
+        assertEquals(4, model.calls, "one merge for the conclusion layer and one per day")
+        assertEquals(
+            listOf(
+                MemoryDraftTarget("memory/2026-10-05.md", fifth.version(), "- the owner was at the conference", "- the owner was at the conference\n- started with the arxiv tool"),
+                MemoryDraftTarget("memory/2026-10-06.md", 0L, null, "- asked for terse answers"),
+                MemoryDraftTarget("memory/2026-10-07.md", 0L, null, "- named the project harnax"),
+            ),
+            run.queue.filed.targets,
+            "a day that did not exist is proposed as a create: version 0, and no text to review against",
+        )
+
+        // A day merge gets exactly two inputs — that day of the agent's ledger and this conversation's — and
+        // has to say which day it is writing, or the model merges two days into one conclusion.
+        val fifthPrompt = model.dayPrompts.first()
+        assertTrue(fifthPrompt.second.contains("- the owner was at the conference"), fifthPrompt.second)
+        assertTrue(fifthPrompt.second.contains("- started with the arxiv tool"), fifthPrompt.second)
+        assertTrue(fifthPrompt.second.contains("2026-10-05"), "the merge has to be told which day it is writing")
+        assertFalse(model.dayPrompts[1].second.contains("- started with the arxiv tool"), "and only that day")
+        assertNothingMoved(store, before)
+    }
+
+    @Test
+    fun `the day merge is asked for that day's text, not for a MEMORY-md`() {
+        // Upstream's consolidation prompt declares its output as "the complete new MEMORY.md". Fed to a day
+        // merge it would have the model curate two days into one conclusion layer, and the reviewer would see
+        // a day file holding somebody else's summary.
+        val store = InMemoryStore()
+        writeLedger(store, sessionId, "2026-10-05.md", "- today")
+        val model = CannedModel(listOf("- merged owner layer", "- today merged"))
+
+        attempt(store, model)
+
+        val daySystem = model.dayPrompts.first().first
+        assertTrue(daySystem.contains("Never record credentials or secrets"), daySystem)
+        assertTrue(daySystem.contains("another user or another tenant"), daySystem)
+        assertFalse(daySystem.contains("Current MEMORY.md"), "the day prompt is not the conclusion prompt: $daySystem")
+        assertFalse(
+            daySystem.contains(MemoryConfigFactory.CONSOLIDATION_MAX_TOKENS.toString()),
+            "the 4000-token budget is MEMORY.md's; a day file gets no budget or the merge trims today to fit",
+        )
+    }
+
+    @Test
+    fun `one attempt merges the oldest seven days and hands the rest to the next window`() {
+        // A model call per day has to fit inside the throttle window the attempt claimed when it started, so
+        // the days are capped — and taking them oldest first is what turns the cap into a delay rather than a
+        // day that never gets merged.
+        val store = InMemoryStore()
+        writeCurated(store, sessionId, "- this conversation's own draft")
+        (1..10).forEach { writeLedger(store, sessionId, "2026-10-%02d.md".format(it), "- note for day %02d".format(it)) }
+        val model = CannedModel(listOf("- merged owner layer") + (1..7).map { "- day $it merged" })
+
+        val run = attempt(store, model)
+
+        assertEquals(MemoryPromoter.Outcome.QUEUED, run.outcome)
+        assertEquals(8, model.calls, "one conclusion merge and one per day in scope")
+        assertEquals(
+            (1..7).map { "memory/2026-10-%02d.md".format(it) },
+            run.queue.filed.targets.map { it.path },
+            "ascending, so a day over the cap is deferred rather than skipped",
+        )
+        assertEquals(
+            listOf("MEMORY.md") + (1..7).map { "memory/2026-10-%02d.md".format(it) },
+            run.queue.filed.sources.map { it.path },
+            "an approval clears the objects a merge took material out of, so the ones it never read stay",
+        )
+    }
+
+    @Test
+    fun `the model budget hands a call its own timeout and only what is left of it`() {
+        // An attempt now makes one merge per day plus the conclusion layer, and the throttle window it runs in
+        // was stamped when the claim was taken, not when the work ends: an attempt longer than its own window
+        // lets the same conversation start a second one on top of it.
+        var now = 0L
+        val budget = MemoryPromoter.ModelBudget(
+            total = java.time.Duration.ofMinutes(25),
+            perCall = java.time.Duration.ofMinutes(5),
+            nanoClock = { now },
+        )
+
+        assertEquals(java.time.Duration.ofMinutes(5), budget.nextCall())
+        now = java.time.Duration.ofMinutes(10).toNanos()
+        assertEquals(java.time.Duration.ofMinutes(5), budget.nextCall(), "a call that starts in time still gets its own timeout")
+        now = java.time.Duration.ofMinutes(23).toNanos()
+        assertEquals(java.time.Duration.ofMinutes(2), budget.nextCall(), "and one that starts late gets what is left, never more")
+        now = java.time.Duration.ofMinutes(25).toNanos()
+        assertNull(budget.nextCall(), "at the deadline the attempt stops rather than crossing its own window")
+    }
+
+    @Test
+    fun `the conclusion merge is not fed a day this attempt will not merge`() {
+        // T3: `sources` and the merge input have to describe the same set. A day curated into the conclusion
+        // but absent from the sources would be knowledge with no record of where it came from — and an
+        // approval that later clears it would clear a file no candidate ever read.
+        val store = InMemoryStore()
+        (1..8).forEach { writeLedger(store, sessionId, "2026-10-%02d.md".format(it), "- note for day %02d".format(it)) }
+
+        val model = CannedModel(listOf("- merged owner layer") + (1..7).map { "- day $it merged" })
+        attempt(store, model)
+
+        assertTrue(model.conclusionUser.contains("- note for day 07"), model.conclusionUser)
+        assertFalse(model.conclusionUser.contains("- note for day 08"), "the deferred day stays out of every input")
+    }
+
+    @Test
+    fun `a day whose merge fails costs the whole candidate`() {
+        // D7: a reviewer cannot decide "three days merged, two of them somehow". The attempt either hands over
+        // the whole thing or nothing at all, and the conversation keeps its own layer for the next window.
+        val store = InMemoryStore()
+        writeLedger(store, sessionId, "2026-10-05.md", "- one day")
+        writeLedger(store, sessionId, "2026-10-06.md", "- another day")
+        val before = snapshot(store)
+        val model = CannedModel(listOf("- merged owner layer", "- day 5 merged"))
+        model.failOnCall = 3
+
+        val run = attempt(store, model)
+
+        assertEquals(MemoryPromoter.Outcome.MODEL_FAILED, run.outcome)
+        assertEquals(0, run.queue.proposals.size)
+        assertNothingMoved(store, before)
+    }
+
+    @Test
+    fun `a day merge that answers with a fragment of that day is not filed`() {
+        // The shrink guard is per object, not one check on the conclusion layer: a day file the model halves is
+        // a day an owner would approve as a curation while the conversation's own copy is the only proof it
+        // was not one.
+        val store = InMemoryStore()
+        writeLongTermDay(store, "2026-10-05.md", "- the owner's own day, ".repeat(10))
+        writeLedger(store, sessionId, "2026-10-05.md", "- one day")
+        writeLedger(store, sessionId, "2026-10-06.md", "- another day")
+        val before = snapshot(store)
+
+        val run = attempt(store, CannedModel(listOf("- merged owner layer", "- dropped")))
+
+        assertEquals(MemoryPromoter.Outcome.MODEL_FAILED, run.outcome)
+        assertEquals(0, run.queue.proposals.size, "the second day was fine and still files nothing")
+        assertNothingMoved(store, before)
+    }
+
+    @Test
+    fun `a long-term day that cannot be read stops the attempt`() {
+        // Same rule as the conclusion layer: an unreadable object is not an absent one. Proposing a create for a
+        // day that really holds text would let an approval overwrite it blind.
+        val store = InMemoryStore()
+        writeLongTerm(store, "- prefers Chinese")
+        writeLedger(store, sessionId, "2026-10-05.md", "- one day")
+        val days = longTermDayNamespace(store)
+        val unreadable = object : BaseStore by store {
+            override fun get(namespace: List<String>, key: String): StoreItem? = if (namespace == days) {
+                throw IllegalStateException("minio is down")
+            } else {
+                store.get(namespace, key)
+            }
+        }
+
+        val run = attempt(unreadable, CannedModel(listOf("- merged owner layer", "- day merged")))
+
+        assertEquals(MemoryPromoter.Outcome.STORE_FAILED, run.outcome)
+        assertEquals(0, run.queue.proposals.size)
     }
 
     private fun sessionNamespacesOf(store: BaseStore, other: String) = listOf(domain(store).curatedNamespace(other), domain(store).ledgerNamespace(other)).map { layer(store, it) }

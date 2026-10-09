@@ -35,6 +35,12 @@ fun interface MemoryDraftAdaptor {
  * [sources] are the conversation's own objects this merge took its material out of, with the exact content
  * each one held. Approval clears those and only those, and only while they still hold these bytes: the flush
  * of a later turn appends to the same daily ledger, and an entry no merge ever saw must not leave the bucket.
+ *
+ * [targets] are the other half of what the same approval writes: days of the agent's own ledger this merge
+ * produced, each carrying the version it read that day at. [baseVersion] can only speak for `MEMORY.md`, and
+ * two conversations merging the same day are two writes to a different object — so the precondition travels
+ * per day, and a day that moved in the meantime is refused by name instead of overwritten. An empty list is a
+ * merge that belongs entirely in the conclusion layer.
  */
 data class MemoryDraftProposal(
     val sessionId: String,
@@ -43,12 +49,30 @@ data class MemoryDraftProposal(
     val baseMarkdown: String?,
     val baseVersion: Long,
     val sources: List<MemoryDraftSource>,
+    val targets: List<MemoryDraftTarget> = emptyList(),
 )
 
 /** One object of the conversation's layer: where it lives under that layer and what this pass read there. */
 data class MemoryDraftSource(
     val path: String,
     val content: String,
+)
+
+/**
+ * One day of the agent's long-term ledger as this merge saw it.
+ *
+ * [path] is the route the pass read through — `memory/<date>.md`, the same spelling it uses for a source, and
+ * admin resolves it to the owner's own bucket. [expectedVersion] is the version that day's object held when
+ * [baseText] was read (0 when the day did not exist), and [mergedText] is the complete text this merge
+ * produced for it. A null [baseText] is the same claim as that 0: a day this merge writes into existence,
+ * which leaves a reviewer with a result and no before to compare it against. The four field names are the
+ * wire contract with `MemoryDraftTarget` on the admin side.
+ */
+data class MemoryDraftTarget(
+    val path: String,
+    val expectedVersion: Long,
+    val baseText: String? = null,
+    val mergedText: String,
 )
 
 /**

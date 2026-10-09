@@ -7,6 +7,7 @@ import com.agnetix.harnax.admin.dto.MemoryDraftRejectRequest
 import com.agnetix.harnax.admin.dto.MemoryDraftResponse
 import com.agnetix.harnax.admin.dto.MemoryDraftSource
 import com.agnetix.harnax.admin.dto.MemoryDraftSubmitRequest
+import com.agnetix.harnax.admin.dto.MemoryDraftTarget
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.mapRecords
 import com.agnetix.harnax.admin.exception.BizException
@@ -37,8 +38,9 @@ import org.springframework.transaction.annotation.Transactional
  * refusal is an outcome on a normal response, because the screen has to act on it — re-read a candidate that
  * moved, show who decided first, tell the owner their layer is no longer the one the merge read.
  *
- * What both hold to is that an owner's long-term `MEMORY.md` changes only here, and only for the person whose
- * token is on the request. [currentOwner] is therefore stricter than it looks: the row is scoped by
+ * What both hold to is that an owner's long-term layer — the `MEMORY.md` and each day of the agent's ledger a
+ * candidate rewrites — changes only here, and only for the person whose token is on the request.
+ * [currentOwner] is therefore stricter than it looks: the row is scoped by
  * `sys_user.id`, not just by workspace, because a memory merge is somebody's own recollection and a workspace
  * admin has no business reading or signing it.
  */
@@ -75,6 +77,7 @@ class MemoryDraftServiceImpl(
             throw BizException("baseVersion ${request.baseVersion} is not a store version")
         }
         val sources = validatedSources(request.sources)
+        val targets = validatedTargets(request.targets)
 
         // No tenant and no owner off the request: a merge filed in somebody else's queue would be approved by
         // the wrong person and written into the wrong bucket, and neither is visible to them.
@@ -105,6 +108,14 @@ class MemoryDraftServiceImpl(
                 throw BizException("source '$path' of conversation '$sessionId' is not a file a merge could have read")
             }
         }
+        // The same argument on the other side of the bucket: a target that resolves to no object is a day the
+        // owner would approve in the queue that no approval can write.
+        for (target in targets) {
+            val path = target.path.orEmpty()
+            if (memoryStoreGateway.longTermSourceKey(owner.tenantId, userId, agentName, path) == null) {
+                throw BizException("daily target '$path' addresses no day of the long-term ledger of agent '$agentName'")
+            }
+        }
 
         val draft = MemoryDraft()
         draft.tenantId = owner.tenantId
@@ -115,6 +126,9 @@ class MemoryDraftServiceImpl(
         draft.baseMd = base
         draft.baseVersion = request.baseVersion
         draft.sources = MemoryDraftCodec.sourcesJson(sources)
+        // NULL rather than an empty array: the column says how many objects this decision covers, and a
+        // candidate that merged no daily file decides on the agent's conclusion layer alone.
+        draft.targets = targets.takeIf { it.isNotEmpty() }?.let { MemoryDraftCodec.targetsJson(it) }
         draft.status = MemoryDraft.STATUS_PENDING
 
         // One open candidate per conversation: the newer merge subsumes the older one, because it read the
@@ -133,11 +147,12 @@ class MemoryDraftServiceImpl(
             draft.id
         }
         log.info(
-            "[memory] Merge for agent '{}' of conversation {} filed for user {} in tenant {} ({})",
+            "[memory] Merge for agent '{}' of conversation {} filed for user {} in tenant {} ({} daily target(s), {})",
             agentName,
             sessionId,
             owner.userId,
             owner.tenantId,
+            targets.size,
             if (rewritten != null) "rewrote open candidate $draftId" else "queued as candidate $draftId",
         )
         return draftId
@@ -182,16 +197,25 @@ class MemoryDraftServiceImpl(
      * different from a skill approval.
      *
      * A skill's approval can check everything it needs against the draft row; this one has to ask the memory
-     * bucket whether it still holds the text the merge read, because that is what the approval overwrites.
-     * So the three answers that need no write — digest, layer version, reachability — all come before the
-     * claim, and the claim comes before the store. [MemoryStoreGateway.writeCuratedIfVersion] then makes the
-     * write conditional again, this time against the object's own ETag, because two owners of the same bucket
-     * deciding at once is a race no row in this table can see.
+     * bucket whether it still holds the text the merge read, because that is what the approval overwrites —
+     * and since one candidate merges a conversation into the conclusion layer *and* into the agent's days,
+     * the question is asked of `1 + K` objects, each against the version that object was read at. So the
+     * answers that need no write — digest, every version, reachability — all come before the claim, and the
+     * claim comes before the store. [MemoryStoreGateway.writeCuratedIfVersion] and
+     * [MemoryStoreGateway.writeDailyIfVersion] then make each write conditional again, this time against that
+     * object's own ETag, because two owners of the same bucket deciding at once is a race no row in this table
+     * can see.
      *
-     * The clear runs last and only after a write that landed. A clear that went first would drop a
-     * conversation's memory on the strength of a candidate that then failed to apply; a clear that fails after
-     * the write leaves text the owner did approve in place, the claim rolls back with it, and the next attempt
-     * finds the layer already holding this exact text and finishes the job instead of writing it twice.
+     * One object being at neither its expected version nor exactly the candidate text refuses the whole
+     * candidate, and an object already holding the candidate's bytes counts as landed rather than as a reason
+     * to refuse: that is what lets a first attempt that wrote three of four days and then lost the store
+     * complete its own work on the next click instead of being stranded.
+     *
+     * The days are written before the conclusion layer, and the clear runs last and only after writes that
+     * landed. A clear that went first would drop a conversation's memory on the strength of a candidate that
+     * then failed to apply; a clear that fails after the writes leaves text the owner did approve in place,
+     * the claim rolls back with it, and the next attempt finds every object already holding this exact text
+     * and finishes the job instead of writing it twice.
      */
     @Transactional(rollbackFor = [Exception::class])
     override fun approve(
@@ -213,6 +237,7 @@ class MemoryDraftServiceImpl(
 
         val userId = MemoryObjectKeys.userSegment(draft.userId)
         val sources = MemoryDraftCodec.sourcesOf(draft)
+        val targets = dailyWrites(draft)
         val layer = memoryStoreGateway.readCuratedLayer(draft.tenantId, userId, draft.agentName)
         val apply = layer.version == draft.baseVersion
         // The layer holds this very text at a version the candidate was not merged against: a previous attempt
@@ -221,11 +246,39 @@ class MemoryDraftServiceImpl(
         val alreadyLanded = !apply && layer.content == draft.mergedMd
         if (!apply && !alreadyLanded) return MemoryDraftDecisionResponse.staleBase(layer.version)
 
+        // Each day the same candidate writes carries its own precondition, and all of them are answered before
+        // anything is claimed: a candidate whose third day moved is not a decision the owner read, and applying
+        // its first two would merge half of what the digest covered.
+        val daysToWrite = mutableListOf<DailyWrite>()
+        var daysLanded = 0
+        for (target in targets) {
+            val current = memoryStoreGateway.readDailyLayer(draft.tenantId, userId, draft.agentName, target.path)
+            when {
+                current.version == target.expectedVersion -> daysToWrite.add(target)
+                current.content == target.mergedText -> daysLanded++
+                else -> return MemoryDraftDecisionResponse.staleBase(layer.version, target.path)
+            }
+        }
+
         if (memoryDraftMapper.markReviewed(id, MemoryDraft.STATUS_APPROVED, caller.username) == 0) {
             // Re-read for the answer: the row now carries the decision that beat this one, including who made it.
             return alreadyReviewed(memoryDraftMapper.selectById(id) ?: draft)
         }
 
+        // Days first, conclusion last. The conclusion layer is the one that goes into every later conversation
+        // and the one the page shows as what this agent remembers; a day has no reader yet. Stopping half-way
+        // therefore leaves "the days are complete, the conclusion is still the one everybody read", which the
+        // next attempt finishes — the already-written days answer as daysLanded above. The other order would
+        // leave text in the prompt of every new conversation while part of the ledger behind it is missing.
+        for (target in daysToWrite) {
+            if (!memoryStoreGateway.writeDailyIfVersion(draft.tenantId, userId, draft.agentName, target.path, target.expectedVersion, target.mergedText)) {
+                // The day moved between the read above and this conditional write — a second approval that won.
+                // The claim goes back down with the transaction, and the days already written hold exactly the
+                // bytes this candidate names, so the next attempt lands them as already-applied and moves on.
+                throw BizException(409, "the day '${target.path}' changed while this approval ran; the candidate is still waiting, re-read it")
+            }
+            daysLanded++
+        }
         if (apply && !memoryStoreGateway.writeCuratedIfVersion(draft.tenantId, userId, draft.agentName, draft.baseVersion, draft.mergedMd)) {
             // The layer moved between the read above and this conditional write — a second approval that won.
             // The claim goes back down with the transaction, so what the owner re-reads is a PENDING candidate.
@@ -234,20 +287,21 @@ class MemoryDraftServiceImpl(
         val cleared = memoryStoreGateway.clearSessionSources(draft.tenantId, userId, draft.agentName, draft.sessionId, sources)
         val longTermVersion = if (apply) draft.baseVersion + 1 else layer.version
         log.info(
-            "[memory] Candidate {} for agent '{}' of conversation {} approved by {}: long-term layer at version {}, sources cleared {} kept {} absent {}",
+            "[memory] Candidate {} for agent '{}' of conversation {} approved by {}: long-term layer at version {}, daily files written {}, sources cleared {} kept {} absent {}",
             id,
             draft.agentName,
             draft.sessionId,
             caller.username,
             longTermVersion,
+            daysLanded,
             cleared.cleared,
             cleared.kept,
             cleared.absent,
         )
         return if (apply) {
-            MemoryDraftDecisionResponse.approved(longTermVersion, cleared.cleared, cleared.kept, cleared.absent)
+            MemoryDraftDecisionResponse.approved(longTermVersion, cleared.cleared, cleared.kept, cleared.absent, daysLanded)
         } else {
-            MemoryDraftDecisionResponse.alreadyApplied(longTermVersion, cleared.cleared, cleared.kept, cleared.absent)
+            MemoryDraftDecisionResponse.alreadyApplied(longTermVersion, cleared.cleared, cleared.kept, cleared.absent, daysLanded)
         }
     }
 
@@ -318,6 +372,66 @@ class MemoryDraftServiceImpl(
             throw BizException("the source files total $total bytes, over the $MAX_SOURCES_BYTES the queue stores")
         }
         return trimmed
+    }
+
+    /**
+     * The daily targets as they may be stored: none at all is a normal answer, and each one present carries a
+     * path, a store version and a text.
+     *
+     * Where [validatedSources] requires at least one entry, an empty list passes: a conversation whose material
+     * all belongs in the conclusion layer proposes exactly that, and it is what every candidate filed before
+     * this column existed looks like. What is checked here is shape — a negative version is no version, and a
+     * blank [MemoryDraftTarget.mergedText] would have an approval replace a whole day of the owner's ledger
+     * with nothing. Whether a path is a day of *this* agent's ledger is answered afterwards by the store's own
+     * key builder, for the same reason [validatedSources] gives for paths. Two targets of one path are
+     * refused because the approval would write that day twice, and the second write would be refused by its
+     * own precondition — a candidate that cannot be applied is not a decision to put in front of anybody.
+     */
+    private fun validatedTargets(targets: List<MemoryDraftTarget>?): List<MemoryDraftTarget> {
+        if (targets.isNullOrEmpty()) return emptyList()
+        if (targets.size > MAX_TARGETS) {
+            throw BizException("the merge names ${targets.size} daily targets, over the $MAX_TARGETS the queue stores")
+        }
+        val trimmed = targets.map { target ->
+            val path = target.path?.trim().orEmpty()
+            if (path.isEmpty()) throw BizException("a daily target carries no path")
+            if (target.expectedVersion < 0L) {
+                throw BizException("daily target '$path' expects version ${target.expectedVersion}, which is not a store version")
+            }
+            val mergedText = target.mergedText.orEmpty()
+            if (mergedText.isBlank()) {
+                throw BizException("daily target '$path' carries no text, so approving it would erase that day")
+            }
+            requireBytes("mergedText of daily target '$path'", mergedText, MAX_TARGET_MERGED_BYTES)
+            MemoryDraftTarget(path = path, expectedVersion = target.expectedVersion, baseText = target.baseText, mergedText = mergedText)
+        }
+        val duplicated = trimmed.groupBy { it.path.orEmpty() }.filterValues { it.size > 1 }.keys
+        if (duplicated.isNotEmpty()) {
+            throw BizException("the merge names ${duplicated.joinToString()} twice, so one approval would write that day twice")
+        }
+        val total = trimmed.sumOf { it.mergedText?.toByteArray(Charsets.UTF_8)?.size ?: 0 }
+        if (total > MAX_TARGETS_BYTES) {
+            throw BizException("the daily targets total $total bytes, over the $MAX_TARGETS_BYTES the queue stores")
+        }
+        return trimmed
+    }
+
+    /**
+     * The stored targets in the shape an approval can act on.
+     *
+     * [submit] writes this column itself and refused every shape below before it stored a row, so a target
+     * with no path or no text is bytes neither intake nor a decision produced. It is refused out loud rather
+     * than worked around, because both quiet answers lose memory: skipping such a target would let an owner
+     * approve a decision whose digest covers a day nobody wrote, and writing it from a null text would replace
+     * that day with nothing.
+     */
+    private fun dailyWrites(draft: MemoryDraft): List<DailyWrite> = MemoryDraftCodec.targetsOf(draft).map { target ->
+        val path = target.path?.trim().orEmpty()
+        val mergedText = target.mergedText
+        if (path.isEmpty() || mergedText.isNullOrBlank()) {
+            throw BizException(503, "candidate ${draft.id} stores a daily target with no path or no text, so no approval can tell which day to write")
+        }
+        DailyWrite(path = path, expectedVersion = target.expectedVersion, mergedText = mergedText)
     }
 
     /**
@@ -402,6 +516,7 @@ class MemoryDraftServiceImpl(
         baseVersion = baseVersion,
         mergedChars = mergedMd.length,
         sourceCount = MemoryDraftCodec.sourcesOf(this).size,
+        targetCount = MemoryDraftCodec.targetsOf(this).size,
         createTime = createTime,
         updateTime = updateTime,
         reviewedBy = reviewedBy,
@@ -418,12 +533,23 @@ class MemoryDraftServiceImpl(
         baseMd = baseMd,
         baseVersion = baseVersion,
         sources = MemoryDraftCodec.sourcesOf(this),
+        targets = MemoryDraftCodec.targetsOf(this),
         contentDigest = MemoryDraftCodec.contentDigest(this),
         createTime = createTime,
         updateTime = updateTime,
         reviewedBy = reviewedBy,
         reviewedAt = reviewedAt,
         rejectReason = rejectReason,
+    )
+
+    /**
+     * One day this approval has to land: the path the candidate names, the version that day's object must
+     * still hold for the write to be allowed, and the complete text to put there.
+     */
+    private data class DailyWrite(
+        val path: String,
+        val expectedVersion: Long,
+        val mergedText: String,
     )
 
     /** Whose memory, in which workspace, under which agent row. */
@@ -448,6 +574,19 @@ class MemoryDraftServiceImpl(
 
         /** Ceiling on those files' text, same reasoning as [MAX_MERGED_BYTES]: a bound, not a design limit. */
         private const val MAX_SOURCES_BYTES = 2_000_000
+
+        /**
+         * Ceiling on the daily files one candidate names. The runtime proposes at most a week per pass, so this
+         * is [MAX_SOURCES] in the same role — a bound against unbounded growth, not the design limit, which
+         * lives on the promotion side.
+         */
+        private const val MAX_TARGETS = 64
+
+        /** Ceiling on one day's merged text, the same width [MAX_MERGED_BYTES] gives the conclusion layer. */
+        private const val MAX_TARGET_MERGED_BYTES = 200_000
+
+        /** Ceiling on all of a candidate's days together, as [MAX_SOURCES_BYTES] is for its sources. */
+        private const val MAX_TARGETS_BYTES = 2_000_000
 
         /** Width of `memory_draft.reject_reason`. */
         private const val MAX_REJECT_REASON_CHARS = 512

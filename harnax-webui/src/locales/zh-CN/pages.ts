@@ -1449,11 +1449,23 @@ export default {
   'pages.memory.draft.detail.notFound': '这份并入已不在你的清单里',
   'pages.memory.draft.tab.merged': '批准后会告诉它什么',
   'pages.memory.draft.tab.base': '现在告诉它什么',
+  'pages.memory.draft.tab.daily': '按日并入',
+  'pages.memory.draft.tab.daily.count': '按日并入 ({count})',
   'pages.memory.draft.tab.sources': '会话记忆文件',
   'pages.memory.draft.mergedHint':
     '这次合并产出的完整 MEMORY.md，共 {count} 字。批准即整篇写入，所以合并时漏掉的一条会从此离开该智能体的记忆。',
   'pages.memory.draft.baseHint': '这次合并开始时读到的原文，版本 v{version}，共 {count} 字。',
   'pages.memory.draft.base.empty': '该智能体还没有长期记忆，所以这次批准就是它第一次被告诉这些内容',
+  'pages.memory.draft.daily.empty': '这次并入只动结论层，不会写任何日期文件',
+  'pages.memory.draft.daily.path': '日期文件',
+  'pages.memory.draft.daily.expectedVersion': '并入基准',
+  'pages.memory.draft.daily.newDay': '该日新建',
+  'pages.memory.draft.daily.chars': '并入后字数',
+  'pages.memory.draft.daily.baseHeading': '该日当前',
+  'pages.memory.draft.daily.baseEmpty': '这一天还没有记忆，这次并入会是它的第一天',
+  'pages.memory.draft.daily.mergedHeading': '并入后',
+  'pages.memory.draft.daily.hint':
+    '批准会同时写入结论层和上面这些日期文件，一次点击就是这一整份决定。只要其中一个对象的存储版本与合并读取时不再是同一个，整条并入会被拒绝，一个都不写。',
   'pages.memory.draft.sources.empty': '这次合并没有记录任何会话记忆文件',
   'pages.memory.draft.sources.path': '路径',
   'pages.memory.draft.sources.chars': '字数',
@@ -1468,10 +1480,13 @@ export default {
   'pages.memory.draft.approve.confirmTitle': '把这次并入写进智能体记忆？',
   'pages.memory.draft.approve.confirmBody':
     '下面这份文本会整篇替换「{agent}」的长期记忆，该智能体之后开的每一个会话都会被告诉它。这次合并读过的会话记忆文件会在写入成功后被清掉。',
+  'pages.memory.draft.approve.confirmDaily':
+    '这一次批准除结论层之外，还会写入 {count} 个日期文件；只要其中一个自合并读取以后动过，就一个都不写。',
   'pages.memory.draft.approved.title': '已并入智能体记忆',
   'pages.memory.draft.approved.body':
     '长期层现在是第 {version} 版，该智能体之后新建的每个会话都会被告诉这段文本。已清掉 {cleared} 个会话记忆文件。{kept}',
   'pages.memory.draft.approved.kept': '其中 {count} 个文件在合并读取之后字节又变动，已留给下一次并入。',
+  'pages.memory.draft.approved.daily': '同时并入了 {count} 个日期的记忆。',
   'pages.memory.draft.approved.openMemory': '查看记忆页',
   'pages.memory.draft.reject': '拒绝',
   'pages.memory.draft.reject.title': '拒绝这次并入',
@@ -1489,6 +1504,7 @@ export default {
   'pages.memory.draft.refused.staleTitle': '这份并入已经过期',
   'pages.memory.draft.refused.stale':
     '长期层现在是第 {version} 版，而这份候选是照着更早的版本合并的，所以没有写入任何内容。该会话下一次合并窗口打开时会照当前层重新提出。',
+  'pages.memory.draft.refused.staleTarget': '合并读取之后动过的是这个对象：{path}',
 
   // 首页运营总览
   'pages.welcome.greeting': 'Hi {nickname}',

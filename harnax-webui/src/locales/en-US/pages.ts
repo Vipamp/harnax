@@ -1457,6 +1457,8 @@ export default {
   'pages.memory.draft.detail.notFound': 'This merge is no longer in your queue',
   'pages.memory.draft.tab.merged': 'What the agent would be told',
   'pages.memory.draft.tab.base': 'What it is told now',
+  'pages.memory.draft.tab.daily': 'Daily merges',
+  'pages.memory.draft.tab.daily.count': 'Daily merges ({count})',
   'pages.memory.draft.tab.sources': 'Conversation files',
   'pages.memory.draft.mergedHint':
     'The complete MEMORY.md the merge produced — {count} characters. Approving writes this text as a whole, so an item the merge dropped leaves the agent.',
@@ -1464,6 +1466,18 @@ export default {
     'The owner text this merge started from, at version {version} — {count} characters.',
   'pages.memory.draft.base.empty':
     'This agent has no long-term memory yet, so this merge would be the first text it is told',
+  'pages.memory.draft.daily.empty':
+    'This merge writes the conclusion layer only, no day file is touched',
+  'pages.memory.draft.daily.path': 'Day file',
+  'pages.memory.draft.daily.expectedVersion': 'Merged against',
+  'pages.memory.draft.daily.newDay': 'New for this day',
+  'pages.memory.draft.daily.chars': 'New length',
+  'pages.memory.draft.daily.baseHeading': 'This day as it stands',
+  'pages.memory.draft.daily.baseEmpty':
+    'This day has no memory yet, so this merge would be the first note it carries',
+  'pages.memory.draft.daily.mergedHeading': 'After the merge',
+  'pages.memory.draft.daily.hint':
+    'Approving writes the conclusion layer and every day file above as one decision. If the stored version of any one of them no longer matches, the whole merge is refused and none of them is written.',
   'pages.memory.draft.sources.empty': 'The merge recorded no conversation memory files',
   'pages.memory.draft.sources.path': 'Path',
   'pages.memory.draft.sources.chars': 'Characters',
@@ -1480,11 +1494,14 @@ export default {
   'pages.memory.draft.approve.confirmTitle': 'Merge this into the agent memory?',
   'pages.memory.draft.approve.confirmBody':
     'The text below replaces the whole long-term layer of {agent}, and every conversation that agent starts afterwards is told it. The conversation memory files this merge read are cleared once the write lands.',
+  'pages.memory.draft.approve.confirmDaily':
+    'This same approval also writes {count} day file(s) of memory. If any one of them moved since the merge read it, nothing is written at all.',
   'pages.memory.draft.approved.title': 'Merged into the agent memory',
   'pages.memory.draft.approved.body':
     'The long-term layer is now version {version}, and every conversation this agent starts from here on is told that text. {cleared} conversation memory file(s) were cleared.{kept}',
   'pages.memory.draft.approved.kept':
     ' {count} were left for the next candidate because their bytes moved after the merge read them.',
+  'pages.memory.draft.approved.daily': 'Memory for {count} date(s) was folded in alongside it.',
   'pages.memory.draft.approved.openMemory': 'Open memory page',
   'pages.memory.draft.reject': 'Reject',
   'pages.memory.draft.reject.title': 'Reject this merge',
@@ -1503,6 +1520,8 @@ export default {
   'pages.memory.draft.refused.staleTitle': 'This merge is out of date',
   'pages.memory.draft.refused.stale':
     'The long-term layer is at version {version}, but this candidate was merged against an older one, so nothing was written. The conversation will propose against the current layer next time its merge window opens.',
+  'pages.memory.draft.refused.staleTarget':
+    'The object that moved since the merge read it is: {path}',
 
   // Dashboard overview
   'pages.welcome.greeting': 'Hi {nickname}',

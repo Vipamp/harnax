@@ -356,4 +356,66 @@ class MemoryObjectKeysTest {
             assertNull(MemoryObjectKeys.sessionSourceKey(prefix, 4L, "7", "Research", "", "MEMORY.md"))
         }
     }
+
+    /**
+     * The daily targets a candidate names on the write side, resolved against the agent's own long-term
+     * layer rather than a conversation's buffer.
+     *
+     * Two rules differ from [SourcePaths] on purpose, and both are about what an approval is allowed to write.
+     * The conclusion file is not addressable by a target path — its text and precondition are the candidate
+     * row, so a second way to name it would be a way to write it twice. And the ledger here is keyed by real
+     * dates, because these objects are what the memory page lists day by day; a file the daily writer never
+     * produces would show up as a date nobody can read.
+     */
+    @Nested
+    @DisplayName("Resolving a merge proposal's long-term target paths")
+    inner class TargetPaths {
+
+        private fun keyOf(path: String?): String? = MemoryObjectKeys.longTermSourceKey(prefix, 4L, "7", "Research", path)
+
+        @Test
+        fun `a dated ledger path is the agent's own long-term object`() {
+            assertEquals(
+                "store/tenants/4/users/7/agents/Research/memory/2026-10-05.md",
+                keyOf("memory/2026-10-05.md"),
+            )
+        }
+
+        @Test
+        fun `with the tenant segment off a target key starts at users`() {
+            assertEquals(
+                "store/users/7/agents/Research/memory/2026-10-05.md",
+                MemoryObjectKeys.longTermSourceKey(prefix, 4L, "7", "Research", "memory/2026-10-05.md", tenantScoped = false),
+            )
+        }
+
+        /** The conclusion layer has one writer and no path, and a day that is not a day cannot be listed. */
+        @Test
+        fun `a path that is not a day of the long-term ledger resolves to nothing`() {
+            listOf(
+                "",
+                "MEMORY.md",
+                "/memory/2026-10-05.md",
+                "memory/",
+                "memory/MEMORY.md",
+                "memory/2026-13-40.md",
+                "memory/2026-10-5.md",
+                "memory/notes.md",
+                "memory/2026-10-05.txt",
+                "memory/2026-10-05.md/extra",
+                "memory/../2026-10-05.md",
+                "memory/archive/2026-10-05.md",
+                "root/MEMORY.md",
+            ).forEach { path ->
+                assertNull(keyOf(path), "'$path' is not a day of the long-term ledger, so no approval may write it")
+            }
+            assertNull(keyOf(null))
+        }
+
+        @Test
+        fun `an unaddressable agent resolves to nothing`() {
+            assertNull(MemoryObjectKeys.longTermSourceKey(prefix, 4L, "7", "Research/x", "memory/2026-10-05.md"))
+            assertNull(MemoryObjectKeys.longTermSourceKey(prefix, 4L, "7", "", "memory/2026-10-05.md"))
+        }
+    }
 }
