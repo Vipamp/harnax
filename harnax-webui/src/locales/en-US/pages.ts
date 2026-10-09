@@ -1369,7 +1369,7 @@ export default {
   'pages.session.skills.refusal.dangerous': 'The security scan says DANGEROUS, so this draft cannot be enabled',
   'pages.session.skills.refusal.limit': 'This session already has ten skills enabled',
   'pages.session.skills.refusal.noSandbox': 'This session has no running sandbox',
-  'pages.session.skills.refusal.container': 'The container refused the copy',
+  'pages.session.skills.refusal.container': 'The copy did not complete',
   'pages.session.skills.refusal.noDraft': 'This session has no draft with that name',
   'pages.session.skills.refusal.unknown': 'The enable request was refused for a reason this panel does not know; the draft itself is untouched',
   'pages.session.createNew': 'or click "Create" on the left to create a new session',

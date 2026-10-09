@@ -89,7 +89,7 @@ const REFUSALS: Record<string, { id: string; en: string }> = {
   },
   '500': {
     id: 'pages.session.skills.refusal.container',
-    en: 'The container refused the copy',
+    en: 'The copy did not complete',
   },
 };
 

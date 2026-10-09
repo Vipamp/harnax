@@ -1368,7 +1368,7 @@ export default {
   'pages.session.skills.refusal.dangerous': '安全扫描判定 DANGEROUS，这份草稿不能启用',
   'pages.session.skills.refusal.limit': '这个会话已经启用了十个技能',
   'pages.session.skills.refusal.noSandbox': '这个会话没有运行中的沙箱',
-  'pages.session.skills.refusal.container': '容器拒绝了这次复制',
+  'pages.session.skills.refusal.container': '这次复制没有完成',
   'pages.session.skills.refusal.noDraft': '这个会话没有这个名字的草稿',
   'pages.session.skills.refusal.unknown': '启用请求被拒绝，原因未登记；草稿本身没有受影响',
   'pages.session.createNew': '或点击左侧「新建」创建一个新会话',

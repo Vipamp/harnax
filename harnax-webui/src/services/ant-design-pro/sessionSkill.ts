@@ -57,7 +57,7 @@ export async function listSessionSkills(sessionId: string, options?: { [key: str
  * usable from the next turn of this session.
  *
  * Every refusal comes back as its own code (403 unsafe draft, 409 the session's ten-skill ceiling, 410 no
- * running sandbox, 404 nothing drafted under that name, 500 the container refused the copy), so the caller can
+ * running sandbox, 404 nothing drafted under that name, 500 the copy did not complete), so the caller can
  * tell the human which of them they are looking at instead of showing one generic failure.
  */
 export async function enableSessionSkill(
