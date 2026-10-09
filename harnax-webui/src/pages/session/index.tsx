@@ -10,6 +10,7 @@ import {
   contextUsageTokenText,
   formatContextPercent,
   isAtAutoTrigger,
+  isCompactionPointless,
   isContextUsageReadable,
 } from './components/contextUsage';
 import SettingsModal from './components/SettingsModal';
@@ -406,6 +407,7 @@ const SessionPage: React.FC = () => {
               {/* 聊天窗口 */}
               <ChatWindow
                 sessionId={selectedSession.sessionId}
+                compactionSkippable={isCompactionPointless(contextUsage)}
                 onContextChanged={() => loadContextUsage(selectedSession.sessionId)}
               />
             </>

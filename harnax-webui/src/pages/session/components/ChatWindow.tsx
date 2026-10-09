@@ -113,6 +113,11 @@ interface ChatWindowProps {
    * only moves after the turn that changed the context.
    */
   onContextChanged?: () => void;
+  /**
+   * The header readout says this context holds too little for a compaction to be worth sending. The reading
+   * belongs to the parent, which fetches it; the window only acts on the conclusion.
+   */
+  compactionSkippable?: boolean;
 }
 
 interface PlanSubTask {
@@ -569,7 +574,7 @@ const LoadingDots: React.FC = () => (
 );
 
 /* ═══════════════ 主组件 ═══════════════ */
-const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onContextChanged }) => {
+const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onContextChanged, compactionSkippable }) => {
   const intl = useIntl();
   const SUGGESTIONS = [
     intl.formatMessage({ id: 'pages.session.quickSuggestion.javaSort', defaultMessage: 'Help me write a Java sorting algorithm' }),
@@ -2443,6 +2448,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onContextChanged }) 
   /* ─── 压缩本会话的模型上下文 ─── */
   const handleCompact = async () => {
     if (!sessionId || loading || compacting) return;
+    // The server reaches this same answer one round trip later.
+    if (compactionSkippable) {
+      message.info(
+        intl.formatMessage({
+          id: 'pages.session.context.compactNoop',
+          defaultMessage: 'This session is still too short to compact',
+        }),
+      );
+      return;
+    }
     setCompacting(true);
     try {
       const response = await fetch('/api/router/agent/command', {

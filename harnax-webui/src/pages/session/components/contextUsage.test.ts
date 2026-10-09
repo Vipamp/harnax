@@ -4,6 +4,7 @@ import {
   contextUsageTokenText,
   formatContextPercent,
   isAtAutoTrigger,
+  isCompactionPointless,
   isContextUsageReadable,
 } from './contextUsage';
 
@@ -165,5 +166,26 @@ describe('contextUsageTokenText', () => {
   it('leaves an absent count absent, so the caller still says "not recorded yet"', () => {
     expect(contextUsageTokenText(null)).toBeNull();
     expect(contextUsageTokenText(undefined)).toBeNull();
+  });
+});
+
+describe('isCompactionPointless', () => {
+  it('holds the command back while the percentage the header shows is under the ten percent line', () => {
+    expect(isCompactionPointless(usage({ ratio: 0 }))).toBe(true);
+    expect(isCompactionPointless(usage({ ratio: 0.0999 }))).toBe(true);
+  });
+
+  it('lets the command through at the line and above it', () => {
+    expect(isCompactionPointless(usage({ ratio: 0.1 }))).toBe(false);
+    expect(isCompactionPointless(usage({ ratio: 0.5 }))).toBe(false);
+  });
+
+  it('gives no basis to refuse a session the router answered without a reading for', () => {
+    expect(isCompactionPointless(null)).toBe(false);
+    expect(isCompactionPointless(undefined)).toBe(false);
+  });
+
+  it('counts a non-finite percentage as no reading rather than as an empty context', () => {
+    expect(isCompactionPointless(usage({ ratio: Number.NaN }))).toBe(false);
   });
 });

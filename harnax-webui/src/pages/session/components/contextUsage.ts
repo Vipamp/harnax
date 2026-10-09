@@ -78,6 +78,20 @@ export function formatContextPercent(ratio: number): string {
   return `${Number(percent.toFixed(2))}%`;
 }
 
+/**
+ * Below this share of the window, the session has nothing a compaction would be worth removing. The command
+ * answers the same way, but only after a round trip — so the button asks this question of the local reading first.
+ */
+export const COMPACT_SKIP_RATIO = 0.1;
+
+/**
+ * Whether holding the command back is the honest answer. A session the router gave no reading for is not a
+ * session with an empty context, and without a reading there is nothing to refuse on.
+ */
+export function isCompactionPointless(usage?: API.ContextUsage | null): boolean {
+  return !!usage && Number.isFinite(usage.ratio) && usage.ratio < COMPACT_SKIP_RATIO;
+}
+
 /** Payload of one `/command` reply, narrowed to what the compaction branch needs. */
 export type CommandReplyLike = {
   success?: boolean;
