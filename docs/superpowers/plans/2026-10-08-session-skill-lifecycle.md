@@ -2833,8 +2833,10 @@ cd harnax-ios && swift test --scratch-path /tmp/hx-ios-final
 Expected: 全部 `BUILD SUCCESS`，0 失败。计数按这条链对，每一档都以已提交那轮的实跑数为准，别用「≥」糊过去：
 
 - harness-core **691**：进场 662 → Task 1/2/3 各抬一笔得 678 → Task 4 补强 682 → Task 5 685 → Task 6 687 → Task 7（`claim` 窗口两支）689 → 控制方自己那笔 attachIfRunning 句柄 provider 修复（`KeepAliveSandboxManagerTest` 追加的 `AttachIfRunning` 两支）691。Skipped 恒为 1。
-- harnax-admin **2432**：进场 2430 → Task 10 追加的两支单元用例（会话过滤 + 三个空谓词）抬到 2432。IT 的那支会话过滤只在 `-Pintegration-test` 下跑，不计入这个数。
-- harnax-ios **按本分支实测**：进场约 2059（1884 是别的分支的数），Task 12 的会话技能套件加 27 例；Task 12 复审把两份读改成各走各的失败后按它报告的实数写。
+- harnax-agent-service **272**：进场 269 → Task 8 的 12 支控制器用例 → fix1 补审计行捕获用例 13 支 → fix2 再补跨模块那跳的两支＝272（`SessionSkillControllerTest` 15 支）。
+- harnax-session-router **548**：进场 546 → Task 9 的 `SessionRouterServiceSessionSkillTest` 4 支，fix1 移掉一支重复＝548。
+- harnax-admin **2433**：进场 2430 → Task 10 追加的两支单元用例（会话过滤 + 三个空谓词）抬到 2432 → Step 1 第 9 项那支证伪器（先读不带 `sessionId` 的队列断两支都在，再读带过滤的断只剩一行）加一支＝2433。IT 的那支会话过滤只在 `-Pintegration-test` 下跑，不计入这个数。
+- harnax-ios **2091**（本分支实跑）：进场 2088 → Task 12 的会话技能套件净加 3 支。`swift test` 只覆盖四个 SwiftPM target，`App/` 不在内——那一份要用 HARNESS-NOTES.md 里带 `-D DEBUG` 的 `swiftc -typecheck` 单独验。
 - webui 的 jest 与逐文件 biome 各跑一遍，`npx max build` 退 0。
 
 - [ ] **Step 3: 合回 kotlin-dev（不 push）**
@@ -2846,7 +2848,18 @@ git -C /Users/heqingsong/code/my_project/harnax status --short
 git log --oneline kotlin-dev..feat/session-skill-lifecycle
 ```
 
-只有主检出的 `harnax-ios/**` 未提交集与本分支改动不重叠时才 `git checkout kotlin-dev && git merge --no-ff feat/session-skill-lifecycle`；重叠则先停下来问一句，不要替他 stash。合完 HEAD 级复验：`git log --oneline -3`、`git diff --stat HEAD~1 HEAD`，并在新 HEAD 上重跑 harness-core 门禁（工作树绿 ≠ HEAD 绿）。
+合并闸在 2026-10-09 08:38 实测已经开：kotlin-dev 在 `7834773f`（memory-approval 那支已并进去），主检出的未提交集只剩 18 个 `??` 的 `tmp-*` 脚本，与重写集零相交，跟踪文件全干净。本支自 merge-base `a3251316` 改 68 份，kotlin-dev 改 125 份，**交集 8 份**：`HarnessAgentLauncher.kt`、`ChatView.swift`、webui `locales/{en-US,zh-CN}/pages.ts` 与 `typings.d.ts`、iOS `FEATURES.md`/`FUNCTIONS.md`/`specs/02-session-chat.md`。逐份按 `-U0` 量过两侧最近改动行的间距，八份互不相交（launcher 152↔176、ChatView 99↔143、en 1359↔1385、zh 1358↔1383、typings 594↔708、FEATURES 63↔67、FUNCTIONS 741↔769、specs/02 397↔408），文本层预期是自动合并；风险因此全在语义层。
+
+形状照旧：`git checkout kotlin-dev && git merge --no-ff feat/session-skill-lifecycle`，**不 push**。若 `status --short` 又冒出跟踪文件的改动，就是闸重新落下——停下来问一句，不替他 stash、不替他 commit。
+
+合完做 HEAD 级复验（工作树绿 ≠ HEAD 绿），四条都要在新 HEAD 上跑，不是在这条分支上跑：
+
+1. `git log --oneline -3`、`git diff --stat HEAD~1 HEAD` 看合并提交真的带上了本支全部改动。
+2. Maven 四档重跑（同 Step 2 那条 `-am` 链），计数不变才算并得干净。
+3. `swift build --build-tests` ＋ `swift test` 仍 2091，外加带 `-D DEBUG` 的那条 `App/` 类型检查——两侧都往对话页标题栏加了东西，只有编一次才知道合得起来。
+4. webui `npx max build` ＋ 逐文件 biome ＋ jest 各一遍：`pages.ts` 与 `typings.d.ts` 是两侧各自往同一个声明块里追加的，合完必须重新量一次产物。
+
+**第 4 条之外还有一条只有合完才暴露的文档洞**：kotlin-dev 那侧把 `ChatView.swift` 的标题栏面板从 `Menu` 换成 `popover`，为此起头就多了一枚状态——在第 18 行之后插 3 行（`@State private var showsContextUsagePanel` 连同它上面两行注释）。本支没碰过的那几处 `ChatView.swift:` 锚点因此整体往下错 3 行：`specs/02-session-chat.md:100` 的 `:81-89`、`:399` 的 `:115`、`:549` 的 `:72-78`／`:18-31`／`:70`／`:287`。DESIGN §13 的锚点脚本只判「文件存在＋行号不越界」，这种平移它测不出来，必须按合并后的 `ChatView.swift` 逐条回找构造所在行再改号，改完重跑脚本才算 `unresolved 0` 有意义。
 
 - [ ] **Step 4: 真栈验收（需要用户在部署环境上点）**
 
