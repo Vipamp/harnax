@@ -44,7 +44,7 @@ AgentScope harness 里没有单一的「self-improving」开关，它是三条�
 6. **「本会话即时可用」是一档独立状态，既不等于审核通过也不撤销它**。会话里那一按是**人工确认**（不是模型自己写完就生效），审核批准是**另一次人工确认**，两者由不同的人、审不同的爆炸半径，谁也不按住谁：会话里用了不代表批准过，批准后这个会话也不再依赖会话内那份（会话结束即随容器与快照一起销毁）。会话内用的是**确认那一刻的快照**——复制进 `session-enabled/` 之后 `_drafts/` 再改，本会话读到的仍是那一刻那份；审核看的始终是 `_drafts/` 的最新那份，批准落地写进技能表的是**审后正文**。
 7. **同名时交付那份压住会话那份**。会话可用区挂在装配的技能仓库列表里、名次排在 admin 下发那份之后，因此 30 分钟装配快照过期后，同名技能由 DB 那份提供，本会话下一轮起用的就是审后正文。两个例外让会话内那份继续生效到容器销毁：审核把名字改了（rename 到别的 `targetName`），或这条技能压根没绑给这个 agent。
 
-**一条前提：这一整套长在沙箱上。** 草稿的答后上报经容器句柄读盘（拿活句柄读 `_drafts/`，不依赖 agent 实例还活着），会话内启用同样是往那个容器里复制文件，所以 `SANDBOX_ENABLED` 关掉时提名与启用这条特性不工作——队列不会收到任何东西。裸配置缺省即关（`harnax-agent/harnax-agent-service/src/main/resources/application.yml:98` `${SANDBOX_ENABLED:false}`），标准部署显式开启（`harnax-deploy/docker-compose.yml:504` `SANDBOX_ENABLED: "true"`）。给自写了技能却关了沙箱的 agent 装配时会打一条 warn 说明队列不会收到东西，只响亮，不改行为。
+**一条前提：这一整套长在沙箱上。** 草稿的答后上报经容器句柄读盘（拿活句柄读 `_drafts/`，不依赖 agent 实例还活着），会话内启用同样是往那个容器里复制文件，所以 `SANDBOX_ENABLED` 关掉时提名与启用这条特性不工作——队列不会收到任何东西。裸配置缺省即关（`harnax-agent/harnax-agent-service/src/main/resources/application.yml:98` `${SANDBOX_ENABLED:false}`），标准部署显式开启（`harnax-deploy/docker-compose.yml:499` `SANDBOX_ENABLED: "true"`）。给自写了技能却关了沙箱的 agent 装配时会打一条 warn 说明队列不会收到东西，只响亮，不改行为。
 
 ## 3. 数据模型
 

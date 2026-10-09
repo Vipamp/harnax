@@ -363,13 +363,13 @@ print('all', len(all_t), 'with-dir', len(q), 'bare', len(all_t) - len(q),
 
 - 队列口没有 `/page` 后缀（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/SkillDraftController.kt:50`），与本 app 其余分页列表（`/api/admin/skills/page` 等）形状不同，照抄必错。
 - 队列的过滤参数是 `status` / `name` / `sessionId` 三个（`SkillDraftController.kt:55`-`:72`），**按会话筛是服务端能力**，不是界面自己兜的：`sessionId` 是一条 SQL 谓词而不是取回后再筛，因为 PageHelper 数的是它交回来的行，筛在分页之后就会报出与页不符的 total。会话列表顶部入口行上那枚计数仍取「本租户待审总数」——那行给的是整条审核链的导航，不分会话；真正带 `sessionId` 的读是对话页那块本会话技能列表（3.17）：一路按会话取提名（`GET /api/admin/skill-drafts?status=PENDING&sessionId=`），一路取本会话已启用的目录（`GET /api/router/agent/session-skills/{sessionId}`，出现即启用，应答不带开关）。webui 的会话抽屉读同两条（`harnax-webui/src/pages/session/components/SessionSkillsDrawer.tsx`），合并规则两端各写一份但判据同源；iOS 这一份把两路读各做成独立失败——一路挂了只丢它那半，另一路答上来的行照常可点，只有两路都没答才说读不出来。
-- 拒绝有三条通道，界面处置完全相反：① 谁都动不了的走错误信封（未知草稿、`status` 传了不认识的值、批准不带 `expectedDigest`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/SkillDraftServiceImpl.kt:274`-`:276`）、驳回不带理由或理由超长（`:370`-`:374`））；② 界面必须据以再动作的随 HTTP 200 + `code:200` 回来，判据是 `data.outcome` 而不是状态码（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/SkillDraftDecisionResponse.kt:20`、`:51`-`:65`）；③ 晋升名被抢是唯一的例外——HTTP 仍 200，信封 `code` 是 409（`SkillDraftController.kt:115`-`:117`），界面要按 code 分这一支。
-- `EXPIRED` 在列定义里存在但没有任何代码写入，`STATUSES` 不含它（`SkillDraftServiceImpl.kt:578`，校验在 `:218`-`:219`），按它筛会被拒——筛选项因此只有三档，iOS 不加第四档。
+- 拒绝有三条通道，界面处置完全相反：① 谁都动不了的走错误信封（未知草稿、`status` 传了不认识的值、批准不带 `expectedDigest`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/SkillDraftServiceImpl.kt:297`-`:300`）、驳回不带理由或理由超长（`:393`-`:396`））；② 界面必须据以再动作的随 HTTP 200 + `code:200` 回来，判据是 `data.outcome` 而不是状态码（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/SkillDraftDecisionResponse.kt:20`、`:51`-`:65`）；③ 晋升名被抢是唯一的例外——HTTP 仍 200，信封 `code` 是 409（`SkillDraftController.kt:120`-`:122`），界面要按 code 分这一支。
+- `EXPIRED` 在列定义里存在但没有任何代码写入，`STATUSES` 不含它（`SkillDraftServiceImpl.kt:601`，校验在 `:219`-`:220`），按它筛会被拒——筛选项因此只有三档，iOS 不加第四档。
 - 两份扫描永远不合并：`localFindings` 是 harnax 对落库字节现算的，非空即意味着批准技能会存成禁用（界面判据是 `skillStatus` 严格 `== 1`）；`scanFindings` / `scanVerdict` 是沙箱上报的，只展示，永远不会因此把技能存成禁用。
 - 批准必须原样回传当前 `contentDigest`，每次重读都刷新；六条 outcome 里只有 `NAME_TAKEN` 不触发重读（它要的是冲突框，重读会盖掉用户正要做的选择）。
 - 决策落库是一条带 `status = 'PENDING'` 守卫的条件更新（`harnax-entity/src/main/resources/mapper/SkillDraftMapper.xml:65`-`:72`），第二个审核人拿到 0 而不是覆盖，界面因此显示「已被审核」；同一语句把 `reject_reason` 一并重写，批准时传 null（`SkillDraftServiceImpl.kt:299`），所以已批准的草稿上不会再挂着上一轮的驳回理由。
-- 长度上限按 UTF-16 码元计：驳回理由 512（`MAX_REJECT_REASON_CHARS`，`SkillDraftServiceImpl.kt:588`）、改名 100。Swift 的 `String.count` 是字素簇数，emoji 在前者算 2、在后者算 1，iOS 镜像判据一律用 `utf16.count`。
-- 服务端把 `pageSize` 夹在 1..1000（`SkillDraftServiceImpl.kt:591`），iOS 队列取 20，与 webui 一致。
+- 长度上限按 UTF-16 码元计：驳回理由 512（`MAX_REJECT_REASON_CHARS`，`SkillDraftServiceImpl.kt:611`）、改名 100。Swift 的 `String.count` 是字素簇数，emoji 在前者算 2、在后者算 1，iOS 镜像判据一律用 `utf16.count`。
+- 服务端把 `pageSize` 夹在 1..1000（`SkillDraftServiceImpl.kt:614`），iOS 队列取 20，与 webui 一致。
 - iOS 侧的导航形状有闸门：入口行挂在会话列表内容相态之外（缺装配即整行撤掉，计数读失败只隐藏数字），队列页与审核详情两级都是 value push；「状态呈现的屏不许再往里 push」由 `Tests/HarnaxFeaturesTests/SkillNavigationTests.swift:186` 钉住。逐字段规格见 `specs/07-skill-draft-review.md`。
 
 ### 13.8 跨页面的字段级硬约定

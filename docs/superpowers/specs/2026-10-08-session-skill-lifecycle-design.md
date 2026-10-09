@@ -21,7 +21,7 @@
 | D2 | 可用区是一棵**新目录** `harnax-skill-staging/session-enabled/`，不复用上游的 `promoted/` | harnax 调了 `disableDefaultWorkspaceSkills()`（`.../HarnessAgentBuilder.kt:261`），`HarnessAgent:2803-2807` 于是在找不到只读 `WorkspaceSkillRepository` 时新建一枚 writable 的并 **append 到列表尾 = 最高优先级**；内容放 `promoted/` 必然压过运维交付的技能，撞 `HarnessAgentBuilder.kt:258-260` 立的不变量 |
 | D3 | 可用区仓库挂在 Layer 2 的 `InMemorySkillRepository` **之前**，同名时交付技能胜 | `HarnessAgentBuilderSupport.composeSkillRepositories:877-916` 按加入顺序排，`HarnessSkillMiddleware.mergeRepositories:349-357` 后者胜；`builder.skillRepository(...)` 落在 Layer 2 |
 | D4 | 启用是**复制**，`_drafts/<name>/` 原样留着 | 「留在草稿目录，直到会话结束」逐字成立；且启用即快照 —— 会话里用的是确认那一刻的那份，审核看的是 `_drafts` 的最新那份 |
-| D5 | 启用不走上游 `promoteSkill`/`SkillPromotionGate` | 那条链唯一出口是 gate 判 `Approve`，而 `AdminBackedPromotionGate` 按一期裁定永不 Approve（`.../AdminBackedPromotionGate.kt:86-90` 只有 Queued/Unavailable 两支）。会话内可用 ≠ 审核通过，reviewer 与爆炸半径都不同 |
+| D5 | 启用不走上游 `promoteSkill`/`SkillPromotionGate` | 那条链唯一出口是 gate 判 `Approve`，而 `AdminBackedPromotionGate` 按一期裁定永不 Approve（`.../AdminBackedPromotionGate.kt:85-100` 三支 `when` 分别是 Queued/Refused/Unavailable，没有 Approve 支）。会话内可用 ≠ 审核通过，reviewer 与爆炸半径都不同 |
 | D6 | 上报这一跳改为「容器句柄读盘 + 上游扫描器 + Admin intake」直连，不再借 `promoteSkill` 走 gate | 答完之后没有 call 上下文，`promoteSkill` 里两处读盘（`SkillPromoter:96-107` 载草稿、gate 的 `files.read`，`.../AdminBackedPromotionGate.kt:68`）都要绑定的沙箱。句柄通道在本仓已被验证可用：`HarnessAgentWrapper.kt:1057` 就在 call 外用 `KeepAliveSandboxManager.getSandbox(sessionId)` 读文件 |
 | D7 | 会话隔离**不是新加的规则**，是容器边界 | 容器 `agentscope-sandbox-<sessionId>`（`.../sandbox/KeepAliveSandboxManager.kt:328`）、`.skills-cache` 作用域 `IsolationScope.SESSION`（`.../config/SandboxConfig.kt:37`）、快照键 `snapshotSpec.build(sessionId)`（`KeepAliveSandboxManager.kt:254`）。A 会话启用什么，B 会话看不见，也不需要谁去撤销 |
 | D8 | 批准后不通知运行侧、不自动绑回提议它的 agent | 2026-10-08 拍板。收敛由 D3 的名次自动完成（见 §6） |
@@ -43,27 +43,27 @@
 ## 3. 装载：可用区进入技能目录册
 
 - 新常量 `SkillDraftStaging.SESSION_ENABLED_DIR = "harnax-skill-staging/session-enabled"`，并纳入 `SkillDraftStaging.kt:93-108` 那条与 `SandboxSkillProjector.SKILLS_DIR` 不重叠的启动期断言。
-- 新类 `SessionEnabledSkillRepository`（harnax 自有，实现 `RuntimeContextSkillRepository`）。`HarnessSkillMiddleware:355-357` 对这类仓库调 `getAllSkills(ctx)`，它把 ctx 交回 `SessionSkillStore.withinCall(ctx)`（§4）读盘，因此落在绑定了沙箱的 call 内。SKILL.md 用上游 `SkillUtil` 解析，和 `WorkspaceSkillRepository` 同一条发现规则（glob `SKILL.md`，只在注册时读正文，资源按需取）。
+- 新类 `SessionEnabledSkillRepository`（harnax 自有，实现 `RuntimeContextSkillRepository`）。`HarnessSkillMiddleware:355-357` 对这类仓库调 `getAllSkills(ctx)`，它用手上的 `WorkspaceDraftFilesReader`（`bindFilesystem()` 在 `build()` 之后装入，与 `SkillDraftStaging.bind()` 同一个晚绑定顺序）带着 ctx 读盘，因此落在绑定了沙箱的 call 内。SKILL.md 用上游 `SkillUtil` 解析，和 `WorkspaceSkillRepository` 同一条发现规则（glob `SKILL.md`，只在注册时读正文，资源按需取）。
 - 在 `HarnessAgentBuilder.kt:261-263` 的 skills 段之前，仅当 selfWrite 装配（`skillStaging != null`）时 `builder.skillRepository(sessionEnabledRepo)`。Layer 2 顺序 `[sessionEnabled, inMemory]`。
 - 可见时机：目录册每次 call 重算（`HarnessSkillMiddleware:322`，harnax 未设 `disableDynamicSkills`，走 `HarnessAgent:2909-2916` 的非 frozen 分支），无缓存。所以「启用后下一轮就能用」这一条腿**一行重开沙箱的代码都不需要** —— 它读盘发生在 call 内。
 - `SkillDraftStaging` 的晚绑定形状不变：`bind()` 之前读为空（`SkillDraftStaging.kt:44-53`），装配期拿不到 `AbstractFilesystem`（`HarnessAgent:2442-2447` 在 `build()` 内部才解析出来），这是它存在的理由。
 
 ## 4. 启用：一条 call 外的动作
 
-`SessionSkillStore`（新）是容器文件的唯一出入口，两个入口：
+`SessionSkillStore`（新）是容器文件的唯一出入口，句柄只有一条取法：
 
-- `forSession(sessionId)`：`KeepAliveSandboxManager.getSandbox(sessionId)` 拿活句柄，供**启用**与**上报**用（都在 call 外）。不依赖 wrapper 还活着，所以 30 分钟 TTL 过期或 agent-service 重启后仍能启用。
-- `withinCall(ctx)`：走 agent 绑定的工作区文件系统，供 §3 的目录册读。它与 `SkillDraftStaging` 同一条晚绑定 —— 装配期拿不到 `AbstractFilesystem`，`bind()` 之后才有（`SkillDraftStaging.kt:44-53` 立的同一个顺序）。
+- `filesystemFor(sessionId)`：`SandboxHandleProvider.handle(sessionId)` 现取一次活句柄，供**启用**与**上报**用（都在 call 外）。不依赖 wrapper 还活着，所以 30 分钟 TTL 过期或 agent-service 重启后仍能启用；句柄不在就是 `NoSandbox`，不猜也不重建。`enable` 里把这一句柄解一次并从头用到尾，中途不再重解。
+- call 内的目录册读**不**走这条入口：`SessionEnabledSkillRepository` 用 `bindFilesystem()` 装入的工作区文件系统读盘（§3），它与 `SkillDraftStaging` 同一条晚绑定 —— 装配期拿不到 `AbstractFilesystem`，`bind()` 之后才有（`SkillDraftStaging.kt:44-53` 立的同一个顺序）。
 
 `enableInSession(sessionId, name, actor)` 三步：
 
-1. 读 `_drafts/<name>/` 的 `SKILL.md` 与四个支持目录（沿用 `WorkspaceDraftFilesReader.kt:55-103` 的同一套 glob 语义：`scripts`/`references`/`templates`/`assets`，只取一层 `<name>/SKILL.md`）。源不在就回「已启用或已不在」，不建第二份。
+1. 读 `_drafts/<name>/` 的 `SKILL.md` 与四个支持目录（沿用 `SkillDraftFilesReader.kt:58-130` 的同一套 glob 语义：`scripts`/`references`/`templates`/`assets`，只取一层 `<name>/SKILL.md`）。源不在就回「已启用或已不在」，不建第二份。
 2. 复跑 `SkillSecurityScanner.scan(name, md, resources)`，`shouldAllow(AGENT_CREATED, verdict)` 为假即拒，并把 verdict + findings 回给调用方（`SkillPromoter:102-113` 同一判据，人确认时看的就是它）。
 3. 整棵**复制**进 `session-enabled/<name>/`，已存在则覆盖 = 「重新启用一次，拿最新快照」。覆盖前判一次条目数，超过 10 条拒（D9）。
 
 ## 5. 上报：把答完之后那一跳接上（D6）
 
-`SkillDraftSubmitMiddleware` 改为：`onAgent` 答完 → 有界弹性线程上 `SessionSkillStore.forSession(sessionId)` 列 `_drafts` → 逐条读正文与支持文件 → `SkillSecurityScanner.scan` → `SkillDraftAdaptor.submit(SkillDraftProposal)` → 记 `claim` 窗口（`SkillDraftSubmitMiddleware.kt:98-110` 逻辑不变）。
+`SkillDraftSubmitMiddleware` 改为：`onAgent` 答完 → 有界弹性线程上 `SessionSkillStore.listDraftNames(sessionId)` 列 `_drafts` → 逐条读正文与支持文件 → `SkillSecurityScanner.scan` → `SkillDraftAdaptor.submit(SkillDraftProposal)` → 记 `claim` 窗口（`SkillDraftSubmitMiddleware.kt:98-110` 逻辑不变）。
 
 - 容器不在（被回收、从未起过）：warn 一条并跳过本轮，与现在的读失败姿态一致 —— 扫描失败说不了任何话，下一轮还会问一遍。
 - `AdminBackedPromotionGate` **保留**并继续挂在 gate 位上：上游自己触发 promote 时仍然只入队不晋升，它是兜底而不是主路径。
@@ -80,22 +80,22 @@
 
 - `GET /api/admin/skill-drafts` 增 `sessionId` 过滤：`SkillDraftController.kt:55-79` 加一个可选参数，`SkillDraftMapper.xml` 加 `<if>`，租户谓词不动。会话页用它取「本会话的待启用提名」。
 - agent-service 两条会话级端点，与 `SandboxWorkspaceController` 同一鉴权形状（`/api/agent/**` internal-only，经 session-router 代理，`SandboxWorkspaceController.kt:22-25`；会话级句柄解析用同一族的 `resolveSandbox(sessionId)`，`:99`）：
-  - `GET  /api/agent/session-skills/{sessionId}` → `[{name, description, verdict, findings, enabledAt}]`，读 `session-enabled/`；`enabledAt` 取目录 mtime，容器不在回空数组。
-  - `POST /api/agent/session-skills/{sessionId}/{name}/enable` → `{ok, verdict, findings, count}`；三类拒因（源不在 / 扫描拒 / 超上限）各带原因。
+  - `GET  /api/agent/session-skills/{sessionId}` → `[{name, description, enabledAt}]`（`SessionSkillController.kt:93` 的 `SessionSkillView`），读 `session-enabled/`；`enabledAt` 取目录 mtime，容器不在回空数组。收窄到三键的理由：目录里没有读者要 verdict/findings —— webui 抽屉与 iOS 面板都只搬 `enabledAt` —— 名字出现在这份目录里本身就是「已启用」，所以应答也不带开关；扫描结论走 enable 那条应答与审计日志，人确认时看的是队列行。
+  - `POST /api/agent/session-skills/{sessionId}/{name}/enable` → `{ok, name, verdict, findings, count}`；三类拒因（源不在 / 扫描拒 / 超上限）各带原因。
 - 两端经 `harnax-session-router` 的 `AgentProxyController`（`@RequestMapping("/api/router/agent")`，`:28`）暴露给公网，浏览器与 iOS 只走这一条链，`/api/agent/**` 本身不给它们开路由：
   - `GET  /api/router/agent/session-skills/{sessionId}`、`POST /api/router/agent/session-skills/{sessionId}/{name}/enable`，各对应 `SessionRouterService` 一个 `proxy*` 方法 + `AgentServiceClient` 一次转发，与 `/workspace/{sessionId}/files`（`AgentProxyController.kt:198-207` → `SessionRouterService.kt:411-421` → `agentServiceClient.workspaceListFiles`）同一条形状。
   - 归属与租户判据不在新代码里重做：三个只读代理都经 `boundInstance(sessionId)`（`SessionRouterService.kt:509-521`），它第一行就是 `sessionAccessGuard.requireAccessible(sessionId)`，新端点从这条链继承。会话未绑定实例时按只读代理的既有姿态回空，不 reroute 到别的实例（`:500-507` 注释立的理由：别人的箱子里没有这份文件）。
 
 ## 8. 界面
 
-- webui 会话页一块「本会话自写技能」：左列本会话 PENDING 提名（Admin），每行一枚「在本会话启用」；右列已启用（agent-service）。i18n 中英文各一份 key。
-- iOS 会话页同一块，`Menu`/列表形状跟随既有会话页规范；「启用」按钮的拒因走 toast，与 iOS 现有草稿队列页的文案口径一致。
+- webui 会话页一块「本会话自写技能」抽屉（`harnax-webui/src/pages/session/components/SessionSkillsDrawer.tsx`）：两路读（Admin 的本会话 PENDING 提名 + agent-service 的本会话已启用目录）合成**一张列表**，每行一枚「在本会话启用」，已启用的行灰显并带上启用时间；启用被拒走 antd 的 message toast，按 `code` 分拒因。i18n 中英文各一份 key。
+- iOS 会话页同一块是一张独立屏（`harnax-ios/Sources/HarnaxFeatures/Chat/SessionSkillsSheet.swift`）：行形跟随会话页既有 `HXRow` 规范，拒因不弹 toast，而是渲染在行列表**下方**的一段说明——那句话点名的是某一行的技能，读者要还能看着那行。
 - 会话内启用与「批准」在界面上必须用不同词：一个是本会话可用，一个是平台技能。
 
 ## 9. 边界与失败形状
 
 - 启用要求该会话容器活着。答完之后就再也不回的会话，容器被 reaper 收走，可用区随之消失 —— 这是 D7 的另一面，不做补偿。
-- `_drafts` 里同名重复目录：upstream 的 delete 是移进 `.archive/<name>-<ts>/`，`listDraftSkillNames` 只认一层，所以归档不会被当草稿（`WorkspaceDraftFilesReader.kt:44-53` 注释立的正是这条）。
+- `_drafts` 里同名重复目录：upstream 的 delete 是移进 `.archive/<name>-<ts>/`，`listDraftSkillNames` 只认一层，所以归档不会被当草稿（`SkillDraftFilesReader.kt:47-57` 注释立的正是这条）。
 - 一个会话同时是团队主管会话时可用区同样存在（主管沙箱归属是另一个域的记账，本设计不扩到那里）。
 - 启用后的技能不进 `skill_usage` 埋点：那条链按 Admin 的 skill id 计，会话提名没有 id。
 
