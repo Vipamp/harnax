@@ -47,7 +47,7 @@ data class SkillDraftProposal(
  * draft at all, while a draft refused for its content must never be offered to the model again as "pending".
  */
 sealed interface SkillDraftIntake {
-    /** Accepted; [draftId] is the queue row a reviewer will open. */
+    /** Accepted; [draftId] is the queue row this proposal maps to, whether the queue filed it or already held it. */
     data class Queued(val draftId: Long) : SkillDraftIntake
 
     /** Accepted by the transport and rejected by the product — retrying sends the same refusal. */

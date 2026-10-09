@@ -63,6 +63,8 @@ class SkillDraftFlowIT : BaseAdminIT() {
     private var sessionRowId = -1L
     private var siblingSessionUuid = ""
     private var siblingSessionRowId = -1L
+    private var thirdSessionUuid = ""
+    private var thirdSessionRowId = -1L
     private var cleanDraftId = -1L
     private var cleanSkillId = -1L
     private var cleanDigest = ""
@@ -99,6 +101,22 @@ class SkillDraftFlowIT : BaseAdminIT() {
         return siblingSessionUuid
     }
 
+    /** A third conversation of the same tenant, so an identical proposal can arrive from somewhere else. */
+    private fun ensureThirdSession(): String {
+        if (thirdSessionUuid.isNotEmpty()) return thirdSessionUuid
+        val agent = findInPage("/api/admin/agents/page", "name=it_draft_agent_$suffix") {
+            it["name"]?.asText() == "it_draft_agent_$suffix"
+        }
+        assertNotNull(agent, "the first session's agent has to still be here")
+        val title = "it_draft_session_third_$suffix"
+        assertOk(postJson("/api/admin/sessions", mapOf("title" to title, "agentId" to agent!!["id"].asLong())))
+        val session = findInPage("/api/admin/sessions/page", "keyword=$title") { it["title"]?.asText() == title }
+        assertNotNull(session, "prerequisite third session should exist")
+        thirdSessionUuid = session!!["sessionId"].asText()
+        thirdSessionRowId = session["id"].asLong()
+        return thirdSessionUuid
+    }
+
     /**
      * The body the harness posts to the intake endpoint, in the shape `AdminApiClient` serialises.
      *
@@ -132,6 +150,9 @@ class SkillDraftFlowIT : BaseAdminIT() {
     private fun digestOf(id: Long): String = detail(id)["contentDigest"].asText()
 
     private fun queueRow(name: String): JsonNode? = findInPage("/api/admin/skill-drafts", "name=$name") { it["name"].asText() == name }
+
+    /** How many rows this name has in the open queue right now, counted off the reviewer's own read. */
+    private fun openRows(name: String): List<JsonNode> = records("name=$name&pageSize=100").filter { it["name"].asText() == name }
 
     private fun records(query: String): List<JsonNode> = assertOk(getJson("/api/admin/skill-drafts?$query"))["records"].toList()
 
@@ -514,6 +535,58 @@ class SkillDraftFlowIT : BaseAdminIT() {
 
     @Test
     @Order(12)
+    fun `a turn that re-files a draft it did not change leaves the queue alone`() {
+        val name = "it_draft_reoffer_$suffix"
+        val body = "# $name\n\nWritten once, offered again on every following turn.\n"
+
+        val first = submit(name, body)["data"].asLong()
+        val stampedAt = queueRow(name)!!["updateTime"].asText()
+        // The next turn edited a sibling, and its offer carries this draft along untouched.
+        val again = submit(name, body)["data"].asLong()
+
+        assertEquals(first, again, "an unchanged re-offer answers the row the reviewer already has, got $again")
+        assertEquals(1, openRows(name).size, "one skill stays one open row: ${openRows(name)}")
+        assertEquals(
+            stampedAt,
+            queueRow(name)!!["updateTime"].asText(),
+            "the queue sorts on this column, so re-stamping it is the sibling jumping back in front of the reviewer",
+        )
+        assertEquals(
+            listOf("PROPOSE"),
+            detail(first)["history"].map { it["action"].asText() },
+            "and the trail says it was proposed once",
+        )
+
+        // A reviewer decides it. The session keeps chatting, and the draft is still in its staging directory.
+        assertOk(postJson("/api/admin/skill-drafts/$first/reject", mapOf("reason" to "not now")))
+        val afterDecision = submit(name, body)["data"].asLong()
+
+        assertEquals(first, afterDecision, "a decided proposal is not pulled back for a second review unchanged")
+        assertEquals(0, openRows(name).size, "and the open queue stays without it: ${openRows(name)}")
+
+        // One byte different is a different proposal, and the reviewer has to be told about it.
+        val rewritten = submit(name, "# $name\n\nRewritten after the rejection.\n")["data"].asLong()
+        assertTrue(rewritten != first, "a real revision gets a row of its own, got $rewritten")
+        assertEquals(1, openRows(name).size, "and exactly one: ${openRows(name)}")
+
+        // The comparison is against what this conversation filed. A second conversation proposing the same
+        // bytes has a reviewer who has never seen them, so dropping the conversation from the identity would
+        // silently swallow its proposal here.
+        assertOk(postJson("/api/admin/skill-drafts/$rewritten/reject", mapOf("reason" to "still not now")))
+        val fromAnother = submit(name, "# $name\n\nRewritten after the rejection.\n", sessionId = ensureThirdSession())["data"].asLong()
+        assertTrue(fromAnother != rewritten, "another conversation's identical proposal is its own row, got $fromAnother")
+        assertEquals(
+            listOf(thirdSessionUuid),
+            openRows(name).map { it["sourceSessionId"].asText() },
+            "and the open row names the conversation that proposed it: ${openRows(name)}",
+        )
+
+        // The session a test creates is the test's to remove; the primary one stays for the case after this.
+        assertOk(deleteJson("/api/admin/sessions/$thirdSessionRowId"))
+    }
+
+    @Test
+    @Order(13)
     fun `clearing the proposing session takes neither the approval nor the record of it`() {
         // Invariant 3, as a test rather than as a review note: a decision can land days after the run that
         // proposed it, and that run's cleanup is not a review action. The draft, the skill it became, the

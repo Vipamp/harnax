@@ -84,7 +84,7 @@ class AdminBackedPromotionGate(
         }
         return when (intake) {
             is SkillDraftIntake.Queued -> {
-                log.info("Draft skill {} is queued for review as draft {}", name, intake.draftId)
+                log.info("Draft skill {} is held by the review queue as draft {}", name, intake.draftId)
                 Defer(retryAfter, "queued for human review as draft ${intake.draftId}")
             }
 

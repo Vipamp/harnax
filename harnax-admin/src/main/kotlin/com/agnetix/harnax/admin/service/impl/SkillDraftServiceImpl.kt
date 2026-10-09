@@ -100,6 +100,24 @@ class SkillDraftServiceImpl(
             agentId = owner.agentId.takeIf { it > 0L }
         }
 
+        // A turn-end scan offers everything its session has staged, so an untouched draft comes back on every
+        // following turn. Answering with the row the reviewer already has is the only way to tell that re-offer
+        // from a revision: the proposal itself carries no version, and the client's cooldown is per agent
+        // instance, so it resets with the assembly cache that holds it.
+        val unchanged = skillDraftMapper
+            .selectLatestByTenantNameAndSession(owner.tenantId, name, sessionId)
+            ?.takeIf { SkillDraftCodec.contentDigest(it) == SkillDraftCodec.contentDigest(draft) }
+        if (unchanged != null) {
+            log.info(
+                "Skill draft {} for tenant {} from session {} repeats draft {}, leaving the queue untouched",
+                name,
+                owner.tenantId,
+                sessionId,
+                unchanged.id,
+            )
+            return unchanged.id
+        }
+
         val open = skillDraftMapper.selectPendingByTenantAndName(owner.tenantId, name)
         val patched = if (open != null) {
             draft.id = open.id

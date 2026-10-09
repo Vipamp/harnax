@@ -7,9 +7,9 @@ import org.apache.ibatis.annotations.Param
 /**
  * The review queue of agent-proposed skills.
  *
- * [selectDraftList] is the one read that carries a tenant predicate, because it is the queue screen: it
- * has no row id to check first. The id-based reads and both writes match on the primary key alone, which
- * is safe for the same reason `SkillMapper` gives for itself — the service that calls them has already
+ * [selectDraftList] is the queue screen, so the reads that have no row id to check first — it and the two
+ * by-name reads — carry a tenant predicate. The id-based reads and both writes match on the primary key alone,
+ * which is safe for the same reason `SkillMapper` gives for itself — the service that calls them has already
  * resolved the row and run it through the tenant check that owns it, and a second filter in SQL could only
  * disagree with the first.
  */
@@ -30,6 +30,20 @@ interface SkillDraftMapper {
     fun selectPendingByTenantAndName(
         @Param("tenantId") tenantId: Long,
         @Param("name") name: String,
+    ): SkillDraft?
+
+    /**
+     * The newest draft this conversation filed under [name], decided or not.
+     *
+     * The intake compares a proposal against this row to tell a revision from a re-offer of bytes it already
+     * holds: an agent's turn-end scan offers everything its session has staged, so a draft nobody touched comes
+     * back on every following turn. Keyed on the conversation as well as the name, because another
+     * conversation's identical proposal has never been shown to this one's reviewer.
+     */
+    fun selectLatestByTenantNameAndSession(
+        @Param("tenantId") tenantId: Long,
+        @Param("name") name: String,
+        @Param("sourceSessionId") sourceSessionId: String,
     ): SkillDraft?
 
     /**

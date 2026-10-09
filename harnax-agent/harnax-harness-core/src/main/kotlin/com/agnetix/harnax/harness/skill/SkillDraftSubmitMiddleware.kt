@@ -34,10 +34,10 @@ import java.util.function.Function
  * It is best-effort in every direction: a draft that cannot be offered this turn is still in the listing and is
  * offered again once its slot opens, so nothing here may surface as a failure to the model or to the user.
  *
- * One offer per draft per [cooldownMillis]. A draft stays in the listing after a reviewer decides it — only the
- * end of the session cleans it — and Admin merges a resubmission into the row it holds only while that row is
- * still pending, so an unthrottled offer would turn one rejected skill into a fresh queue row with a fresh
- * review-log entry on every following turn, and would put an approved one back in front of the reviewer.
+ * One offer per draft per [cooldownMillis]. A staged draft stays in the listing until the session ends, so every
+ * following turn would otherwise re-read, re-scan and re-post the whole staged set. Keeping the queue clean is
+ * not this throttle's job: Admin answers a proposal carrying bytes it already holds with the row a reviewer has
+ * seen, touching neither that row nor its trail.
  */
 class SkillDraftSubmitMiddleware(
     private val sessionId: String,
@@ -135,7 +135,7 @@ class SkillDraftSubmitMiddleware(
         }
         when (intake) {
             is SkillDraftIntake.Queued -> log.info(
-                "Draft skill {} of session {} is queued for review as draft {}",
+                "Draft skill {} of session {} is held by the review queue as draft {}",
                 name,
                 sessionId,
                 intake.draftId,

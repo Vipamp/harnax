@@ -43,6 +43,14 @@
         LIMIT 1
     </select>
 
+    <!-- selectLatestByTenantNameAndSession: what this conversation last filed under this name, decided or not -->
+    <select id="selectLatestByTenantNameAndSession" resultMap="SkillDraftResultMap">
+        SELECT * FROM skill_draft
+        WHERE tenant_id = #{tenantId} AND name = #{name} AND source_session_id = #{sourceSessionId}
+        ORDER BY update_time DESC, id DESC
+        LIMIT 1
+    </select>
+
     <!--
         updateContent: every column a proposal carries is reassigned, because the gate submits the whole
         candidate each time and leaving a stale script preview beside a new body would show a reviewer a

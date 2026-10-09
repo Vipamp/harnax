@@ -38,6 +38,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.Mock
 import org.mockito.Mockito.never
+import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
@@ -342,6 +343,76 @@ class SkillDraftServiceImplTest {
             tenantId = eq(TENANT),
             actor = eq(SkillReviewLog.ACTOR_AGENT),
         )
+    }
+
+    /** The queue's generated keys counting up, so a second row cannot answer with the first row's id. */
+    private fun countingKeys() {
+        var issued = NEW_ID
+        `when`(skillDraftMapper.insert(any())).thenAnswer { invocation ->
+            invocation.getArgument<SkillDraft>(0).id = issued
+            issued += 1
+            1
+        }
+    }
+
+    /**
+     * The turn-end offer walks everything the session has staged, so a draft nobody touched is offered again on
+     * every following turn with the same bytes. Nothing in that offer says "unchanged", so the queue has to
+     * compare it against what it already holds from this conversation: two writes are withheld — the fresh row a
+     * decided name would otherwise become, and the re-stamp that moves an open one back to the top of the list.
+     */
+    @Test
+    @DisplayName("a re-offer of bytes the queue already holds files nothing and re-stamps nothing")
+    fun `an unchanged re-offer is not a new proposal`() {
+        stubWebSession()
+        countingKeys()
+
+        val first = submit()
+        val stored = capturedInsert()
+        `when`(skillDraftMapper.selectLatestByTenantNameAndSession(TENANT, "invoice-fill", WEB_SESSION)).thenReturn(stored)
+
+        val second = submit()
+
+        assertEquals(first, second, "the answer names the row the reviewer already has, got $second")
+        verify(skillDraftMapper, times(1)).insert(any())
+        verify(skillDraftMapper, never()).updateContent(any())
+        verify(skillReviewRecorder, times(1)).recordDraft(any(), any(), anyOrNull(), anyOrNull(), anyOrNull())
+    }
+
+    @Test
+    @DisplayName("a draft a reviewer has decided cannot be pulled back to the queue by an unchanged re-offer")
+    fun `a decided draft is not resurrected`() {
+        stubWebSession()
+        countingKeys()
+
+        val first = submit()
+        val decided = capturedInsert().apply {
+            status = SkillDraft.STATUS_APPROVED
+            reviewedBy = REVIEWER
+        }
+        `when`(skillDraftMapper.selectLatestByTenantNameAndSession(TENANT, "invoice-fill", WEB_SESSION)).thenReturn(decided)
+
+        val second = submit()
+
+        assertEquals(first, second, "the proposal a reviewer has read stays where they left it, got $second")
+        verify(skillDraftMapper, times(1)).insert(any())
+        verify(skillReviewRecorder, times(1)).recordDraft(any(), any(), anyOrNull(), anyOrNull(), anyOrNull())
+    }
+
+    @Test
+    @DisplayName("a body the agent actually rewrote after a decision becomes a proposal again")
+    fun `a changed draft after a decision still queues`() {
+        stubWebSession()
+        countingKeys()
+
+        submit()
+        val rejected = capturedInsert().apply { status = SkillDraft.STATUS_REJECTED }
+        `when`(skillDraftMapper.selectLatestByTenantNameAndSession(TENANT, "invoice-fill", WEB_SESSION)).thenReturn(rejected)
+
+        val rewritten = submit(skillmd = "# invoice-fill\n\nRewritten after the rejection.")
+
+        assertEquals(NEW_ID + 1, rewritten, "a proposal nobody has read yet gets its own row")
+        verify(skillDraftMapper, times(2)).insert(any())
     }
 
     @Test
