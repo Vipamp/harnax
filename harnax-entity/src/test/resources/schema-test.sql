@@ -1,11 +1,9 @@
 -- Mapper integration test baseline (harnax-entity, Testcontainers MySQLContainer + withInitScript)
 --
 -- The DDL below is the table-definition block of harnax-admin's schema at its last version - the baseline
--- (harnax-admin/src/main/resources/db/migration/V1__init_schema.sql) plus the forward increments stacked on
--- it (V2__agent_session_memory.sql, V3__tool_invocation_metrics.sql, V4__drop_tool_call_log.sql,
--- V5__tool_invocation_stats_hourly.sql, V6__drop_agent_session_memory.sql - which undoes the column V2
--- added - and V7__memory_draft.sql) - copied so this file and the
--- production schema cannot drift apart the way the hand-maintained version did. What matters is the shape
+-- (harnax-admin/src/main/resources/db/migration/V1__init_schema.sql) plus every forward increment stacked on
+-- it in that directory. They are named there and not listed here: the list went stale every time a number was
+-- added, and some increments undo an earlier one (V6 drops the column V2 added). What matters is the shape
 -- Flyway ends at, because that is what SchemaBaselineDriftIT replays and compares. Regenerate this file's
 -- DDL block whenever the baseline or any increment changes.
 --

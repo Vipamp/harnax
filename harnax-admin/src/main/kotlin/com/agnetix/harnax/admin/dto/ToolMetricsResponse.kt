@@ -49,9 +49,9 @@ data class ToolMetricsRow(
     @Schema(description = "Successes over calls as a fraction; the page formats the percentage")
     val successRate: Double = 0.0,
     val avgDurationMs: Long = 0L,
-    @Schema(description = "'<=' when the 95th percentile lands inside a bucket, '>' for the open-ended one")
+    @Schema(description = "'<=' when the 95th percentile lands inside a bucket, '>' for the open-ended one; on the agent and session dimensions the row's longest call instead")
     val p95Operator: String = "<=",
-    @Schema(description = "Upper bound of the bucket p95Operator points at, in ms")
+    @Schema(description = "Upper bound of the bucket p95Operator points at, in ms; `max(duration_ms)` on the agent and session dimensions")
     val p95Ms: Long = 0L,
     @Schema(description = "`yyyy-MM-dd HH:mm:ss`; hour precision on the aggregate path, second precision on the detail path")
     val lastSeenAt: String? = null,
@@ -108,6 +108,8 @@ data class ToolInvocationRow(
     val toolName: String = "",
     val agentId: Long? = null,
     val sessionId: String = "",
+    @Schema(description = "Registered title of that session; absent when the id has no session row")
+    val sessionName: String? = null,
     val userId: Long? = null,
     val mcpId: Long? = null,
     val cliId: Long? = null,

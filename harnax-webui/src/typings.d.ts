@@ -639,6 +639,8 @@ message?: string;
     toolName: string;
     agentId?: number;
     sessionId: string;
+    /** Resolved session title; the key is absent when no session row stands behind the id */
+    sessionName?: string;
     userId?: number;
     mcpId?: number;
     cliId?: number;

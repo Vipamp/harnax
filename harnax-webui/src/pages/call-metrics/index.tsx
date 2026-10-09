@@ -102,6 +102,15 @@ const CallMetrics: React.FC = () => {
     load();
   }, [start, end, kind, groupBy]);
 
+  /**
+   * Both drawers show one row read at one range and one dimension, so neither may outlive the query it came
+   * from: a moved table with a frozen count beside it is the one thing a drill-down must not do.
+   */
+  const closeDrawers = () => {
+    setSubject(null);
+    setProfileRow(null);
+  };
+
   const loadDetails = async (row: API.CallMetricsRow, page: number) => {
     setSubject(row);
     setDetailPage(page);
@@ -222,9 +231,9 @@ const CallMetrics: React.FC = () => {
           style={{ fontWeight: 500, cursor: 'pointer' }}
         >
           {row.subjectName || row.subjectKey}
-          {/* The aggregate groups by (kind, subject_id, tool_name): one tool served by two MCP servers is two
-              rows with the same name, and the server named beside it is what tells them apart — and scopes the
-              drawer to a different server. */}
+          {/* `parentName` names the server or package owning a tool row, which is what tells two same-named
+              tools of two servers apart. Only kind=mcp/cli rows carry one, and this tab's kind picker offers
+              only builtin / shell / framework, so the matrix above never hands the page such a row today. */}
           {groupBy === 'tool' && row.parentName ? (
             <Typography.Text type="secondary" style={{ marginLeft: 6, fontSize: 12 }}>
               {row.parentName}
@@ -315,7 +324,9 @@ const CallMetrics: React.FC = () => {
       dataIndex: 'sessionId',
       key: 'sessionId',
       ellipsis: true,
-      render: (sessionId: string) => sessionId || '-',
+      // Title first, id behind it: the same reading the session dimension gets in the table above, so a
+      // session that was never registered still shows the only name it has rather than an empty cell.
+      render: (sessionId: string, row) => row.sessionName || sessionId || '-',
     },
   ];
 
@@ -346,6 +357,7 @@ const CallMetrics: React.FC = () => {
             // Each tab groups by its own subject first, so a dimension that belongs to another tab is dropped
             // rather than left on show asking the new table a question it cannot answer.
             if (!TAB_DIMENSIONS[key].includes(groupBy)) setGroupBy(TAB_DIMENSIONS[key][0]);
+            closeDrawers();
           }}
           items={[
             { key: 'tool', label: intl.formatMessage({ id: 'pages.callMetrics.tab.tool', defaultMessage: 'Tools' }) },
@@ -367,9 +379,9 @@ const CallMetrics: React.FC = () => {
                   // The window is hour grain at both ends, so a typed minute folds back into the hour it
                   // belongs to here rather than reaching the server as a boundary it cannot answer.
                   setRange([dates[0].startOf('hour'), dates[1].startOf('hour')]);
-                  // The records an open drawer lists belong to the range they were counted over; paging them
-                  // under a new range would silently mix the two.
-                  setSubject(null);
+                  // The records an open drawer lists belong to the range they were counted over, and the four
+                  // numbers in the profile drawer are one row read at that range too.
+                  closeDrawers();
                 }}
               />
             ),
@@ -433,7 +445,10 @@ const CallMetrics: React.FC = () => {
               {tab === 'tool' && (
                 <Select
                   value={toolKind}
-                  onChange={setToolKind}
+                  onChange={(value) => {
+                    setToolKind(value);
+                    closeDrawers();
+                  }}
                   style={{ width: 150 }}
                   options={TOOL_TAB_KINDS.map((value) => ({
                     value,
@@ -443,7 +458,10 @@ const CallMetrics: React.FC = () => {
               )}
               <Select
                 value={groupBy}
-                onChange={setGroupBy}
+                onChange={(value) => {
+                  setGroupBy(value);
+                  closeDrawers();
+                }}
                 style={{ width: 130 }}
                 options={TAB_DIMENSIONS[tab].map((value) => ({
                   value,

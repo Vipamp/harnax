@@ -135,6 +135,12 @@
         l.tool_name AS toolName,
         l.agent_id AS agentId,
         l.session_id AS sessionId,
+        <!-- The session's own title, resolved exactly as the session dimension resolves it above: a scalar
+             subquery rather than a join, because `session.session_id` carries no unique index — a join would
+             duplicate a row here and move the page boundary under the LIMIT. -->
+        (SELECT ss.title FROM session ss
+        WHERE ss.session_id = l.session_id AND ss.tenant_id = l.tenant_id
+        ORDER BY ss.id DESC LIMIT 1) AS sessionName,
         l.user_id AS userId,
         l.mcp_id AS mcpId,
         l.cli_id AS cliId,

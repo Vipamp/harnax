@@ -41,7 +41,7 @@ class ToolInvocationStats : Serializable {
     @Schema(description = "mcp_id or cli_id, 0 when neither applies")
     var subjectId: Long = 0
 
-    @Schema(description = "Command name for kind cli, empty otherwise")
+    @Schema(description = "Tool or command name, carried for every kind so two tools of one server stay two rows")
     var toolName: String = ""
 
     @Schema(description = "Total invocations")

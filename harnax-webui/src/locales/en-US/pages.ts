@@ -258,7 +258,7 @@ export default {
   'pages.callMetrics.window.30': 'Last 30 days',
   'pages.callMetrics.window.90': 'Last 90 days',
   'pages.callMetrics.window.365': 'Last 365 days',
-  'pages.callMetrics.detailHint': 'The agent and session views read the detail table, so they only cover calls inside the retention window; older history is answerable only from the hourly aggregate, per tool, MCP server or CLI package.',
+  'pages.callMetrics.detailHint': 'The agent and session views read the detail table, so they only cover calls inside the retention window; older history is answerable only from the hourly aggregate, per tool, MCP server or CLI package. These two views count up to the current instant while the four cards count up to the last hourly fold, so the two totals can differ by the calls of one hour.',
   'pages.callMetrics.profile.title': 'Registered info',
   'pages.callMetrics.profile.empty': 'Nothing is registered behind this row',
   'pages.callMetrics.detail.title': 'Call records',
