@@ -187,7 +187,7 @@ public actor APIClient {
             // on a bearer it cannot verify before it ever reaches `X-Api-Key`
             // (`harnax-auth/src/main/kotlin/com/agnetix/harnax/auth/UnifiedAuthFilter.kt:47-93`) — and admin's
             // user JWT is signed with a different secret than the one the router verifies with, so it never
-            // verifies there. The console sends the same shape (`ChatWindow.tsx:153-164`), and with no tenant
+            // verifies there. The console sends the same shape (`ChatWindow.tsx:158-169`), and with no tenant
             // header: the router derives the tenant off the credential itself
             // (`harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/RouterMonitorController.kt:108`).
             request.setValue(key, forHTTPHeaderField: "X-Api-Key")

@@ -7,7 +7,7 @@ import HarnaxCore
 /// a silent pass.
 ///
 /// The two queues are separate on purpose — the panel's whole shape is that `current-plan` has a cadence and
-/// `plans` does not (`ChatWindow.tsx:649-669` against the never-started `plansListTimerRef` at `:603`), and a fake
+/// `plans` does not (`ChatWindow.tsx:654-674` against the never-started `plansListTimerRef` at `:608`), and a fake
 /// that served both from one list would let a history re-read pass as a poll.
 ///
 /// Each side also takes a *fallback* reply, used only once its queue runs dry. That is what makes a cadence test

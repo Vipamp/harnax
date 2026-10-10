@@ -15,7 +15,7 @@ public struct ContextUsageDetail: Equatable, Sendable {
 /// What the header readout says about one `ContextUsage`, as data.
 ///
 /// The console draws the same two pieces as a `Tag` and a hover `Tooltip`
-/// (`harnax-webui/src/pages/session/index.tsx:32-83`); the phone has no hover, so the chip opens a panel of the
+/// (`harnax-webui/src/pages/session/index.tsx:33-84`); the phone has no hover, so the chip opens a panel of the
 /// same five rows. Either way the two screens are meant to put the same number against the same word for the
 /// same session, which is why the pairing lives here rather than in a view: which of the two travelling token
 /// counts answers which question is a judgement, and one that lives inside `Text(...)` calls drifts silently.
@@ -25,12 +25,12 @@ public struct ContextUsageDetail: Equatable, Sendable {
 /// and `windowSourceTitleKey` — are the contract type's own, tested in `HarnaxCoreTests`.
 public enum ContextUsageReadout {
     /// The chip's own two tokens: the percentage, then where its numerator came from
-    /// (`index.tsx:75-79`).
+    /// (`index.tsx:76-80`).
     public static func headline(for usage: ContextUsage) -> String {
         "\(usage.percentText) · \(hx(usage.basis.titleKey))"
     }
 
-    /// The five detail rows, in the console's order (`index.tsx:34-57`).
+    /// The five detail rows, in the console's order (`index.tsx:35-58`).
     ///
     /// The billed row is the one leg that must not fall back to a number: a session with no billed call yet has
     /// no bill to show, and `0` there would read as a free call rather than as nothing. The window row carries

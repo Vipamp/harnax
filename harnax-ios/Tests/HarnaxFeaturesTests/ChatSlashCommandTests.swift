@@ -2,7 +2,7 @@ import XCTest
 import HarnaxCore
 @testable import HarnaxFeatures
 
-/// The slash line, read the way the console reads it (`ChatWindow.tsx:961-983`, spec 302-310).
+/// The slash line, read the way the console reads it (`ChatWindow.tsx:966-988`, spec 302-310).
 ///
 /// Table-driven because the whole contract is a table: nine keywords, one separator rule, and a fall-through
 /// that has to stay silent. A parse that is wrong here is not a wrong label — it is a message sent to the

@@ -23,7 +23,7 @@ public protocol SessionCataloging: Sendable {
     /// `keyword` is a `LIKE` over `title` and `status` the raw 0/1 column (`SessionController.kt:40-41`,
     /// applied at `mapper/SessionMapper.xml:108-116`). Both are optional on the wire, and the web console
     /// sends neither — it asks for one page of 100 and lets the server's `ORDER BY create_time DESC` stand
-    /// (`harnax-webui/src/pages/session/index.tsx:39`, `SessionMapper.xml:117`) — but the filters are real,
+    /// (`harnax-webui/src/pages/session/index.tsx:40`, `SessionMapper.xml:117`) — but the filters are real,
     /// so this screen is allowed to use them. `size` is clamped to 1000 server-side
     /// (`service/impl/SessionServiceImpl.kt:66`).
     ///
@@ -63,7 +63,7 @@ public protocol SessionCataloging: Sendable {
     ///
     /// This is the one method here that is not an admin call: it goes to `POST /api/router/agent/command`
     /// with `CLEAR` on the router base, which is what the web console does
-    /// (`harnax-webui/src/pages/session/components/ChatWindow.tsx:2678-2682`). Two routes can clear a
+    /// (`harnax-webui/src/pages/session/components/ChatWindow.tsx:2693-2697`). Two routes can clear a
     /// session — the runtime also exposes `DELETE /api/router/agent/session/{sessionId}`
     /// (`AgentProxyController.kt:131-139`) — and the console never calls that one, so neither does this
     /// screen. The command's reply is a loose map rather than an envelope body (`AgentCommandReply`), and

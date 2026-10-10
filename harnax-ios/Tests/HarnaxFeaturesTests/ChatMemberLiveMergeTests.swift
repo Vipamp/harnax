@@ -95,7 +95,7 @@ final class ChatMemberLiveMergeTests: XCTestCase {
     }
 
     /// A source that names the team and the member but leaves the run id blank is the lead's own speech, which
-    /// is where the console's truthy test puts it too (`ChatWindow.tsx:1400`).
+    /// is where the console's truthy test puts it too (`ChatWindow.tsx:1405`).
     func testAMemberWithoutARunIdBelongsToTheLead() throws {
         var transcript = started()
         try fold(&transcript, MemberFrames.text("主管自己说的", member: 3, run: ""))

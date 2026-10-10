@@ -7,7 +7,7 @@ import HarnaxKit
 ///
 /// The interesting behaviours are all asymmetries the console carries and a fresh implementation would "fix":
 /// the current plan re-reads every 2 s while the history never re-reads on a timer at all
-/// (`ChatWindow.tsx:649-669` against the declared-but-never-started `plansListTimerRef` at `:603`); a manual
+/// (`ChatWindow.tsx:654-674` against the declared-but-never-started `plansListTimerRef` at `:608`); a manual
 /// refresh prepends unseen `planId`s instead of rebuilding the rows (`:2603-2648`); and a plan with no name is
 /// absent rather than blank (`hasValidCurrentPlan`, `:2965-3038`). Each gets its own test below.
 ///
@@ -127,7 +127,7 @@ final class PlanPanelViewModelTests: XCTestCase {
         let reading = FakePlanReading()
         reading.historyReplies = [.success([PlanFixtures.note("p1")])]
         reading.currentReplies = [PlanFixtures.open(PlanFixtures.note("p2"))]
-        // `loadCurrentPlan` returns in silence on a non-OK response (`ChatWindow.tsx:2489-2492`), so a tick that
+        // `loadCurrentPlan` returns in silence on a non-OK response (`ChatWindow.tsx:2504-2507`), so a tick that
         // fails must not raise a band over a card that is still readable.
         reading.currentFallback = .failure(.offline)
         let vm = makeVM(reading, pollInterval: .milliseconds(20))
@@ -165,7 +165,7 @@ final class PlanPanelViewModelTests: XCTestCase {
 
     func testAnIncrementalRefreshOnAnEmptyPanelIsAFullLoad() async {
         // `loadPlans(true)` only takes the incremental branch `plans.length > 0`
-        // (`ChatWindow.tsx:2621-2624`); with nothing displayed there is nothing to prepend to.
+        // (`ChatWindow.tsx:2636-2639`); with nothing displayed there is nothing to prepend to.
         let reading = FakePlanReading()
         reading.historyReplies = [.failure(.offline), .success([PlanFixtures.note("p2"), PlanFixtures.note("p1")])]
         reading.currentReplies = [PlanFixtures.open(PlanFixtures.note("p3"))]

@@ -132,7 +132,7 @@ final class ChatStreamClientTests: XCTestCase {
     }
 
     /// The other credential does not expire. A permanent key is what the router prefers
-    /// (`ChatWindow.tsx:153-164`), so paying for a refresh round trip before a turn that carries it would
+    /// (`ChatWindow.tsx:158-169`), so paying for a refresh round trip before a turn that carries it would
     /// only make the first answer slower.
     func testAStreamOnAPermanentKeyRenewsNothing() async throws {
         let server = SSELoopback(answers: [.stream([SSEAnswer.endFrame])])
@@ -245,7 +245,7 @@ final class ChatStreamClientTests: XCTestCase {
     }
 
     /// One frame the client cannot read is not a dead turn. The console's reader wraps every single
-    /// `JSON.parse` in its own `try/catch` and moves on with the next line (`ChatWindow.tsx:1389-1394`,
+    /// `JSON.parse` in its own `try/catch` and moves on with the next line (`ChatWindow.tsx:1394-1399`,
     /// with the same catch again at `:2349-2351`), so a torn or unparseable frame cannot end a run that
     /// is still answering — it only loses that one frame.
     func testABadFrameIsSkippedAndTheFramesAfterItStillLand() async throws {
@@ -290,7 +290,7 @@ final class ChatStreamClientTests: XCTestCase {
     }
 
     /// The server cut the corner mid-frame. The console keeps the bytes still in its buffer when the reader
-    /// reports `done` and never parses them (`ChatWindow.tsx:1385-1386`), and the socket dying is still the
+    /// reports `done` and never parses them (`ChatWindow.tsx:1390-1391`), and the socket dying is still the
     /// turn's own news — the screen calls it a disconnect
     /// (`ChatViewModelTests.testACloseWithNothingOnScreenSaysConnectionLost`), a truer sentence than a
     /// JSON error the user cannot act on.

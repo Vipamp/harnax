@@ -626,7 +626,7 @@ public final class SessionDetailViewModel: ObservableObject {
     }
 
     /// Plan has no capability behind it: neither the console nor the service gates it on a model column
-    /// (`harnax-webui/src/pages/session/components/ChatWindow.tsx:3591-3599`, `SessionServiceImpl.kt:298`), so
+    /// (`harnax-webui/src/pages/session/components/ChatWindow.tsx:3606-3614`, `SessionServiceImpl.kt:298`), so
     /// the switch is always live while the draft is open.
     public func setConfigPlan(_ value: Bool) {
         mutateDraft { row in row.enablePlan = value }

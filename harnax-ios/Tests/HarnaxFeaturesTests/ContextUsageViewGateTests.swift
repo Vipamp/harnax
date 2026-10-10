@@ -36,7 +36,7 @@ final class ContextUsageViewGateTests: XCTestCase {
         XCTAssertTrue(chip.contains("usage.isAtAutoTrigger ? .warning : nil"), chip)
     }
 
-    /// The console's order is permission, compact, stop sandbox, clear (`ChatWindow.tsx:3708-3765`), and the
+    /// The console's order is permission, compact, stop sandbox, clear (`ChatWindow.tsx:3723-3780`), and the
     /// entry is inert for the length of the run it just started.
     func testTheCompactionEntrySitsInTheChipsRowInTheConsolesPlace() throws {
         let text = try ToolbarSources.contents(of: Self.chatView)

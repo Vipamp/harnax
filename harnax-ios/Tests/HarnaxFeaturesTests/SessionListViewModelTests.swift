@@ -6,7 +6,7 @@ import HarnaxKit
 /// Everything worth guarding on this screen lives in the order a write and its answer interleave: the
 /// switch answers before the stack does, the rename answers after, a delete only leaves when the envelope
 /// says so, and a clear reports the runtime's own sentence instead of a local success string
-/// (`harnax-webui/src/pages/session/index.tsx:180-232`, `components/ChatWindow.tsx:1000-1020`).
+/// (`harnax-webui/src/pages/session/index.tsx:181-233`, `components/ChatWindow.tsx:1005-1025`).
 @MainActor
 final class SessionListViewModelTests: XCTestCase {
     private func rowJSON(_ title: String, id: Any?, businessKey: String?) -> [String: Any] {

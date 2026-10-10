@@ -3,7 +3,7 @@ import HarnaxCore
 
 /// A slash command the composer recognised.
 ///
-/// The parse is the console's own (`harnax-webui/src/pages/session/components/ChatWindow.tsx:961-983`) and the
+/// The parse is the console's own (`harnax-webui/src/pages/session/components/ChatWindow.tsx:966-988`) and the
 /// backend has an isomorphic one (`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/AgentRequest.kt:98-118`),
 /// so the two agree on what a line of text means. Kept as a pure type with no view model in sight: three
 /// rules — the leading slash, the earlier of the first space or colon, the lower-cased keyword — are exactly
@@ -20,7 +20,7 @@ public struct ChatSlashCommand: Equatable, Sendable {
         }
     }
 
-    /// The nine keywords the web console exposes (`ChatWindow.tsx:946-956`), in its own order.
+    /// The nine keywords the web console exposes (`ChatWindow.tsx:951-961`), in its own order.
     ///
     /// `deny`, `reject` and `refresh` exist on the server's ten-value enum
     /// (`AgentRequest.kt:196-207`) and are deliberately absent here: the console never routes them through a
@@ -50,7 +50,7 @@ public struct ChatSlashCommand: Equatable, Sendable {
     /// The command a line of composer text asks for, or nil when it is an ordinary message.
     ///
     /// A keyword the table does not know answers nil rather than an error — typing `/hello there` at a chat
-    /// box is saying hello, not running a command (`ChatWindow.tsx:980-982` falls through to `doSend`'s
+    /// box is saying hello, not running a command (`ChatWindow.tsx:985-987` falls through to `doSend`'s
     /// streaming leg, and the backend's `parse` returns null the same way at `AgentRequest.kt:117`).
     public static func parse(_ text: String) -> ChatSlashCommand? {
         guard text.hasPrefix("/") else { return nil }
@@ -58,7 +58,7 @@ public struct ChatSlashCommand: Equatable, Sendable {
         guard !afterSlash.isEmpty else { return nil }
 
         // The earlier of the first space and the first colon, which is what makes `/permission:bypass` and
-        // `/permission bypass` the same command (`ChatWindow.tsx:968-977`, `AgentRequest.kt:107-114`). A line
+        // `/permission bypass` the same command (`ChatWindow.tsx:973-982`, `AgentRequest.kt:107-114`). A line
         // with neither is one bare keyword.
         let separator = [afterSlash.firstIndex(of: " "), afterSlash.firstIndex(of: ":")]
             .compactMap { $0 }
@@ -83,7 +83,7 @@ public struct ChatSlashCommand: Equatable, Sendable {
 /// A command the screen has to ask about before it sends.
 ///
 /// The console puts a `Popconfirm` on clear and a `Modal.confirm` behind a live status read on stop-sandbox
-/// (`ChatWindow.tsx:3639-3677`); every other command goes straight through. The raw text travels with it so a
+/// (`ChatWindow.tsx:3654-3692`); every other command goes straight through. The raw text travels with it so a
 /// confirmed command still draws the bubble the user typed (`:992-998`), and a refused one draws nothing.
 public struct ChatPendingCommand: Equatable, Sendable {
     public let command: ChatSlashCommand
@@ -111,7 +111,7 @@ public struct ChatPendingCommand: Equatable, Sendable {
 
 /// What the composer has to say about a tap that did nothing.
 ///
-/// The console's three `message.warning` / `message.info` calls (`ChatWindow.tsx:3493-3572`) are the whole of
+/// The console's three `message.warning` / `message.info` calls (`ChatWindow.tsx:3508-3587`) are the whole of
 /// its feedback for a refused switch, and a banner is this screen's equivalent — a toast has no home in a
 /// navigation stack that is already holding a keyboard.
 public struct ChatComposerNotice: Equatable, Sendable {

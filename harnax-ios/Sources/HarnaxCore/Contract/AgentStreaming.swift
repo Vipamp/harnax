@@ -59,7 +59,7 @@ public struct AgentCommandReply: Decodable, Sendable, Equatable {
 ///
 /// Three answers rather than two because the runtime has a documented third outcome: a session whose context
 /// is too short to keep a tail comes back `success: true` with the same count on both sides
-/// (`harnax-webui/src/pages/session/components/contextUsage.ts:92-99`). Calling that a completed compaction
+/// (`harnax-webui/src/pages/session/components/contextUsage.ts:107-114`). Calling that a completed compaction
 /// would be a false report to the user, and calling it a failure would be a lie about the server.
 public enum CompactionOutcome: Equatable, Sendable {
     /// The context got shorter, or the reply carried no counts to argue with.
@@ -73,7 +73,7 @@ public enum CompactionOutcome: Equatable, Sendable {
 extension CompactionOutcome {
     /// The console's reading of one reply, kept as close to the transport as the payload it reads: the flag has
     /// to say true before anything is reported
-    /// (`harnax-webui/src/pages/session/components/contextUsage.ts:92-99`).
+    /// (`harnax-webui/src/pages/session/components/contextUsage.ts:107-114`).
     ///
     /// A body without it is a reply this side did not read rather than a compaction that ran, and the one thing
     /// this reading must not do is put 「已压缩上下文」 under a call that never said so. The counted no-op needs

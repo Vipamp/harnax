@@ -116,7 +116,7 @@ public struct SessionSkillRead: Equatable, Sendable {
 /// Its own protocol rather than a member of `SkillDraftCataloging`: the queue is a reviewer's surface on the
 /// admin routes and answers about a draft that may never become anything, while these two legs are scoped to
 /// one conversation and one of them is not an admin route at all. `ContextUsageReading` set the precedent for
-/// a session-scoped router read with a protocol of its own (`ContextUsage.swift:171-179`).
+/// a session-scoped router read with a protocol of its own (`ContextUsage.swift:207-212`).
 public protocol SessionSkillReading: Sendable {
     /// Both reads merged (`SessionSkillRules.merged`), each carrying its own failure.
     ///

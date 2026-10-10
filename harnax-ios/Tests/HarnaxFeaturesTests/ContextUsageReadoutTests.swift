@@ -8,7 +8,7 @@ import HarnaxKit
 ///
 /// The pairing is the thing under test. `ContextUsage` carries two token counts because they answer different
 /// questions, and the console's tooltip lists five rows in a fixed order
-/// (`harnax-webui/src/pages/session/index.tsx:34-57`); a readout that shows the estimate under 「billed」 is
+/// (`harnax-webui/src/pages/session/index.tsx:35-58`); a readout that shows the estimate under 「billed」 is
 /// not a layout slip but a wrong number about the user's money.
 final class ContextUsageReadoutTests: XCTestCase {
     /// Every number here is different on purpose, so a row that took another row's value cannot pass.
@@ -66,7 +66,7 @@ final class ContextUsageReadoutTests: XCTestCase {
     }
 
     /// A session whose calls have never been billed has no bill to show, and `0` there would read as a free
-    /// call rather than as nothing (`index.tsx:35-38`).
+    /// call rather than as nothing (`index.tsx:36-39`).
     func testABilllessSessionSaysThereIsNoBillAndRebasesTheChip() {
         let estimate = ContextUsage(
             messageCount: 3,

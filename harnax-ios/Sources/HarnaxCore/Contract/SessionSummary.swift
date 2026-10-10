@@ -133,7 +133,7 @@ public struct SessionSummary: Decodable, Identifiable, Equatable, Sendable {
     public var displayName: String? { hxPresented(title) }
 
     /// What the row shows under its title. The console's list row carries only a team tag and the title
-    /// (`harnax-webui/src/pages/session/index.tsx:203-213`) and never renders this column, so showing it is
+    /// (`harnax-webui/src/pages/session/index.tsx:204-214`) and never renders this column, so showing it is
     /// this screen's own choice — the value is real, it is just not a port of a webui decision.
     public var detail: String? { hxPresented(sessionDescription) }
 

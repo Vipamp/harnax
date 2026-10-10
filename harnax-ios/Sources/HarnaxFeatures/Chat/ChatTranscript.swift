@@ -40,7 +40,7 @@ public struct ChatSegment: Identifiable, Equatable {
         /// A file the run produced in the sandbox, reported by the end frame.
         case file(ChatFileAttachment)
         /// The plan the session is on, read off `current-plan` while this answer was running
-        /// (`plan_card`, `ChatWindow.tsx:2545-2555`). One block per plan phase: every later reading rewrites the
+        /// (`plan_card`, `ChatWindow.tsx:2560-2570`). One block per plan phase: every later reading rewrites the
         /// block that is already there (`:2558-2572`), and the plan going away leaves it on screen
         /// (`:2576-2584`). Nothing in the fold adds or removes one — the plan read does, through `showPlan`.
         case plan(PlanNote)
@@ -56,7 +56,7 @@ public struct ChatSegment: Identifiable, Equatable {
 }
 
 /// A tool call and the result it paired with. One block per call: a result never stands on its own
-/// (`ChatWindow.tsx:1596-1617` writes into the card, and `:2771-2773` renders a standalone result as null).
+/// (`ChatWindow.tsx:1601-1622` writes into the card, and `:2786-2788` renders a standalone result as null).
 public struct ChatToolRun: Equatable {
     public struct Result: Equatable {
         public let message: String
@@ -78,7 +78,7 @@ public struct ChatToolRun: Equatable {
     /// is still waiting.
     public var confirmAnswer: ToolConfirmAnswer?
     /// The turn closed while this call was still waiting for a result, so it never will get one
-    /// (`markOpenToolCards`, `ChatWindow.tsx:1148-1153`).
+    /// (`markOpenToolCards`, `ChatWindow.tsx:1153-1158`).
     public var interrupted: Bool
 
     public init(
@@ -104,7 +104,7 @@ public struct ChatToolRun: Equatable {
 
     /// Still waiting for the tool to come back — the one state that opens its own card. A call the user
     /// refused is finished business even before the server's refusal result lands
-    /// (`ChatWindow.tsx:319-324` ranks `rejected` above a result).
+    /// (`ChatWindow.tsx:324-329` ranks `rejected` above a result).
     public var isRunning: Bool { result == nil && !awaitingConfirmation && !interrupted && !isRefused }
 }
 
@@ -153,7 +153,7 @@ public struct ChatPendingTool: Equatable {
 ///
 /// One at a time, and the newest one: an answered block stays on screen as a record of what was decided, so
 /// "what may the user answer right now" is a question about the transcript, not about the last frame
-/// (`ChatWindow.tsx:1720-1725` rewrites every pending segment rather than the newest one, which is the same
+/// (`ChatWindow.tsx:1725-1730` rewrites every pending segment rather than the newest one, which is the same
 /// rule read from the other side).
 public struct ChatPendingConfirmation: Equatable {
     /// The block this is, so a card can tell "you are the question" from "you have been answered".
@@ -217,7 +217,7 @@ public struct ChatTurn: Identifiable, Equatable {
     public var isMemberBubble: Bool { member != nil }
 
     /// Nothing reached the screen for this turn — the difference between "connection lost" and "stopped
-    /// with a half answer still on screen" (`ChatWindow.tsx:2361`).
+    /// with a half answer still on screen" (`ChatWindow.tsx:2366`).
     public var hasContent: Bool { !segments.isEmpty || !images.isEmpty }
 
     /// The words one bubble is worth handing to the pasteboard: the text runs in the order they were streamed,
@@ -238,8 +238,8 @@ public struct ChatTurn: Identifiable, Equatable {
 public struct ChatTranscript: Equatable {
     /// The plan tools are driven by the plan interface rather than by the transcript: their call and
     /// confirm frames create no card and break no text run (`isPlanRelatedTool`,
-    /// `ChatWindow.tsx:2943-2962`, skipped at `:1507` and `:1676`). What the panel does with those frames is
-    /// the view model's business — it sees the raw event and reacts to it (`ChatWindow.tsx:1499-1504`,
+    /// `ChatWindow.tsx:2958-2977`, skipped at `:1512` and `:1681`). What the panel does with those frames is
+    /// the view model's business — it sees the raw event and reacts to it (`ChatWindow.tsx:1504-1509`,
     /// `:1566-1591`), and the card itself comes from the plan read, never from the frame
     /// (`showPlan`, which is the only way one gets here).
     private static let planTools: Set<String> = ["plan_enter", "plan_write", "plan_exit"]
@@ -254,18 +254,18 @@ public struct ChatTranscript: Equatable {
     private var segmentCounter = 0
     private var turnCounter = 0
     private var synthesizedCounter = 0
-    /// Numbering for the ids a replayed call has to be given (`ChatWindow.tsx:881`).
+    /// Numbering for the ids a replayed call has to be given (`ChatWindow.tsx:886`).
     private var replayToolSeq = 0
     /// A closing frame (`isLast`) ends the run its kind was growing: the next delta opens a new block rather
     /// than extending one the model already signed off. One seal per kind, which is what the console's two
-    /// accumulator resets amount to (`ChatWindow.tsx:1422-1428`, `:1444-1485`).
+    /// accumulator resets amount to (`ChatWindow.tsx:1427-1433`, `:1449-1490`).
     private var textSealed = false
     private var thinkingSealed = false
     /// The team half of the merge, shared by the replay and the live fold on purpose: a member's rows and a
     /// member's frames have to agree on what one bubble is (`teamRun.ts`'s reason for existing).
     private var team = TeamRunMerge()
     /// The inline plan block this transcript is following, by segment id — the console's
-    /// `currentPlanMessageIdRef` (`ChatWindow.tsx:592-595`). One card per plan phase: a reading that finds it
+    /// `currentPlanMessageIdRef` (`ChatWindow.tsx:597-600`). One card per plan phase: a reading that finds it
     /// rewrites that block, and `endAnswerForPlanExit` clearing it is what lets a later plan open its own card
     /// while the finished one stays on screen (`:1588`).
     private var planCardID: Int?
@@ -273,7 +273,7 @@ public struct ChatTranscript: Equatable {
     public init() {}
 
     /// The stored transcript of a session, replayed row by row the way the console maps it
-    /// (`harnax-webui/src/pages/session/components/ChatWindow.tsx:759-930`).
+    /// (`harnax-webui/src/pages/session/components/ChatWindow.tsx:764-935`).
     ///
     /// Rows are consumed in array order and never re-sorted: the team merge interleaves the lead's rows with
     /// the members', so the list is not time-ordered even though every row is stamped. Consecutive ASSISTANT
@@ -294,7 +294,7 @@ public struct ChatTranscript: Equatable {
             switch log {
             case let .user(message, _, _):
                 // A user row ends the answer it prompted, and with it the member bubbles of that round
-                // (`ChatWindow.tsx:775-778`).
+                // (`ChatWindow.tsx:780-783`).
                 answer = nil
                 let segment = nextSegment(.text(message))
                 turns.append(ChatTurn(
@@ -339,7 +339,7 @@ public struct ChatTranscript: Equatable {
                 }
             case .system, .tool, .unknown:
                 // The console draws neither a system row nor a bare tool result: a result only ever reaches
-                // the screen through the call it belongs to (`ChatWindow.tsx:911-929`). A member's result row
+                // the screen through the call it belongs to (`ChatWindow.tsx:916-934`). A member's result row
                 // with no member row before it opens nothing either — it only routes (`:766-772`).
                 break
             }
@@ -347,11 +347,11 @@ public struct ChatTranscript: Equatable {
     }
 
     /// One stored assistant row into the bubble it belongs to, in the console's order: thinking, then one card
-    /// per call, then the text (`ChatWindow.tsx:836-902`).
+    /// per call, then the text (`ChatWindow.tsx:841-907`).
     ///
     /// A call's result is looked for among the TOOL rows that follow *this* row in an unbroken run, because a
     /// row can name several calls and their results come back one after another
-    /// (`ChatWindow.tsx:855-861`). The run stops at a row from another source: a member's result answers a
+    /// (`ChatWindow.tsx:860-866`). The run stops at a row from another source: a member's result answers a
     /// member's call, and pairing it with the lead's would hand a member's output to the wrong card
     /// (`:859`). One that finds no result closes as interrupted: that turn was cut, and a replayed card must
     /// not sit there claiming to still be working (`:890-893`).
@@ -391,7 +391,7 @@ public struct ChatTranscript: Equatable {
                 arguments: call.input
             )
             // A result that names no tool pairs with the first call still unclaimed, the way the console's
-            // `!r.log.name || r.log.name === toolName` test reads (`ChatWindow.tsx:884-886`).
+            // `!r.log.name || r.log.name === toolName` test reads (`ChatWindow.tsx:889-891`).
             if let at = results.firstIndex(where: { !$0.used && ($0.name.isEmpty || $0.name == name) }) {
                 results[at].used = true
                 // A stored result row carries no success flag — the outcome lived in the stream's
@@ -404,7 +404,7 @@ public struct ChatTranscript: Equatable {
             turns[target].segments.append(segment)
             if name == teamDelegateToolName {
                 // Registered under the id just synthesized, because a member's row can only reach a card by
-                // that id and history names none (`ChatWindow.tsx:881`).
+                // that id and history names none (`ChatWindow.tsx:886`).
                 team.noteDelegateCall(toolID: run.toolId, arguments: call.input)
             }
         }
@@ -421,7 +421,7 @@ public struct ChatTranscript: Equatable {
         var used = false
     }
 
-    /// `log.timestamp || Date.now()` (`ChatWindow.tsx:764`): a row the server left unstamped, or stamped with
+    /// `log.timestamp || Date.now()` (`ChatWindow.tsx:769`): a row the server left unstamped, or stamped with
     /// the zero the JVM default carries, reads as now.
     private static func millis(_ timestamp: Int64?, now: Int64) -> Int64 {
         guard let timestamp, timestamp != 0 else { return now }
@@ -432,7 +432,7 @@ public struct ChatTranscript: Equatable {
         Date(timeIntervalSince1970: Double(millis) / 1000)
     }
 
-    /// The console's row key, which the replayed tool ids hang off of (`ChatWindow.tsx:764`, `:881`).
+    /// The console's row key, which the replayed tool ids hang off of (`ChatWindow.tsx:769`, `:886`).
     private static func rowID(role: String, stamp: Int64, index: Int) -> String {
         "\(role)-\(stamp)-\(index)"
     }
@@ -453,14 +453,14 @@ public struct ChatTranscript: Equatable {
     }
 
     /// A user bubble that opens no answer: the raw text of a slash command
-    /// (`ChatWindow.tsx:992-998` pushes exactly one text segment and then goes off to `/command`).
+    /// (`ChatWindow.tsx:997-1003` pushes exactly one text segment and then goes off to `/command`).
     public mutating func appendUserMessage(_ message: String, at date: Date = Date()) {
         terminate(as: .interrupted)
         appendUserTurn(message: message, images: [], opensAnswer: false, at: date)
     }
 
     /// The reply to a command — one finished bubble of its own, never a stream
-    /// (`ChatWindow.tsx:1023-1028`, where the sentence goes in as a single text segment).
+    /// (`ChatWindow.tsx:1028-1033`, where the sentence goes in as a single text segment).
     ///
     /// It opens nothing, so `isTerminated` stays true and a late frame from an earlier read still cannot
     /// write into it.
@@ -494,7 +494,7 @@ public struct ChatTranscript: Equatable {
     /// end frame is the contract's last word, and the server closes the socket behind it.
     ///
     /// A frame that names a member run skips all of that: it belongs to that member's bubble, which the lead's
-    /// fold never sees (`ChatWindow.tsx:1399-1403`).
+    /// fold never sees (`ChatWindow.tsx:1404-1408`).
     public mutating func fold(_ event: ChatEvent) {
         // A parked run says nothing. Rendering the ping would open an empty bubble, and ending on it would
         // stop the turn the ping exists to keep alive (ChatEvent.swift:80-82). A member's ping is the sharper
@@ -524,7 +524,7 @@ public struct ChatTranscript: Equatable {
         switch event {
         case let .text(delta):
             // `isLast` closes the channel and its payload is discarded, never treated as the last batch of
-            // content (`ChatWindow.tsx:1422-1428`). What was already accumulated stays where it is.
+            // content (`ChatWindow.tsx:1427-1433`). What was already accumulated stays where it is.
             if delta.isLast { textSealed = true } else { grow(&turn, delta.message, thinking: false) }
         case let .thinking(delta):
             if delta.isLast { thinkingSealed = true } else { grow(&turn, delta.message, thinking: true) }
@@ -673,7 +673,7 @@ public struct ChatTranscript: Equatable {
     /// frames that retire a run arrive when the round is being given up on — a stop, or the lead's own end
     /// frame — and `finally` nulls the member answer handler at exactly that point, so the card loses its
     /// controls rather than staying live on a run the transcript has called dead
-    /// (`ChatWindow.tsx:2375-2395`).
+    /// (`ChatWindow.tsx:2380-2400`).
     private mutating func closeMember(_ turn: inout ChatTurn, as outcome: ChatOutcome, succeeded: Bool) {
         close(&turn, as: outcome)
         guard var member = turn.member else { return }
@@ -732,7 +732,7 @@ public struct ChatTranscript: Equatable {
     /// whose run was already closed.
     ///
     /// Every open member bubble goes with it: a stop is the user letting the round go, and a round that was
-    /// let go cannot still have a member working inside it (`closeAllMemberRuns`, `ChatWindow.tsx:2375-2395`).
+    /// let go cannot still have a member working inside it (`closeAllMemberRuns`, `ChatWindow.tsx:2380-2400`).
     public mutating func terminate(as outcome: ChatOutcome) {
         // First the members, whatever became of the lead: a stop that arrives after the lead's own end frame
         // still has to retire a run parked inside it.
@@ -784,7 +784,7 @@ public struct ChatTranscript: Equatable {
     }
 
     /// `plan_exit` came back: the plan phase is over and the execution phase starts a bubble of its own
-    /// (`ChatWindow.tsx:1566-1591`).
+    /// (`ChatWindow.tsx:1571-1596`).
     ///
     /// The answer closes, an empty one opens behind it, and the followed card is forgotten so a later plan gets
     /// its own block while this one stays where it landed. `.ended` is the console's own ending here — the run is
@@ -810,7 +810,7 @@ public struct ChatTranscript: Equatable {
     /// Read off the last turn only — a parked ask from an earlier turn is history by then, and answering it
     /// would resume a run the conversation has left behind. A turn closed by a stop or by the server's
     /// `ErrorEvent` is out too: the console retires the answer handler at exactly that point rather than
-    /// leaving 「确定」 live on a run it has called dead (`ChatWindow.tsx:2378-2379`). An `EndEvent` does
+    /// leaving 「确定」 live on a run it has called dead (`ChatWindow.tsx:2383-2384`). An `EndEvent` does
     /// not disqualify it — the run parks and the harness closes the stream around the wait
     /// (`HarnessAgentWrapper.kt:763-798`), and the answer is what opens a new one.
     public var pendingConfirmation: ChatPendingConfirmation? {
@@ -856,7 +856,7 @@ public struct ChatTranscript: Equatable {
     /// The reopening is the point: the answer is not a receipt, it is the request that resumes the run, and
     /// the frames that come back are this same turn's continuation. Without it the fold's
     /// "no bubble to write into" guard would drop every word the resumed run says
-    /// (`ChatWindow.tsx:1720-1725` likewise rewrites the pending segments before it posts).
+    /// (`ChatWindow.tsx:1725-1730` likewise rewrites the pending segments before it posts).
     ///
     /// A row the caller left out is treated as approved — the panel's rows default to 「允许执行」, so an
     /// absent decision is the one the user saw, not a refusal smuggled in by a missing key.
@@ -940,7 +940,7 @@ public struct ChatTranscript: Equatable {
         guard let name = hxPresented(call.toolName) else { return nil }
         guard !Self.planTools.contains(name) else { return nil }
         let id = hxPresented(call.toolId) ?? synthesizeToolID()
-        // A repeated call for the same id rewrites its card (`ChatWindow.tsx:1523-1530`); two calls with
+        // A repeated call for the same id rewrites its card (`ChatWindow.tsx:1528-1535`); two calls with
         // different ids are two cards even when the tool is the same one. The console's name fallback
         // would fold the second call into the first card while the first is still running, losing a tool
         // the user can see was called twice.
@@ -968,7 +968,7 @@ public struct ChatTranscript: Equatable {
     /// come back. Nil for a result that paired with nothing.
     private mutating func foldResult(_ turn: inout ChatTurn, _ result: ChatEvent.ToolResult) -> String? {
         guard !Self.planTools.contains(result.toolName) else { return nil }
-        // An unpaired result is dropped rather than drawn on its own (`ChatWindow.tsx:1614-1616`).
+        // An unpaired result is dropped rather than drawn on its own (`ChatWindow.tsx:1619-1621`).
         guard let index = findTool(turn, id: result.toolId, name: result.toolName, broad: true),
               var run = turn.segments[index].tool
         else { return nil }
@@ -989,7 +989,7 @@ public struct ChatTranscript: Equatable {
             guard !Self.planTools.contains(name) else { continue }
             if let index = claimedCard(turn, id: pending.toolId, name: name, claimed: claimed, loose: loose),
                var run = turn.segments[index].tool {
-                // The card is reused and only its status changes (`ChatWindow.tsx:1683-1691`); its
+                // The card is reused and only its status changes (`ChatWindow.tsx:1688-1696`); its
                 // arguments come from this frame, which is the shape the user is being asked to approve.
                 run.toolName = name
                 run.arguments = pending.arguments
@@ -999,7 +999,7 @@ public struct ChatTranscript: Equatable {
                 claimed.insert(turn.segments[index].id)
             } else {
                 // A confirmation can be the first frame that names the tool. Dropping it would hide the
-                // very call the user is being asked about (`ChatWindow.tsx:1692-1703` opens a card).
+                // very call the user is being asked about (`ChatWindow.tsx:1697-1708` opens a card).
                 let segment = nextSegment(.tool(ChatToolRun(
                     toolId: pending.toolId,
                     toolName: name,
@@ -1024,7 +1024,7 @@ public struct ChatTranscript: Equatable {
             turn.segments[index].kind = .confirmation(merge(turn.segments[index].rows, rows))
         } else {
             // Either no block yet, or the last one has been answered: a fresh ask after an answer is a new
-            // question and gets its own panel (`ChatWindow.tsx:2036-2130`), because the settled block is the
+            // question and gets its own panel (`ChatWindow.tsx:2041-2135`), because the settled block is the
             // record of what the user decided.
             turn.segments.append(nextSegment(.confirmation(rows)))
         }
@@ -1034,7 +1034,7 @@ public struct ChatTranscript: Equatable {
 
     /// Text and thinking each run into the block they grew last, so long as that block is still the newest
     /// one and no closing frame has signed it off — the same test the console's accumulator makes
-    /// (`ChatWindow.tsx:1407-1419`). A frame carrying nothing opens no block, so an empty segment never
+    /// (`ChatWindow.tsx:1412-1424`). A frame carrying nothing opens no block, so an empty segment never
     /// reaches the screen (`:1432`).
     private mutating func grow(_ turn: inout ChatTurn, _ message: String, thinking: Bool) {
         guard !message.isEmpty else { return }
@@ -1062,7 +1062,7 @@ public struct ChatTranscript: Equatable {
 
     /// A run that never got its result closes as interrupted, so a stopped stream does not leave a card
     /// spinning forever. A card awaiting an answer keeps that state instead — its run is parked, not gone
-    /// (`ChatWindow.tsx:2383-2384`).
+    /// (`ChatWindow.tsx:2388-2389`).
     private mutating func close(_ turn: inout ChatTurn, as outcome: ChatOutcome) {
         for index in turn.segments.indices {
             guard var run = turn.segments[index].tool, run.result == nil, !run.awaitingConfirmation else {
@@ -1076,7 +1076,7 @@ public struct ChatTranscript: Equatable {
 
     /// Exact id first, then the console's two looser matches: the same tool still without a result, then
     /// any open card. The broad step exists because `CallToolEvent` and `ToolConfirmEvent` do not always
-    /// spell the tool name the same way (`ChatWindow.tsx:1067-1091`).
+    /// spell the tool name the same way (`ChatWindow.tsx:1072-1096`).
     private func findTool(_ turn: ChatTurn, id: String, name: String, broad: Bool) -> Int? {
         if !id.isEmpty, let hit = indexOfTool(turn, id: id) { return hit }
         if let hit = lastOpenTool(turn, where: { $0.toolName == name }) { return hit }
@@ -1179,7 +1179,7 @@ public struct ChatTranscript: Equatable {
     }
 
     /// A call whose id the server left blank still needs one to pair its result. The console stamps the
-    /// clock (`ChatWindow.tsx:1489`); a counter keeps the fold reproducible.
+    /// clock (`ChatWindow.tsx:1494`); a counter keeps the fold reproducible.
     private mutating func synthesizeToolID() -> String {
         synthesizedCounter += 1
         return "tool-\(synthesizedCounter)"

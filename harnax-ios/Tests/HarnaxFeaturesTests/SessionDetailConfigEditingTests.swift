@@ -7,7 +7,7 @@ import HarnaxKit
 /// the panel is allowed to claim after each of the three answers the route can give.
 ///
 /// The route is the one the web console never calls — the console drives the same four columns through
-/// `POST /api/router/agent/command` (`harnax-webui/src/pages/session/components/ChatWindow.tsx:2408-2430`) —
+/// `POST /api/router/agent/command` (`harnax-webui/src/pages/session/components/ChatWindow.tsx:2413-2435`) —
 /// so nothing here has a page-level reference to copy. What it does have is the server's own behaviour:
 /// `PUT /api/admin/sessions/{sessionId}/config` answers `ResultVo<Void>` (`SessionController.kt:128-141`),
 /// which is why a landed write is followed by a read rather than by a success message alone, and why the read
@@ -170,7 +170,7 @@ final class SessionDetailConfigEditingTests: XCTestCase {
     }
 
     /// Plan is the one switch with no capability behind it — neither the console nor the service gates it on a
-    /// model column (`ChatWindow.tsx:3591-3599`, `SessionServiceImpl.kt:298`) — so it stays live even on a
+    /// model column (`ChatWindow.tsx:3606-3614`, `SessionServiceImpl.kt:298`) — so it stays live even on a
     /// model that refuses the other two.
     func testPlanStaysLiveWhateverTheModelSupports() throws {
         let (vm, _, _) = scripted(.stub(modelSupportReasoning: 0, modelSupportInternet: 0))

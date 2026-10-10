@@ -6,7 +6,7 @@ import HarnaxKit
 /// Opening a conversation: the read that fetches the stored rows, the three races it has to lose gracefully,
 /// and what the screen is told while it is waiting.
 ///
-/// The console loads on mount (`ChatWindow.tsx:740`, called from `:683-705`); the difference is that here the
+/// The console loads on mount (`ChatWindow.tsx:745`, called from `:688-710`); the difference is that here the
 /// read can come back after the user has moved on, and that has to be a no-op rather than a wrong transcript.
 @MainActor
 final class ChatHistoryLoadTests: XCTestCase {

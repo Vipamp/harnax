@@ -74,7 +74,7 @@ final class ScriptedAgentCommands: AgentCommanding, @unchecked Sendable {
 ///
 /// The chat screen reads the conversation's model flags once on entry and then drives every switch from the
 /// command channel, so this fake records the write instead of performing it and its `writes` stays empty there
-/// (`ChatWindow.tsx:2408-2430`). The detail sheet is the caller that does write: it turns `writeResult` into a
+/// (`ChatWindow.tsx:2413-2435`). The detail sheet is the caller that does write: it turns `writeResult` into a
 /// landing answer and asserts the body the panel sent.
 final class ScriptedSessionConfig: SessionConfiguring, @unchecked Sendable {
     private(set) var requested: [String] = []

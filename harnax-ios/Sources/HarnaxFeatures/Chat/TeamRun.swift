@@ -164,7 +164,7 @@ public struct TeamMemberRun: Equatable {
     public var headline: String { teamTaskHeadline(task) }
 
     /// The copy key for this run's state. A run waiting on an answer says so, because that is the one state
-    /// the user can act on (`ChatWindow.tsx:2870-2889`).
+    /// the user can act on (`ChatWindow.tsx:2885-2904`).
     public var statusTitleKey: String {
         switch status {
         case .running: return "chat.team.run.running"
@@ -175,7 +175,7 @@ public struct TeamMemberRun: Equatable {
     }
 
     /// `teamRun.toolCount` on replay is the number of call blocks the bubble ended up with
-    /// (`ChatWindow.tsx:905-908`).
+    /// (`ChatWindow.tsx:910-913`).
     public mutating func recountTools(from segments: [ChatSegment]) {
         toolCount = segments.reduce(0) { $0 + ($1.tool == nil ? 0 : 1) }
     }
@@ -196,7 +196,7 @@ public struct TeamRunMerge: Equatable {
     /// Delegate cards a member run has taken, so a member delegated twice gets two cards.
     public private(set) var claimedCards: Set<String> = []
     /// Which member each of the lead's `team_delegate` cards was sent to (`delegateTargets`,
-    /// `ChatWindow.tsx:1108`). The card's result is what retires the member's run, and the result frame
+    /// `ChatWindow.tsx:1113`). The card's result is what retires the member's run, and the result frame
     /// carries no arguments, so this is read back off the call.
     public private(set) var cardMembers: [String: Int64] = [:]
     /// The run id of the frame or row last consumed, nil when that one was the lead's.
@@ -211,7 +211,7 @@ public struct TeamRunMerge: Equatable {
     /// Route one frame or row. Returns the bubble it belongs to, or nil for the lead's own speech.
     ///
     /// Called for every row of a replay, tool results included: a member's ASSISTANT row and its TOOL rows
-    /// are one run, and the id has to survive the gap between them (`ChatWindow.tsx:766-772`).
+    /// are one run, and the id has to survive the gap between them (`ChatWindow.tsx:771-777`).
     public mutating func route(runID: String?) -> String? {
         guard let runID else {
             lastRunID = nil
@@ -237,7 +237,7 @@ public struct TeamRunMerge: Equatable {
     public func task(forMember id: Int64) -> String? { taskByMember[id] }
 
     /// A `team_delegate` call landed in the lead's turn: remember who it was sent to
-    /// (`noteDelegateCall`, `ChatWindow.tsx:1168-1176`).
+    /// (`noteDelegateCall`, `ChatWindow.tsx:1173-1181`).
     ///
     /// Recorded on the call rather than read back on the result, because the result frame names no arguments:
     /// `ToolResultEvent` carries a `toolId`, a `toolName` and a message, so the card is the only place the
@@ -304,6 +304,6 @@ public extension ChatEvent {
     /// naming a run (`TeamHistoryReplay.kt:81-82` writes the child run id onto every stamped row, but the
     /// live orchestrator only puts a source on a member's frames), and an id the server left blank names no
     /// run at all — such a frame belongs to the lead's answer, which is where a truthy test in the console
-    /// puts it too (`ChatWindow.tsx:1400`).
+    /// puts it too (`ChatWindow.tsx:1405`).
     var memberRunID: String? { hxPresented(teamSource?.childRunId) }
 }

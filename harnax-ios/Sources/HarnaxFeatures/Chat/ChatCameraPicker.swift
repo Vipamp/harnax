@@ -112,7 +112,7 @@ enum ChatCameraDevice {
 ///
 /// Not a button of its own: the composer's picture chip asks which source the picture comes from, exactly the
 /// way the console's one picture control hands the choice to the operating system
-/// (`harnax-webui/src/pages/session/components/ChatWindow.tsx:3500`, the input it clicks at `:3692-3699`).
+/// (`harnax-webui/src/pages/session/components/ChatWindow.tsx:3515`, the input it clicks at `:3707-3714`).
 private struct ChatCameraHost: UIViewControllerRepresentable {
     @Binding private var isPresented: Bool
     private let onShot: ([String]) -> Void

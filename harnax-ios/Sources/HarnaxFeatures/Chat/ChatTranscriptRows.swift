@@ -113,7 +113,7 @@ struct ChatTurnRow: View {
 /// One team member's run, drawn as a bubble of its own.
 ///
 /// The attribution is the point: a member speaks on the lead's channel, and without a name on the bubble its
-/// words are indistinguishable from the answer the user asked for (`ChatWindow.tsx:2904-2940`). The fold
+/// words are indistinguishable from the answer the user asked for (`ChatWindow.tsx:2919-2955`). The fold
 /// already routed the frames here (`TeamRunMerge`); this is the same fact drawn.
 ///
 /// Everything inside is drawn by the lead's own row views — a member's tool cards and its inline confirmation
@@ -125,7 +125,7 @@ struct ChatMemberBubble: View {
     @ObservedObject var vm: ChatViewModel
 
     /// The console's rule: expanded while the run works, collapsed when it is over, and once the user has
-    /// tapped, their choice holds (`isRunExpanded`, `ChatWindow.tsx:2863-2868`).
+    /// tapped, their choice holds (`isRunExpanded`, `ChatWindow.tsx:2878-2883`).
     @State private var manual: Bool?
     @State private var taskExpanded = false
 
@@ -188,7 +188,7 @@ struct ChatMemberBubble: View {
     }
 
     /// Tools it called and how long it took — the two facts that tell a finished run from one still going
-    /// (`ChatWindow.tsx:2918-2935`).
+    /// (`ChatWindow.tsx:2933-2950`).
     @ViewBuilder
     private var summary: some View {
         HStack(spacing: 6) {
@@ -280,7 +280,7 @@ struct ChatSegmentRow: View {
         case let .plan(note):
             // The drawer's own card, not a second drawing of a plan: the console renders its inline
             // `plan_card` from the same component as the panel's current plan
-            // (`ChatWindow.tsx:2784-2848` against `:2973-3038`) and both read the one
+            // (`ChatWindow.tsx:2799-2863` against `:2988-3053`) and both read the one
             // `currentPlanExpanded`, so closing the card in the stream closes it in the drawer too.
             // `live` is the one poll behind both, which is also what stops the stream's card from
             // claiming to update after `plan_exit` let the plan go.
@@ -298,7 +298,7 @@ struct ChatSegmentRow: View {
 
 struct ChatThinkingBlock: View {
     let message: String
-    /// The console's thinking block opens expanded (`ChatWindow.tsx:211-228`).
+    /// The console's thinking block opens expanded (`ChatWindow.tsx:216-233`).
     @State private var expanded = true
 
     var body: some View {
@@ -339,11 +339,11 @@ struct ChatThinkingBlock: View {
 // MARK: - tool card
 
 /// A call and the result it paired with, in one card. A result never stands on its own
-/// (`ChatWindow.tsx:2771-2773` renders a standalone one as nothing).
+/// (`ChatWindow.tsx:2786-2788` renders a standalone one as nothing).
 struct ChatToolCard: View {
     let run: ChatToolRun
     /// Nil until the user taps: a running card opens itself, a finished one stays shut, and once the tap
-    /// happens the user's choice holds (`expanded = manual ?? !!busy`, `ChatWindow.tsx:305-307`).
+    /// happens the user's choice holds (`expanded = manual ?? !!busy`, `ChatWindow.tsx:310-312`).
     @State private var manual: Bool?
 
     private var expanded: Bool { manual ?? run.isRunning }
@@ -404,7 +404,7 @@ struct ChatToolCard: View {
         }
     }
 
-    /// The console's six-state ladder, in its short-circuit order (`ChatWindow.tsx:319-324`): the ask still
+    /// The console's six-state ladder, in its short-circuit order (`ChatWindow.tsx:324-329`): the ask still
     /// waiting outranks everything, then the refusal the user gave it, then an approval whose result has not
     /// come back, then a turn that closed before the result arrived. A refusal keeps its own name even once
     /// the server's refusal result lands, because the two say different things.
@@ -459,11 +459,11 @@ struct ChatCodeBlock: View {
 ///
 /// The answer goes to `POST /api/router/agent/confirm`, which replies with the stream that resumes the run
 /// (`SessionRouterService.kt:221`), so the panel settles as soon as it is submitted and a nested ask draws
-/// its own panel underneath it rather than editing this one (`ChatWindow.tsx:2036-2130`).
+/// its own panel underneath it rather than editing this one (`ChatWindow.tsx:2041-2135`).
 ///
 /// Two shapes of the same card, decided by one flag pair: with an answer channel and a live block, the rows
 /// carry a choice each and the block ends in a single 确定; without one, the block keeps the wait state this
-/// build shipped with and offers no control that could only fail (`ChatWindow.tsx:451-460`).
+/// build shipped with and offers no control that could only fail (`ChatWindow.tsx:456-465`).
 struct ChatConfirmationBlock: View {
     let tools: [ChatPendingTool]
     /// The newest ask, so the record of an answered one does not offer to answer it again.
@@ -594,7 +594,7 @@ struct ChatConfirmationBlock: View {
     }
 
     /// The header's batch choices. An answer here writes every row and goes straight off — the console's
-    /// modal does the same with its two buttons (`ChatWindow.tsx:1712-1728`).
+    /// modal does the same with its two buttons (`ChatWindow.tsx:1717-1733`).
     private var batchMenu: some View {
         Menu {
             Button {

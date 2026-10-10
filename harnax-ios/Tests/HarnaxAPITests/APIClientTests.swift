@@ -478,7 +478,7 @@ final class APIClientTests: XCTestCase {
     /// (`harnax-session-router/src/main/resources/application.yml:141`) — two different secrets by design
     /// (`harnax-auth/src/main/kotlin/com/agnetix/harnax/auth/InternalTokenProvider.kt:59-67`). Measured on the
     /// live stack 2026-09-30: the key alone 200, the bearer alone 401, both together 401. So the key has to go
-    /// alone, which is the shape the console sends (`ChatWindow.tsx:153-164`).
+    /// alone, which is the shape the console sends (`ChatWindow.tsx:158-169`).
     func testARouterCallCarriesThePermanentKeyAndNothingThatCouldPreemptIt() async throws {
         let harness = await signedInHarness()
         harness.transport.enqueue(200, Wire.success("[]"))

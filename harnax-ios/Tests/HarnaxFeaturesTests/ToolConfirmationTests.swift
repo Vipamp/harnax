@@ -9,7 +9,7 @@ import HarnaxKit
 /// An answer is not a fire-and-forget POST. `POST /api/router/agent/confirm` answers with an SSE stream of
 /// its own that carries the resumed run
 /// (`harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/proxy/SessionRouterService.kt:221`),
-/// and that stream may hold another `ToolConfirmEvent` (`ChatWindow.tsx:2036-2331`). Every test here drives
+/// and that stream may hold another `ToolConfirmEvent` (`ChatWindow.tsx:2041-2336`). Every test here drives
 /// the flow objects — the view model, the transcript and the request builder — never a view.
 @MainActor
 final class ToolConfirmationTests: XCTestCase {
@@ -91,7 +91,7 @@ final class ToolConfirmationTests: XCTestCase {
     // MARK: - the answer path may be absent
 
     /// A host that has not wired a confirmer must not offer a control that can only fail: the card keeps
-    /// waiting, and nothing leaves the screen (`ChatWindow.tsx:451-460` gates its buttons the same way).
+    /// waiting, and nothing leaves the screen (`ChatWindow.tsx:456-465` gates its buttons the same way).
     func testAnUnwiredHostShowsTheWaitWithoutAnAnswer() async throws {
         let (vm, stream, confirmer) = makeModel(wired: false)
         try await park(on: vm, stream)
@@ -120,7 +120,7 @@ final class ToolConfirmationTests: XCTestCase {
 
     // MARK: - the wire body
 
-    /// Approving is the console's bulk body, field for field (`ChatWindow.tsx:1730-1749`,
+    /// Approving is the console's bulk body, field for field (`ChatWindow.tsx:1735-1754`,
     /// `harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/AgentRequest.kt:136-145`).
     func testApprovingSendsTheBulkBodyTheConsoleSends() async throws {
         let (vm, stream, confirmer) = makeModel()
@@ -203,7 +203,7 @@ final class ToolConfirmationTests: XCTestCase {
 
     /// A member run is resumed with one decision for the whole run, and the server ANDs a per-tool list into
     /// it (`DefaultAgentRunner.kt:427`), so a mixed list would silently deny tools the user approved: the
-    /// answer goes bulk, with the run id back on it (`ChatWindow.tsx:1295-1349`).
+    /// answer goes bulk, with the run id back on it (`ChatWindow.tsx:1300-1354`).
     func testAMemberConfirmationCarriesItsRunIdBackInBulkMode() async throws {
         let (vm, stream, confirmer) = makeModel()
         try await park(on: vm, stream, frames: [
@@ -262,7 +262,7 @@ final class ToolConfirmationTests: XCTestCase {
 
     /// A stop is the last word on that run, so the ask parked on it goes with it. The console nulls the
     /// member answer handler when the stream closes for exactly this reason
-    /// (`ChatWindow.tsx:2378-2379`); leaving 「确定」 live would reopen a bubble the screen already calls
+    /// (`ChatWindow.tsx:2383-2384`); leaving 「确定」 live would reopen a bubble the screen already calls
     /// interrupted and open a read the router can only refuse.
     func testStoppingATurnParkedOnAMemberAskRetiresTheAnswer() async throws {
         let (vm, stream, confirmer) = makeModel()
@@ -309,7 +309,7 @@ final class ToolConfirmationTests: XCTestCase {
     }
 
     /// A denial is answered too: the tool comes back with a refusal result, and the card keeps the refusal as
-    /// its own state (`ChatWindow.tsx:319-324` ranks `rejected` above a result).
+    /// its own state (`ChatWindow.tsx:324-329` ranks `rejected` above a result).
     func testADeniedCardKeepsItsRefusalAfterTheResult() async throws {
         let (vm, stream, confirmer) = makeModel()
         try await park(on: vm, stream)
@@ -329,7 +329,7 @@ final class ToolConfirmationTests: XCTestCase {
 
     /// The recursion the console only reaches by copying its read loop three times: a confirmation arriving
     /// on a confirm stream opens a fresh panel, and answering it opens a third stream
-    /// (`ChatWindow.tsx:2036-2331`).
+    /// (`ChatWindow.tsx:2041-2336`).
     func testANestedConfirmationAsksAgainOnTheResumedStream() async throws {
         let (vm, stream, confirmer) = makeModel()
         try await park(on: vm, stream)
@@ -487,7 +487,7 @@ final class ToolConfirmationTests: XCTestCase {
     }
 
     /// A second ask for a tool that was already answered is a new question, not an edit of the settled one
-    /// (`ChatWindow.tsx:2036-2331` opens a fresh pending state for the nested frame).
+    /// (`ChatWindow.tsx:2041-2336` opens a fresh pending state for the nested frame).
     func testAFreshAskAfterAnAnswerOpensItsOwnBlock() throws {
         var transcript = ChatTranscript()
         transcript.send("删掉临时目录")

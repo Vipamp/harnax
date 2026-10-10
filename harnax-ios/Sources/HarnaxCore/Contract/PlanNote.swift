@@ -13,7 +13,7 @@ import Foundation
 ///   Whatever format the runtime writes reaches the screen as it arrived; this side neither parses nor
 ///   re-formats it, because guessing at the pattern would turn a date the app cannot read into a blank line.
 /// - A plan with no `name` is not a plan. The console's `hasValidCurrentPlan` uses the name as the validity
-///   flag and renders nothing without it (`harnax-webui/src/pages/session/components/ChatWindow.tsx:2965-3038`),
+///   flag and renders nothing without it (`harnax-webui/src/pages/session/components/ChatWindow.tsx:2980-3053`),
 ///   and its `plan_card` segment returns null on the same test (`:2746-2858`). `isValid` is that rule.
 ///
 /// Every field is read as optional: the routes answer `ResultVo<List<Any>>` and `ResultVo<Any?>`
@@ -22,7 +22,7 @@ import Foundation
 /// unreadable subtask costs that row, not the plan.
 public struct PlanNote: Decodable, Equatable, Sendable, Identifiable {
     /// The plan's own key inside its session, which is what the console uses as the accordion row id
-    /// (`ChatWindow.tsx:3041-3290`) and what an incremental refresh compares against.
+    /// (`ChatWindow.tsx:3056-3305`) and what an incremental refresh compares against.
     public let planId: String?
     public let sessionId: String?
     public let name: String?
@@ -89,7 +89,7 @@ public struct PlanNote: Decodable, Equatable, Sendable, Identifiable {
     /// the accordion, and its timestamp is the only other column that distinguishes it.
     public var id: String { planId ?? createdAt ?? "" }
 
-    /// The name is the validity flag, not a label (`hasValidCurrentPlan`, `ChatWindow.tsx:2965-3038`).
+    /// The name is the validity flag, not a label (`hasValidCurrentPlan`, `ChatWindow.tsx:2980-3053`).
     public var isValid: Bool { hxPresented(name) != nil }
 
     public var title: String? { hxPresented(name) }
@@ -99,7 +99,7 @@ public struct PlanNote: Decodable, Equatable, Sendable, Identifiable {
     public var createdAtText: String? { hxPresented(createdAt) }
 
     /// Subtasks in the order the runtime wrote them. The console never sorts this list — its table shows the
-    /// array as it arrived (`ChatWindow.tsx:3041-3290`) — so neither does the screen.
+    /// array as it arrived (`ChatWindow.tsx:3056-3305`) — so neither does the screen.
     public var steps: [PlanSubTask] { subtasks }
 
     /// How far the plan got, spelled from its own rows rather than from the `status` column: the runtime
@@ -186,7 +186,7 @@ public enum PlanState: String, CaseIterable, Decodable, Sendable {
     case done = "DONE"
     case abandoned = "ABANDONED"
 
-    /// The console renders this column from the wire name (`ChatWindow.tsx:3041-3290`). Spelled as literals
+    /// The console renders this column from the wire name (`ChatWindow.tsx:3056-3305`). Spelled as literals
     /// rather than built from `rawValue`, because the copy gate only sees a key it can read off the source.
     public var titleKey: String {
         switch self {
@@ -223,7 +223,7 @@ public struct CurrentPlan: Decodable, Equatable, Sendable {
         note = try box.decode(PlanNote.self)
     }
 
-    /// The one rule the panel applies before it draws anything (`ChatWindow.tsx:2965-3038`).
+    /// The one rule the panel applies before it draws anything (`ChatWindow.tsx:2980-3053`).
     public var valid: Bool { note?.isValid ?? false }
 }
 
@@ -231,7 +231,7 @@ public struct CurrentPlan: Decodable, Equatable, Sendable {
 
 private extension KeyedDecodingContainer {
     /// Absent, explicitly null and unreadable all read as "no value", which is what the console does for a
-    /// plan column the runtime left empty (`ChatWindow.tsx:2965-3038`).
+    /// plan column the runtime left empty (`ChatWindow.tsx:2980-3053`).
     func hxText(_ key: K) -> String? {
         hxPresented((try? decodeIfPresent(String.self, forKey: key)) ?? nil)
     }
@@ -266,7 +266,7 @@ public protocol PlanReading: Sendable {
     /// `GET /api/router/agent/session/{sessionId}/plans` (`AgentProxyController.kt:157-165`) — every plan this
     /// conversation has written. The console loads this on opening the panel and on a manual refresh only:
     /// its 5-second timer is declared and never started
-    /// (`harnax-webui/src/pages/session/components/ChatWindow.tsx:603`, `:2651-2675`).
+    /// (`harnax-webui/src/pages/session/components/ChatWindow.tsx:608`, `:2666-2690`).
     func planNotes(sessionId: String) async -> Result<[PlanNote], APIError>
 
     /// `GET /api/router/agent/session/{sessionId}/current-plan` (`AgentProxyController.kt:170-178`) — the plan

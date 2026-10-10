@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Three answers, because the wire has three shapes: the run may go ahead, it may go ahead and stop asking
 /// next time, or it may not go ahead at all. The console only ever sends the first and the third
-/// (`harnax-webui/src/pages/session/components/ChatWindow.tsx:1730-1749`); 「总是允许」 is the iOS affordance
+/// (`harnax-webui/src/pages/session/components/ChatWindow.tsx:1735-1754`); 「总是允许」 is the iOS affordance
 /// `FEATURES.md` §3 asks for, and it can only be expressed in per-tool mode
 /// (`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/AgentRequest.kt:150-160`) — the bulk
 /// body has no field that could carry it.

@@ -95,17 +95,17 @@ public struct ChatView: View {
         .toolbar {
             // Declared first so it sits left of the workspace entry, which is where the console keeps the
             // readout — beside the title, ahead of the action buttons
-            // (`harnax-webui/src/pages/session/index.tsx:359-361`). This is the one unwrap of the reading:
+            // (`harnax-webui/src/pages/session/index.tsx:360-362`). This is the one unwrap of the reading:
             // the model keeps no reading for the legs that answer without one, so the absence here *is* the
             // judgement (`ContextUsageReadout`).
             if let usage = vm.contextUsage {
                 ToolbarItem(placement: .primaryAction) { contextUsageTag(usage) }
             }
             // A deliberate fork from the console, which draws its Workspace button always and checks the status
-            // when it is tapped (`harnax-webui/src/pages/session/index.tsx:280-292`): with no sandbox manager
+            // when it is tapped (`harnax-webui/src/pages/session/index.tsx:281-293`): with no sandbox manager
             // running every workspace route is a 404 (`SandboxWorkspaceController.kt:398-416`), so this corner
             // only offers the drawer once a status read said the sandbox is up. The plan's drawer lost the corner
-            // — a plan tool call opens it by itself (`ChatWindow.tsx:1501`).
+            // — a plan tool call opens it by itself (`ChatWindow.tsx:1506`).
             if vm.workspacePanel != nil, vm.sandboxIsRunning {
                 ToolbarItem(placement: .primaryAction) { workspaceButton }
             }
@@ -139,7 +139,7 @@ public struct ChatView: View {
             vm.bind(conversation)
             // Two reads, one after the other: the rows on screen and the flags that decide which composer
             // controls are real. The second is what the gating matrix reads off
-            // (`ChatWindow.tsx:718-737`), so it has to be re-taken for every conversation.
+            // (`ChatWindow.tsx:723-742`), so it has to be re-taken for every conversation.
             await vm.load()
             await vm.loadComposerConfig()
             // And the one read that decides whether the workspace entry exists at all.
@@ -175,7 +175,7 @@ public struct ChatView: View {
 
     /// The header readout: how full the context the agent holds is, and which number that is.
     ///
-    /// The console draws it as a tag with a hover tooltip (`harnax-webui/src/pages/session/index.tsx:32-83`); a
+    /// The console draws it as a tag with a hover tooltip (`harnax-webui/src/pages/session/index.tsx:33-84`); a
     /// phone has no hover, so the same reading opens from the chip — the chip for the headline, the tooltip's
     /// five rows for what it lists. Both halves come from `ContextUsageReadout`, so which number answers which
     /// question is decided once and not in a view. The rows open and close nothing: the readout reports, it
@@ -185,14 +185,14 @@ public struct ChatView: View {
     /// and the number it bills cannot share one there, whatever is nested in between.
     ///
     /// Absent rather than `0%`, the way the console hides its tag
-    /// (`index.tsx:361`): `ChatViewModel.contextUsage` only ever holds a reading that passed
+    /// (`index.tsx:362`): `ChatViewModel.contextUsage` only ever holds a reading that passed
     /// `ContextUsage.isReadable`, and both legs that answer without one — no instance holds the session, the
     /// session was never bound — say the router cannot see this context, never that the context is empty.
     @ViewBuilder
     private func contextUsageTag(_ usage: ContextUsage) -> some View {
         Button { showsContextUsagePanel = true } label: {
             // `orange` for a context that has reached the automatic trigger, neutral for one that has not
-            // (`index.tsx:74`): at that point the next turn compacts this context whether or not anyone
+            // (`index.tsx:75`): at that point the next turn compacts this context whether or not anyone
             // asks, and a quiet pill would be the readout withholding the only news it has.
             HXChip(
                 ContextUsageReadout.headline(for: usage),
@@ -212,7 +212,7 @@ public struct ChatView: View {
     /// The five readings as a two-column table: the word on the left, the number it bills right-aligned
     /// against the other four.
     ///
-    /// `Grid` does the alignment the console's tooltip gets from a table (`index.tsx:61-71`): each column sizes
+    /// `Grid` does the alignment the console's tooltip gets from a table (`index.tsx:62-72`): each column sizes
     /// off its widest cell, so the numbers share a right edge without a fixed width a longer locale would clip.
     /// The floor on the panel is what makes it read as two columns rather than as a list with a number glued to
     /// each word, and the word column is the one that swallows the slack: with the numbers held to their own
@@ -328,7 +328,7 @@ public struct ChatView: View {
     }
 
     /// The console's "back to bottom" control, shown once the user has scrolled clear of the tail
-    /// (`ChatWindow.tsx:620-627`, rendered at `:3452-3456`).
+    /// (`ChatWindow.tsx:625-632`, rendered at `:3467-3471`).
     @ViewBuilder
     private var jumpButton: some View {
         if !vm.isAnchoredToBottom {
@@ -378,7 +378,7 @@ private extension View {
 
 // MARK: - input
 
-/// The console's `inputCard` (`ChatWindow.tsx:3459-3700`): the strip of pictures waiting to go, the text box,
+/// The console's `inputCard` (`ChatWindow.tsx:3474-3715`): the strip of pictures waiting to go, the text box,
 /// and the row of chips under it that writes the conversation's four settings.
 private struct ChatInputBar: View {
     @ObservedObject var vm: ChatViewModel
@@ -492,7 +492,7 @@ private struct ChatInputBar: View {
 }
 
 /// The pictures waiting for the send, each with its own way of being taken back out
-/// (`ChatWindow.tsx:3463-3477`).
+/// (`ChatWindow.tsx:3478-3492`).
 private struct ChatImageStrip: View {
     let images: [String]
     let onRemove: (Int) -> Void
@@ -522,13 +522,13 @@ private struct ChatImageStrip: View {
 
 /// The chip row. Every one of them stays tappable even when the model forbids it — the console's gating is a
 /// muted style plus a warning, not a dead control, because a dead control has nothing to say
-/// (spec's matrix, `ChatWindow.tsx:3493-3600`).
+/// (spec's matrix, `ChatWindow.tsx:3508-3615`).
 private struct ChatComposerToolbar: View {
     @ObservedObject var vm: ChatViewModel
     @Binding private var showsPhotoPicker: Bool
     /// Whether the chip is asking which source the picture comes from. The console asks no question because its
     /// one picture control clicks a file input and lets the operating system decide
-    /// (`ChatWindow.tsx:3500`); `PhotosPicker` has no camera route at all, so this side asks the question in
+    /// (`ChatWindow.tsx:3515`); `PhotosPicker` has no camera route at all, so this side asks the question in
     /// words and hands the shot to UIKit.
     @State private var showsSourceSheet = false
     /// Whether the camera is open. Its own flag, because it is its own sheet.
@@ -568,7 +568,7 @@ private struct ChatComposerToolbar: View {
                 }
                 permissionChip
                 // The compaction entry, in the console's place in the row — after the permission mode, before
-                // the two that destroy things (`ChatWindow.tsx:3716-3765`). It asks for no confirmation: it is
+                // the two that destroy things (`ChatWindow.tsx:3731-3780`). It asks for no confirmation: it is
                 // the one command here that leaves the conversation itself untouched, because the bubbles on
                 // screen come from the archive and keep every turn it folds away
                 // (`ChatViewModel.requestCompact`).
@@ -582,12 +582,12 @@ private struct ChatComposerToolbar: View {
                     vm.requestCompact()
                 }
                 // The console carries what the entry does as the item's hover title
-                // (`ChatWindow.tsx:3718-3721`); a chip has no hover, so the sentence goes to the description a
+                // (`ChatWindow.tsx:3733-3736`); a chip has no hover, so the sentence goes to the description a
                 // screen reader speaks after the chip's own name.
                 .accessibilityHint(hx("chat.context.compactTip"))
                 // Both go dead for the length of a run, the way the send button turns into a stop button:
                 // a command on a busy session gets refused server-side, so the chips have to say they are
-                // not available rather than look tappable (`ChatWindow.tsx:3679-3686`).
+                // not available rather than look tappable (`ChatWindow.tsx:3694-3701`).
                 ChatComposerChip(
                     titleKey: "chat.composer.stopSandbox",
                     systemImage: "stop",
@@ -637,7 +637,7 @@ private struct ChatComposerToolbar: View {
     }
 
     /// The picture button. A model with no vision cannot pick, but a picture already in the strip still goes
-    /// out — the console blocks the picker, never the state (`ChatWindow.tsx:3493-3505`). The chip stays
+    /// out — the console blocks the picker, never the state (`ChatWindow.tsx:3508-3520`). The chip stays
     /// tappable so the refusal has somewhere to be said; on the test host the sheet is simply absent.
     private var imageChip: some View {
         ChatComposerChip(
@@ -655,7 +655,7 @@ private struct ChatComposerToolbar: View {
         let mode = vm.composer.permissionMode
         if vm.canPickPermission {
             Menu {
-                // `allCases` order, which is the dropdown's order (`ChatWindow.tsx:3601-3638`).
+                // `allCases` order, which is the dropdown's order (`ChatWindow.tsx:3616-3653`).
                 ForEach(vm.permissionOptions, id: \.self) { option in
                     Button {
                         vm.selectPermission(option)

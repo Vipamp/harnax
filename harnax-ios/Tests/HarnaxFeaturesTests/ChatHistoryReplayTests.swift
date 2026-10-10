@@ -3,7 +3,7 @@ import HarnaxCore
 @testable import HarnaxFeatures
 
 /// The console's history mapping, ported: which stored rows become bubbles, in what order, and what a
-/// replayed tool card claims to know (`harnax-webui/src/pages/session/components/ChatWindow.tsx:759-930`).
+/// replayed tool card claims to know (`harnax-webui/src/pages/session/components/ChatWindow.tsx:764-935`).
 final class ChatHistoryReplayTests: XCTestCase {
     // MARK: - fixtures
 
@@ -99,7 +99,7 @@ final class ChatHistoryReplayTests: XCTestCase {
     }
 
     /// Consecutive thinking blocks merge with a blank line between them, and nothing else breaks the run
-    /// (`ChatWindow.tsx:839-849`).
+    /// (`ChatWindow.tsx:844-854`).
     func testConsecutiveThinkingBlocksMergeWithABlankLine() throws {
         let transcript = replay([assistant(thinking: "想一"), assistant(thinking: "想二", text: "答")])
 
@@ -162,7 +162,7 @@ final class ChatHistoryReplayTests: XCTestCase {
     }
 
     /// A row can name several calls and their results come back one after another; pairing only the first
-    /// would leave the rest spinning forever (`ChatWindow.tsx:852-861`).
+    /// would leave the rest spinning forever (`ChatWindow.tsx:857-866`).
     func testSeveralCallsPairWithSeveralResultsInOrder() throws {
         let transcript = replay([
             assistant(calls: [call("shell"), call("write_file")]),
@@ -204,7 +204,7 @@ final class ChatHistoryReplayTests: XCTestCase {
     }
 
     /// A tool result never stands on its own: whatever is left over after the calls claimed their pairs is
-    /// simply not drawn (`ChatWindow.tsx:925-926`).
+    /// simply not drawn (`ChatWindow.tsx:930-931`).
     func testAnUnclaimedToolRowOpensNoBlock() throws {
         let transcript = replay([user("第一条"), assistant(text: "答"), tool("shell", "orphan")])
 
@@ -228,7 +228,7 @@ final class ChatHistoryReplayTests: XCTestCase {
 
     /// The server merges a member's rows into the lead's list stamped with the run they came from
     /// (`TeamHistoryReplay.kt:81-82`), so they have to come back as a bubble of their own, placed above the
-    /// lead's because the lead's turn is the last word of the round (`ChatWindow.tsx:795-823`).
+    /// lead's because the lead's turn is the last word of the round (`ChatWindow.tsx:800-828`).
     func testAMemberRowOpensABubbleAboveTheLead() throws {
         let transcript = replay([
             user("第一条", stamp: 1000),
@@ -305,7 +305,7 @@ final class ChatHistoryReplayTests: XCTestCase {
     }
 
     /// A tool row on its own draws nothing, member-sourced or not: a result only reaches the screen through
-    /// the call it belongs to (`ChatWindow.tsx:911-929`).
+    /// the call it belongs to (`ChatWindow.tsx:916-934`).
     func testAMemberToolRowWithNoMemberRowOpensNothing() throws {
         let transcript = replay([user("第一条"), tool("shell", "无主的执行结果", source: member)])
 
@@ -316,7 +316,7 @@ final class ChatHistoryReplayTests: XCTestCase {
     // MARK: - what replay leaves out
 
     /// A member's result answers a member's call, so it must not be claimed by the lead's card — the scan
-    /// stops at the source boundary the same way the console's does (`ChatWindow.tsx:859`).
+    /// stops at the source boundary the same way the console's does (`ChatWindow.tsx:864`).
     func testAMemberResultDoesNotPairWithALeadCall() throws {
         let transcript = replay([
             assistant(calls: [call("shell")]),

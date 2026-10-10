@@ -4,7 +4,7 @@ import Foundation
 /// the detail read answer (`SessionResponse.kt:35-50`, serialised by the shared
 /// `convertToResponse` at `SessionServiceImpl.kt:86-160`).
 ///
-/// The mapping below is the console's own (`harnax-webui/src/pages/session/components/ChatWindow.tsx:718-737`)
+/// The mapping below is the console's own (`harnax-webui/src/pages/session/components/ChatWindow.tsx:723-742`)
 /// and each default is a decision the server does not make for it:
 ///
 /// - the three `enable*` columns are `Int?` 0/1, and `|| false` means an absent column reads as *off* rather
@@ -33,7 +33,7 @@ public struct SessionChatConfig: Equatable, Sendable {
     public var modelSupportInternet: Bool
     public var modelSupportVision: Bool
     /// A team conversation labels its answers with the team's name, which is the row's `name` column
-    /// (`ChatWindow.tsx:737`).
+    /// (`ChatWindow.tsx:742`).
     public var leadLabel: String?
 
     public init(
@@ -77,7 +77,7 @@ public struct SessionChatConfig: Equatable, Sendable {
     }
 
     /// Thinking cannot be offered as a switch at all: `!modelSupportReasoning` disables it, and mode 2 forbids
-    /// turning it off (`ChatWindow.tsx:3506-3572`, `SessionServiceImpl.kt:291-295`).
+    /// turning it off (`ChatWindow.tsx:3521-3587`, `SessionServiceImpl.kt:291-295`).
     public var canToggleThink: Bool { modelSupportReasoning && modelThinkingMode != 2 }
     public var canToggleSearch: Bool { modelSupportInternet }
     public var thinkLockedOn: Bool { modelThinkingMode == 2 }
@@ -183,7 +183,7 @@ public protocol SessionConfiguring: Sendable {
     /// instead of being left off.
     ///
     /// This route is the one the web console never calls: it sets the same four columns through
-    /// `POST /api/router/agent/command` (`ChatWindow.tsx:2408-2430`), which additionally refuses a permission
+    /// `POST /api/router/agent/command` (`ChatWindow.tsx:2413-2435`), which additionally refuses a permission
     /// change on a `task-` conversation and invalidates the runtime's cached agent copy
     /// (`DefaultAgentRunner.kt:1014-1040`). Neither happens here. The chat tab's own switches keep going
     /// through the command channel; this sheet is the admin-side editor the route exists for.

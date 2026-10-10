@@ -5,13 +5,13 @@ import Foundation
 /// checked at `:1017`), and one of them is what a `PERMISSION` command carries in `args`
 /// (`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/AgentRequest.kt:74-119`).
 ///
-/// The case order is the console's dropdown order (`harnax-webui/src/pages/session/components/ChatWindow.tsx:3601-3638`),
+/// The case order is the console's dropdown order (`harnax-webui/src/pages/session/components/ChatWindow.tsx:3616-3653`),
 /// which is the order the screen lists them in.
 ///
 /// A sixth value would not be a bug on this side: the runtime owns the set, and it refuses anything outside
 /// it, so `init(wireValue:)` answers nil rather than guessing and the screen falls back to `defaultMode` —
 /// which is also what the console does for a conversation whose column is null
-/// (`permissionMode = config.permissionMode || 'DEFAULT'`, `ChatWindow.tsx:720-738`).
+/// (`permissionMode = config.permissionMode || 'DEFAULT'`, `ChatWindow.tsx:725-743`).
 public enum ChatPermissionMode: String, CaseIterable, Sendable {
     /// Ask before anything that writes. The runtime's own default.
     case defaultMode = "DEFAULT"

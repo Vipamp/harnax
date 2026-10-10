@@ -16,7 +16,7 @@ import UIKit
 /// An `https://` link therefore cannot work, which is why every string that leaves this type is a data URL and
 /// every string that does not read as one is dropped rather than sent.
 ///
-/// The web console builds the same shape with `FileReader.readAsDataURL` (`ChatWindow.tsx:2442-2468`); this is
+/// The web console builds the same shape with `FileReader.readAsDataURL` (`ChatWindow.tsx:2447-2483`); this is
 /// that line of code, in the other direction — it never asks the network anything.
 enum ChatImageData {
     /// `data:image/<mime>;base64,<bytes>`, the exact prefix order the server splits on: it takes the text
@@ -92,7 +92,7 @@ private struct ChatPhotoPickerHost: View {
                 photoLibrary: .shared()
             )
             // Cleared on the way out rather than left to grow: the console resets its hidden file input for
-            // the same reason, so picking the same picture twice is possible (`ChatWindow.tsx:2466-2468`).
+            // the same reason, so picking the same picture twice is possible (`ChatWindow.tsx:2481-2483`).
             .onChange(of: selection) { _, items in
                 guard !items.isEmpty else { return }
                 let picked = items

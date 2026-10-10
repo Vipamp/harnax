@@ -94,7 +94,7 @@ final class ChatHistoryLogTests: XCTestCase {
     }
 
     /// Every content column is optional on this side: the console reads `log.message || ''`
-    /// (`ChatWindow.tsx:782`), so a row that names no message is blank rather than undecodable.
+    /// (`ChatWindow.tsx:787`), so a row that names no message is blank rather than undecodable.
     func testRoleAloneDecodes() throws {
         let decoded = try log(#"{"role":"ASSISTANT"}"#)
 

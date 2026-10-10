@@ -5,7 +5,7 @@ import HarnaxCore
 ///
 /// This cannot ride on `APIClient`: that transport waits for a whole body, and a chat answer is read frame by
 /// frame. The credential the router expects is the account's permanent key (`X-Api-Key`), with the bearer
-/// token as the fallback — the same order `getRouterHeaders` uses in `webui` (`ChatWindow.tsx:153-164`).
+/// token as the fallback — the same order `getRouterHeaders` uses in `webui` (`ChatWindow.tsx:158-169`).
 ///
 /// Being a separate transport is no reason to hold a different standard about that fallback: a bearer expires
 /// whether it is going to a JSON call or to a stream, so this client renews it the way `APIClient` does —
@@ -146,7 +146,7 @@ public struct ChatStreamClient: AgentStreaming {
             try Task.checkCancellation()
             guard let payload = SSE.payload(from: line) else { continue }
             // One frame the client cannot read does not end the turn. The console catches around every
-            // `JSON.parse` in its line loop and goes on with the next line (`ChatWindow.tsx:1389-1394`,
+            // `JSON.parse` in its line loop and goes on with the next line (`ChatWindow.tsx:1394-1399`,
             // `:2349-2351`), and that is the right call for two different reasons at once: a frame the
             // server wrote across a buffer boundary, and an event type older clients have never seen, are
             // both news about one frame — not news about a run that is still going. The socket's own
@@ -214,7 +214,7 @@ public struct ChatStreamClient: AgentStreaming {
 /// given as an optional dependency, so a host can leave the answer path unwired.
 extension ChatStreamClient: ToolConfirming {}
 
-/// Server-Sent Events framing, matching the browser reader `webui` uses (`ChatWindow.tsx:1380-1394`): a
+/// Server-Sent Events framing, matching the browser reader `webui` uses (`ChatWindow.tsx:1385-1399`): a
 /// payload line is `data:` plus JSON, and everything else — `event:`, `id:`, a `:` comment, the blank
 /// separator between frames — is skipped.
 enum SSE {

@@ -59,7 +59,7 @@ final class ChatTranscriptTests: XCTestCase {
     }
 
     /// A closing frame carries no content and seals the run it closes: the delta behind it belongs to a new
-    /// message, not to the one that was signed off (`ChatWindow.tsx:1422-1428`).
+    /// message, not to the one that was signed off (`ChatWindow.tsx:1427-1433`).
     func testClosingFrameDropsItsPayloadAndStartsANewBlock() throws {
         var transcript = started()
         try fold(&transcript,
@@ -136,7 +136,7 @@ final class ChatTranscriptTests: XCTestCase {
     }
 
     /// `ToolResultEvent` does not always spell the name the call used, so the fold falls back to the open
-    /// card the way the console's three-level lookup does (`ChatWindow.tsx:1067-1091`).
+    /// card the way the console's three-level lookup does (`ChatWindow.tsx:1072-1096`).
     func testAResultWithAnotherNameStillLandsOnTheOpenCard() throws {
         var transcript = started()
         try fold(&transcript,
@@ -301,7 +301,7 @@ final class ChatTranscriptTests: XCTestCase {
     }
 
     /// A card parked on an answer is not a card that lost its result
-    /// (`ChatWindow.tsx:2383-2384` leaves those alone).
+    /// (`ChatWindow.tsx:2388-2389` leaves those alone).
     func testClosingLeavesAParkedCardParked() throws {
         var transcript = started()
         try fold(&transcript, ChatFrames.confirm(ChatFrames.pending(id: "t-1", name: "bash")))

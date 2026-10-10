@@ -10,7 +10,7 @@ import HarnaxKit
 /// dismissed by the drawer itself.
 ///
 /// The console's two panes are both here, and the layout follows what a phone can hold rather than the web layout:
-/// the current plan is a card whose body collapses (`ChatWindow.tsx:2965-3038`), and the history is an accordion
+/// the current plan is a card whose body collapses (`ChatWindow.tsx:2980-3053`), and the history is an accordion
 /// whose newest row opens by default (`:3041-3290`). The history's subtask *table* — three columns, a horizontal
 /// scroll and one expandable row each — becomes three-line rows with the same three fields behind the same
 /// disclosure, because a table at 390 pt shows one column at a time.
@@ -63,7 +63,7 @@ public struct PlanPanelView: View {
 
     // MARK: - chrome
 
-    /// Panel title, then the manual history refresh (`handleRefreshPlans`, `ChatWindow.tsx:3173-3180`), then the
+    /// Panel title, then the manual history refresh (`handleRefreshPlans`, `ChatWindow.tsx:3188-3195`), then the
     /// close the console also has (`:3155-3160`).
     private var header: some View {
         HStack(spacing: 8) {
@@ -123,7 +123,7 @@ public struct PlanPanelView: View {
     }
 
     /// A failed read lands on the banner line rather than replacing the panel: whatever the last good answer put on
-    /// screen stays on screen (`ChatWindow.tsx:2640-2644` only logs, which on a handset reads as a refresh button
+    /// screen stays on screen (`ChatWindow.tsx:2655-2659` only logs, which on a handset reads as a refresh button
     /// that does nothing).
     private var panel: some View {
         ScrollView {
@@ -170,7 +170,7 @@ public struct PlanPanelView: View {
                 HXSectionHeader("chat.plan.history")
                 if !vm.history.isEmpty {
                     // The count sits next to the heading the way the console's `planCount` sits next to its `h4`
-                    // (`ChatWindow.tsx:3168-3172`). A number is not copy.
+                    // (`ChatWindow.tsx:3183-3187`). A number is not copy.
                     HXChip("\(vm.history.count)", tone: .brand)
                 }
                 Spacer(minLength: 0)
@@ -193,7 +193,7 @@ public struct PlanPanelView: View {
     }
 
     /// The two places the console says the same sentence: no plan open, and no plan ever written
-    /// (`noCurrentPlanHint` / `noPlansHint` are one string there, `ChatWindow.tsx:3145-3170`).
+    /// (`noCurrentPlanHint` / `noPlansHint` are one string there, `ChatWindow.tsx:3160-3185`).
     private func emptyBlock(symbol: String, titleKey: String) -> some View {
         VStack(spacing: 6) {
             Image(systemName: symbol)
@@ -218,7 +218,7 @@ public struct PlanPanelView: View {
 /// The plan the session is on right now, re-read every 2 s while this card is open.
 ///
 /// The live line follows the loop that actually runs rather than the mere existence of a plan: the console prints
-/// `Realtime Update` under `hasValidCurrentPlan()` (`ChatWindow.tsx:3060-3067`), which would say the panel is
+/// `Realtime Update` under `hasValidCurrentPlan()` (`ChatWindow.tsx:3075-3082`), which would say the panel is
 /// updating while its own collapsed card has stopped polling.
 struct CurrentPlanCard: View {
     let plan: PlanNote
@@ -339,7 +339,7 @@ struct PlanHistoryRow: View {
         )
     }
 
-    /// `Created At:` and `Total Cost Time:` (`ChatWindow.tsx:3276-3280`). The stamp reaches the screen as the
+    /// `Created At:` and `Total Cost Time:` (`ChatWindow.tsx:3291-3295`). The stamp reaches the screen as the
     /// runtime wrote it — `PlanNote`'s header says why neither side parses it — and an absent cost renders as
     /// nothing rather than as `0s`.
     private var footer: some View {
@@ -363,7 +363,7 @@ struct PlanHistoryRow: View {
 // MARK: - subtask row
 
 /// One subtask: state, name and elapsed seconds, with the three long fields behind the same disclosure the
-/// console's table puts under its expandable row (`ChatWindow.tsx:3206-3275`).
+/// console's table puts under its expandable row (`ChatWindow.tsx:3221-3290`).
 struct PlanSubTaskRow: View {
     let step: PlanSubTask
     /// Expandable rows start shut, in the table and here.
@@ -436,7 +436,7 @@ struct PlanField: View {
 }
 
 /// The four states' colour and glyph, spelled once. The console's own mapping: done green, in-progress blue,
-/// abandoned red, todo the default grey (`ChatWindow.tsx:3011-3027`, `:3186-3196`). The *words* are never here —
+/// abandoned red, todo the default grey (`ChatWindow.tsx:3026-3042`, `:3201-3211`). The *words* are never here —
 /// `PlanState.titleKey` owns those.
 enum PlanStateStyle {
     static func tone(_ state: PlanState) -> PaletteSlot {

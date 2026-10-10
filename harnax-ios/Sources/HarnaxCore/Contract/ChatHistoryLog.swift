@@ -19,7 +19,7 @@ public enum ChatHistoryLog: Decodable, Sendable, Equatable {
     case system(message: String, timestamp: Int64?, source: ChatEventSource?)
     case tool(name: String, result: String, timestamp: Int64?, source: ChatEventSource?)
     /// A role or shape this build does not recognise. The console draws nothing for a log that is not USER,
-    /// ASSISTANT or TOOL (`harnax-webui/src/pages/session/components/ChatWindow.tsx:774-929`), which is the
+    /// ASSISTANT or TOOL (`harnax-webui/src/pages/session/components/ChatWindow.tsx:779-934`), which is the
     /// behaviour this case folds into.
     case unknown
 
@@ -41,7 +41,7 @@ public enum ChatHistoryLog: Decodable, Sendable, Equatable {
         }
 
         /// Both fields are read on their own: the console replays a call whose input it cannot read as
-        /// `tool.input || {}` (`ChatWindow.tsx:879`), so an unreadable argument tree costs the payload, not
+        /// `tool.input || {}` (`ChatWindow.tsx:884`), so an unreadable argument tree costs the payload, not
         /// the card.
         public init(from decoder: Decoder) throws {
             let row = try decoder.container(keyedBy: Field.self)
@@ -64,7 +64,7 @@ public enum ChatHistoryLog: Decodable, Sendable, Equatable {
     }
 
     /// The role lower-cased, which is how the console spells a replayed message id
-    /// (`ChatWindow.tsx:764`).
+    /// (`ChatWindow.tsx:769`).
     public var roleKey: String? {
         switch self {
         case .user: return "user"
@@ -152,13 +152,13 @@ public enum ChatHistoryLog: Decodable, Sendable, Equatable {
     }
 
     /// Absent, explicitly null and unreadable all arrive as the empty string, which is what the console
-    /// renders for a row whose content column is blank (`ChatWindow.tsx:782`).
+    /// renders for a row whose content column is blank (`ChatWindow.tsx:787`).
     private static func text(_ key: Field, in row: KeyedDecodingContainer<Field>) -> String {
         ((try? row.decodeIfPresent(String.self, forKey: key)) ?? nil) ?? ""
     }
 
     /// A stamp this side cannot read is the same as no stamp: the console's `log.timestamp || Date.now()`
-    /// (`ChatWindow.tsx:764`) treats both alike.
+    /// (`ChatWindow.tsx:769`) treats both alike.
     private static func stamp(in row: KeyedDecodingContainer<Field>) -> Int64? {
         (try? row.decodeIfPresent(Int64.self, forKey: .timestamp)) ?? nil
     }
