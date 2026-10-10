@@ -29,7 +29,7 @@ export interface TrendCardProps {
  *
  * 费用只在合计里出现，今日四卡里没有费用卡：`token_stats.fee` 是 decimal(10,0)，只有整数元，
  * 「今日费用 ¥0.00」会假装一个并不存在的精度。窗口也不给选择器——首页是免配置的一屏，
- * 带筛选器的深度分析在「监控与治理 → Token 监控」。
+ * 带筛选器的深度分析在「集群监控 → Token 监控」。
  */
 const TrendCard: React.FC<TrendCardProps> = ({ trend, recent14dFee, loading }) => {
   const intl = useIntl();

@@ -325,7 +325,7 @@ const MyAgentMemory: React.FC = () => {
             />
             {intl.formatMessage({
               id: 'pages.memory.title',
-              defaultMessage: 'My Agent Memory',
+              defaultMessage: 'Agent Memory',
             })}
           </span>
         ),
@@ -342,7 +342,7 @@ const MyAgentMemory: React.FC = () => {
           <Button
             key="drafts"
             icon={<AuditOutlined />}
-            onClick={() => history.push('/agent/memory-drafts')}
+            onClick={() => history.push('/optimization/memory/drafts')}
           >
             {intl.formatMessage({
               id: 'pages.memory.draft.title',

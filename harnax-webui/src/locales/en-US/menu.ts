@@ -10,22 +10,25 @@ export default {
   'menu.context.cli': 'CLI Tools',
   'menu.context.tool': 'Tool Management',
 
+  // Optimization Governance
+  'menu.optimization': 'Optimization Governance',
+  'menu.optimization.skill.drafts': 'Skill Promotion',
+  'menu.optimization.memory': 'Agent Memory',
+  'menu.optimization.memory.drafts': 'Session Memory Approvals',
+
   // Agent
   'menu.agent': 'Agent',
   'menu.agent.management': 'Agent Management',
   'menu.agent.team': 'Agent Teams',
   'menu.agent.session': 'Session',
   'menu.agent.task': 'Scheduled Tasks',
-  'menu.agent.memory': 'My Agent Memory',
-  'menu.agent.memory.drafts': 'Memory Merge Approvals',
 
   // Job
 
-  // Monitoring & Governance
-  'menu.monitor': 'Monitoring & Governance',
-  'menu.monitor.skill.usage': 'Skill Usage',
+  // Cluster Monitoring
+  'menu.monitor': 'Cluster Monitoring',
+  'menu.monitor.skill.usage': 'Skill Monitoring',
   'menu.monitor.call.metrics': 'Call Metrics',
-  'menu.monitor.skill.drafts': 'Draft Review',
   'menu.monitor.token.monitor': 'Token Monitor',
 
   // System

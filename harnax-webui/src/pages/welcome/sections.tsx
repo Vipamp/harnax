@@ -281,7 +281,7 @@ export const TodoStrip: React.FC<TodoStripProps> = ({
     <Card style={glassCardStyle} styles={{ body: { padding: '14px 20px' } }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
         <Space split={separator} size={8} wrap>
-          <Link onClick={() => history.push('/monitor/skill-drafts')}>
+          <Link onClick={() => history.push('/optimization/skill-drafts')}>
             {intl.formatMessage(
               { id: 'pages.welcome.todo.drafts' },
               { count: formatCount(pendingSkillDrafts) },

@@ -55,26 +55,6 @@ export default [
         path: '/agent/task',
         component: './agent-task',
       },
-      {
-        // 自助合规页：每个登录用户都要能看到并清掉自己智能体的记忆，所以不加 access
-        name: 'memory',
-        icon: 'book',
-        path: '/agent/memory',
-        component: './memory',
-      },
-      {
-        // A conversation's merge only reaches an agent's long-term layer once its owner says so,
-        // so the queue lives beside the page that shows what those layers hold
-        name: 'memory.drafts',
-        icon: 'audit',
-        path: '/agent/memory-drafts',
-        component: './memory/drafts',
-      },
-      {
-        path: '/agent/memory-draft/detail/:id',
-        component: './memory/draftDetail',
-        hideInMenu: true,
-      },
     ],
   },
   {
@@ -112,25 +92,14 @@ export default [
         component: './skill',
       },
       {
-        // 用量与待审草稿已迁至「监控与治理」，旧地址保活
-        path: '/context/skill-usage',
-        redirect: '/monitor/skill-usage',
-        hideInMenu: true,
-      },
-      {
-        path: '/context/skill-drafts',
-        redirect: '/monitor/skill-drafts',
-        hideInMenu: true,
-      },
-      {
-        // 带路径参数的旧地址不能用 redirect（Navigate 不会替换 :id），所以仍挂同一个页面
-        path: '/context/skill-draft/detail/:id',
-        component: './skill/draftDetail',
-        hideInMenu: true,
-      },
-      {
         path: '/context/skill/detail/:id',
         component: './skill/detail',
+        hideInMenu: true,
+      },
+      {
+        // Usage stays a monitoring concern under Cluster Monitoring; this old address keeps working
+        path: '/context/skill-usage',
+        redirect: '/monitor/skill-usage',
         hideInMenu: true,
       },
       {
@@ -143,6 +112,47 @@ export default [
         // 菜单已迁至系统管理，旧地址保活
         path: '/context/channel',
         redirect: '/system/channel',
+        hideInMenu: true,
+      },
+    ],
+  },
+  {
+    // Both queues here feed the agents' own improvement loop: what they remember and what
+    // they propose as new skills. Neither is a capability to bind, so they don't sit in context.
+    name: 'optimization',
+    icon: 'bulb',
+    path: '/optimization',
+    routes: [
+      {
+        // A conversation's merge only reaches an agent's long-term layer once its owner says so,
+        // so the approval queue is listed before the page that shows what those layers hold
+        name: 'memory.drafts',
+        icon: 'audit',
+        path: '/optimization/memory/drafts',
+        component: './memory/drafts',
+      },
+      {
+        path: '/optimization/memory/draft/detail/:id',
+        component: './memory/draftDetail',
+        hideInMenu: true,
+      },
+      {
+        // Self-service compliance page: every signed-in user must be able to see and purge
+        // what their own agents remember, so this carries no access rule
+        name: 'memory',
+        icon: 'book',
+        path: '/optimization/memory',
+        component: './memory',
+      },
+      {
+        name: 'skill.drafts',
+        icon: 'audit',
+        path: '/optimization/skill-drafts',
+        component: './skill/drafts',
+      },
+      {
+        path: '/optimization/skill-draft/detail/:id',
+        component: './skill/draftDetail',
         hideInMenu: true,
       },
     ],
@@ -161,16 +171,6 @@ export default [
         name: 'call.metrics',
         path: '/monitor/call-metrics',
         component: './call-metrics',
-      },
-      {
-        name: 'skill.drafts',
-        path: '/monitor/skill-drafts',
-        component: './skill/drafts',
-      },
-      {
-        path: '/monitor/skill-draft/detail/:id',
-        component: './skill/draftDetail',
-        hideInMenu: true,
       },
       {
         name: 'token.monitor',
@@ -197,7 +197,7 @@ export default [
         access: 'canAccessUserManagement',
       },
       {
-        // Token 监控已迁至「监控与治理」，旧地址保活
+        // Token 监控已迁至「集群监控」，旧地址保活
         path: '/system/token-monitor',
         redirect: '/monitor/token-monitor',
         hideInMenu: true,

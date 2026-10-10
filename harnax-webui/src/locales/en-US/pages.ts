@@ -199,7 +199,7 @@ export default {
   'pages.skill.visibility.tag.canary': 'Rollout {pct}%',
   'pages.skill.visibility.tag.allowList': '{count} named user(s)',
   'pages.skill.visibility.tag.env': 'Only {environments}',
-  'pages.skill.usage.title': 'Skill Usage',
+  'pages.skill.usage.title': 'Skill Monitoring',
   'pages.skill.usage.perSkill': 'Per-skill usage',
   'pages.skill.usage.totalSkills': 'Skills',
   'pages.skill.usage.totalViews': 'Loads',
@@ -273,7 +273,7 @@ export default {
   'pages.callMetrics.loadFailed': 'Failed to load call metrics',
   'pages.callMetrics.windowHint': 'Counts cover {from} to {to}, both hours inclusive - the cards, the trend line and the table below all read this range. Success rate and P95 are range-wide figures, not per-bucket ones.',
 
-  'pages.skill.draft.title': 'Draft review',
+  'pages.skill.draft.title': 'Skill Promotion',
   'pages.skill.draft.name': 'Skill name',
   'pages.skill.draft.description': 'Description',
   'pages.skill.draft.proposedAt': 'Proposed',
@@ -640,7 +640,7 @@ export default {
   'pages.agent.ownerPlaceholder': 'Auto-filled with current user',
   'pages.agent.isPublic': 'Is Public',
   'pages.agent.skillSelfWrite': 'Self-evolution',
-  'pages.agent.skillSelfWriteHint': 'The agent may draft skills inside its own session. Nothing is published and no other agent sees it until a reviewer approves the draft on the draft review page.',
+  'pages.agent.skillSelfWriteHint': 'The agent may draft skills inside its own session. Nothing is published and no other agent sees it until a reviewer approves the draft on the Skill Promotion page.',
   'pages.agent.memoryEnabled': 'Long-term memory',
   'pages.agent.memoryEnabledHint': 'Off means this agent stops extracting memory from its sessions and stops carrying existing memory into its context. Memory already written is not deleted; clear it on the memory page.',
   'pages.agent.toolConfig': 'Tool Config',
@@ -1387,8 +1387,8 @@ export default {
   'pages.tokenMonitor.statDimension': 'Stat dimension',
   'pages.tokenMonitor.fee': 'Fee',
 
-  // My agent memory (self-service compliance page)
-  'pages.memory.title': 'My Agent Memory',
+  // Agent memory (self-service compliance page)
+  'pages.memory.title': 'Agent Memory',
   'pages.memory.subtitle': 'Only the agents owned by the signed-in account are listed here',
   'pages.memory.agentName': 'Agent',
   'pages.memory.detailOpen': 'Click to read what this agent remembers',
@@ -1556,7 +1556,7 @@ export default {
   'pages.welcome.platform.note': 'Platform-wide, not this tenant',
   'pages.welcome.platform.tools': 'Tools {count}',
   'pages.welcome.platform.cli': 'CLI packages {count}',
-  'pages.welcome.todo.drafts': '{count} drafts pending review',
+  'pages.welcome.todo.drafts': '{count} drafts awaiting promotion',
   'pages.welcome.todo.activeUsers7d': 'Active users, last 7 days {active}/{total}',
   'pages.welcome.quick.agent': 'Create an agent',
   'pages.welcome.quick.skill': 'Manage skills',

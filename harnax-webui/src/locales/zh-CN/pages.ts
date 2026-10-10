@@ -199,7 +199,7 @@ export default {
   'pages.skill.visibility.tag.canary': '灰度 {pct}%',
   'pages.skill.visibility.tag.allowList': '白名单 {count} 人',
   'pages.skill.visibility.tag.env': '仅 {environments}',
-  'pages.skill.usage.title': '技能用量',
+  'pages.skill.usage.title': '技能监控',
   'pages.skill.usage.perSkill': '技能用量明细',
   'pages.skill.usage.totalSkills': '技能总数',
   'pages.skill.usage.totalViews': '装载次数',
@@ -273,7 +273,7 @@ export default {
   'pages.callMetrics.loadFailed': '加载调用指标失败',
   'pages.callMetrics.windowHint': '计数口径为 {from} 至 {to}（两端整点都含）。卡片、趋势图与下表都取这一区间，成功率与 P95 是区间整体值，不是某一个时段的值。',
 
-  'pages.skill.draft.title': '待审草稿',
+  'pages.skill.draft.title': '技能晋升',
   'pages.skill.draft.name': '技能名',
   'pages.skill.draft.description': '描述',
   'pages.skill.draft.proposedAt': '首次提议',
@@ -639,7 +639,7 @@ export default {
   'pages.agent.ownerPlaceholder': '自动填充为当前用户',
   'pages.agent.isPublic': '是否公开',
   'pages.agent.skillSelfWrite': '技能自我进化',
-  'pages.agent.skillSelfWriteHint': '允许 agent 在自己的会话里起草技能。在待审草稿页有人批准之前，它不会被发布，也不会被任何其他 agent 看到。',
+  'pages.agent.skillSelfWriteHint': '允许 agent 在自己的会话里起草技能。在技能晋升页有人批准之前，它不会被发布，也不会被任何其他 agent 看到。',
   'pages.agent.memoryEnabled': '长期记忆',
   'pages.agent.memoryEnabledHint': '关闭后这个 agent 不再从会话里提炼记忆，也不会在装配上下文时带上已有记忆。已经落盘的记忆文件不会删除，需要清理请到记忆管理页。',
   'pages.agent.toolConfig': '工具配置',
@@ -1386,8 +1386,8 @@ export default {
   'pages.tokenMonitor.statDimension': '统计维度',
   'pages.tokenMonitor.fee': '费用',
 
-  // 我的智能体记忆（自助合规页）
-  'pages.memory.title': '我的智能体记忆',
+  // 智能体记忆（自助合规页）
+  'pages.memory.title': '智能体记忆',
   'pages.memory.subtitle': '这里只列出当前登录账号拥有的智能体',
   'pages.memory.agentName': '智能体',
   'pages.memory.detailOpen': '点击查看该智能体记住了什么',
@@ -1539,7 +1539,7 @@ export default {
   'pages.welcome.platform.note': '平台级，非本租户',
   'pages.welcome.platform.tools': '工具 {count}',
   'pages.welcome.platform.cli': 'CLI 包 {count}',
-  'pages.welcome.todo.drafts': '待审草稿 {count}',
+  'pages.welcome.todo.drafts': '技能晋升待审 {count}',
   'pages.welcome.todo.activeUsers7d': '近 7 天活跃用户 {active}/{total}',
   'pages.welcome.quick.agent': '创建智能体',
   'pages.welcome.quick.skill': '管理技能',

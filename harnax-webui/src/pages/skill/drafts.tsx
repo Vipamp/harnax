@@ -71,7 +71,7 @@ const SkillDrafts: React.FC = () => {
       width: 240,
       render: (rowName: string, record) => (
         <a
-          onClick={() => history.push(`/monitor/skill-draft/detail/${record.id}`)}
+          onClick={() => history.push(`/optimization/skill-draft/detail/${record.id}`)}
           style={{ fontWeight: 500, cursor: 'pointer' }}
         >
           {rowName}
@@ -161,7 +161,7 @@ const SkillDrafts: React.FC = () => {
       fixed: 'right',
       width: 100,
       render: (_text, record) => (
-        <Button type="link" size="small" onClick={() => history.push(`/monitor/skill-draft/detail/${record.id}`)}>
+        <Button type="link" size="small" onClick={() => history.push(`/optimization/skill-draft/detail/${record.id}`)}>
           {intl.formatMessage({ id: 'pages.skill.draft.review', defaultMessage: 'Review' })}
         </Button>
       ),

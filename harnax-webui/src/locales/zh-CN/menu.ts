@@ -10,22 +10,25 @@ export default {
   'menu.context.cli': 'CLI 工具',
   'menu.context.tool': '工具管理',
 
+  // 优化治理
+  'menu.optimization': '优化治理',
+  'menu.optimization.skill.drafts': '技能晋升',
+  'menu.optimization.memory': '智能体记忆',
+  'menu.optimization.memory.drafts': '会话记忆审批',
+
   // 智能体
   'menu.agent': '智能体',
   'menu.agent.management': '智能体管理',
   'menu.agent.team': '多智能体团队',
   'menu.agent.session': '会话',
   'menu.agent.task': '定时任务',
-  'menu.agent.memory': '我的智能体记忆',
-  'menu.agent.memory.drafts': '记忆并入审批',
 
   // 定时任务
 
-  // 监控与治理
-  'menu.monitor': '监控与治理',
-  'menu.monitor.skill.usage': '技能用量',
+  // 集群监控
+  'menu.monitor': '集群监控',
+  'menu.monitor.skill.usage': '技能监控',
   'menu.monitor.call.metrics': '调用监控',
-  'menu.monitor.skill.drafts': '待审草稿',
   'menu.monitor.token.monitor': 'Token 监控',
 
   // 系统管理

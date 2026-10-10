@@ -142,7 +142,7 @@ const MemoryDraftDetail: React.FC = () => {
         id: 'pages.memory.draft.approved.openMemory',
         defaultMessage: 'Open memory page',
       }),
-      onOk: () => history.push('/agent/memory'),
+      onOk: () => history.push('/optimization/memory'),
     });
   };
 
@@ -468,7 +468,7 @@ const MemoryDraftDetail: React.FC = () => {
       header={{
         title: (
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <BackButton onClick={() => history.push('/agent/memory-drafts')} />
+            <BackButton onClick={() => history.push('/optimization/memory/drafts')} />
             <div style={{ width: 1, height: 24, background: 'var(--vip-border)' }} />
             <span style={{ fontSize: 18, fontWeight: 600, color: 'var(--vip-text-primary)', margin: 0 }}>
               <BookOutlined style={{ marginRight: 10, color: '#531dab' }} />
