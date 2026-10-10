@@ -30,6 +30,16 @@ public struct HarnaxDependencies: Sendable {
     /// proxy has neither read, and the chat toolbar keeps the entry off rather than offering a sheet that can
     /// only report its own inability.
     public let sessionSkills: (any SessionSkillReading)?
+    /// The owner's own long-term agent memory: the list, one agent's text, and the removal. Optional for
+    /// `drafts`' reason — nothing on the admin surface, so a host without it keeps the governance row off
+    /// rather than opening a list the transport cannot answer.
+    public let memory: (any MemoryCataloging)?
+    /// The memory merge queue: this account's candidates and the two decisions on them.
+    public let memoryDrafts: (any MemoryDraftCataloging)?
+    /// Which of this tenant's skills actually get loaded, behind the 监控 group's 技能 row.
+    public let skillUsage: (any SkillUsageReading)?
+    /// Tool / MCP / CLI call metrics, behind the same group's 调用 row.
+    public let toolMetrics: (any ToolMetricsReading)?
     public let clis: any CliCataloging
     public let envVars: any EnvVarCataloging
     public let apiKeys: any ApiKeyCataloging
@@ -83,7 +93,11 @@ public struct HarnaxDependencies: Sendable {
         contextUsage: any ContextUsageReading,
         commands: any AgentCommanding,
         streaming: any AgentStreaming,
-        toolConfirm: (any ToolConfirming)? = nil
+        toolConfirm: (any ToolConfirming)? = nil,
+        memory: (any MemoryCataloging)? = nil,
+        memoryDrafts: (any MemoryDraftCataloging)? = nil,
+        skillUsage: (any SkillUsageReading)? = nil,
+        toolMetrics: (any ToolMetricsReading)? = nil
     ) {
         self.auth = auth
         self.agents = agents
@@ -115,6 +129,10 @@ public struct HarnaxDependencies: Sendable {
         self.commands = commands
         self.streaming = streaming
         self.toolConfirm = toolConfirm
+        self.memory = memory
+        self.memoryDrafts = memoryDrafts
+        self.skillUsage = skillUsage
+        self.toolMetrics = toolMetrics
     }
 
     public static func live() -> HarnaxDependencies {
@@ -173,7 +191,11 @@ public struct HarnaxDependencies: Sendable {
             contextUsage: admin,
             commands: admin,
             streaming: stream,
-            toolConfirm: stream
+            toolConfirm: stream,
+            memory: admin,
+            memoryDrafts: admin,
+            skillUsage: admin,
+            toolMetrics: admin
         )
     }
 }
