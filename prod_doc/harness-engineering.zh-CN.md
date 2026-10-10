@@ -25,14 +25,14 @@
 ### 1.1 三条验收
 
 1. **`/compact` 是真压缩。** 会话跑过若干轮之后发 `/compact`，模型侧上下文被摘要替换，`token_stats` 里下一轮的 `input_token` 相应下降；发一条命令就多付一次摘要用的模型调用，除此之外不多付。
-2. **页面永远看到全量原文气泡。** 无论压缩过一次还是十次，`GET /api/agent/chat/history/{sessionId}`（`AgentController.kt:105`）返回的气泡序列与压缩前逐字一致，且不出现任何"压缩摘要"气泡。这是本域的主断言。
-3. **占用比例可查。** `GET /api/agent/context/{sessionId}`（`AgentController.kt:123`）一次返回估算占用、真实占用、窗口值与其来源；比例按真实占用算，估算那两位继续回答"自动压缩会不会触发"。
+2. **页面永远看到全量原文气泡。** 无论压缩过一次还是十次，`GET /api/agent/chat/history/{sessionId}`（`harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/controller/AgentController.kt:105`）返回的气泡序列与压缩前逐字一致，且不出现任何"压缩摘要"气泡。这是本域的主断言。
+3. **占用比例可查。** `GET /api/agent/context/{sessionId}`（`harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/controller/AgentController.kt:123`）一次返回估算占用、真实占用、窗口值与其来源；比例按真实占用算，估算那两位继续回答"自动压缩会不会触发"。
 
 ### 1.2 形状由三条事实决定
 
 - **压缩本来就在跑。** `HarnessAgent.Builder` 的初值是 `compactionConfig = CompactionConfig.builder().build()`、`disableCompaction = false`（`HarnessAgent.java:1227,1230`），默认装配下 `CompactionMiddleware` 一定装上（`HarnessAgent.java:2600-2609`），默认档 `triggerMessages=50`、`keepMessages=20`、动态 token 档与 flush/offload 全开（`CompactionConfig.java:273-286`、`:67`）。所以这一域不是引入新机制，而是给一个已在跑的机制补上受控入口与可见度。
 - **用户可见历史原本就是模型上下文本身。** `loadSessionMessages()`（`HarnessAgentLauncher.kt:1146-1159`）读的是 `AgentState.context`，读它的只有 `DefaultAgentRunner.kt:353` 的聊天历史与 `TeamHistoryReplay.kt:44` 的成员气泡合并。压缩覆写 `context` 等于把聊天记录一起裁掉，所以**历史与模型上下文分离是压缩落地的前置**，见 1.3。
-- **`/compact` 的命令链路一直是通的。** `/compact 500` 解析为 `CommandType.COMPACT` + `args="500"`（`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/AgentRequest.kt:67,90,199`），`POST /api/agent/command` 在收（`AgentController.kt:77`），webui 与 iOS 的斜杠命令表各登记一处（`harnax-webui/src/pages/session/components/ChatWindow.tsx:957`、`harnax-ios/Sources/HarnaxFeatures/Chat/ChatSlashCommand.swift:33`）。缺的只有服务端那一支。
+- **`/compact` 的命令链路一直是通的。** `/compact 500` 解析为 `CommandType.COMPACT` + `args="500"`（`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/AgentRequest.kt:67,90,199`），`POST /api/agent/command` 在收（`harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/controller/AgentController.kt:77`），webui 与 iOS 的斜杠命令表各登记一处（`harnax-webui/src/pages/session/components/ChatWindow.tsx:962`、`harnax-ios/Sources/HarnaxFeatures/Chat/ChatSlashCommand.swift:33`）。缺的只有服务端那一支。
 
 ### 1.3 全量历史与模型上下文分离
 
@@ -54,7 +54,7 @@
 
 ### 1.6 两端入口
 
-webui 会话聊天页（`harnax-webui/src/pages/session/index.tsx` 的 `ContextUsageTag` + `pages/session/components/contextUsage.ts` 三个判据 + `services/ant-design-pro/chat.ts` 的 `getContextUsage`）与 iOS 会话页（契约 `harnax-ios/Sources/HarnaxCore/Contract/ContextUsage.swift`、传输 `Sources/HarnaxAPI/ContextUsageClient.swift:24`、视图模型 `Sources/HarnaxFeatures/Chat/ChatViewModel.swift:1471`、屏幕 `Sources/HarnaxFeatures/Chat/ChatView.swift:89`）同一套判据、同一套刷新时机（一轮回答结束、一次压缩返回）。两端都不新增接口：读走聊天历史那条 router 通道，压缩走既有命令通道。没有读数时标题栏整块不出现，而不是画一个 `0%`；到自动压缩阈值时读数转警告色。压缩结果的措辞分四支：压成报条数、成功而一条没裁报"还太短"、被后端拒时顶替成服务端那句原因、信封级失败取失败自身的正文。
+webui 会话聊天页（`harnax-webui/src/pages/session/index.tsx` 的 `ContextUsageTag` + `pages/session/components/contextUsage.ts` 六处判据 + `services/ant-design-pro/chat.ts` 的 `getContextUsage`）与 iOS 会话页（契约 `harnax-ios/Sources/HarnaxCore/Contract/ContextUsage.swift`、传输 `Sources/HarnaxAPI/ContextUsageClient.swift:24`、视图模型 `Sources/HarnaxFeatures/Chat/ChatViewModel.swift:1479`、屏幕 `Sources/HarnaxFeatures/Chat/ChatView.swift:101-103`）同一套判据、同一套刷新时机（一轮回答结束、一次压缩返回）。两端都不新增接口：读走聊天历史那条 router 通道，压缩走既有命令通道。没有读数时标题栏整块不出现，而不是画一个 `0%`；到自动压缩阈值时读数转警告色。压缩结果的措辞分四支：压成报条数、成功而一条没裁报"还太短"、被后端拒时顶替成服务端那句原因、信封级失败取失败自身的正文。屏幕上的那个百分比还决定命令发不发：落在 10% 线下时两端就地答那句「还太短」、一个命令都不发（档位 `contextUsage.ts:86-93`／`ContextUsage.swift:133-149`，两端各在入口拦一次：`ChatWindow.tsx:2451-2460`、`ChatViewModel.swift:1405-1412`），读不到数的会话从不被拦，手敲 `/compact` 也不拦。
 
 ## 2. 这个域仍然开着的收口项
 

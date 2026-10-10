@@ -1,9 +1,10 @@
 /**
  * Pure helpers behind the session page's context readout and compaction entry.
  *
- * Kept out of the components so the four judgements that actually matter — when a reading is a reading,
- * how the percentage is rounded for one narrow header slot, how a token count is abbreviated, and whether a
- * compaction command really changed anything — are testable without rendering.
+ * Kept out of the components so the six judgements that actually matter — when a reading is a reading, which
+ * bill the numerator stands behind, how the percentage is rounded for one narrow header slot, how a token count
+ * is abbreviated, when a compaction is too small to be worth sending, and whether a compaction command really
+ * changed anything — are testable without rendering.
  */
 
 import { formatTokenCount } from '@/utils/tokenFormat';
