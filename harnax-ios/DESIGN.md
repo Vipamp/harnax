@@ -324,12 +324,12 @@ print('all', len(all_t), 'with-dir', len(q), 'bare', len(all_t) - len(q),
 
 ### 13.3 会话与对话
 
-- 列表一次拉 100 条、不分页、无搜索与分组，排序完全来自后端 `create_time DESC`（`harnax-webui/src/pages/session/index.tsx:100`）。
+- 列表一次拉 100 条、不分页、无搜索与分组，排序完全来自后端 `create_time DESC`（`harnax-webui/src/pages/session/index.tsx:101`）。
 - 新建返回 `ResultVo<Void>`，拿不到新会话 id，必须重拉列表再选中。
 - `isPublic` 是死 UI：不进提交体，后端 DTO 也没有该字段；「公开」语义只在列表 SQL 的 `is_public = 1 OR creator = 自己` 里成立。
 - 图片附件走 `imageUrls` 的 base64 data URL（`FileReader.readAsDataURL`），没有上传接口，历史消息不保存图片；非 `data:image` 前缀的值会被后端当本地路径读。
 - 收附件是 iOS 超出 Web 的一项：`EndEvent.attachments` 七个字段（`fileId`/`fileName`/`filePath`/`fileSize`/`mimeType`/`url`/`objectKey`，`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/FileAttachment.kt:14`-`:22`），webui 全仓零处引用 `attachments`。下载口 `GET /api/output-files/{sessionType}/{sessionId}/{fileId}` 整个控制器受 `@ConditionalOnProperty(minio.enabled=true)` 控制（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/OutputFileController.kt:38`），未开启时该路由不存在（默认值 `${MINIO_ENABLED:false}` 关，标准部署 compose 显式开），iOS 要按 404 降级而不是当业务失败报错，是否留 v1 见 O8；`sessionType` 只接受 `web`/`task`/`channel`，`fileId` 必须是 UUID。
-- 分段类型 6 个、实际渲染 5 类：`tool_result` 类型的渲染分支直接返回 `null`，结果写进 `tool_call` 段的 `toolResult` 由合并卡展示（`harnax-webui/src/pages/session/components/ChatWindow.tsx:2848`-`:2850`）；`isLast === true` 的帧要丢内容；`KeepAliveEvent` 无分支即忽略，但成员 KeepAlive 带 `childRunId` 时会画出空气泡。
+- 分段类型 6 个、实际渲染 5 类：`tool_result` 类型的渲染分支直接返回 `null`，结果写进 `tool_call` 段的 `toolResult` 由合并卡展示（`harnax-webui/src/pages/session/components/ChatWindow.tsx:2863`-`:2865`）；`isLast === true` 的帧要丢内容；`KeepAliveEvent` 无分支即忽略，但成员 KeepAlive 带 `childRunId` 时会画出空气泡。
 - 主管确认是整批允许／拒绝，成员确认靠 `childRunId` 整轮一次性；`alwaysAllow` 与 `toolResults` 前端零使用、服务端也忽略（`harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:399`-`:404`）。
 - slash 只映射 9 个 keyword 到 8 个 `CommandType`，缺 `deny` 与 `refresh`。`COMPACT` 后端已实现：入口 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/impl/DefaultAgentRunner.kt:264` → `handleCompact` `:917`，三种拒绝各自的文案与成功回包的四个计数见 `specs/02-session-chat.md` 的「后端行为差异」。
 - Web 侧主管确认期间 `await` 会阻塞整个 SSE 读循环，且切会话不 abort 旧流——这两条都是缺陷，iOS 不复刻。

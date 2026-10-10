@@ -240,7 +240,7 @@ X 轴标签按粒度格式化（hour→`MM-DD HH:mm`，week/month→`MM-DD`/`YYY
 - iOS 收到成功后必须：**替换本地 accessToken**（不是只换 X-Tenant-ID），再刷新 `currentUser`，再重放所有已加载页面数据。
 - 列表读的是成员关系：`harnax-entity/src/main/resources/mapper/UserTenantMapper.xml:16-21` 的谓词是 `WHERE user_id = ? AND status = 1 ORDER BY joined_at DESC`，那个 `status` 属于成员行；`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/UserTenantServiceImpl.kt:31-43` 把 membership 映射成 `TenantResponse` 时不看租户自身的 status。所以面板里会出现 `status = 0` 的租户行，且 `switch-tenant` 照样给它发令牌——iOS 用「已停用」芯片标注，但不禁用该行。
 - 切换响应没有 `expiresIn`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/AuthController.kt:172-177`），客户端只能沿用登录时算出的到期时刻，不能自己给新令牌定时长。
-- keychain 里的 `tenantId` 要按**请求值**写入：`harnax-ios/Sources/HarnaxAPI/APIClient.swift:87-89` 的 `X-Tenant-ID` 就是从这个键读出来的，写错等于把之后每个请求都发回旧租户（`TenantInterceptor.kt:28-58` 优先信这个头）。
+- keychain 里的 `tenantId` 要按**请求值**写入：`harnax-ios/Sources/HarnaxAPI/APIClient.swift:206-208` 的 `X-Tenant-ID` 就是从这个键读出来的，写错等于把之后每个请求都发回旧租户（`TenantInterceptor.kt:28-58` 优先信这个头）。
 
 ### 2. TenantInterceptor 的 X-Tenant-ID 校验规则
 
@@ -354,5 +354,5 @@ Token 统计（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller
 4. **已核实**：`regenerate` 不带保护键检查是**既定出口而不是遗漏**。改、删、停三处的拒绝文案自己写着「use regenerate instead」（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ApiKeyServiceImpl.kt:116`-`:117`、`:142`-`:143`、`:153`-`:154`，保护集 `protectedKeyTypes = setOf("PERMANENT", "SYSTEM")` 见 `:40`），而 `regenerateApiKey` 只走 `loadAndCheckAccess`（`:162`-`:183`）。webui 侧对任意可操作行都渲染重新生成按钮、不按 `keyType` 灰显（`harnax-webui/src/pages/api-key/index.tsx:282`-`:299`）。iOS 照此实现：不加客户端拦截，但要把「换掉 PERMANENT/SYSTEM 的密钥会让既有引用立即失效」写进二次确认文案。
 5. **环境变量 `GET /list` 的返回结构已核实**：投影固定四个键 `id` / `envKey` / `displayValue` / `sensitive`，其中 `sensitive` 是 **Boolean** 而非全仓惯用的 0/1 `Int`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/EnvVariableServiceImpl.kt:252`-`:269`），iOS 解码这一处要按布尔写。`displayValue` 的掩码规则是三档：长度 ≤4 全掩、≤8 首尾各留 1 字符、其余首 3 尾 2（同文件 `:275`-`:279`），因此「回填后原样提交」必然写出星号；候选只含 `enabled == 1` 且按调用者可见范围过滤。
 6. **租户列表的可见范围已核实，且与切租户口不一致**：`GET /api/admin/auth/tenants` 只返回已经存在 `user_tenant` 关联行的租户（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/UserTenantServiceImpl.kt:31`-`:47`），对管理员没有放宽；而 `POST /api/admin/auth/switch-tenant` 在 `isAdmin == 1` 时跳过成员检查、允许切到任意租户（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/AuthController.kt:159`-`:162`）。结果是管理员的切换列表可能为空却能切成功。iOS 若要呈现切换器（O1），列表源要么补一次「全部租户」读，要么接受管理员看不到未加入的租户。
-7. **`workspace/status` 的失败语义**：`active` 之外还有哪些字段、未创建过沙箱的 `chn-` 会话返回缺省还是条目不存在（`harnax-webui/src/services/ant-design-pro/workspace.ts:98-110`、`harnax-webui/src/pages/session/index.tsx:111-128`），未核实；iOS 的未知态渲染口径待定。
+7. **`workspace/status` 的失败语义**：`active` 之外还有哪些字段、未创建过沙箱的 `chn-` 会话返回缺省还是条目不存在（`harnax-webui/src/services/ant-design-pro/workspace.ts:98-110`、`harnax-webui/src/pages/session/index.tsx:112-129`），未核实；iOS 的未知态渲染口径待定。
 8. **Token 监控周对齐时区**：`alignToBucketStart` 用周一对齐（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/TokenStatsServiceImpl.kt:313-314`），但是否按服务器时区还是客户端时区截断、`timePoint` 字符串是否带时区，未读到显式声明；跨时区设备的边界桶归属需实测。
