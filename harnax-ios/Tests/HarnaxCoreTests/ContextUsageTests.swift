@@ -2,7 +2,7 @@ import XCTest
 
 @testable import HarnaxCore
 
-/// The occupancy readout's four judgements, plus the wire shape they are read out of.
+/// The occupancy readout's five judgements, plus the wire shape they are read out of.
 ///
 /// Every rule here is a copy of a rule the console already runs
 /// (`harnax-webui/src/pages/session/components/contextUsage.ts`), because the two screens are meant to say the
@@ -314,5 +314,33 @@ final class ContextUsageTests: XCTestCase {
 
         XCTAssertEqual(decoded.windowSource, "SOMETHING_NEW")
         XCTAssertNil(decoded.windowSourceTitleKey)
+    }
+
+    // MARK: - the compaction pre-check
+
+    /// Under the line the headline shows, a compaction has nothing worth removing. The console refuses the tap
+    /// off its own reading (`harnax-webui/src/pages/session/components/contextUsage.ts:86-93`), and the two
+    /// screens have to refuse the same session — so this side asks the same question of the same number.
+    func testALowOccupancyReadingHoldsTheCompactionBack() {
+        XCTAssertTrue(ContextUsage.isCompactionPointless(0))
+        XCTAssertTrue(ContextUsage.isCompactionPointless(0.0999))
+        XCTAssertTrue(
+            ContextUsage(contextWindow: 32_000, ratio: 0.0999).isCompactionPointless,
+            "the instance leg reads the same rule as the ratio leg"
+        )
+    }
+
+    /// The line itself is not under it, and a fuller context is the case the entry exists for.
+    func testTheTenPercentLineAndAboveStillSendsTheCommand() {
+        XCTAssertFalse(ContextUsage.isCompactionPointless(0.1))
+        XCTAssertFalse(ContextUsage.isCompactionPointless(0.5))
+    }
+
+    /// A ratio that is not a number is not an empty context: the same leg that hides the tag has to refuse to
+    /// be a reason to say「还太短」.
+    func testANonFiniteRatioGivesThePreCheckNothingToRefuse() {
+        for ratio in [Double.nan, Double.infinity, -.infinity] {
+            XCTAssertFalse(ContextUsage.isCompactionPointless(ratio), "\(ratio)")
+        }
     }
 }

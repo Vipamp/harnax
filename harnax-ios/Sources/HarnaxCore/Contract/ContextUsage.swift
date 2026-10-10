@@ -15,8 +15,8 @@ import Foundation
 /// is the billed input of the last model call — the real size of that request, system prompt and tool list
 /// included, but it only moves on the turn *after* a compaction. They are not proportional, so `ratio` takes
 /// the billed numerator whenever the router has one — and only while that bill still describes the context
-/// being measured, which is what `billIsCurrent` reports. The four judgements below follow `ratio` rather than
-/// re-deriving a second opinion. The same four rules live on the console side in
+/// being measured, which is what `billIsCurrent` reports. The five judgements below follow `ratio` rather than
+/// re-deriving a second opinion. The same five rules live on the console side in
 /// `harnax-webui/src/pages/session/components/contextUsage.ts`; the two screens are meant to say the same
 /// number for the same session, so they are kept in step deliberately.
 public struct ContextUsage: Decodable, Equatable, Sendable {
@@ -37,7 +37,7 @@ public struct ContextUsage: Decodable, Equatable, Sendable {
     /// The wire value of `ContextWindowSource`
     /// (`harnax-protocol/src/main/kotlin/com/agnetix/harnax/agent/protocol/ContextUsageResponse.kt:7-16`)
     /// kept as the string the server sent, the way the console keeps it
-    /// (`harnax-webui/src/pages/session/index.tsx:46-50`): a fourth tier
+    /// (`harnax-webui/src/pages/session/index.tsx:47-51`): a fourth tier
     /// added upstream then shows up under its own name instead of being read as the fallback.
     public let windowSource: String?
     /// `lastCallInputTokens` over `contextWindow` while that bill stands, `estimatedTokens` over it until the
@@ -88,8 +88,8 @@ public struct ContextUsage: Decodable, Equatable, Sendable {
     /// and the session was never bound to one (`ResultVo.success(null)`,
     /// `harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/proxy/SessionRouterService.kt:397-407`).
     /// The console hides its tag for both rather than showing a `0%`
-    /// (`harnax-webui/src/pages/session/index.tsx:142-153`,
-    /// `harnax-webui/src/pages/session/components/contextUsage.ts:22-26`), and a header slot that claims an
+    /// (`harnax-webui/src/pages/session/index.tsx:143-154`,
+    /// `harnax-webui/src/pages/session/components/contextUsage.ts:23-27`), and a header slot that claims an
     /// empty context on a session the router simply cannot see is the one thing this readout must never do.
     public var isReadable: Bool {
         contextWindow > 0 && ratio.isFinite
@@ -125,14 +125,32 @@ public struct ContextUsage: Decodable, Equatable, Sendable {
     ///
     /// A trigger of zero is the runtime saying it worked the number out for a model with no window, so nothing
     /// is "at" it — that is why the comparison is guarded rather than the raw `>=`
-    /// (`harnax-webui/src/pages/session/components/contextUsage.ts:66-70`).
+    /// (`harnax-webui/src/pages/session/components/contextUsage.ts:67-71`).
     public var isAtAutoTrigger: Bool {
         triggerTokens > 0 && numeratorTokens >= triggerTokens
     }
 
+    /// The share of the window under which a compaction has nothing worth removing — the console's own line
+    /// (`harnax-webui/src/pages/session/components/contextUsage.ts:86-93`).
+    public static let compactionSkipRatio = 0.1
+
+    /// Whether holding the command back is the honest answer for this reading.
+    ///
+    /// A non-finite ratio is *no reading*, not an empty context, so it does not refuse anything — the same leg
+    /// that hides the tag (`isReadable`). The rule is the console's `isCompactionPointless`, kept in step on
+    /// purpose: the two screens have to refuse the same session.
+    public var isCompactionPointless: Bool {
+        Self.isCompactionPointless(ratio)
+    }
+
+    /// The same rule as `isCompactionPointless`, open so the screen and the tests ask it of a ratio.
+    public static func isCompactionPointless(_ ratio: Double) -> Bool {
+        ratio.isFinite && ratio < compactionSkipRatio
+    }
+
     /// The headline number, one header slot wide, so the decimals follow the magnitude instead of a fixed
     /// format: whole per cent above ten, one decimal down to one, two below that with the trailing zeros
-    /// dropped (`harnax-webui/src/pages/session/components/contextUsage.ts:73-79`).
+    /// dropped (`harnax-webui/src/pages/session/components/contextUsage.ts:74-80`).
     /// Zero and an unreadable ratio both read as `0%`.
     public var percentText: String {
         Self.percentText(ratio)
@@ -159,7 +177,7 @@ public struct ContextUsage: Decodable, Equatable, Sendable {
     /// The catalogue key naming where the denominator came from. An unknown tier keeps its own wording rather
     /// than borrowing the fallback's, which would say "the runtime had no idea" when it said something else.
     /// An empty tier is the fallback's answer, which is the console's own leg
-    /// (`harnax-webui/src/pages/session/index.tsx:48-49`, `usage.windowSource || 'FALLBACK'`).
+    /// (`harnax-webui/src/pages/session/index.tsx:49-50`, `usage.windowSource || 'FALLBACK'`).
     public var windowSourceTitleKey: String? {
         switch windowSource {
         case "MODEL_FIELD": return "chat.context.source.modelField"

@@ -9,7 +9,7 @@ import HarnaxKit
 /// The session list owns the rows it draws; this screen only needs the two things a turn is addressed by,
 /// so it declares them here instead of borrowing a DTO from the list half of the feature. `id` is the
 /// string business key rather than the numeric row id, because the streaming endpoints take the business
-/// key (`harnax-webui/src/pages/session/index.tsx:309` passes `sessionId`, while delete takes `id`).
+/// key (`harnax-webui/src/pages/session/index.tsx:310` passes `sessionId`, while delete takes `id`).
 public struct ChatConversation: Identifiable, Hashable, Sendable {
     public let id: String
     public let title: String
@@ -25,7 +25,7 @@ public struct ChatConversation: Identifiable, Hashable, Sendable {
 ///
 /// One turn is streamed at a time. Every path that leaves the screen or moves to another conversation has
 /// to abort the read first — the console does not, and its own audit calls that out
-/// (`harnax-webui/src/pages/session/components/ChatWindow.tsx:672-680`, `:683-705`): the previous
+/// (`harnax-webui/src/pages/session/components/ChatWindow.tsx:677-685`, `:688-710`): the previous
 /// conversation's frames keep landing in the new one. Here `bind` and `detach` both cancel before anything
 /// else happens.
 @MainActor
@@ -34,14 +34,14 @@ public final class ChatViewModel: ObservableObject {
     /// sentence under it.
     public enum StopNotice: Equatable {
         /// The read closed and nothing had arrived, so there is no partial answer to show
-        /// (`ChatWindow.tsx:2361-2366`).
+        /// (`ChatWindow.tsx:2366-2371`).
         case disconnected
         /// The answer broke partway through, or the request never started. `text` is the resolved copy.
         case failed(text: String)
     }
 
     /// How far from the newest row still counts as following the stream. The console's
-    /// `NEAR_BOTTOM_THRESHOLD` (`ChatWindow.tsx:612`), in the same unit — points.
+    /// `NEAR_BOTTOM_THRESHOLD` (`ChatWindow.tsx:617`), in the same unit — points.
     public static let nearBottomThreshold: CGFloat = 120
 
     @Published public var draft = ""
@@ -70,7 +70,7 @@ public final class ChatViewModel: ObservableObject {
     @Published public private(set) var isAnchoredToBottom = true
     /// Bumped when the list should be at the newest row. The view watches this instead of scrolling on
     /// every published change, which is what `scrollToBottom(force:)`'s `isNearBottomRef` test decides
-    /// (`ChatWindow.tsx:614-617`). It lives in `surface` beside the rows it follows, so a stream that grows
+    /// (`ChatWindow.tsx:619-622`). It lives in `surface` beside the rows it follows, so a stream that grows
     /// the transcript and pulls the view along is one update and not two.
     public var scrollToBottomID: Int { surface.scrollToBottomID }
 
@@ -83,11 +83,11 @@ public final class ChatViewModel: ObservableObject {
     /// (`Sources/HarnaxFeatures/Chat/ChatImagePicker.swift`).
     @Published public private(set) var images: [String] = []
     /// The conversation's four writable settings plus the model's capability flags, read once on open
-    /// (`ChatWindow.tsx:718-737`). It is the same DTO the config route answers, kept whole because the
+    /// (`ChatWindow.tsx:723-742`). It is the same DTO the config route answers, kept whole because the
     /// matrix of which switch is enabled reads off every flag in it at once.
     @Published public private(set) var composer = SessionChatConfig()
     /// Why the last tap did nothing, or why a switch has come back. The console's three `message.warning`
-    /// calls (`ChatWindow.tsx:3493-3572`) are its only feedback for a refused switch; here it is a banner.
+    /// calls (`ChatWindow.tsx:3508-3587`) are its only feedback for a refused switch; here it is a banner.
     @Published public var composerNotice: ChatComposerNotice?
     /// A command that has to be confirmed before it goes out, and the text the user typed for it.
     @Published public private(set) var pendingCommand: ChatPendingCommand?
@@ -104,13 +104,13 @@ public final class ChatViewModel: ObservableObject {
     /// The plan panel, owned here rather than by the drawer.
     ///
     /// The card in the message stream and the card in the drawer are the same plan, read by the same loop
-    /// (`ChatWindow.tsx:2479-2585` feeds both from one `currentPlan`), and that reading has to outlive the sheet:
+    /// (`ChatWindow.tsx:2494-2600` feeds both from one `currentPlan`), and that reading has to outlive the sheet:
     /// a panel built by the drawer stops when the drawer closes, which would leave the stream's card frozen the
     /// moment the user looked at it. `nil` is a host that wired no `PlanReading`, and it takes the toolbar entry
     /// with it.
     @Published public private(set) var planPanel: PlanPanelViewModel?
     /// Whether the drawer is showing. The composer's chip writes the plan *switch*; nothing writes this one by
-    /// hand any more, because a plan call opens the drawer on its own (`ChatWindow.tsx:1501`).
+    /// hand any more, because a plan call opens the drawer on its own (`ChatWindow.tsx:1506`).
     @Published public var isPlanPanelPresented = false
 
     // MARK: - sandbox workspace
@@ -124,7 +124,7 @@ public final class ChatViewModel: ObservableObject {
     /// this screen's top-right corner.
     ///
     /// The console keeps its button on screen and reads the status when it is tapped, warning when the answer is
-    /// no (`harnax-webui/src/pages/session/index.tsx:280-292`). iOS hides the entry instead, because with no
+    /// no (`harnax-webui/src/pages/session/index.tsx:281-293`). iOS hides the entry instead, because with no
     /// sandbox manager running all five workspace routes are 404s (`SandboxWorkspaceController.kt:398-416`) and
     /// a corner entry that can only fail reads as a broken button. A read that *failed* counts as not running
     /// here and says nothing: the entry going away is a state, while `checkSandbox` has a refused command to
@@ -138,8 +138,8 @@ public final class ChatViewModel: ObservableObject {
     /// `nil` is not an empty context. The runtime answers two ways when it cannot see one — a session never
     /// bound to an instance (`ResultVo.success(null)`) and a session bound elsewhere
     /// (`ResultVo.error("No context held for session …")`) — and the console hides its tag for both rather
-    /// than drawing `0%` (`harnax-webui/src/pages/session/index.tsx:142-153`,
-    /// `harnax-webui/src/pages/session/components/contextUsage.ts:22-26`). A read therefore *overwrites*,
+    /// than drawing `0%` (`harnax-webui/src/pages/session/index.tsx:143-154`,
+    /// `harnax-webui/src/pages/session/components/contextUsage.ts:23-27`). A read therefore *overwrites*,
     /// including with `nil`: the tag is the latest answer, and an old one belongs to a context the run has
     /// since changed.
     @Published public private(set) var contextUsage: ContextUsage?
@@ -155,7 +155,7 @@ public final class ChatViewModel: ObservableObject {
     private let workspace: (any SessionWorkspaceReading)?
     /// The answer channel, optional like the five above it. Without it the confirmation card shows the wait
     /// and offers nothing, because a control that can only fail is worse than no control
-    /// (`ChatWindow.tsx:451-460` gates its buttons on the same kind of `onAnswer` being present).
+    /// (`ChatWindow.tsx:456-465` gates its buttons on the same kind of `onAnswer` being present).
     private let confirming: (any ToolConfirming)?
     /// The plan's two reads, optional for the same reason as the five above: a host that wired none has no drawer
     /// to open, and its stream draws no plan card either.
@@ -234,12 +234,12 @@ public final class ChatViewModel: ObservableObject {
     }
 
     /// `commands` is the console's second leg of a stop: the read is aborted locally, and `INTERRUPT` tells
-    /// the server to stop billing the run (`ChatWindow.tsx:2401-2405`). A host that has no command channel
+    /// the server to stop billing the run (`ChatWindow.tsx:2406-2410`). A host that has no command channel
     /// wired yet still gets a working abort, so the dependency is optional. `history` is optional for the
     /// same reason: a host that has not wired it starts on an empty transcript instead of failing to build.
     ///
     /// `config` is what the composer's four controls are gated by — the model capability flags and the stored
-    /// permission mode (`ChatWindow.tsx:718-737`) — and `workspace` is the sandbox status read that
+    /// permission mode (`ChatWindow.tsx:723-742`) — and `workspace` is the sandbox status read that
     /// `/stop-sandbox` has to make before it offers the confirmation (`:3639-3664`). Both optional like the
     /// other two: without them the switches keep the shipped defaults and the send path is untouched.
     ///
@@ -251,7 +251,7 @@ public final class ChatViewModel: ObservableObject {
     ///
     /// `contextUsage` is the occupancy read behind the header's tag. Left unwired, the tag never appears —
     /// unlike the console, which has no unwired case because one client object serves every route
-    /// (`harnax-webui/src/pages/session/index.tsx:142-153`).
+    /// (`harnax-webui/src/pages/session/index.tsx:143-154`).
     ///
     /// Every screen a handset builds takes the platform's own background allowance; the initializer below is
     /// the one that takes it as an argument.
@@ -330,7 +330,7 @@ public final class ChatViewModel: ObservableObject {
     }
 
     /// Nothing to send, or a turn already reading — the input bar's send button becomes a stop button while
-    /// streaming (`ChatWindow.tsx:3679-3686`), and the backend refuses a second run on a session still busy.
+    /// streaming (`ChatWindow.tsx:3694-3701`), and the backend refuses a second run on a session still busy.
     ///
     /// A picture is a message. The console's own disabled test reads
     /// `!inputValue.trim() && imageUrls.length === 0` (`:3684`), so a caption-less picture arms the button.
@@ -350,7 +350,7 @@ public final class ChatViewModel: ObservableObject {
     public var canPickPermission: Bool { !isTaskConversation }
 
     /// Whether a picture may be picked. Already-picked pictures stay sendable when this is false — the console
-    /// blocks the button, not the state (`ChatWindow.tsx:3493-3505`).
+    /// blocks the button, not the state (`ChatWindow.tsx:3508-3520`).
     public var canPickImages: Bool { composer.modelSupportVision }
 
     /// The answer currently on screen, open or closed.
@@ -440,7 +440,7 @@ public final class ChatViewModel: ObservableObject {
     // MARK: - history
 
     /// The conversation's stored rows, replayed into the transcript. The console does the same on open
-    /// (`ChatWindow.tsx:740-933`), and this is called from the screen's `.task`.
+    /// (`ChatWindow.tsx:745-938`), and this is called from the screen's `.task`.
     ///
     /// Rows never overwrite work already on screen: if a turn started while the read was in flight, or the
     /// user moved on to another conversation, what came back is stale and gets dropped.
@@ -477,7 +477,7 @@ public final class ChatViewModel: ObservableObject {
     /// The send button and the Return key.
     ///
     /// A slash line takes the text and nothing else: the console's command leg never reads `imageUrls`, so a
-    /// picture picked before typing `/clear` is still in the strip afterwards (`ChatWindow.tsx:986-1032`).
+    /// picture picked before typing `/clear` is still in the strip afterwards (`ChatWindow.tsx:991-1037`).
     ///
     /// The box empties as the send goes out, and what it held is handed to the turn so a read that dies
     /// before its first frame can put it back (`restoreComposer`).
@@ -495,7 +495,7 @@ public final class ChatViewModel: ObservableObject {
     /// Submit one line of composer text: a slash command if it parses as one, otherwise a turn.
     ///
     /// Returns false when there was nothing to send or a turn is already reading — the input bar's send button
-    /// becomes a stop button while streaming (`ChatWindow.tsx:3679-3686`), and the backend refuses a second
+    /// becomes a stop button while streaming (`ChatWindow.tsx:3694-3701`), and the backend refuses a second
     /// run on a session that is still busy. An unrecognised keyword is not a command and not an error:
     /// `/hello there` is a greeting, which is the console's fall-through at `:980-982`.
     @discardableResult
@@ -575,7 +575,7 @@ public final class ChatViewModel: ObservableObject {
         draft = ""
         // The three switches and the permission mode are per-conversation columns, and the console clears
         // them on the session change rather than letting the previous one's values sit under a new title
-        // (`ChatWindow.tsx:683-705`). Same for the pictures: a half-picked send belongs to one conversation.
+        // (`ChatWindow.tsx:688-710`). Same for the pictures: a half-picked send belongs to one conversation.
         composer = SessionChatConfig()
         // A plan belongs to the conversation that wrote it, and its panel is addressed by session id: the old
         // follow, its loop and its drawer go here, and the new conversation gets a panel of its own. After the
@@ -636,7 +636,7 @@ public final class ChatViewModel: ObservableObject {
     ///
     /// The two streaming endpoints share the loop because they share the frame vocabulary: the confirm
     /// response carries the resumed run, and that run may park on another confirmation
-    /// (`ChatWindow.tsx:2036-2331`). Folding both through `receive` is what makes the recursion one code path
+    /// (`ChatWindow.tsx:2041-2336`). Folding both through `receive` is what makes the recursion one code path
     /// instead of the three copies the console had to write; the read loop is never blocked waiting for an
     /// answer, which `DESIGN.md` line 300 lists as a defect not to reproduce.
     private func start(with target: ReadTarget) {
@@ -706,7 +706,7 @@ public final class ChatViewModel: ObservableObject {
         // raw event here — after `apply`, so the words already in the window are on screen first.
         reactToPlanFrame(event)
         // A member's terminal frame is not the stream's last word. It arrives on the lead's channel and closes
-        // only the member's own bubble (`handleMemberEvent`, `ChatWindow.tsx:1278-1290`), while the lead's turn
+        // only the member's own bubble (`handleMemberEvent`, `ChatWindow.tsx:1283-1295`), while the lead's turn
         // is still open waiting for the delegation to come back — so it settles nothing here.
         let isMemberFrame = event.memberRunID != nil
         switch event {
@@ -725,14 +725,14 @@ public final class ChatViewModel: ObservableObject {
     }
 
     /// The read ended on its own. A stream that never saw an end frame was cut, which is the console's
-    /// disconnect case (`ChatWindow.tsx:2361-2366`): words only when nothing got through.
+    /// disconnect case (`ChatWindow.tsx:2366-2371`): words only when nothing got through.
     private func readerClosed() {
         streamTask = nil
         isStreaming = false
         followUpSandboxStatus()
         followUpContextUsage()
         // The socket opened, so the request left: a stream that goes quiet is the console's disconnect
-        // (`ChatWindow.tsx:2361-2366`), not a send that failed to go out, and the box stays empty.
+        // (`ChatWindow.tsx:2366-2371`), not a send that failed to go out, and the box stays empty.
         consumedByOpenTurn = nil
         // The window first, before anything below reads the transcript. A stream that closed just after its
         // last word — with that word still waiting for a tick — would otherwise be read as an answer that
@@ -787,7 +787,7 @@ public final class ChatViewModel: ObservableObject {
     /// Close out a confirm read.
     ///
     /// An answer whose stream produced no frame never reached the run, so the decision goes back on the panel
-    /// instead of sitting settled on a transcript the server never saw it (`ChatWindow.tsx:1338-1347` reads
+    /// instead of sitting settled on a transcript the server never saw it (`ChatWindow.tsx:1343-1352` reads
     /// the response body for exactly this news, and `confirmSubmitFailed` is what it says when the call
     /// throws). Returns true when it rolled an answer back, which is the one case that has already said why.
     @discardableResult
@@ -827,7 +827,7 @@ public final class ChatViewModel: ObservableObject {
     /// The block that is waiting on the user, or `nil` when nothing is parked.
     ///
     /// An answered block is not pending even though it stays on screen: it is the record of a decision, and
-    /// a nested ask puts its own block under it (`ChatWindow.tsx:2036-2130`).
+    /// a nested ask puts its own block under it (`ChatWindow.tsx:2041-2135`).
     public var pendingConfirmation: ChatPendingConfirmation? { transcript.pendingConfirmation }
 
     /// Whether the answer controls may be offered at all. Both halves matter: a run parked on a question,
@@ -840,7 +840,7 @@ public final class ChatViewModel: ObservableObject {
     }
 
     /// The row's choice. A row nobody touched is approved, which is the console's default too — its modal
-    /// offers 「允许执行」 as the affirmative action (`ChatWindow.tsx:1712-1728`).
+    /// offers 「允许执行」 as the affirmative action (`ChatWindow.tsx:1717-1733`).
     public func confirmationChoice(for toolId: String) -> ToolConfirmAnswer {
         confirmationChoices[toolId] ?? .allowed
     }
@@ -893,7 +893,7 @@ public final class ChatViewModel: ObservableObject {
     ///
     /// The member run is parked inside a tool call of the lead, whose stream is still open, and the resumed
     /// output continues on that stream: the answer itself comes back as a bare End and nothing else
-    /// (`DefaultAgentRunner.kt:400-441`, and `ChatWindow.tsx:1294-1348` reads the body only for an ErrorEvent).
+    /// (`DefaultAgentRunner.kt:400-441`, and `ChatWindow.tsx:1299-1353` reads the body only for an ErrorEvent).
     /// So this leg reads for the news of its own delivery and for nothing else. Folding that End into the
     /// transcript would terminate the lead's live turn and drop every frame after it, and taking over
     /// `streamTask` would leave the lead's read running with no handle left to stop it.
@@ -930,7 +930,7 @@ public final class ChatViewModel: ObservableObject {
     ///
     /// * `toolInfoList` always names every row of the block — the server reads it for the tools either way.
     /// * A uniform approve or a uniform refusal goes bulk, which is the shape the console sends
-    ///   (`ChatWindow.tsx:1730-1749`) and the only shape `isConfirmed` alone can express.
+    ///   (`ChatWindow.tsx:1735-1754`) and the only shape `isConfirmed` alone can express.
     /// * An answer that asks for a standing rule has to go per-tool: `alwaysAllow` lives on
     ///   `ToolConfirmResult` and has no bulk leg. A mixed panel goes per-tool too, with `isConfirmed`
     ///   reading as "everything in here was approved", which is what makes a panel holding one refusal not
@@ -978,7 +978,7 @@ public final class ChatViewModel: ObservableObject {
 
     /// The conversation's capability flags and stored settings, read when the screen opens.
     ///
-    /// The console does the same read on mount (`ChatWindow.tsx:718-737`) and it is the only source for the
+    /// The console does the same read on mount (`ChatWindow.tsx:723-742`) and it is the only source for the
     /// four gates in the matrix at spec line 449-462 — a screen that guessed them would offer a switch the
     /// model behind the conversation cannot honour.
     public func loadComposerConfig() async {
@@ -990,7 +990,7 @@ public final class ChatViewModel: ObservableObject {
         case let .success(row):
             composer = SessionChatConfig(from: row)
             // The stored `enablePlan` is what the console's two plan effects read
-            // (`ChatWindow.tsx:642-646`, `:649-669`), so this is where the follow starts on a real conversation.
+            // (`ChatWindow.tsx:647-651`, `:654-674`), so this is where the follow starts on a real conversation.
             syncPlanPanel()
         case let .failure(error):
             // The switches keep the DTO's own defaults, which is why the reason they may be wrong has to be
@@ -1001,7 +1001,7 @@ public final class ChatViewModel: ObservableObject {
 
     // MARK: - plan
 
-    /// The calls that open the drawer by themselves (`ChatWindow.tsx:1500`). `plan_exit` is deliberately absent:
+    /// The calls that open the drawer by themselves (`ChatWindow.tsx:1505`). `plan_exit` is deliberately absent:
     /// its result closes the plan rather than showing it, and it is not gated on the switch the way these two are.
     static let planOpeningTools: Set<String> = ["plan_write", "plan_enter"]
     /// The one tool whose result breaks the answer bubble (`:1566-1591`).
@@ -1078,7 +1078,7 @@ public final class ChatViewModel: ObservableObject {
     ///
     /// `ChatTranscript` drops every plan frame — no card, no break in the sentence — so the raw event is the only
     /// place that still knows which tool was called, and this is the only place the two side effects
-    /// (`ChatWindow.tsx:1499-1504`, `:1566-1591`) can live. A member's plan frame belongs to that member's run,
+    /// (`ChatWindow.tsx:1504-1509`, `:1571-1596`) can live. A member's plan frame belongs to that member's run,
     /// and neither of the console's guards reaches it.
     private func reactToPlanFrame(_ event: ChatEvent) {
         guard event.memberRunID == nil else { return }
@@ -1115,7 +1115,7 @@ public final class ChatViewModel: ObservableObject {
         }
     }
 
-    /// The card and the drawer are one plan with one expansion (`ChatWindow.tsx:593`, whose
+    /// The card and the drawer are one plan with one expansion (`ChatWindow.tsx:598`, whose
     /// `currentPlanExpanded` both renderings read), so the stream's card reports the panel's state rather than
     /// keeping a fold-out of its own.
     public var isPlanExpanded: Bool { planPanel?.isCurrentPlanExpanded ?? true }
@@ -1129,7 +1129,7 @@ public final class ChatViewModel: ObservableObject {
     /// How much of one request body the router's edge will take: 1 MB.
     ///
     /// The console puts no number on its own strip — its picker appends every file it is handed
-    /// (`ChatWindow.tsx:2442-2468`) off a bare `multiple` input (`:3692-3699`) — so the only limit that is
+    /// (`ChatWindow.tsx:2447-2483`) off a bare `multiple` input (`:3707-3714`) — so the only limit that is
     /// really there is the server's, and the smaller byte answers for it. The router would take 16 MB
     /// (`harnax-session-router/src/main/resources/application.yml:31`, its WebClient at `:104`), but the
     /// public entry this console is deployed behind sets no `client_max_body_size` on the streaming
@@ -1154,7 +1154,7 @@ public final class ChatViewModel: ObservableObject {
     /// The picture button's tap: may the sheet open?
     ///
     /// A model with no vision gets the warning instead of a picker it could not use, so the view has no
-    /// capability branch of its own (`ChatWindow.tsx:3493-3505`).
+    /// capability branch of its own (`ChatWindow.tsx:3508-3520`).
     public func requestImages() -> Bool {
         guard canPickImages else {
             composerNotice = .warning(hx("chat.model.noVision"))
@@ -1231,7 +1231,7 @@ public final class ChatViewModel: ObservableObject {
 
     // MARK: - capability switches
 
-    /// Deep thinking. Three answers, in the console's own order (`ChatWindow.tsx:3506-3572`): a model that
+    /// Deep thinking. Three answers, in the console's own order (`ChatWindow.tsx:3521-3587`): a model that
     /// cannot reason gets a warning and no command, a model that *must* reason gets an explanation and no
     /// command at all, and only then does the switch move.
     public func toggleThink() {
@@ -1249,7 +1249,7 @@ public final class ChatViewModel: ObservableObject {
         flip(.think, capability: "thinking")
     }
 
-    /// Web search, gated by the model's internet flag and nothing else (`ChatWindow.tsx:3573-3589`).
+    /// Web search, gated by the model's internet flag and nothing else (`ChatWindow.tsx:3588-3604`).
     public func toggleSearch() {
         if !composer.canToggleSearch {
             composerNotice = .warning(hx("chat.model.noInternet"))
@@ -1258,13 +1258,13 @@ public final class ChatViewModel: ObservableObject {
         flip(.search, capability: "search")
     }
 
-    /// Plan has no model gate at all (`ChatWindow.tsx:3590-3600`) — it is a session column, not a capability.
+    /// Plan has no model gate at all (`ChatWindow.tsx:3605-3615`) — it is a session column, not a capability.
     public func togglePlan() {
         flip(.plan, capability: "plan")
     }
 
     /// The permission picker's row. Same value is a no-op, then optimistic, then back out if the server says
-    /// no (`ChatWindow.tsx:3601-3638`).
+    /// no (`ChatWindow.tsx:3616-3653`).
     ///
     /// A `task-` conversation is not offered this at all: the runtime refuses the command outright for those
     /// ids (`DefaultAgentRunner.kt:1025-1027`), so an option that could only ever fail is left out rather than
@@ -1307,14 +1307,14 @@ public final class ChatViewModel: ObservableObject {
         case .plan:
             composer.enablePlan = value
             // The panel reads the same flag the console's two plan effects read, on the optimistic write and on
-            // the rollback alike (`ChatWindow.tsx:642-646`), so a switch the server refused stops the follow it
+            // the rollback alike (`ChatWindow.tsx:647-651`), so a switch the server refused stops the follow it
             // never got.
             syncPlanPanel()
         }
     }
 
     /// Move one flag ahead of the server, then send `ENABLE`/`DISABLE` with the capability name
-    /// (`ChatWindow.tsx:3506-3600`: `setEnableThink(newValue)` first, revert on a `false`).
+    /// (`ChatWindow.tsx:3521-3615`: `setEnableThink(newValue)` first, revert on a `false`).
     ///
     /// The capability names are the server's whitelist — `search`, `thinking`, `plan`
     /// (`DefaultAgentRunner.kt:1052-1053`); a fourth spelling would be refused as `Unknown capability`.
@@ -1329,7 +1329,7 @@ public final class ChatViewModel: ObservableObject {
         }
     }
 
-    /// `sendSilentCommand` (`ChatWindow.tsx:2408-2430`): no bubble, and the caller rolls back on the answer.
+    /// `sendSilentCommand` (`ChatWindow.tsx:2413-2435`): no bubble, and the caller rolls back on the answer.
     ///
     /// Answers false when the command did not land. The console only calls a failure a failure when the server
     /// said `success === false` *and* supplied a message (`:2422`), which leaves a bare `false` keeping its
@@ -1363,7 +1363,7 @@ public final class ChatViewModel: ObservableObject {
     ///
     /// Two of the nine need a word with the user first, and the rest go straight through: clear behind a
     /// confirmation and stop-sandbox behind a status read and then a confirmation
-    /// (`ChatWindow.tsx:3639-3677`, spec lines 318-322).
+    /// (`ChatWindow.tsx:3654-3692`, spec lines 318-322).
     private func dispatch(_ command: ChatSlashCommand, rawText: String) {
         switch command.command {
         case .clear:
@@ -1376,11 +1376,11 @@ public final class ChatViewModel: ObservableObject {
     }
 
     /// The toolbar's Clear button. A toolbar tap has no typed line to draw, which is why its `rawText` is
-    /// empty: the console's `handleClearChat` (`ChatWindow.tsx:2678-2708`) sends silently and empties the
+    /// empty: the console's `handleClearChat` (`ChatWindow.tsx:2693-2723`) sends silently and empties the
     /// transcript instead of adding to it.
     ///
     /// Dead while a run is reading, like the send button: the console leaves both chips disabled for the
-    /// length of a turn (`ChatWindow.tsx:3679-3686`) because the backend refuses a second command on a busy
+    /// length of a turn (`ChatWindow.tsx:3694-3701`) because the backend refuses a second command on a busy
     /// session — and clearing the transcript would pull it out from under the read still folding into it.
     public func requestClear() {
         guard !isStreaming else { return }
@@ -1394,17 +1394,25 @@ public final class ChatViewModel: ObservableObject {
     }
 
     /// The compaction entry. It needs no confirmation: the console's menu item is wired straight to
-    /// `handleCompact` (`harnax-webui/src/pages/session/components/ChatWindow.tsx:3717-3726`), because
+    /// `handleCompact` (`harnax-webui/src/pages/session/components/ChatWindow.tsx:3731-3737`), because
     /// compaction is the one command that leaves the conversation itself untouched — the archive still holds
     /// every original bubble. Dead while a run reads like the other two entries, since the backend refuses a
     /// second command on a busy session and compacting mid-turn would rewrite the context the run is reading.
+    ///
+    /// A reading under the line is answered here rather than sent: the runtime says「nothing to compact」for
+    /// that session too, one round trip later, and the console holds its entry back on the same number
+    /// (`ChatWindow.tsx:2451-2460`). No reading is not a low reading, so that tap still sends.
     public func requestCompact() {
         guard !isStreaming else { return }
+        if contextUsage?.isCompactionPointless == true {
+            composerNotice = .info(hx("chat.context.compact.noop"))
+            return
+        }
         run(command: ChatSlashCommand(command: .compact), rawText: "")
     }
 
     /// Ask the runtime whether the sandbox is up, and only offer the confirmation when it answers yes
-    /// (`ChatWindow.tsx:3639-3664`).
+    /// (`ChatWindow.tsx:3654-3679`).
     ///
     /// A status read that *failed* is not the same news as a sandbox that is down, and the console keeps them
     /// apart — the second is a warning, the first an error. Both refuse to send.
@@ -1463,7 +1471,7 @@ public final class ChatViewModel: ObservableObject {
 
     /// Ask the runtime how full this conversation's context is, and let the header's tag follow the answer.
     ///
-    /// The console's `loadContextUsage` (`harnax-webui/src/pages/session/index.tsx:142-154`) overwrites on
+    /// The console's `loadContextUsage` (`harnax-webui/src/pages/session/index.tsx:143-155`) overwrites on
     /// every read, including with null: a business failure means no instance holds this session, an absent
     /// `data` means it was never bound, and both hide the tag rather than showing a `0%` for a context the
     /// router cannot see. Nothing is said when the read fails — the tag not being there is a state, and the
@@ -1488,7 +1496,7 @@ public final class ChatViewModel: ObservableObject {
     /// Re-read at a turn's last word.
     ///
     /// The reading's numerator is the *last billed call*, so mid-turn it is one answer behind; a turn is
-    /// exactly what changes it (`harnax-webui/src/pages/session/components/ChatWindow.tsx:2503-2507` re-reads
+    /// exactly what changes it (`harnax-webui/src/pages/session/components/ChatWindow.tsx:2518-2522` re-reads
     /// on the same edge).
     private func followUpContextUsage() {
         guard contextReader != nil else { return }
@@ -1510,7 +1518,7 @@ public final class ChatViewModel: ObservableObject {
     /// One command down `POST /api/router/agent/command`.
     ///
     /// `rawText` is the line the user typed, which becomes the user bubble before the request goes out
-    /// (`ChatWindow.tsx:992-998`); empty means a toolbar tap, whose answer the console keeps out of the
+    /// (`ChatWindow.tsx:997-1003`); empty means a toolbar tap, whose answer the console keeps out of the
     /// transcript and puts in a toast instead. Either way the answer is the server's sentence and not a
     /// stream — the command channel is plain JSON, so `isStreaming` here only parks the composer for the
     /// length of one request.
@@ -1536,7 +1544,7 @@ public final class ChatViewModel: ObservableObject {
                 // A stop is the user letting the *answer* go: no banner, no bubble, and `abort()` has already
                 // put `isStreaming` back so the composer is free. The context is another matter — the server
                 // ran this command whatever this side does with its reply — so the re-read the compact leg owes
-                // is still taken, in the console's `finally` place (`ChatWindow.tsx:2497-2499`).
+                // is still taken, in the console's `finally` place (`ChatWindow.tsx:2512-2514`).
                 if command.command == .compact { await self.refreshContextUsage() }
                 return
             }
@@ -1561,7 +1569,7 @@ public final class ChatViewModel: ObservableObject {
                 }
                 // Clearing a conversation's history really does empty it server-side
                 // (`DefaultAgentRunner.kt:241-244`), so the bubbles on screen go with it
-                // (`ChatWindow.tsx:2681`).
+                // (`ChatWindow.tsx:2696`).
                 if Self.commandSucceeded(result), command.command == .clear {
                     self.settled { $0.transcript = ChatTranscript() }
                 }
@@ -1576,7 +1584,7 @@ public final class ChatViewModel: ObservableObject {
     }
 
     /// The console's reply chain, in order: `data.message`, then `Done` for a success that said nothing, then
-    /// the failure's own words (`ChatWindow.tsx:1023`).
+    /// the failure's own words (`ChatWindow.tsx:1028`).
     ///
     /// `AgentCommandReply` has no envelope message of its own — the client's `Result` carries the business
     /// error — so the third leg is `ErrorMessage`'s reading of that failure. The one difference from the
@@ -1602,7 +1610,7 @@ public final class ChatViewModel: ObservableObject {
     }
 
     /// What a tapped compaction has to say, in the console's own four branches
-    /// (`harnax-webui/src/pages/session/components/ChatWindow.tsx:2443-2501`).
+    /// (`harnax-webui/src/pages/session/components/ChatWindow.tsx:2448-2516`).
     ///
     /// A completed compaction names its two counts, because 「the context got shorter」 and 「this session was
     /// too short to compact」 are otherwise the same sentence — and the second is a report the user has to be
@@ -1676,7 +1684,7 @@ public final class ChatViewModel: ObservableObject {
     // MARK: - scroll
 
     /// The view reports the distance from its last row to the bottom of the viewport, which is the one
-    /// number the console's `handleScroll` keeps (`ChatWindow.tsx:620-627`).
+    /// number the console's `handleScroll` keeps (`ChatWindow.tsx:625-632`).
     public func didScroll(distanceFromBottom: CGFloat) {
         let anchored = distanceFromBottom <= Self.nearBottomThreshold
         guard anchored != isAnchoredToBottom else { return }
@@ -1684,7 +1692,7 @@ public final class ChatViewModel: ObservableObject {
     }
 
     /// The "back to bottom" control: coming back down re-arms the follow, so the stream pulls the view
-    /// again (`ChatWindow.tsx:635-639`).
+    /// again (`ChatWindow.tsx:640-644`).
     public func jumpToBottom() {
         isAnchoredToBottom = true
         commit { $0.scrollToBottomID += 1 }
@@ -1693,7 +1701,7 @@ public final class ChatViewModel: ObservableObject {
     // MARK: - copy
 
     /// The ErrorEvent's own words, falling back to its machine name, which is the same order the console
-    /// uses (`ChatWindow.tsx:1619-1633`).
+    /// uses (`ChatWindow.tsx:1624-1638`).
     private func errorSentence(_ failure: ChatEvent.StreamFailure) -> String {
         failure.message.isEmpty ? failure.code : failure.message
     }

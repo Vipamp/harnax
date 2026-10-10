@@ -396,7 +396,7 @@ final class ChatViewModelTests: XCTestCase {
 
     /// A command is the other channel, and the recovery belongs to the stream leg only: the line reaches the
     /// server even when the answer comes back as a failure, and the console clears the box on the send
-    /// (`ChatWindow.tsx:986-1032`).
+    /// (`ChatWindow.tsx:991-1037`).
     func testACommandTheServerNeverAnsweredDoesNotRefillTheBox() async {
         let commands = ScriptedAgentCommands()
         commands.reply = .failure(.offline)
@@ -422,7 +422,7 @@ final class ChatViewModelTests: XCTestCase {
     }
 
     /// A half answer that simply stopped is the console's silent case: the text stays, and nothing claims
-    /// the connection died when the user can see it did not (`ChatWindow.tsx:2361-2366`).
+    /// the connection died when the user can see it did not (`ChatWindow.tsx:2366-2371`).
     func testACloseAfterContentStaysQuiet() async throws {
         let (vm, stream) = makeModel()
         await send("断在中间", on: vm, stream)
@@ -452,7 +452,7 @@ final class ChatViewModelTests: XCTestCase {
     }
 
     /// A toolbar chip is not a second send button. The console leaves both disabled for the length of a run
-    /// because the backend refuses a second command on a busy session (`ChatWindow.tsx:3679-3686`); here a
+    /// because the backend refuses a second command on a busy session (`ChatWindow.tsx:3694-3701`); here a
     /// chip that got through would have replaced the read's task and orphaned the socket behind it.
     func testAChipCannotTakeOverALiveRead() async throws {
         let commands = ScriptedAgentCommands()
@@ -530,7 +530,7 @@ final class ChatViewModelTests: XCTestCase {
     // MARK: - a typed command
 
     /// A command line is its own bubble and a `POST /command`: no stream is opened, so the two channels cannot
-    /// be confused by a later frame (`ChatWindow.tsx:986-1032`).
+    /// be confused by a later frame (`ChatWindow.tsx:991-1037`).
     func testATypedCommandGoesToTheCommandChannelAndNotToTheStream() async {
         let commands = ScriptedAgentCommands()
         let (vm, stream) = makeModel(commands: commands)
@@ -585,7 +585,7 @@ final class ChatViewModelTests: XCTestCase {
     }
 
     /// A command the server refused answers with its own words, which is the third leg of the console's reply
-    /// chain (`harnax-webui/src/pages/session/components/ChatWindow.tsx:1023`) and the only useful thing a
+    /// chain (`harnax-webui/src/pages/session/components/ChatWindow.tsx:1028`) and the only useful thing a
     /// bubble can carry: a compaction refusal says why (a member's child session, a task session, a call
     /// already running).
     func testACommandRefusedByTheServerAnswersWithItsOwnWords() async {
@@ -675,7 +675,7 @@ final class ChatViewModelTests: XCTestCase {
     }
 
     /// The toolbar's Clear has no typed line, so its answer is a banner and its success really does empty the
-    /// transcript (`ChatWindow.tsx:2678-2708`).
+    /// transcript (`ChatWindow.tsx:2693-2723`).
     func testTheToolbarClearEmptiesTheTranscriptOnSuccess() async throws {
         let commands = ScriptedAgentCommands()
         let (vm, stream) = makeModel(commands: commands)
@@ -722,7 +722,7 @@ final class ChatViewModelTests: XCTestCase {
     }
 
     /// A status read that failed is not the same news as a sandbox that is down: one is an error, the other a
-    /// warning, and neither may offer a confirmation (`ChatWindow.tsx:3639-3664`).
+    /// warning, and neither may offer a confirmation (`ChatWindow.tsx:3654-3679`).
     func testAFailedStatusReadSaysTheReadFailedAndAsksNothing() async {
         let commands = ScriptedAgentCommands()
         let sandbox = ScriptedSandbox()
@@ -835,7 +835,7 @@ final class ChatViewModelTests: XCTestCase {
 
     /// The tag is the latest answer and nothing else: the console's `loadContextUsage` overwrites on every
     /// read, including with null, because a session the router cannot see must not keep a number on screen
-    /// (`harnax-webui/src/pages/session/index.tsx:142-154`).
+    /// (`harnax-webui/src/pages/session/index.tsx:143-155`).
     func testTheOccupancyTagFollowsTheRead() async {
         let reader = ScriptedContextUsage()
         let (vm, _) = makeModel(contextUsage: reader)
@@ -918,7 +918,7 @@ final class ChatViewModelTests: XCTestCase {
     }
 
     /// The reading's numerator is the last billed call, so it only becomes worth asking again when a turn ends
-    /// (`harnax-webui/src/pages/session/components/ChatWindow.tsx:2503-2507`).
+    /// (`harnax-webui/src/pages/session/components/ChatWindow.tsx:2518-2522`).
     func testTheTurnsLastWordRereadsTheOccupancy() async throws {
         let reader = ScriptedContextUsage()
         let (vm, stream) = makeModel(contextUsage: reader)
@@ -1048,7 +1048,7 @@ final class ChatViewModelTests: XCTestCase {
 
     /// A stop suppresses the banner, not the state of the server's context: the compaction ran wherever this
     /// side's answer went, so the reading the command rewrote is still taken — the console's re-read sits in a
-    /// `finally` (`ChatWindow.tsx:2497-2499`) for the same reason. The composer is already free, because a
+    /// `finally` (`ChatWindow.tsx:2512-2514`) for the same reason. The composer is already free, because a
     /// stop is what puts `isStreaming` back.
     func testAStoppedCompactionStillRereadsTheContext() async {
         let commands = ScriptedAgentCommands()
@@ -1064,6 +1064,45 @@ final class ChatViewModelTests: XCTestCase {
 
         await waitUntil("the reading after the stop") { reader.requested == ["s-1"] }
         XCTAssertNil(vm.composerNotice, "the banner is what the stop was for, not the re-read")
+    }
+
+    /// The console asks its own occupancy reading before it sends anything
+    /// (`harnax-webui/src/pages/session/components/ChatWindow.tsx:2451-2460`): under the line the session is too
+    /// short to compact, so the tap answers with that sentence and the command never leaves this side. The
+    /// assertion that carries the weight here is the empty request list — a slower「还太短」would pass a text-only
+    /// check while the pre-check was quietly dead code.
+    func testATapOnALowOccupancySessionSaysTooShortWithoutSending() async {
+        let commands = ScriptedAgentCommands()
+        commands.reply = .success(AgentCommandReply(success: true, result: .init(beforeMessages: 40, afterMessages: 12)))
+        let reader = ScriptedContextUsage()
+        reader.reading = ContextUsage(messageCount: 6, estimatedTokens: 1_200, contextWindow: 32_000, ratio: 0.0375)
+        let (vm, _) = makeModel(commands: commands, contextUsage: reader)
+        await vm.refreshContextUsage()
+        XCTAssertEqual(vm.contextUsage?.ratio, 0.0375, "the reading the gate runs off has to be on screen first")
+
+        vm.requestCompact()
+
+        XCTAssertEqual(vm.composerNotice?.tone, .info, "the console answers a too-short session blue, not red")
+        XCTAssertEqual(vm.composerNotice?.text, hx("chat.context.compact.noop"))
+        XCTAssertTrue(commands.requests.isEmpty, "the pre-check is what makes this a local answer, not a slower one")
+    }
+
+    /// No reading is not a low reading: with nothing to refuse on, the tap sends and the server's own answer
+    /// comes back, which is the console's `isCompactionPointless(undefined) === false` leg.
+    func testATapWithNoOccupancyReadingStillSendsTheCommand() async {
+        let commands = ScriptedAgentCommands()
+        commands.reply = .success(AgentCommandReply(success: true, result: .init(beforeMessages: 40, afterMessages: 12)))
+        let reader = ScriptedContextUsage()
+        reader.fails = true
+        let (vm, _) = makeModel(commands: commands, contextUsage: reader)
+        await vm.refreshContextUsage()
+        XCTAssertNil(vm.contextUsage)
+
+        vm.requestCompact()
+        await waitUntil("the compaction answer") { vm.composerNotice != nil }
+
+        XCTAssertEqual(commands.requests.count, 1)
+        XCTAssertEqual(commands.requests.first?.command, .compact)
     }
 
     // MARK: - the capability switches
@@ -1094,7 +1133,7 @@ final class ChatViewModelTests: XCTestCase {
     }
 
     /// A model that cannot reason gets a warning and no command, and the switch does not move at all
-    /// (`ChatWindow.tsx:3506-3512`).
+    /// (`ChatWindow.tsx:3521-3527`).
     func testThinkingRefusesAModelThatCannotReason() async {
         let commands = ScriptedAgentCommands()
         let vm = await composerReady(row: configRow(reasoning: 0), commands: commands)
@@ -1322,7 +1361,7 @@ final class ChatViewModelTests: XCTestCase {
     }
 
     /// The console puts no number on the strip — its picker appends every file it is handed
-    /// (`ChatWindow.tsx:2442-2468`, the append itself at `:2458`) off a bare `multiple` input (`:3692-3699`) —
+    /// (`ChatWindow.tsx:2447-2483`, the append itself at `:2473`) off a bare `multiple` input (`:3707-3714`) —
     /// so the limit is the server's. The edge that answers for that console takes a request body of 1 MB and
     /// no more: the streaming `location` sets no `client_max_body_size`
     /// (`harnax-deploy/nginx.conf:72-101`), and the same file spells out what that default means
