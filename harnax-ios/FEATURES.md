@@ -126,9 +126,9 @@
 | 技能详情：Markdown 正文 | `/context/skill/detail/:id` | v1 | `GET /skills/{id}` | M |
 | 技能详情：资源文件树与文件内容 | 同上 | v1 | 同一详情响应 | L |
 | 技能行的来源标记（智能体晋升 / 人工，两枚徽标；整行没有这一列时两枚都不画） | 技能表新增列 | v1 | 列表行与详情行的 `origin` | S |
-| 技能草稿队列（`PENDING`/`APPROVED`/`REJECTED` 三档分段、按名搜索、每页 20 条） | `/context/skill-drafts` | v1 | `GET /api/admin/skill-drafts`（无 `/page` 后缀） | M |
+| 技能草稿队列（`PENDING`/`APPROVED`/`REJECTED` 三档分段、按名搜索、每页 20 条） | `/optimization/skill-drafts` | v1 | `GET /api/admin/skill-drafts`（无 `/page` 后缀） | M |
 | 会话域入口行（租户级待审计数；装配缺失即撤整行，计数读失败只隐藏数字） | 无（Web 走左侧菜单） | v1 | 同一队列接口 | S |
-| 草稿详情六页签（正文 / 文件 / 脚本 / 内容扫描 / 来源 / 轨迹） | `/context/skill-draft/detail/:id` | v1 | `GET /skill-drafts/{id}` | L |
+| 草稿详情六页签（正文 / 文件 / 脚本 / 内容扫描 / 来源 / 轨迹） | `/optimization/skill-draft/detail/:id` | v1 | `GET /skill-drafts/{id}` | L |
 | 两份扫描分色并置（harnax 内容扫描非空即存成禁用；沙箱上报只展示、永不按住） | 详情扫描页签 | v1 | 同一详情响应 | M |
 | 批准晋升（先取摘要再确认，六种结果各有一句，未知结果走兜底） | 审核详情操作区 | v1 | `POST /skill-drafts/{id}/approve` | L |
 | 重名冲突处置（改名或覆盖，预选改名、改名限 100 字，取消即重读） | 冲突弹窗 | v1 | 同一批准接口的 `conflictResolution` 与 `newName` | M |

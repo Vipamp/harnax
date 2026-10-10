@@ -256,7 +256,7 @@ iOS 结论：**只提供 sse / streamablehttp 两种创建/编辑选项**；已�
 ### 现有 Web 回跳依赖什么（iOS 必须替换的部分）
 
 `harnax-webui/src/pages/mcp/oauth-callback.tsx`
-- 回调路由常量 `CALLBACK_PATH = '/mcp/oauth/callback'`：`harnax-webui/src/pages/mcp/oauth-callback.tsx:9`；路由注册 `harnax-webui/config/routes.ts:161-163`。
+- 回调路由常量 `CALLBACK_PATH = '/mcp/oauth/callback'`：`harnax-webui/src/pages/mcp/oauth-callback.tsx:9`；路由注册 `harnax-webui/config/routes.ts:228-233`。
 - 页面直接从 URL query 读 `code` / `state` / `error` / `error_description`，随后 `history.replace` **先把 query 抹掉再 exchange**：`harnax-webui/src/pages/mcp/oauth-callback.tsx:35-44`。
 - state / code 从不落到 useState 持久化或 localStorage：`harnax-webui/src/pages/mcp/oauth-callback.tsx:19-28`。
 - `authorized === true` → 成功提示；否则错误提示：`harnax-webui/src/pages/mcp/oauth-callback.tsx:72-91`。
@@ -388,7 +388,7 @@ installed / updated / failed[{name,reason}] / flagged[{name,reasons}] / sourceEr
 
 ## CLI
 
-路由：`harnax-webui/config/routes.ts:103` `/context/cli`。页面：`harnax-webui/src/pages/cli/index.tsx`。
+路由：`harnax-webui/config/routes.ts:109` `/context/cli`。页面：`harnax-webui/src/pages/cli/index.tsx`。
 
 ### 与最新 DDL 的一致性核验（结论：一致）
 
@@ -580,7 +580,7 @@ Web 那条链路的形状 iOS 全部保留，只有「谁去接回跳」这一�
 - 敏感值永远以掩码回显（apiKey 前 2 + `****` + 后 4，`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ModelProviderResponse.kt:60-68`；header/envParam secret，`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/McpServerResponse.kt:55-56`）→ iOS 表单初始值不要回填掩码串，直接留空并提示"留空不修改"。
 - 连通性测试只有布尔（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/ModelProviderController.kt:122`、`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/McpServerController.kt:136`）+ 前端 15s 超时竞赛（`harnax-webui/src/pages/mcp/index.tsx:381-438`）→ 用 `Task` + `TimeoutError` 区分三态：通过 / 服务端失败(message) / 本地超时。
 - 权限来自登录态（Web 从 localStorage `currentUser`，`harnax-webui/src/utils/permissionUtil.ts:80-97`）→ iOS 从 Keychain 会话解析，规则照抄 `hasOperationPermission`（`:111-120`）与 `isPublicSwitchDisabled`（`:57-75`）；CLI 无 creator/isPublic 字段，因此不能照模型页做门控（见"未确认"）。
-- 路由参数：`/context/mcp/detail/:id`、`/context/skill/detail/:id`（`harnax-webui/config/routes.ts:85,96`）→ iOS 用 `.navigationDestination(for: MCP.ID.self)` / `Skill.ID.self`。OAuth 回调路由 `/mcp/oauth/callback`（`:161-163`）在 iOS 不存在，也不注册任何 `CFBundleURLTypes`：租户共享的 `redirect_uri` 要过 `validateHttpUrl`，只认 http(s)（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/McpOAuthServiceImpl.kt:433-448`），自定义 scheme 既无法注册也不该由一台设备改写（`harnax-ios/Sources/HarnaxFeatures/Mcp/McpAuthorizationWebSheet.swift:8-17`）。承接有两条：应用内在 `WKWebView` 里截获回跳、由本机换 code（`harnax-ios/Sources/HarnaxFeatures/Mcp/McpDetailViewModel.swift:491-499`），或交给系统浏览器、仍由控制台回调页收 code 并落令牌，iOS 轮询授权状态收尾（`harnax-ios/Sources/HarnaxFeatures/Mcp/McpBrowserAuthorizer.swift:10-13`、`harnax-ios/Sources/HarnaxFeatures/Mcp/McpDetailViewModel.swift:305`）。两条都不把 code 与一次性 state 存下来。
+- 路由参数：`/context/mcp/detail/:id`、`/context/skill/detail/:id`（`harnax-webui/config/routes.ts:85,96`）→ iOS 用 `.navigationDestination(for: MCP.ID.self)` / `Skill.ID.self`。OAuth 回调路由 `/mcp/oauth/callback`（`:228-233`）在 iOS 不存在，也不注册任何 `CFBundleURLTypes`：租户共享的 `redirect_uri` 要过 `validateHttpUrl`，只认 http(s)（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/McpOAuthServiceImpl.kt:433-448`），自定义 scheme 既无法注册也不该由一台设备改写（`harnax-ios/Sources/HarnaxFeatures/Mcp/McpAuthorizationWebSheet.swift:8-17`）。承接有两条：应用内在 `WKWebView` 里截获回跳、由本机换 code（`harnax-ios/Sources/HarnaxFeatures/Mcp/McpDetailViewModel.swift:491-499`），或交给系统浏览器、仍由控制台回调页收 code 并落令牌，iOS 轮询授权状态收尾（`harnax-ios/Sources/HarnaxFeatures/Mcp/McpBrowserAuthorizer.swift:10-13`、`harnax-ios/Sources/HarnaxFeatures/Mcp/McpDetailViewModel.swift:305`）。两条都不把 code 与一次性 state 存下来。
 
 ---
 
@@ -589,7 +589,7 @@ Web 那条链路的形状 iOS 全部保留，只有「谁去接回跳」这一�
 1. `GET /api/admin/model-providers/{id}/delete` 在厂商仍有模型时的后端行为（是否级联、是否报 message）未读实现层，仅确认端点存在：`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/ModelProviderController.kt:113`。
 2. `connectivity-test` 对 stdio 的具体拒绝路径：只确认 `McpStdioPolicy.refusalReason()` 文案存在（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/McpStdioPolicy.kt:26-31`）与 `list_tools` 异常时把 message 塞进 `ResultVo.error`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/McpServerController.kt:173-175`），但 service 层 `connectivityTest` / `listTools` 的 stdio 分支实现未逐行读。
 3. `McpOAuthDiscoveryResponse` / `McpOAuthStatusResponse` / `McpOAuthExchangeResponse` 的**逐字段清单**取自 DTO 行范围（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/McpOAuthDiscoveryResponse.kt:11-50` 等），未逐字段展开类型（例如 scopes 是 `List<String>` 还是逗号串、过期字段名）。iOS 建模前建议再逐行核对这三个 DTO。
-4. **已核实**：CLI 走的是「全体登录用户可见可开关」，不是管理员限定。`harnax-webui/config/routes.ts:100`-`:105` 的 `/context/cli` 没有 `access` 字段（全仓只有三条路由带 `canAccessUserManagement`：`/system/user`、`/system/tenant`、`/system/api-key`），`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/CliController.kt:37`-`:95` 的读口与 `PUT /toggle/{id}` 也都没有 `@PreAuthorize`。又因 `CliResponse`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/CliResponse.kt:21`-`:58`）不含 `isPublic` / `creator`，`hasOperationPermission` 两条规则在这页套不上——iOS 的 CLI 页对任何登录用户都放行到接口层，权限完全由后端默认策略兜。
+4. **已核实**：CLI 走的是「全体登录用户可见可开关」，不是管理员限定。`harnax-webui/config/routes.ts:105`-`:110` 的 `/context/cli` 没有 `access` 字段（全仓只有三条路由带 `canAccessUserManagement`：`/system/user`、`/system/tenant`、`/system/api-key`），`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/CliController.kt:37`-`:95` 的读口与 `PUT /toggle/{id}` 也都没有 `@PreAuthorize`。又因 `CliResponse`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/CliResponse.kt:21`-`:58`）不含 `isPublic` / `creator`，`hasOperationPermission` 两条规则在这页套不上——iOS 的 CLI 页对任何登录用户都放行到接口层，权限完全由后端默认策略兜。
 5. `harnax-webui/src/services/ant-design-pro/{model,mcp,skill,cli}.ts` 中各封装函数返回 `res.data` 的具体解构位置未逐个贴行号（以 controller 的返回类型为准）；iOS 只需按 `ResultVo` 信封解 `data`。
 6. 技能页「批量安装到 Agent」已核实为**不存在**：`POST /api/admin/skills/batch` 带 `@Deprecated`，注释说明它保留给 CLI 调用、请改用 `POST /api/admin/skill-sources/{id}/install`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/SkillController.kt:125`-`:135`），且全 webui 无任何调用点（`skills/batch` 与 `batchInstall` 零命中）。iOS 只接 `install` 那一路，不要为废弃口做适配层。
 7. `EntityCard` 的底部/统计区精确 CSS 层级与响应式断点细节未逐行读完（只读了 `:1-120` 与注释块 `:92-101`）；iOS 视觉稿需自行决定间距/圆角，无强约束。

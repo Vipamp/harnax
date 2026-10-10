@@ -46,8 +46,8 @@ Web 侧路由定义见 `harnax-webui/config/routes.ts`，iOS 与之一一对应�
 | 上下文 | `/context/mcp` | 列表 + 编辑 + 详情 | 详情含工具列表与 OAuth 面板 |
 | 上下文 | `/context/skill` | 仓库列表 + 技能列表 | 含同步、安装、上传 |
 | 上下文 | `/context/skill/detail/:id` | 详情（正文 / 文件树两态） | Markdown 渲染 + 代码高亮 |
-| 上下文 | `/context/skill-drafts` | 草稿队列 + 审核详情 | 智能体自写的技能先排队等人工批准；iOS 的入口挂在会话列表顶部，不在上下文那排分段里（`specs/07-skill-draft-review.md` §5.1） |
-| 上下文 | `/context/skill-draft/detail/:id` | 审核详情（六页签 + 批准 / 驳回 / 冲突处置） | 队列页内部再 push 一层；`hideInMenu` |
+| 优化治理 | `/optimization/skill-drafts` | 草稿队列 + 审核详情 | 智能体自写的技能先排队等人工批准；iOS 的入口挂在会话列表顶部，不在上下文那排分段里（`specs/07-skill-draft-review.md` §5.1） |
+| 优化治理 | `/optimization/skill-draft/detail/:id` | 审核详情（六页签 + 批准 / 驳回 / 冲突处置） | 队列页内部再 push 一层；`hideInMenu` |
 | 上下文 | `/context/cli` | 列表 + 详情抽屉 | 含 kill switch 与关联检查 |
 | 系统 | `/system/channel` | 列表 + 条件字段表单 | 5 类型 × 4 接入模式矩阵，含微信扫码 |
 | 系统 | `/system/api-key` | 列表 + 编辑 | 一次性原始 Key 展示；Web 侧该页对非管理员不可见（O5） |
@@ -56,7 +56,7 @@ Web 侧路由定义见 `harnax-webui/config/routes.ts`，iOS 与之一一对应�
 | 登录态 | `/login` | 登录页 + 服务器地址设置 | 见 §5 |
 | 兜底 | — | 我的（登录态、租户切换、主题、语言、退出） | 不含资料编辑与改密 |
 
-Web 侧 `/context/mcp/detail/:id`、`/context/skill/detail/:id` 与 `/context/skill-draft/detail/:id` 是 `hideInMenu` 的子路由，iOS 用 push 导航承载；`/mcp/oauth/callback` 是无布局的回跳页，iOS 上由应用内 `WKWebView` 承接这条回跳——那行注册只存得住 http(s) 的 `redirect_uri`，所以拿它逐段比对每一次导航，命中即取消加载并由本端发 `exchange`，徽标最后仍以 `status` 那次读为准（见第 13 章 13.4 的六步状态机）。`/welcome` 是数据全硬编码的演示页，`/context/channel` 是保活重定向，两者都不进 iOS。
+Web 侧 `/context/mcp/detail/:id`、`/context/skill/detail/:id` 与 `/optimization/skill-draft/detail/:id` 是 `hideInMenu` 的子路由，iOS 用 push 导航承载；`/mcp/oauth/callback` 是无布局的回跳页，iOS 上由应用内 `WKWebView` 承接这条回跳——那行注册只存得住 http(s) 的 `redirect_uri`，所以拿它逐段比对每一次导航，命中即取消加载并由本端发 `exchange`，徽标最后仍以 `status` 那次读为准（见第 13 章 13.4 的六步状态机）。`/welcome` 是数据全硬编码的演示页，`/context/channel` 是保活重定向，两者都不进 iOS。
 
 ### 3.2 明确不进 v1（记账项）
 
@@ -343,12 +343,12 @@ print('all', len(all_t), 'with-dir', len(q), 'bare', len(all_t) - len(q),
 - 技能仓库的「同步」是两个口的组合：`GET /skill-sources/{id}/fetch` 拿预览，`POST /skill-sources/{id}/install` 落库，后端没有 `sync` 口；上传是 multipart，字段名 `file` 与 `name`；安装结果 `200` 不等于全成功，要按新增／`flagged`／`stale` 分区渲染。技能没有删除入口，删除只在仓库侧。
 - 技能详情的资源文件没有独立读取接口，全部来自详情响应；Markdown 正文即 `skillmd`。
 - `POST /api/admin/skills/batch` 是 `@Deprecated` 且 Web 零调用的旧口，iOS 不接。
-- CLI 是「全体登录用户可见可开关」的一页：路由不带 `access`（`harnax-webui/config/routes.ts:122`-`:127`，全仓只有 `/system/user`、`/system/tenant`、`/system/api-key` 三条加了管理员门禁），`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/CliController.kt:37`-`:95` 的读口与 `PUT /toggle/{id}` 也没有角色校验；又因 `CliResponse` 不含 `isPublic`/`creator`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/CliResponse.kt:21`-`:58`），§13.8 的两条权限规则在这页套不上。
+- CLI 是「全体登录用户可见可开关」的一页：路由不带 `access`（`harnax-webui/config/routes.ts:105`-`:110`，全仓只有 `/system/user`、`/system/tenant`、`/system/api-key` 三条加了管理员门禁），`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/CliController.kt:37`-`:95` 的读口与 `PUT /toggle/{id}` 也没有角色校验；又因 `CliResponse` 不含 `isPublic`/`creator`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/CliResponse.kt:21`-`:58`），§13.8 的两条权限规则在这页套不上。
 
 ### 13.5 系统域
 
 - 渠道是「类型 × 接入模式」的条件字段矩阵，`callbackKey` 从不下发、`callbackUrl` 只在 webhook 模式存在；`configJson` 与 `envValue` 都走「掩码回传＝不修改」协议；`http` 类型没有 adaptor，运行时会报 `no adaptor registered`，iOS 表单保留选项但灰显不可提交（O7）。渠道级 `enableThink` / `enableSearch` / `enablePlan` 三开关进 v1，取值沿用实体的 0/1 整数、与类型无关因此放在表单通用段而非条件段（O6：后端三列已落地）。iOS 要自己复刻的是非空即覆盖的更新语义——`thinkingFlagOrRefuse` 在调用方不传时按模型的思考规则取值，因此表单不能把「未动过」的开关序列成 `0` 上送。
-- API Key 的 `scope` 由前端传值决定，缺省 `"chat"`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ApiKeyServiceImpl.kt:91`），且 scope 不参与访问控制；原始 Key 只在创建与 `regenerate` 的响应里出现一次。`regenerate` 对 PERMANENT／SYSTEM 保护键没有服务端拦截，这是**既定出口而非遗漏**——改／删／停三处的拒绝文案自己写着「use regenerate instead」（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ApiKeyServiceImpl.kt:116`-`:117`、`:142`-`:143`、`:153`-`:154`，保护集 `:40`），Web 侧也按 `keyType` 灰显；iOS 不加客户端拦截，但二次确认要写清「换钥会让既有引用立即失效」。另一条要拍的板是可见性：Web 把这一页挂在管理员门禁下（`harnax-webui/config/routes.ts:158`-`:163`），见 O5。
+- API Key 的 `scope` 由前端传值决定，缺省 `"chat"`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ApiKeyServiceImpl.kt:91`），且 scope 不参与访问控制；原始 Key 只在创建与 `regenerate` 的响应里出现一次。`regenerate` 对 PERMANENT／SYSTEM 保护键没有服务端拦截，这是**既定出口而非遗漏**——改／删／停三处的拒绝文案自己写着「use regenerate instead」（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ApiKeyServiceImpl.kt:116`-`:117`、`:142`-`:143`、`:153`-`:154`，保护集 `:40`），Web 侧也按 `keyType` 灰显；iOS 不加客户端拦截，但二次确认要写清「换钥会让既有引用立即失效」。另一条要拍的板是可见性：Web 把这一页挂在管理员门禁下（`harnax-webui/config/routes.ts:205`-`:210`），见 O5。
 - 环境变量 `GET /list` 固定返回 `id` / `envKey` / `displayValue` / `sensitive` 四键，其中 `sensitive` 是布尔（全仓其余标志位都是 `0/1` 整数）；掩码三档规则见 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/EnvVariableServiceImpl.kt:275`-`:279`。
 - Token 监控是唯一图表页，一次进页并发 5 个请求、任一返回即重算；会话维度前端截 `slice(0, 10)`，周维度按周一对齐。
 - 租户：`GET /api/admin/auth/tenants` 只返回已有 `user_tenant` 关联行的租户，不给管理员放宽，而 `switch-tenant` 对管理员放行任意租户——两个口径不一致，O1 的呈现方案要处理这点。
@@ -405,7 +405,7 @@ print('all', len(all_t), 'with-dir', len(q), 'bare', len(all_t) - len(q),
 | O2 | 对话凭据是否要设备维度 | v1 接受账号级永久 Key，v1.1 与 `cli-login` 限流一起提后端 | 该 Key 一旦泄露等同账号对话权（R4）。iOS 侧 Keychain + 生物识别能挡设备丢失，挡不住主动导出。要后端新增设备登记接口，与零改造前提冲突 |
 | O3 | APNs 推送做不做、推什么 | 列入 v1.1，作为 v1.1 唯一新增后端接口项（v1 的后端改动只有 O6 的渠道 DTO 三列，已落地）；事件源先只开两个——定时任务失败、工具等待确认 | 移动管理台的真实增量就是「不在电脑前也能被叫回来处理确认」。其余事件（对话结束、Token 报表）噪音大于价值 |
 | O4 | 旧移动端工程与移动专用接口面何时下线 | 与 iOS M0 并行做，先删工程再删接口面 | §4.3 的顺序不可颠倒。趁 iOS 还没写第一行 Swift 之前把口径收干净，能避免实现阶段误引到那条面上 |
-| O5 | API Key 页是否照搬「仅管理员可见」 | 照搬：非管理员不显示入口，但「我的永久 Key」照常可看 | Web 的门禁只落在前端路由（`harnax-webui/config/routes.ts:158`-`:163` 的 `access: canAccessUserManagement`，判据 `harnax-webui/src/access.ts:13` 即 `isAdmin === 1`），后端 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/ApiKeyController.kt:23`-`:25` 没有任何管理员校验。iOS 若放开入口，等于给普通用户新开一条 Web 上刻意不给的能力面；而 `getMyPermanentKey`（`:128`）本来就是按人取自己的 Key，不必连带上列表 |
+| O5 | API Key 页是否照搬「仅管理员可见」 | 照搬：非管理员不显示入口，但「我的永久 Key」照常可看 | Web 的门禁只落在前端路由（`harnax-webui/config/routes.ts:205`-`:210` 的 `access: canAccessUserManagement`，判据 `harnax-webui/src/access.ts:13` 即 `isAdmin === 1`），后端 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/ApiKeyController.kt:23`-`:25` 没有任何管理员校验。iOS 若放开入口，等于给普通用户新开一条 Web 上刻意不给的能力面；而 `getMyPermanentKey`（`:128`）本来就是按人取自己的 Key，不必连带上列表 |
 | O6 | 渠道级「思考 / 联网 / 计划」三个开关进不进 v1 | **已定案（2026-09-28）：进 v1。后端改动已落地，iOS 只消费** | 三列在实体上（`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Channel.kt:49`-`:55`）、内部接口会读（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt:464`-`:466`），admin 侧三个 DTO 也都带上了（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelCreateRequest.kt:41`、`:44`、`:47`，`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelUpdateRequest.kt:36`、`:39`、`:42`，`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelResponse.kt:56`、`:59`、`:62`），读侧由 `ChannelResponse.kt:95`-`:115` 的 `fromEntity` 映射（三行在 `:107`-`:109`），写侧在 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ChannelServiceImpl.kt:84`-`:86` 的创建映射与 `:123`-`:125` 的更新映射。两条写侧守卫 iOS 要照着复刻：`capabilityFlag`（`:160`）把非 `1` 的一切取值当停用，`thinkingFlagOrRefuse`（`:169`-`:180`）在调用方不传时继承模型自身的规则、且拒绝把「要求深度思考的模型」的思考关掉——后者会以英文串抛出，属第 13.8 章第 7 条必须原样呈现的拒绝 |
 | O7 | `http` 渠道类型给不给入口 | 给，但灰显且不可提交，标注「暂未支持」 | 后端把它当合法值接受，运行时找不到适配器、报 `no adaptor registered`（见 `harnax-ios/specs/03-system-domain.md` 的渠道矩阵）。让用户填完一整张表单才在运行期看到失败，比入口灰显更糟 |
 | O8 | 附件收取与下载留不留 v1 | 留，客户端把 404 当作「对象存储未开启」处理 | 该路由整控制器受开关控制（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/OutputFileController.kt:36`-`:39`），`harnax-admin/src/main/resources/application.yml:96` 里 `${MINIO_ENABLED:false}` 默认关，但标准部署 compose 显式置 `true`（`harnax-deploy/docker-compose.yml:183`、`:478`）。也就是说部署环境能用、裸配置环境必 404，需要一条明确的降级表现而不是让页面报错 |

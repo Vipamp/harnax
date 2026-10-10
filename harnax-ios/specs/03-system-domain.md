@@ -91,7 +91,7 @@
 
 ## API Key
 
-页面可见性：Web 侧 `/system/api-key` 带 `access: 'canAccessUserManagement'`（`harnax-webui/config/routes.ts:136`-`:141`），而该 access 就是 `currentUser.isAdmin === 1`（`harnax-webui/src/access.ts:13`）——**这一页对非管理员根本不可见**，与用户管理、租户管理同一条门禁。iOS 是否照搬列入 §15 的 O5。
+页面可见性：Web 侧 `/system/api-key` 带 `access: 'canAccessUserManagement'`（`harnax-webui/config/routes.ts:205`-`:210`），而该 access 就是 `currentUser.isAdmin === 1`（`harnax-webui/src/access.ts:13`）——**这一页对非管理员根本不可见**，与用户管理、租户管理同一条门禁。iOS 是否照搬列入 §15 的 O5。
 
 ### 1. 字段与校验
 
