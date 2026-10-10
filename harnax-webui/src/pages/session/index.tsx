@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { PageContainer } from '@ant-design/pro-components';
 import { Button, Card, List, Typography, Empty, Spin, message, Tag, Tooltip } from 'antd';
 import { PlusOutlined, BulbOutlined, CloudServerOutlined, ArrowLeftOutlined, TeamOutlined, FolderOpenOutlined, ThunderboltOutlined } from '@ant-design/icons';
@@ -100,6 +100,8 @@ const SessionPage: React.FC = () => {
   const [sessionSkillsVisible, setSessionSkillsVisible] = useState(false);
   /** Null means the router has no reading for this session, and then the header shows nothing at all. */
   const [contextUsage, setContextUsage] = useState<API.ContextUsage | null>(null);
+  /** Counts the asks, so a reply to a session the user has left cannot land after the newer one and redraw this title. */
+  const contextUsageGeneration = useRef(0);
   const { initialState } = useModel('@@initialState');
   const currentUser = initialState?.currentUser;
 
@@ -144,6 +146,8 @@ const SessionPage: React.FC = () => {
 
   /** A business failure comes back without data (code 500 when no instance holds the session, code 200 with null data when it was never bound). */
   const loadContextUsage = useCallback(async (sessionId?: string) => {
+    contextUsageGeneration.current += 1;
+    const generation = contextUsageGeneration.current;
     if (!sessionId) {
       setContextUsage(null);
       return;
@@ -151,13 +155,17 @@ const SessionPage: React.FC = () => {
     try {
       const res = await getContextUsage(sessionId);
       const usage = res?.data;
+      if (generation !== contextUsageGeneration.current) return;
       setContextUsage(usage && isContextUsageReadable(res) ? usage : null);
     } catch {
-      setContextUsage(null);
+      if (generation === contextUsageGeneration.current) setContextUsage(null);
     }
   }, []);
 
   useEffect(() => {
+    // What the last session occupied is no answer about this one — drop it now rather than when the new read
+    // happens to land.
+    setContextUsage(null);
     loadContextUsage(selectedSession?.sessionId);
   }, [selectedSession?.sessionId, loadContextUsage]);
 
