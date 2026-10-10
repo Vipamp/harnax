@@ -417,7 +417,7 @@ Scheduler 用同一条通道，`harnax-scheduler/src/main/kotlin/com/agnetix/har
 
 ### 6.1 Web 前端（harnax-webui）
 
-登录响应里的 `routerApiKey` 随 token 信息一并存本地：`harnax-webui/src/pages/user/login/index.tsx:433`。读出来加头的地方有两处封装——`harnax-webui/src/services/ant-design-pro/workspace.ts:8-13`（`getRouterApiKey()`，用于 workspace/session 类接口，加头见 :25、:125、:147）与 `harnax-webui/src/services/ant-design-pro/chat.ts:5-10`（对话流式接口）；聊天窗口另有一份等价逻辑，`harnax-webui/src/pages/session/components/ChatWindow.tsx:158-159` 在有 `routerApiKey` 时用 `X-Api-Key`，否则回退到 Bearer。
+登录响应里的 `routerApiKey` 随 token 信息一并存本地：`harnax-webui/src/pages/user/login/index.tsx:433`。读出来加头的地方有两处封装——`harnax-webui/src/services/ant-design-pro/workspace.ts:8-13`（`getRouterApiKey()`，用于 workspace/session 类接口，加头见 :25、:125、:147）与 `harnax-webui/src/services/ant-design-pro/chat.ts:5-10`（对话流式接口）；聊天窗口另有一份等价逻辑，`harnax-webui/src/pages/session/components/ChatWindow.tsx:166-177` 在有 `routerApiKey` 时用 `X-Api-Key`，否则回退到 Bearer。
 
 API Key 管理页 `harnax-webui/src/pages/api-key/index.tsx` 的数据来自 §4.7 的分页接口，列表里只有临时 Key，页面因此只提供临时 Key 的创建、编辑、启停、删除与重置（重置按钮与 `regenerateApiKey` 调用在 :16、:151-161）；创建表单 `src/pages/api-key/components/CreateForm.tsx` 提交的 Key 由后端写定为 TEMPORARY（§4.6）。
 
@@ -532,7 +532,7 @@ Router → Agent-Service 用服务间 JWT：`harnax-session-router/src/main/kotl
 |------|------|------|
 | harnax-webui | `harnax-webui/src/pages/user/login/index.tsx:433` | 登录响应中的 `routerApiKey` 存入本地 |
 | harnax-webui | `harnax-webui/src/services/ant-design-pro/workspace.ts:8-25`、`chat.ts:5-22` | 读出 Key 并加 `X-Api-Key` 头 |
-| harnax-webui | `harnax-webui/src/pages/session/components/ChatWindow.tsx:158-159` | 有 Key 用 `X-Api-Key`，否则回退 Bearer |
+| harnax-webui | `harnax-webui/src/pages/session/components/ChatWindow.tsx:166-177` | 有 Key 用 `X-Api-Key`，否则回退 Bearer |
 | harnax-webui | `harnax-webui/src/pages/api-key/index.tsx` | 临时 Key 的增删改查与重置 |
 | harnax-app | `harnax-app/src/api/client.ts:65-72`、`harnax-app/src/api/router.ts:24` | 加 `X-Api-Key` 头 |
 | harnax-cli | `harnax-cli/cmd/auth.go:52` | 登录解析 `routerApiKey` |
