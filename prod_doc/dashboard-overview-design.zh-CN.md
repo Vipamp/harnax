@@ -25,7 +25,7 @@
 | D2 | 后端 = 单个只读聚合接口 `GET /api/admin/dashboard/overview` | 一次 RTT；租户谓词集中在一处可审；不动既有 20 条聚合的 wire contract。备选「前端并发拼既有分页接口」被否：拿不到今日调用数与昨日环比，且列表 total 的口径由页面筛选条件决定，不是统计口径 |
 | D3 | 租户 = `TenantResolver.resolve(jwtUtil)`，永不做查询参数 | 与 `TokenStatsController` 同源。能在 URL 里点名的租户就是能点名的任意租户 |
 | D4 | 「今日请求」= `token_stats` 的行数，卡片文案写「模型调用」 | 每模型调用一行由 `TokenStatsTurnRowsIT` 守着，与 Token/费用同源，几个数字天然对得上。`api_call_log` 属 harnax-session-router 库，跨服务读要另走内部密钥链路，本规格不做 |
-| D5 | 时间窗写死：今日 + 昨日同时段环比 + 近 14 天趋势，页面不给窗口选择器 | 与「监控与治理 → Token 监控」分工：那里是带筛选器的深度分析，首页是免配置的一屏 |
+| D5 | 时间窗写死：今日 + 昨日同时段环比 + 近 14 天趋势，页面不给窗口选择器 | 与「集群监控 → Token 监控」分工：那里是带筛选器的深度分析，首页是免配置的一屏 |
 | D6 | 环比基准 = 昨日 00:00 到昨日同一钟点 | 「今日至今」对「昨日整天」必然虚假下滑，是错口径 |
 | D7 | 资产盘点分两排：租户内 8 格（智能体、技能、模型、MCP 服务、渠道、团队、会话、用户），平台级 2 格（工具、CLI 包）另起一行并标明平台级 | `agent_tool` 与 `cli` 无 `tenant_id`，混进同一排会让人以为租户内只有 48 个工具 |
 | D8 | 计数谓词一律 `tenant_id = 当前租户 AND active = 1`，不叠加 `status` | 停用的智能体仍是租户的资产；`status` 是开关不是有无 |
@@ -271,7 +271,7 @@ PageContainer
 ├─ 榜（两列）    Top 5 智能体｜Top 5 模型，行内条形占比
 ├─ 租户资产条    8 格：智能体 技能 模型 MCP 服务 渠道 团队 会话 用户
 ├─ 平台内置行    工具 {n} · CLI 包 {m}，前缀小字「平台级，非本租户」
-└─ 待办与入口    待审草稿 {k} → /monitor/skill-drafts；近 7 天活跃用户 {a}/{u}
+└─ 待办与入口    技能晋升待审 {k} → /optimization/skill-drafts；近 7 天活跃用户 {a}/{u}
                 快速入口三个文字链：创建智能体 / 管理技能 / Token 监控
 ```
 
@@ -333,7 +333,7 @@ pages.welcome.loadFailed
 
 菜单 key：`menu.welcome` 两行替换为 `menu.dashboard`（zh `总览` / en `Overview`）。
 
-`config/routes.ts:25-31` 的 `name` 从 `welcome` 改 `dashboard`、去掉 `hideInMenu`，`path` 与 `component` 不动；`redirect: '/welcome'`（207-210 行）不动。
+`config/routes.ts:25-30` 的 `name` 从 `welcome` 改 `dashboard`、去掉 `hideInMenu`，`path` 与 `component` 不动；`redirect: '/welcome'`（224-227 行）不动。
 
 ### 4.6 样式与响应式
 
@@ -390,7 +390,7 @@ pages.welcome.loadFailed
 - [x] `Welcome.tsx` 内不再出现任何写死的统计数字，`grep -nE 'value=\{[0-9]+\}' src/pages/Welcome.tsx` 零命中（0）
 - [x] 六张平台能力卡与横幅标签已删，`features` 数组零残留（`AnimatedFeatureCard` 在 `src/` 下零命中；`features` 在 `src/pages/Welcome.tsx` 与 `src/pages/welcome/` 下零命中——`src/pages/user/login/index.tsx:223,802` 那两处同名变量属登录页自身，与本页无关）
 - [x] `useCountUp` / `useCurrentUser` 从页面移除，`localStorage.getItem('currentUser')` 在 `src/pages/` 下零命中（三项均 0）
-- [x] 菜单顶位出现「总览 / Overview」并指向 `/welcome`，`/` 仍重定向到它，登录后落地页不变（`menu.dashboard` = zh 总览 / en Overview；`/welcome` 之前的 `/login` 块带 `layout: false`（`routes.ts:16`）不渲染菜单，所以它是侧栏菜单里的第一项；`routes.ts:177-178` 的 `path: '/'` + `redirect: '/welcome'` 未动）
+- [x] 菜单顶位出现「总览 / Overview」并指向 `/welcome`，`/` 仍重定向到它，登录后落地页不变（`menu.dashboard` = zh 总览 / en Overview；`/welcome` 之前的 `/login` 块带 `layout: false`（`routes.ts:16`）不渲染菜单，所以它是侧栏菜单里的第一项；`routes.ts:225-226` 的 `path: '/'` + `redirect: '/welcome'` 未动）
 - [x] zh 与 en 的 `pages.welcome.*` key 集合差为空（两侧各 38，双向差集为空，且 38 个全有消费方）
 - [x] `max build` 与 `biome lint` 绿；无头 Chromium 复核过真实数字（构建 8 轮 `EXIT=0`；窄范围 lint `Checked 7 files` 零诊断；1400 与 390 两档截图读数逐字对上手写 SQL）
 - [x] 工具与 CLI 两格在页面上明确标为平台级，不与租户资产同排（`Divider` 之后独立一行，标题紧跟「平台级，非本租户」小字）

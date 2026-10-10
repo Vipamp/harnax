@@ -352,7 +352,7 @@ Controller/Service/Mapper/DTO 的分层与命名照现例（`SkillController` �
 
 ### 页面与文件
 
-一级菜单 `agent` 下新增子页 `orchestration`，与 `management`/`team`/`session`/`task`/`memory` 平级（`harnax-webui/config/routes.ts:32` 那个分组）：
+一级菜单 `agent` 下新增子页 `orchestration`，与 `management`/`team`/`session`/`task` 平级（`harnax-webui/config/routes.ts:32` 那个分组）：
 
 ```
 config/routes.ts                                  增一条 name: 'orchestration'

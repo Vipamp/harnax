@@ -152,7 +152,7 @@
 
 `harnax-admin` 每小时第 5 分钟把「聚合表里还没有的那些小时」逐小时折进 `tool_invocation_stats`，每次再带上当前小时与上一小时（六个半开区间耗时桶 + 四个终态计数 + `calls` / `sum_duration_ms` / `max_duration_ms`），随后释放超出保留窗口的行——带租户归属的以「那个小时已折进聚合」为前提，`tenant_id IS NULL` 的行没有聚合可等、过窗即删；窗口由 `harnax.metrics.retention-days` 给出，默认 90 天。聚合行永久保留，重算某小时时该小时的行整行重写；明细不随 session 或 agent 清理。
 
-读侧是 `/api/admin/tool-metrics` 的三个只读 GET：`/summary` 按分组档位给窗口内合计，`/time-series` 按 `auto`（默认）/ `hour` / `day` / `week` / `month` 给趋势——`auto` 按跨度选桶，48 小时内按小时、92 天内按天、更长按周，`/invocations` 给单次调用明细。三个端点都不带租户形参，租户一律取自调用令牌；窗口都由 `start` / `end` 给到小时（缺省 `end` 为当前小时、`start` 为它之前第 720 小时）。分组档位取 `tool`（默认）/ `mcp` / `cli` / `agent` / `session`，前三档读小时聚合，后两档读明细，因此只有后两档问得到保留窗口之内的调用。页面是 `harnax-webui` 的「监控与治理」分组下的「调用监控」，路由 `/monitor/call-metrics`，工具 / MCP / CLI 三个 tab 各自给出本 tab 的档位（工具 tab 是工具 / 智能体 / 会话，MCP tab 是 MCP / 智能体 / 会话，CLI tab 是 CLI / 智能体 / 会话），表格首列按当前档位实名，另有一个单次调用明细抽屉。
+读侧是 `/api/admin/tool-metrics` 的三个只读 GET：`/summary` 按分组档位给窗口内合计，`/time-series` 按 `auto`（默认）/ `hour` / `day` / `week` / `month` 给趋势——`auto` 按跨度选桶，48 小时内按小时、92 天内按天、更长按周，`/invocations` 给单次调用明细。三个端点都不带租户形参，租户一律取自调用令牌；窗口都由 `start` / `end` 给到小时（缺省 `end` 为当前小时、`start` 为它之前第 720 小时）。分组档位取 `tool`（默认）/ `mcp` / `cli` / `agent` / `session`，前三档读小时聚合，后两档读明细，因此只有后两档问得到保留窗口之内的调用。页面是 `harnax-webui` 的「集群监控」分组下的「调用监控」，路由 `/monitor/call-metrics`，工具 / MCP / CLI 三个 tab 各自给出本 tab 的档位（工具 tab 是工具 / 智能体 / 会话，MCP tab 是 MCP / 智能体 / 会话，CLI tab 是 CLI / 智能体 / 会话），表格首列按当前档位实名，另有一个单次调用明细抽屉。
 
 ## 7. 与 MCP / Skill 的一致性
 

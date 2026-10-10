@@ -16,7 +16,7 @@
 
 | 编号 | 口径 | 落地位置 |
 |---|---|---|
-| C1 | 页面形态是运营总览仪表盘，不是产品介绍页；免配置一屏，深度分析在「监控与治理 → Token 监控」 | `src/pages/Welcome.tsx` |
+| C1 | 页面形态是运营总览仪表盘，不是产品介绍页；免配置一屏，深度分析在「集群监控 → Token 监控」 | `src/pages/Welcome.tsx` |
 | C2 | 只有一个聚合接口，路径 `GET /api/admin/dashboard/overview` | `DashboardController.kt` |
 | C3 | 接口不接任何查询参数：租户、窗口、榜长、天数都不由客户端命名 | 同上 |
 | C4 | 「今日请求」= 今日模型调用次数 = `token_stats` 在窗口内的行数，不跨服务读 `api_call_log`；卡片文案写「模型调用」，不写「请求」 | `getDashboardWindowStats`、`pages.welcome.today.calls` |
@@ -112,7 +112,7 @@ data class DashboardOverviewResponse(
 | `topAgents` / `topModels` | `List<DashboardRankItem>` | 恒 ≤5，已排序，`name` 空=归属行已删 |
 | `assets` | `DashboardAssetCounts` | 8 格租户资产 |
 | `platform` | `DashboardPlatformCounts` | `tools`、`cliPackages`，平台级 |
-| `pendingSkillDrafts` | `Long` | 本租户待审草稿 |
+| `pendingSkillDrafts` | `Long` | 本租户未决的技能晋升草稿数 |
 | `totalUsers` / `activeUsersLast7Days` | `Long` | 分母与活跃数 |
 | `recent14dFee` | `BigDecimal` | 14 天费用合计，元，不造精度 |
 | `serverTime` | `String` | 全部窗口的测量时刻，`yyyy-MM-dd HH:mm:ss` |
@@ -580,7 +580,7 @@ useEffect(() => {
 - [x] **Step 3：环比规则由 `metrics.ts` 单测钉住**——昨 0 且今 0 → 持平；昨 0 且今 >0 → 「新增」，不出现 `+Infinity%` 也不出现 100%；非有限值或负值 → 持平且无百分比；其余一位小数。
 - [x] **Step 4：38 条 `pages.welcome.*` 中英同时落盘**（`pages.ts` 两侧计数相等：`agents/channels/mcp/models/sessions/skills/teams/users/title`、`dataAsOf`、`greeting`、`platform.{cli,note,title,tools}`、`quick.{agent,skill,tokenMonitor}`、`rank.deleted`、`refresh`、`tenant`、`today.{agents,calls,sessions,tokens}`、`todo.{activeUsers7d,drafts}`、`trend.{calls,fee14d,title,tokens}`）。
 - [x] **Step 5：入口**：`config/routes.ts` 的 `/welcome` 去掉 `hideInMenu`、`name` 由 `welcome` 改 `dashboard`；`menu.ts` 两侧把 `menu.welcome` 换成 `menu.dashboard`。旧地址 `/welcome` 未改，收藏与登录后跳转不受影响。
-- [x] **Step 6：快速入口指向迁移后的正式地址**：`/monitor/token-monitor`、`/monitor/skill-drafts`、`/agent/manager`、`/context/skill`（菜单迁移是用户未提交的改动，`/context/*` 旧地址已改 redirect，页面里不挂 redirect 壳）。
+- [x] **Step 6：快速入口指向迁移后的正式地址**：`/monitor/token-monitor`、`/optimization/skill-drafts`、`/agent/manager`、`/context/skill`（三条旧地址只挂 redirect：`/context/skill-usage` 在 `config/routes.ts:99-104`、`/context/channel` 在 `:111-116`、`/system/token-monitor` 在 `:199-204`，页面里不挂 redirect 壳）。
 
 ## 任务 10：验证闸门（全部由控制方重跑）
 
@@ -647,7 +647,7 @@ grep -E 'Tests:|Suites:' /tmp/jest-metrics.log
 cd harnax-webui && npx jest --config ../logs/jest.resolved.json src/pages/welcome/metrics.test.ts
 ```
 实测：`EXIT=0`、`Test Suites: 1 passed`、`Tests: 13 passed, 13 total`（`deltaOf` 7 项 / `deltaTone` 1 项 / `formatCount` 3 项 / `formatTokens` 2 项，证据 `logs/jest-metrics2.log`）。复核第一轮为「差值抹到 0.0%」补了一条双向用例，到 14 项（`logs/jest-metrics3.log`）；第四遍又为榜标签补了 5 项，交付时的套件是 19 项（`deltaOf` 8 项 / `deltaTone` 1 项 / `formatCount` 3 项 / `formatTokens` 2 项 / `rankLabels` 5 项，证据 `logs/jest-metrics4.log`，见文末「复核四遍」）。
-- [x] **Step 7：真渲染**——`npm run start:dev` 起 dev server 后用无头 Chromium 打开 `/welcome`，逐屏核对：四卡读数、14 点折线、两列榜（≤5 行）、8 格资产 + 平台行的「非本租户」小字、待审草稿链接、`serverTime` 显示的「数据截至」；再看 console 无未捕获异常、Network 里 `/api/admin/dashboard/overview` 一条 200。
+- [x] **Step 7：真渲染**——`npm run start:dev` 起 dev server 后用无头 Chromium 打开 `/welcome`，逐屏核对：四卡读数、14 点折线、两列榜（≤5 行）、8 格资产 + 平台行的「非本租户」小字、技能晋升待审链接、`serverTime` 显示的「数据截至」；再看 console 无未捕获异常、Network 里 `/api/admin/dashboard/overview` 一条 200。
 本步没有走 dev server：部署栈是用户正在用的，起新端口不干扰但也不必要，而部署的 frontend 容器是自签 https、浏览器打不开。实际通道是**静态 `dist/` + 取证代理 + CDP 无头 Chromium**——`logs/forensic-server.mjs`（8123）只桩掉 `GET /api/admin/dashboard/overview`，其余 `/api/*` 原样转发到宿主 28080 的真 admin；登录态从真标签页抓下来写进 `logs/login-seed.json` 再由 `?seed=1` 注入。桩的载荷 `logs/payload.json` 是手写 SQL 在部署库上真跑出来的（`logs/overview-from-sql.sql`），不是编的。
 逐屏核对已完成：桌面 1400（`logs/trend-desktop-final.png`，2800×2334 @2x）、移动 390（`logs/trend-mobile3.png`，780×4134 @2x）、点「刷新」重新取数（`logs/probe-refresh.mjs`）、注入 500 的错误态（`logs/welcome-error.png`，走 `GET /__fail?on=1` 运行期开关）、错误态后重试恢复（`logs/welcome-recovered.png`）。console 除故意注入的那条 500 之外无未捕获异常。
 **真渲染抓到一个只靠构建和单测抓不到的缺陷**：ProLayout 侧栏在首屏带一段宽度过渡，而 `@ant-design/plots` 的 autoFit 只在挂载那一刻量一次容器、此后只跟 window resize。量到过渡中途的值，趋势图画布就一直比卡片宽 192px，整页被顶出横向滚动条（1400 视口下 `scrollWidth` 1547）。修法是自己用 `ResizeObserver` 盯住卡片宽度、把宽度显式交给图表并关掉 autoFit（`TrendCard.tsx`）；先用「数据为空就不挂图」试过一次，改了溢出不了——已在产物里 grep 到新代码才确认那条假设是错的。
@@ -722,9 +722,9 @@ docker exec harnax-mysql mysql -uroot -proot123456 harnax_admin -e \
 
 变更集在本地 git 的形状：功能分支 `dashboard-overview`（从 `98b79301` 切出）三笔——后端 `9be3696a`、前端 `483d718b`、文档 `e32516a7`；`kotlin-dev` 四笔——用户在途的菜单与路由改动原样入库 `c1262d91`（内容一字未改）、同一份内容先后落地的后端 `ecbdfb18`、前端 `556a1ae1`、文档 `877c4098`，合流是 `dc6e2142`（双亲 `877c4098` 与 `e32516a7`）。两处都只在本地，push 由用户执行。
 
-丢没丢按行核过：分支相对基线新增 5190 行，逐行在合并后的 `kotlin-dev` 上查存在性，缺席 0 行。28 个文件里 22 个与分支副本逐字节相同，6 个（`routes.ts`、中英 `menu.ts`、中英 `pages.ts`、`typings.d.ts`）是 `kotlin-dev` 为超集——「监控与治理」分组与记忆双层的键和类型都在，我这 38 个 `pages.welcome.*` 键、`menu.dashboard` 与 `qualifier` 也都在。唯一冲突是 `DashboardRankItem`，取 HEAD 那份再补 `qualifier` 字段与其两行注释；`dc6e2142` 相对它的第一父只多这 3 行。
+丢没丢按行核过：分支相对基线新增 5190 行，逐行在合并后的 `kotlin-dev` 上查存在性，缺席 0 行。28 个文件里 22 个与分支副本逐字节相同，6 个（`routes.ts`、中英 `menu.ts`、中英 `pages.ts`、`typings.d.ts`）是 `kotlin-dev` 为超集——`menu.monitor` 分组与记忆双层的键和类型都在，我这 38 个 `pages.welcome.*` 键、`menu.dashboard` 与 `qualifier` 也都在。唯一冲突是 `DashboardRankItem`，取 HEAD 那份再补 `qualifier` 字段与其两行注释；`dc6e2142` 相对它的第一父只多这 3 行。
 
-合流后在同一份代码上重跑闸门：后端单测 7、真库 IT 3 + 2（`failsafe-reports` 非空）、全量 reactor 26/26 SUCCESS 且 4409 项 0 失败 0 跳过；前端 `max build` 成功、窄范围 lint `Checked 6 files` 零诊断、`metrics.test.ts` 19 项全绿。证据在主检出 `tmp/gate-merged-2026-10-07/`。后端那三跳测的是纯 HEAD 内容（后端没有未提交改动），前端两跳测的是 HEAD 加上用户那 3 只未提交的 webui 文件——本页不 import 那 3 只文件，而快捷入口指向的 `/system/token-monitor` 与 `/context/skill-drafts` 在他的重构里改成了 redirect，仍落得到原页面（`/monitor/token-monitor`、`/monitor/skill-drafts`）。
+合流后在同一份代码上重跑闸门：后端单测 7、真库 IT 3 + 2（`failsafe-reports` 非空）、全量 reactor 26/26 SUCCESS 且 4409 项 0 失败 0 跳过；前端 `max build` 成功、窄范围 lint `Checked 6 files` 零诊断、`metrics.test.ts` 19 项全绿。证据在主检出 `tmp/gate-merged-2026-10-07/`。后端那三跳测的是纯 HEAD 内容（后端没有未提交改动），前端两跳测的是 HEAD 加上用户那 3 只未提交的 webui 文件——本页不 import 那 3 只文件，而快捷入口指向的 `/monitor/token-monitor` 与 `/optimization/skill-drafts` 都直达原页面（`/system/token-monitor` 那枚旧地址另有保活 redirect）。
 
 ## 记账（未验）
 

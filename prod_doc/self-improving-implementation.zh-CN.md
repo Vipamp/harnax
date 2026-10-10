@@ -249,7 +249,7 @@ POST /api/admin/skill-drafts/{id}:reject
 
 审核这一屏不许自造词汇。技能域今天唯一的「审核」可见物是同步结果行里可展开的明细块中的「Disabled pending review ({count})」分组（`harnax-webui/src/pages/skill/components/RepositoryList.tsx:160-172`）和一条同义警告（`harnax-webui/src/utils/skillInstall.ts:72-78`），运营的实际动作是把 `StatusSwitch` 再打开一次（`harnax-webui/src/pages/skill/components/SkillList.tsx:124-135`）。草稿页说的是同一件事：扫描命中 → 落库为禁用 → 人来启用。
 
-- **入口**：`harnax-webui/config/routes.ts:89-99` 技能路由同级新增「待审草稿」，菜单项带 PENDING 计数；技能列表加一列 `origin` 区分人工与 agent 晋升。草稿不混进技能列表，理由见下条。
+- **入口**：`harnax-webui/config/routes.ts:147-152` 列表与 `:153-157` 详情挂在一级「优化治理」组（`:119-159`）下，菜单名「技能晋升」；PENDING 计数挂在首页待办那枚入口上（`harnax-webui/src/pages/welcome/sections.tsx:284-289`），不在菜单项上；技能列表加一列 `origin` 区分人工与 agent 晋升。草稿不混进技能列表，理由见下条。
 - **草稿为什么不进技能列表**：`harnax-webui/src/components/StatusSwitch/index.tsx:55-64` 的判据是 `status === 1` 与 `checked ? 1 : 0`，只有二值。把 PENDING 塞进去会得到一个「拨上去但内容还没落库」的开关。草稿页用 Tag 表达状态，不给开关。
 - **详情容器**：沿用技能详情页的 PageContainer + Card + Tabs 布局（`harnax-webui/src/pages/skill/detail.tsx:535`、`:585`、`:597`），Tab 分「正文」「资源」「脚本」「扫描结论」「出处」。脚本 Tab 展示上游 `SkillCandidate` 已带出的 head 与 sha256（§1），扫描结论 Tab 把 harnax 与上游两份并列并标出哪一份决定禁用，出处 Tab 给 sessionId / agentId / 首次提议时间；出处会话已被清理时显示「出处会话已清理」而不是报错——审核人仍应能就内容本身做决定。
 - **人要输入的只有三处**：批准本身是一次点击（§6.2 若定了专用落点仓库，`targetRepositoryId` 就不出现在界面上）；同名冲突时追加一次 `replace` / `rename` 二选一，改名要过 `active_name` 唯一性校验；驳回必须填理由。其余全是展示，取自 `skill_draft` 行，绝不让审核人在页面上重打正文——那是 `expectedDigest` 对不上号的头号来源。

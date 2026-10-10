@@ -321,7 +321,7 @@ harness 侧的 `ToolInvocationAdaptor` 由 `HarnessAutoConfiguration` 经 `Objec
 
 读侧是 `ToolMetricsController`（基路径 `/api/admin/tool-metrics` 声明在类上）三个只读 GET：`getSummary`（`/summary`）、`getTimeSeries`（`/time-series`）、`getInvocations`（`/invocations`）。三个端点都没有租户形参，租户取自调用方自己的令牌；窗口都由 `start` / `end` 两个形参给，取值到小时（`yyyy-MM-dd HH:mm`，也接受整日的 `yyyy-MM-dd` 并按当天零时取），两端都含；缺省 `end` 是当前小时、`start` 是它之前第 720 小时，上限 8760 小时（超出保留 `end`、把 `start` 往前推）。`summary` 的 `groupBy` 取 `tool`（默认）/ `mcp` / `cli` / `agent` / `session`，前三档读 `tool_invocation_stats`，后两档读 `tool_invocation_log`，因此只有后两档受保留窗口限制。`time-series` 的 `granularity` 取 `auto`（默认）/ `hour` / `day` / `week` / `month`，`auto` 按跨度选桶——48 小时内按小时、92 天内按天、更长按周；空档补零，安静的一小时不会让折线跳格。
 
-页面是 `harnax-webui`「监控与治理」分组下的「调用监控」，路由 `/monitor/call-metrics`（`harnax-webui/config/routes.ts:143`，页面 `harnax-webui/src/pages/call-metrics/index.tsx`）：三个 tab（工具 / MCP / CLI）共用一套形状，各自给出本 tab 的分组档位——工具 tab 是工具 / 智能体 / 会话，MCP tab 是 MCP / 智能体 / 会话，CLI tab 是 CLI / 智能体 / 会话（`harnax-webui/src/pages/call-metrics/dimensions.ts`）；表格首列按当前档位实名（工具 / MCP / CLI / 智能体 / 会话），不再笼统写作「主体」。`shell` 与 `framework` 在工具 tab 里按 `kind` 可达，单次调用明细在抽屉里给出终态、耗时、失败原因、入参与结果摘要。
+页面是 `harnax-webui`「集群监控」分组下的「调用监控」，路由 `/monitor/call-metrics`（`harnax-webui/config/routes.ts:173`，页面 `harnax-webui/src/pages/call-metrics/index.tsx`）：三个 tab（工具 / MCP / CLI）共用一套形状，各自给出本 tab 的分组档位——工具 tab 是工具 / 智能体 / 会话，MCP tab 是 MCP / 智能体 / 会话，CLI tab 是 CLI / 智能体 / 会话（`harnax-webui/src/pages/call-metrics/dimensions.ts`）；表格首列按当前档位实名（工具 / MCP / CLI / 智能体 / 会话），不再笼统写作「主体」。`shell` 与 `framework` 在工具 tab 里按 `kind` 可达，单次调用明细在抽屉里给出终态、耗时、失败原因、入参与结果摘要。
 
 ## 9. 新工具开发：一步一步
 

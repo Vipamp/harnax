@@ -7,7 +7,7 @@
 
 ## 0. 需求与现状错位
 
-用户要求：把「监控与治理」里的 tool / MCP / CLI 调用指标补齐并做成能看的页面，此前记录过的日志不完整，重新梳理。
+用户要求：把「集群监控」里的 tool / MCP / CLI 调用指标补齐并做成能看的页面，此前记录过的日志不完整，重新梳理。
 
 现状与之错位的四处，各自都问过源码：
 
@@ -18,9 +18,9 @@
 
 四处是同一个根因：**记录点挂在实现方式上，而不是挂在执行通道上**。凡是绕过 `ToolBox` 的注册都不被记，而绕过它的注册正是这个项目后来的主要形态。
 
-对照参照物是「监控与治理 → 技能用量」：`skill_usage`（基线 `:584`）有写入方（`SkillUsageAdaptorImpl` 异步批量上报）、有读端点（`/api/admin/skill-usage/summary`）、有页面（`harnax-webui/src/pages/skill/usage.tsx`），但它只报 `VIEW`；页面「执行次数」那一列的提示文案自己承认没有数据来源（`src/locales/zh-CN/pages.ts:209`）。
+对照参照物是「集群监控 → 技能监控」：`skill_usage`（基线 `:584`）有写入方（`SkillUsageAdaptorImpl` 异步批量上报）、有读端点（`/api/admin/skill-usage/summary`）、有页面（`harnax-webui/src/pages/skill/usage.tsx`），但它只报 `VIEW`；页面「执行次数」那一列的提示文案自己承认没有数据来源（`src/locales/zh-CN/pages.ts:209`）。
 
-目标：一个事件源、一张明细、一张小时聚合、三个读端点、一个新页面，覆盖 `builtin` / `mcp` / `cli` / `shell` / `framework` 五种来源，并顺带给技能用量补上 `USE` 的写入方。
+目标：一个事件源、一张明细、一张小时聚合、三个读端点、一个新页面，覆盖 `builtin` / `mcp` / `cli` / `shell` / `framework` 五种来源，并顺带给技能监控页所用的 `skill_usage` 补上 `USE` 的写入方。
 
 ## 1. 决策清单（已定稿）
 
@@ -244,13 +244,13 @@ ToolInvocationMiddleware → ToolInvocationAdaptor(harnax-tools-sdk 定义)
 - 窗口是一条 `DatePicker.RangePicker`，挂在页首 `Tabs` 那一行的右侧（`tabBarExtraContent.right`），因为它驱动的是整页四张卡、趋势与两枚抽屉，放在下面那张表的头上会被读成只管这张表。`showTime` 只开小时（面板 `format: 'HH'` 且 `showMinute` 与 `showSecond` 都关，输入框显示 `YYYY-MM-DD HH:00`），四个预设（近 7 / 30 / 90 / 365 天）由 `presets` 给出、算的是显式时间，选中的值和预设都向下取整到整点，晚于当前小时的不可选、不允许清空。选中的区间是页面唯一的时间状态，同时喂 `/summary`、`/time-series` 与下钻的 `/invocations`，所以四张卡、趋势线、行表和抽屉里的记录永远同一个窗口。
 - 文案全走 `pages.callMetrics.*`，中英两个 locale 都必须加，缺一侧算未完成。
 
-## 9. 技能用量的连带改动
+## 9. 技能监控页的连带改动
 
 - `SkillUsageAdaptor`（`harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/adaptor/SkillUsageAdaptor.kt`）从 `fun interface` 变成两个方法：`reportViews` 与 `reportUses`，后者签名与前者一致。
 - `AdminApiClient.reportSkillUsage` 现在把 `"VIEW"` 写死在事件体里（`harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/client/AdminApiClient.kt:265`），要改成带事件种类入参；服务端 `SkillUsageServiceImpl.report` 已允许 `VIEW` / `USE` 两类（`:91-94`），不需要放宽。
 - 上报点在 `ToolInvocationMiddleware` 的 `TOOL_RESULT_END` 分支：工具名是 `load_skill_through_path` 且 `path` 为 `SKILL.md` 且 `outcome=SUCCESS` 时，按 `skillId` 反解出 `skill.id`，经 `SkillUsageAdaptorImpl` 现成的异步队列发 `POST /api/admin/internal/skills/usage`（`InternalApiController.kt:291`）。技能没取到正文就不算被用过。
 - 不做冷却：一次装载就是一次 USE，模型不会在同一轮里反复装载同一技能；`VIEW` 那 60 秒冷却的理由（harness 每次组装系统提示都重读仓库）在这里不存在。
-- 技能用量页去掉自述文案：`pages.skill.usage.usesHint`（`harnax-webui/src/locales/zh-CN/pages.ts:209` 与 `en-US/pages.ts:209`）改为定义本身。
+- 技能监控页去掉自述文案：`pages.skill.usage.usesHint`（`harnax-webui/src/locales/zh-CN/pages.ts:209` 与 `en-US/pages.ts:209`）改为定义本身。
 
 ## 10. 删除清单
 
@@ -283,7 +283,7 @@ ToolInvocationMiddleware → ToolInvocationAdaptor(harnax-tools-sdk 定义)
   - 时区陷阱：Testcontainers 的 MySQL 是 UTC，Java 侧 `LocalDateTime` 按 JVM 时区写 `datetime`，所以折算与清理的用例一律从 `LocalDateTime.now().truncatedTo(ChronoUnit.HOURS)` 往前往后推相对整点，不写绝对日期——写死的日子在 UTC 与 JVM 时区之间会漂出一个小时，而漂移一小时的夹具刚好落在「未折算」那一侧，用例会以一种谁也解释不了的方式红。
 - 跑法：`mvn -o test -pl harnax-entity`；admin 侧 `mvn -o verify -pl harnax-admin -am -Pintegration-test -Dit.test=<类名> -Dtest=<类名> -Dsurefire.failIfNoSpecifiedTests=false -Dfailsafe.failIfNoSpecifiedTests=false`（`-am` 与两个 `failIfNoSpecifiedTests` 都不能少，`docs/unit-test-cases.md:799-810`）。删过源文件的模块跑 IT 前必须 `clean`，残留 `.class` 会进 jar 造出假绿。
 - 前端：`npm run build`（`max build`）与 `npx @biomejs/biome lint <改过的文件>` 各自单独跑并落日志再看退出码；`biome check --write` 会把上千行既有文件一起铺开，不许当闸门用；`npm run lint` 会串 `tsc --noEmit`，本仓有一批既有噪声，也不作为闸门。页面里的纯函数各有用例（`lastSeen.test.ts`、`subjectProfile.test.ts`），`dimensions.ts` 那张 tab→维度矩阵是给页面直接读的常量，不另立用例；`npm test` 走 jest，本仓的 `jest.config.ts` 在新检出里加载不起来（主检出同样如此），跑单测要直接把配置内联喂给 jest。
-- 端到端（harnax-deploy 真栈）：一个装了 MCP、勾了一个 CLI 和一个技能的 agent 跑一轮，页面上 `mcp` tab 有非零调用、`cli` tab 记到该命令、技能用量的 USE 从 0 变正。
+- 端到端（harnax-deploy 真栈）：一个装了 MCP、勾了一个 CLI 和一个技能的 agent 跑一轮，页面上 `mcp` tab 有非零调用、`cli` tab 记到该命令、技能监控页的「执行次数」从 0 变正。
 
 ## 12. 已知边界与不做
 
@@ -304,5 +304,5 @@ ToolInvocationMiddleware → ToolInvocationAdaptor(harnax-tools-sdk 定义)
 | 动作 | 位置 |
 |---|---|
 | 新增 | 中间件 `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/agent/provider/middleware/ToolInvocationMiddleware.kt` + 同目录的 `ToolInvocationClassifier.kt`（`kind` 判定与 CLI 归因纯函数）；写入契约 `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/adaptor/ToolInvocationAdaptor.kt`；实现 `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/adaptor/ToolInvocationAdaptorImpl.kt`；两张表 `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/{ToolInvocationLog,ToolInvocationStats}.kt`（新实体跟 `TokenStats.kt`、`SkillUsage.kt` 一致，不带 `Entity` 后缀）+ `.../mapper/{ToolInvocationLogMapper,ToolInvocationStatsMapper}.kt` + `harnax-entity/src/main/resources/mapper/*.xml`；读端 `harnax-admin/.../controller/ToolMetricsController.kt` + `.../service/ToolMetricsService.kt` + `.../service/impl/ToolMetricsServiceImpl.kt` + `.../service/ToolInvocationRollupService.kt` + `admin/dto/` 的响应 DTO，IT 落 `harnax-admin/src/test/kotlin/com/agnetix/harnax/admin/it/`；DDL 落 `harnax-admin/src/main/resources/db/migration/V3__tool_invocation_metrics.sql`（前向增量，理由见 §2）、`V4__drop_tool_call_log.sql`（同形状的第二条，`DROP TABLE IF EXISTS`）与 `V5__tool_invocation_stats_hourly.sql`（第三条：先清空聚合表再把 `stat_date` 改名成 `stat_hour` 并换上小时的两条键，形状与理由见 §2.2）；前端 `harnax-webui/src/pages/call-metrics/index.tsx`（区间 `RangePicker` + 两枚抽屉）+ `.../call-metrics/dimensions.ts`（tab→维度矩阵与「这一档读哪张表」）+ `.../call-metrics/lastSeen.ts` + `lastSeen.test.ts` + `.../call-metrics/subjectProfile.ts` + `subjectProfile.test.ts` + `.../call-metrics/SubjectDrawer.tsx` + `src/services/ant-design-pro/toolMetrics.ts` + `src/typings.d.ts` 的 `API.CallMetrics*` / `API.CallInvocationRow` / `API.AgentToolItem` 类型 + 两份 locale |
-| 修改 | `schema-test.sql`（并入两张新表的建表块、并删掉 `tool_call_log` 的建表块与它的三行夹具；聚合表那块要与 V5 同步成 `stat_hour` 和小时的两条键，改漏由 `SchemaBaselineDriftIT` 双向拦下；`V1__init_schema.sql` 逐字未动）、`HarnessAgentLauncher`、`HarnessAgentBuilder`（toolkit 只读访问器）、`HarnessAutoConfiguration`、`SkillUsageAdaptor` / `SkillUsageAdaptorImpl` / `AdminApiClient`、`HarnaxAdminApplication`（`@EnableScheduling`）、两侧 `application.yml`、`config/routes.ts`、`src/services/ant-design-pro/session.ts`（新增 `getSessionConfig`：会话档案只有 `/api/admin/sessions/{sessionId}/config` 这一条按 id 字符串查的读端点）、技能用量页文案、`prod_doc` 双语包（工具能力 / MCP 管理 / CLI 包 / 技能）与 `docs/deploy-harnax-admin.md`（保留窗口、本域那三条前向增量与既有库免重建、`tool_call_log` 由 V4 代清因此无手工步骤、V5 会清空 `tool_invocation_stats` 并从保留窗口重新折出小时行） |
+| 修改 | `schema-test.sql`（并入两张新表的建表块、并删掉 `tool_call_log` 的建表块与它的三行夹具；聚合表那块要与 V5 同步成 `stat_hour` 和小时的两条键，改漏由 `SchemaBaselineDriftIT` 双向拦下；`V1__init_schema.sql` 逐字未动）、`HarnessAgentLauncher`、`HarnessAgentBuilder`（toolkit 只读访问器）、`HarnessAutoConfiguration`、`SkillUsageAdaptor` / `SkillUsageAdaptorImpl` / `AdminApiClient`、`HarnaxAdminApplication`（`@EnableScheduling`）、两侧 `application.yml`、`config/routes.ts`、`src/services/ant-design-pro/session.ts`（新增 `getSessionConfig`：会话档案只有 `/api/admin/sessions/{sessionId}/config` 这一条按 id 字符串查的读端点）、技能监控页文案、`prod_doc` 双语包（工具能力 / MCP 管理 / CLI 包 / 技能）与 `docs/deploy-harnax-admin.md`（保留窗口、本域那三条前向增量与既有库免重建、`tool_call_log` 由 V4 代清因此无手工步骤、V5 会清空 `tool_invocation_stats` 并从保留窗口重新折出小时行） |
 | 删除 | §10 清单 |

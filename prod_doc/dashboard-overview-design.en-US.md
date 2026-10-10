@@ -25,7 +25,7 @@ Five places where the current state does not match that:
 | D2 | Backend = a single read-only aggregation endpoint `GET /api/admin/dashboard/overview` | One RTT; the tenant predicate sits in one auditable place; the wire contract of the 20 existing aggregations is untouched. The alternative "have the front end fan out over the existing paged endpoints" was rejected: it cannot obtain today's call count or the day-over-day delta, and a list total is defined by the page's filter conditions, which is not a statistical basis |
 | D3 | Tenant = `TenantResolver.resolve(jwtUtil)`, never a query parameter | Same source as `TokenStatsController`. A tenant that can be named in the URL is any tenant a caller can name |
 | D4 | 「今日请求」 ("today's requests") = the row count of `token_stats`, with the card copy reading 「模型调用」 ("model calls") | One row per model call, guarded by `TokenStatsTurnRowsIT`; the same source as Token and cost, so the numbers line up by themselves. `api_call_log` belongs to the harnax-session-router database, and reading it across services needs a separate internal-key path, which this spec does not do |
-| D5 | Time windows are fixed: today + the same span yesterday for the delta + a 14-day trend, and the page offers no window selector | Division of labour with 「监控与治理 → Token 监控」 ("Monitoring and governance → Token monitor"): that page is deep analysis with filters, the landing page is one screen that needs no configuration |
+| D5 | Time windows are fixed: today + the same span yesterday for the delta + a 14-day trend, and the page offers no window selector | Division of labour with 「集群监控 → Token 监控」 ("Cluster monitoring → Token monitor"): that page is deep analysis with filters, the landing page is one screen that needs no configuration |
 | D6 | Delta baseline = yesterday 00:00 to the same hour yesterday | "Today so far" against "all of yesterday" is necessarily a false decline — the wrong basis |
 | D7 | The asset inventory splits into two rows: 8 cells inside the tenant (agents, skills, models, MCP servers, channels, teams, sessions, users), and 2 platform-level cells (tools, CLI packages) on a row of their own marked platform-level | `agent_tool` and `cli` have no `tenant_id`; mixing them into the same row would leave the impression that the tenant has only 48 tools |
 | D8 | Counting predicates are always `tenant_id = 当前租户 AND active = 1` (the current tenant), with no `status` added | A disabled agent is still an asset of the tenant; `status` is a switch, not existence |
@@ -271,7 +271,7 @@ PageContainer
 ├─ 榜（两列）    Top 5 智能体｜Top 5 模型，行内条形占比
 ├─ 租户资产条    8 格：智能体 技能 模型 MCP 服务 渠道 团队 会话 用户
 ├─ 平台内置行    工具 {n} · CLI 包 {m}，前缀小字「平台级，非本租户」
-└─ 待办与入口    待审草稿 {k} → /monitor/skill-drafts；近 7 天活跃用户 {a}/{u}
+└─ 待办与入口    技能晋升待审 {k} → /optimization/skill-drafts；近 7 天活跃用户 {a}/{u}
                 快速入口三个文字链：创建智能体 / 管理技能 / Token 监控
 ```
 
@@ -333,7 +333,7 @@ pages.welcome.loadFailed
 
 Menu key: the two `menu.welcome` lines are replaced by `menu.dashboard` (zh `总览` / en `Overview`).
 
-At `config/routes.ts:25-31` the `name` changes from `welcome` to `dashboard` and `hideInMenu` is dropped; `path` and `component` do not move, and `redirect: '/welcome'` (lines 207-210) does not move.
+At `config/routes.ts:25-30` the `name` changes from `welcome` to `dashboard` and `hideInMenu` is dropped; `path` and `component` do not move, and `redirect: '/welcome'` (lines 224-227) does not move.
 
 ### 4.6 Styling and responsive
 
@@ -390,7 +390,7 @@ How to run: `mvn -Pintegration-test` (probe Docker availability first, and if Do
 - [x] No hardcoded statistic number appears in `Welcome.tsx` any more, and `grep -nE 'value=\{[0-9]+\}' src/pages/Welcome.tsx` has zero hits (0)
 - [x] The six platform capability cards and the banner tags are deleted, and the `features` array leaves no residue (`AnimatedFeatureCard` has zero hits under `src/`; `features` has zero hits in `src/pages/Welcome.tsx` and `src/pages/welcome/` — the two same-named variables at `src/pages/user/login/index.tsx:223,802` belong to the login page itself and have nothing to do with this page)
 - [x] `useCountUp` / `useCurrentUser` are removed from the page, and `localStorage.getItem('currentUser')` has zero hits under `src/pages/` (all three items 0)
-- [x] 「总览 / Overview」 appears at the top of the menu and points at `/welcome`, `/` still redirects to it, and the post-login landing page is unchanged (`menu.dashboard` = zh 总览 / en Overview; the `/login` block before `/welcome` carries `layout: false` (`routes.ts:16`) and renders no menu, so this is the first item in the sidebar menu; `path: '/'` + `redirect: '/welcome'` at `routes.ts:177-178` is untouched)
+- [x] 「总览 / Overview」 appears at the top of the menu and points at `/welcome`, `/` still redirects to it, and the post-login landing page is unchanged (`menu.dashboard` = zh 总览 / en Overview; the `/login` block before `/welcome` carries `layout: false` (`routes.ts:16`) and renders no menu, so this is the first item in the sidebar menu; `path: '/'` + `redirect: '/welcome'` at `routes.ts:225-226` is untouched)
 - [x] The set difference between the zh and en `pages.welcome.*` keys is empty (38 on each side, empty in both directions, and all 38 have consumers)
 - [x] `max build` and `biome lint` are green; headless Chromium re-checked the real numbers (8 build rounds with `EXIT=0`; the narrow-scope lint reported `Checked 7 files` with zero diagnostics; the readings in the 1400 and 390 screenshots match the hand-written SQL verbatim)
 - [x] The tools and CLI cells are clearly marked as platform-level on the page, not in the same row as the tenant assets (a row of its own after `Divider`, the title immediately followed by the small print 「平台级，非本租户」 ("platform-wide, not this tenant"))

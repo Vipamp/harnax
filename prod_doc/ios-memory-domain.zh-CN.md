@@ -27,7 +27,7 @@
 
 | 候选 | 落点 | 判断 |
 |---|---|---|
-| A 智能体 tab 第四段 | `harnax-ios/Sources/HarnaxFeatures/Agents/AgentHomeView.swift:8` 的段枚举加一项，段名在 `:15`，出口在 `:49` 那个分支 | **推荐**。网页把这一页挂在智能体菜单组内且明确不加管理员闸（`harnax-webui/config/routes.ts:59`），第四段是同一归属；分段条按选项等分宽度（`harnax-ios/Sources/HarnaxKit/Components/HXSegmented.swift:42`），上下文 tab 已排到五段，第四段没有宽度问题 |
+| A 智能体 tab 第四段 | `harnax-ios/Sources/HarnaxFeatures/Agents/AgentHomeView.swift:8` 的段枚举加一项，段名在 `:15`，出口在 `:49` 那个分支 | **推荐**。网页把这一页挂在一级「优化治理」组内、明确不加管理员闸（`harnax-webui/config/routes.ts:139-146`），而这一页本身是一行一台智能体；第四段按这个归属摆放；分段条按选项等分宽度（`harnax-ios/Sources/HarnaxKit/Components/HXSegmented.swift:42`），上下文 tab 已排到五段，第四段没有宽度问题 |
 | B 「我的」的管理组 | `harnax-ios/Sources/HarnaxFeatures/SystemDomain/SystemRoute.swift:13` 加一个 case | 否。那一组是管理域，非管理员少一行（`harnax-ios/Sources/HarnaxFeatures/SystemDomain/SystemRoute.swift:19`，注册与出口在 `harnax-ios/Sources/HarnaxFeatures/Me/MeView.swift:79`、`:106`）；记忆是本人数据，挂进去要么被那道闸误伤，要么破坏这一组的含义 |
 | C 上下文 tab 第六段 | `harnax-ios/Sources/HarnaxFeatures/Context/ContextDomain.swift:5` 加一个 case | 否。那五段是 agent 可绑定的资源，`harnax-ios/Sources/HarnaxFeatures/Context/ContextView.swift:35` 的分支即按那个枚举展开；记忆不是可绑定资源 |
 | D 智能体行内下钻 | 行的下钻出口在 `harnax-ios/Sources/HarnaxFeatures/Agents/AgentListView.swift:51` 那一段 | 否。逐台翻达不到"看全并清干净"，而这一屏存在的理由正是那一条 |

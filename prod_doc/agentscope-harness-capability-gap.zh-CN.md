@@ -39,7 +39,7 @@ harness 2.0.2 类分布（231 个类，对应 230 个源文件）：`sandbox` 45
 
 **C 类 · 上游有、harnax 已自建，不建议替换**（7 项）。逐条给出"可以借的机制"，避免后续有人拿上游实现来推翻既有裁定。
 
-2.0.4 这条线改变了两件事的形状，但没改变上面三类的划分：其一，A 类七条在 2.0.4 的默认值**逐条复核后与 2.0.2 完全一致**，收口建议照旧成立；其二，2.0.4 新增了一批与 harnax 正面重叠的能力——原生 `team` 团队协调层、`transcript` 会话逐字记录、`deliver_artifact` 投递 SPI、跨节点周期闸、会话 turn 租约、技能用量后端——同时带来两个升级后才生效的静默默认（`web_fetch`/`web_search` 默认注册、transcript 默认落盘）。这些集中在 §6，其中 `web_fetch` 默认开是本报告新增的第二个**安全面**结论。
+2.0.4 这条线改变了两件事的形状，但没改变上面三类的划分：其一，A 类七条在 2.0.4 的默认值**逐条复核后与 2.0.2 完全一致**，收口建议照旧成立；其二，2.0.4 新增了一批与 harnax 正面重叠的能力——原生 `team` 团队协调层、`transcript` 会话逐字记录、`deliver_artifact` 投递 SPI、跨节点周期闸、会话 turn 租约、技能使用统计后端——同时带来两个升级后才生效的静默默认（`web_fetch`/`web_search` 默认注册、transcript 默认落盘）。这些集中在 §6，其中 `web_fetch` 默认开是本报告新增的第二个**安全面**结论。
 
 另外，本轮 self-improving 专项复核（B3.1）**修正了 B3 的一个前提**：技能治理面不是"配了就有"——四个内置 `SkillVisibilityFilter` 只 gate agent 自产的技能、对 harnax 的 admin 资产逐条放行，`.usage.json`/`.audit`/`.curator_state.json` 又不跟租户命名空间走，用量遥测只有 view 没有 use。Q7 从"P2 优先做"下调为"先过两道闸再做"，`enableSkillCurator` 单独调用是静默 no-op 这条也属于必须显式写出来的装配事实。
 
@@ -309,7 +309,7 @@ harnax 的团队层覆盖了"主管派成员、成员在独立沙箱、产物靠
 | 会话逐字记录 | `transcript/TranscriptStore`（append-only **不可变分段**，键 `{tenant}/{agentId}/{sessionId}/events/{seqStart}-{seqEnd}-{writerId}.jsonl`，并发写不会互相覆盖）、`FilesystemTranscriptStore`/`ObjectStoreTranscriptStore`、`memory/session/SessionTranscriptWriter`（结构化工具调用/结果行，带 `truncated` + `originalSize`）、`TranscriptMiddleware`；builder `transcriptStore`/`transcriptTenant`/`disableTranscript` | harnax 有 MySQL 会话与逐轮 token，但没有**工具级逐字记录**；对象存储后端正好吃 harnax 已有的 MinIO；且与 `session_search`/恢复直接联动 | **P2**，与 B6 同批 |
 | 跨节点周期闸 | `coordination/PeriodicGate`、`LocalPeriodicGate`、`StoreBackedPeriodicGate`（最小间隔节流，`tryClaim` 语义） | harnax 的定时任务集群化**已定稿 D1~D8**，这一层属同一职责，不能双跑 | **只作对照**，动它前先读既有裁定 |
 | 会话 turn 租约 | `gateway/TurnLease`（幂等 close）、`LocalSessionTurnGate`、`TurnBusyException`，由 `distributedStore.sessionTurnGate()` 自动接入（`:694-697`） | 正是 harnax 记账里「同成员并行双委派」「切会话不断流」的运行层解法 | **P1，推荐接** |
-| 技能用量后端 | `skill/curator/SkillUsageBackend` + `FilesystemSkillUsageBackend`/`BaseStoreSkillUsageBackend`（单进程文件或跨节点 CAS） | B3 里的"用量遥测"上游已实现，接法从自建变成配后端 —— 但**只省掉 CAS 这一层**：不解决 `.usage.json` 跨租户共享一份，也不解决 view 有计数、use 恒空（B3.1 第 6、4 条） | 从 P2 自建改为 **P2 配置 + 两道前置** |
+| 技能使用统计后端 | `skill/curator/SkillUsageBackend` + `FilesystemSkillUsageBackend`/`BaseStoreSkillUsageBackend`（单进程文件或跨节点 CAS） | B3 里的"用量遥测"上游已实现，接法从自建变成配后端 —— 但**只省掉 CAS 这一层**：不解决 `.usage.json` 跨租户共享一份，也不解决 view 有计数、use 恒空（B3.1 第 6、4 条） | 从 P2 自建改为 **P2 配置 + 两道前置** |
 | 文件系统前缀路由 | builder `filesystemRoute(prefix, fs)`、`RoutedSandboxFilesystem`（路由仍保留主沙箱的 `shell_execute`）、`PinnedSandboxFilesystem`（异步镜像上传期间钉住沙箱） | harnax 现在沙箱与 MinIO 二选一；路由可让 memory-store 类前缀挂到别的后端 | **P3** |
 | 内置 Web 工具 | `tool/WebTools` 的 `web_fetch`/`web_search`（Tavily，无 key 返回配置错误）、builder `webHttpClient`/`disableWebTools` | harnax **完全没有** web 工具（全仓无 `web_fetch`/`web_search` 实现） | 见 §6.3 的默认注册风险 |
 | MCP 注册结果回调 | builder `mcpServerRegistrationListener`、`McpConnectionException`/`McpServerRegistrationResult`（不向动态子 agent 传播） | 对上 harnax 记账里「未授权提示不可见」：注册终态有回调就有可见性 | **P2** |
