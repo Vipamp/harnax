@@ -25,7 +25,9 @@ extension AdminClient: SessionSkillReading {
     /// Each leg carries its own failure. The queue going down costs the nominations and nothing else, the
     /// directory going down costs the enabled answers and nothing else: a leg that did not answer hands the merge an
     /// empty list of its own and flips `unavailable`, because the rows the other leg did answer are still rows the
-    /// operator can act on. What no leg may do is answer "this conversation's agent proposed nothing" on behalf of
+    /// operator can act on. One of those failures arrives named: the directory's 410 flips `noSandbox` beside
+    /// `unavailable`, so the panel can say the conversation has no running sandbox rather than guess at why a read
+    /// would not answer. What no leg may do is answer "this conversation's agent proposed nothing" on behalf of
     /// a failure — that is the one sentence this panel must not say about something that broke, and `unavailable`
     /// is what keeps an empty list from being read as it. Both legs failing is the case where the empty list
     /// is the honest answer, and the blank-conversation guard below answers the same way without asking anything.
@@ -45,7 +47,8 @@ extension AdminClient: SessionSkillReading {
         let (drafts, directory) = await (nominations, enabled)
         return SessionSkillRead(
             rows: SessionSkillRules.merged(drafts: drafts.rows, enabled: directory.rows),
-            unavailable: drafts.failed || directory.failed
+            unavailable: drafts.failed || directory.failed,
+            noSandbox: directory.noSandbox
         )
     }
 
@@ -66,7 +69,13 @@ extension AdminClient: SessionSkillReading {
     }
 
     /// The directory leg: `GET /api/router/agent/session-skills/{sessionId}`.
-    private func enabledLeg(sessionId: String) async -> (rows: [SessionSkillRow], failed: Bool) {
+    ///
+    /// One refusal owns a tier of its own. 410 says this conversation has no running container — the state the
+    /// server refuses *both* panel calls with now, and the only read failure with a sentence to go with it
+    /// (`SessionSkillRead.noSandbox`). It is still a failure: the enabled answers are missing whatever caused them.
+    /// A code that says anything else — a 500 out of agent-service, a guard rejection, a transport error that never
+    /// carried a code — stays on the generic tier, because「沙箱已经停了」over those is a diagnosis nobody made.
+    private func enabledLeg(sessionId: String) async -> (rows: [SessionSkillRow], failed: Bool, noSandbox: Bool) {
         switch await client.send([SessionSkillViewRow].self, SessionSkillEndpoint.rows(sessionId: sessionId)) {
         case let .success(enabled):
             // `SessionSkillView` has no `enabled` key: presence in this list *is* the flag.
@@ -79,9 +88,10 @@ extension AdminClient: SessionSkillReading {
                     enabledAt: hxPresented(row.enabledAt)
                 )
             }
-            return (rows, false)
-        case .failure:
-            return ([], true)
+            return (rows, false, false)
+        case let .failure(error):
+            if case .business(410, _) = error { return ([], true, true) }
+            return ([], true, false)
         }
     }
 

@@ -15,8 +15,10 @@ import HarnaxCore
 /// `sessionSkills.test.ts:82-126`).
 ///
 /// Failing and answering empty are still not the same shape: a leg that did not answer flips `unavailable`, while
-/// an enabled set that answered with nothing is exactly what a stopped or unbound session says and leaves the flag
-/// alone. Refusal codes belong to the enable call — the only one that changes anything.
+/// an enabled set that answered with nothing is exactly what a running container with nothing enabled says and
+/// leaves the flag alone. The directory does refuse, but with one code only — 410, the session has no live sandbox
+/// to list — and that one arrives as `noSandbox` beside `unavailable`, because the panel has a different sentence
+/// for a stopped conversation than for a read that would not answer. Every other refusal code stays generic.
 ///
 /// The enable matters for the same reason in the other direction: the panel has one sentence per server code, and
 /// a request that never reached a server must not borrow one of them.
@@ -164,6 +166,7 @@ final class SessionSkillWireTests: XCTestCase {
             "so does the directory leg: \(sent.map(\.path))"
         )
         XCTAssertTrue(read.unavailable, "a leg that never went out did not answer")
+        XCTAssertFalse(read.noSandbox, "and a leg that never reached a server was never told the sandbox is stopped")
         XCTAssertTrue(read.rows.isEmpty, "the tenant's nominations must not be drawn as this conversation's")
     }
 
@@ -305,9 +308,10 @@ final class SessionSkillWireTests: XCTestCase {
         XCTAssertNil(read.rows[0].enabledAt)
     }
 
-    /// An empty enabled set is an answer. A session whose sandbox is stopped, or which was never bound to one,
-    /// gives back `data: []` on this leg — and that is not a leg missing: `unavailable` stays off, or every session
-    /// without a running container would read as one the panel cannot see into.
+    /// An empty enabled set is an answer. A running container whose enabled zone holds nothing gives back
+    /// `data: []` on this leg — and that is not a leg missing: `unavailable` stays off, or every session that has
+    /// not enabled a skill yet would read as one the panel cannot see into. A session with no live container at all
+    /// answers differently now, and that arm is the test below this one.
     func testAnEmptyDirectoryBesideNominationsIsAnAnswerRatherThanAFailure() async throws {
         let harness = await harness()
         harness.transport.enqueue(forPath: queuePath, queue(oneNomination, total: 1))
@@ -316,6 +320,7 @@ final class SessionSkillWireTests: XCTestCase {
         let read = await harness.agents.read(sessionId: "s-1")
 
         XCTAssertFalse(read.unavailable, "nothing enabled is an answer, not a leg that went missing")
+        XCTAssertFalse(read.noSandbox, "and an empty zone is not a stopped container: nothing here says it is")
         XCTAssertEqual(
             read.rows.map(\.name),
             ["invoice-fill"],
@@ -323,6 +328,44 @@ final class SessionSkillWireTests: XCTestCase {
         )
         XCTAssertFalse(read.rows[0].enabled)
         XCTAssertNil(read.rows[0].enabledAt)
+    }
+
+    /// 410 is the one code the read leg refuses with, and it has to arrive as itself: the panel says 「这个会话的
+    /// 沙箱没有在运行」 for it and 「这个会话的技能读不出来」 for everything else. The two send the operator to
+    /// different places — one restarts the conversation, the other checks the login — and the nominations the queue
+    /// did answer are rows either way.
+    func testTheDirectoryRefusingWith410ArrivesAsASandboxThatIsNotRunning() async throws {
+        let harness = await harness()
+        harness.transport.enqueue(forPath: queuePath, queue(oneNomination, total: 1))
+        harness.transport.enqueue(forPath: directoryPath, Wire.business(410, "this session has no running sandbox"))
+
+        let read = await harness.agents.read(sessionId: "s-1")
+
+        XCTAssertTrue(read.unavailable, "the enabled answer is missing, whatever named it")
+        XCTAssertTrue(read.noSandbox, "and the reason the envelope gave is the reason the panel says")
+        XCTAssertEqual(
+            read.rows.map(\.name),
+            ["invoice-fill"],
+            "a refused directory is not news that nothing was nominated"
+        )
+        XCTAssertFalse(read.rows[0].enabled, "the leg that owns `enabled` is the one that refused")
+    }
+
+    /// The same leg refusing for a reason that is not a stopped sandbox must not borrow that sentence: a 500 from
+    /// agent-service, or a code this side has never been told the meaning of, leaves the panel on its generic
+    /// failure copy.
+    func testAnyOtherDirectoryRefusalKeepsTheGenericFailureRatherThanNamingASandbox() async throws {
+        for code in [500, 403, 418] {
+            let harness = await harness()
+            harness.transport.enqueue(forPath: queuePath, queue(oneNomination, total: 1))
+            harness.transport.enqueue(forPath: directoryPath, Wire.business(code, "refused"))
+
+            let read = await harness.agents.read(sessionId: "s-1")
+
+            XCTAssertTrue(read.unavailable, "code \(code) did not answer")
+            XCTAssertFalse(read.noSandbox, "code \(code) never said the sandbox is stopped")
+            XCTAssertEqual(read.rows.map(\.name), ["invoice-fill"])
+        }
     }
 
     /// Both legs failing is the one case an empty list is honest about: nothing answered, so the panel may claim

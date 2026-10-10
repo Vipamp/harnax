@@ -28,6 +28,12 @@ public final class SessionSkillsViewModel: ObservableObject {
     /// an earlier successful read stay on screen when a later re-read fails — the same rule every other list in
     /// the app follows (`TeamArtifactsViewModel.load()`).
     @Published public private(set) var unavailable = false
+    /// The last read that answered said this conversation has no running container (`SessionSkillRead.noSandbox`).
+    ///
+    /// Carried apart from `unavailable`, because the two have different sentences and only one of them sends the
+    /// user to restarting the conversation. `chat.skills.noSandbox` rather than `chat.skills.loadFailed`, which is
+    /// what the console's `readCopy` does for the same flag.
+    @Published public private(set) var noSandbox = false
     /// Why the last enable was refused, already reduced to the one cause it names. `notice` rather than a toast:
     /// this app has no toast, and a sentence that times out is no use to someone still looking at the row that
     /// produced it (`SkillDraftDetailViewModel.notice`).
@@ -72,6 +78,10 @@ public final class SessionSkillsViewModel: ObservableObject {
         // that newer one back on screen, and a failed re-read would erase a list the user could still act on.
         guard generation == refreshGeneration else { return }
         isLoading = false
+        // The cause belongs to *this* read, not to the rows it displaced: a re-read that found no container names
+        // that even when the list on screen is the older one's, and a re-read that answered retires the cause the
+        // panel said a moment ago.
+        noSandbox = read.noSandbox
         if read.unavailable, read.rows.isEmpty {
             // Not one leg answered. The list on screen becomes a statement about an older answer, and the only
             // honest move is to keep it and say the read is missing — an unanswered re-read is not news that a

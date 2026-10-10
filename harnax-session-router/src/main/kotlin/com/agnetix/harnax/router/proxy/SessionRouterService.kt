@@ -502,6 +502,10 @@ class SessionRouterService(
 
     /**
      * The skills one session has enabled. Read-only, so it follows the binding instead of placing the session.
+     *
+     * A session with no bound instance answers an empty list here rather than the 410 the agent-service now
+     * answers for a bound session whose container is gone: nothing is known about the sandbox at this hop, and
+     * every other read on this class answers the same way when there is no instance to call.
      */
     suspend fun proxySessionSkills(sessionId: String): ResultVo<List<Map<String, Any>>> {
         setMDC(sessionId, null)

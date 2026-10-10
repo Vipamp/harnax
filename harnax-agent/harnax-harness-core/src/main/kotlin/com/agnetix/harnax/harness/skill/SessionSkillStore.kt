@@ -19,8 +19,10 @@ import org.slf4j.LoggerFactory
  * after the agent exists: an operator enabling a skill over HTTP has no agent to bind to, and after a TTL
  * expiry or a restart there may be none left to bind to at all.
  *
- * Everything here is best-effort in the same shape as the draft reads: no container answers as empty, and
- * no exception is handed to a caller that can do nothing about a stopped sandbox.
+ * Reads are best-effort in the same shape as the draft reads: no exception is handed to a caller that can do
+ * nothing about a stopped sandbox, and a directory that would not list answers as a list that is empty. The one
+ * read that does not flatten is [listEnabled] — the panel has to be able to tell「this agent wrote nothing」from
+ * 「nothing was there to ask」, and [enable] already refuses that state as [EnableOutcome.NoSandbox].
  */
 class SessionSkillStore(
     private val handles: SandboxHandleProvider,
@@ -85,8 +87,17 @@ class SessionSkillStore(
         )
     }
 
-    fun listEnabled(sessionId: String): List<EnabledSkill> {
-        val fs = filesystemFor(sessionId) ?: return emptyList()
+    /**
+     * What this session may use right now.
+     *
+     * Null when no container answers: an empty list is the sentence「this conversation wrote no skill」, and a
+     * session whose sandbox has stopped or expired cannot support it — the panel would be denying drafts the
+     * `_drafts` tree still holds. A container that *is* running with an empty enabled zone still answers
+     * `emptyList()`, which is exactly that sentence and is not a failure. [enable] refuses the same state as
+     * [EnableOutcome.NoSandbox], so the two calls now agree about when there is nothing to talk to.
+     */
+    fun listEnabled(sessionId: String): List<EnabledSkill>? {
+        val fs = filesystemFor(sessionId) ?: return null
         val reader = enabledReader(fs)
         return reader.listDraftSkillNames(null).mapNotNull { name ->
             val md = reader.readSkillMarkdown(name, null) ?: return@mapNotNull null
