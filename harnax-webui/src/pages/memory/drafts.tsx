@@ -91,7 +91,7 @@ const MemoryDrafts: React.FC = () => {
       ellipsis: true,
       render: (name: string, record) => (
         <a
-          onClick={() => history.push(`/optimization/memory/draft/detail/${record.id}`)}
+          onClick={() => history.push(`/optimization/memory-drafts/detail/${record.id}`)}
           style={{ fontWeight: 500, cursor: 'pointer' }}
         >
           <AuditOutlined style={{ marginRight: 6, color: 'var(--vip-primary)' }} />
@@ -268,7 +268,7 @@ const MemoryDrafts: React.FC = () => {
         <Button
           type="link"
           size="small"
-          onClick={() => history.push(`/optimization/memory/draft/detail/${record.id}`)}
+          onClick={() => history.push(`/optimization/memory-drafts/detail/${record.id}`)}
         >
           {intl.formatMessage({ id: 'pages.memory.draft.review', defaultMessage: 'Review' })}
         </Button>

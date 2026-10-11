@@ -342,7 +342,7 @@ const MyAgentMemory: React.FC = () => {
           <Button
             key="drafts"
             icon={<AuditOutlined />}
-            onClick={() => history.push('/optimization/memory/drafts')}
+            onClick={() => history.push('/optimization/memory-drafts')}
           >
             {intl.formatMessage({
               id: 'pages.memory.draft.title',

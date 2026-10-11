@@ -125,14 +125,16 @@ export default [
     routes: [
       {
         // A conversation's merge only reaches an agent's long-term layer once its owner says so,
-        // so the approval queue is listed before the page that shows what those layers hold
+        // so the approval queue is listed before the page that shows what those layers hold.
+        // It stays a sibling address of /optimization/memory: ProLayout focuses every row whose
+        // path prefixes the location, so nesting it under that path would focus both rows.
         name: 'memory.drafts',
         icon: 'audit',
-        path: '/optimization/memory/drafts',
+        path: '/optimization/memory-drafts',
         component: './memory/drafts',
       },
       {
-        path: '/optimization/memory/draft/detail/:id',
+        path: '/optimization/memory-drafts/detail/:id',
         component: './memory/draftDetail',
         hideInMenu: true,
       },
