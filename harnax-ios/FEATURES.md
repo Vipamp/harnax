@@ -126,8 +126,7 @@
 | 技能详情：Markdown 正文 | `/context/skill/detail/:id` | v1 | `GET /skills/{id}` | M |
 | 技能详情：资源文件树与文件内容 | 同上 | v1 | 同一详情响应 | L |
 | 技能行的来源标记（智能体晋升 / 人工，两枚徽标；整行没有这一列时两枚都不画） | 技能表新增列 | v1 | 列表行与详情行的 `origin` | S |
-| 技能草稿队列（`PENDING`/`APPROVED`/`REJECTED` 三档分段、按名搜索、每页 20 条） | `/optimization/skill-drafts` | v1 | `GET /api/admin/skill-drafts`（无 `/page` 后缀） | M |
-| 会话域入口行（租户级待审计数；装配缺失即撤整行，计数读失败只隐藏数字） | 无（Web 走左侧菜单） | v1 | 同一队列接口 | S |
+| 技能草稿队列（`PENDING`/`APPROVED`/`REJECTED` 三档分段、待审那一档带条数、按名搜索、每页 20 条；App 上只有治理枢纽一行入口；在详情做完决定退回时队列自己重读一次，不用退出再进） | `/optimization/skill-drafts` | v1 | `GET /api/admin/skill-drafts`（无 `/page` 后缀） | M |
 | 草稿详情六页签（正文 / 文件 / 脚本 / 内容扫描 / 来源 / 轨迹） | `/optimization/skill-draft/detail/:id` | v1 | `GET /skill-drafts/{id}` | L |
 | 两份扫描分色并置（harnax 内容扫描非空即存成禁用；沙箱上报只展示、永不按住） | 详情扫描页签 | v1 | 同一详情响应 | M |
 | 批准晋升（先取摘要再确认，六种结果各有一句，未知结果走兜底） | 审核详情操作区 | v1 | `POST /skill-drafts/{id}/approve` | L |
@@ -184,7 +183,7 @@
 | 智能体记忆列表（登录用户自己的每台智能体一行；后端回裸数组而非 `Page`，因此这一屏没有分页状态机） | `/optimization/memory` | v1 | `GET /api/admin/memory` | M |
 | 单智能体记忆详情（长期层的整理稿与每日记录；会话那一层只能以一个整数出现，没有读它正文的路由） | 同上点入（Web 是抽屉） | v1 | `GET /api/admin/memory/{agentId}`（路径参数绑运行时名字，不是数据库 id） | M |
 | 清除记忆（对话框必须点名被前缀清扫带走的三样：整理稿、全部每日记录、尚未并入的会话记忆，少说一样就是低估这次删除） | 同上 | v1 | `DELETE /api/admin/memory/{agentId}` | M |
-| 会话记忆审批队列（待审 / 已批准 / 已驳回三臂且没有「全部」，按智能体名提交式搜索，每页 20 条） | `/optimization/memory/drafts` | v1 | `GET /api/admin/memory-drafts`（无 `/page` 后缀） | M |
+| 会话记忆审批队列（待审 / 已批准 / 已驳回三臂且没有「全部」，按智能体名提交式搜索，每页 20 条；在详情做完决定退回时队列自己重读一次，不用退出再进） | `/optimization/memory/drafts` | v1 | `GET /api/admin/memory-drafts`（无 `/page` 后缀） | M |
 | 候选详情（四块对照：它提出的记忆、智能体现在的记忆、它清空的会话文件、它改写的日子文件） | `/optimization/memory/draft/detail/:id` | v1 | `GET /api/admin/memory-drafts/{id}` | L |
 | 批准并入（先取摘要再确认；五种结果各有一句、未知结果原样带上屏；409 丢写这一支先落提示再重读，重读就是修复） | 审核详情操作区 | v1 | `POST /api/admin/memory-drafts/{id}/approve`（body `expectedDigest`） | L |
 | 驳回并留原话（理由必填、trim 后限 512 字；驳回不会带走会话那一层，同一份内容下一轮还会再提） | 驳回弹窗 | v1 | `POST /api/admin/memory-drafts/{id}/reject` | M |

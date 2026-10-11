@@ -28,7 +28,7 @@
 | D8 | 交付目标 | 有付费开发者账号，可真机与 TestFlight | 用户裁定；APNs 推送因需后端改造后置 |
 | D9 | 图表 | 用 Swift Charts 重画，不引第三方 | 用到图表的只有两页：Token 监控 3 饼 4 折，调用监控一条趋势折线（`Sources/HarnaxFeatures/CallMetrics/CallMetricsView.swift:469`），系统框架够用 |
 | D10 | 平台边界 | iPad 采用同一套自适应布局，不做独立形态 | 避免范围膨胀 |
-| D11 | Web 侧「优化治理」与「集群监控」两个一级在 iOS 的落点 | 「优化治理」落智能体 tab 的第四段（段名「治理」）里的一列枢纽，三行依次是会话记忆审批／智能体记忆／技能晋升；「集群监控」落「我的」页里与「系统管理」并列的一组三行。技能队列另保留会话列表顶部那一行作为第二入口 | iOS 没有一级菜单可加——tab 栏固定四段（`Sources/HarnaxFeatures/Root/HarnaxTab.swift:6-9`），第四段不占宽度；枢纽按门面建行，门面没接上的那一臂整行消失而不是留一个点进去白屏的入口（`Sources/HarnaxFeatures/Governance/GovernanceHomeView.swift:80-88`）；两组分开画是因为门不同——监控三行在 Web 侧都不带 access（`harnax-webui/config/routes.ts:165-179`），而环境变量／API Key／渠道是会写记录的实体 |
+| D11 | Web 侧「优化治理」与「集群监控」两个一级在 iOS 的落点 | 「优化治理」落智能体 tab 的第四段（段名「治理」）里的一列枢纽，三行依次是会话记忆审批／智能体记忆／技能晋升；「集群监控」落「我的」页里与「系统管理」并列的一组三行。一条队列一个入口，会话列表不挂队列行 | iOS 没有一级菜单可加——tab 栏固定四段（`Sources/HarnaxFeatures/Root/HarnaxTab.swift:6-9`），第四段不占宽度；枢纽按门面建行，门面没接上的那一臂整行消失而不是留一个点进去白屏的入口（`Sources/HarnaxFeatures/Governance/GovernanceHomeView.swift:77-85`）；两组分开画是因为门不同——监控三行在 Web 侧都不带 access（`harnax-webui/config/routes.ts:165-179`），而环境变量／API Key／渠道是会写记录的实体 |
 
 ## 3. 产品范围
 
@@ -47,10 +47,10 @@ Web 侧路由定义见 `harnax-webui/config/routes.ts`，iOS 与之一一对应�
 | 上下文 | `/context/mcp` | 列表 + 编辑 + 详情 | 详情含工具列表与 OAuth 面板 |
 | 上下文 | `/context/skill` | 仓库列表 + 技能列表 | 含同步、安装、上传 |
 | 上下文 | `/context/skill/detail/:id` | 详情（正文 / 文件树两态） | Markdown 渲染 + 代码高亮 |
-| 优化治理 | `/optimization/memory/drafts` | 三臂队列（待审／已批准／已驳回）+ 批准与驳回 | 会话那一层抽出来的合并候选；iOS 主入口是治理枢纽第一行，行尾 badge 另发一次 `size: 1` 的待审读（`Sources/HarnaxCore/Contract/MemoryDraftCataloging.swift:47-57`） |
+| 优化治理 | `/optimization/memory/drafts` | 三臂队列（待审／已批准／已驳回）+ 批准与驳回 | 会话那一层抽出来的合并候选；iOS 只有治理枢纽第一行这一个入口，队列屏「待审」那一档分段标签上的计数另发一次 `size: 1` 的读，不随档位与搜索变（`Sources/HarnaxCore/Contract/MemoryDraftCataloging.swift:47-57`） |
 | 优化治理 | `/optimization/memory/draft/detail/:id` | 候选详情（四部分提案 + digest 门） | 队列页内部再 push 一层；`hideInMenu`。批准必须原样回传当前 `contentDigest`，五种结局里三种是「界面要据以再动作」的拒绝，各带一个可执行字段（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/MemoryDraftDecisionResponse.kt:6-17`） |
 | 优化治理 | `/optimization/memory` | 列表 + 单智能体详情 + 清除 | 列表不分页——`GET /api/admin/memory` 回裸数组而不是 `Page`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/MemoryController.kt:54`）；清除对话框必须点名被前缀清扫带走的三样东西（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/MemoryStoreGateway.kt:153-165`） |
-| 优化治理 | `/optimization/skill-drafts` | 草稿队列 + 审核详情 | 智能体自写的技能先排队等人工批准；iOS 保留两个入口——治理枢纽第三行与会话列表顶部那一行（`specs/07-skill-draft-review.md` §5.1），后者是提案最可能被注意到的地方 |
+| 优化治理 | `/optimization/skill-drafts` | 草稿队列 + 审核详情 | 智能体自写的技能先排队等人工批准；iOS 在 App 上只有治理枢纽第三行这一个入口（`specs/07-skill-draft-review.md` §5.1） |
 | 优化治理 | `/optimization/skill-draft/detail/:id` | 审核详情（六页签 + 批准 / 驳回 / 冲突处置） | 队列页内部再 push 一层；`hideInMenu` |
 | 上下文 | `/context/cli` | 列表 + 详情抽屉 | 含 kill switch 与关联检查 |
 | 系统 | `/system/channel` | 列表 + 条件字段表单 | 5 类型 × 4 接入模式矩阵，含微信扫码 |
@@ -210,6 +210,7 @@ HarnaxApp                App target：场景、导航、依赖装配
 - **契约模型手写 Codable**，字段名与后端 DTO 逐字对齐（后端别名即契约的地方尤其注意），每个模型配 JSON fixture 测试。不用代码生成器，避免生成物与后端漂移时无人负责。
 - **列表统一用游标式加载封装**（内部仍是 `pageNum`/`pageSize`），分页、下拉刷新、错误重试一处实现，15 个分页列表共用（口径：持有那份分页状态对象的 ViewModel 数，含定时任务的执行记录列表与技能草稿队列）。
 - **列表页的工具栏是 HarnaxKit 的一对组件**：`HXPlusButton` 与 `HXFilterMenu` 各只在这一个文件里画图标，都排在导航栏尾部（加号左、漏斗右），因为前导角落属于返回按钮。除名称搜索外的条件全进漏斗，漏斗用实心表示有条件生效；菜单内容留在调用点（状态清单是打勾行，状态加类型是两枚选择器）。行内不放状态分段条，筛到零条时它会跟着行一起消失。唯一的例外是技能草稿队列：它按 Web 的三档形态在行顶放一枚分段条（待审／已批准／已驳回），并把分段条画在列表相态之外，因此筛到零条时它不消失，操作者看得见自己停在哪一档、也看得见怎么换档。
+- **页标题一律走 `harnaxTitle`**（`HarnaxKit/Components/HXScreen.swift`）：裸 `navigationTitle` 会带回 iOS 默认的大字标题——每个屏顶部一块左对齐大字块，是全 App 唯一一处标题字体不一致的来源。`harnaxTitle` 在 UIKit 下钉住 `.navigationBarTitleDisplayMode(.inline)`，名字居中、用导航栏自己的小字号；`Text` 与已本地化的 `String` 两个重载都在这一处，调用点不再各自拼 `#if canImport(UIKit)`。编译器看不见这个差别，所以由 `Tests/HarnaxFeaturesTests/TitleStyleGateTests.swift` 的两支源码闸门守：HarnaxFeatures 全域不许出现裸 `navigationTitle`，且显示模式那一行必须留在修饰符体内。登录页正文里的 "Harnax" 字标是版面装饰不是导航标题，不在收口范围。
 - **表单**用一组可组合的行控件（文本 / 数字 / 开关 / 单选 / 多选 / 键值表 / JSON 编辑器 / 文件），条件字段矩阵由一个声明式描述驱动，Channel 那种 5×4 组合靠新增描述而不是新代码解决。
 - **能力门控**：对话输入区的开关由后端返回的模型能力字段驱动（推理支持、思考模式取值、联网、视觉），客户端不得自行假设某模型可思考。
 
@@ -267,7 +268,7 @@ M3 与 M4 可并行拆分给不同人。开工前必须先落 §14 的 R1：开�
 
 ## 13. 各页面字段级规格
 
-逐字段的全量清单落在同目录 `specs/` 的十份文件里，每份都带 `路径:行号` 锚点。计数口径是「形如 `文件名.扩展名:行号` 的出现次数，一处并列写多个行号（`:42,50,88`）算一条」：`specs/` 十份合计 2420 条（01 为 411、02 为 443、03 为 159、04 为 365、05 为 199、06 为 5、07 为 64、08 为 413、09 为 121、10 为 240），本文件 151 条，`FEATURES.md` 与 `FUNCTIONS.md` 各 0 条——后两份一份是档位清单、一份只写行为，都不带锚点。其中带目录的全路径锚点 2478 条已用脚本逐条核过「文件存在 + 行号在文件行数内」，无一条指向不存在的文件或越界的行号；只写裸文件名的 93 条不在这条判据里（其中 07 那一份占 53 条、本文件占 28 条），它们靠仓库内同名文件唯一来定位，例外是 `CompactionConfig.java` 那一处指向上游 sources jar、本来就不在仓库里。另有 21 处本文件以行内代码点名 `specs/` 里的某份文档（本章表格十行、§1 四处、§3.1 一处、本章 13.3 一处、本章 13.7 一处、本章 13.8 一处、本章 13.9 两处、§15 的 O7 一处），十份文档都被点到、文件都已在位。本章给的是写码时要对照的口径摘要；两者冲突以代码为准，代码与 `specs/` 冲突时以 `specs/` 里更细的锚点为准。
+逐字段的全量清单落在同目录 `specs/` 的十份文件里，每份都带 `路径:行号` 锚点。计数口径是「形如 `文件名.扩展名:行号` 的出现次数，一处并列写多个行号（`:42,50,88`）算一条」：`specs/` 十份合计 2445 条（01 为 411、02 为 442、03 为 159、04 为 365、05 为 199、06 为 5、07 为 83、08 为 421、09 为 120、10 为 240），本文件 152 条，`FEATURES.md` 与 `FUNCTIONS.md` 各 0 条——后两份一份是档位清单、一份只写行为，都不带锚点。其中带目录的全路径锚点 2502 条已用脚本逐条核过「文件存在 + 行号在文件行数内」，无一条指向不存在的文件或越界的行号；只写裸文件名的 95 条不在这条判据里（其中 07 那一份占 55 条、本文件占 28 条），它们靠仓库内同名文件唯一来定位，例外是 `CompactionConfig.java` 那一处指向上游 sources jar、本来就不在仓库里。另有 23 处本文件以行内代码点名 `specs/` 里的某份文档（本章表格十行、§1 四处、§3.1 一处、本章 13.3 一处、本章 13.7 两处、本章 13.8 两处、本章 13.9 两处、§15 的 O7 一处），十份文档都被点到、文件都已在位。本章给的是写码时要对照的口径摘要；两者冲突以代码为准，代码与 `specs/` 冲突时以 `specs/` 里更细的锚点为准。
 
 重跑这两个计数用同一段脚本（在 `harnax-ios/` 下执行），免得下一次改动把数字留在旧值上：
 
@@ -297,7 +298,7 @@ print('all', len(all_t), 'with-dir', len(q), 'bare', len(all_t) - len(q),
       'unresolved', sum(1 for x in q if not exists(x)))
 ```
 
-`exists` 里两个根是必要的：锚点有两种写法，`harnax-admin/...`、`harnax-webui/...` 从仓库根算起（脚本里的 `..`），`Sources/...`、`Tests/...`、`Package.swift` 从 `harnax-ios/` 算起（脚本里的 `.`）。最后一行的实测输出是 `specs 2420 / all 2571 / with-dir 2478 / bare 93 / unresolved 0`。
+`exists` 里两个根是必要的：锚点有两种写法，`harnax-admin/...`、`harnax-webui/...` 从仓库根算起（脚本里的 `..`），`Sources/...`、`Tests/...`、`Package.swift` 从 `harnax-ios/` 算起（脚本里的 `.`）。最后一行的实测输出是 `specs 2445 / all 2597 / with-dir 2502 / bare 95 / unresolved 0`。
 
 | 文件 | 覆盖页面 | 「未确认」条数 / 其中已回代码核实 |
 |---|---|---|
@@ -307,7 +308,7 @@ print('all', len(all_t), 'with-dir', len(q), 'bare', len(all_t) - len(q),
 | `specs/04-context-domains.md` | 模型两级、工具、MCP 与 OAuth、技能仓库与技能、技能详情、CLI | 11 / 4 |
 | `specs/05-task-domain.md` | 任务列表与轮询、新建/编辑表单与 cron 互斥、写侧拒绝的 code 对照、执行日志与停止语义 | 5 / 0 |
 | `specs/06-app-icon.md` | 图标母题与构图、pine/brass 配色、交付物与工程接线、小尺寸实测、再生成管线 | 无「未确认」章节 |
-| `specs/07-skill-draft-review.md` | 会话域入口行、草稿队列、审核详情六 Tab、批准/冲突/驳回三条流、六条 outcome 的界面处置 | 无「未确认」章节，四条口径记在第 8 节 |
+| `specs/07-skill-draft-review.md` | 治理枢纽入口、草稿队列、审核详情六 Tab、批准/冲突/驳回三条流、六条 outcome 的界面处置 | 无「未确认」章节，四条口径记在第 8 节 |
 | `specs/08-memory.md` | 治理枢纽三行、智能体记忆列表与详情、清空的三件损失、会话记忆审批队列与五种结局的详情、批准/驳回/清除各自的再动作字段、向导里那枚长期记忆开关 | 无「未确认」章节，四条口径记在第 8 节 |
 | `specs/09-skill-usage.md` | 技能监控的一条路由一个参数、五个数字与服务端四个的差、只看没用过的这一列筛选、窗口三档与答复回显、行的两枚 pill | 无「未确认」章节，七条口径记在第 8 节 |
 | `specs/10-call-metrics.md` | 调用监控的三读两表五分组维、四张卡与趋势折叠、下钻闸与明细翻页、画像面板为什么不搬 | 无「未确认」章节，八条口径记在第 8 节 |
@@ -371,15 +372,16 @@ print('all', len(all_t), 'with-dir', len(q), 'bare', len(all_t) - len(q),
 ### 13.7 自我进化：技能草稿审核
 
 - 队列口没有 `/page` 后缀（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/SkillDraftController.kt:50`），与本 app 其余分页列表（`/api/admin/skills/page` 等）形状不同，照抄必错。
-- 队列的过滤参数是 `status` / `name` / `sessionId` 三个（`SkillDraftController.kt:55`-`:73`），**按会话筛是服务端能力**，不是界面自己兜的：`sessionId` 是一条 SQL 谓词而不是取回后再筛，因为 PageHelper 数的是它交回来的行，筛在分页之后就会报出与页不符的 total。这个键**缺席与为空是两个答案**（`SkillDraftServiceImpl.kt:243`-`:255`）：不带键＝没点名任何会话，回本租户整条队列；带了但值为空白＝点名了一个会话，回空页。会话入口行上那枚计数仍取「本租户待审总数」——那行给的是整条审核链的导航，不分会话；真正带 `sessionId` 的读是对话页那块本会话技能列表（3.17）：一路按会话取提名（`GET /api/admin/skill-drafts?status=PENDING&sessionId=`），一路取本会话已启用的目录（`GET /api/router/agent/session-skills/{sessionId}`，出现即启用，应答不带开关）。会话 id trim 后为空时提名那一腿不发（丢键得到的是别人的提名），并按「读不出来」报。webui 的会话抽屉读同两条（`harnax-webui/src/pages/session/components/SessionSkillsDrawer.tsx`），合并规则两端各写一份但判据同源；iOS 这一份把两路读各做成独立失败——一路挂了只丢它那半，另一路答上来的行照常可点，只有两路都没答才说读不出来。目录腿的失败按码分两档，两端各拿一个与 `unavailable` 并列的旗标（webui `readOutcome.noSandbox`、iOS `SessionSkillRead.noSandbox`），410 时不说泛化的读不出来而是说「这个会话的沙箱没有在运行」，与启用那一按的 410 同因同码（`SessionSkillController.kt:46`-`:51`，源头是 `SessionSkillStore.listEnabled` 在这种情况下回 `null`）；沙箱在跑而 `session-enabled/` 为空回 200 空数组，会话压根没绑到实例时代理在发出请求前自己回 200 空数组（`SessionRouterService.kt:513`），两种都是空列表而不是失败，两端都不亮那两句。
+- 队列的过滤参数是 `status` / `name` / `sessionId` 三个（`SkillDraftController.kt:55`-`:73`），**按会话筛是服务端能力**，不是界面自己兜的：`sessionId` 是一条 SQL 谓词而不是取回后再筛，因为 PageHelper 数的是它交回来的行，筛在分页之后就会报出与页不符的 total。这个键**缺席与为空是两个答案**（`SkillDraftServiceImpl.kt:243`-`:255`）：不带键＝没点名任何会话，回本租户整条队列；带了但值为空白＝点名了一个会话，回空页。队列屏分段标签上那枚待审计数不带会话条件——它是本租户待审那一臂的行数（按名搜索时跟着搜索走），不分会话；真正带 `sessionId` 的读是对话页那块本会话技能列表（3.17）：一路按会话取提名（`GET /api/admin/skill-drafts?status=PENDING&sessionId=`），一路取本会话已启用的目录（`GET /api/router/agent/session-skills/{sessionId}`，出现即启用，应答不带开关）。会话 id trim 后为空时提名那一腿不发（丢键得到的是别人的提名），并按「读不出来」报。webui 的会话抽屉读同两条（`harnax-webui/src/pages/session/components/SessionSkillsDrawer.tsx`），合并规则两端各写一份但判据同源；iOS 这一份把两路读各做成独立失败——一路挂了只丢它那半，另一路答上来的行照常可点，只有两路都没答才说读不出来。目录腿的失败按码分两档，两端各拿一个与 `unavailable` 并列的旗标（webui `readOutcome.noSandbox`、iOS `SessionSkillRead.noSandbox`），410 时不说泛化的读不出来而是说「这个会话的沙箱没有在运行」，与启用那一按的 410 同因同码（`SessionSkillController.kt:46`-`:51`，源头是 `SessionSkillStore.listEnabled` 在这种情况下回 `null`）；沙箱在跑而 `session-enabled/` 为空回 200 空数组，会话压根没绑到实例时代理在发出请求前自己回 200 空数组（`SessionRouterService.kt:513`），两种都是空列表而不是失败，两端都不亮那两句。
 - 拒绝有三条通道，界面处置完全相反：① 谁都动不了的走错误信封（未知草稿、`status` 传了不认识的值、批准不带 `expectedDigest`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/SkillDraftServiceImpl.kt:315`-`:318`）、驳回不带理由或理由超长（`:411`-`:414`））；② 界面必须据以再动作的随 HTTP 200 + `code:200` 回来，判据是 `data.outcome` 而不是状态码（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/SkillDraftDecisionResponse.kt:20`、`:51`-`:65`）；③ 晋升名被抢是唯一的例外——HTTP 仍 200，信封 `code` 是 409（`SkillDraftController.kt:120`-`:122`），界面要按 code 分这一支。
 - `EXPIRED` 在列定义里存在但没有任何代码写入，`STATUSES` 不含它（`SkillDraftServiceImpl.kt:619`，校验在 `:237`-`:238`），按它筛会被拒——筛选项因此只有三档，iOS 不加第四档。
 - 两份扫描永远不合并：`localFindings` 是 harnax 对落库字节现算的，非空即意味着批准技能会存成禁用（界面判据是 `skillStatus` 严格 `== 1`）；`scanFindings` / `scanVerdict` 是沙箱上报的，只展示，永远不会因此把技能存成禁用。
 - 批准必须原样回传当前 `contentDigest`，每次重读都刷新；六条 outcome 里只有 `NAME_TAKEN` 不触发重读（它要的是冲突框，重读会盖掉用户正要做的选择）。
+- 详情屏重读本行之后要向队列宣告一次：详情是 push 出来的，返回不销毁发起它的视图，队列的 `@StateObject` 因此活着跨过这一趟，而它唯一的自动读是 `.task` 里按 `.loading` 把关的那句 `refresh()`——不宣告就停在决定前的行上。宣告集与「触发重读」同域但不同集：`NAME_TAKEN` 早退不重读也不宣告，409 回滚重读详情却不宣告（行仍是待审，队列没有变化要取），错误信封与本地守卫同样沉默。不用 `.onAppear` 无条件重读，因为 `refresh()` 把页码复位到第一页，翻过几页的审核人一返回就被丢回顶上。网页端不需要这座桥：`history.back()` 重建列表组件，它的副作用自然再读一次。闸门 `Tests/HarnaxFeaturesTests/SkillNavigationTests.swift:223`，逐字段规格见 `specs/07-skill-draft-review.md` §5.2。
 - 决策落库是一条带 `status = 'PENDING'` 守卫的条件更新（`harnax-entity/src/main/resources/mapper/SkillDraftMapper.xml:73`-`:80`），第二个审核人拿到 0 而不是覆盖，界面因此显示「已被审核」；同一语句把 `reject_reason` 一并重写，批准时传 null（`SkillDraftServiceImpl.kt:340`），所以已批准的草稿上不会再挂着上一轮的驳回理由。
 - 长度上限按 UTF-16 码元计：驳回理由 512（`MAX_REJECT_REASON_CHARS`，`SkillDraftServiceImpl.kt:629`）、改名 100。Swift 的 `String.count` 是字素簇数，emoji 在前者算 2、在后者算 1，iOS 镜像判据一律用 `utf16.count`。
 - 服务端把 `pageSize` 夹在 1..1000（`SkillDraftServiceImpl.kt:632`），iOS 队列取 20，与 webui 一致。
-- iOS 侧的导航形状有闸门：入口行挂在会话列表内容相态之外（缺装配即整行撤掉，计数读失败只隐藏数字），队列页与审核详情两级都是 value push；「状态呈现的屏不许再往里 push」由 `Tests/HarnaxFeaturesTests/SkillNavigationTests.swift:186` 钉住。逐字段规格见 `specs/07-skill-draft-review.md`。
+- iOS 侧的导航形状有闸门：技能队列在 App 上只有治理枢纽那一行入口，枢纽按门面建行——这一域的门面没接上时整行消失，而不是留一个点进去必然失败的按钮；队列页与审核详情两级都是 value push；「状态呈现的屏不许再往里 push」由 `Tests/HarnaxFeaturesTests/SkillNavigationTests.swift:186` 钉住。逐字段规格见 `specs/07-skill-draft-review.md`。
 
 ### 13.8 记忆域：智能体记忆与会话记忆审批
 
@@ -392,8 +394,9 @@ print('all', len(all_t), 'with-dir', len(q), 'bare', len(all_t) - len(q),
 - 清除按前缀取全部对象，对话框必须点名被带走的三样（整理稿、全部每日记录、尚未并入的会话记忆），少说一样就是低估这一次删除（`MemoryStoreGateway.kt:153-165`）；`deletedObjects` 是两条路由全部对象的和，`0` 是合法答案并渲染成「什么都没删掉」而不是成功（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/MemoryDeleteResponse.kt:7-10`）。
 - 批准的门序本身是契约：digest → 桶可达 → 长期层版本 → 每个日子文件版本 → 抢 DB 声明 → 写（日子在前、整理稿在后）→ 清源文件（`MemoryDraftServiceImpl.kt:220-306`）；一次批准写 `1 + K` 个对象，K 是候选点名的日子文件数（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/MemoryDraftResponse.kt:96-97` 的 `targets`）。
 - 拒绝分两条通道，界面处置完全相反：谁都动不了的走错误信封（未知 `status`、批准不带 `expectedDigest`、驳回不带理由或超长、候选不属于本账号、记忆桶不可达）；界面必须据以再动作的随 HTTP 200 + `code:200` 回来，判据是 `data.outcome` 而不是状态码（`MemoryDraftDecisionResponse.kt:68-80` 五个常量，`:6-17` 的 KDoc 逐条说明每种拒绝要带哪个附加字段才可执行，`:44-45` 明确 `reason` 文案不是契约）。丢写竞态是唯一按信封 code 分支的一支——`BizException(409, …)` 两处：某个日子文件在跑动中被改（`MemoryDraftServiceImpl.kt:278`）、长期层在跑动中被改（`:285`），两处都把 DB 声明随事务回滚、候选仍是 PENDING，所以重读就是修复。
+- 候选队列与技能队列共用同一座详情→队列的宣告桥（§13.7）：返回不重建队列的 `@StateObject`，靠桥重读。差别只在宣告集——这一屏六个结局每一支都把行写过了，因此都宣告；409、其余错误信封与两条本地守卫不宣告。逐字段规格见 `specs/08-memory.md` §5.3。
 - **两种时间戳不许混**：记忆三处 `lastModified` 是存储层给的 `Instant.toString()`，取不到存储时间才退回写者嵌在信封里的原串（`MemoryStoreGateway.kt:787-790`）；候选三处是 Kotlin `LocalDateTime`（`MemoryDraftResponse.kt:40-50`），序列化不带时区。iOS 因此两屏只显日期、候选屏切的是无区墙钟，两侧不共用一个格式化器。
-- iOS 落点：治理枢纽三行依次是会话记忆审批 → 智能体记忆 → 技能晋升（`Sources/HarnaxFeatures/Governance/GovernanceRoute.swift:21-27`），门面没接上的那一臂整行消失（`Sources/HarnaxFeatures/Governance/GovernanceHomeView.swift:80-88`）；智能体向导的「长期记忆」开关走行模型 `Sources/HarnaxCore/Contract/AgentSummary.swift:33` 与保存模型 `Sources/HarnaxCore/Contract/AgentSaveDraft.swift:34`，控件行在 `Sources/HarnaxFeatures/Agents/AgentFormView.swift:365`。逐字段规格见 `specs/08-memory.md`。
+- iOS 落点：治理枢纽三行依次是会话记忆审批 → 智能体记忆 → 技能晋升（`Sources/HarnaxFeatures/Governance/GovernanceRoute.swift:21-27`），门面没接上的那一臂整行消失（`Sources/HarnaxFeatures/Governance/GovernanceHomeView.swift:77-85`）；智能体向导的「长期记忆」开关走行模型 `Sources/HarnaxCore/Contract/AgentSummary.swift:33` 与保存模型 `Sources/HarnaxCore/Contract/AgentSaveDraft.swift:34`，控件行在 `Sources/HarnaxFeatures/Agents/AgentFormView.swift:365`。逐字段规格见 `specs/08-memory.md`。
 
 ### 13.9 集群监控两屏：技能监控与调用监控
 

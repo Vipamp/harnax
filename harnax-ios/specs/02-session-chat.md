@@ -12,7 +12,6 @@
 
 - 桌面/平板双栏：左侧会话列表 + 右侧 `ChatWindow`；窄屏（移动端断点）单栏，列表页与聊天页互切，聊天页左上角有返回按钮。锚点 `harnax-webui/src/pages/session/index.tsx:107-110`（返回按钮渲染）、`harnax-webui/src/pages/session/index.tsx:256-264`（移动端单栏切换）、`harnax-webui/src/pages/session/index.tsx:153`、`harnax-webui/src/pages/session/index.tsx:230`（单/双栏容器分支）。
 - iOS 映射：`NavigationSplitView`（regular 宽度双栏 / compact 宽度单栏 push），返回即 `dismiss`。
-- iOS 独有的一行入口：会话列表顶部挂「技能晋升」行，通到本租户的草稿审核队列——Web 侧这一页在 `/optimization/skill-drafts`（`harnax-webui/config/routes.ts:147`-`:152`），不在会话列表里，所以这一行不对应 webui 的任何元素，只借会话列表的位置露出。行上的计数是租户级待审总数（这一行给的是审核链的导航，队列的会话谓词由本 spec「本会话自写技能」那一节的那次读用），读失败只隐藏数字不撤行；行名与它通向那一屏同用 `skill.draft.title` 一条键，行的挂载位置与两级 push 形状见 `harnax-ios/specs/07-skill-draft-review.md` §5.1。
 
 ### 列表数据加载
 
@@ -409,11 +408,12 @@
 
 ## 本会话自写技能（交叉引用）
 
-对话页标题栏最后一枚入口打开的那块列表，行为逐条写在 `FUNCTIONS.md` §3.17，队列侧的契约写在 `07-skill-draft-review.md`；本节只登记它跨的三条路由与一条读侧不变量。
+对话页标题栏最后一枚入口打开的那块列表，行为逐条写在 `FUNCTIONS.md` §3.17，队列侧的契约写在 `07-skill-draft-review.md`；本节只登记它跨的三条路由与读侧的不变量。
 
 - 读走 `SessionSkillReading` 一个门面、两条腿：提名腿 `GET /api/admin/skill-drafts?status=PENDING&sessionId=`（admin 队列的会话谓词），目录腿 `GET /api/router/agent/session-skills/{sessionId}`（`harnax-session-router/src/main/kotlin/com/agnetix/harnax/router/controller/AgentProxyController.kt:199` → `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/controller/SessionSkillController.kt:29`）。目录里出现即「已启用」，应答不带开关。
 - 写只有启用一条：`POST /api/router/agent/session-skills/{sessionId}/{name}/enable`（`AgentProxyController.kt:215`），没有请求体——操作者由 router 自己的鉴权上下文命名，这边发什么都是主张不是事实。
 - **两份读各走各的失败**：一条腿挂了只丢它那半，另一条腿答上来的行照常可点；只有两腿都没答才说「读不出来」。这条规矩存在是因为一份失败绝不能替另一份去回答「这个会话没提出过技能」。
+- **下拉不许换掉正在被拉的那张卡；被拆掉的那一轮不写结论**：整屏转圈收口在 `SessionSkillsViewModel.isFirstWait`（`Sources/HarnaxFeatures/Chat/SessionSkillsViewModel.swift`）——首读之后的重读只动 `isLoading`，画面不动；答复落地先过取消守卫（`guard !Task.isCancelled`，在代际守卫之后、任何状态写入之前），被拆掉的读不写行、不写两枚失败旗标。判据：源规则 `Tests/HarnaxFeaturesTests/PullRefreshGateTests.swift`（换卡拼写与 `Task.isCancelled` 各一条），行为 `Tests/HarnaxFeaturesTests/SessionSkillsViewModelTests.swift`（`testAPullFromAnAnsweredPanelDrawsNoFullScreenSpinner`、`testAReadWhosePullWasTornDownWritesNothing`）。
 
 ---
 

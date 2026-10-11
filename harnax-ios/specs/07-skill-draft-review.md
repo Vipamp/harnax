@@ -1,11 +1,11 @@
 # iOS 实现规格 07：自我进化（技能草稿审核）
 
-会话域内的技能草稿队列与人工审核，行为逐条对齐 harnax-webui 现存页面。所有锚点均为仓库内真实读过的行号（2026-10-06 首次逐条核过，2026-10-09 因 `SkillDraftServiceImpl` 插入会话过滤而全部重核），格式 `相对路径:行号`。后端统一 `ResultVo<T>` 信封 `{code, message, data}`；admin 的 Jackson 3 **丢弃 null 键**，因此除注明「必带」外，iOS DTO 一律可选。
+技能草稿队列与人工审核，入口在治理枢纽，行为逐条对齐 harnax-webui 现存页面。所有锚点均为仓库内真实读过的行号（2026-10-06 首次逐条核过，2026-10-09 因 `SkillDraftServiceImpl` 插入会话过滤而全部重核），格式 `相对路径:行号`。后端统一 `ResultVo<T>` 信封 `{code, message, data}`；admin 的 Jackson 3 **丢弃 null 键**，因此除注明「必带」外，iOS DTO 一律可选。
 
 ## 1. 范围与三条取舍
 
-- 入口挂会话域：会话列表顶部一屏一行，带待审计数。队列页与审核详情页都从这一行进。
-- 队列的过滤参数是 `status` / `name` / `sessionId` 三个（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/SkillDraftController.kt:55-73`），**按会话筛是服务端能力**；本 spec 这两屏（队列页与审核详情页）自己不带会话条件，badge 因此是「本租户待审总数」，不是「本会话条数」——那行给的是审核链的导航。带 `sessionId` 的那次读在会话页的本技能列表（见 `02-session-chat.md`），webui 的会话抽屉走同一条件。
+- 入口挂治理枢纽：智能体 tab 第四段一列三行队列，本队列占其中一行，队列页与审核详情页都从这一行进。
+- 队列的过滤参数是 `status` / `name` / `sessionId` 三个（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/SkillDraftController.kt:55-73`），**按会话筛是服务端能力**；本 spec 这两屏（队列页与审核详情页）自己不带会话条件，badge 因此是「本租户待审总数」，不是「本会话条数」。带 `sessionId` 的那次读在会话页的本技能列表（见 `02-session-chat.md`），webui 的会话抽屉走同一条件。
 - **`sessionId` 缺席与 `sessionId` 为空是两个问题**，服务端已分别定死（`SkillDraftServiceImpl.kt:243-255`）：不带这个键＝没提名任何会话，回整租户队列；带了但值是空白（`?sessionId=`／纯空格）＝点名为了一个会话，回**空页**。客户端因此不许用「丢掉这个键」来表达「这一页没有会话」——丢键拿回的是别的会话的提名，正是一块会话面板唯一不能做的事。会话 id trim 后为空时，这一腿根本不发，并按「读不出来」报（`harnax-ios/Sources/HarnaxAPI/SessionSkillClient.swift`）。
 - 技能可见性设置、用量分析页、独立审核历史页不在本轮范围。草稿详情自带的 `history` 轨迹在。
 
@@ -79,23 +79,25 @@
 
 ## 5. 界面
 
-新目录 `Sources/HarnaxFeatures/SkillDrafts/`：`SkillDraftListView.swift` / `SkillDraftListViewModel.swift` / `SkillDraftDetailView.swift` / `SkillDraftDetailViewModel.swift` / `SkillDraftPresentation.swift` / `SkillDraftEntryRow.swift`。
+新目录 `Sources/HarnaxFeatures/SkillDrafts/`：`SkillDraftListView.swift` / `SkillDraftListViewModel.swift` / `SkillDraftDetailView.swift` / `SkillDraftDetailViewModel.swift` / `SkillDraftPresentation.swift`。
 
-### 5.1 会话域入口
+### 5.1 治理枢纽入口
 
-`Chat/SessionListView.swift` 把入口行挂在 `content` 的相态**之外**（`content` 的顶部 `VStack`，`phases` 在其下），文案「技能晋升」——行名取的就是它通向那一屏自己的标题键 `skill.draft.title`，一处改动两处同步、不会各说各话；右侧待审计数——它导航的是租户级队列、读的是草稿，挂进列表就会跟着会话空态一起消失。两级导航都是 value push：入口行 push `SkillDraftQueueRoute`，`Chat/ChatTab.swift` 注册这个目的（它的 KDoc 就写着「只有目的住在这里」）；队列页内部再 push `SkillDraftRef(id: Int64)` 到审核详情，**行没有 id 就不给链接**，与会话行没有业务键就不给开的既有规则一致。队列不是叶子，所以它由状态呈现（`navigationDestination(item:)`/`(isPresented:)`）会被更深的 push 重复推一次——`SkillNavigationTests.testNoDomainPresentsAScreenThatPushesDeeper` 把这条形状钉成闸门。
+`Sources/HarnaxFeatures/Governance/GovernanceHomeView.swift` 一列三行队列，本队列占 `GovernanceRoute.skillDrafts` 那一行，文案「技能晋升」——行名取的就是它通向那一屏自己的标题键 `skill.draft.title`（`Sources/HarnaxFeatures/Governance/GovernanceRoute.swift:33` 对 `Sources/HarnaxFeatures/SkillDrafts/SkillDraftListView.swift:34`），一处改动两处同步、不会各说各话；`Tests/HarnaxFeaturesTests/SystemHomeTests.swift:44` 的 `testEachRowIsNamedByTheKeyItsOwnScreenTitlesItselfWith` 把这条命名规则钉成闸门。两级导航都是 value push：枢纽行 push `GovernanceRoute`（`Sources/HarnaxFeatures/Governance/GovernanceHomeView.swift:27-42` 注册目的地），队列页内部再 push `SkillDraftRef(id: Int64)` 到审核详情（`Sources/HarnaxFeatures/SkillDrafts/SkillDraftListView.swift:39-46`），**行没有 id 就不给链接**（`Sources/HarnaxFeatures/SkillDrafts/SkillDraftListView.swift:182-187`），与会话行没有业务键就不给开的既有规则一致。队列不是叶子，只能按值走：由状态呈现（`navigationDestination(item:)`/`(isPresented:)`）会被更深的 push 重复推一次——`Tests/HarnaxFeaturesTests/SkillNavigationTests.swift:186` 的 `testNoDomainPresentsAScreenThatPushesDeeper` 把这条形状钉成闸门。
 
-装配缺失即撤入口：`drafts` 门面为 nil 时这一行不渲染，不给一个注定失败的按钮。计数读失败**只隐藏数字，不撤行**（入口是导航，不是计数）。计数随会话列表的下拉刷新一起重取。
+装配缺失即撤入口：`drafts` 门面为 nil 时这一行不渲染，不给一个注定失败的按钮（`Sources/HarnaxFeatures/Governance/GovernanceHomeView.swift:82`）。待审计数只在队列页自己的分段标签上出现（`Sources/HarnaxFeatures/SkillDrafts/SkillDraftListView.swift:66` 取用，判据在 §5.2），枢纽行不带计数。
 
 ### 5.2 队列页
 
 数据：`PagedState<SkillDraftRow>` + 触底 `loadMore` + `refreshable`（`Contract/PagedState.swift`）。筛选：三档分段 `PENDING`/`APPROVED`/`REJECTED`，**没有「全部」档**，初值 PENDING（`harnax-webui/src/pages/skill/drafts.tsx:26,193-205`）。搜索：提交式，不用防抖，Enter/清除才发请求，值 trim 后进 `name`（`drafts.tsx:206-215`）。分页 20（`drafts.tsx:30-31`）。
 
-行内容照 webui 六列的语义压成两行卡：主标题 `name`；副行 `proposed`（`createTime`，`yyyy-MM-dd HH:mm`）· `last patched`（`updateTime`）· 上报命中数 + `scanVerdict` 标签 · 状态标签（`PENDING` 橙 / `APPROVED` 绿 / `REJECTED` 红，`drafts.tsx:10-14`）· `Decided by`（`reviewedBy` + `reviewedAt` 显示 `MM-DD HH:mm`，`drafts.tsx:148-156`）。
+行内容照 webui 六列的语义压成卡：主标题 `name`；副行 `proposed`（`createTime`，`yyyy-MM-dd HH:mm`）· `last patched`（`updateTime`）· 上报命中数 + `scanVerdict` 标签 · 状态标签（`PENDING` 橙 / `APPROVED` 绿 / `REJECTED` 红，`drafts.tsx:10-14`）· `Decided by`（`reviewedBy` + `reviewedAt` 显示 `MM-DD HH:mm`，`drafts.tsx:148-156`）。徽标那一排是 `HXFlow` 换行容器而不是 `HStack`（`Sources/HarnaxFeatures/SkillDrafts/SkillDraftListView.swift:221-242`）——`HXChip` 以 `.fixedSize()` 收尾（`Sources/HarnaxKit/Components/HXBadge.swift:45`）不给回宽度，`scanVerdict` 又是服务端给的原文，一排并排就能宽过卡片；记忆队列同一处同因同改，判据见 `08-memory.md` §5.3。
 
 **「已打补丁」标签谓词逐字照抄**：`updateTime` 严格晚于 `createTime` 才标，时间相等不标，`createTime` 缺失不标（`drafts.tsx:102`）。这条判据写成 Core 里的纯函数以便单测。
 
 其余条件渲染：待审计数标签只在 `status == .pending && total > 0` 时出现（`drafts.tsx:178-182`）；空态文案按 `status == .pending` 分两句（`drafts.tsx:230-233`）；列表底部一行队列说明（`drafts.tsx:250-255`）。
+
+**做完决定的那一趟，队列自己重读**：详情是 push 出来的，返回不销毁发起它的视图，队列的 `@StateObject` VM 因此活着跨过一次 push/pop；而它唯一的自动读是 `.task` 里那句按 `.loading` 把关的 `refresh()`（`Sources/HarnaxFeatures/SkillDrafts/SkillDraftListView.swift:35-37`）——返回时 `phase` 早不是 `.loading`，那一腿不跑，于是批准完退回队列，行还坐在「待审」里（2026-10-11 现场报的）。网页端不会有这一课：`history.back()` 重建 `drafts.tsx`，它的 `useEffect` 自然再读一次。收口走本仓现成的桥（模型公布状态、宿主视图 `onChange` 转成注入回调）：详情 VM 在**每次重读本行之后**点亮 `queueNeedsReload`（`Sources/HarnaxFeatures/SkillDrafts/SkillDraftDetailViewModel.swift:36-42`、`:348-351`），详情视图把它转成一次回调（`Sources/HarnaxFeatures/SkillDrafts/SkillDraftDetailView.swift:52-57`），队列在目的地构造处把回调接到 `vm.refresh()`（`Sources/HarnaxFeatures/SkillDrafts/SkillDraftListView.swift:39-46`）。宣告条件与 §5.4 的「是否重读」列**同域但不同集**：`apply(_:)` 的每一支都走到那句宣告（表中除 `NAME_TAKEN` 的七行），因为批准成功、驳回成功、草稿变、别人已决、第六个未知 token 都在服务端把这一行写过了。`NAME_TAKEN` 早退（`Sources/HarnaxFeatures/SkillDrafts/SkillDraftDetailViewModel.swift:329-337`）不宣告；409 回滚（`Sources/HarnaxFeatures/SkillDrafts/SkillDraftDetailViewModel.swift:284-290`）与错误信封、两条本地守卫也不宣告——那几支草稿仍是待审，队列里那一行没动，重读只是详情自己重新拿一份 digest。不选 `.onAppear` 无条件重读：`refresh()` 把页码复位到第一页，翻过几页的审核人一返回就被丢回顶上；标记只在行真被重读过的那一支点亮，一次决定也只宣告一次。
 
 ### 5.3 详情页
 
@@ -122,6 +124,8 @@
 
 「打开技能」跳已有技能详情（`Skills/SkillDetailView.swift`），依赖 `HarnaxDependencies.skills.skill(id:)`；拿不到 skills 门面时这句提示不带跳转。
 
+「是否重读」那一列说的是详情屏自己；凡「是」的行还欠队列屏一次重读，除 409 那一行——它把草稿留在待审，队列里那一行没动（判据见 §5.2）。
+
 ### 5.5 冲突框
 
 `NAME_TAKEN` 才开。**预选 `rename`**（`draftDetail.tsx:511`），选项顺序 rename 在前、replace 在后。`newName` 输入框只在选中 rename 时出现，占位符是草稿名，规则：必填、非空白、长度 ≤100；校验时不 trim、提交时 trim（`draftDetail.tsx:524-551,264-273`）。有 `skillId` 时给「查看占用该名的技能」入口（`draftDetail.tsx:501-510`）。**取消时关框 + 清表单 + 重读**（`draftDetail.tsx:485-489`）——重读是为了拿到可能已变的 digest。
@@ -146,12 +150,12 @@
 
 - `Tests/HarnaxCoreTests/`：`isPatched`（相等不标 / 缺 createTime 不标 / 晚于才标）、`utf16` 长度判据（512 合法、513 拒、emoji 串与服务端同判）、digest 截断 12/16、`origin == "agent_promoted"` 判定、`skillStatus` 严格 == 1、状态与 verdict 的颜色/键映射。
 - `Tests/HarnaxAPITests/`：endpoint 构造（路径无 `/page`、`status` 必发、`name` trim 且空则省略、分页参数）、两个 payload 的编码形状（首次批准恰好一个键、rename 三键、replace 两键且无 `newName`）、解码夹具（admin 丢 null 键的形状、`resources` 是对象、五种 outcome 各一份、第六个未知 outcome 走 `.unknown`）。
-- `Tests/HarnaxFeaturesTests/`：两个 VM 用 fake 门面。列表——筛选切换重置页码、搜索提交、触底翻页、pending 标签的两条件；详情——六个 outcome 的状态迁移（含 `NAME_TAKEN` **不重读**、其余都重读）、409 分支、无 digest 时不发请求、冲突框取消会重读、驳回 trim 值入参。
-- 门禁：worktree 内 `swift build --build-tests` + `swift test`（宿主 macOS，无外部依赖）。基线 2093 测试全绿，任何新增都必须保持全绿。
+- `Tests/HarnaxFeaturesTests/`：两个 VM 用 fake 门面。列表——筛选切换重置页码、搜索提交、触底翻页、pending 标签的两条件；详情——六个 outcome 的状态迁移（含 `NAME_TAKEN` **不重读**、其余都重读）、409 分支、无 digest 时不发请求、冲突框取消会重读、驳回 trim 值入参。返回队列那一趟（§5.2）由三支钉住：`SkillDraftDetailViewModelTests.swift:565` 的 `testADecisionThatReReadsTheRowAsksTheQueueToReload`（promoted／驳回成功／他人已决／草稿变四支都宣告）、`:604` 的 `testAPathThatLeavesTheRowPendingLeavesTheQueueAlone`（`NAME_TAKEN`、409 回滚、400 业务拒三支都不宣告），以及 `SkillNavigationTests.swift:223` 的 `testEachQueueReloadsForADecisionMadeOnItsRow`——它读源文件，钉两条队列屏的目的地里真接了 `onDecided`、两个详情视图里真有那句 `onChange`，接线一旦删掉单测层看不见、这一支看得见。跨域共用的闸门还有三支同样管着本域的屏：`PinnedBarFillGateTests.swift` 钉住顶部段选条与状态屏之间谁拿剩余高度（§5.2），`ChipRowWrapGateTests.swift` 钉住徽标那一排问的是换行容器而不是 `HStack`、并钉住 `HXChip` 还带着 `.fixedSize()` 这个前提，`TitleStyleGateTests.swift` 钉住本域两屏的标题只经 `harnaxTitle` 下发（居中内联，`DESIGN.md` §7）、不许出现裸 `navigationTitle`。
+- 门禁：worktree 内 `swift build --build-tests` + `swift test`（宿主 macOS，无外部依赖）。基线 2336 测试全绿，任何新增都必须保持全绿。
 
 ## 8. 记账（本轮不做或做不了）
 
-- 本会话级计数与提名：`sessionId` 过滤参数已在服务端交付，读它的是会话页那块本会话技能列表（`02-session-chat.md`），入口行与队列页仍按租户全量。会话 id 空白时那一腿不发（§1 末条）已实现并由 `Tests/HarnaxAPITests/SessionSkillWireTests.swift` 钉住，不在未做之列。
-- 无推送、无轮询：新草稿要下拉刷新才反映。webui 同样需要手动刷新，故不算偏离，但也不会更即时。
+- 本会话级计数与提名：`sessionId` 过滤参数已在服务端交付，读它的是会话页那块本会话技能列表（`02-session-chat.md`），队列页仍按租户全量。会话 id 空白时那一腿不发（§1 末条）已实现并由 `Tests/HarnaxAPITests/SessionSkillWireTests.swift` 钉住，不在未做之列。
+- 无推送、无轮询：**别人的**新草稿要下拉刷新才反映。webui 同样需要手动刷新，故不算偏离，但也不会更即时。自己刚做完的那一次决定不在此列——返回队列时由 `queueNeedsReload` 主动重读（§5.2），因为那一行正是审核人回来要看的。
 - `EXPIRED` 不上筛选项：后端 `STATUSES` 不含它，按它筛会被拒（`SkillDraftServiceImpl.kt:619`，校验在 `:237-238`）。
 - 详情正文渲染复用 `HXMarkdownText`，其离线解析器对表格/代码块的覆盖不及 webui 的 `ReactMarkdown + remarkGfm`；这是既有约束，不在本轮扩。

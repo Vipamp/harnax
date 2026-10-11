@@ -28,11 +28,11 @@
 | 候选 | 落点 | 判断 |
 |---|---|---|
 | A 智能体 tab 第四段 | 段枚举 `harnax-ios/Sources/HarnaxFeatures/Agents/AgentHomeView.swift:8` 的 `governance`（`:12`）、段名键 `:21`、出口分支 `:58` | **取定**。网页把 `/optimization/memory` 挂在一级「优化治理」组内、明确不带管理员闸（`harnax-webui/config/routes.ts:139-146`），而这一页本身是一行一台智能体；第四段按这个归属摆放；分段条按选项等分宽度（`harnax-ios/Sources/HarnaxKit/Components/HXSegmented.swift:42`），上下文 tab 已排到五段，第四段没有宽度问题 |
-| B 「我的」的管理组 | `harnax-ios/Sources/HarnaxFeatures/SystemDomain/SystemRoute.swift:20` 加一个 case | 否。那一组是管理域，非管理员少一行（`harnax-ios/Sources/HarnaxFeatures/SystemDomain/SystemRoute.swift:25`，注册与出口在 `harnax-ios/Sources/HarnaxFeatures/Me/MeView.swift:79`、`:131`）；记忆是本人数据，挂进去要么被那道闸误伤，要么破坏这一组的含义 |
+| B 「我的」的管理组 | `harnax-ios/Sources/HarnaxFeatures/SystemDomain/SystemRoute.swift:20` 加一个 case | 否。那一组是管理域，非管理员少一行（`harnax-ios/Sources/HarnaxFeatures/SystemDomain/SystemRoute.swift:23-25`，注册与出口在 `harnax-ios/Sources/HarnaxFeatures/Me/MeView.swift:79`、`:131`）；记忆是本人数据，挂进去要么被那道闸误伤，要么破坏这一组的含义 |
 | C 上下文 tab 第六段 | `harnax-ios/Sources/HarnaxFeatures/Context/ContextDomain.swift:5` 加一个 case | 否。那五段是 agent 可绑定的资源，`harnax-ios/Sources/HarnaxFeatures/Context/ContextView.swift:35` 的分支即按那个枚举展开；记忆不是可绑定资源 |
 | D 智能体行内下钻 | 行的下钻出口在 `harnax-ios/Sources/HarnaxFeatures/Agents/AgentListView.swift:51` 那一段 | 否。逐台翻达不到"看全并清干净"，而这一屏存在的理由正是那一条 |
 
-落地形状：智能体 tab 第四段是治理枢纽（`harnax-ios/Sources/HarnaxFeatures/Governance/GovernanceHomeView.swift:18`），三行按会话记忆审批 → 智能体记忆 → 技能晋升排（导航值枚举 `harnax-ios/Sources/HarnaxFeatures/Governance/GovernanceRoute.swift:21-27`，宿主没有那份 facade 的行不出现 `harnax-ios/Sources/HarnaxFeatures/Governance/GovernanceHomeView.swift:80-88`）→ 智能体记忆清单（一行一台，正文取整理稿，日期计数与「待并入」计数并列，见 `harnax-ios/Sources/HarnaxFeatures/Memory/MemoryListView.swift:195-205`）→ 单台详情（整理稿全文与按天流水）→ 行内删除，删除前给确认对话框并点全三层内容。
+落地形状：智能体 tab 第四段是治理枢纽（`harnax-ios/Sources/HarnaxFeatures/Governance/GovernanceHomeView.swift:16`），三行按会话记忆审批 → 智能体记忆 → 技能晋升排（导航值枚举 `harnax-ios/Sources/HarnaxFeatures/Governance/GovernanceRoute.swift:21-27`，宿主没有那份 facade 的行不出现 `harnax-ios/Sources/HarnaxFeatures/Governance/GovernanceHomeView.swift:77-85`）→ 智能体记忆清单（一行一台，正文取整理稿，日期计数与「待并入」计数并列，见 `harnax-ios/Sources/HarnaxFeatures/Memory/MemoryListView.swift:195-205`）→ 单台详情（整理稿全文与按天流水）→ 行内删除，删除前给确认对话框并点全三层内容。
 
 ## 4. 跨端契约要点
 
@@ -53,7 +53,7 @@
 | 屏 | `harnax-ios/Sources/HarnaxFeatures/Memory/MemoryListView.swift:39`、`harnax-ios/Sources/HarnaxFeatures/Memory/MemoryListViewModel.swift:20-28`、`harnax-ios/Sources/HarnaxFeatures/Memory/MemoryDetailView.swift:25`、`harnax-ios/Sources/HarnaxFeatures/Memory/MemoryDetailViewModel.swift:20-29` |
 | 开关 | `harnax-ios/Sources/HarnaxCore/Contract/AgentSummary.swift:33`、`harnax-ios/Sources/HarnaxCore/Contract/AgentSaveDraft.swift:34`：一个字段与三态编码 |
 | 开关 | `harnax-ios/Sources/HarnaxFeatures/Agents/AgentFormView.swift:365`、`harnax-ios/Sources/HarnaxFeatures/Agents/AgentFormViewModel.swift:188`：一行控件与一套状态迁移 |
-| 导航 | `harnax-ios/Sources/HarnaxFeatures/Agents/AgentHomeView.swift:12`、`harnax-ios/Sources/HarnaxFeatures/Governance/GovernanceHomeView.swift:29-44`：第四段与枢纽三行的出口 |
+| 导航 | `harnax-ios/Sources/HarnaxFeatures/Agents/AgentHomeView.swift:12`、`harnax-ios/Sources/HarnaxFeatures/Governance/GovernanceHomeView.swift:27-42`：第四段与枢纽三行的出口 |
 | 依赖 | `harnax-ios/Sources/HarnaxFeatures/Support/HarnaxDependencies.swift:36`：这一域的依赖，形参在 `:97`、赋值在 `:132`、装配在 `:196` |
 | 规格 | `harnax-ios/specs/08-memory.md`：落地后的客户端规格，与本文同一形状 |
 | 文案 | `harnax-ios/Sources/HarnaxKit/Resources/zh-Hans.lproj/Localizable.strings`、`harnax-ios/Sources/HarnaxKit/Resources/en.lproj/Localizable.strings`：`memory.*` 一整块 |
@@ -63,7 +63,7 @@
 
 - 两份目录表的新键**成块追加在文件末尾**，标题类文案与悬停说明各成一条，不在中间行插入：清单页标题 `memory.list.title`、空态 `memory.list.empty`、删除确认的三层点名列 `memory.purge.warning`、这一枚开关 `agent.wizard.memory` 与它的悬停说明 `agent.wizard.memory.hint`，以及「待并入」的解释句 `memory.pending.why`。
 - 两道门禁各自守什么：`harnax-ios/Tests/HarnaxKitTests/LocalizationKeyTests.swift:28` 要两份目录表的键集合逐字相等，`:99` 要源码里用到的每个键都在两份目录表里存在。新增文案因此必须中文与英文同批落，缺一份直接红。
-- 清单行的标题键与清单屏自己 `navigationTitle` 用的是同一个键，这一条由读源码的门禁守着（`harnax-ios/Tests/HarnaxFeaturesTests/SystemHomeTests.swift:44`）；文案指的路径必须在渲染它的那一屏真的存在，删除确认那句点名的"尚未并入的会话记忆"由服务端按前缀清扫带走，客户端虽不列出会话层正文，这一项照样要写。
+- 清单行的标题键与清单屏自己 `harnaxTitle` 用的是同一个键，这一条由读源码的门禁守着（`harnax-ios/Tests/HarnaxFeaturesTests/SystemHomeTests.swift:44`）；文案指的路径必须在渲染它的那一屏真的存在，删除确认那句点名的"尚未并入的会话记忆"由服务端按前缀清扫带走，客户端虽不列出会话层正文，这一项照样要写。
 
 ## 7. 判定条款
 
@@ -85,5 +85,5 @@
 |---|---|
 | 入口 | 智能体 tab 第四段的治理枢纽里的一行，段名键 `agent.segment.governance` 与屏名键 `governance.title` 分属两处；B、C、D 三条否决理由见第 3 节那一表 |
 | 两块是否同批 | 同批：这一枚开关的控件在智能体向导上，读清那一屏在治理枢纽里，拆开只多一次回归 |
-| 候选审批屏 | 已上 iOS：四条路由都有客户端出口（清单 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/MemoryDraftController.kt:56`、详情 `:94`、批准 `:111`、驳回 `:129`），屏在 `harnax-ios/Sources/HarnaxFeatures/MemoryDrafts/MemoryDraftListView.swift:38` 与 `harnax-ios/Sources/HarnaxFeatures/MemoryDrafts/MemoryDraftDetailView.swift:33` |
+| 候选审批屏 | 已上 iOS：四条路由都有客户端出口（清单 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/MemoryDraftController.kt:56`、详情 `:94`、批准 `:111`、驳回 `:129`），屏在 `harnax-ios/Sources/HarnaxFeatures/MemoryDrafts/MemoryDraftListView.swift:41` 与 `harnax-ios/Sources/HarnaxFeatures/MemoryDrafts/MemoryDraftDetailView.swift:37` |
 | 会话层正文 | 不做：会员也装这一层（判据见第 2 节），按会话列出因此是一屏待批进度而不是存档，而候选本身已经有表承载 |

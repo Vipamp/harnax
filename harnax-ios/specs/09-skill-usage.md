@@ -78,7 +78,7 @@
 
 ### 5.1 屏壳与四个相态
 
-`navigationTitle` 用 `skill.usage.title`（`Sources/HarnaxFeatures/SkillUsage/SkillUsageView.swift:27`），与 `MonitorRoute.skillUsage.titleKey`（`Sources/HarnaxFeatures/SystemDomain/MonitorRoute.swift:27`）**是同一个词的两个键**：行上印的与导航栏印的必须一致，但导航栏这一句要走 `Text(verbatim:)` 以免把键当正文（`Sources/HarnaxFeatures/SkillUsage/SkillUsageView.swift:27`）。右上角一个刷新按钮，无障碍标签 `state.action.reload`（`:28-37`）；`.task` 只在 `phase == .loading` 时首读（`:38-40`），`refreshable` 走同一条 `refresh()`（`:41`）。
+`harnaxTitle` 用 `skill.usage.title`（`Sources/HarnaxFeatures/SkillUsage/SkillUsageView.swift:27`），与 `MonitorRoute.skillUsage.titleKey`（`Sources/HarnaxFeatures/SystemDomain/MonitorRoute.swift:27`）**是同一个词的两个键**：行上印的与导航栏印的必须一致，但导航栏这一句要走 `Text(verbatim:)` 以免把键当正文，且只能经 `harnaxTitle` 下发（居中内联，`DESIGN.md` §7）——裸 `navigationTitle` 会带回大字标题，`TitleStyleGateTests` 会红。右上角一个刷新按钮，无障碍标签 `state.action.reload`（`:28-37`）；`.task` 只在 `phase == .loading` 时首读（`:38-40`），`refreshable` 走同一条 `refresh()`（`:41`）。
 
 四个相态各归各的句（`Sources/HarnaxFeatures/SkillUsage/SkillUsageViewModel.swift:20-31`）：`.loading` / `.content` / `.empty`（租户一个技能都看不见，即 `rows.isEmpty`，`:161`）/ `.failed(String)`。空态与错误态不许互相借词（`Sources/HarnaxFeatures/SkillUsage/SkillUsageView.swift:49-54`）；「筛选后没匹配到」是第三种消息，见 §5.2。被拒的**再读**不清屏：`inlineError` 以 `HXBanner` 画在控件之上、列表仍在（`Sources/HarnaxFeatures/SkillUsage/SkillUsageView.swift:63-70`，`Sources/HarnaxFeatures/SkillUsage/SkillUsageViewModel.swift:129-133`）。
 
@@ -112,7 +112,7 @@
 
 ### 5.6 表格下面那句窗口话
 
-两行 caption，各自条件渲染（`Sources/HarnaxFeatures/SkillUsage/SkillUsageView.swift:143-156`）：`skill.usage.window` 印的是 `answeredDays`——**服务端回显的窗口**（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/SkillUsageSummaryResponse.kt:17-18`，`Sources/HarnaxFeatures/SkillUsage/SkillUsageViewModel.swift:140`），不是本屏请求的那个数；回显缺失就不印这句而不是印一个猜测的跨度。`skill.usage.since` 印 `since` 归一化后的文本（`:141`）。前者带 `%d`、后者带 `%@`（`Sources/HarnaxKit/Resources/en.lproj/Localizable.strings:1615-1616`）。
+两行 caption，各自条件渲染（`Sources/HarnaxFeatures/SkillUsage/SkillUsageView.swift:143-156`）：`skill.usage.window` 印的是 `answeredDays`——**服务端回显的窗口**（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/SkillUsageSummaryResponse.kt:17-18`，`Sources/HarnaxFeatures/SkillUsage/SkillUsageViewModel.swift:140`），不是本屏请求的那个数；回显缺失就不印这句而不是印一个猜测的跨度。`skill.usage.since` 印 `since` 归一化后的文本（`:141`）。前者带 `%d`、后者带 `%@`（`Sources/HarnaxKit/Resources/en.lproj/Localizable.strings:1613-1614`）。
 
 ### 5.7 竞态：后到的旧答复什么都拿不走
 
@@ -120,7 +120,7 @@
 
 ## 6. 本地化
 
-命名空间 `skill` 与 `monitor` 都已在 `Tests/HarnaxKitTests/LocalizationKeyTests.swift:10-16` 的闸门表内，两份 `Localizable.strings` 里本域各占一个注释块：`Sources/HarnaxKit/Resources/en.lproj/Localizable.strings:1585-1616`、`Sources/HarnaxKit/Resources/zh-Hans.lproj/Localizable.strings:1586-1617`。
+命名空间 `skill` 与 `monitor` 都已在 `Tests/HarnaxKitTests/LocalizationKeyTests.swift:10-16` 的闸门表内，两份 `Localizable.strings` 里本域各占一个注释块：`Sources/HarnaxKit/Resources/en.lproj/Localizable.strings:1583-1614`、`Sources/HarnaxKit/Resources/zh-Hans.lproj/Localizable.strings:1584-1615`。
 
 屏上出现的键，全部已在中英两侧各自存在（逐条查过，无缺失）：
 
@@ -131,7 +131,7 @@
 - 行的最后一列：`skill.usage.lastEvent` · `skill.usage.lastEvent.none`
 - 窗口两句：`skill.usage.window`（`%d`）· `skill.usage.since`（`%@`）
 - 复用的既有键：`skill.table.unnamed`、`state.badge.enabled`、`state.badge.disabled`、`skill.origin.agent`、`skill.origin.human`、`state.action.reload`、`state.error.title`
-- 窗口三档与 `monitor` 面：`monitor.range.sevenDays` / `.thirtyDays` / `.ninetyDays`（`Sources/HarnaxFeatures/SkillUsage/SkillUsageViewModel.swift:48-53`，与 Token 监控共用同一批跨度词）、`monitor.section`（块头，`Sources/HarnaxFeatures/Me/MeView.swift:105`）、`monitor.skillUsage.subtitle`（行上那句副标题，`Sources/HarnaxFeatures/SystemDomain/MonitorRoute.swift:35`，在表中占 `Sources/HarnaxKit/Resources/en.lproj/Localizable.strings:1457`、`Sources/HarnaxKit/Resources/zh-Hans.lproj/Localizable.strings:1458`）；行标题不再另造键，它复用屏自己的 `skill.usage.title`（`Sources/HarnaxFeatures/SystemDomain/MonitorRoute.swift:27`，`Sources/HarnaxKit/Resources/en.lproj/Localizable.strings:1584`、`Sources/HarnaxKit/Resources/zh-Hans.lproj/Localizable.strings:1585`）
+- 窗口三档与 `monitor` 面：`monitor.range.sevenDays` / `.thirtyDays` / `.ninetyDays`（`Sources/HarnaxFeatures/SkillUsage/SkillUsageViewModel.swift:48-53`，与 Token 监控共用同一批跨度词）、`monitor.section`（块头，`Sources/HarnaxFeatures/Me/MeView.swift:105`）、`monitor.skillUsage.subtitle`（行上那句副标题，`Sources/HarnaxFeatures/SystemDomain/MonitorRoute.swift:35`，在表中占 `Sources/HarnaxKit/Resources/en.lproj/Localizable.strings:1455`、`Sources/HarnaxKit/Resources/zh-Hans.lproj/Localizable.strings:1456`）；行标题不再另造键，它复用屏自己的 `skill.usage.title`（`Sources/HarnaxFeatures/SystemDomain/MonitorRoute.swift:27`，`Sources/HarnaxKit/Resources/en.lproj/Localizable.strings:1582`、`Sources/HarnaxKit/Resources/zh-Hans.lproj/Localizable.strings:1583`）
 
 带参键只有两个，占位符各一个：`%d` 是天数、`%@` 是窗口起点文本。`testTemplatedCopyIsAlwaysCalledWithItsArguments`（`Tests/HarnaxKitTests/LocalizationKeyTests.swift:68-80`）不允许任何模板句被裸调用，`testEveryKeyUsedInSourceExistsInBothCatalogs`（`:99-110`）会把「源码用到、目录缺键」判红。它的取键方式决定了覆盖边界：除 `hx`/`HXText` 的调用位（`:198-201`）与 `hxCount` 的两个复数臂（`:189-197`）之外，它只认**引号里写全的点分字面量**（`:202-208`），因此经 `titleKey` 变量转手但整串写全的键在检（本域五个 `skill.usage.metric.*`、三个 `skill.usage.hint.*` 正是这一类，`Sources/HarnaxFeatures/SkillUsage/SkillUsagePresentation.swift:18-22,32-34`），而 `"...group.\(rawValue)"` 这种拼接落不进正则、整族不受检——那一族只能靠文档逐条数，见 `harnax-ios/specs/10-call-metrics.md` §6。图标名避开命名空间前缀：本屏用的 `books.vertical` / `square.stack` / `eye` / `bolt` / `moon` / `checkmark.circle` / `arrow.clockwise` / `exclamationmark.triangle` 都不以任一namespace 开头（`Sources/HarnaxFeatures/SystemDomain/MonitorRoute.swift:45`，`Sources/HarnaxFeatures/SkillUsage/SkillUsageView.swift:199-204,33,67`）。
 
