@@ -28,7 +28,7 @@
 不接收任何合成输入，所以一屏只要不能由启动参数命名，就永远不会被看见——它能编译、有单测，但从不进截图。
 
 - 启动参数四个：`-FIXTURE <screen>`、`-THEME <system|light|dark>`、`-LANG <system|en|zh-Hans>`、
-  `-SCROLL <points>`。`<screen>` 就是 `HarnaxDebugScreen` 的 case 名（71 个），一个 case 一个表面：tab、
+  `-SCROLL <points>`。`<screen>` 就是 `HarnaxDebugScreen` 的 case 名（81 个），一个 case 一个表面：tab、
   三种列表态、被 push 的详情页、以及所有由列表 present 出来的表单与 sheet。`-SCROLL` 是长表单折到折叠线以下
   的唯一办法。
 - 一条命令一张图：`xcrun simctl launch <udid> com.agnetix.harnax.ios -FIXTURE mcpForm -THEME dark`，随后
@@ -60,9 +60,9 @@
   固定文本用 `Text(verbatim:`）。
 - `Tests/HarnaxKitTests/LocalizationKeyTests.swift`：只扫 `Sources/`（不含 `App/`）。两份 `.strings` 的键集必须
   set 相等且 `sorted()` 相等、值非空；被判成键的是 `hx("…")`/`HXText("…")` 里的字面量，以及任意「带点且
-  首段命中命名空间」的小写字面量。当前命名空间：
-  `common, state, tab, login, server, me, context, env, agent, team, task, chat, model, tool, skill, mcp, cli,
-  channel, cron, token, monitor, log, error, auth, session`。
+  首段命中命名空间」的小写字面量。当前命名空间（与 `LocalizationKeyTests.namespaces` 同序）：
+  `common, state, tab, login, server, me, context, system, env, agent, team, task, chat, model, tool, skill,
+  mcp, cli, apikey, channel, cron, token, monitor, log, error, auth, session, governance, memory`。
   ⇒ SF Symbol 不能撞这些前缀（`server.rack` 会被当键）。安全示例：`sparkles`、`network`、`terminal`、
   `books.vertical`、`wrench.and.screwdriver`、`textformat`、`checkmark.circle.fill`、`link.badge.plus`、`ellipsis`。
 

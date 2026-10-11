@@ -83,7 +83,7 @@
 
 ### 5.1 会话域入口
 
-`Chat/SessionListView.swift` 把入口行挂在 `content` 的相态**之外**（`content` 的顶部 `VStack`，`phases` 在其下），文案「技能草稿」，右侧待审计数——它导航的是租户级队列、读的是草稿，挂进列表就会跟着会话空态一起消失。两级导航都是 value push：入口行 push `SkillDraftQueueRoute`，`Chat/ChatTab.swift` 注册这个目的（它的 KDoc 就写着「只有目的住在这里」）；队列页内部再 push `SkillDraftRef(id: Int64)` 到审核详情，**行没有 id 就不给链接**，与会话行没有业务键就不给开的既有规则一致。队列不是叶子，所以它由状态呈现（`navigationDestination(item:)`/`(isPresented:)`）会被更深的 push 重复推一次——`SkillNavigationTests.testNoDomainPresentsAScreenThatPushesDeeper` 把这条形状钉成闸门。
+`Chat/SessionListView.swift` 把入口行挂在 `content` 的相态**之外**（`content` 的顶部 `VStack`，`phases` 在其下），文案「技能晋升」——行名取的就是它通向那一屏自己的标题键 `skill.draft.title`，一处改动两处同步、不会各说各话；右侧待审计数——它导航的是租户级队列、读的是草稿，挂进列表就会跟着会话空态一起消失。两级导航都是 value push：入口行 push `SkillDraftQueueRoute`，`Chat/ChatTab.swift` 注册这个目的（它的 KDoc 就写着「只有目的住在这里」）；队列页内部再 push `SkillDraftRef(id: Int64)` 到审核详情，**行没有 id 就不给链接**，与会话行没有业务键就不给开的既有规则一致。队列不是叶子，所以它由状态呈现（`navigationDestination(item:)`/`(isPresented:)`）会被更深的 push 重复推一次——`SkillNavigationTests.testNoDomainPresentsAScreenThatPushesDeeper` 把这条形状钉成闸门。
 
 装配缺失即撤入口：`drafts` 门面为 nil 时这一行不渲染，不给一个注定失败的按钮。计数读失败**只隐藏数字，不撤行**（入口是导航，不是计数）。计数随会话列表的下拉刷新一起重取。
 

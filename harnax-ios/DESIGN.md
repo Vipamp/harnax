@@ -2,7 +2,7 @@
 
 ## 1. 目的与结论摘要
 
-本方案由三层文档构成，互不重复：本文件（`DESIGN.md`）定义产品范围、信息架构、接口契约、模块划分、里程碑与验收标准，并给出横切口径；同目录 `FEATURES.md` 是逐条能力清单，承担范围界定与验收对账；同目录 `specs/` 的七份文件是各页面与交付物的逐字段全量清单，每条结论都带 `路径:行号` 锚点指向 Web 侧与后端源码。同目录 `ui-mockup/index.html` 是 24 屏界面草图（浏览器直接打开），只定信息架构、控件形态与状态表现，不是视觉终稿；技能草稿的队列屏与审核详情屏不在草图内，那两屏的形态以 `specs/07-skill-draft-review.md` 第 5 节和 `FUNCTIONS.md` 4.5 为准。
+本方案由三层文档构成，互不重复：本文件（`DESIGN.md`）定义产品范围、信息架构、接口契约、模块划分、里程碑与验收标准，并给出横切口径；同目录 `FEATURES.md` 是逐条能力清单，承担范围界定与验收对账；同目录 `specs/` 的十份文件是各页面与交付物的逐字段全量清单，每条结论都带 `路径:行号` 锚点指向 Web 侧与后端源码。同目录 `ui-mockup/index.html` 是 24 屏界面草图（浏览器直接打开），只定信息架构、控件形态与状态表现，不是视觉终稿；技能草稿的队列屏与审核详情屏、记忆域的四屏、技能监控与调用监控三屏都不在草图内，那几屏的形态以 `specs/07-skill-draft-review.md`、`specs/08-memory.md`、`specs/09-skill-usage.md`、`specs/10-call-metrics.md` 各自第 5 节和 `FUNCTIONS.md` 为准。
 
 读法：拍范围与优先级看 `FEATURES.md`，写某个页面前看 `specs/` 对应那一份，两者有冲突时以本文件的横切约定为准、以代码为最终事实。
 
@@ -26,8 +26,9 @@
 | D6 | 排除项 | 用户管理、租户管理、修改密码、个人资料 | 用户裁定；后两项在 Web 侧同样不存在 |
 | D7 | 保留项 | 用户管理与租户管理两页不进 v1；切租户能力保留（属登录态能力，不属管理页），按 O1 定案的形态落地——只对拥有多个租户的账号出现在「我的」页，不进主导航 | `POST /api/admin/auth/switch-tenant` 会签发新令牌，`X-Tenant-ID` 受成员校验；候选列表来自 `GET /api/admin/auth/tenants`，该接口按 `user_tenant` 关联行返回、对管理员也不放宽 |
 | D8 | 交付目标 | 有付费开发者账号，可真机与 TestFlight | 用户裁定；APNs 推送因需后端改造后置 |
-| D9 | 图表 | 用 Swift Charts 重画，不引第三方 | 仅一个页面用到 3 饼 4 折，系统框架够用 |
+| D9 | 图表 | 用 Swift Charts 重画，不引第三方 | 用到图表的只有两页：Token 监控 3 饼 4 折，调用监控一条趋势折线（`Sources/HarnaxFeatures/CallMetrics/CallMetricsView.swift:469`），系统框架够用 |
 | D10 | 平台边界 | iPad 采用同一套自适应布局，不做独立形态 | 避免范围膨胀 |
+| D11 | Web 侧「优化治理」与「集群监控」两个一级在 iOS 的落点 | 「优化治理」落智能体 tab 的第四段（段名「治理」）里的一列枢纽，三行依次是会话记忆审批／智能体记忆／技能晋升；「集群监控」落「我的」页里与「系统管理」并列的一组三行。技能队列另保留会话列表顶部那一行作为第二入口 | iOS 没有一级菜单可加——tab 栏固定四段（`Sources/HarnaxFeatures/Root/HarnaxTab.swift:6-9`），第四段不占宽度；枢纽按门面建行，门面没接上的那一臂整行消失而不是留一个点进去白屏的入口（`Sources/HarnaxFeatures/Governance/GovernanceHomeView.swift:80-88`）；两组分开画是因为门不同——监控三行在 Web 侧都不带 access（`harnax-webui/config/routes.ts:165-179`），而环境变量／API Key／渠道是会写记录的实体 |
 
 ## 3. 产品范围
 
@@ -46,17 +47,22 @@ Web 侧路由定义见 `harnax-webui/config/routes.ts`，iOS 与之一一对应�
 | 上下文 | `/context/mcp` | 列表 + 编辑 + 详情 | 详情含工具列表与 OAuth 面板 |
 | 上下文 | `/context/skill` | 仓库列表 + 技能列表 | 含同步、安装、上传 |
 | 上下文 | `/context/skill/detail/:id` | 详情（正文 / 文件树两态） | Markdown 渲染 + 代码高亮 |
-| 优化治理 | `/optimization/skill-drafts` | 草稿队列 + 审核详情 | 智能体自写的技能先排队等人工批准；iOS 的入口挂在会话列表顶部，不在上下文那排分段里（`specs/07-skill-draft-review.md` §5.1） |
+| 优化治理 | `/optimization/memory/drafts` | 三臂队列（待审／已批准／已驳回）+ 批准与驳回 | 会话那一层抽出来的合并候选；iOS 主入口是治理枢纽第一行，行尾 badge 另发一次 `size: 1` 的待审读（`Sources/HarnaxCore/Contract/MemoryDraftCataloging.swift:47-57`） |
+| 优化治理 | `/optimization/memory/draft/detail/:id` | 候选详情（四部分提案 + digest 门） | 队列页内部再 push 一层；`hideInMenu`。批准必须原样回传当前 `contentDigest`，五种结局里三种是「界面要据以再动作」的拒绝，各带一个可执行字段（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/MemoryDraftDecisionResponse.kt:6-17`） |
+| 优化治理 | `/optimization/memory` | 列表 + 单智能体详情 + 清除 | 列表不分页——`GET /api/admin/memory` 回裸数组而不是 `Page`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/MemoryController.kt:54`）；清除对话框必须点名被前缀清扫带走的三样东西（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/MemoryStoreGateway.kt:153-165`） |
+| 优化治理 | `/optimization/skill-drafts` | 草稿队列 + 审核详情 | 智能体自写的技能先排队等人工批准；iOS 保留两个入口——治理枢纽第三行与会话列表顶部那一行（`specs/07-skill-draft-review.md` §5.1），后者是提案最可能被注意到的地方 |
 | 优化治理 | `/optimization/skill-draft/detail/:id` | 审核详情（六页签 + 批准 / 驳回 / 冲突处置） | 队列页内部再 push 一层；`hideInMenu` |
 | 上下文 | `/context/cli` | 列表 + 详情抽屉 | 含 kill switch 与关联检查 |
 | 系统 | `/system/channel` | 列表 + 条件字段表单 | 5 类型 × 4 接入模式矩阵，含微信扫码 |
 | 系统 | `/system/api-key` | 列表 + 编辑 | 一次性原始 Key 展示；Web 侧该页对非管理员不可见（O5） |
 | 系统 | `/system/env-variable` | 列表 + 编辑 | 敏感值掩码 |
-| 系统 | `/system/token-monitor` | 筛选 + 统计卡 + 图表 | 唯一图表页 |
+| 监控 | `/monitor/token-monitor` | 筛选 + 统计卡 + 图表 | 3 饼 4 折，一次进页并发 5 个请求、任一返回即重算；Web 侧旧地址 `/system/token-monitor` 只做保活重定向（`harnax-webui/config/routes.ts:175-179` 是新路由、`:199-204` 是那条 redirect） |
+| 监控 | `/monitor/skill-usage` | 窗口三档 + 汇总卡 + 行表 | 一屏一问：可见技能里哪些被读进过上下文、被照着做过几次、哪些一次都没有——窗口与事件谓词写在 `LEFT JOIN` 的 ON 子句里，零事件技能因此不会整行丢掉（`harnax-entity/src/main/resources/mapper/SkillUsageMapper.xml:39-62`）；Web 侧旧地址 `/context/skill-usage` 保活重定向（`harnax-webui/config/routes.ts:165-169`、`:99-104`） |
+| 监控 | `/monitor/call-metrics` | 折线趋势 + 五维分组表 + 按主体下钻 | 三条路由全是 GET；分组维有五个，且前三读小时聚合表、后二读明细表（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ToolMetricsServiceImpl.kt:69-73`）；可下钻的门是 `subjectId` 而不是维度，与控制台把抽屉挂在 calls 列上不同 |
 | 登录态 | `/login` | 登录页 + 服务器地址设置 | 见 §5 |
-| 兜底 | — | 我的（登录态、租户切换、主题、语言、退出） | 不含资料编辑与改密 |
+| 兜底 | — | 我的（登录态、租户切换、主题、语言、退出，外加「系统管理」与「集群监控」两组入口） | 不含资料编辑与改密；两组各按自己的门过滤（`Sources/HarnaxFeatures/Me/MeView.swift:79-105`） |
 
-Web 侧 `/context/mcp/detail/:id`、`/context/skill/detail/:id` 与 `/optimization/skill-draft/detail/:id` 是 `hideInMenu` 的子路由，iOS 用 push 导航承载；`/mcp/oauth/callback` 是无布局的回跳页，iOS 上由应用内 `WKWebView` 承接这条回跳——那行注册只存得住 http(s) 的 `redirect_uri`，所以拿它逐段比对每一次导航，命中即取消加载并由本端发 `exchange`，徽标最后仍以 `status` 那次读为准（见第 13 章 13.4 的六步状态机）。`/welcome` 是数据全硬编码的演示页，`/context/channel` 是保活重定向，两者都不进 iOS。
+Web 侧 `/context/mcp/detail/:id`、`/context/skill/detail/:id`、`/optimization/memory/draft/detail/:id`（`harnax-webui/config/routes.ts:134-138`）与 `/optimization/skill-draft/detail/:id` 是 `hideInMenu` 的子路由，iOS 用 push 导航承载；`/mcp/oauth/callback` 是无布局的回跳页，iOS 上由应用内 `WKWebView` 承接这条回跳——那行注册只存得住 http(s) 的 `redirect_uri`，所以拿它逐段比对每一次导航，命中即取消加载并由本端发 `exchange`，徽标最后仍以 `status` 那次读为准（见第 13 章 13.4 的六步状态机）。`/welcome` 是数据全硬编码的演示页，`/context/channel` 是保活重定向，两者都不进 iOS。
 
 ### 3.2 明确不进 v1（记账项）
 
@@ -254,14 +260,14 @@ HarnaxApp                App target：场景、导航、依赖装配
 | M1 上下文域 | 模型、工具、MCP（含 OAuth 回跳改造）、技能（含上传与详情文件树）、技能草稿（队列 + 审核详情 + 批准/冲突/驳回三条流）、CLI | 五个域可增改查，连通性测试与关联拦截可用；队列能筛能翻页，批准一条草稿后 Web 侧同一份配置可见 |
 | M2 智能体域（配置） | 智能体 5 步向导、团队、四类绑定与环境参数、刷新受影响会话 | 能建出一个带工具与技能的智能体并在 Web 侧看到同一份配置 |
 | M3 对话全量 | 会话列表、分段渲染、工具确认、计划面板、slash 命令、权限模式、图片、workspace、团队多路合并 | 第 11 章第 5 条端到端链路通过；与 Web 同一会话逐段对照渲染结果一致 |
-| M4 任务与系统域 | 定时任务、Channel（含微信扫码、含渠道级三开关）、API Key、环境变量、Token 监控。O6 的后端改动已随渠道域合入（三列进了两个请求 DTO、`fromEntity` 与创建/更新映射齐备），本阶段只剩 iOS 侧表单与两条写侧守卫的判据复刻 | 图表数值与 Web 同源一致；Channel 五种类型配置可完成；三开关写入后内部接口读到同一值 |
+| M4 任务与系统域 | 定时任务、Channel（含微信扫码、含渠道级三开关）、API Key、环境变量、Token 监控，另加智能体 tab「治理」段的那一列枢纽（会话记忆审批／智能体记忆／技能晋升）与「我的」里「集群监控」组的技能监控、调用监控两屏。O6 的后端改动已随渠道域合入（三列进了两个请求 DTO、`fromEntity` 与创建/更新映射齐备），本阶段只剩 iOS 侧表单与两条写侧守卫的判据复刻 | 图表数值与 Web 同源一致；Channel 五种类型配置可完成；三开关写入后内部接口读到同一值；枢纽行按门面接上与否整行出现或消失、不留点进去白屏的入口；集群监控三行在任何账号下都在，系统管理三行仍按账号过滤 |
 | M5 收口 | 双语、无障碍、全 app 深浅两档逐屏走查、TestFlight 分发、签名与隐私清单 | 内部试用一轮，无阻断缺陷；逐屏两档走查表全绿 |
 
 M3 与 M4 可并行拆分给不同人。开工前必须先落 §14 的 R1：开发期绕开 Nginx 直连 Admin `28080` / Router `28081` 并在 ATS 里配例外域，否则 M0 的「真机能登录」这条出口判据达不到；R7（Swift 工程骨架、CI、图标基线）由 M0 本身建成。
 
 ## 13. 各页面字段级规格
 
-逐字段的全量清单落在同目录 `specs/` 的七份文件里，每份都带 `路径:行号` 锚点。计数口径是「形如 `文件名.扩展名:行号` 的出现次数，一处并列写多个行号（`:42,50,88`）算一条」：`specs/` 七份合计 1637 条（01 为 411、02 为 436、03 为 159、04 为 364、05 为 199、06 为 5、07 为 63），本文件 87 条，`FEATURES.md` 与 `FUNCTIONS.md` 各 0 条——后两份一份是档位清单、一份只写行为，都不带锚点。其中带目录的全路径锚点 1657 条已用脚本逐条核过「文件存在 + 行号在文件行数内」，无一条指向不存在的文件或越界的行号；只写裸文件名的 67 条不在这条判据里（其中 07 那一份占 52 条），它们靠仓库内同名文件唯一来定位，例外是 `CompactionConfig.java` 那一处指向上游 sources jar、本来就不在仓库里。另有 12 处本文件以行内代码点名 `specs/` 里的某份文档（本章表格七行、§1 一处、§3.1 一处、本章 13.3 一处、本章 13.7 一处、§15 的 O7 一处），七份文档都被点到、文件都已在位。本章给的是写码时要对照的口径摘要；两者冲突以代码为准，代码与 `specs/` 冲突时以 `specs/` 里更细的锚点为准。
+逐字段的全量清单落在同目录 `specs/` 的十份文件里，每份都带 `路径:行号` 锚点。计数口径是「形如 `文件名.扩展名:行号` 的出现次数，一处并列写多个行号（`:42,50,88`）算一条」：`specs/` 十份合计 2420 条（01 为 411、02 为 443、03 为 159、04 为 365、05 为 199、06 为 5、07 为 64、08 为 413、09 为 121、10 为 240），本文件 151 条，`FEATURES.md` 与 `FUNCTIONS.md` 各 0 条——后两份一份是档位清单、一份只写行为，都不带锚点。其中带目录的全路径锚点 2478 条已用脚本逐条核过「文件存在 + 行号在文件行数内」，无一条指向不存在的文件或越界的行号；只写裸文件名的 93 条不在这条判据里（其中 07 那一份占 53 条、本文件占 28 条），它们靠仓库内同名文件唯一来定位，例外是 `CompactionConfig.java` 那一处指向上游 sources jar、本来就不在仓库里。另有 21 处本文件以行内代码点名 `specs/` 里的某份文档（本章表格十行、§1 四处、§3.1 一处、本章 13.3 一处、本章 13.7 一处、本章 13.8 一处、本章 13.9 两处、§15 的 O7 一处），十份文档都被点到、文件都已在位。本章给的是写码时要对照的口径摘要；两者冲突以代码为准，代码与 `specs/` 冲突时以 `specs/` 里更细的锚点为准。
 
 重跑这两个计数用同一段脚本（在 `harnax-ios/` 下执行），免得下一次改动把数字留在旧值上：
 
@@ -291,7 +297,7 @@ print('all', len(all_t), 'with-dir', len(q), 'bare', len(all_t) - len(q),
       'unresolved', sum(1 for x in q if not exists(x)))
 ```
 
-`exists` 里两个根是必要的：锚点有两种写法，`harnax-admin/...`、`harnax-webui/...` 从仓库根算起（脚本里的 `..`），`Sources/...`、`Tests/...`、`Package.swift` 从 `harnax-ios/` 算起（脚本里的 `.`）。最后一行的实测输出是 `specs 1637 / all 1724 / with-dir 1657 / bare 67 / unresolved 0`。
+`exists` 里两个根是必要的：锚点有两种写法，`harnax-admin/...`、`harnax-webui/...` 从仓库根算起（脚本里的 `..`），`Sources/...`、`Tests/...`、`Package.swift` 从 `harnax-ios/` 算起（脚本里的 `.`）。最后一行的实测输出是 `specs 2420 / all 2571 / with-dir 2478 / bare 93 / unresolved 0`。
 
 | 文件 | 覆盖页面 | 「未确认」条数 / 其中已回代码核实 |
 |---|---|---|
@@ -302,6 +308,9 @@ print('all', len(all_t), 'with-dir', len(q), 'bare', len(all_t) - len(q),
 | `specs/05-task-domain.md` | 任务列表与轮询、新建/编辑表单与 cron 互斥、写侧拒绝的 code 对照、执行日志与停止语义 | 5 / 0 |
 | `specs/06-app-icon.md` | 图标母题与构图、pine/brass 配色、交付物与工程接线、小尺寸实测、再生成管线 | 无「未确认」章节 |
 | `specs/07-skill-draft-review.md` | 会话域入口行、草稿队列、审核详情六 Tab、批准/冲突/驳回三条流、六条 outcome 的界面处置 | 无「未确认」章节，四条口径记在第 8 节 |
+| `specs/08-memory.md` | 治理枢纽三行、智能体记忆列表与详情、清空的三件损失、会话记忆审批队列与五种结局的详情、批准/驳回/清除各自的再动作字段、向导里那枚长期记忆开关 | 无「未确认」章节，四条口径记在第 8 节 |
+| `specs/09-skill-usage.md` | 技能监控的一条路由一个参数、五个数字与服务端四个的差、只看没用过的这一列筛选、窗口三档与答复回显、行的两枚 pill | 无「未确认」章节，七条口径记在第 8 节 |
+| `specs/10-call-metrics.md` | 调用监控的三读两表五分组维、四张卡与趋势折叠、下钻闸与明细翻页、画像面板为什么不搬 | 无「未确认」章节，八条口径记在第 8 节 |
 
 「已核实」只统计各文件「未确认」章节里显式标了「已定案／已核实／已查实／已裁定」的条目，五份带该章节的文件合计 42 条中已收口 17 条（八项产品问题已全部拍板，剩余 25 条是写码前实测项或待产品裁定的开口）；其余条目是写码前需要实测或产品拍板的开口，没有一条可以当作已验证前提。
 
@@ -343,14 +352,14 @@ print('all', len(all_t), 'with-dir', len(q), 'bare', len(all_t) - len(q),
 - 技能仓库的「同步」是两个口的组合：`GET /skill-sources/{id}/fetch` 拿预览，`POST /skill-sources/{id}/install` 落库，后端没有 `sync` 口；上传是 multipart，字段名 `file` 与 `name`；安装结果 `200` 不等于全成功，要按新增／`flagged`／`stale` 分区渲染。技能没有删除入口，删除只在仓库侧。
 - 技能详情的资源文件没有独立读取接口，全部来自详情响应；Markdown 正文即 `skillmd`。
 - `POST /api/admin/skills/batch` 是 `@Deprecated` 且 Web 零调用的旧口，iOS 不接。
-- CLI 是「全体登录用户可见可开关」的一页：路由不带 `access`（`harnax-webui/config/routes.ts:105`-`:110`，全仓只有 `/system/user`、`/system/tenant`、`/system/api-key` 三条加了管理员门禁），`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/CliController.kt:37`-`:95` 的读口与 `PUT /toggle/{id}` 也没有角色校验；又因 `CliResponse` 不含 `isPublic`/`creator`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/CliResponse.kt:21`-`:58`），§13.8 的两条权限规则在这页套不上。
+- CLI 是「全体登录用户可见可开关」的一页：路由不带 `access`（`harnax-webui/config/routes.ts:105`-`:110`，全仓只有 `/system/user`、`/system/tenant`、`/system/api-key` 三条加了管理员门禁），`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/CliController.kt:37`-`:95` 的读口与 `PUT /toggle/{id}` 也没有角色校验；又因 `CliResponse` 不含 `isPublic`/`creator`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/CliResponse.kt:21`-`:58`），§13.10 的两条权限规则在这页套不上。
 
 ### 13.5 系统域
 
 - 渠道是「类型 × 接入模式」的条件字段矩阵，`callbackKey` 从不下发、`callbackUrl` 只在 webhook 模式存在；`configJson` 与 `envValue` 都走「掩码回传＝不修改」协议；`http` 类型没有 adaptor，运行时会报 `no adaptor registered`，iOS 表单保留选项但灰显不可提交（O7）。渠道级 `enableThink` / `enableSearch` / `enablePlan` 三开关进 v1，取值沿用实体的 0/1 整数、与类型无关因此放在表单通用段而非条件段（O6：后端三列已落地）。iOS 要自己复刻的是非空即覆盖的更新语义——`thinkingFlagOrRefuse` 在调用方不传时按模型的思考规则取值，因此表单不能把「未动过」的开关序列成 `0` 上送。
 - API Key 的 `scope` 由前端传值决定，缺省 `"chat"`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ApiKeyServiceImpl.kt:91`），且 scope 不参与访问控制；原始 Key 只在创建与 `regenerate` 的响应里出现一次。`regenerate` 对 PERMANENT／SYSTEM 保护键没有服务端拦截，这是**既定出口而非遗漏**——改／删／停三处的拒绝文案自己写着「use regenerate instead」（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ApiKeyServiceImpl.kt:116`-`:117`、`:142`-`:143`、`:153`-`:154`，保护集 `:40`），Web 侧也按 `keyType` 灰显；iOS 不加客户端拦截，但二次确认要写清「换钥会让既有引用立即失效」。另一条要拍的板是可见性：Web 把这一页挂在管理员门禁下（`harnax-webui/config/routes.ts:205`-`:210`），见 O5。
 - 环境变量 `GET /list` 固定返回 `id` / `envKey` / `displayValue` / `sensitive` 四键，其中 `sensitive` 是布尔（全仓其余标志位都是 `0/1` 整数）；掩码三档规则见 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/EnvVariableServiceImpl.kt:275`-`:279`。
-- Token 监控是唯一图表页，一次进页并发 5 个请求、任一返回即重算；会话维度前端截 `slice(0, 10)`，周维度按周一对齐。
+- Token 监控是两页有图表的屏之一（另一页是调用监控的一条趋势折线，见 13.9），一次进页并发 5 个请求、任一返回即重算；会话维度前端截 `slice(0, 10)`，周维度按周一对齐。iOS 把它与技能监控、调用监控一起画在「我的」的「集群监控」组里（`Sources/HarnaxFeatures/SystemDomain/MonitorRoute.swift:16-23`）。
 - 租户：`GET /api/admin/auth/tenants` 只返回已有 `user_tenant` 关联行的租户，不给管理员放宽，而 `switch-tenant` 对管理员放行任意租户——两个口径不一致，O1 的呈现方案要处理这点。
 
 ### 13.6 登录与账号
@@ -372,7 +381,33 @@ print('all', len(all_t), 'with-dir', len(q), 'bare', len(all_t) - len(q),
 - 服务端把 `pageSize` 夹在 1..1000（`SkillDraftServiceImpl.kt:632`），iOS 队列取 20，与 webui 一致。
 - iOS 侧的导航形状有闸门：入口行挂在会话列表内容相态之外（缺装配即整行撤掉，计数读失败只隐藏数字），队列页与审核详情两级都是 value push；「状态呈现的屏不许再往里 push」由 `Tests/HarnaxFeaturesTests/SkillNavigationTests.swift:186` 钉住。逐字段规格见 `specs/07-skill-draft-review.md`。
 
-### 13.8 跨页面的字段级硬约定
+### 13.8 记忆域：智能体记忆与会话记忆审批
+
+- 两条链七个口：记忆侧 `GET /api/admin/memory`、`GET /api/admin/memory/{agentId}`、`DELETE /api/admin/memory/{agentId}`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/MemoryController.kt:42` 是前缀、`:49`、`:64`、`:83` 是三条映射），候选侧队列／详情／批准／驳回四条（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/MemoryDraftController.kt:43`、`:51`、`:89`、`:106`、`:124`）。两组都不是内网路径——`InternalApiAuthFilter` 只 gate `/api/admin/internal/` 前缀（`MemoryController.kt:32-35`），而服务身份在两条链上都被直接拒（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/MemoryServiceImpl.kt:99-101`、`MemoryDraftServiceImpl.kt:500`），共享密钥因此列不出任何人的记忆桶。
+- 记忆列表回的是**裸数组**不是 `Page`（`MemoryController.kt:54` 的 `ResultVo<List<MemoryAgentResponse>>`），iOS 因此不给这一屏挂分页状态机，只有队列侧用 `PagedState`。
+- 队列口**没有 `/page` 后缀**（`MemoryDraftController.kt:51` 是一个不带路径的 `@GetMapping`），与本 app 其余分页列表形状不同，照抄必错。
+- 路径参数 `{agentId}` 绑的是**运行时智能体名字**而不是数据库 id（`MemoryController.kt:70`、`:89`），iOS 必须按单个路径段百分号编码（`Sources/HarnaxAPI/MemoryEndpoint.swift:19`、`:23` 走 `Endpoint.segment`，实现 `Sources/HarnaxAPI/Transport/Endpoint.swift:99-101`）；带 `/`、`?`、`#` 的名字不编码就会被读成多一段或一条查询。
+- 「空列表」与「读失败」是两个事实：一次成功的空列表就是「还没有记忆」，这条写死在 KDoc 里（`MemoryController.kt:36-37`）；单智能体读不出来才回错误信封 `code:404` 加那句原文（`:73`），iOS 的判据是 `code == 404 && message == APIError.noMemoryMessage`（`Sources/HarnaxCore/Contract/Memory.swift:74`、`:82-84`）。名字非法是第三种——`BizException("Invalid agent id")` 用默认 400（`MemoryServiceImpl.kt:57-60`），走错误横幅而不是空态。
+- **会话自己那一层永远读不到正文**：路由不存在，只有长期层两条读（`MemoryController.kt:49`、`:64`），界面上那一层因此只能以一个整数出现（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/MemoryStoreGateway.kt:108`，计数实现 `:468-472` 按会话去重）。文案因此说「还没并入」，不说「等你审批」——驳回只重写 DB 那一行、全程不碰存储（`MemoryDraftServiceImpl.kt:314-338`），同一份内容下一轮还会再提。
+- 清除按前缀取全部对象，对话框必须点名被带走的三样（整理稿、全部每日记录、尚未并入的会话记忆），少说一样就是低估这一次删除（`MemoryStoreGateway.kt:153-165`）；`deletedObjects` 是两条路由全部对象的和，`0` 是合法答案并渲染成「什么都没删掉」而不是成功（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/MemoryDeleteResponse.kt:7-10`）。
+- 批准的门序本身是契约：digest → 桶可达 → 长期层版本 → 每个日子文件版本 → 抢 DB 声明 → 写（日子在前、整理稿在后）→ 清源文件（`MemoryDraftServiceImpl.kt:220-306`）；一次批准写 `1 + K` 个对象，K 是候选点名的日子文件数（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/MemoryDraftResponse.kt:96-97` 的 `targets`）。
+- 拒绝分两条通道，界面处置完全相反：谁都动不了的走错误信封（未知 `status`、批准不带 `expectedDigest`、驳回不带理由或超长、候选不属于本账号、记忆桶不可达）；界面必须据以再动作的随 HTTP 200 + `code:200` 回来，判据是 `data.outcome` 而不是状态码（`MemoryDraftDecisionResponse.kt:68-80` 五个常量，`:6-17` 的 KDoc 逐条说明每种拒绝要带哪个附加字段才可执行，`:44-45` 明确 `reason` 文案不是契约）。丢写竞态是唯一按信封 code 分支的一支——`BizException(409, …)` 两处：某个日子文件在跑动中被改（`MemoryDraftServiceImpl.kt:278`）、长期层在跑动中被改（`:285`），两处都把 DB 声明随事务回滚、候选仍是 PENDING，所以重读就是修复。
+- **两种时间戳不许混**：记忆三处 `lastModified` 是存储层给的 `Instant.toString()`，取不到存储时间才退回写者嵌在信封里的原串（`MemoryStoreGateway.kt:787-790`）；候选三处是 Kotlin `LocalDateTime`（`MemoryDraftResponse.kt:40-50`），序列化不带时区。iOS 因此两屏只显日期、候选屏切的是无区墙钟，两侧不共用一个格式化器。
+- iOS 落点：治理枢纽三行依次是会话记忆审批 → 智能体记忆 → 技能晋升（`Sources/HarnaxFeatures/Governance/GovernanceRoute.swift:21-27`），门面没接上的那一臂整行消失（`Sources/HarnaxFeatures/Governance/GovernanceHomeView.swift:80-88`）；智能体向导的「长期记忆」开关走行模型 `Sources/HarnaxCore/Contract/AgentSummary.swift:33` 与保存模型 `Sources/HarnaxCore/Contract/AgentSaveDraft.swift:34`，控件行在 `Sources/HarnaxFeatures/Agents/AgentFormView.swift:365`。逐字段规格见 `specs/08-memory.md`。
+
+### 13.9 集群监控两屏：技能监控与调用监控
+
+- 三行都在「我的」的「集群监控」组里（`Sources/HarnaxFeatures/SystemDomain/MonitorRoute.swift:16-23`，绘制与过滤在 `Sources/HarnaxFeatures/Me/MeView.swift:98-119`），**一行都不看账号**：控制台三条监控路由都不带 access（`harnax-webui/config/routes.ts:165-179`），同一份文件里带 access 的只有用户、租户、API Key 三条。会写记录的实体才需要门，因此「我的」画两块而不是一块长列表，`SystemRoute` 里不再有任何监控项（`Sources/HarnaxFeatures/SystemDomain/SystemRoute.swift:18-25`）。
+- 技能监控是一路一参：`GET /api/admin/skill-usage/summary?days=`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/SkillUsageController.kt:23` 前缀、`:31` 映射）。它**自成一族**，不挂在 `/api/admin/skills/{id}` 下——那里的 `{id}` 是 `Long`，`skills/usage` 会被那条路由吃掉并解析失败（同一份文件 `:19-21` 的 KDoc）。`days` 缺省 30，服务端再夹进 1..365（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/SkillUsageServiceImpl.kt:113`）。
+- 四个汇总数是行的算术、不是第二条查询（`SkillUsageServiceImpl.kt:141-149`），所以汇总卡与行集天然自洽；「没用过」的谓词是 `viewCount == 0 && useCount == 0` 两条同时成立，不是「或」。这一屏的存在理由是行集含零事件技能——窗口与事件谓词写在 `LEFT JOIN` 的 ON 子句里而不是 WHERE（`harnax-entity/src/main/resources/mapper/SkillUsageMapper.xml:39-62`），写在 WHERE 会把一次事件都没有的技能整行丢掉。
+- 调用监控两读撑主屏、一读撑下钻，三条全是 GET（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/ToolMetricsController.kt:35`、`:56`、`:79`）；主屏进屏即并发发 `summary` 与 `time-series`，与控制台同一个 `useEffect` 里的 `Promise.all` 同形（`harnax-webui/src/pages/call-metrics/index.tsx:78-81`）。
+- 分组维有五个（`tool` / `mcp` / `cli` / `agent` / `session`，`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ToolMetricsServiceImpl.kt:464-471`），且不是装饰性划分：前三读小时聚合表、后二读明细表（`:69-73`）。`groupBy` 传不认识的值回落 `tool` 而不是报错（`:262-264`）。
+- 可下钻的门是 `subjectId` 而不是维度（`Sources/HarnaxCore/Contract/ToolMetrics.swift:73` 的 `isDrillable`）：服务端只在 mcp / cli / agent 三种行上给出这个 id，builtin / shell / framework 的 `subject_id` 是 0，session 维度直接 `CAST(NULL AS SIGNED)`（`harnax-entity/src/main/resources/mapper/ToolInvocationLogMapper.xml:73-77`）。控制台把抽屉挂在 calls 列上、对任何行都开（`harnax-webui/src/pages/call-metrics/index.tsx:250-262`），这是两端最大一处真实行为差。
+- 主体档案抽屉不移植：它读 agent / MCP / CLI / session 四张登记表，本域三条路由一概不答（`Sources/HarnaxFeatures/CallMetrics/CallInvocationsView.swift:12-14`），所以第二屏只答「这些次调用分别是哪一次」。
+- 窗口收口在服务端且回显：两端都接受 `yyyy-MM-dd HH:mm` 或裸 `yyyy-MM-dd`（先按小时解、再按天解，都失败即视为缺席，`ToolMetricsServiceImpl.kt:362-369`）；`kind` 是五个来源桶、`outcome` 是四个终态，两者都是空串等于不发谓词。租户不进参数——三条路由都没有 `tenantId` 形参（`ToolMetricsController.kt:20-28`），`X-Tenant-ID` 头是唯一定界手段。
+- 逐字段规格见 `specs/09-skill-usage.md` 与 `specs/10-call-metrics.md`。
+
+### 13.10 跨页面的字段级硬约定
 
 1. 判定成功一律走 `code == 200`；`message` 在成功时也是 `"success"`，不能拿它判空。
 2. 分页请求字段是 `pageNum` / `pageSize`，而 Web 前端类型声明的是 `size` / `current`（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/Page.kt:9`-`:13`）。iOS 按后端字段解码，不要照抄前端类型。
@@ -406,6 +441,6 @@ print('all', len(all_t), 'with-dir', len(q), 'bare', len(all_t) - len(q),
 | O3 | APNs 推送做不做、推什么 | 列入 v1.1，作为 v1.1 唯一新增后端接口项（v1 的后端改动只有 O6 的渠道 DTO 三列，已落地）；事件源先只开两个——定时任务失败、工具等待确认 | 移动管理台的真实增量就是「不在电脑前也能被叫回来处理确认」。其余事件（对话结束、Token 报表）噪音大于价值 |
 | O4 | 旧移动端工程与移动专用接口面何时下线 | 与 iOS M0 并行做，先删工程再删接口面 | §4.3 的顺序不可颠倒。趁 iOS 还没写第一行 Swift 之前把口径收干净，能避免实现阶段误引到那条面上 |
 | O5 | API Key 页是否照搬「仅管理员可见」 | 照搬：非管理员不显示入口，但「我的永久 Key」照常可看 | Web 的门禁只落在前端路由（`harnax-webui/config/routes.ts:205`-`:210` 的 `access: canAccessUserManagement`，判据 `harnax-webui/src/access.ts:13` 即 `isAdmin === 1`），后端 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/ApiKeyController.kt:23`-`:25` 没有任何管理员校验。iOS 若放开入口，等于给普通用户新开一条 Web 上刻意不给的能力面；而 `getMyPermanentKey`（`:128`）本来就是按人取自己的 Key，不必连带上列表 |
-| O6 | 渠道级「思考 / 联网 / 计划」三个开关进不进 v1 | **已定案（2026-09-28）：进 v1。后端改动已落地，iOS 只消费** | 三列在实体上（`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Channel.kt:49`-`:55`）、内部接口会读（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt:464`-`:466`），admin 侧三个 DTO 也都带上了（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelCreateRequest.kt:41`、`:44`、`:47`，`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelUpdateRequest.kt:36`、`:39`、`:42`，`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelResponse.kt:56`、`:59`、`:62`），读侧由 `ChannelResponse.kt:95`-`:115` 的 `fromEntity` 映射（三行在 `:107`-`:109`），写侧在 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ChannelServiceImpl.kt:84`-`:86` 的创建映射与 `:123`-`:125` 的更新映射。两条写侧守卫 iOS 要照着复刻：`capabilityFlag`（`:160`）把非 `1` 的一切取值当停用，`thinkingFlagOrRefuse`（`:169`-`:180`）在调用方不传时继承模型自身的规则、且拒绝把「要求深度思考的模型」的思考关掉——后者会以英文串抛出，属第 13.8 章第 7 条必须原样呈现的拒绝 |
+| O6 | 渠道级「思考 / 联网 / 计划」三个开关进不进 v1 | **已定案（2026-09-28）：进 v1。后端改动已落地，iOS 只消费** | 三列在实体上（`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Channel.kt:49`-`:55`）、内部接口会读（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt:464`-`:466`），admin 侧三个 DTO 也都带上了（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelCreateRequest.kt:41`、`:44`、`:47`，`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelUpdateRequest.kt:36`、`:39`、`:42`，`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/ChannelResponse.kt:56`、`:59`、`:62`），读侧由 `ChannelResponse.kt:95`-`:115` 的 `fromEntity` 映射（三行在 `:107`-`:109`），写侧在 `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/ChannelServiceImpl.kt:84`-`:86` 的创建映射与 `:123`-`:125` 的更新映射。两条写侧守卫 iOS 要照着复刻：`capabilityFlag`（`:160`）把非 `1` 的一切取值当停用，`thinkingFlagOrRefuse`（`:169`-`:180`）在调用方不传时继承模型自身的规则、且拒绝把「要求深度思考的模型」的思考关掉——后者会以英文串抛出，属第 13.10 章第 7 条必须原样呈现的拒绝 |
 | O7 | `http` 渠道类型给不给入口 | 给，但灰显且不可提交，标注「暂未支持」 | 后端把它当合法值接受，运行时找不到适配器、报 `no adaptor registered`（见 `harnax-ios/specs/03-system-domain.md` 的渠道矩阵）。让用户填完一整张表单才在运行期看到失败，比入口灰显更糟 |
 | O8 | 附件收取与下载留不留 v1 | 留，客户端把 404 当作「对象存储未开启」处理 | 该路由整控制器受开关控制（`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/OutputFileController.kt:36`-`:39`），`harnax-admin/src/main/resources/application.yml:96` 里 `${MINIO_ENABLED:false}` 默认关，但标准部署 compose 显式置 `true`（`harnax-deploy/docker-compose.yml:183`、`:478`）。也就是说部署环境能用、裸配置环境必 404，需要一条明确的降级表现而不是让页面报错 |
