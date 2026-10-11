@@ -470,4 +470,49 @@ final class MemoryDraftDetailViewModelTests: XCTestCase {
         await vm.load()
         XCTAssertEqual(vm.expectedDigest, "d-2")
     }
+
+    // MARK: - the queue hand-off
+
+    /// The skill queue's defect, reported 2026-10-11 and reproduced by this screen's identical wiring: a pushed
+    /// detail is not re-mounted on the way back, so the queue's `.task` guarded on `.loading` never fires a
+    /// second time and a decided candidate stays on screen. Every outcome branch ends in a re-read of the row,
+    /// so every one of them owes a re-read of the queue too — including the three that keep the candidate
+    /// pending, whose bylines the queue prints.
+    func testEveryDecisionOutcomeAsksTheQueueToReload() async throws {
+        let outcomes: [[String: Any]] = [
+            ["outcome": "APPROVED"],
+            ["outcome": "REJECTED"],
+            ["outcome": "ALREADY_REVIEWED"],
+            ["outcome": "DRAFT_CHANGED", "currentDigest": "d-2"],
+            ["outcome": "STALE_BASE", "currentBaseVersion": 9, "staleTarget": "memory/2026-10-08.md"],
+        ]
+        for outcome in outcomes {
+            let (vm, drafts) = try await loaded(extraDetails: [.success(try MemoryDraftDetail.stub())])
+            drafts.approveReplies = [.success(try MemoryDraftDecision.stub(outcome))]
+            await vm.approve()
+            await vm.confirmApprove()
+            XCTAssertEqual(drafts.detailRequests.count, 2, "\(outcome): the detail re-reads")
+            XCTAssertTrue(vm.queueNeedsReload, "\(outcome): the queue has to catch up with the same row")
+        }
+    }
+
+    /// The 409 race is the case a blanket "reload after any write" would get wrong: the candidate is still
+    /// pending, the detail re-reads to replace the digest the failed approval sent, and the queue's rows are
+    /// already right.
+    func testARefusedWriteLeavesTheQueueAlone() async throws {
+        let (rolled, rolledDrafts) = try await loaded(extraDetails: [.success(try MemoryDraftDetail.stub())])
+        rolledDrafts.approveReplies = [.failure(.business(code: 409, message: "该候选已被审核"))]
+        await rolled.approve()
+        await rolled.confirmApprove()
+        XCTAssertEqual(rolledDrafts.detailRequests.count, 2, "the digest this attempt sent is replaced")
+        XCTAssertFalse(rolled.queueNeedsReload, "…and nothing moved out of the arm")
+
+        let (refused, refusedDrafts) = try await loaded(extraDetails: [.success(try MemoryDraftDetail.stub())])
+        refusedDrafts.approveReplies = [.failure(.business(code: 400, message: "只有待审候选可以被批准"))]
+        await refused.approve()
+        await refused.confirmApprove()
+        XCTAssertEqual(refused.notice, .refused(message: "只有待审候选可以被批准"))
+        XCTAssertEqual(refusedDrafts.detailRequests.count, 1, "an error envelope re-reads nothing")
+        XCTAssertFalse(refused.queueNeedsReload)
+    }
 }

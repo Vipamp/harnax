@@ -19,8 +19,19 @@ public final class SessionSkillsViewModel: ObservableObject {
     /// Opens on the spinner, the way every other list in the app does (`TeamArtifactsViewModel`'s `phase` starts
     /// at `.loading`, and `SkillDraftListViewModelTests` names the rule: 「the screen opens on a spinner, not on an
     /// empty promise」). A panel that had not asked yet would otherwise draw an empty list for one frame, and an
-    /// empty list on this screen is a sentence about the conversation.
+    /// empty list on this screen is a sentence about the conversation. The spinner is drawn from `isFirstWait`,
+    /// not from this flag alone: a re-read turns this flag on without turning the screen into a spinner.
     @Published public private(set) var isLoading = true
+    /// Whether any read has ended with an answer this panel can stand behind. Set only where the answer is
+    /// actually allowed to land — a read whose task was torn down writes none of its results, including this flag.
+    private var hasAnswered = false
+    /// The wait before the first answer — the only wait this screen may draw as a full-screen spinner.
+    ///
+    /// Every later read is a pull or the refresh button, and both already carry their own progress on screen.
+    /// Replacing the card they are attached to mid-gesture is how a pull tears its own task down — the gesture
+    /// hangs on that card's layer (`92834f03`: 「换卡等于拆掉手势所挂的那一层」) — and the task that died then
+    /// answered with a verdict nobody was left to read.
+    public var isFirstWait: Bool { isLoading && !hasAnswered }
     /// Either read failed, or no host wired the dependency at all.
     ///
     /// Kept apart from an empty `rows`, because the two say opposite things: `chat.skills.empty` claims this
@@ -77,7 +88,13 @@ public final class SessionSkillsViewModel: ObservableObject {
         // The generation is the order: an older ask that lands after a newer one would put the rows from before
         // that newer one back on screen, and a failed re-read would erase a list the user could still act on.
         guard generation == refreshGeneration else { return }
+        // A read whose pull was torn down is no verdict on this conversation: the gesture that asked is gone, its
+        // legs answered the cancellation rather than the server, and the failures ride as fields here — no thrown
+        // error for `ErrorMessage.carriesNews` to filter — so the question is asked at this line. Writing nothing
+        // keeps the last reader-waited answer: a pulled-empty panel stays 暂无内容, not 「读不出来」.
+        guard !Task.isCancelled else { return }
         isLoading = false
+        hasAnswered = true
         // The cause belongs to *this* read, not to the rows it displaced: a re-read that found no container names
         // that even when the list on screen is the older one's, and a re-read that answered retires the cause the
         // panel said a moment ago.

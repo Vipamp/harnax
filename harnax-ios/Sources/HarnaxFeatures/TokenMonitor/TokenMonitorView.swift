@@ -31,7 +31,7 @@ public struct TokenMonitorView: View {
     public var body: some View {
         content
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: hx("monitor.title")))
+            .harnaxTitle(Text(verbatim: hx("monitor.title")))
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {

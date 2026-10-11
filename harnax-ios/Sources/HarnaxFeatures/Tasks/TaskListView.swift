@@ -59,7 +59,7 @@ public struct TaskListView: View {
     public var body: some View {
         content
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: hx("task.title")))
+            .harnaxTitle(Text(verbatim: hx("task.title")))
             .searchable(text: $vm.keyword, prompt: Text(verbatim: hx("task.search")))
             .toolbar {
                 ToolbarItem(placement: .primaryAction) { addButton }

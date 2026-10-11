@@ -45,8 +45,8 @@ public protocol MemoryDraftCataloging: Sendable {
 }
 
 public extension MemoryDraftCataloging {
-    /// The badge the governance hub puts on the queue row. One row of the pending queue is enough to read
-    /// `total`, the same trick `SkillDraftCataloging.pendingCount` uses.
+    /// The pending arm's badge on the review queue. One row of that queue is enough to read `total`, so this
+    /// sends a `size: 1` page rather than pulling a whole page down for a number.
     func pendingCount() async -> Int? {
         guard let page = try? await page(status: .pending, agentName: nil, sessionId: nil, num: 1, size: 1).get()
         else {

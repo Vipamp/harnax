@@ -81,6 +81,10 @@ final class SessionSkillsViewModelTests: XCTestCase {
             "the sheet's first frame has no read behind it yet: an empty list here prints 「这个会话还没有自写的技能」, "
                 + "a claim about the conversation that nothing has answered"
         )
+        XCTAssertTrue(
+            vm.isFirstWait,
+            "and the spinner is drawn from this gate — the opening read is the only wait it may cover"
+        )
         XCTAssertFalse(vm.unavailable, "nothing has failed yet either")
         XCTAssertTrue(vm.rows.isEmpty)
     }
@@ -306,5 +310,69 @@ final class SessionSkillsViewModelTests: XCTestCase {
             ["fresh-draft"],
             "the parked read is older, and putting its list back would undo a refresh the user already saw"
         )
+    }
+
+    // MARK: - the pull that was torn down
+
+    /// The reported defect of 2026-10-11: pulling a panel whose first read answered *empty* printed
+    /// 「这个会话的技能读不出来」. The pull asks the same `refresh()` the button does, but its task hangs from the
+    /// card on screen — and that card used to be redrawn as a full-screen spinner on every read that had no rows,
+    /// which tore the task down mid-gesture and let its cancelled answer pass for a verdict. The pull carries its
+    /// own progress, so the card stays; the spinner belongs to the opening wait alone.
+    func testAPullFromAnAnsweredPanelDrawsNoFullScreenSpinner() async throws {
+        let reading = stub([answered()])
+        let vm = SessionSkillsViewModel(reading: reading, sessionId: "s-1")
+        await vm.refresh()
+        XCTAssertFalse(vm.isFirstWait, "the first answer has landed — the screen owes that answer, not a spinner")
+
+        reading.rowsGate.arm()
+        let pull = Task { await vm.refresh() }
+        try await waitUntil { reading.reads.count == 2 }
+        XCTAssertTrue(vm.isLoading, "a read is out; its progress is the pull's own indicator")
+        XCTAssertFalse(
+            vm.isFirstWait,
+            "drawing the spinner here redraws the card the gesture hangs from, which is what cancels the pull"
+        )
+
+        reading.rowsGate.release()
+        await pull.value
+        XCTAssertTrue(vm.rows.isEmpty, "and the answer that landed still says the conversation wrote nothing")
+        XCTAssertFalse(vm.unavailable, "an answered-empty read is not a failed one")
+    }
+
+    /// The other half, exercised the way the house exercises it: the task is torn down while its read is parked,
+    /// and the answer that comes back afterwards carries a refusal. Nobody is waiting for it any more — the rows
+    /// on screen are the last answer a reader was actually waiting for, and neither flag may borrow the torn-down
+    /// read's failure. This is the panel's spelling of `ErrorMessage.carriesNews`: the failures ride as fields
+    /// here, so the question 「is anyone still waiting」 is asked as `Task.isCancelled`.
+    func testAReadWhosePullWasTornDownWritesNothing() async throws {
+        let reading = stub([
+            answered([SessionSkillRow(name: "weekly-digest", enabled: true, enabledAt: "2026-10-08 10:00:00")]),
+            missing(),
+        ])
+        let vm = SessionSkillsViewModel(reading: reading, sessionId: "s-1")
+        await vm.refresh()
+        XCTAssertEqual(vm.rows.map(\.name), ["weekly-digest"])
+
+        reading.rowsGate.arm()
+        let pull = Task { await vm.refresh() }
+        try await waitUntil { reading.reads.count == 2 }
+        pull.cancel()
+        reading.rowsGate.release()
+        await pull.value
+
+        XCTAssertEqual(
+            reading.reads.count,
+            2,
+            "the torn-down read really did answer — the silence is a choice, not an empty wire"
+        )
+        XCTAssertEqual(
+            vm.rows.map(\.name),
+            ["weekly-digest"],
+            "a read nobody is waiting for is not news that the skill went away"
+        )
+        XCTAssertFalse(vm.unavailable, "…nor that this conversation's skills cannot be read at all")
+        XCTAssertFalse(vm.noSandbox, "nothing said the sandbox is stopped")
+        XCTAssertFalse(vm.isFirstWait, "and the card that was on screen was never redrawn into a spinner")
     }
 }

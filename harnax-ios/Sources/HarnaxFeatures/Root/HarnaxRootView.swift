@@ -51,7 +51,7 @@ struct HarnaxTabView: View {
             ForEach(HarnaxTab.allCases) { tab in
                 NavigationStack {
                     screen(for: tab)
-                        .navigationTitle(Text(verbatim: hx(tab.titleKey)))
+                        .harnaxTitle(Text(verbatim: hx(tab.titleKey)))
                 }
                 .tabItem {
                     Image(systemName: tab.systemImage)

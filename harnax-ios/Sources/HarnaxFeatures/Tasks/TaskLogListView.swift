@@ -43,13 +43,12 @@ public struct TaskLogSheet: View {
                 if vm.isWindowEditorShown {
                     windowEditor
                 }
+                // The switch takes what a pinned editor leaves, or `harnaxScreen` centres the two together.
                 content
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: hx("task.log.title")))
-#if canImport(UIKit)
-            .navigationBarTitleDisplayMode(.inline)
-#endif
+            .harnaxTitle(Text(verbatim: hx("task.log.title")))
             .searchable(text: $vm.keyword, prompt: Text(verbatim: hx("task.log.search")))
             .toolbar {
                 ToolbarItem(placement: .primaryAction) { statusFilterMenu }
@@ -458,10 +457,7 @@ public struct TaskLogDetailView: View {
             .padding(.bottom, 24)
         }
         .harnaxScreen()
-        .navigationTitle(Text(verbatim: row.title ?? hx("task.log.title")))
-#if canImport(UIKit)
-        .navigationBarTitleDisplayMode(.inline)
-#endif
+        .harnaxTitle(Text(verbatim: row.title ?? hx("task.log.title")))
     }
 
     private func metaRow(_ titleKey: String, _ raw: String?) -> some View {

@@ -21,16 +21,20 @@ import HarnaxKit
 public struct MemoryDraftDetailView: View {
     @StateObject private var vm: MemoryDraftDetailViewModel
     private let catalog: any MemoryDraftCataloging
+    /// Tells the queue that pushed this screen that its row moved. Left at the no-op default by a host with no
+    /// queue to reload — the debug bench (`App/HarnaxDebugScreens.swift`) — and supplied by the real one.
+    private let onDecided: () -> Void
 
-    public init(id: Int64, catalog: any MemoryDraftCataloging) {
+    public init(id: Int64, catalog: any MemoryDraftCataloging, onDecided: @escaping () -> Void = {}) {
         self.catalog = catalog
+        self.onDecided = onDecided
         _vm = StateObject(wrappedValue: MemoryDraftDetailViewModel(id: id, catalog: catalog))
     }
 
     public var body: some View {
         content
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: hx("memory.draft.detail.title")))
+            .harnaxTitle(Text(verbatim: hx("memory.draft.detail.title")))
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
@@ -45,6 +49,11 @@ public struct MemoryDraftDetailView: View {
                 if vm.phase == .loading { await vm.load() }
             }
             .refreshable { await vm.load() }
+            .onChange(of: vm.queueNeedsReload) {
+                // The queue will not discover on its own that the row it lists has moved — the same bridge
+                // `SkillDraftDetailView` makes, and `SkillSyncSheet.swift`'s `onChanged` before it.
+                if vm.queueNeedsReload { onDecided() }
+            }
             .confirmationDialog(
                 Text(verbatim: hx("memory.draft.approve.confirm.title")),
                 isPresented: $vm.isConfirmingApprove,
@@ -159,7 +168,7 @@ public struct MemoryDraftDetailView: View {
     /// `SkillDraftRules.isPatched`, which is the very rule `MemoryDraftRow.patched` delegates to, so a row and
     /// the candidate it links to can never disagree about whether the merge rewrote the proposal.
     private func badges(_ draft: MemoryDraftDetail) -> some View {
-        HStack(spacing: 6) {
+        HXFlow(spacing: 6) {
             if draft.baseVersion > 0 {
                 HXChip("v\(draft.baseVersion)")
             } else {
@@ -372,7 +381,7 @@ public struct MemoryDraftDetailView: View {
             }
             .padding(16)
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: hx("memory.draft.reject.title")))
+            .harnaxTitle(Text(verbatim: hx("memory.draft.reject.title")))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button { vm.closeRejection() } label: { HXText("common.cancel") }

@@ -22,10 +22,13 @@ public struct CallInvocationsView: View {
     public var body: some View {
         VStack(spacing: 0) {
             filterBar
+            // Same rule as the two draft queues: the switch has to take what the pinned arms leave, or
+            // `harnaxScreen` centres bar and glyph together and the arms land mid-screen.
             content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .harnaxScreen()
-        .navigationTitle(Text(verbatim: vm.subject.title))
+        .harnaxTitle(Text(verbatim: vm.subject.title))
         .task {
             if vm.phase == .loading { await vm.refresh() }
         }

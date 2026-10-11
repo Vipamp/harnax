@@ -31,7 +31,7 @@ public struct ModelListView: View {
         screen
             .harnaxScreen()
             .searchable(text: $vm.keyword, prompt: Text(verbatim: hx("model.search")))
-            .navigationTitle(Text(verbatim: ModelProviderPresenter.title(for: provider)))
+            .harnaxTitle(Text(verbatim: ModelProviderPresenter.title(for: provider)))
             .toolbar {
                 ToolbarItem(placement: .primaryAction) { createButton }
                 ToolbarItem(placement: .primaryAction) { filterMenu }
@@ -84,7 +84,10 @@ public struct ModelListView: View {
             if vm.phase == .content || (vm.phase == .empty && vm.isFiltered) {
                 priceFilter
             }
+            // Pinned boxes above a fixed-height state view would otherwise be centred with it, so the switch
+            // takes the remaining height.
             content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 

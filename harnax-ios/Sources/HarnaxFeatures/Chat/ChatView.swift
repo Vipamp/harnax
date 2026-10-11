@@ -91,7 +91,7 @@ public struct ChatView: View {
                 }
         })
         .harnaxScreen()
-        .navigationTitle(vm.conversation.title)
+        .harnaxTitle(vm.conversation.title)
         .toolbar {
             // Declared first so it sits left of the workspace entry, which is where the console keeps the
             // readout — beside the title, ahead of the action buttons

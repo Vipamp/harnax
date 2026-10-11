@@ -40,7 +40,7 @@ public struct SessionSkillsSheet: View {
                 .padding(.bottom, 24)
             }
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: hx("chat.skills.title")))
+            .harnaxTitle(Text(verbatim: hx("chat.skills.title")))
             .toolbar {
                 // `.primaryAction` is the only placement the macOS test host accepts.
                 ToolbarItem(placement: .primaryAction) {
@@ -67,7 +67,9 @@ public struct SessionSkillsSheet: View {
 
     @ViewBuilder
     private var content: some View {
-        if vm.isLoading, vm.rows.isEmpty {
+        // Only the opening wait draws the full-screen spinner: a later read is a pull or the refresh button, and
+        // both carry their own progress — redrawing the card they are attached to is what cancels them.
+        if vm.isFirstWait {
             HXStateView(.loading)
         } else if vm.rows.isEmpty {
             // Two different sentences, and telling them apart is the whole of this screen's honesty: a queue
@@ -87,10 +89,10 @@ public struct SessionSkillsSheet: View {
     }
 
     /// One row per name, in the order the merge answers it — the queue's newest proposal first, then the
-    /// directory's leftovers. The two glyphs are the two this app already uses for the same two facts: the draft
-    /// queue's own checklist (`SkillDraftEntryRow.swift`) for a proposal nobody has acted on, and the seal it
-    /// puts on a decision somebody did agree to (`ChatTranscriptRows.swift:419`). A row's state therefore reads
-    /// here the way it reads on the reviewer's screens.
+    /// directory's leftovers. The two glyphs are the two this app already uses for the same two facts: a
+    /// checklist for a proposal nobody has acted on, and the seal (`ChatTranscriptRows.swift:419`) it puts on a
+    /// decision somebody did agree to. A row's state therefore reads here the way it reads on the reviewer's
+    /// screens.
     private var rows: some View {
         HXGroupCard {
             ForEach(vm.rows) { row in

@@ -44,7 +44,10 @@ public struct PlanPanelView: View {
         VStack(spacing: 0) {
             header
             Divider()
+            // Same rule as the queues: a fixed-height state view beside a pinned header would be centred with
+            // it, so the switch takes what the header leaves.
             content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .harnaxScreen()
         .task { await vm.open() }

@@ -45,7 +45,7 @@ public struct WorkspaceSheet: View {
                 .padding(.bottom, 24)
             }
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: hx("chat.workspace.title")))
+            .harnaxTitle(Text(verbatim: hx("chat.workspace.title")))
             .toolbar { controls }
         }
         .task { await vm.load() }

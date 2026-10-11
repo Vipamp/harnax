@@ -1336,8 +1336,6 @@
 "chat.skills.enableFailed" = "启用没有成功";
 
 /* ---- 技能草稿：自我进化的待审队列、审核页与两个决定 ---- */
-"skill.draft.entry.hint" = "智能体提出的技能改动，等人来审";
-"skill.draft.pendingCount" = "%d 条待审";
 "skill.draft.title" = "技能晋升";
 "skill.draft.detail.title" = "审核草稿";
 "skill.draft.search" = "按技能名搜索";

@@ -22,7 +22,7 @@ public struct MemoryDetailView: View {
     public var body: some View {
         content
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: vm.agentName))
+            .harnaxTitle(Text(verbatim: vm.agentName))
             .task {
                 if vm.phase == .loading { await vm.load() }
             }

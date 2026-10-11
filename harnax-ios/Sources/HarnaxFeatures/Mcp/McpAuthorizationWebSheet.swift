@@ -39,7 +39,7 @@ public struct McpAuthorizationWebSheet: View {
                 }
             }
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: hx("mcp.oauth.inAppTitle")))
+            .harnaxTitle(Text(verbatim: hx("mcp.oauth.inAppTitle")))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button { vm.cancelInAppAuthorization() } label: { HXText("common.close") }

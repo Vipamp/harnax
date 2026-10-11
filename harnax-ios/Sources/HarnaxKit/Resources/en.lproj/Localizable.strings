@@ -1335,8 +1335,6 @@
 "chat.skills.enableFailed" = "Could not enable it";
 
 /* ---- skill drafts: the self-evolution queue, its review screen and the two decisions ---- */
-"skill.draft.entry.hint" = "Skills the agents proposed, waiting for a human";
-"skill.draft.pendingCount" = "%d pending";
 "skill.draft.title" = "Skill promotion";
 "skill.draft.detail.title" = "Review draft";
 "skill.draft.search" = "Search by skill name";

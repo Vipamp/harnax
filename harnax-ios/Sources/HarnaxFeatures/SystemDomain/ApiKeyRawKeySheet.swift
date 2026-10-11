@@ -61,10 +61,7 @@ public struct ApiKeyRawKeySheet: View {
                 .padding(.bottom, 28)
             }
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: created.name))
-            #if canImport(UIKit)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
+            .harnaxTitle(Text(verbatim: created.name))
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(action: onClose) { HXText("common.confirm") }

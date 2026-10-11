@@ -57,7 +57,7 @@ public struct SkillTableView: View {
         .harnaxScreen()
         // Named by its source: this screen and the list it pushed from would otherwise carry the same
         // "Skills" title, and a stacked pair with one title cannot be told apart.
-        .navigationTitle(Text(verbatim: sourceName ?? hx("skill.table.title")))
+        .harnaxTitle(Text(verbatim: sourceName ?? hx("skill.table.title")))
         .searchable(text: $vm.keyword, prompt: Text(verbatim: hx("skill.table.search")))
         .toolbar {
             ToolbarItem(placement: .primaryAction) { filterMenu }

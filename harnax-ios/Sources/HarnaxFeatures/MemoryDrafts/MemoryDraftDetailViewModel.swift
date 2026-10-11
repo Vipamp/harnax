@@ -33,6 +33,13 @@ public final class MemoryDraftDetailViewModel: ObservableObject {
     @Published public private(set) var isActing = false
     /// What the last decision actually did, once it stopped being a button.
     @Published public private(set) var notice: MemoryDraftNotice?
+    /// Announced once a decision has been made on this candidate, so the queue can re-read it.
+    ///
+    /// The queue is a *pushed* screen, and popping back to one does not re-mount it: its only automatic read is
+    /// the `.task` guarded on `.loading`, which a return does not re-run. Without this announcement the reviewer
+    /// decides a candidate, pops back, and the row is still sitting in the arm it left (the skill queue's defect
+    /// of 2026-10-11, which this screen shares wiring with).
+    @Published public private(set) var queueNeedsReload = false
 
     @Published public var rejectReason = ""
     @Published public private(set) var rejectRefusal: String?
@@ -270,6 +277,9 @@ public final class MemoryDraftDetailViewModel: ObservableObject {
             // sentences: it says the decision was refused and carries the token verbatim.
             notice = .unrecognised(raw: raw)
         }
+        // Every outcome re-reads the row, so every one of them owes the queue the same re-read: a moved row is
+        // gone from the arm on screen, and one that stayed still changed its bylines.
+        queueNeedsReload = true
         await load()
     }
 

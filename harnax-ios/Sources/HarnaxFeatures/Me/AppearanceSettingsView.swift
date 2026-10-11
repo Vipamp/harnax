@@ -21,7 +21,7 @@ public struct AppearanceSettingsView: View {
             .padding(.bottom, HXLayout.tabBarClearance)
         }
         .harnaxScreen()
-        .navigationTitle(Text(verbatim: hx("me.themeAndLanguage")))
+        .harnaxTitle(Text(verbatim: hx("me.themeAndLanguage")))
     }
 
     private var themeSelection: Binding<Int> {

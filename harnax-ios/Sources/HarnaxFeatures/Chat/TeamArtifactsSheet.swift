@@ -50,7 +50,7 @@ public struct TeamArtifactsSheet: View {
                 .padding(.bottom, 24)
             }
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: hx("chat.artifacts.title")))
+            .harnaxTitle(Text(verbatim: hx("chat.artifacts.title")))
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {

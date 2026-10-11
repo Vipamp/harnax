@@ -40,10 +40,7 @@ public struct SkillDetailView: View {
             .padding(.bottom, HXLayout.tabBarClearance)
         }
         .harnaxScreen()
-        .navigationTitle(Text(verbatim: vm.title ?? ""))
-#if canImport(UIKit)
-        .navigationBarTitleDisplayMode(.inline)
-#endif
+        .harnaxTitle(Text(verbatim: vm.title ?? ""))
         .task { await vm.load() }
     }
 

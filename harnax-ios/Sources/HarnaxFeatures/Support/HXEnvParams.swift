@@ -59,7 +59,7 @@ public struct HXEnvParamsSheet: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .navigationTitle(Text(verbatim: hx("env.title")))
+            .harnaxTitle(Text(verbatim: hx("env.title")))
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button {

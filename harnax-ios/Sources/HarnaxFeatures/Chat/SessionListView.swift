@@ -26,10 +26,6 @@ public struct SessionListView: View {
     /// the panels the conversation's own row can answer for, and no line saying otherwise.
     private let executor: (any ExecutorReading)?
     private let onOpen: ((ChatConversation) -> Void)?
-    /// The review queue's read, and the only thing the entry row above the list needs. `nil` removes that row
-    /// entirely rather than offering a screen that could only report its own inability
-    /// (`specs/07-skill-draft-review.md` §5.1).
-    private let drafts: (any SkillDraftCataloging)?
 
     @State private var renameTarget: SessionSummary?
     @State private var detailTarget: SessionSummary?
@@ -38,9 +34,6 @@ public struct SessionListView: View {
     @State private var artifactsTarget: SessionSummary?
     @State private var pendingClear: SessionSummary?
     @State private var pendingDelete: SessionSummary?
-    /// Bumped by the pull-to-refresh so the draft entry row re-reads its pending count with this list rather
-    /// than on a timer of its own (§5.1: 计数随会话列表的下拉刷新一起重取).
-    @State private var draftCountToken = 0
     /// Set by the detail sheet when its config write landed, and spent by its dismissal. The row the sheet was
     /// built from is a snapshot of this list's own page, so a write through admin has moved four columns this
     /// screen still shows the old values of — invisible on the card, which draws none of them, and wrong the
@@ -60,7 +53,6 @@ public struct SessionListView: View {
         workspace: (any SessionWorkspaceReading)? = nil,
         teamArtifacts: (any TeamArtifactReading)? = nil,
         executor: (any ExecutorReading)? = nil,
-        drafts: (any SkillDraftCataloging)? = nil,
         onOpen: ((ChatConversation) -> Void)? = nil
     ) {
         _vm = StateObject(wrappedValue: SessionListViewModel(sessions: sessions))
@@ -69,7 +61,6 @@ public struct SessionListView: View {
         self.workspace = workspace
         self.teamArtifacts = teamArtifacts
         self.executor = executor
-        self.drafts = drafts
         self.onOpen = onOpen
     }
 
@@ -87,7 +78,6 @@ public struct SessionListView: View {
                 if vm.phase == .loading { await vm.refresh() }
             }
             .refreshable {
-                draftCountToken += 1
                 await vm.refresh()
             }
             .sheet(item: $renameTarget) { session in
@@ -178,21 +168,6 @@ public struct SessionListView: View {
 
     @ViewBuilder
     private var content: some View {
-        VStack(spacing: 0) {
-            // The self-write entry sits outside the conversation phases on purpose: it navigates the tenant's
-            // queue and reads drafts, not sessions. Hung inside the list it would disappear with an empty state,
-            // and「自己一条会话都没有、别人的会话里却提议了草稿」is exactly the reviewer who needs the entry.
-            if SkillDraftEntryRow.isAvailable(drafts) {
-                SkillDraftEntryRow(drafts: drafts, reloadToken: draftCountToken)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
-            }
-            phases
-        }
-    }
-
-    @ViewBuilder
-    private var phases: some View {
         switch vm.phase {
         case .loading:
             HXStateView(.loading)
@@ -456,7 +431,7 @@ public struct SessionRenameSheet: View {
             }
             .padding(16)
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: hx("chat.rename.title")))
+            .harnaxTitle(Text(verbatim: hx("chat.rename.title")))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button { dismiss() } label: { HXText("common.cancel") }

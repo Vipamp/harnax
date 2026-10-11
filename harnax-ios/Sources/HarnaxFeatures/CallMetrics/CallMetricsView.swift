@@ -124,7 +124,7 @@ public struct CallMetricsView: View {
     public var body: some View {
         content
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: hx("monitor.calls.title")))
+            .harnaxTitle(Text(verbatim: hx("monitor.calls.title")))
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {

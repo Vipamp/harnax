@@ -32,16 +32,19 @@ public struct MemoryDraftListView: View {
     public var body: some View {
         VStack(spacing: 0) {
             filterBar
+            // The same rule as the skill queue: a state view has no height of its own, so the switch takes what
+            // the pinned bar leaves, or `harnaxScreen` centres the two and the arms land mid-screen.
             content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .harnaxScreen()
-        .navigationTitle(Text(verbatim: hx("memory.draft.title")))
+        .harnaxTitle(Text(verbatim: hx("memory.draft.title")))
         .task {
             if vm.phase == .loading { await vm.refresh() }
         }
         .refreshable { await vm.refresh() }
         .navigationDestination(for: MemoryDraftRef.self) { ref in
-            MemoryDraftDetailView(id: ref.id, catalog: catalog)
+            MemoryDraftDetailView(id: ref.id, catalog: catalog, onDecided: { Task { await vm.refresh() } })
         }
     }
 
@@ -205,7 +208,7 @@ struct MemoryDraftRowCard: View {
     /// has no long-term layer yet」, which is a different fact from「v0」— `drafts.tsx:140-151`), how much text it
     /// produced, and the two counts that say how many files the one approval moves.
     private var badges: some View {
-        HStack(spacing: 6) {
+        HXFlow(spacing: 6) {
             if row.baseVersion > 0 {
                 HXChip("v\(row.baseVersion)")
             } else {

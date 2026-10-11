@@ -34,10 +34,7 @@ public struct WechatLoginSheet: View {
             .padding(.bottom, 28)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: hx("channel.wechat.scan")))
-            #if canImport(UIKit)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
+            .harnaxTitle(Text(verbatim: hx("channel.wechat.scan")))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button {

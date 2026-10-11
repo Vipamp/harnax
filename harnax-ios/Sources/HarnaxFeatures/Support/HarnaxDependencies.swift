@@ -21,9 +21,9 @@ public struct HarnaxDependencies: Sendable {
     public let tools: any ToolCataloging
     public let mcp: any McpCataloging
     public let skills: any SkillCataloging
-    /// The self-evolution queue: skill drafts and the two review actions. Optional because the entry row in the
-    /// session tab has nothing to show a host that carries no admin surface, and the same rule the chat screen
-    /// uses for `toolConfirm` keeps an unwired dependency from offering a control that can only fail.
+    /// The self-evolution queue: skill drafts and the two review actions. Optional because a host with no admin
+    /// surface has no queue to show, and the rule the chat screen uses for `toolConfirm` keeps an unwired
+    /// dependency from offering a control that can only fail.
     public let drafts: (any SkillDraftCataloging)?
     /// The session page's own skill panel: this conversation's nominations plus its enabled set, and the enable
     /// that turns one into the other. Optional for `drafts`' reason — a host with no admin surface and no router

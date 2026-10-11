@@ -554,6 +554,75 @@ final class SkillDraftDetailViewModelTests: XCTestCase {
         XCTAssertEqual(vm.rejectReason, "", "the rejection form opens empty, not holding the last attempt's text")
     }
 
+    // MARK: - the queue hand-off
+
+    /// The defect reported 2026-10-11: a decided draft still sat in「待审」after the reviewer popped back, and
+    /// only disappeared on a second entry. A pushed screen is not re-mounted on the way back, so the queue's one
+    /// automatic read — the `.task` guarded on `.loading` — never runs a second time, and nothing else tells it
+    /// the row moved. The rule that stands in for that missing remount: **the detail re-reads the row, the queue
+    /// re-reads its page**, so `queueNeedsReload` is set on exactly the paths that end in a post-decision
+    /// `load()`.
+    func testADecisionThatReReadsTheRowAsksTheQueueToReload() async throws {
+        let (approved, approvedDrafts) = try await loaded()
+        approvedDrafts.approveReplies = [.success(try promoted())]
+        try queueReload(approvedDrafts)
+        await approved.confirmApprove()
+        XCTAssertTrue(approved.queueNeedsReload, "the row left the pending arm, so the queue is now showing a row that is gone")
+
+        let (declined, declinedDrafts) = try await loaded()
+        declined.startRejection()
+        declined.rejectReason = "与既有技能重复"
+        declinedDrafts.rejectReplies = [.success(try SkillDraftDecision.stub(["outcome": "REJECTED"]))]
+        try queueReload(declinedDrafts)
+        await declined.submitRejection()
+        XCTAssertTrue(declined.queueNeedsReload, "a rejection moves the row exactly the way an approval does")
+
+        let (outran, outranDrafts) = try await loaded()
+        outranDrafts.approveReplies = [.success(try SkillDraftDecision.stub(["outcome": "ALREADY_REVIEWED"]))]
+        try queueReload(outranDrafts)
+        await outran.confirmApprove()
+        XCTAssertTrue(outran.queueNeedsReload, "another reviewer moved this row out of the arm; this screen still has to catch up")
+
+        let (patched, patchedDrafts) = try await loaded()
+        patchedDrafts.approveReplies = [.success(
+            try SkillDraftDecision.stub([
+                "outcome": "DRAFT_CHANGED",
+                "currentDigest": String(repeating: "b", count: 64),
+            ])
+        )]
+        try queueReload(patchedDrafts)
+        await patched.confirmApprove()
+        XCTAssertTrue(
+            patched.queueNeedsReload,
+            "the row stays, but its patch stamp is one of the columns the queue prints for it"
+        )
+    }
+
+    /// The three paths that leave a pending draft pending must not churn the list — and two of them are the
+    /// paths a "just reload everything" shortcut would get wrong: `NAME_TAKEN` deliberately re-reads nothing,
+    /// and the 409 race re-reads the *detail* precisely because the row has not moved.
+    func testAPathThatLeavesTheRowPendingLeavesTheQueueAlone() async throws {
+        let (taken, takenDrafts) = try await loaded()
+        takenDrafts.approveReplies = [.success(try SkillDraftDecision.stub(["outcome": "NAME_TAKEN", "skillId": 42]))]
+        await taken.confirmApprove()
+        XCTAssertNotNil(taken.conflict)
+        XCTAssertFalse(taken.queueNeedsReload, "nothing moved, so the queue's rows are still the truth")
+
+        let (rolled, rolledDrafts) = try await loaded()
+        rolledDrafts.approveReplies = [.failure(.business(code: 409, message: "该名称在批准期间已被占用"))]
+        try queueReload(rolledDrafts)
+        await rolled.confirmApprove()
+        XCTAssertEqual(rolled.notice, .nameRace)
+        XCTAssertEqual(rolledDrafts.detailRequests.count, 2, "the detail does re-read, to replace the digest it sent")
+        XCTAssertFalse(rolled.queueNeedsReload, "…and the draft is still pending, so the queue has nothing to catch up on")
+
+        let (refused, refusedDrafts) = try await loaded()
+        refusedDrafts.approveReplies = [.failure(.business(code: 400, message: "只有待审草稿可以被批准"))]
+        await refused.confirmApprove()
+        XCTAssertEqual(refused.notice, .refused(message: "只有待审草稿可以被批准"))
+        XCTAssertFalse(refused.queueNeedsReload)
+    }
+
     private func waitUntil(_ condition: @escaping @MainActor () -> Bool) async throws {
         for _ in 0..<400 {
             if condition() { return }

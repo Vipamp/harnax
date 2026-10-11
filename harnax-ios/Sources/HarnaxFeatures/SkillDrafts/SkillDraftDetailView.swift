@@ -16,16 +16,25 @@ import HarnaxKit
 public struct SkillDraftDetailView: View {
     @StateObject private var vm: SkillDraftDetailViewModel
     private let skills: (any SkillCataloging)?
+    /// Tells the queue that pushed this screen that its row moved. Left at the no-op default by a host with no
+    /// queue to reload — the debug bench (`App/HarnaxDebugScreens.swift`) — and supplied by the real one.
+    private let onDecided: () -> Void
 
-    public init(id: Int64, drafts: any SkillDraftCataloging, skills: (any SkillCataloging)? = nil) {
+    public init(
+        id: Int64,
+        drafts: any SkillDraftCataloging,
+        skills: (any SkillCataloging)? = nil,
+        onDecided: @escaping () -> Void = {}
+    ) {
         self.skills = skills
+        self.onDecided = onDecided
         _vm = StateObject(wrappedValue: SkillDraftDetailViewModel(id: id, drafts: drafts, skills: skills))
     }
 
     public var body: some View {
         content
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: hx("skill.draft.detail.title")))
+            .harnaxTitle(Text(verbatim: hx("skill.draft.detail.title")))
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
@@ -40,6 +49,12 @@ public struct SkillDraftDetailView: View {
                 if vm.phase == .loading { await vm.load() }
             }
             .refreshable { await vm.load() }
+            .onChange(of: vm.queueNeedsReload) {
+                // The hand-off the latched flag makes once: the row this screen showed has moved, and the queue
+                // that pushed it will not find that out on its own (`SkillSyncSheet.swift:53-57` is the same
+                // bridge from a model's report to its owner's reload).
+                if vm.queueNeedsReload { onDecided() }
+            }
             .confirmationDialog(
                 Text(verbatim: hx("skill.draft.approve.confirm.title")),
                 isPresented: $vm.isConfirmingApprove,
@@ -506,7 +521,7 @@ public struct SkillDraftDetailView: View {
             }
             .padding(16)
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: hx("skill.draft.reject.title")))
+            .harnaxTitle(Text(verbatim: hx("skill.draft.reject.title")))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button { vm.closeRejection() } label: { HXText("common.cancel") }
@@ -584,7 +599,7 @@ public struct SkillDraftDetailView: View {
             }
             .padding(16)
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: hx("skill.draft.conflict.title")))
+            .harnaxTitle(Text(verbatim: hx("skill.draft.conflict.title")))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button {

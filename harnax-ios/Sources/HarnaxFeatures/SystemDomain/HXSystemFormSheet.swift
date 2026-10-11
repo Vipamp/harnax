@@ -53,10 +53,7 @@ struct HXSystemFormSheet<Content: View>: View {
                 .padding(.bottom, 28)
             }
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: hx(titleKey)))
-            #if canImport(UIKit)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
+            .harnaxTitle(Text(verbatim: hx(titleKey)))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button { dismiss() } label: { HXText("common.cancel") }

@@ -174,7 +174,7 @@ public struct ModelProviderFormSheet: View {
                 }
                 .padding(16)
             }
-            .navigationTitle(hx(vm.isEditing ? "model.provider.edit" : "model.provider.create"))
+            .harnaxTitle(hx(vm.isEditing ? "model.provider.edit" : "model.provider.create"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button { dismiss() } label: { HXText("common.cancel") }

@@ -18,7 +18,7 @@ public struct McpDetailView: View {
     public var body: some View {
         content
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: vm.title))
+            .harnaxTitle(Text(verbatim: vm.title))
             .task {
                 if vm.server == nil { await vm.load() }
             }

@@ -17,18 +17,6 @@ public struct SkillDraftRef: Identifiable, Hashable, Sendable {
     public static func forRow(_ row: SkillDraftRow) -> SkillDraftRef? { row.id.map(SkillDraftRef.init(id:)) }
 }
 
-/// The queue's own push value, carried by the session list's entry row.
-///
-/// A value rather than a `Bool` flag on the chat tab, because the queue is not a leaf: its rows push a detail
-/// one level deeper. An item- or `isPresented`-presented screen is re-evaluated by the path change its own
-/// deeper push causes, and while the binding still reads true it gets pushed a second time on top of the
-/// screen it just opened — the defect `SkillNavigationTests` records for 2026-10-03, where tapping a skill left
-/// a second copy of the table over the detail. Pushing by value puts this flow on the same shape as
-/// `ModelProviderListView` and the skill flow: value at every level.
-public struct SkillDraftQueueRoute: Hashable, Sendable {
-    public init() {}
-}
-
 /// Which of the six panes the detail screen shows.
 ///
 /// The console's own split (`harnax-webui/src/pages/skill/draftDetail.tsx:275-333`), with the trail pulled out

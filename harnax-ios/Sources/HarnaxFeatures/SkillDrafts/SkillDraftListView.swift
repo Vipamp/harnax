@@ -25,16 +25,24 @@ public struct SkillDraftListView: View {
     public var body: some View {
         VStack(spacing: 0) {
             filterBar
+            // A state view has no height of its own, so the switch has to be told to take what the pinned bar
+            // leaves; otherwise `harnaxScreen` centres bar and glyph together and the arms land mid-screen.
             content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .harnaxScreen()
-        .navigationTitle(Text(verbatim: hx("skill.draft.title")))
+        .harnaxTitle(Text(verbatim: hx("skill.draft.title")))
         .task {
             if vm.phase == .loading { await vm.refresh() }
         }
         .refreshable { await vm.refresh() }
         .navigationDestination(for: SkillDraftRef.self) { ref in
-            SkillDraftDetailView(id: ref.id, drafts: drafts, skills: skills)
+            SkillDraftDetailView(
+                id: ref.id,
+                drafts: drafts,
+                skills: skills,
+                onDecided: { Task { await vm.refresh() } }
+            )
         }
     }
 
@@ -210,7 +218,7 @@ struct SkillDraftRowCard: View {
 
     @ViewBuilder
     private var badges: some View {
-        HStack(spacing: 6) {
+        HXFlow(spacing: 6) {
             SkillDraftStatusBadge(status: row.status)
             if let verdict = hxPresented(row.scanVerdict) {
                 HXChip(

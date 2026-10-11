@@ -39,7 +39,7 @@ final class SystemHomeTests: XCTestCase {
     }
 
     /// A row and the screen it opens are one name: the row's `titleKey` is the key the destination screen hands
-    /// its own `navigationTitle`. Two keys naming one place do drift — the 会话记忆审批 row opened a screen that
+    /// its own `harnaxTitle`. Two keys naming one place do drift — the 会话记忆审批 row opened a screen that
     /// titled itself 记忆合并候选 — so this reads the nine screens rather than restating the routes' constants.
     func testEachRowIsNamedByTheKeyItsOwnScreenTitlesItselfWith() throws {
         let rows: [(titleKey: String, screen: String)] = [
@@ -55,7 +55,7 @@ final class SystemHomeTests: XCTestCase {
         ]
         for row in rows {
             let titles = try FeatureSources.captures(
-                #"navigationTitle\(.*hx\("([^"]+)"\)"#,
+                #"harnaxTitle\(.*hx\("([^"]+)"\)"#,
                 in: try FeatureSources.code(of: row.screen)
             )
             XCTAssertEqual(

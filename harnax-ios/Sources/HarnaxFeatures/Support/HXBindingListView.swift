@@ -73,10 +73,7 @@ struct HXBindingSheet<Content: View>: View {
         NavigationStack {
             content
                 .harnaxScreen()
-                .navigationTitle(Text(verbatim: title))
-#if canImport(UIKit)
-                .navigationBarTitleDisplayMode(.inline)
-#endif
+                .harnaxTitle(Text(verbatim: title))
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
                         Button { dismiss() } label: { HXText("common.close") }

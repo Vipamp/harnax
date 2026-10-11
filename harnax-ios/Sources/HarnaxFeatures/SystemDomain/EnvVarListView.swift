@@ -42,7 +42,7 @@ public struct EnvVarListView: View {
     public var body: some View {
         content
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: hx("env.title")))
+            .harnaxTitle(Text(verbatim: hx("env.title")))
             .searchable(text: $vm.keyword, prompt: Text(verbatim: hx("env.var.search")))
             .toolbar {
                 ToolbarItem(placement: .primaryAction) { addButton }

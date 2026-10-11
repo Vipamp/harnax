@@ -24,7 +24,7 @@ public struct SkillUsageView: View {
     public var body: some View {
         content
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: hx("skill.usage.title")))
+            .harnaxTitle(Text(verbatim: hx("skill.usage.title")))
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {

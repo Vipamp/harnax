@@ -44,7 +44,7 @@ public struct ChannelListView: View {
     public var body: some View {
         content
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: hx("channel.title")))
+            .harnaxTitle(Text(verbatim: hx("channel.title")))
             .searchable(text: $vm.keyword, prompt: Text(verbatim: hx("channel.search")))
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {

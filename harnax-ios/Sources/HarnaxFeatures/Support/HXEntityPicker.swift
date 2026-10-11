@@ -91,7 +91,7 @@ public struct HXEntityPicker: View {
                     HXStateView(.empty, message: hx(emptyKey ?? "state.empty.title"))
                 }
             }
-            .navigationTitle(Text(verbatim: hx(titleKey)))
+            .harnaxTitle(Text(verbatim: hx(titleKey)))
             .searchable(text: $query, prompt: Text(verbatim: hx(searchKey)))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

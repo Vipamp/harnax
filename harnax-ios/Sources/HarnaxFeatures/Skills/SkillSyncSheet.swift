@@ -37,10 +37,7 @@ public struct SkillSyncSheet: View {
                 footer
             }
             .background(Color.hx(.background))
-            .navigationTitle(Text(verbatim: hx("skill.sync.title")))
-#if canImport(UIKit)
-            .navigationBarTitleDisplayMode(.inline)
-#endif
+            .harnaxTitle(Text(verbatim: hx("skill.sync.title")))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button { dismiss() } label: { HXText("common.cancel") }

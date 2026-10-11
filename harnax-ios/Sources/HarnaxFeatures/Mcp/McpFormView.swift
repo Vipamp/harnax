@@ -71,7 +71,7 @@ public struct McpFormView: View {
                 .padding(16)
             }
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: hx(isCreate ? "mcp.create" : "mcp.edit")))
+            .harnaxTitle(Text(verbatim: hx(isCreate ? "mcp.create" : "mcp.edit")))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button { dismiss() } label: { HXText("common.cancel") }

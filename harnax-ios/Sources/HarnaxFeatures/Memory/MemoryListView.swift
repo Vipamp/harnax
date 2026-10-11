@@ -36,7 +36,7 @@ public struct MemoryListView: View {
     public var body: some View {
         content
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: hx("memory.list.title")))
+            .harnaxTitle(Text(verbatim: hx("memory.list.title")))
             .task {
                 if vm.phase == .loading { await vm.refresh() }
             }

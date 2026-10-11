@@ -183,7 +183,7 @@ public struct ServerAddressView: View {
             .padding(.bottom, HXLayout.tabBarClearance)
         }
         .harnaxScreen()
-        .navigationTitle(Text(verbatim: hx("login.serverAddress")))
+        .harnaxTitle(Text(verbatim: hx("login.serverAddress")))
         .task { await vm.load() }
     }
 }

@@ -88,7 +88,7 @@ public struct SkillSourceListView: View {
         }
         .listStyle(.plain)
         .harnaxScreen()
-        .navigationTitle(Text(verbatim: hx("context.domain.skill")))
+        .harnaxTitle(Text(verbatim: hx("context.domain.skill")))
         .searchable(text: $vm.keyword, prompt: Text(verbatim: hx("skill.source.search")))
         .toolbar {
             // Two entries, as the console has two writes on this card: one Create button
@@ -328,10 +328,7 @@ public struct SkillUploadSheet: View {
             }
             .padding(16)
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: hx("skill.source.upload.title")))
-#if canImport(UIKit)
-            .navigationBarTitleDisplayMode(.inline)
-#endif
+            .harnaxTitle(Text(verbatim: hx("skill.source.upload.title")))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button { dismiss() } label: { HXText("common.cancel") }
@@ -450,10 +447,7 @@ public struct SkillReportSheet: View {
                 .padding(16)
             }
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: hx("skill.install.title")))
-#if canImport(UIKit)
-            .navigationBarTitleDisplayMode(.inline)
-#endif
+            .harnaxTitle(Text(verbatim: hx("skill.install.title")))
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button { dismiss() } label: { HXText("common.close") }

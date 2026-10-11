@@ -219,7 +219,7 @@ public struct McpOAuthClientSheet: View {
                 .padding(16)
             }
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: hx("mcp.oauth.client.title")))
+            .harnaxTitle(Text(verbatim: hx("mcp.oauth.client.title")))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button { vm.closeClientEditor() } label: { HXText("common.cancel") }

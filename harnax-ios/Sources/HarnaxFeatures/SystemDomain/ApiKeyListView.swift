@@ -45,7 +45,7 @@ public struct ApiKeyListView: View {
     public var body: some View {
         content
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: hx("apikey.title")))
+            .harnaxTitle(Text(verbatim: hx("apikey.title")))
             .searchable(text: $vm.keyword, prompt: Text(verbatim: hx("apikey.search")))
             .toolbar {
                 ToolbarItem(placement: .primaryAction) { addButton }

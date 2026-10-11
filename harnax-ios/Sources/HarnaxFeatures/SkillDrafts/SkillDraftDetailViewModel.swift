@@ -33,6 +33,13 @@ public final class SkillDraftDetailViewModel: ObservableObject {
     @Published public private(set) var isActing = false
     /// What the last decision actually did, once it stopped being a button.
     @Published public private(set) var notice: SkillDraftNotice?
+    /// Announced once a decision has moved this row, so the queue can re-read it.
+    ///
+    /// The queue is a *pushed* screen, and popping back to one does not re-mount it: its only automatic read is
+    /// the `.task` guarded on `.loading`, which a return does not re-run. Without this announcement the
+    /// reviewer approves a draft, pops back, and the row is still sitting in「待审」(reported 2026-10-11). The
+    /// webui never needed it because `history.back()` remounts its list.
+    @Published public private(set) var queueNeedsReload = false
     /// Non-nil only while the name-conflict dialog is open — the one state the approve flow reaches without
     /// the draft having moved.
     @Published public private(set) var conflict: SkillDraftConflict?
@@ -338,6 +345,9 @@ public final class SkillDraftDetailViewModel: ObservableObject {
         conflict = nil
         conflictRefusal = nil
         newName = ""
+        // The same re-read, one screen up: this branch is reached by every outcome except the `NAME_TAKEN`
+        // early exit, so the queue reloads exactly when the row it lists has been re-read here.
+        queueNeedsReload = true
         await load()
     }
 }

@@ -82,8 +82,7 @@ final class CardTapAreaGateTests: XCTestCase {
         "HarnaxFeatures/Tools/ToolListView.swift",
         "HarnaxFeatures/Tasks/TaskLogListView.swift",
         "HarnaxFeatures/Models/ModelProviderListView.swift",
-        "HarnaxFeatures/SkillDrafts/SkillDraftListView.swift",
-        "HarnaxFeatures/SkillDrafts/SkillDraftEntryRow.swift"
+        "HarnaxFeatures/SkillDrafts/SkillDraftListView.swift"
     ]
 
     func testNoCardHandsItsOpenActionToABlockInsideIt() throws {
@@ -128,16 +127,14 @@ final class CardTapAreaGateTests: XCTestCase {
         }
     }
 
-    /// The other four open through a control, which is already whole-card — a control takes its label's frame,
+    /// The other three open through a control, which is already whole-card — a control takes its label's frame,
     /// padding included. The invariant is that the *card* is that label: move it down to a block inside the
     /// card and this reads as a pass while the hit area shrinks back to one row.
-    func testTheFourCardsThatOpenThroughAControlWrapTheWholeCard() throws {
+    func testTheThreeCardsThatOpenThroughAControlWrapTheWholeCard() throws {
         let openers: [(path: String, pattern: String)] = [
             ("HarnaxFeatures/Tasks/TaskLogListView.swift", #"(Button\(action: onTap\) \{\s*HXCard \{)"#),
             ("HarnaxFeatures/Models/ModelProviderListView.swift", #"(NavigationLink\(value: provider\) \{\s*HXCard \{)"#),
-            ("HarnaxFeatures/SkillDrafts/SkillDraftListView.swift", #"(NavigationLink\(value: ref\) \{ card \})"#),
-            ("HarnaxFeatures/SkillDrafts/SkillDraftEntryRow.swift",
-             #"(NavigationLink\(value: SkillDraftQueueRoute\(\)\) \{\s*HXCard \{)"#)
+            ("HarnaxFeatures/SkillDrafts/SkillDraftListView.swift", #"(NavigationLink\(value: ref\) \{ card \})"#)
         ]
         for entry in openers {
             let text = try FeatureSources.code(of: entry.path)

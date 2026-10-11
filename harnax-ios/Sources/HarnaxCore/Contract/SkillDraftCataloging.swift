@@ -38,16 +38,3 @@ public protocol SkillDraftCataloging: Sendable {
     /// validate first rather than paying for a round trip that can only say「write something」.
     func reject(id: Int64, _ payload: SkillDraftRejectPayload) async -> Result<SkillDraftDecision, APIError>
 }
-
-public extension SkillDraftCataloging {
-    /// The badge the chat tab's entry row carries. One row of the pending queue is enough to read `total`, and
-    /// this read sends no `sessionId` on purpose — the badge counts the tenant, not the conversation the row
-    /// sits in. The screen that wants the conversation's own nominations is the session skill panel, and it goes
-    /// through `SessionSkillReading`, which does scope by session.
-    func pendingCount() async -> Int? {
-        guard let page = try? await page(status: .pending, name: nil, sessionId: nil, num: 1, size: 1).get() else {
-            return nil
-        }
-        return page.total
-    }
-}

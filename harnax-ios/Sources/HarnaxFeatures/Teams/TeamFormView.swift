@@ -90,10 +90,7 @@ public struct TeamFormView: View {
             .sheet(item: $picking) { pick in pickerSheet(pick) }
             .safeAreaInset(edge: .bottom) { footer }
             .harnaxScreen()
-            .navigationTitle(Text(verbatim: hx(vm.titleKey)))
-            #if canImport(UIKit)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
+            .harnaxTitle(Text(verbatim: hx(vm.titleKey)))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button { dismiss() } label: { HXText("common.cancel") }

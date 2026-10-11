@@ -215,28 +215,67 @@ final class SkillNavigationTests: XCTestCase {
         )
     }
 
-    /// The row at the top of the conversation list is the queue's second entry, so the two have to carry one
-    /// name: a row called 「技能草稿」 in front of a screen titled 「技能晋升」 says two different things about one
-    /// queue. The row therefore takes the destination's own title key rather than a copy of the words, and the
-    /// retired second key may not come back — a copy nobody reads is how the two drifted apart the first time.
-    func testTheDraftEntryRowCarriesTheQueuesOwnTitleKey() throws {
-        let row = try FeatureSources.code(of: "HarnaxFeatures/SkillDrafts/SkillDraftEntryRow.swift")
-        let labels = try FeatureSources.captures(#"HXText\("([^"]+)"\)"#, in: row)
-        XCTAssertEqual(labels.count, 1, "the row shows exactly one label, got \(labels)")
+    /// The other half of the hand-off the gate above covers, over both review queues. A pushed screen is not
+    /// re-mounted when the reviewer pops back, and each queue's only automatic read is a `.task` guarded on
+    /// `.loading` — so a decision made on the row has to reach the list that owns it (reported 2026-10-11: the
+    /// approved draft was still sitting in「待审」until the queue was left and re-entered). Two hops to gate:
+    /// the list must not leave the detail's report at its no-op default, and the detail must actually post it.
+    func testEachQueueReloadsForADecisionMadeOnItsRow() throws {
+        let queues = [
+            (
+                list: "HarnaxFeatures/SkillDrafts/SkillDraftListView.swift",
+                detail: "HarnaxFeatures/SkillDrafts/SkillDraftDetailView.swift",
+                ctor: "SkillDraftDetailView("
+            ),
+            (
+                list: "HarnaxFeatures/MemoryDrafts/MemoryDraftListView.swift",
+                detail: "HarnaxFeatures/MemoryDrafts/MemoryDraftDetailView.swift",
+                ctor: "MemoryDraftDetailView("
+            ),
+        ]
+        for queue in queues {
+            let text = try FeatureSources.code(of: queue.list)
+            XCTAssertTrue(text.contains(queue.ctor), "\(queue.list) is the only entry to its own detail")
+            let call = try FeatureSources.block(text, from: queue.ctor)
+            XCTAssertTrue(
+                call.contains("onDecided:"),
+                "\(queue.list) leaves the detail's change report at the no-op default, which is how every view "
+                    + "model test can pass while the queue still shows the pre-decision rows: \(call)"
+            )
+            XCTAssertTrue(
+                call.contains("vm.refresh()"),
+                "the hand-off has to reload the queue this screen owns, got \(call)"
+            )
+
+            let detail = try FeatureSources.code(of: queue.detail)
+            XCTAssertTrue(
+                detail.contains(".onChange(of: vm.queueNeedsReload)"),
+                "\(queue.detail) forwards no announcement, so `onDecided` would fire on a flag nothing ever posts"
+            )
+        }
+    }
+
+    /// The queue has one name. The hub row takes the key the screen titles itself with, and the three strings
+    /// the conversation list's retired entry row read may not come back: a copy nobody renders is how two names
+    /// for one queue drift apart in the first place.
+    func testTheQueueIsNamedByOneKey() throws {
         let screen = try FeatureSources.code(of: "HarnaxFeatures/SkillDrafts/SkillDraftListView.swift")
-        let titles = try FeatureSources.captures(#"navigationTitle\(.*hx\("([^"]+)"\)"#, in: screen)
+        let titles = try FeatureSources.captures(#"harnaxTitle\(.*hx\("([^"]+)"\)"#, in: screen)
         XCTAssertEqual(titles.count, 1, "the queue titles itself once, got \(titles)")
         XCTAssertEqual(
-            labels,
-            titles,
-            "the entry row and the screen it opens are named by one key; two keys are two names that drift"
+            GovernanceRoute.skillDrafts.titleKey,
+            titles[0],
+            "the hub row and the screen it opens are named by one key; two keys are two names that drift"
         )
         for catalog in ["HarnaxKit/Resources/zh-Hans.lproj/Localizable.strings",
                         "HarnaxKit/Resources/en.lproj/Localizable.strings"] {
-            XCTAssertFalse(
-                try FeatureSources.contents(of: catalog).contains("\"skill.draft.entry\" ="),
-                "\(catalog) still defines the retired second name for this queue"
-            )
+            let text = try FeatureSources.contents(of: catalog)
+            for retired in ["skill.draft.entry", "skill.draft.entry.hint", "skill.draft.pendingCount"] {
+                XCTAssertFalse(
+                    text.contains("\"\(retired)\" ="),
+                    "\(catalog) still defines \(retired), which no screen renders any more"
+                )
+            }
         }
     }
 }
