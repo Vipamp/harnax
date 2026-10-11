@@ -25,3 +25,14 @@ func hxMonthDay(_ raw: String?) -> String? {
     guard parts.count == 3, parts[1].count == 2, parts[2].count == 2 else { return nil }
     return "\(parts[1])-\(parts[2])"
 }
+
+/// A `LocalDateTime` stamp in the form the console shows it: `2026-10-08 10:00:00`.
+///
+/// admin writes java.time in ISO (`JacksonConfig.kt:13`), so the `T` is the only character the two surfaces
+/// disagree on; every digit behind it is the server's own. A stamp that already has no `T` keeps itself, and
+/// an absent one stays absent rather than becoming a guessed-at date.
+func hxSpaceStamp(_ raw: String?) -> String? {
+    guard let raw = hxPresented(raw) else { return nil }
+    guard let index = raw.firstIndex(of: "T") else { return raw }
+    return "\(raw[..<index]) \(raw[raw.index(after: index)...])"
+}

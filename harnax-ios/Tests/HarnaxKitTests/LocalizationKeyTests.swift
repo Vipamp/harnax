@@ -12,6 +12,7 @@ final class LocalizationKeyTests: XCTestCase {
         "context", "system", "env", "agent", "team", "task", "chat", "model", "tool", "skill", "mcp", "cli",
         "apikey",
         "channel", "cron", "token", "monitor", "log", "error", "auth", "session",
+        "governance", "memory",
     ]
 
     private static let enPath = TestSources.sourcesRoot

@@ -25,6 +25,12 @@ public struct AgentSummary: Decodable, Identifiable, Equatable, Sendable {
     /// (`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/AgentResponse.kt:57-58`). Absent reads as off,
     /// which is the server's own default for the column.
     public let skillSelfWrite: Int?
+    /// The long-term memory switch: `1` means this agent extracts memory from its sessions and carries it back
+    /// into their context (`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/dto/AgentResponse.kt:60-61`).
+    /// A row with no key reads as **on**, not off — the create route writes `request.memoryEnabled ?: 1`
+    /// (`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AgentServiceImpl.kt:130`), so the
+    /// only row that can arrive without the key is one the server already defaulted to on.
+    public let memoryEnabled: Int?
     public let owner: String?
     public let creator: String?
     public let createTime: String?
@@ -42,6 +48,9 @@ public struct AgentSummary: Decodable, Identifiable, Equatable, Sendable {
     public var isShared: Bool { isPublic == 1 }
     /// Tested on exactly 1, the same shape as every other flag column on this DTO.
     public var isSelfWriting: Bool { skillSelfWrite == 1 }
+    /// Tested against `0` and not against `1`: the column's own default is on, so only an explicit off reads as
+    /// off and a key that is not there at all stays on (`AgentServiceImpl.kt:130`).
+    public var keepsMemory: Bool { memoryEnabled != 0 }
     public var title: String? { hxPresented(name) }
     public var mcpCount: Int { mcpList?.count ?? 0 }
     public var skillCount: Int { skillList?.count ?? 0 }

@@ -2,13 +2,14 @@ import SwiftUI
 import HarnaxCore
 import HarnaxKit
 
-/// C1/C2 — the 智能体 tab is a three-way switch between agents, teams and scheduled tasks, the shape the
-/// mockup's `.seg` row draws.
+/// C1/C2 — the 智能体 tab is a four-way switch between agents, teams, scheduled tasks and the governance
+/// queues, the shape the mockup's `.seg` row draws.
 public struct AgentHomeView: View {
     public enum Section: Int, CaseIterable, Identifiable, Sendable {
         case agents
         case teams
         case tasks
+        case governance
 
         public var id: Int { rawValue }
 
@@ -17,6 +18,7 @@ public struct AgentHomeView: View {
             case .agents: return "agent.segment.agents"
             case .teams: return "agent.segment.teams"
             case .tasks: return "agent.segment.tasks"
+            case .governance: return "agent.segment.governance"
             }
         }
     }
@@ -53,6 +55,8 @@ public struct AgentHomeView: View {
             TeamListView(dependencies: dependencies, account: account)
         case .tasks:
             TaskListView(catalog: dependencies.tasks, account: account)
+        case .governance:
+            GovernanceHomeView(dependencies: dependencies)
         }
     }
 }

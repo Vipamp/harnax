@@ -486,6 +486,72 @@ final class AgentFormWizardTests: XCTestCase {
         XCTAssertEqual(draft.systemPrompt, "  你负责抓取  \n", "the prompt goes out as written, markdown and all")
     }
 
+    // MARK: - the long-term memory switch's three states
+
+    /// Untouched is a state in its own right, not the value the screen happens to show: the switch reads on
+    /// because on is the column's default, and the body says nothing about it either way
+    /// (`AgentServiceImpl.kt:130`).
+    func testAFreshWizardShowsMemoryOnAndSendsNothingAboutIt() throws {
+        let rig = try rig()
+
+        XCTAssertTrue(rig.vm.memoryEnabled)
+        XCTAssertFalse(rig.vm.hasTouchedMemory)
+        XCTAssertNil(rig.vm.buildDraft().memoryEnabled)
+    }
+
+    /// The acceptance line read off the body a real submit put up for sending: a wizard walked straight through
+    /// with the switch never moved carries no memory key at all, which is how the server reads its own default
+    /// (`AgentServiceImpl.kt:130`).
+    func testASaveThatNeverTouchedMemorySendsABodyWithNoMemoryKey() async throws {
+        let rig = try rig()
+        fillIn(rig.vm)
+
+        _ = await rig.vm.save()
+
+        let body = try json(try XCTUnwrap(rig.agents.saveCalls.first?.draft))
+        XCTAssertNil(body["memoryEnabled"])
+    }
+
+    func testMovingTheMemorySwitchSendsTheColumnValue() throws {
+        let rig = try rig()
+
+        rig.vm.setMemoryEnabled(false)
+        XCTAssertTrue(rig.vm.hasTouchedMemory)
+        XCTAssertEqual(rig.vm.buildDraft().memoryEnabled, 0, "off is as much a decision as on")
+
+        rig.vm.setMemoryEnabled(true)
+        XCTAssertEqual(rig.vm.buildDraft().memoryEnabled, 1)
+    }
+
+    /// An edit seeds the switch off the row it arrived on and stays untouched: a read is not a decision, and
+    /// echoing the seeded value back would be a write the operator never asked the update route for
+    /// (`AgentServiceImpl.kt:181`).
+    func testAnEditSeedsTheMemorySwitchWithoutTouchingIt() throws {
+        let off = try rig(mode: .edit(AgentSummary.stub(["id": 3, "name": "报表", "memoryEnabled": 0])))
+        let on = try rig(mode: .edit(AgentSummary.stub(["id": 3, "name": "报表", "memoryEnabled": 1])))
+        let legacy = try rig(mode: .edit(AgentSummary.stub(["id": 3, "name": "报表"])))
+
+        XCTAssertFalse(off.vm.memoryEnabled)
+        XCTAssertTrue(on.vm.memoryEnabled)
+        XCTAssertTrue(legacy.vm.memoryEnabled, "a row with no column is the server's on")
+
+        XCTAssertFalse(on.vm.hasTouchedMemory, "seeding is not touching")
+        XCTAssertNil(on.vm.buildDraft().memoryEnabled)
+    }
+
+    /// A switch walked back to the state it was read in still counts as touched: what the operator did is what
+    /// the key reports, not whether the row ends up different.
+    func testReturningTheMemorySwitchToWhereItStartedStillWritesIt() throws {
+        let row = try AgentSummary.stub(["id": 3, "name": "报表", "memoryEnabled": 0])
+        let rig = try rig(mode: .edit(row))
+
+        rig.vm.setMemoryEnabled(true)
+        rig.vm.setMemoryEnabled(false)
+
+        XCTAssertTrue(rig.vm.hasTouchedMemory)
+        XCTAssertEqual(rig.vm.buildDraft().memoryEnabled, 0)
+    }
+
     // MARK: - rows are slots
 
     /// An added row that was never filled in is not a binding; it must not be sent, and must not be refused.

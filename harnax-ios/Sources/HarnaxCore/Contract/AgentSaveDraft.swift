@@ -28,6 +28,10 @@ public struct AgentSaveDraft: Encodable, Equatable, Sendable {
     /// The self-evolution switch. `nil` sends nothing and keeps what the row holds; the update route only
     /// writes it when the key is present (`AgentServiceImpl.kt:180`).
     public var skillSelfWrite: Int?
+    /// The long-term memory switch. `nil` sends nothing, and both routes then do what the operator asked by
+    /// doing nothing: create takes the column's own default of on (`AgentServiceImpl.kt:130`) and update keeps
+    /// the stored value (`AgentServiceImpl.kt:181`).
+    public var memoryEnabled: Int?
 
     public init(
         name: String? = nil,
@@ -41,7 +45,8 @@ public struct AgentSaveDraft: Encodable, Equatable, Sendable {
         owner: String? = nil,
         status: Int? = nil,
         isPublic: Int? = nil,
-        skillSelfWrite: Int? = nil
+        skillSelfWrite: Int? = nil,
+        memoryEnabled: Int? = nil
     ) {
         self.name = name
         self.description = description
@@ -55,11 +60,12 @@ public struct AgentSaveDraft: Encodable, Equatable, Sendable {
         self.status = status
         self.isPublic = isPublic
         self.skillSelfWrite = skillSelfWrite
+        self.memoryEnabled = memoryEnabled
     }
 
     enum CodingKeys: String, CodingKey {
         case name, description, systemPrompt, modelId, skillList, toolList, mcpList, cliList, owner, status,
-            isPublic, skillSelfWrite
+            isPublic, skillSelfWrite, memoryEnabled
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -78,6 +84,7 @@ public struct AgentSaveDraft: Encodable, Equatable, Sendable {
         try box.encodeIfPresent(status, forKey: .status)
         try box.encodeIfPresent(isPublic, forKey: .isPublic)
         try box.encodeIfPresent(skillSelfWrite, forKey: .skillSelfWrite)
+        try box.encodeIfPresent(memoryEnabled, forKey: .memoryEnabled)
     }
 }
 

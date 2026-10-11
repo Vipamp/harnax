@@ -17,6 +17,9 @@ import HarnaxKit
 /// The row pushes `SkillDraftQueueRoute` by value and `ChatTabView` answers it, so the facade is the only
 /// availability question left: the destination is registered by this row's single host, and a link that has a
 /// destination has nothing to be disabled for.
+///
+/// The label is the destination's own title key (`skill.draft.title`), the same rule the hub rows follow: a row
+/// and the screen it opens are one string, not two that can say different things about one queue.
 public struct SkillDraftEntryRow: View {
     private let drafts: (any SkillDraftCataloging)?
     /// Bumped by the conversation list's pull-to-refresh. `Equatable` so `.task(id:)` re-runs the read on a
@@ -47,7 +50,7 @@ public struct SkillDraftEntryRow: View {
                             .foregroundStyle(Color.hx(.brand))
                             .frame(width: 26)
                         VStack(alignment: .leading, spacing: 3) {
-                            HXText("skill.draft.entry")
+                            HXText("skill.draft.title")
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(Color.hx(.textPrimary))
                             Text(verbatim: hx("skill.draft.entry.hint"))

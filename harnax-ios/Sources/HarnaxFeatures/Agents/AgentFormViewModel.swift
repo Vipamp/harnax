@@ -182,6 +182,11 @@ public final class AgentFormViewModel: ObservableObject {
     /// second half is the load-bearing one — see `buildDraft`.
     @Published public var skillSelfWrite: Bool = false
     @Published public private(set) var hasTouchedSelfWrite = false
+    /// The 长期记忆 switch (`AgentSummary.memoryEnabled`), and whether the operator has ever moved it. It starts
+    /// on because on is the column's own default (`AgentServiceImpl.kt:130`), so an untouched create asks the
+    /// server for what the screen already shows.
+    @Published public var memoryEnabled: Bool = true
+    @Published public private(set) var hasTouchedMemory = false
 
     // MARK: - Steps 2–5
 
@@ -637,6 +642,13 @@ public final class AgentFormViewModel: ObservableObject {
         skillSelfWrite = value
     }
 
+    /// The 长期记忆 switch. The touch decides whether the key goes out, not the resulting value, so a switch
+    /// moved back to the state it was read in is still a decision the operator made — see `buildDraft`.
+    public func setMemoryEnabled(_ value: Bool) {
+        hasTouchedMemory = true
+        memoryEnabled = value
+    }
+
     // MARK: - Step 2 edits
 
     public func addToolRow() {
@@ -1088,6 +1100,12 @@ public final class AgentFormViewModel: ObservableObject {
         if hasTouchedSelfWrite {
             draft.skillSelfWrite = skillSelfWrite.hxInt
         }
+        // The same rule against the opposite default: with the key off the body create takes the column's own
+        // on (`AgentServiceImpl.kt:130`) and update reads it as「不动」(`AgentServiceImpl.kt:181`), so echoing
+        // back the value the row was seeded from would be a write nobody asked for.
+        if hasTouchedMemory {
+            draft.memoryEnabled = memoryEnabled.hxInt
+        }
         if isCreate { draft.status = 1 }
         draft.tools = toolRows.compactMap { row -> AgentToolDraft? in
             guard let toolID = row.toolID else { return nil }
@@ -1129,6 +1147,9 @@ public final class AgentFormViewModel: ObservableObject {
         modelID = row.modelId
         isPublic = row.isPublic == 1
         skillSelfWrite = row.isSelfWriting
+        // Seeding is a read, so the touch stays false: the row's own value shows on the switch and the key
+        // still leaves the body when the operator saves without moving it.
+        memoryEnabled = row.keepsMemory
         toolRows = (row.toolList ?? []).map { binding in
             AgentToolRow(
                 toolID: binding.toolId,

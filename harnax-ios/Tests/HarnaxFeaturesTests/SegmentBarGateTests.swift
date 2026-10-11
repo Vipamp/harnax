@@ -14,7 +14,7 @@ final class SegmentBarGateTests: XCTestCase {
         "HarnaxFeatures/Agents/AgentHomeView.swift"
     ]
 
-    /// The eight columns they switch between. A pushed second-level screen is not in this list on purpose: the
+    /// The nine columns they switch between. A pushed second-level screen is not in this list on purpose: the
     /// row belongs to the tab, not to a detail.
     private let columns = [
         "HarnaxFeatures/Models/ModelProviderListView.swift",
@@ -24,7 +24,8 @@ final class SegmentBarGateTests: XCTestCase {
         "HarnaxFeatures/Cli/CliListView.swift",
         "HarnaxFeatures/Agents/AgentListView.swift",
         "HarnaxFeatures/Teams/TeamListView.swift",
-        "HarnaxFeatures/Tasks/TaskListView.swift"
+        "HarnaxFeatures/Tasks/TaskListView.swift",
+        "HarnaxFeatures/Governance/GovernanceHomeView.swift"
     ]
 
     /// A host that stacks the bar above its column re-creates the defect by hand, and a host that builds the
@@ -69,7 +70,7 @@ final class SegmentBarGateTests: XCTestCase {
         let unexpected = drawn.filter { !columns.contains($0) }
         XCTAssertTrue(
             unexpected.isEmpty,
-            "the row is drawn by a screen that is not one of the eight hosted columns: "
+            "the row is drawn by a screen that is not one of the nine hosted columns: "
                 + unexpected.joined(separator: ", ")
         )
         let missing = columns.filter { !drawn.contains($0) }

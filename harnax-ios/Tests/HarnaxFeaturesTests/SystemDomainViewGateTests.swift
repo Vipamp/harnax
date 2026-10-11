@@ -102,9 +102,9 @@ final class SystemDomainViewGateTests: XCTestCase {
 
     // MARK: - 系统 tab 并入「我的」
 
-    /// The merged screen is the only home the four admin rows have now, and it has to keep the gate that came
-    /// with them: the row list is what an account may open, not `allCases`. A missing `navigationDestination`
-    /// would leave every row tappable and going nowhere, which the compiler cannot see.
+    /// The merged screen is the only home the admin rows have now, and it has to keep the gate that came with
+    /// them: the row list is what an account may open, not `allCases`. A missing `navigationDestination` would
+    /// leave every row tappable and going nowhere, which the compiler cannot see.
     func testTheAccountScreenIsNowTheOnlyHomeForTheAdminRows() throws {
         let text = try SystemDomainSources.contents(of: meFile)
         XCTAssertTrue(

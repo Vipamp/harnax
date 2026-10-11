@@ -272,7 +272,7 @@
 "context.domain.cli" = "CLI";
 
 /* ---- system tab ---- */
-"system.section.administration" = "Administration";
+"system.section.administration" = "System management";
 "system.env.subtitle" = "Values agents read when they run";
 "system.apikey.subtitle" = "Keys that call Harnax over its API";
 
@@ -1335,10 +1335,9 @@
 "chat.skills.enableFailed" = "Could not enable it";
 
 /* ---- skill drafts: the self-evolution queue, its review screen and the two decisions ---- */
-"skill.draft.entry" = "Skill drafts";
 "skill.draft.entry.hint" = "Skills the agents proposed, waiting for a human";
 "skill.draft.pendingCount" = "%d pending";
-"skill.draft.title" = "Skill drafts";
+"skill.draft.title" = "Skill promotion";
 "skill.draft.detail.title" = "Review draft";
 "skill.draft.search" = "Search by skill name";
 "skill.draft.reload" = "Reload";
@@ -1446,4 +1445,243 @@
 "skill.origin.human" = "Installed";
 "agent.wizard.selfWrite" = "Self-evolution";
 "agent.wizard.selfWrite.hint" = "Lets this agent propose skill drafts of its own. Every draft still needs a human approval before it becomes a skill.";
+
+/* ---- navigation shell: the fourth agents segment, the governance hub's three rows, and the monitor block split off the account screen ---- */
+"agent.segment.governance" = "Governance";
+"governance.title" = "Optimization governance";
+"governance.memoryDrafts.subtitle" = "What the agents merged out of conversations, before it reaches long-term memory";
+"governance.memory.subtitle" = "What each agent remembers, and how to clear it";
+"governance.skillDrafts.subtitle" = "New skills the agents have proposed, approved one by one";
+"monitor.section" = "Cluster monitoring";
+"monitor.skillUsage.subtitle" = "Which skills are actually read and used";
+"monitor.calls.title" = "Call metrics";
+"monitor.calls.subtitle" = "Calls, latency and failures by tool, MCP server and CLI package";
+
+// ==== long-term memory
+"agent.wizard.memory" = "Long-term memory";
+"agent.wizard.memory.hint" = "Lets this agent keep long-term memory of its own conversations. There is no switch per conversation: once this is on, each of its sessions keeps its own layer.";
+
+/* ---- memory: the owner's own long-term agent memory, its one agent detail, and the purge ---- */
+/* the two non-happy paths of the list, kept apart on purpose: one is an answer, the other is a failure */
+"memory.list.title" = "Agent memory";
+"memory.list.empty" = "None of your agents has long-term memory yet";
+"memory.list.note" = "Only your own agents' memory is listed. A conversation's own layer has no read route, so it never appears as text here — only as the count of what still has not been merged.";
+"memory.count.one" = "%d agent with memory";
+"memory.count.other" = "%d agents with memory";
+/* the row: what the long-term layer holds, and the one signal the conversation layer is allowed to give */
+"memory.row.noCurated" = "Nothing curated into long-term memory yet";
+"memory.row.days.one" = "%d daily note";
+"memory.row.days.other" = "%d daily notes";
+"memory.row.pending.one" = "%d conversation still owes a merge";
+"memory.row.pending.other" = "%d conversations still owe a merge";
+"memory.row.updated" = "Updated";
+"memory.column.days" = "Daily notes";
+"memory.column.pending" = "Unmerged";
+/* 「not merged away yet」, never 「waiting for your approval」: a rejection leaves the layer in place */
+"memory.pending.why" = "This many of the agent's conversations still hold a layer of their own, and none of it reaches this list until a merge takes it. Rejecting a candidate does not remove that layer, so the same material is proposed again next window.";
+/* the purge: one sentence naming all three things the prefix sweep takes */
+"memory.purge.title" = "Delete this agent's memory";
+"memory.purge.action" = "Delete memory";
+"memory.purge.warning" = "Delete the memory of %@? The curated MEMORY.md, every daily note and any conversation memory that has not been merged away yet all go with it, and nothing can be restored.";
+"memory.purge.banner" = "Memory deletion";
+"memory.purge.removed" = "Deleted the memory of %@ — %d object(s) removed";
+"memory.purge.nothing" = "No memory of %@ was found to delete; nothing was removed";
+/* one agent's detail: the curated text and the daily ledger, drawn apart because the runtime keeps them apart */
+"memory.detail.empty" = "This agent has no long-term memory to read yet";
+"memory.detail.note" = "The curated text is rewritten by a merge; the daily ledger only ever appends. A conversation's own layer has no read route, so nothing on this screen is one.";
+"memory.detail.curated" = "Curated memory (MEMORY.md)";
+"memory.detail.noCurated" = "This agent has not curated any long-term memory yet";
+"memory.detail.daily" = "Daily notes";
+"memory.detail.noDaily" = "No daily notes yet";
+"memory.detail.noEntry" = "This day's note is empty";
+
+// ============================================================ memory drafts
+"memory.draft.title" = "Session memory approvals";
+"memory.draft.detail.title" = "Merge proposal";
+"memory.draft.search" = "Search by agent";
+"memory.draft.reload" = "Reload";
+"memory.draft.queue.hint" = "Every candidate here is a whole rewrite of one agent's long-term memory. Approving one replaces that text and tells every conversation that agent starts afterwards.";
+"memory.draft.status.PENDING" = "Pending";
+"memory.draft.status.APPROVED" = "Approved";
+"memory.draft.status.REJECTED" = "Rejected";
+"memory.draft.unnamed" = "Unnamed agent";
+"memory.draft.firstLayer" = "No layer yet";
+"memory.draft.patched" = "Rewritten";
+"memory.draft.hint.patched" = "The merge rewrote this candidate after it was first proposed";
+"memory.draft.hint.targets" = "Day files of the agent's own memory that this one approval rewrites";
+"memory.draft.row.merged" = "%d characters";
+"memory.draft.row.sources" = "%d files drained";
+"memory.draft.row.targets" = "%d day files";
+"memory.draft.column.agent" = "Agent";
+"memory.draft.column.session" = "Conversation";
+"memory.draft.column.proposed" = "Proposed";
+"memory.draft.column.patched" = "Rewritten";
+"memory.draft.column.decidedBy" = "Decided by";
+"memory.draft.empty.pending" = "Nothing is waiting to be merged into a long-term memory";
+"memory.draft.empty.decided" = "No decided candidate matches this filter";
+"memory.draft.digest.label" = "Content digest";
+"memory.draft.digest.hint" = "An approval sends this back, so what you approve is the text you are reading";
+"memory.draft.digest.missing" = "This candidate carries no digest to approve against, so it was reloaded";
+"memory.draft.decided.hint" = "Decided by %@ at %@";
+"memory.draft.rejectReason" = "Reason";
+"memory.draft.decision.working" = "Sending…";
+"memory.draft.approve" = "Approve";
+"memory.draft.reject" = "Reject";
+"memory.draft.approve.confirm.title" = "Merge this into the agent's memory?";
+"memory.draft.approve.confirm.body" = "This text replaces the whole long-term layer of %@, and every conversation that agent starts afterwards is told it. The conversation files this merge read are cleared once the write lands.";
+"memory.draft.approve.confirm.daily" = "The same approval also writes %d of the agent's own day files. If any one of them moved since the merge read it, nothing is written at all.";
+"memory.draft.reject.title" = "Reject this candidate";
+"memory.draft.reject.placeholder" = "Why are you rejecting it?";
+"memory.draft.reject.hint" = "The agent keeps the memory it has, and the next window proposes this material again — this sentence is what the queue will say about it.";
+"memory.draft.reject.counter" = "%d of %d characters";
+"memory.draft.reject.reasonRequired" = "A rejection needs a reason";
+"memory.draft.reject.tooLong" = "The reason cannot exceed %d characters";
+"memory.draft.reject.done" = "Rejected, and nothing was written";
+"memory.draft.merged.title" = "The memory it proposes";
+"memory.draft.merged.hint" = "%d characters — this is the whole file, not an addition to it";
+"memory.draft.merged.empty" = "This candidate produced no text";
+"memory.draft.base.title" = "What the agent holds now";
+"memory.draft.base.hint" = "Read at %@, %d characters";
+"memory.draft.base.empty" = "There was no long-term layer to merge into";
+"memory.draft.sources.title" = "Conversation files it drained";
+"memory.draft.sources.hint" = "%d file(s). An approval clears each one only while it still holds these exact bytes.";
+"memory.draft.sources.empty" = "This candidate read no conversation file";
+"memory.draft.sources.noPath" = "No file name recorded";
+"memory.draft.sources.chars" = "%d characters";
+"memory.draft.sources.noContent" = "The bytes it read were not recorded";
+"memory.draft.targets.title" = "Day files it rewrites";
+"memory.draft.targets.hint" = "%d of the agent's own day files, each with its own version check";
+"memory.draft.targets.empty" = "This candidate writes no day file";
+"memory.draft.targets.newDay" = "New for this day";
+"memory.draft.targets.chars" = "%d characters";
+"memory.draft.targets.diff" = "The day before and after";
+"memory.draft.targets.baseHeading" = "As it stands";
+"memory.draft.targets.mergedHeading" = "As this approval would write it";
+"memory.draft.targets.baseEmpty" = "That day had no file yet";
+"memory.draft.targets.noText" = "No text was produced for this day";
+"memory.draft.outcome.approved" = "Merged into the agent's memory";
+"memory.draft.outcome.rejected" = "Rejected";
+"memory.draft.outcome.changed" = "The conversation merged again";
+"memory.draft.outcome.reviewed" = "Already decided";
+"memory.draft.outcome.stale" = "Nothing was written";
+"memory.draft.outcome.unknown" = "The decision was refused";
+"memory.draft.outcome.failed" = "The decision was not applied";
+"memory.draft.approved.body" = "The long-term layer is now version %@, and every conversation this agent starts from here on is told that text. %d conversation memory file(s) were cleared.";
+"memory.draft.approved.kept" = "%d were left for the next candidate because their bytes moved after the merge read them.";
+"memory.draft.approved.absent" = "%d had already gone by the time the write landed.";
+"memory.draft.approved.daily" = "Memory for %d date(s) was folded in alongside it.";
+"memory.draft.changed.hint" = "This candidate is no longer the newest merge, so nothing was written. Reload it and approve against the text you are shown now.";
+"memory.draft.changed.digest" = "The digest to approve against";
+"memory.draft.reviewed.hint" = "%@ decided this at %@, so this screen no longer holds the decision.";
+"memory.draft.stale.hint" = "The agent's layer is at version %@ now, and one file this candidate writes moved since the merge read it. Nothing was written.";
+"memory.draft.stale.target" = "The file that moved";
+"memory.draft.unknown.hint" = "The stack answered with an outcome this build does not know how to read: %@. Nothing was interpreted from it.";
+
+// ==== skill usage
+
+/* the read-only monitor pushed from 「我的」: which of this tenant's skills ever get loaded */
+"skill.usage.title" = "Skill monitoring";
+"skill.usage.section" = "Per-skill usage";
+
+/* the five headline numbers, in the console's card order with the derived complement last */
+"skill.usage.metric.skills" = "Skills";
+"skill.usage.metric.loads" = "Loads";
+"skill.usage.metric.uses" = "Uses";
+"skill.usage.metric.unused" = "Never used";
+"skill.usage.metric.used" = "Used at least once";
+
+/* what the two easily-mixed counts measure, copied from the console's tooltips */
+"skill.usage.hint.loads" = "Times a skill was read into a context";
+"skill.usage.hint.uses" = "Times a skill's instructions were actually followed, reported by the runtime when a load succeeds";
+"skill.usage.hint.unused" = "No load and no use inside the window";
+
+/* the one filter this screen has, and the news it can report */
+"skill.usage.unusedOnly" = "Unused only";
+"skill.usage.unusedOnly.none" = "Every skill here was loaded at least once";
+
+/* 「no data」 on this page — a refusal is the error state and says so in its own words */
+"skill.usage.empty" = "No skill to report";
+
+/* the row's last column: the server's own text, or nothing in the window at all */
+"skill.usage.lastEvent" = "Last event";
+"skill.usage.lastEvent.none" = "None in this window";
+
+/* the paragraph under the table, quoting the window the server answered */
+"skill.usage.window" = "Counts cover the last %d days. An unused list is not by itself a reason to delete a skill.";
+"skill.usage.since" = "Window opens %@";
+
+/* ---- call metrics: the filters, the four cards, the trend, the subjects and one recorded call ---- */
+/* the console's card tooltips and its footnote under the table both become readable text here */
+"monitor.calls.cards" = "Overview";
+"monitor.calls.card.calls" = "Calls";
+"monitor.calls.card.rate" = "Success rate";
+"monitor.calls.card.p95" = "P95 duration";
+"monitor.calls.card.failures" = "Failed calls";
+"monitor.calls.card.rate.hint" = "Share of calls ending SUCCESS; denials and interruptions count as failures";
+"monitor.calls.card.p95.hint" = "Approximated from six duration buckets, so the per-tool figure is a bucket boundary rather than an exact millisecond";
+"monitor.calls.card.failures.hint" = "ERROR, DENIED and INTERRUPTED together";
+"monitor.calls.section.subjects" = "Subjects";
+"monitor.calls.trend.title" = "Call trend";
+"monitor.calls.trend.empty" = "No call to plot in this window";
+"monitor.calls.bucket.note" = "Trend bucketed by %@";
+"monitor.calls.series.calls" = "Calls";
+"monitor.calls.series.successes" = "Successes";
+"monitor.calls.series.failures" = "Failures";
+"monitor.calls.empty" = "No call inside this window";
+"monitor.calls.filter.kind" = "Origin";
+"monitor.calls.kind.inert" = "This arm only says which calls the figures above counted";
+"monitor.calls.window.days" = "Last %d days";
+"monitor.calls.window.asked" = "Counts cover the window opening %@";
+"monitor.calls.window.note" = "Counts run from %@ to %@, both hours inclusive. Success rate and P95 are range-wide figures, not per-bucket ones.";
+"monitor.calls.detail.note" = "The agent and session views read the detail table, so they only cover calls inside the retention window; older history is answerable only from the hourly aggregate, per tool, MCP server or CLI package. These two count up to the current instant while the four cards count up to the last hourly fold, so the two totals can differ by the calls of one hour.";
+"monitor.calls.row.failed" = "%1$d failed, %2$d succeeded";
+"monitor.calls.row.succeeded" = "%1$d succeeded of %2$d";
+"monitor.calls.stamp.none" = "No call in this window";
+/* the five dimensions: the first three read the hourly aggregate, the last two the detail table */
+"monitor.calls.group.tool" = "By tool";
+"monitor.calls.group.mcp" = "By MCP";
+"monitor.calls.group.cli" = "By CLI";
+"monitor.calls.group.agent" = "By agent";
+"monitor.calls.group.session" = "By session";
+/* the five origins */
+"monitor.calls.kind.builtin" = "Available tools";
+"monitor.calls.kind.mcp" = "MCP";
+"monitor.calls.kind.cli" = "CLI";
+"monitor.calls.kind.shell" = "Bare shell commands";
+"monitor.calls.kind.framework" = "System built-ins";
+/* the four terminal states, in the console's four tag colours */
+"monitor.calls.outcome.SUCCESS" = "Success";
+"monitor.calls.outcome.ERROR" = "Failed";
+"monitor.calls.outcome.DENIED" = "Denied";
+"monitor.calls.outcome.INTERRUPTED" = "Interrupted";
+/* the bucket size the trend answered with; auto never reaches this */
+"monitor.calls.granularity.auto" = "Auto";
+"monitor.calls.granularity.hour" = "Hourly";
+"monitor.calls.granularity.day" = "Daily";
+"monitor.calls.granularity.week" = "Weekly";
+"monitor.calls.granularity.month" = "Monthly";
+/* the six figures of one subject card */
+"monitor.calls.column.calls" = "Calls";
+"monitor.calls.column.rate" = "Success rate";
+"monitor.calls.column.average" = "Avg duration";
+"monitor.calls.column.p95" = "P95";
+"monitor.calls.column.failures" = "Failed";
+"monitor.calls.column.kind" = "Origin";
+/* the pushed record list: which arm, which window, how many, and why it can be fewer than the total above */
+"monitor.calls.detail.subject" = "%1$@ · %2$@";
+"monitor.calls.detail.origin" = "Only calls whose origin is %@";
+"monitor.calls.detail.total.one" = "%d call recorded";
+"monitor.calls.detail.total.other" = "%d calls recorded";
+"monitor.calls.detail.empty" = "The detail table holds no call for this arm";
+"monitor.calls.retention.note" = "The detail table keeps only a window of history, and older calls survive just as aggregate counts, so this list can be shorter than the total above.";
+"monitor.calls.row.tool" = "Tool %@";
+"monitor.calls.row.origin" = "Origin %@";
+"monitor.calls.row.session" = "Session %@";
+"monitor.calls.row.agent" = "Agent %@";
+"monitor.calls.row.failure" = "Failure reason: %@";
+"monitor.calls.row.expand" = "See input and result";
+"monitor.calls.row.collapse" = "Collapse";
+"monitor.calls.row.payload.off" = "This arm recorded no input or result";
+"monitor.calls.detail.args" = "Input";
+"monitor.calls.detail.result" = "Result excerpt";
 

@@ -150,10 +150,11 @@ public struct HarnaxDependencies: Sendable {
             // next launch.
             language: { AcceptLanguage.current() }
         )
-        // One admin surface, twenty-seven protocols: every `/api/admin/**` route family hangs off the same
+        // One admin surface, thirty-one protocols: every `/api/admin/**` route family hangs off the same
         // client, so the agent and team reads, their two detail reads, their two save surfaces, the task,
-        // refresh, five context domains, four system reads, the skill draft queue, the session skill panel's two
-        // router legs and the nine session reads and writes share its header injection.
+        // refresh, five context domains, four system reads, the skill draft queue, the agent memory read, the
+        // memory draft queue, the two monitor reads (skill usage and call metrics), the session skill panel's
+        // two router legs and the nine session reads and writes share its header injection.
         let admin = AdminClient(client: client)
         // One client for both legs: an answer to a parked run comes back as a stream of its own.
         let stream = ChatStreamClient(

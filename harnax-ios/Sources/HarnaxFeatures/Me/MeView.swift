@@ -8,7 +8,7 @@ public enum HarnaxRoute: Hashable, Sendable {
 }
 
 /// F1 — who is signed in, which tenant the session is in, the preferences this build owns, the administration
-/// domains that had a tab of their own, and signing out.
+/// domains that had a tab of their own, the three cluster monitors, and signing out.
 ///
 /// Everything this screen can change is on it. The two appearance picks and the tenant are menu rows rather
 /// than a sub-screen and a sheet: a pick you have to navigate to reads as information, and the tenant entry
@@ -92,6 +92,31 @@ public struct MeView: View {
                         .buttonStyle(.plain)
                     }
                 }
+                // A separate block because it is a separate kind of thing: the rows above create and delete
+                // records, these three only add up what is already there. That is also why no monitor row
+                // takes the administrator flag — the console gates the API Key route alone (`MonitorRoute`).
+                let monitors = MonitorRoute.allCases.filter { route in
+                    switch route {
+                    case .token: true
+                    case .skillUsage: model.dependencies.skillUsage != nil
+                    case .callMetrics: model.dependencies.toolMetrics != nil
+                    }
+                }
+                HXSectionHeader("monitor.section")
+                HXGroupCard {
+                    ForEach(Array(monitors.enumerated()), id: \.element) { offset, route in
+                        NavigationLink(value: route) {
+                            HXRow(
+                                route.titleKey,
+                                subtitle: hx(route.subtitleKey),
+                                systemImage: route.systemImage,
+                                divider: offset < monitors.count - 1,
+                                trailing: { HXChevron() }
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
                 signOut
             }
             .padding(16)
@@ -115,8 +140,20 @@ public struct MeView: View {
                     agents: model.dependencies.agents,
                     account: model.account
                 )
-            case .tokenMonitor:
+            }
+        }
+        .navigationDestination(for: MonitorRoute.self) { route in
+            switch route {
+            case .token:
                 TokenMonitorView(catalog: model.dependencies.tokenStats)
+            case .skillUsage:
+                if let skillUsage = model.dependencies.skillUsage {
+                    SkillUsageView(catalog: skillUsage)
+                }
+            case .callMetrics:
+                if let toolMetrics = model.dependencies.toolMetrics {
+                    CallMetricsView(catalog: toolMetrics)
+                }
             }
         }
         .task {

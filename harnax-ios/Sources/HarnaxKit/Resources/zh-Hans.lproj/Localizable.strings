@@ -273,7 +273,7 @@
 "context.domain.cli" = "CLI";
 
 /* ---- 系统 ---- */
-"system.section.administration" = "管理";
+"system.section.administration" = "系统管理";
 "system.env.subtitle" = "智能体运行时读取的参数值";
 "system.apikey.subtitle" = "调用 Harnax 接口的密钥";
 
@@ -1336,10 +1336,9 @@
 "chat.skills.enableFailed" = "启用没有成功";
 
 /* ---- 技能草稿：自我进化的待审队列、审核页与两个决定 ---- */
-"skill.draft.entry" = "技能草稿";
 "skill.draft.entry.hint" = "智能体提出的技能改动，等人来审";
 "skill.draft.pendingCount" = "%d 条待审";
-"skill.draft.title" = "技能草稿";
+"skill.draft.title" = "技能晋升";
 "skill.draft.detail.title" = "审核草稿";
 "skill.draft.search" = "按技能名搜索";
 "skill.draft.reload" = "重新读取";
@@ -1447,4 +1446,243 @@
 "skill.origin.human" = "人工安装";
 "agent.wizard.selfWrite" = "技能自我进化";
 "agent.wizard.selfWrite.hint" = "允许这个智能体自己提出技能草稿。每份草稿仍要人工批准才会成为技能。";
+
+/* ---- 导航壳：智能体 tab 第四段、治理枢纽三行入口、「我的」拆出的集群监控组 ---- */
+"agent.segment.governance" = "治理";
+"governance.title" = "优化治理";
+"governance.memoryDrafts.subtitle" = "智能体从会话里并出来的整理稿，批准才写进长期记忆";
+"governance.memory.subtitle" = "每台智能体记住了什么，与清空它的入口";
+"governance.skillDrafts.subtitle" = "智能体提出的新技能，批准才成为技能";
+"monitor.section" = "集群监控";
+"monitor.skillUsage.subtitle" = "哪些技能真被读过、被用过";
+"monitor.calls.title" = "调用监控";
+"monitor.calls.subtitle" = "工具、MCP 与 CLI 的调用次数、耗时与失败";
+
+// ==== long-term memory
+"agent.wizard.memory" = "长期记忆";
+"agent.wizard.memory.hint" = "允许这个智能体保留自己会话的长期记忆。没有按会话单独的开关：打开后它的每个会话都各自保留一层。";
+
+/* ---- 记忆：主人自己的智能体长期记忆、单台详情与清除 ---- */
+/* 清单的两条非正常路径刻意分开：一条是答案，另一条是读失败 */
+"memory.list.title" = "智能体记忆";
+"memory.list.empty" = "你的智能体还没有长期记忆";
+"memory.list.note" = "这里只列出当前登录账号自己的记忆。会话单独记的那一层没有读取路由，因此不出现正文，只出现还有多少没被并走。";
+"memory.count.one" = "%d 台智能体有记忆";
+"memory.count.other" = "%d 台智能体有记忆";
+/* 行：长期层里的内容，以及会话层唯一能给的那一枚信号 */
+"memory.row.noCurated" = "还没有整理出长期记忆";
+"memory.row.days.one" = "%d 条每日记录";
+"memory.row.days.other" = "%d 条每日记录";
+"memory.row.pending.one" = "%d 个会话的记忆还没并入";
+"memory.row.pending.other" = "%d 个会话的记忆还没并入";
+"memory.row.updated" = "最近更新";
+"memory.column.days" = "每日记录";
+"memory.column.pending" = "待并入";
+/* 「还没并走」而不是「等你审批」：驳回并不会带走会话那一层 */
+"memory.pending.why" = "这个智能体还有这么多会话保留着自己那一层记忆，在被并走之前不会出现在这里；驳回一条候选不会带走那一层，同一份内容下一轮还会再提。";
+/* 清除：一句话点全前缀清扫带走的三样东西 */
+"memory.purge.title" = "删除这台智能体的记忆";
+"memory.purge.action" = "删除记忆";
+"memory.purge.warning" = "删除「%@」的记忆？整理后的记忆（MEMORY.md）、全部每日记录，以及尚未并入的会话记忆会一并删除，且无法恢复。";
+"memory.purge.banner" = "记忆删除结果";
+"memory.purge.removed" = "已删除「%@」的记忆，共移除 %d 个记忆对象";
+"memory.purge.nothing" = "未找到「%@」可删除的记忆，没有删除任何内容";
+/* 单台详情：整理稿与按天流水分开画，因为运行侧就是把它们分开记的 */
+"memory.detail.empty" = "这台智能体还没有长期记忆可读";
+"memory.detail.note" = "整理稿由合并改写，每日记录只追加。会话自己那一层没有读取路由，所以这一屏上的任何一段文字都不是它。";
+"memory.detail.curated" = "整理后的记忆（MEMORY.md）";
+"memory.detail.noCurated" = "该智能体还没有整理出长期记忆";
+"memory.detail.daily" = "每日记录";
+"memory.detail.noDaily" = "暂无每日记录";
+"memory.detail.noEntry" = "这一天的记录是空的";
+
+// ============================================================ memory drafts
+"memory.draft.title" = "会话记忆审批";
+"memory.draft.detail.title" = "合并候选";
+"memory.draft.search" = "按智能体名称搜索";
+"memory.draft.reload" = "重新读取";
+"memory.draft.queue.hint" = "这里的每一条候选都是对某个智能体长期记忆的整篇改写。批准之后，这段文字会替换它原有的长期记忆，此后该智能体开启的每一个会话都会被告诉这段内容。";
+"memory.draft.status.PENDING" = "待审";
+"memory.draft.status.APPROVED" = "已批准";
+"memory.draft.status.REJECTED" = "已驳回";
+"memory.draft.unnamed" = "未命名智能体";
+"memory.draft.firstLayer" = "尚无记忆层";
+"memory.draft.patched" = "已被重新合并";
+"memory.draft.hint.patched" = "这份候选被提出之后，合并又重写过一次";
+"memory.draft.hint.targets" = "这一次批准还会改写智能体自己的按日记忆文件";
+"memory.draft.row.merged" = "%d 个字符";
+"memory.draft.row.sources" = "清空 %d 个会话文件";
+"memory.draft.row.targets" = "改写 %d 个日志文件";
+"memory.draft.column.agent" = "智能体";
+"memory.draft.column.session" = "会话";
+"memory.draft.column.proposed" = "提出于";
+"memory.draft.column.patched" = "最近合并";
+"memory.draft.column.decidedBy" = "决策人";
+"memory.draft.empty.pending" = "没有等待合并进长期记忆的内容";
+"memory.draft.empty.decided" = "当前筛选下没有已决策的候选";
+"memory.draft.digest.label" = "内容摘要";
+"memory.draft.digest.hint" = "批准时会把这段摘要原样送回，所以你批准的就是你此刻看到的文字";
+"memory.draft.digest.missing" = "这份候选没有可用于批准的摘要，已重新读取";
+"memory.draft.decided.hint" = "由 %@ 在 %@ 决策";
+"memory.draft.rejectReason" = "理由";
+"memory.draft.decision.working" = "提交中…";
+"memory.draft.approve" = "批准";
+"memory.draft.reject" = "驳回";
+"memory.draft.approve.confirm.title" = "把这段记忆合并进智能体的长期记忆？";
+"memory.draft.approve.confirm.body" = "这段文字会替换 %@ 的整篇长期记忆，此后该智能体开启的每一个会话都会被告诉它。合并所读取的那些会话文件，会在写入成功后被清空。";
+"memory.draft.approve.confirm.daily" = "同一次批准还会改写该智能体自己的 %d 个按日记忆文件。只要其中任何一个自合并读取之后发生过变化，这次就什么都不写。";
+"memory.draft.reject.title" = "驳回这份候选";
+"memory.draft.reject.placeholder" = "为什么要驳回？";
+"memory.draft.reject.hint" = "智能体会保留它已有的记忆，下一个窗口还会把同样的内容再提一次——这句话就是候选重回队列时别人看到的理由。";
+"memory.draft.reject.counter" = "%d / %d 个字符";
+"memory.draft.reject.reasonRequired" = "驳回必须写理由";
+"memory.draft.reject.tooLong" = "理由不能超过 %d 个字符";
+"memory.draft.reject.done" = "已驳回，两层记忆都未改动";
+"memory.draft.merged.title" = "它提出的记忆";
+"memory.draft.merged.hint" = "共 %d 个字符——这是整篇文件，而不是追加的一段";
+"memory.draft.merged.empty" = "这份候选没有产生任何文字";
+"memory.draft.base.title" = "智能体现在的记忆";
+"memory.draft.base.hint" = "读取于 %@，共 %d 个字符";
+"memory.draft.base.empty" = "当时还没有可供合并的长期记忆";
+"memory.draft.sources.title" = "它清空的会话文件";
+"memory.draft.sources.hint" = "共 %d 个文件。只有文件里仍是这些字节时，批准才会把它清空。";
+"memory.draft.sources.empty" = "这份候选没有读取任何会话文件";
+"memory.draft.sources.noPath" = "未记录文件名";
+"memory.draft.sources.chars" = "%d 个字符";
+"memory.draft.sources.noContent" = "没有记录它读到的字节";
+"memory.draft.targets.title" = "它改写的按日文件";
+"memory.draft.targets.hint" = "该智能体自己的 %d 个按日文件，每一个都带自己的版本校验";
+"memory.draft.targets.empty" = "这份候选不改写任何按日文件";
+"memory.draft.targets.newDay" = "这一天首次创建";
+"memory.draft.targets.chars" = "%d 个字符";
+"memory.draft.targets.diff" = "改写前后的这一天";
+"memory.draft.targets.baseHeading" = "现在的样子";
+"memory.draft.targets.mergedHeading" = "批准后写入的样子";
+"memory.draft.targets.baseEmpty" = "这一天还没有文件";
+"memory.draft.targets.noText" = "这一天没有产生文字";
+"memory.draft.outcome.approved" = "已合并进智能体记忆";
+"memory.draft.outcome.rejected" = "已驳回";
+"memory.draft.outcome.changed" = "会话又合并了一次";
+"memory.draft.outcome.reviewed" = "已被他人决策";
+"memory.draft.outcome.stale" = "什么都没写";
+"memory.draft.outcome.unknown" = "这次决策被拒绝了";
+"memory.draft.outcome.failed" = "决策没有生效";
+"memory.draft.approved.body" = "长期记忆现在是 %@ 版，此后该智能体开启的每一个会话都会被告诉这段文字。共清空了 %d 个会话记忆文件。";
+"memory.draft.approved.kept" = "其中 %d 个因为字节在合并读取之后又变了，被留给下一份候选。";
+"memory.draft.approved.absent" = "另有 %d 个在写入时本就已经不在了。";
+"memory.draft.approved.daily" = "同时并入了 %d 天的按日记忆。";
+"memory.draft.changed.hint" = "这份候选已经不是最新的一次合并，所以什么都没写。请重新读取，对着现在看到的文字再批准一次。";
+"memory.draft.changed.digest" = "现在要对着批准的摘要";
+"memory.draft.reviewed.hint" = "%@ 已在 %@ 做过决策，这个页面不再持有这次决策权。";
+"memory.draft.stale.hint" = "智能体的记忆现在是 %@ 版，而这份候选要写的某个文件在合并读取之后发生了变化，所以什么都没写。";
+"memory.draft.stale.target" = "发生变化的文件";
+"memory.draft.unknown.hint" = "服务端返回了这个客户端读不懂的结果：%@。这里没有对它做任何解释。";
+
+// ==== skill usage
+
+/* 从「我的」推入的只读监控页：这个租户的技能到底有没有被加载 */
+"skill.usage.title" = "技能监控";
+"skill.usage.section" = "每个技能的使用情况";
+
+/* 五个头部数字，顺序照控制台的卡片，最后一个是前端算出来的补数 */
+"skill.usage.metric.skills" = "技能总数";
+"skill.usage.metric.loads" = "加载次数";
+"skill.usage.metric.uses" = "使用次数";
+"skill.usage.metric.unused" = "从未使用";
+"skill.usage.metric.used" = "至少用过一次";
+
+/* 两个最容易混的计数各自量的是什么，抄自控制台的浮层提示 */
+"skill.usage.hint.loads" = "技能被读进上下文的次数";
+"skill.usage.hint.uses" = "技能指令被真正执行的次数，由运行时在加载成功后上报";
+"skill.usage.hint.unused" = "在这个窗口里既没被加载也没被使用";
+
+/* 这一屏唯一的筛选，以及它能报出来的消息 */
+"skill.usage.unusedOnly" = "只看没用过的";
+"skill.usage.unusedOnly.none" = "这里的每个技能都被加载过至少一次";
+
+/* 这一页的「没有数据」——读取失败是错误态，它有自己的说法 */
+"skill.usage.empty" = "没有可报告的技能";
+
+/* 表格的最后一列：要么是服务器写下的事件时间，要么这个窗口里什么都没有 */
+"skill.usage.lastEvent" = "最近事件";
+"skill.usage.lastEvent.none" = "本窗口内没有";
+
+/* 表格下面那段话，引用的是服务器应答的窗口 */
+"skill.usage.window" = "统计覆盖最近 %d 天。一份没人用过的清单，本身不是删除技能的理由。";
+"skill.usage.since" = "窗口始于 %@";
+
+/* ---- 调用监控：筛选、四张卡、趋势、按对象的名次、一次调用的明细 ---- */
+/* 两处口径说明：控制台挂在卡上的浮层提示与表格下的一段话，这里都成了读得到的文字 */
+"monitor.calls.cards" = "总览";
+"monitor.calls.card.calls" = "调用量";
+"monitor.calls.card.rate" = "成功率";
+"monitor.calls.card.p95" = "P95 耗时";
+"monitor.calls.card.failures" = "失败数";
+"monitor.calls.card.rate.hint" = "以 SUCCESS 收尾的占比；拒绝与中断都算失败";
+"monitor.calls.card.p95.hint" = "由六个耗时分桶近似，按工具口径给的是桶边界而不是精确毫秒";
+"monitor.calls.card.failures.hint" = "ERROR / DENIED / INTERRUPTED 三类合计";
+"monitor.calls.section.subjects" = "调用对象";
+"monitor.calls.trend.title" = "调用趋势";
+"monitor.calls.trend.empty" = "这一区间没有可画的调用";
+"monitor.calls.bucket.note" = "趋势按 %@ 分桶";
+"monitor.calls.series.calls" = "调用量";
+"monitor.calls.series.successes" = "成功";
+"monitor.calls.series.failures" = "失败";
+"monitor.calls.empty" = "该窗口内没有调用记录";
+"monitor.calls.filter.kind" = "来源";
+"monitor.calls.kind.inert" = "这一档只说明上面的数字算的是哪些调用";
+"monitor.calls.window.days" = "近 %d 天";
+"monitor.calls.window.asked" = "统计覆盖 %@ 起的窗口。";
+"monitor.calls.window.note" = "统计覆盖 %@ 至 %@（两端整点都含）。成功率与 P95 是区间整体值，不是某一个时段的值。";
+"monitor.calls.detail.note" = "按智能体与会话统计读的是明细表，只覆盖保留窗口内的调用；更早的记录只有工具、MCP 与 CLI 三档的小时聚合能答。这两档数到当前一刻，顶部四张卡只数到上次整点折算，所以两边的调用总数会差出最多一个小时内的新记录。";
+"monitor.calls.row.failed" = "%1$d 次失败，%2$d 次成功";
+"monitor.calls.row.succeeded" = "%1$d 次成功，共 %2$d 次";
+"monitor.calls.stamp.none" = "窗口内没有调用";
+/* 五档统计维度：前三档读小时聚合，后两档读明细表，这是它们数得不一样的原因 */
+"monitor.calls.group.tool" = "按工具";
+"monitor.calls.group.mcp" = "按 MCP";
+"monitor.calls.group.cli" = "按 CLI";
+"monitor.calls.group.agent" = "按智能体";
+"monitor.calls.group.session" = "按会话";
+/* 五种来源 */
+"monitor.calls.kind.builtin" = "可选工具";
+"monitor.calls.kind.mcp" = "MCP";
+"monitor.calls.kind.cli" = "CLI";
+"monitor.calls.kind.shell" = "裸 shell 命令";
+"monitor.calls.kind.framework" = "系统内置";
+/* 四种终态，控制台的四种标签色 */
+"monitor.calls.outcome.SUCCESS" = "成功";
+"monitor.calls.outcome.ERROR" = "失败";
+"monitor.calls.outcome.DENIED" = "被拒绝";
+"monitor.calls.outcome.INTERRUPTED" = "被中断";
+/* 趋势答回来的桶大小；auto 从不走到这里 */
+"monitor.calls.granularity.auto" = "自动";
+"monitor.calls.granularity.hour" = "按小时";
+"monitor.calls.granularity.day" = "按天";
+"monitor.calls.granularity.week" = "按周";
+"monitor.calls.granularity.month" = "按月";
+/* 一张名次卡上的六个数 */
+"monitor.calls.column.calls" = "调用量";
+"monitor.calls.column.rate" = "成功率";
+"monitor.calls.column.average" = "平均耗时";
+"monitor.calls.column.p95" = "P95";
+"monitor.calls.column.failures" = "失败数";
+"monitor.calls.column.kind" = "来源";
+/* 点开的明细屏：哪一档、哪一区间、多少条，以及为什么可以比上面的总数少 */
+"monitor.calls.detail.subject" = "%1$@ · %2$@";
+"monitor.calls.detail.origin" = "只列来源为「%@」的调用";
+"monitor.calls.detail.total.one" = "%d 次调用记了明细";
+"monitor.calls.detail.total.other" = "%d 次调用记了明细";
+"monitor.calls.detail.empty" = "这一档的明细表里没有调用记录";
+"monitor.calls.retention.note" = "明细表只保留一段窗口，更早的调用只剩小时聚合里的计数，所以这里的条数可以少于上面那一个总数。";
+"monitor.calls.row.tool" = "工具 %@";
+"monitor.calls.row.origin" = "来源 %@";
+"monitor.calls.row.session" = "会话 %@";
+"monitor.calls.row.agent" = "智能体 %@";
+"monitor.calls.row.failure" = "失败原因：%@";
+"monitor.calls.row.expand" = "看入参与结果";
+"monitor.calls.row.collapse" = "收起";
+"monitor.calls.row.payload.off" = "这一档没有记录入参和结果";
+"monitor.calls.detail.args" = "入参";
+"monitor.calls.detail.result" = "结果摘要";
 

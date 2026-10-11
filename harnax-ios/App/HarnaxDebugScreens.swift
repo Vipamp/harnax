@@ -38,6 +38,16 @@ enum HarnaxDebugScreen: String {
     case taskLogRunning
     case refreshSheet
     case tenantSheet
+    /// The 智能体 tab's fourth segment: the hub whose rows are the three queues an owner owes the agents'
+    /// own improvement loop. It gets a case of its own because a segment takes a tap to reach, and the
+    /// `simctl` harness has no finger — framed alone is the only way its three rows can be reviewed at all.
+    case governance
+    case memory
+    case memoryDetail
+    case memoryDrafts
+    case memoryDraftDetail
+    case skillDrafts
+    case skillDraftDetail
     case context
     case contextTools
     case contextToolDetail
@@ -59,6 +69,9 @@ enum HarnaxDebugScreen: String {
     case channels
     case tokenMonitor
     case tokenMonitorNumbers
+    case skillUsage
+    case callMetrics
+    case callInvocations
     case me
     case appearance
 
@@ -108,6 +121,11 @@ enum HarnaxDebugScreen: String {
         case .me: return .me
         case .chat: return .chat
         case .system, .envVars, .apiKeys, .channels, .tokenMonitor, .tokenMonitorNumbers: return .me
+        // The two read-only monitors that came with the 「集群监控」 block, and the drill-down a card pushes.
+        case .skillUsage, .callMetrics, .callInvocations: return .me
+        // The hub is this tab's fourth segment, and the queues are the three rows behind it.
+        case .governance, .memory, .memoryDetail, .memoryDrafts, .memoryDraftDetail, .skillDrafts,
+             .skillDraftDetail: return .agents
         case .apiKeyForm, .apiKeyRawKey, .channelForm, .wechatScan, .envVarForm: return .me
         case .mcpForm, .mcpClient, .mcpWebAuth, .skillSync, .skillUpload, .skillRepoForm, .skillReport,
              .modelProviderForm, .modelForm, .envParams: return .context
@@ -316,6 +334,7 @@ struct HarnaxDebugView: View {
             tools: HarnaxDebugTools(),
             mcp: HarnaxDebugMcp(),
             skills: HarnaxDebugSkills(),
+            drafts: HarnaxDebugSkillDrafts(),
             sessionSkills: HarnaxDebugSessionExtras(),
             clis: HarnaxDebugClis(),
             envVars: HarnaxDebugEnvVars(),
@@ -331,7 +350,11 @@ struct HarnaxDebugView: View {
             plan: HarnaxDebugSessionExtras(),
             contextUsage: HarnaxDebugSessionExtras(),
             commands: HarnaxDebugCommands(),
-            streaming: HarnaxDebugStreaming()
+            streaming: HarnaxDebugStreaming(),
+            memory: HarnaxDebugMemory(),
+            memoryDrafts: HarnaxDebugMemoryDrafts(),
+            skillUsage: HarnaxDebugSkillUsage(),
+            toolMetrics: HarnaxDebugToolMetrics()
         ), biometrics: HarnaxDebugBiometrics(screen: screen), gateEnabled: screen == .loginGate)
         model.tab = screen.tab
         _model = StateObject(wrappedValue: model)
@@ -424,12 +447,54 @@ struct HarnaxDebugView: View {
                     .background(HarnaxDebugScroll())
             }
             .harnaxThemed()
+        case .skillUsage, .callMetrics:
+            // The other two rows of the 「集群监控」 block, each behind the hub row on the real tab. Framed alone
+            // they capture with both reads landed — the skill page has one route and the call page fires two
+            // together, which is the only way to see the four numbers, the trend and the rows at once.
+            NavigationStack {
+                switch screen {
+                case .skillUsage:
+                    if let usage = model.dependencies.skillUsage {
+                        SkillUsageView(catalog: usage)
+                    }
+                default:
+                    if let metrics = model.dependencies.toolMetrics {
+                        CallMetricsView(catalog: metrics)
+                            .background(HarnaxDebugScroll())
+                    }
+                }
+            }
+            .harnaxThemed()
         case .tasks, .tasksEmpty, .tasksFailed:
             // The task column is the third segment on the agents tab. Framed alone it captures in whatever
             // state the fixture names — rows, the empty fact, or the failed read — with no finger to switch.
             NavigationStack {
                 TaskListView(catalog: model.dependencies.tasks, account: model.account)
                     .background(HarnaxDebugScroll())
+            }
+            .harnaxThemed()
+        case .governance, .memory, .memoryDrafts, .skillDrafts:
+            // The fourth segment and the three queues behind it. Framed alone, each captures without a finger to
+            // switch the segment or to tap a row — and the hub mounts bare on purpose, so its switch row is the
+            // one thing this capture cannot show: `HXSegmentBarRow` reads the host's environment, and a framed
+            // column has no host (`HarnaxKit/Components/HXSegmentBarRow.swift:36-38`).
+            NavigationStack {
+                switch screen {
+                case .governance:
+                    GovernanceHomeView(dependencies: model.dependencies)
+                case .memory:
+                    if let memory = model.dependencies.memory {
+                        MemoryListView(catalog: memory)
+                    }
+                case .memoryDrafts:
+                    if let drafts = model.dependencies.memoryDrafts {
+                        MemoryDraftListView(catalog: drafts)
+                    }
+                default:
+                    if let drafts = model.dependencies.drafts {
+                        SkillDraftListView(drafts: drafts, skills: model.dependencies.skills)
+                    }
+                }
             }
             .harnaxThemed()
         case .context:
@@ -464,7 +529,8 @@ struct HarnaxDebugView: View {
             // means rendering it bare, not nesting a second stack around it.
             pushed
                 .harnaxThemed()
-        case .contextMcpDetail, .contextSkillTable, .contextSkillDetail, .modelTable, .chat, .taskLogDetail, .taskLogRunning:
+        case .contextMcpDetail, .contextSkillTable, .contextSkillDetail, .modelTable, .chat, .taskLogDetail,
+             .taskLogRunning, .memoryDetail, .memoryDraftDetail, .skillDraftDetail, .callInvocations:
             NavigationStack { pushed }
                 .harnaxThemed()
         case .agentBindings, .teamBindings, .refreshSheet, .contextToolDetail, .contextCliDetail, .sessionRename,
@@ -875,6 +941,33 @@ struct HarnaxDebugView: View {
                     conversation: ChatConversation(id: sessionId, title: session.displayName ?? "")
                 )
                 .background(HarnaxDebugScroll())
+            }
+        case .memoryDetail:
+            // One agent's whole long-term memory: the curated text and the daily ledger under it. The address is
+            // the runtime name the list row carries, so this is the same drill-down the row gives.
+            if let memory = model.dependencies.memory, let agentName = HarnaxDebugRecord.memoryAgent {
+                MemoryDetailView(agentName: agentName, catalog: memory)
+                    .background(HarnaxDebugScroll())
+            }
+        case .memoryDraftDetail:
+            // The candidate with both texts, the conversation files it drained and the days it rewrites — the
+            // four parts an approval has to be read against, which is why the queue keeps them off its rows.
+            if let drafts = model.dependencies.memoryDrafts, let id = HarnaxDebugRecord.memoryDraft?.id {
+                MemoryDraftDetailView(id: id, catalog: drafts)
+                    .background(HarnaxDebugScroll())
+            }
+        case .skillDraftDetail:
+            if let drafts = model.dependencies.drafts, let id = HarnaxDebugRecord.skillDraft?.id {
+                SkillDraftDetailView(id: id, drafts: drafts, skills: model.dependencies.skills)
+                    .background(HarnaxDebugScroll())
+            }
+        case .callInvocations:
+            // The drill-down a subject card gives. The push value is rebuilt here exactly the way the card
+            // builds it — from the first summary row that has an id to filter by — because a row without one is
+            // not pushable at all and this capture would otherwise be naming an affordance that does not exist.
+            if let metrics = model.dependencies.toolMetrics, let subject = HarnaxDebugRecord.callSubject {
+                CallInvocationsView(subject: subject, catalog: metrics)
+                    .background(HarnaxDebugScroll())
             }
         default:
             EmptyView()
@@ -1448,6 +1541,145 @@ struct HarnaxDebugTokenStats: TokenStatsCataloging {
     }
 }
 
+/// The 智能体记忆 list and the one detail screen the list pushes.
+///
+/// The detail answers for exactly one agent — the subject of its own fixture — and every other name gets admin's
+/// 404 sentence back (`MemoryController.kt:73`), which the screen renders as an empty state rather than a failure.
+/// That is the shape the real route has: a caller with no memory for an agent is told so, and
+/// `APIError.isMissingAgentMemory` exists to keep that apart from a broken read.
+///
+/// The pairing the gallery relies on is `HarnaxDebugRecord.memoryAgent`, which reads the same list fixture, so a
+/// detail screenshot is always the memory of an agent the list really listed.
+struct HarnaxDebugMemory: MemoryCataloging {
+    func list() async -> Result<[MemoryAgentRow], APIError> {
+        HarnaxDebugPages.decode(HarnaxDebugPages.memoryJSON, [MemoryAgentRow].self)
+    }
+
+    func read(agentName: String) async -> Result<MemoryDetail, APIError> {
+        guard let detail = try? HarnaxDebugPages.decode(
+            HarnaxDebugPages.memoryDetailJSON, MemoryDetail.self
+        ).get() else { return .failure(.decoding) }
+        guard detail.agentId == agentName else {
+            return .failure(.business(code: 404, message: APIError.noMemoryMessage))
+        }
+        return .success(detail)
+    }
+
+    func delete(agentName: String) async -> Result<MemoryDeleteResult, APIError> { .failure(.offline) }
+}
+
+/// The 会话记忆审批 queue: its three arms, one candidate, and both decisions refused.
+///
+/// Three page fixtures rather than one, because the queue's rows *are* the answer to a filtered question —
+/// a capture that showed an `APPROVED` candidate under the pending arm would describe a queue that never
+/// answered that. The badge read (`pendingCount`) sends the same `PENDING` request, so the number beside the
+/// rows is the number the rows are.
+struct HarnaxDebugMemoryDrafts: MemoryDraftCataloging {
+    func page(
+        status: MemoryDraftStatus,
+        agentName: String?,
+        sessionId: String?,
+        num: Int,
+        size: Int
+    ) async -> Result<Page<MemoryDraftRow>, APIError> {
+        let json: String
+        switch status {
+        case .pending: json = HarnaxDebugPages.memoryDraftsJSON
+        case .approved: json = HarnaxDebugPages.memoryDraftsApprovedJSON
+        case .rejected: json = HarnaxDebugPages.memoryDraftsRejectedJSON
+        }
+        return HarnaxDebugPages.decode(json, Page<MemoryDraftRow>.self)
+    }
+
+    func detail(id: Int64) async -> Result<MemoryDraftDetail, APIError> {
+        HarnaxDebugPages.decode(HarnaxDebugPages.memoryDraftDetailJSON, MemoryDraftDetail.self)
+    }
+
+    /// The two decisions are what this whole screen exists to make, and a screenshot has no finger to make one
+    /// with. A capture that ever reached approve would show the refusal banner, not a merged memory.
+    func approve(
+        id: Int64,
+        _ payload: MemoryDraftApprovePayload
+    ) async -> Result<MemoryDraftDecision, APIError> { .failure(.offline) }
+
+    func reject(
+        id: Int64,
+        _ payload: MemoryDraftRejectPayload
+    ) async -> Result<MemoryDraftDecision, APIError> { .failure(.offline) }
+}
+
+/// The 技能晋升 queue: the same shape and the same reason as the memory queue — one fixture per arm, both
+/// decisions refused. The detail read answers for the candidate `HarnaxDebugRecord.skillDraft` names.
+struct HarnaxDebugSkillDrafts: SkillDraftCataloging {
+    func page(
+        status: SkillDraftStatus,
+        name: String?,
+        sessionId: String?,
+        num: Int,
+        size: Int
+    ) async -> Result<Page<SkillDraftRow>, APIError> {
+        let json: String
+        switch status {
+        case .pending: json = HarnaxDebugPages.skillDraftsJSON
+        case .approved: json = HarnaxDebugPages.skillDraftsApprovedJSON
+        case .rejected: json = HarnaxDebugPages.skillDraftsRejectedJSON
+        }
+        return HarnaxDebugPages.decode(json, Page<SkillDraftRow>.self)
+    }
+
+    func detail(id: Int64) async -> Result<SkillDraftDetail, APIError> {
+        HarnaxDebugPages.decode(HarnaxDebugPages.skillDraftDetailJSON, SkillDraftDetail.self)
+    }
+
+    func approve(
+        id: Int64,
+        _ payload: SkillDraftApprovePayload
+    ) async -> Result<SkillDraftDecision, APIError> { .failure(.offline) }
+
+    func reject(
+        id: Int64,
+        _ payload: SkillDraftRejectPayload
+    ) async -> Result<SkillDraftDecision, APIError> { .failure(.offline) }
+}
+
+/// 技能监控. One route and one read, so one fixture: the window arm is this request's only parameter, and the
+/// capture sits on the screen's own default of 30 days, which is the span the fixture echoes back in `days` and
+/// `since`.
+struct HarnaxDebugSkillUsage: SkillUsageReading {
+    func summary(days: Int) async -> Result<SkillUsageSummary, APIError> {
+        HarnaxDebugPages.decode(HarnaxDebugPages.skillUsageJSON, SkillUsageSummary.self)
+    }
+}
+
+/// 调用监控, and the invocation list a summary card pushes.
+///
+/// The dimension and the bucket are echoed rather than tracked, which is what the routes themselves do: an
+/// unrecognised `groupBy` answers as `tool` instead of failing, and `auto` answers as the bucket the service
+/// folded the window to (`ToolMetrics.swift:18-21,193-196`). Both screens read the answer back rather than
+/// trusting their own request, so a capture labels what it is actually showing.
+struct HarnaxDebugToolMetrics: ToolMetricsReading {
+    func summary(
+        window: CallMetricsWindow,
+        group: CallMetricsGroup,
+        kind: CallMetricsKind?
+    ) async -> Result<CallMetricsSummary, APIError> {
+        HarnaxDebugPages.decode(HarnaxDebugPages.callMetricsSummaryJSON, CallMetricsSummary.self)
+    }
+
+    func timeSeries(
+        window: CallMetricsWindow,
+        kind: CallMetricsKind?,
+        subjectId: Int64?,
+        granularity: CallMetricsGranularity
+    ) async -> Result<CallMetricsTimeSeries, APIError> {
+        HarnaxDebugPages.decode(HarnaxDebugPages.callMetricsSeriesJSON, CallMetricsTimeSeries.self)
+    }
+
+    func invocations(_ query: CallInvocationQuery) async -> Result<Page<CallInvocationRow>, APIError> {
+        HarnaxDebugPages.decode(HarnaxDebugPages.callInvocationsJSON, Page<CallInvocationRow>.self)
+    }
+}
+
 /// The conversation list.
 ///
 /// Only the page read answers; the four writes fail, so a capture that ever reached for a row's menu shows
@@ -1881,6 +2113,36 @@ enum HarnaxDebugRecord {
     static var mcpServer: McpServerRow? { rows(McpServerRow.self, HarnaxDebugPages.mcpServersJSON).first }
     static var skillSource: SkillSourceSummary? { rows(SkillSourceSummary.self, HarnaxDebugPages.skillSourcesJSON).first }
     static var skill: SkillItem? { rows(SkillItem.self, HarnaxDebugPages.skillsJSON).first }
+    /// The agent whose memory the detail capture shows: the first *named* row, not simply the first. The
+    /// fixture ends with a blank `agentId`, and pushing that name would mount a screen the double answers with
+    /// admin's 404 — a screenshot of an empty state standing in for the whole detail.
+    static var memoryAgent: String? {
+        list(MemoryAgentRow.self, HarnaxDebugPages.memoryJSON).first { hxPresented($0.agentId) != nil }?.agentId
+    }
+    /// The candidate the memory queue's detail opens on: row one of the pending arm, which is the arm the queue
+    /// starts on and the one its badge counts.
+    static var memoryDraft: MemoryDraftRow? { rows(MemoryDraftRow.self, HarnaxDebugPages.memoryDraftsJSON).first }
+    static var skillDraft: SkillDraftRow? { rows(SkillDraftRow.self, HarnaxDebugPages.skillDraftsJSON).first }
+    /// The subject a call-metrics card pushes, rebuilt exactly the way the card builds it
+    /// (`CallMetricsViewModel.ref(at:)`): the first summary row that carries a `subjectId`, titled by its own
+    /// name with the key behind it, grouped by what the reply said rather than by what was asked. The two
+    /// filters and the window are this screen's defaults, since a capture never touched a control; a row
+    /// without an id has no predicate to build and is not pushable at all.
+    static var callSubject: CallMetricsSubjectRef? {
+        guard let summary = try? HarnaxDebugPages.decode(
+            HarnaxDebugPages.callMetricsSummaryJSON, CallMetricsSummary.self
+        ).get(), let row = summary.rows.first(where: { $0.isDrillable }) else { return nil }
+        return CallMetricsSubjectRef(
+            subjectId: row.subjectId,
+            subjectKey: row.subjectKey,
+            title: row.subjectName.isEmpty ? row.subjectKey : row.subjectName,
+            toolName: row.toolName,
+            kind: row.kind,
+            group: summary.group,
+            filterKind: nil,
+            window: CallMetricsWindows.default
+        )
+    }
     static var task: AgentTaskSummary? { rows(AgentTaskSummary.self, HarnaxDebugPages.tasksJSON).first }
     /// The row the API Key form edits, and the key the one-time sheet prints.
     static var apiKey: ApiKeySummary? { rows(ApiKeySummary.self, HarnaxDebugPages.apiKeysJSON).first }
@@ -1989,7 +2251,7 @@ private enum HarnaxDebugPages {
     /// a made-up shape decodes to a card with counts and no names.
     static let agentsJSON = """
     {"pageNum":1,"pageSize":20,"total":47,"records":[
-      {"id":11,"name":"Support Desk","description":"Answers product questions in the help channel and opens a ticket when it cannot.","modelId":3,"modelName":"qwen3.7-max","status":1,"isPublic":1,"creator":"admin","createTime":"2026-09-12 10:24:31","sessionCount":128,"sessionList":[{"id":881,"title":"Weekly digest","sessionId":"sess-8842","sessionDescription":"web · 3 hours ago"},{"id":872,"sessionId":"sess-8790"}],"mcpList":[{"mcpId":4,"mcpName":"amap-maps","mcpDescription":"Maps and routing","envBindings":[{"envKey":"AMAP_KEY","envValue":"******","envVarId":9,"envVarName":"amap-key"}]}],"skillList":[{"repositoryId":2,"repositoryName":"qoder-skills","skillId":5,"skillName":"Glossary","skillDescription":"Domain terms"},{"repositoryId":2,"skillId":7,"skillName":"Polish"}],"toolList":[{"toolId":2,"toolName":"webSearch","toolDisplayName":"Web Search","toolDisplayNameZh":"联网搜索","toolDescription":"Public web lookup","needConfirm":true,"envBindings":[{"envKey":"SEARCH_QUOTA","customValue":"50"}]},{"toolId":3,"toolName":"writeFile","toolDisplayName":"write-file"},{"toolId":9,"toolName":"   ","toolDisplayName":""}],"cliList":[{"cliId":1,"cliName":"harnax-cli","cliDescription":"Cluster ops","version":"1.30.0","skillList":[{"skillId":21,"skillName":"Notice parser"}]}]},
+      {"id":11,"name":"Support Desk","description":"Answers product questions in the help channel and opens a ticket when it cannot.","modelId":3,"modelName":"qwen3.7-max","status":1,"isPublic":1,"skillSelfWrite":1,"memoryEnabled":0,"creator":"admin","createTime":"2026-09-12 10:24:31","sessionCount":128,"sessionList":[{"id":881,"title":"Weekly digest","sessionId":"sess-8842","sessionDescription":"web · 3 hours ago"},{"id":872,"sessionId":"sess-8790"}],"mcpList":[{"mcpId":4,"mcpName":"amap-maps","mcpDescription":"Maps and routing","envBindings":[{"envKey":"AMAP_KEY","envValue":"******","envVarId":9,"envVarName":"amap-key"}]}],"skillList":[{"repositoryId":2,"repositoryName":"qoder-skills","skillId":5,"skillName":"Glossary","skillDescription":"Domain terms"},{"repositoryId":2,"skillId":7,"skillName":"Polish"}],"toolList":[{"toolId":2,"toolName":"webSearch","toolDisplayName":"Web Search","toolDisplayNameZh":"联网搜索","toolDescription":"Public web lookup","needConfirm":true,"envBindings":[{"envKey":"SEARCH_QUOTA","customValue":"50"}]},{"toolId":3,"toolName":"writeFile","toolDisplayName":"write-file"},{"toolId":9,"toolName":"   ","toolDisplayName":""}],"cliList":[{"cliId":1,"cliName":"harnax-cli","cliDescription":"Cluster ops","version":"1.30.0","skillList":[{"skillId":21,"skillName":"Notice parser"}]}]},
       {"id":12,"name":"Release Manager","description":"Tracks the release train and pings owners before a cut-off slips.","modelId":3,"modelName":"qwen3.7-max","status":1,"isPublic":0,"creator":"liwei","createTime":"2026-09-08 18:02:09","sessionCount":42,"mcpList":[],"skillList":[{"skillId":6,"skillName":"Changelog"}],"toolList":[],"cliList":[]},
       {"id":13,"name":"Contract Review","description":"Long-form review that has to wrap over two lines at a small width without breaking the badge row above it.","modelId":8,"modelName":"deepseek-v4","status":0,"isPublic":0,"creator":"zhaomin","createTime":"2026-08-19 14:47:55","sessionCount":7,"mcpList":[],"skillList":[],"toolList":[],"cliList":[]},
       {"id":14,"name":null,"description":null,"modelName":"glm-5","status":null,"isPublic":null,"creator":null,"createTime":"not-a-date","sessionCount":null,"mcpList":[],"skillList":[],"toolList":[],"cliList":[]}
@@ -2380,6 +2642,182 @@ private enum HarnaxDebugPages {
       {"timePoint":"2026-09-24 00:00:00","dimensionId":"chn-1f0a","dimensionName":"   ","totalInputToken":65000,"totalOutputToken":30000,"grandTotalToken":95000,"totalFee":1},
       {"timePoint":"2026-09-25 00:00:00","dimensionId":"chn-1f0a","dimensionName":"   ","totalInputToken":110000,"totalOutputToken":55000,"grandTotalToken":165000,"totalFee":1},
       {"timePoint":"2026-09-26 00:00:00","dimensionId":"chn-1f0a","dimensionName":"   ","totalInputToken":120000,"totalOutputToken":50000,"grandTotalToken":170000,"totalFee":1}
+    ]}
+    """
+
+    /// The 智能体记忆 list, and it is a bare array rather than the `Page` envelope (`MemoryController.kt:54`), so
+    /// this route has no total to disagree with the rows. Three cards: a named agent with both layers, an agent
+    /// whose conclusion layer has never been written (`content` ships as `""`, not null), and a row whose
+    /// `agentId` the runtime left blank — the one card that reads unnamed and whose purge stays disabled,
+    /// because `agentId` is the only address either route takes.
+    static let memoryJSON = """
+    [
+      {"agentId":"support-desk","content":"- 用户偏好中文回答，工单正文用敬语。\\n- 合同类问题一律转给 Contract Review，不代答。","lastModified":"2026-10-08T01:12:00Z","dates":["2026-10-05","2026-10-06","2026-10-08"],"pendingSessionLayers":2},
+      {"agentId":"release-bot","content":"","lastModified":"2026-09-30T08:00:00Z","dates":[],"pendingSessionLayers":1},
+      {"agentId":"   ","content":"","dates":["2026-10-02"],"pendingSessionLayers":0}
+    ]
+    """
+
+    /// The first row's whole memory. `agentId` is the same runtime name the list shows, because the double
+    /// answers this only for that name — every other one gets admin's 404 sentence. Both stamp fields are
+    /// instants (`2026-10-08T01:12:00Z`, `MemoryStoreGateway.kt:787-790`), which is the one date shape in this
+    /// app that carries a zone, so the screens show the day and not the hour.
+    static let memoryDetailJSON = """
+    {"agentId":"support-desk","content":"# 长期记忆\\n\\n- 用户偏好中文回答，工单正文用敬语。\\n- 合同类问题一律转给 Contract Review，不代答。\\n- 工单 4821 的价格口径以 2026-10 版价目表为准。","lastModified":"2026-10-08T01:12:00Z","entries":[
+      {"date":"2026-10-05","content":"- 今天处理 3 张工单，其中 1 张转给合同审阅。","lastModified":"2026-10-05T12:00:00Z"},
+      {"date":"2026-10-06","content":"- 值班群里补充了价目表 2026-10 版的差异说明。","lastModified":"2026-10-06T23:41:07Z"},
+      {"date":"2026-10-08","content":""}
+    ]}
+    """
+
+    /// The pending arm of the 会话记忆审批 queue. The first row is the one the detail capture opens, and its
+    /// `id` matches `memoryDraftDetailJSON` for the same reason the agent detail matches the list: a screenshot
+    /// of a candidate has to be a candidate the queue actually listed. `baseVersion` 0 is what puts the
+    /// 「首层」chip on screen, and the third row has no `updateTime` at all, so its byline is one stamp rather
+    /// than two.
+    static let memoryDraftsJSON = """
+    {"pageNum":1,"pageSize":20,"total":3,"records":[
+      {"id":301,"agentName":"support-desk","sessionId":"sess-8842","status":"PENDING","baseVersion":4,"mergedChars":1840,"sourceCount":2,"targetCount":3,"createTime":"2026-10-08T09:12:33","updateTime":"2026-10-08T09:12:33"},
+      {"id":302,"agentName":"support-desk","sessionId":"sess-8790","status":"PENDING","baseVersion":0,"mergedChars":620,"sourceCount":1,"targetCount":1,"createTime":"2026-10-07T21:04:10","updateTime":"2026-10-08T07:55:02"},
+      {"id":303,"agentName":"   ","sessionId":"sess-8712","status":"PENDING","baseVersion":2,"mergedChars":240,"sourceCount":3,"targetCount":0,"createTime":"2026-10-06T14:20:00"}
+    ]}
+    """
+
+    static let memoryDraftsApprovedJSON = """
+    {"pageNum":1,"pageSize":20,"total":1,"records":[
+      {"id":300,"agentName":"release-bot","sessionId":"sess-8634","status":"APPROVED","baseVersion":7,"mergedChars":2210,"sourceCount":2,"targetCount":4,"createTime":"2026-10-04T10:02:11","updateTime":"2026-10-04T10:02:11","reviewedBy":"admin","reviewedAt":"2026-10-05T08:30:00"}
+    ]}
+    """
+
+    /// A rejection that says why, and the reason is the load-bearing field: a closed candidate leaves the
+    /// conversation's layer alone (`MemoryDraftServiceImpl.kt:314`), so the owner reads this sentence again when
+    /// the same material comes back next window.
+    static let memoryDraftsRejectedJSON = """
+    {"pageNum":1,"pageSize":20,"total":1,"records":[
+      {"id":299,"agentName":"support-desk","sessionId":"sess-8601","status":"REJECTED","baseVersion":4,"mergedChars":310,"sourceCount":1,"targetCount":1,"createTime":"2026-10-02T19:44:02","updateTime":"2026-10-02T19:44:02","reviewedBy":"liwei","reviewedAt":"2026-10-03T09:15:20","rejectReason":"这条把已经失效的价格口径并进了长期层，下周的会话会照着答。"}
+    ]}
+    """
+
+    /// Row 301 with all four parts an approval has to be read against: the conclusion layer it produces, the
+    /// owner's text it merged against, the conversation files it drained and the days it rewrites. The second
+    /// source carries a path and no content — the key is dropped server-side when the bytes are gone — and the
+    /// second target has `expectedVersion` 0 with a blank base, which is the day that did not exist yet.
+    static let memoryDraftDetailJSON = """
+    {"id":301,"agentName":"support-desk","sessionId":"sess-8842","status":"PENDING","mergedMd":"# 长期记忆\\n\\n- 用户偏好中文回答，工单正文用敬语。\\n- 合同类问题一律转给 Contract Review，不代答。\\n- 工单 4821 的价格口径以 2026-10 版价目表为准。","baseMd":"# 长期记忆\\n\\n- 用户偏好中文回答，工单正文用敬语。\\n","baseVersion":4,"sources":[
+      {"path":"memory/sessions/sess-8842/2026-10-07.md","content":"- 合同类问题一律转给 Contract Review，不代答。\\n"},
+      {"path":"memory/sessions/sess-8842/2026-10-08.md"}
+    ],"targets":[
+      {"path":"memory/2026-10-08.md","expectedVersion":2,"baseText":"- 今天处理 3 张工单。\\n","mergedText":"- 今天处理 3 张工单。\\n- 工单 4821 的价格口径以 2026-10 版价目表为准。\\n"},
+      {"path":"memory/2026-10-09.md","expectedVersion":0,"baseText":"","mergedText":"- 合同类问题转交 Contract Review。\\n"}
+    ],"contentDigest":"9f2c4e7ab13d5580c6e1f77a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e","createTime":"2026-10-08T09:12:33","updateTime":"2026-10-08T09:12:33"}
+    """
+
+    /// The pending arm of the 技能晋升 queue. `upstreamFindingCount` is required on every row — the DTO defaults
+    /// it to 0 (`SkillDraftResponse.kt:33`), so a row with nothing to report still answers it. The second row is
+    /// the patched one (`updateTime` after `createTime`), the third has neither a name nor a session and a
+    /// verdict the app cannot name, which is shown as that token rather than as one of the three tags.
+    static let skillDraftsJSON = """
+    {"pageNum":1,"pageSize":20,"total":3,"records":[
+      {"id":501,"name":"Invoice OCR","description":"从扫描件里读出抬头、金额与税号，并核对币种。","status":"PENDING","scanVerdict":"CAUTION","upstreamFindingCount":2,"sourceSessionId":"sess-8842","agentId":11,"createTime":"2026-10-08T08:02:14","updateTime":"2026-10-08T08:02:14"},
+      {"id":502,"name":"Changelog","description":"把两次发布之间已合并的提交整理成发布说明。","status":"PENDING","scanVerdict":"SAFE","upstreamFindingCount":0,"sourceSessionId":"sess-8790","agentId":12,"createTime":"2026-10-06T22:41:09","updateTime":"2026-10-07T06:12:44"},
+      {"id":503,"name":"   ","status":"PENDING","scanVerdict":"REVIEW_LATER","upstreamFindingCount":0,"createTime":"2026-10-05T11:00:00"}
+    ]}
+    """
+
+    static let skillDraftsApprovedJSON = """
+    {"pageNum":1,"pageSize":20,"total":1,"records":[
+      {"id":500,"name":"Glossary","description":"术语表的统一口径。","status":"APPROVED","scanVerdict":"SAFE","upstreamFindingCount":0,"sourceSessionId":"sess-8634","agentId":11,"createTime":"2026-09-28T15:04:00","updateTime":"2026-09-28T15:04:00","reviewedBy":"admin","reviewedAt":"2026-09-29T09:30:12"}
+    ]}
+    """
+
+    static let skillDraftsRejectedJSON = """
+    {"pageNum":1,"pageSize":20,"total":1,"records":[
+      {"id":499,"name":"Cookie fetcher","description":"用保存的凭据代登录后台取数据。","status":"REJECTED","scanVerdict":"DANGEROUS","upstreamFindingCount":4,"sourceSessionId":"sess-8601","agentId":13,"createTime":"2026-09-25T20:11:03","updateTime":"2026-09-25T20:11:03","reviewedBy":"liwei","reviewedAt":"2026-09-26T10:02:40","rejectReason":"这个技能把用户凭据落到了磁盘，扫描的四条发现都指向同一件事。"}
+    ]}
+    """
+
+    /// Row 501 in full: the body, the two support files, the script the scan computed a hash over, the sandbox's
+    /// findings and the trail. `localFindings` is empty here, which is the branch where an approval would store
+    /// the skill enabled; the non-empty branch is what the presentation tests pin, not a screenshot.
+    static let skillDraftDetailJSON = """
+    {"id":501,"name":"Invoice OCR","description":"从扫描件里读出抬头、金额与税号，并核对币种。","status":"PENDING","skillmd":"---\\nname: invoice-ocr\\ndescription: 从扫描件里读出抬头、金额与税号\\n---\\n\\n# Invoice OCR\\n\\n1. 先确认扫描件是 PDF 还是图片，图片先跑一次 OCR。\\n2. 读出抬头、金额、税号三项，缺任一项就回问用户，不要猜。\\n3. 币种按扫描件原文输出，不做换算。","resources":{
+      "templates/invoice-fields.md":"抬头、金额、税号三段的字段名与常见别名。",
+      "examples/sample-2026-10.txt":"一张已脱敏的样例扫描件。"
+    },"scripts":[
+      {"relPath":"scripts/extract.py","headPreview":"import re\\n\\nFIELDS = ('title', 'amount', 'tax_id')","totalLines":48,"sha256":"4a1f77c9be23d408a5f1c6e97b02d3548ce1a6f7093b4c5d6e7f8091a2b3c4d5"}
+    ],"scanVerdict":"CAUTION","scanFindings":["脚本从环境变量读取对象存储凭据","未在清单中声明对外网络访问"],"localFindings":[],"contentDigest":"b6e1f0a39c7d52481f0e6d3ba9c45f702d18e3b6c9a04d7f5e21b8c6a3904d1f","sourceSessionId":"sess-8842","agentId":11,"createTime":"2026-10-08T08:02:14","updateTime":"2026-10-08T08:02:14","history":[
+      {"action":"PROPOSE","actor":"agent","detail":"由会话 sess-8842 提出","createTime":"2026-10-08T08:02:14"},
+      {"action":"PROPOSE","actor":"agent","detail":"同一会话的第二次并入，正文与支持文件已重写","createTime":"2026-10-08T07:58:02"},
+      {"action":"PROPOSE","actor":"agent"}
+    ]}
+    """
+
+    /// 技能监控 over one 30-day window, and the four numbers add up against the rows rather than sitting beside
+    /// them: 58 views and 16 uses are the column sums, `zeroUseCount` 1 is the one row with neither. That row —
+    /// loaded never and followed never — is the reason this page exists at all, and the disabled skill beside it
+    /// is the second shape the table has to keep visible rather than filter away by accident.
+    static let skillUsageJSON = """
+    {"days":30,"since":"2026-09-09T00:00:00","totalSkills":4,"zeroUseCount":1,"totalViews":58,"totalUses":16,"rows":[
+      {"skillId":21,"name":"Notice parser","repositoryId":2,"repositoryName":"qoder-skills","status":1,"origin":"human","viewCount":46,"useCount":12,"lastUsedAt":"2026-10-08T09:41:12"},
+      {"skillId":24,"name":"Glossary","repositoryId":2,"repositoryName":"qoder-skills","status":1,"origin":"agent_promoted","viewCount":9,"useCount":4,"lastUsedAt":"2026-10-07T18:22:05"},
+      {"skillId":31,"name":"Weekly digest","repositoryId":3,"repositoryName":"ops-skills","status":0,"origin":"human","viewCount":3,"useCount":0,"lastUsedAt":"2026-09-30T11:02:44"},
+      {"skillId":40,"name":"   ","repositoryId":4,"status":1,"origin":"human","viewCount":0,"useCount":0}
+    ]}
+    """
+
+    /// 调用监控's counts, answered on the tool dimension, which is the screen's own default. Four things are
+    /// here for the table's sake: a `builtin` row with no `subjectId` (the detail predicate has nothing to build,
+    /// so the card offers no push), one `mcp` and one `cli` row that do carry one — the first of which is the
+    /// subject `HarnaxDebugRecord.callSubject` pushes — and the last two rows are the unnamed readings, one
+    /// falling back to `subjectKey` and one to the app's own「未命名」sentence.
+    ///
+    /// Every stamp is `yyyy-MM-dd HH:mm:ss` service text, hour precision here because the tool dimension reads
+    /// the hourly aggregate. One row has no stamp at all and one has a date the cut cannot apply.
+    static let callMetricsSummaryJSON = """
+    {"from":"2026-09-09 00:00:00","to":"2026-10-08 09:00:00","groupBy":"tool","totalCalls":604,"totalSuccesses":551,"successRate":0.9123,"failingCalls":53,"p95Operator":"<=","p95Ms":4200,"rows":[
+      {"kind":"builtin","subjectKey":"web_search","toolName":"web_search","subjectName":"web_search","parentName":"","calls":412,"successes":401,"errors":9,"denials":2,"interruptions":0,"successRate":0.9733,"avgDurationMs":1840,"p95Operator":"<=","p95Ms":4200,"lastSeenAt":"2026-10-08 09:00:00"},
+      {"kind":"mcp","subjectKey":"4","toolName":"amap_maps","subjectName":"amap_maps","parentName":"amap-maps","subjectId":4,"calls":96,"successes":88,"errors":6,"denials":2,"interruptions":0,"successRate":0.9167,"avgDurationMs":2640,"p95Operator":"<=","p95Ms":8000,"lastSeenAt":"2026-10-08 08:00:00"},
+      {"kind":"cli","subjectKey":"1","toolName":"deploy","subjectName":"harnax-cli","parentName":"harnax-cli","subjectId":1,"calls":58,"successes":44,"errors":4,"denials":8,"interruptions":2,"successRate":0.7586,"avgDurationMs":12400,"p95Operator":">","p95Ms":30000,"lastSeenAt":"2026-10-07 22:00:00"},
+      {"kind":"shell","subjectKey":"bash","toolName":"bash","subjectName":"bash","parentName":"","calls":23,"successes":3,"errors":12,"denials":8,"interruptions":0,"successRate":0.1304,"avgDurationMs":620,"p95Operator":"<=","p95Ms":1000},
+      {"kind":"framework","subjectKey":"read_file","toolName":"read_file","subjectName":"","parentName":"","calls":11,"successes":11,"errors":0,"denials":0,"interruptions":0,"successRate":1.0,"avgDurationMs":90,"p95Operator":"<=","p95Ms":200,"lastSeenAt":"not-a-date"},
+      {"kind":"   ","subjectKey":"   ","toolName":"","subjectName":"","parentName":"","calls":4,"successes":4,"errors":0,"denials":0,"interruptions":0,"successRate":1.0,"avgDurationMs":1500,"p95Operator":"","p95Ms":1500,"lastSeenAt":"2026-10-05 03:00:00"}
+    ]}
+    """
+
+    /// The same window's trend, folded to days by the service and echoed as `granularity` — the screen asked
+    /// `auto` and reads back what that became. Two points per kind per bucket, and 10-05 is zero-filled rather
+    /// than absent, which is the whole reason the line does not skip a day (`ToolMetricsController.kt:56-60`).
+    static let callMetricsSeriesJSON = """
+    {"from":"2026-10-03 00:00:00","to":"2026-10-08 09:00:00","granularity":"day","points":[
+      {"timePoint":"2026-10-03 00:00:00","kind":"builtin","dimensionName":"web_search","calls":96,"successes":94,"errors":2,"denials":0,"interruptions":0,"avgDurationMs":1720},
+      {"timePoint":"2026-10-03 00:00:00","kind":"mcp","dimensionId":4,"dimensionName":"amap_maps","calls":22,"successes":20,"errors":2,"denials":0,"interruptions":0,"avgDurationMs":2480},
+      {"timePoint":"2026-10-03 00:00:00","kind":"cli","dimensionId":1,"dimensionName":"deploy","calls":14,"successes":9,"errors":1,"denials":3,"interruptions":1,"avgDurationMs":11800},
+      {"timePoint":"2026-10-04 00:00:00","kind":"builtin","dimensionName":"web_search","calls":104,"successes":101,"errors":3,"denials":0,"interruptions":0,"avgDurationMs":1690},
+      {"timePoint":"2026-10-04 00:00:00","kind":"mcp","dimensionId":4,"dimensionName":"amap_maps","calls":18,"successes":16,"errors":2,"denials":0,"interruptions":0,"avgDurationMs":2610},
+      {"timePoint":"2026-10-04 00:00:00","kind":"cli","dimensionId":1,"dimensionName":"deploy","calls":8,"successes":6,"errors":0,"denials":2,"interruptions":0,"avgDurationMs":13200},
+      {"timePoint":"2026-10-05 00:00:00","kind":"builtin","dimensionName":"web_search","calls":0,"successes":0,"errors":0,"denials":0,"interruptions":0,"avgDurationMs":0},
+      {"timePoint":"2026-10-05 00:00:00","kind":"mcp","dimensionId":4,"dimensionName":"amap_maps","calls":0,"successes":0,"errors":0,"denials":0,"interruptions":0,"avgDurationMs":0},
+      {"timePoint":"2026-10-05 00:00:00","kind":"cli","dimensionId":1,"dimensionName":"deploy","calls":0,"successes":0,"errors":0,"denials":0,"interruptions":0,"avgDurationMs":0},
+      {"timePoint":"2026-10-06 00:00:00","kind":"builtin","dimensionName":"web_search","calls":132,"successes":129,"errors":2,"denials":1,"interruptions":0,"avgDurationMs":1810},
+      {"timePoint":"2026-10-06 00:00:00","kind":"mcp","dimensionId":4,"dimensionName":"amap_maps","calls":27,"successes":24,"errors":2,"denials":1,"interruptions":0,"avgDurationMs":2980},
+      {"timePoint":"2026-10-06 00:00:00","kind":"cli","dimensionId":1,"dimensionName":"deploy","calls":11,"successes":8,"errors":1,"denials":2,"interruptions":0,"avgDurationMs":12600},
+      {"timePoint":"2026-10-07 00:00:00","kind":"builtin","dimensionName":"web_search","calls":88,"successes":86,"errors":2,"denials":0,"interruptions":0,"avgDurationMs":1760},
+      {"timePoint":"2026-10-07 00:00:00","kind":"mcp","dimensionId":4,"dimensionName":"amap_maps","calls":31,"successes":28,"errors":3,"denials":0,"interruptions":0,"avgDurationMs":2520},
+      {"timePoint":"2026-10-07 00:00:00","kind":"cli","dimensionId":1,"dimensionName":"deploy","calls":16,"successes":12,"errors":2,"denials":1,"interruptions":1,"avgDurationMs":12100}
+    ]}
+    """
+
+    /// One page of recorded calls for the subject the summary row pushed. The four terminal states are all here
+    /// plus a fifth the contract does not name, and the payload columns are decided row by row: one call has
+    /// both, one has neither key at all (capture off deployment-side), one has only the arguments, and the last
+    /// has both present and blank — which is「this call carried nothing」and must not read like the missing pair.
+    static let callInvocationsJSON = """
+    {"pageNum":1,"pageSize":20,"total":5,"records":[
+      {"id":9007,"kind":"mcp","toolName":"amap_maps","agentId":11,"sessionId":"sess-8842","sessionName":"Weekly digest","userId":1,"mcpId":4,"outcome":"SUCCESS","errorMessage":"","argsJson":"{\\\"query\\\": \\\"杭州西湖区到萧山机场\\\"}","resultExcerpt":"3 条路线，最快 41 分钟。","durationMs":1840,"startTime":"2026-10-08 09:41:12","ts":"2026-10-08 09:41:14"},
+      {"id":9006,"kind":"mcp","toolName":"amap_maps","agentId":11,"sessionId":"sess-8842","sessionName":"Weekly digest","mcpId":4,"outcome":"ERROR","errorMessage":"上游返回 403：令牌已过期","argsJson":"{\\\"query\\\": \\\"宁波到舟山\\\"}","durationMs":3120,"startTime":"2026-10-08 08:12:03","ts":"2026-10-08 08:12:06"},
+      {"id":9005,"kind":"mcp","toolName":"amap_distance","agentId":12,"sessionId":"sess-8511","outcome":"DENIED","errorMessage":"","durationMs":4,"startTime":"2026-10-07 21:04:55","ts":"2026-10-07 21:04:55"},
+      {"id":9004,"kind":"mcp","toolName":"amap_maps","agentId":null,"sessionId":"sess-8490","outcome":"INTERRUPTED","errorMessage":"会话被用户中断","argsJson":"{\\\"query\\\": \\\"上海虹桥\\\"}","durationMs":29880,"startTime":"2026-10-06 15:30:11"},
+      {"id":9003,"kind":"mcp","toolName":"amap_maps","agentId":11,"sessionId":"sess-8540","sessionName":"   ","outcome":"TIMEOUT","errorMessage":"","argsJson":"","resultExcerpt":"","durationMs":60000,"startTime":"2026-10-05 10:02:00","ts":"2026-10-05 10:03:00"}
     ]}
     """
 }

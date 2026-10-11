@@ -214,4 +214,29 @@ final class SkillNavigationTests: XCTestCase {
             "the sheet's change report has to reach the list: \(calls[0])"
         )
     }
+
+    /// The row at the top of the conversation list is the queue's second entry, so the two have to carry one
+    /// name: a row called 「技能草稿」 in front of a screen titled 「技能晋升」 says two different things about one
+    /// queue. The row therefore takes the destination's own title key rather than a copy of the words, and the
+    /// retired second key may not come back — a copy nobody reads is how the two drifted apart the first time.
+    func testTheDraftEntryRowCarriesTheQueuesOwnTitleKey() throws {
+        let row = try FeatureSources.code(of: "HarnaxFeatures/SkillDrafts/SkillDraftEntryRow.swift")
+        let labels = try FeatureSources.captures(#"HXText\("([^"]+)"\)"#, in: row)
+        XCTAssertEqual(labels.count, 1, "the row shows exactly one label, got \(labels)")
+        let screen = try FeatureSources.code(of: "HarnaxFeatures/SkillDrafts/SkillDraftListView.swift")
+        let titles = try FeatureSources.captures(#"navigationTitle\(.*hx\("([^"]+)"\)"#, in: screen)
+        XCTAssertEqual(titles.count, 1, "the queue titles itself once, got \(titles)")
+        XCTAssertEqual(
+            labels,
+            titles,
+            "the entry row and the screen it opens are named by one key; two keys are two names that drift"
+        )
+        for catalog in ["HarnaxKit/Resources/zh-Hans.lproj/Localizable.strings",
+                        "HarnaxKit/Resources/en.lproj/Localizable.strings"] {
+            XCTAssertFalse(
+                try FeatureSources.contents(of: catalog).contains("\"skill.draft.entry\" ="),
+                "\(catalog) still defines the retired second name for this queue"
+            )
+        }
+    }
 }

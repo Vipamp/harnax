@@ -22,28 +22,72 @@ final class SystemHomeTests: XCTestCase {
     func testAnAdministratorSeesEveryDomainInTheMockupOrder() {
         XCTAssertEqual(
             SystemRoute.visible(for: AccountSnapshot(username: "admin", isAdministrator: true)),
-            [.envVars, .apiKeys, .channels, .tokenMonitor]
+            [.envVars, .apiKeys, .channels]
         )
     }
 
-    /// The channel and token-monitor routes name no access rule server-side, so a member keeps both rows and
+    /// The channel and env-variable routes name no access rule server-side, so a member keeps both rows and
     /// loses only the key list the backend would refuse.
     func testAMemberIsNotOfferedTheKeyListTheBackendWouldRefuse() {
-        XCTAssertEqual(SystemRoute.visible(for: AccountSnapshot(username: "liwei")), [.envVars, .channels, .tokenMonitor])
+        XCTAssertEqual(SystemRoute.visible(for: AccountSnapshot(username: "liwei")), [.envVars, .channels])
     }
 
     /// The tab can be drawn before the profile read has landed, and an unknown account is not an
     /// administrator.
     func testAnUnknownAccountGetsTheRowsAnyoneMayOpen() {
-        XCTAssertEqual(SystemRoute.visible(for: nil), [.envVars, .channels, .tokenMonitor])
+        XCTAssertEqual(SystemRoute.visible(for: nil), [.envVars, .channels])
     }
 
-    /// The row label and the screen's own navigation title are one key each (`env.title`, `apikey.title`), so
-    /// the two cannot drift apart.
-    func testEachRowIsNamedByTheKeyItsOwnScreenTitlesItselfWith() {
-        XCTAssertEqual(SystemRoute.envVars.titleKey, "env.title")
-        XCTAssertEqual(SystemRoute.apiKeys.titleKey, "apikey.title")
-        XCTAssertEqual(SystemRoute.tokenMonitor.titleKey, "monitor.title")
+    /// A row and the screen it opens are one name: the row's `titleKey` is the key the destination screen hands
+    /// its own `navigationTitle`. Two keys naming one place do drift — the 会话记忆审批 row opened a screen that
+    /// titled itself 记忆合并候选 — so this reads the nine screens rather than restating the routes' constants.
+    func testEachRowIsNamedByTheKeyItsOwnScreenTitlesItselfWith() throws {
+        let rows: [(titleKey: String, screen: String)] = [
+            (SystemRoute.envVars.titleKey, "HarnaxFeatures/SystemDomain/EnvVarListView.swift"),
+            (SystemRoute.apiKeys.titleKey, "HarnaxFeatures/SystemDomain/ApiKeyListView.swift"),
+            (SystemRoute.channels.titleKey, "HarnaxFeatures/SystemDomain/ChannelListView.swift"),
+            (MonitorRoute.token.titleKey, "HarnaxFeatures/TokenMonitor/TokenMonitorView.swift"),
+            (MonitorRoute.skillUsage.titleKey, "HarnaxFeatures/SkillUsage/SkillUsageView.swift"),
+            (MonitorRoute.callMetrics.titleKey, "HarnaxFeatures/CallMetrics/CallMetricsView.swift"),
+            (GovernanceRoute.memoryDrafts.titleKey, "HarnaxFeatures/MemoryDrafts/MemoryDraftListView.swift"),
+            (GovernanceRoute.memory.titleKey, "HarnaxFeatures/Memory/MemoryListView.swift"),
+            (GovernanceRoute.skillDrafts.titleKey, "HarnaxFeatures/SkillDrafts/SkillDraftListView.swift"),
+        ]
+        for row in rows {
+            let titles = try FeatureSources.captures(
+                #"navigationTitle\(.*hx\("([^"]+)"\)"#,
+                in: try FeatureSources.code(of: row.screen)
+            )
+            XCTAssertEqual(
+                titles,
+                [row.titleKey],
+                "\(row.screen) has to title itself with the key its row is labelled by, got \(titles)"
+            )
+        }
+    }
+
+    /// The three monitors are reads, not records, so they left the administration array and are not gated.
+    /// The order is the console's 「集群监控」 group (`harnax-webui/config/routes.ts:160-181`).
+    func testTheMonitorsAreTheirOwnBlockInConsoleOrder() {
+        XCTAssertEqual(MonitorRoute.allCases, [.skillUsage, .callMetrics, .token])
+        XCTAssertFalse(
+            SystemRoute.allCases.map(\.titleKey).contains(MonitorRoute.token.titleKey),
+            "the token monitor is still listed as an administration row, so 「我的」 draws it twice"
+        )
+    }
+
+    func testEveryMonitorLabelResolvesInBothLanguages() {
+        for language in [HarnaxLanguage.zhHans, .en] {
+            HarnaxCatalog.shared.language = language
+            for route in MonitorRoute.allCases {
+                for key in [route.titleKey, route.subtitleKey] {
+                    let label = hx(key)
+                    XCTAssertFalse(label.isEmpty, "\(key) resolved to nothing in \(language.rawValue)")
+                    XCTAssertNotEqual(label, key, "\(key) is missing from the catalogue")
+                }
+            }
+        }
+        HarnaxCatalog.shared.language = .system
     }
 
     func testEveryRowLabelResolvesInBothLanguages() {

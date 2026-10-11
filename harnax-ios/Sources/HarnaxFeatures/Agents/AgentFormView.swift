@@ -213,6 +213,7 @@ public struct AgentFormView: View {
             ownerRow
             visibilityRow
             selfWriteRow
+            memoryRow
         }
     }
 
@@ -348,6 +349,32 @@ public struct AgentFormView: View {
                 }
             }
             Text(verbatim: hx("agent.wizard.selfWrite.hint"))
+                .font(.footnote)
+                .foregroundStyle(Color.hx(.textTertiary))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// The 长期记忆 switch: whether this agent extracts memory from its sessions and carries it back into their
+    /// context (`AgentResponse.kt:60-61`, `CreateForm.tsx:282`-`:295` — the row directly under self-evolution).
+    ///
+    /// A switch and not a stored 0/1, for the same reason as the one above it: the update route only moves the
+    /// column when the key arrives (`AgentServiceImpl.kt:181`), so saving without touching this leaves
+    /// `memoryEnabled` off the body and `AgentFormViewModel.buildDraft` is what keeps that promise. This view
+    /// only ever calls `setMemoryEnabled`.
+    private var memoryRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HXGroupCard {
+                HXRow(text: hx("agent.wizard.memory"), subtitle: nil, divider: false) {
+                    Toggle(isOn: Binding(get: { vm.memoryEnabled }, set: { vm.setMemoryEnabled($0) })) {
+                        HXText("agent.wizard.memory")
+                    }
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .tint(Color.hx(.brand))
+                }
+            }
+            Text(verbatim: hx("agent.wizard.memory.hint"))
                 .font(.footnote)
                 .foregroundStyle(Color.hx(.textTertiary))
                 .fixedSize(horizontal: false, vertical: true)

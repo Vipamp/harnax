@@ -53,6 +53,42 @@ final class AgentSaveDraftTests: XCTestCase {
         XCTAssertEqual(body["isPublic"], .number(0))
     }
 
+    // MARK: - the long-term memory switch
+
+    /// Not touching the switch keeps the key off the body outright rather than sending anything that stands for
+    /// 「on」: create then takes the column's own default (`AgentServiceImpl.kt:130`) and update leaves the
+    /// stored value alone (`AgentServiceImpl.kt:181`), so a form nobody touched asks for exactly what the row
+    /// already says. A literal `null` would be a value on the wire, not an absence.
+    func testAnUntouchedMemorySwitchLeavesNeitherTheKeyNorANull() throws {
+        let draft = AgentSaveDraft(name: "翻译", description: "改个描述")
+
+        XCTAssertNil(try json(draft)["memoryEnabled"])
+        XCTAssertFalse(
+            String(decoding: try JSONEncoder().encode(draft), as: UTF8.self).contains("memoryEnabled"),
+            "the key is absent, not present-and-null"
+        )
+    }
+
+    /// Both directions are spelled as the 0/1 column the DTO declares (`AgentCreateRequest.kt:55`,
+    /// `AgentUpdateRequest.kt:46`), and turning memory off is sent outright because that *is* a decision.
+    func testAMovedMemorySwitchSendsItsColumnValue() throws {
+        XCTAssertEqual(try json(AgentSaveDraft(memoryEnabled: 1))["memoryEnabled"], .number(1))
+        XCTAssertEqual(try json(AgentSaveDraft(memoryEnabled: 0))["memoryEnabled"], .number(0))
+    }
+
+    /// The seed side of the same rule, named identically on both legs: the wizard reads its switch off the list
+    /// row, so `0` is off and a row with no key is on — the only row that can arrive without the key is one the
+    /// server already defaulted (`AgentServiceImpl.kt:130`).
+    func testAMemoryRowReadsOnUnlessTheColumnSaysOff() throws {
+        XCTAssertFalse(try row(#"{"id":3,"name":"翻译","memoryEnabled":0}"#).keepsMemory)
+        XCTAssertTrue(try row(#"{"id":3,"name":"翻译","memoryEnabled":1}"#).keepsMemory)
+        XCTAssertTrue(try row(#"{"id":3,"name":"翻译"}"#).keepsMemory, "absent is the server's on")
+    }
+
+    private func row(_ body: String) throws -> AgentSummary {
+        try JSONDecoder().decode(AgentSummary.self, from: Data(body.utf8))
+    }
+
     // MARK: - binding rows
 
     func testAToolRowSendsItsIdItsConfirmFlagAndItsParameters() throws {

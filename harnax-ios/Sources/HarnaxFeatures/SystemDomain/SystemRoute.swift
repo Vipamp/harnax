@@ -1,23 +1,27 @@
 import Foundation
 import HarnaxCore
 
-/// The administration domains that are not agent context, as one navigation value so the group on 「我的」
-/// can be a `ForEach` and its last row knows it is last.
+/// The administration domains that are neither agent context nor a monitor, as one navigation value so the
+/// 「系统管理」 block on 「我的」 can be a `ForEach` and its last row knows it is last.
 ///
 /// The console gates the whole API Key domain behind an administrator, not the row
-/// (`harnax-webui/config/routes.ts:140` → `src/access.ts:13`), so a member gets a shorter group rather
+/// (`harnax-webui/config/routes.ts:205-210` → `src/access.ts:13`), so a member gets a shorter block rather
 /// than a list the backend would answer 403 for. Variables are scoped per account server-side
-/// (`EnvVariableServiceImpl.kt:35-41`), and neither the channel route nor the token-monitor route names an
-/// access rule at all (`routes.ts:131-135`, `:147-152`), so both of those rows stay open — a member simply
-/// sees rows whose menus are empty, because every stored channel was created by `system`.
+/// (`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/EnvVariableServiceImpl.kt:35-41`),
+/// and neither the env route nor the channel route names an access rule at all (`routes.ts:211-215`,
+/// `:216-221`), so both of those rows stay open — a member simply sees rows whose menus are empty, because
+/// every stored channel was created by `system`.
+///
+/// The token monitor used to be in this array. It is a read of aggregate counters, like the two monitors that
+/// joined it later, and the console moved it out of 「系统管理」 for the same reason (`routes.ts:199-204`):
+/// `MonitorRoute` carries all three now, ungated.
 public enum SystemRoute: Hashable, CaseIterable, Sendable {
     case envVars
     case apiKeys
     case channels
-    case tokenMonitor
 
     public static func visible(for account: AccountSnapshot?) -> [SystemRoute] {
-        account?.isAdministrator == true ? allCases : [.envVars, .channels, .tokenMonitor]
+        account?.isAdministrator == true ? allCases : [.envVars, .channels]
     }
 
     public var titleKey: String {
@@ -25,7 +29,6 @@ public enum SystemRoute: Hashable, CaseIterable, Sendable {
         case .envVars: return "env.title"
         case .apiKeys: return "apikey.title"
         case .channels: return "channel.title"
-        case .tokenMonitor: return "monitor.title"
         }
     }
 
@@ -34,7 +37,6 @@ public enum SystemRoute: Hashable, CaseIterable, Sendable {
         case .envVars: return "system.env.subtitle"
         case .apiKeys: return "system.apikey.subtitle"
         case .channels: return "system.channel.subtitle"
-        case .tokenMonitor: return "system.monitor.subtitle"
         }
     }
 
@@ -45,7 +47,6 @@ public enum SystemRoute: Hashable, CaseIterable, Sendable {
         case .envVars: return "slider.horizontal.3"
         case .apiKeys: return "key"
         case .channels: return "antenna.radiowaves.left.and.right"
-        case .tokenMonitor: return "chart.line.uptrend.xyaxis"
         }
     }
 }
