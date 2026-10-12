@@ -1,11 +1,11 @@
 /* ─── ChatWindow 视觉设计 v2 ─── */
 
-@keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(10px); }
+@keyframes messageRise {
+  from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes pulse {
+@keyframes breath {
   0%, 100% { opacity: 0.35; }
   50%      { opacity: 1; }
 }
@@ -105,23 +105,23 @@
   height: 36px;
   border-radius: 50%;
   border: 1px solid var(--vip-border);
-  background: var(--vip-bg-card);
+  background: var(--vip-bg-container);
   color: var(--vip-text-secondary);
   font-size: 14px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-  transition: all 0.2s ease;
+  box-shadow: var(--vip-shadow-sm);
+  transition: background var(--vip-motion-fast) var(--vip-motion-ease), color var(--vip-motion-fast) var(--vip-motion-ease), border-color var(--vip-motion-fast) var(--vip-motion-ease), box-shadow var(--vip-motion-fast) var(--vip-motion-ease);
   z-index: 10;
-  animation: btnFadeIn 0.2s ease;
+  animation: btnFadeIn var(--vip-motion-fast) var(--vip-motion-ease);
 
   &:hover {
     background: var(--vip-bg-elevated);
     color: var(--vip-primary);
     border-color: var(--vip-primary);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+    box-shadow: var(--vip-shadow-md);
   }
 }
 
@@ -355,7 +355,7 @@
   display: flex;
   gap: 12px;
   margin-bottom: 24px;
-  animation: fadeInUp 0.3s ease-out both;
+  animation: messageRise var(--vip-motion-base) var(--vip-motion-ease) both;
 }
 
 .messageRowUser {
@@ -372,12 +372,12 @@
   align-items: center;
   justify-content: center;
   font-size: 15px;
-  color: var(--vip-bg-container);
+  color: #fff;
 }
 
 .avatarUser {
-  background: linear-gradient(135deg, var(--vip-primary), var(--vip-primary-active));
-  box-shadow: 0 2px 8px rgba(var(--vip-primary-rgb), 0.25);
+  background: var(--vip-text-secondary);
+  box-shadow: var(--vip-shadow-sm);
 }
 
 .avatarAssistant {
@@ -404,28 +404,27 @@
 
 .bubbleUser {
   background: linear-gradient(135deg, var(--vip-primary) 0%, var(--vip-primary-hover) 100%);
-  color: var(--vip-bg-container);
+  color: #fff;
   padding: 10px 16px;
-  border-radius: 18px 18px 4px 18px;
-  box-shadow: 0 2px 12px rgba(var(--vip-primary-rgb), 0.22);
+  border-radius: 16px 16px 5px 16px;
+  box-shadow: 0 4px 14px rgba(var(--vip-primary-rgb), 0.22);
   white-space: pre-wrap;
 }
 
 .bubbleAssistant {
-  background: var(--glass-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--glass-border);
+  background: var(--vip-bg-container);
+  border: 1px solid var(--vip-border-secondary);
   color: var(--vip-text-primary);
   padding: 12px 16px;
-  border-radius: 18px 18px 18px 4px;
-  box-shadow: var(--glass-shadow);
+  border-radius: 16px 16px 16px 5px;
+  box-shadow: var(--vip-shadow-sm);
+  width: fit-content;
 }
 
 /* 团队成员气泡：与主管同形，用左侧色带标明这是被委派的运行 */
 .bubbleMember {
   border-left: 3px solid var(--vip-info);
-  border-radius: 4px 18px 18px 4px;
+  border-radius: 4px 16px 16px 4px;
 }
 
 /* 成员气泡头即折叠开关：一行摘要说清是谁在跑、跑到哪、跑了多久 */
@@ -555,7 +554,7 @@
 
 .timestamp {
   font-size: 11px;
-  color: #c0c0cc;
+  color: var(--vip-text-quaternary);
   margin-top: 4px;
   padding: 0 2px;
 }
@@ -576,36 +575,33 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--vip-primary);
-  animation: pulse 1.2s ease-in-out infinite;
-  &:nth-child(2) { animation-delay: 0.2s; }
-  &:nth-child(3) { animation-delay: 0.4s; }
+  background: var(--vip-text-quaternary);
+  animation: breath 1.2s ease-in-out infinite;
+  &:nth-child(2) { animation-delay: 0.15s; }
+  &:nth-child(3) { animation-delay: 0.3s; }
 }
 
-/* ─── 内联加载点（在消息末尾） ─── */
-.inlineLoading {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: 8px;
-  vertical-align: middle;
+/* ─── 流式光标 ─── */
+.streamCaret {
+  display: inline-block;
+  width: 2px;
+  height: 15px;
+  margin-left: 3px;
+  vertical-align: text-bottom;
+  background: var(--vip-primary);
+  animation: caretBlink 1s steps(1) infinite;
 }
 
-.loadingDot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--vip-primary);
-  animation: pulse 1.2s ease-in-out infinite;
-  &:nth-child(2) { animation-delay: 0.2s; }
-  &:nth-child(3) { animation-delay: 0.4s; }
+@keyframes caretBlink {
+  0%, 49%  { opacity: 1; }
+  50%, 100% { opacity: 0; }
 }
 
 /* ─── Markdown ─── */
 .markdownBody {
   :global {
     p {
-      margin: 0 0 10px;
+      margin: 0 0 8px;
       color: var(--vip-text-secondary);
       line-height: 1.7;
       &:last-child { margin-bottom: 0; }
@@ -2076,6 +2072,7 @@ html.dark {
   .bubbleAssistant {
     background: var(--vip-bg-elevated);
     color: var(--vip-text-primary);
+    border-color: var(--vip-border);
   }
 
   .timestamp {

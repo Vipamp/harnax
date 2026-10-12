@@ -3542,14 +3542,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onContextChanged, co
                   ) : (
                     <>
                       {msg.segments.map((seg, idx) => renderSegment(seg, idx, msg))}
-                      {/* 如果是最后一条消息且正在 loading，显示加载动画 */}
-                      {loading && msg.id === messages[messages.length - 1]?.id && (
-                        <div className={styles.inlineLoading}>
-                          <span className={styles.loadingDot} />
-                          <span className={styles.loadingDot} />
-                          <span className={styles.loadingDot} />
-                        </div>
-                      )}
+                      {/* 如果是最后一条消息且正在 loading，显示流式光标 */}
+                      {loading && msg.id === messages[messages.length - 1]?.id && <span className={styles.streamCaret} />}
                     </>
                   )}
                 </div>
