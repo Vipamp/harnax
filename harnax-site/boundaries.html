@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="description" content="边界页：站内说不清的功能、被收窄的表述对照，以及每条断言的判据来源与更新日期。">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>边界 · Harnax</title>
+<link rel="canonical" href="/boundaries.html">
+<link rel="alternate" hreflang="zh-CN" href="/boundaries.html">
+<link rel="alternate" hreflang="en" href="/en/boundaries.html">
+<link rel="alternate" hreflang="x-default" href="/boundaries.html">
+<link rel="icon" href="/assets/icon.png">
+<link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+
+<header class="hdr">
+  <div class="hdr-inner">
+    <a class="hdr-brand" href="/index.html"><img src="/assets/icon.png" alt="">Harnax</a>
+    <button class="nav-toggle" data-nav-toggle type="button" aria-expanded="false" aria-label="展开导航"></button>
+    <nav class="hdr-nav">
+      <a href="/index.html">首页</a>
+      <a href="/capability.html">运行期机制</a>
+      <a href="/deploy.html">部署形态</a>
+      <a href="/boundaries.html">边界</a>
+    </nav>
+    <div class="hdr-actions">
+      <div class="hdr-lang">
+        <a href="/boundaries.html" aria-current="page">中文</a><span>/</span><a href="/en/boundaries.html">EN</a>
+      </div>
+      <a class="btn-primary" href="/deploy.html">部署形态</a>
+    </div>
+  </div>
+</header>
+
+<div class="band">
+  <div class="band-inner">
+    <span class="eyebrow">边界</span>
+    <h1>这一页负责把话说清楚到哪个程度</h1>
+    <p class="lede">站内其它页在讲它做了什么，这一页讲三件事：哪些功能我们说不清、哪些常见说法被我们主动收窄、以及每一条断言凭什么写在这里。</p>
+  </div>
+</div>
+
+<section id="not-said" class="band band-alt" data-band>
+  <div class="band-inner">
+    <div class="band-head">
+      <h2>说不清的功能，我们就不说成功能</h2>
+      <p class="lede">这几条不是「暂时没写」，是查过源码之后确认无法按常见说法讲出来。左边是那句常见的说法，右边是实情。</p>
+    </div>
+    <div class="tbl-wrap">
+      <table class="tbl">
+        <thead>
+          <tr><th>常见说法</th><th>实情</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>stdio 型 MCP 能先登记起来</td>
+            <td>默认连登记都不允许：登记即拒，运行期还有多层拦截。开关在部署侧，默认关闭。</td>
+          </tr>
+          <tr>
+            <td>推理迭代上限可调</td>
+            <td>前后端都没有这个字段，它只存在于文档里。运行期用的是引擎默认值。</td>
+          </tr>
+          <tr>
+            <td>渠道能力可以在管理台开关</td>
+            <td>渠道页表单里没有这类控件，后端与 IM 端支持切换的能力没有配置入口。</td>
+          </tr>
+          <tr>
+            <td>定时任务跑完把结果发回群</td>
+            <td>这条联动不存在：执行链结束只写执行日志，管理台可见，飞书、钉钉、企业微信的群里都不会自动出现结果。</td>
+          </tr>
+          <tr>
+            <td>在群里指挥一个团队</td>
+            <td>团队会话只落在网页与移动端两种前缀上，渠道会话前缀进不了团队模式。</td>
+          </tr>
+          <tr>
+            <td>每一次 MCP 调用都留一条记录</td>
+            <td>那张表记的是令牌的签发、刷新与吊销这类授权决策，工具调用本身没有写入方。</td>
+          </tr>
+          <tr>
+            <td>所有观测都是异步落库</td>
+            <td>两条路径不能混说：执行服务侧的四张表是同步单条写入，只有网关那张调用日志走内存缓冲、攒批落库。</td>
+          </tr>
+          <tr>
+            <td>文件能直发到每个渠道</td>
+            <td>渠道适配里确有这个能力位，但站内不把它当功能讲：它只在某一个 IM 适配上打开，而那个渠道我们不在这里推广。</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <aside class="note"><b>为什么把这张表放在官网上。</b>一个能长期运行的系统，失效面比能力面更值得先看一遍。上面每一条都是「查过、确认不能那么说」，不是「还没查」。</aside>
+  </div>
+</section>
+
+<section id="narrowed" class="band" data-band>
+  <div class="band-inner">
+    <div class="band-head">
+      <h2>被主动收窄的表述</h2>
+      <p class="lede">这些说法不是假的，但按原样讲会超出代码能背书的范围。左列是常见写法，中列是站内实际采用的写法。</p>
+    </div>
+    <div class="tbl-wrap">
+      <table class="tbl">
+        <thead>
+          <tr><th>常见写法</th><th>站内写法</th><th>为什么要收窄</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>危险操作谁都绕不过</td>
+            <td>危险命令与敏感路径强制转人工确认</td>
+            <td>强制点在第三方内核里，本仓无法复核，不能用绝对化的话。</td>
+          </tr>
+          <tr>
+            <td>主管不带任何工具</td>
+            <td>主管不带业务工具、不接 MCP、不给沙箱，只保留 3 个团队编排工具</td>
+            <td>白名单真实存在，但「不带任何工具」是假的。</td>
+          </tr>
+          <tr>
+            <td>可视化排班</td>
+            <td>cron 表达式输入，外加 5 个常用预设</td>
+            <td>没有拖拽编辑器。</td>
+          </tr>
+          <tr>
+            <td>令牌在运行期解密</td>
+            <td>密钥类字段以 AES-256-GCM 加密落库，下发前在管理面解密</td>
+            <td>执行侧收到的就是明文，加密只覆盖库里那一段。</td>
+          </tr>
+          <tr>
+            <td>我们校验 PKCE</td>
+            <td>授权请求强制携带 PKCE</td>
+            <td>challenge 的校验在授权服务器那侧，我们这一侧只负责强制携带。</td>
+          </tr>
+          <tr>
+            <td>各类请求只在失败时重试</td>
+            <td>流式仅在结果尚未送达时才做故障转移；非流式对连接错误与服务端错误状态重试</td>
+            <td>两条路径的条件不同，已经吐出任何事件的流不再重试。</td>
+          </tr>
+          <tr>
+            <td>熔断 5 次失败</td>
+            <td>默认连续 3 次失败熔断 30 秒（网关侧）</td>
+            <td>5 次是渠道接入层（飞书、钉钉、企业微信那一路）自己那份重试参数，两家容易混着说。</td>
+          </tr>
+          <tr>
+            <td>沙箱无限复用</td>
+            <td>保活池上限 100，空闲 30 分钟回收</td>
+            <td>有真实限额，回收由后台清扫完成。</td>
+          </tr>
+          <tr>
+            <td>用量看板显示花了多少钱</td>
+            <td>按模型、Agent 与会话维度的用量看板</td>
+            <td>那个 <code>fee</code> 列恒写零，精度连「分」都存不下，全仓没有单价表。</td>
+          </tr>
+          <tr>
+            <td>多租户之间完全隔开</td>
+            <td>租户是配置与统计的分组维度，会话列表的主隔离其实是创建者</td>
+            <td>没有统一的拦截器，单行读写有的只比租户不比创建者。</td>
+          </tr>
+          <tr>
+            <td>全流程自动化测试保障</td>
+            <td>登录链路有端到端用例，持久层用 Testcontainers 起真实数据库</td>
+            <td>业务页面零端到端用例。</td>
+          </tr>
+          <tr>
+            <td>移动端功能齐全</td>
+            <td>移动端建设中</td>
+            <td>历史移动端工程只有核心页面，未经真机验证。</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <aside class="note"><b>收窄的方向只有一个。</b>把「绝对化」改成「机制」，把「都有」改成「在哪一层有」。凡是被这样改过的句子，站内其它页就用改后的那一版。</aside>
+  </div>
+</section>
+
+<section id="source" class="band band-alt" data-band>
+  <div class="band-inner">
+    <div class="band-head">
+      <h2>口径从哪来</h2>
+      <p class="lede">站内的每条功能描述都来自一份逐条对照源码的审计清单，而不是来自产品文档。</p>
+    </div>
+    <div class="split">
+      <div>
+        <h3>判据方式</h3>
+        <p>审计按域并行进行，逐条拿断言去读源码与测试，产品文档只当线索、不当依据。共 69 条断言：56 条属实、11 条需要收窄、2 条未实现——需要收窄的进了上一页，未实现的进了上一页的左列。</p>
+        <p>判据一律取仓库已提交的内容，不取工作区里尚未提交的改动。这条纪律是踩过一次才写死的：有一版成稿读了本地未提交的部署文件，把已经配好的入口状态写成了「还没配」。</p>
+        <p>更新日期：2026-10-12。口径过期比文案过期更严重，所以这个日期和断言一起放在页上。</p>
+      </div>
+      <div>
+        <h3>机器闸</h3>
+        <p>站内文案由一个零依赖脚本把关，五种检查各跑一遍：禁用词全站零命中；正文里出现的每个数字都要在可回溯白名单里；写了前半句就必须同段写后半句；中英两棵树的目录、锚点与链接逐项相等；配色按 WCAG 相对亮度算对比度。</p>
+        <p>闸自己也要能被证明有效：它带一份夹具，里面埋着几条违规，跑不出这些违规就判失败。</p>
+      </div>
+    </div>
+    <aside class="note"><b>如果这一页和代码不一致，那就是缺陷。</b>站内没有「差不多」这一档。发现任何一条描述与实际行为不符，欢迎直接把它当 bug 报出来——报的时候带上是哪一页的哪一节，够用。</aside>
+  </div>
+</section>
+
+<footer class="ftr">
+  <div class="band-inner">
+    <div class="ftr-grid">
+      <div>
+        <p class="ftr-brand"><img src="/assets/icon.png" alt="">Harnax</p>
+        <p class="ftr-blurb">自托管的多智能体运行平台：配置化装配、可中断可恢复的流式执行、沙箱隔离的工具执行、实例粘性的多副本路由、集群化定时触发与多渠道接入。</p>
+      </div>
+      <div class="ftr-col">
+        <h4>产品</h4>
+        <a href="/capability.html">运行期机制</a>
+        <a href="/deploy.html">部署形态</a>
+        <a href="/boundaries.html">边界</a>
+        <a href="/index.html#articles">系列文章</a>
+      </div>
+      <div class="ftr-col">
+        <h4>形态</h4>
+        <a href="/index.html#forms">单机</a>
+        <a href="/index.html#forms">集群</a>
+        <a href="/index.html#forms">模型本地化</a>
+      </div>
+      <div class="ftr-col">
+        <h4>口径</h4>
+        <a href="/boundaries.html#source">判据来源与更新日期</a>
+        <a href="/boundaries.html#narrowed">要收窄的表述</a>
+        <a href="/boundaries.html#not-said">没说清的功能</a>
+      </div>
+    </div>
+    <div class="ftr-base">
+      <span>站内每条功能描述以 <code>harnax-marketing</code> 的《宣传口径审计清单》审计结论为准；任何一条与实际行为不符，请当缺陷报出来。</span>
+      <span>© 2026 Harnax</span>
+    </div>
+  </div>
+</footer>
+
+<script src="/assets/site.js"></script>
+</body>
+</html>
