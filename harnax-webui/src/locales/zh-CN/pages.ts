@@ -1048,7 +1048,7 @@ export default {
   'pages.session.guide.plan.example': '先帮我列一个实现计划，确认后再动手',
   'pages.session.group.today': '今天',
   'pages.session.group.earlier': '更早',
-  'pages.session.noSession.title': '右侧还没有可进入的会话',
+  'pages.session.noSession.title': '还没有可进入的会话',
   'pages.session.noSession.hint': '点左侧「新建」开一个会话',
   'pages.session.emptyList.title': '还没有会话',
   'pages.session.emptyList.hint': '点「新建」开一个',
