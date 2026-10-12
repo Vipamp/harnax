@@ -123,7 +123,7 @@
         <svg class="dgm" viewBox="0 0 520 296" role="img" aria-label="Conversation content in the database, session ownership in the cache, the approval step in process memory">
           <text class="t-sm" x="16" y="22">Conversation</text>
           <rect class="node" x="16" y="32" width="214" height="44" rx="10"/>
-          <text x="34" y="60">messages · thinking · tool results</text>
+          <text x="34" y="60">messages · thinking · tools</text>
           <path class="wire" d="M230 54 h44"/><path class="wire" d="M270 48 l8 6 l-8 6"/>
           <rect class="node node-key" x="290" y="32" width="214" height="44" rx="10"/>
           <text x="308" y="54">MySQL</text>
@@ -135,7 +135,7 @@
           <path class="wire" d="M230 148 h44"/><path class="wire" d="M270 142 l8 6 l-8 6"/>
           <rect class="node node-key" x="290" y="126" width="214" height="44" rx="10"/>
           <text x="308" y="148">Redis</text>
-          <text class="t-mono" x="308" y="164">shared, holds ~30s of warmth</text>
+          <text class="t-mono" x="308" y="164">shared, ~30s of warmth</text>
 
           <text class="t-sm" x="16" y="210">The approval step</text>
           <rect class="node" x="16" y="220" width="214" height="44" rx="10"/>
@@ -143,7 +143,7 @@
           <path class="wire-accent" d="M230 242 h44"/><path class="wire-accent" d="M270 236 l8 6 l-8 6"/>
           <rect class="node node-warn" x="290" y="220" width="214" height="44" rx="10"/>
           <text x="308" y="242">executor memory</text>
-          <text class="t-mono" x="308" y="258">a blocked thread — it cannot move</text>
+          <text class="t-mono" x="308" y="258">a thread that cannot move</text>
         </svg>
       </div>
       <div class="mech-body">
@@ -173,7 +173,7 @@
           <path class="lane" d="M16 214 h488"/>
           <path class="bar" d="M150 208 v12"/>
           <path class="bar-accent" d="M150 208 h170 v12 h-170 z"/>
-          <text class="t-mono" x="150" y="198">node dies</text>
+          <text class="t-mono" x="150" y="198" text-anchor="end">dies</text>
           <text class="t-mono" x="330" y="198" text-anchor="end">takeover 22.5–52.5s</text>
           <path class="bar-mute" d="M330 208 h120 v12 h-120 z"/>
           <text class="t-mono" x="450" y="198" text-anchor="end">misfire 60s</text>
@@ -208,7 +208,7 @@
           <path class="wire" d="M260 182 v10"/><path class="wire" d="M254 188 l6 8 l6 -8"/>
           <rect class="node" x="26" y="204" width="468" height="42" rx="10"/>
           <text x="44" y="230">Approved by a person → projected into the sandbox each turn</text>
-          <text class="t-mono" x="26" y="272">manifest .harnax-skills.json · sha256 diff · deletes only what it wrote</text>
+          <text class="t-mono" x="26" y="272">.harnax-skills.json · sha256 diff · deletes its own dirs</text>
         </svg>
       </div>
       <div class="mech-body">
@@ -234,7 +234,7 @@
           <rect class="node node-key" x="16" y="70" width="246" height="40" rx="9"/>
           <text class="t-mono" x="32" y="95">api_call_log · gateway</text>
           <rect class="node node-key" x="286" y="70" width="218" height="40" rx="9"/>
-          <text x="302" y="95">reads back on the console page</text>
+          <text x="302" y="95">reads back on the console</text>
 
           <rect class="node" x="16" y="126" width="246" height="40" rx="9"/>
           <text class="t-mono" x="32" y="151">process_log</text>

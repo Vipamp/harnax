@@ -195,7 +195,7 @@ svg { display: block; }
 .fineprint { font-size: 13px; color: rgba(255, 255, 255, 0.6); margin: 34px 0 0; max-width: 78ch; }
 
 /* ---------- tables ---------- */
-.tbl-wrap { border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; }
+.tbl-wrap { border: 1px solid var(--line); border-radius: var(--r-lg); overflow-x: auto; }
 .tbl { width: 100%; border-collapse: collapse; font-size: 15px; }
 .tbl caption { text-align: left; padding: 0 0 12px; color: var(--muted); font-size: 14px; }
 .tbl th { text-align: left; color: var(--text-2); font-weight: 650; background: var(--bg); font-size: 13.5px; letter-spacing: 0.01em; }
@@ -268,6 +268,8 @@ svg { display: block; }
   }
   .hdr-nav.open { display: flex; }
   .hdr-actions { margin-left: auto; }
+  /* The CTA duplicates a nav row and the row cannot fit brand + language + it at 390px. */
+  .hdr-actions .btn-primary { display: none; }
   .nav-toggle { display: inline-flex; }
   .cards, .cards-3, .cards-2, .tiers, .facts, .ftr-grid { grid-template-columns: 1fr; }
   .facts { gap: 18px; }

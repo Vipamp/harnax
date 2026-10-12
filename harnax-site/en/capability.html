@@ -56,23 +56,23 @@
             <rect class="node node-key" x="16" y="14" width="300" height="44" rx="10"/>
             <text x="34" y="36">executor reports a heartbeat</text>
             <text class="t-mono" x="34" y="52">every 10s</text>
-            <text class="t-sm" x="332" y="41">the timestamp written into the registry</text>
+            <text class="t-sm" x="332" y="41">the registry timestamp</text>
 
             <rect class="node node-key" x="16" y="76" width="300" height="44" rx="10"/>
             <text x="34" y="98">gateway re-reads the registry</text>
             <text class="t-mono" x="34" y="114">every 5s</text>
-            <text class="t-sm" x="332" y="103">reads timestamps, sends no HTTP probe</text>
+            <text class="t-sm" x="332" y="103">reads timestamps, no probe</text>
 
             <rect class="node node-warn" x="16" y="138" width="300" height="44" rx="10"/>
             <text x="34" y="160">declared unhealthy</text>
             <text class="t-mono" x="34" y="176">heartbeat older than 30s</text>
-            <text class="t-sm" x="332" y="165">from here the instance takes no new session</text>
+            <text class="t-sm" x="332" y="165">no new session from here</text>
 
             <path class="lane" d="M16 232 h488"/>
             <path class="bar-accent" d="M120 226 h170 v12 h-170 z"/>
             <text class="t-mono" x="120" y="216">process stops</text>
             <text class="t-mono" x="290" y="216">detected</text>
-            <text class="t-sm" x="16" y="266">Between stopping and being detected sits 20–35 seconds — the sum of three clocks, not the period of any one of them.</text>
+            <text class="t-sm" x="16" y="266">Detection lands 20–35s after the stop: three clocks summed, not one period.</text>
           </svg>
         </div>
         <div class="mech-body">
@@ -96,7 +96,7 @@
             <rect class="node node-key" x="16" y="14" width="488" height="42" rx="10"/>
             <text x="34" y="40">Layer one · who gets the trigger — the cluster row lock</text>
             <rect class="node node-key" x="16" y="64" width="488" height="42" rx="10"/>
-            <text x="34" y="90">Layer two · who owns this fire — colliding a unique key into the trigger-lock table</text>
+            <text x="34" y="90">Layer two · who owns this fire — the trigger-lock unique key</text>
             <text class="t-mono" x="16" y="128">check-in 15s · misfire threshold 60s</text>
 
             <path class="lane" d="M16 176 h488"/>
@@ -106,9 +106,9 @@
             <text class="t-mono" x="196" y="160">reaping 5 min</text>
             <path class="bar-accent" d="M370 170 h134 v12 h-134 z"/>
             <text class="t-mono" x="370" y="160">takeover 22.5–52.5s</text>
-            <text class="t-sm" x="16" y="212">Reconciliation treats the business table as the truth; adding and removing happen by diff, not by delete-and-recreate.</text>
-            <text class="t-sm" x="16" y="234">The reap line is 1.5 times that row's own timeout. The lock release line is a global 2 times. They are not the same thing.</text>
-            <text class="t-sm" x="16" y="256">The takeover window is not covered by any automated test — it is derived on paper.</text>
+            <text class="t-sm" x="16" y="212">Reconciliation follows the business table; adds and removals are diffs.</text>
+            <text class="t-sm" x="16" y="234">Reap at 1.5 times the row's own timeout; lock release at a global 2 times.</text>
+            <text class="t-sm" x="16" y="256">The takeover window is derived on paper; no test covers it.</text>
           </svg>
         </div>
         <div class="mech-body">
@@ -130,7 +130,7 @@
           <p class="dgm-title">Fig 3 · Projection converges every round, it does not append</p>
           <svg class="dgm" viewBox="0 0 520 296" role="img" aria-label="The expected set, a sha256 comparison, deleting only directories the projection wrote itself, zero writes when nothing differs">
             <rect class="node" x="150" y="12" width="220" height="42" rx="10"/>
-            <text x="168" y="38">the skill set expected this round</text>
+            <text x="168" y="38">skills expected this round</text>
             <path class="wire" d="M370 33 h60 v92 h-40"/><path class="wire" d="M396 121 l-8 -6 l8 -6"/>
             <rect class="node" x="330" y="112" width="174" height="42" rx="10"/>
             <text x="348" y="138">compared by sha256</text>
@@ -139,9 +139,9 @@
             <text x="168" y="212">writes only on a difference</text>
             <path class="wire" d="M150 207 h-60 v-130 h60"/><path class="wire" d="M144 83 l8 -6 l6 6"/>
             <rect class="node node-warn" x="16" y="112" width="180" height="42" rx="10"/>
-            <text x="32" y="132">deletes only what it wrote</text>
+            <text x="32" y="132">deletes only its own</text>
             <text class="t-mono" x="32" y="148">.harnax-skills.json</text>
-            <text class="t-sm" x="16" y="256">Nothing differs → zero writes; an artefact landing outside the expected location is filed as rejected and kept;</text>
+            <text class="t-sm" x="16" y="256">Nothing differs → zero writes; a stray artefact is filed as rejected and kept;</text>
             <text class="t-sm" x="16" y="276">a failed projection logs WARN and does not block the round.</text>
           </svg>
         </div>
@@ -164,7 +164,7 @@
           <p class="dgm-title">Fig 4 · Five write paths, two read paths</p>
           <svg class="dgm" viewBox="0 0 520 296" role="img" aria-label="Write and read paths for the tables; three of the ledger tables are written but never read by the application layer">
             <text class="t-sm" x="300" y="14">write</text>
-            <text class="t-sm" x="400" y="14">read back on a page</text>
+            <text class="t-sm" x="400" y="14">read on a page</text>
             <rect class="node" x="16" y="24" width="250" height="40" rx="9"/>
             <text class="t-mono" x="32" y="49">token_stats</text>
             <rect class="bar" x="300" y="34" width="40" height="20" rx="4"/>
@@ -185,7 +185,7 @@
             <text class="t-mono" x="32" y="265">mcp_call_log</text>
             <rect class="bar" x="300" y="250" width="40" height="20" rx="4"/>
             <rect class="bar-mute" x="400" y="250" width="40" height="20" rx="4"/>
-            <text class="t-sm" x="300" y="292">Four on the executor side are synchronous single rows; the gateway's is asynchronous batches</text>
+            <text class="t-sm" x="300" y="292">Executor sync; gateway batched</text>
           </svg>
         </div>
         <div class="mech-body">
