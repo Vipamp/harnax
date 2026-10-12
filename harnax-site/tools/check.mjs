@@ -37,15 +37,20 @@ const NUM = new Set([
   // 4 = dashboard composition (7 卡 / 3 饼 / 4 线), an audited UI fact.
   '0', '1', '2', '3', '4', '5', '6', '7', '7.5', '9', '10', '11', '12', '14', '15', '20', '30', '35',
   '50', '60', '90', '100', '200', '500', '512', '600', '900', '1000', '1800', '443', '80', '300',
-  '5000', '8448', '10000', '11434', '12.0', '22.5', '52.5', '1.5', '4.5', '2688',
+  '5000', '8448', '10000', '11434', '12.0', '22.5', '52.5', '1.5', '4.5', '2688', '0.5',
+  // The audit ledger's own tally, quoted on the boundaries page: 69 = 56 + 11 + 2.
+  '69', '56',
 ]);
 
 // Shapes that are not product claims: dates, years, protocol codes, CSS lengths,
-// algorithm names and dependency versions.
+// algorithm names and dependency versions. Memory ceilings with an M suffix are per-service
+// compose resource limits copied verbatim from docker-compose.yml; the aggregates (8448 / 2688)
+// stay whitelisted so a total cannot be invented.
 const IGNORE = [
   /\d{4}-\d{2}-\d{2}/g,
   /\b20\d{2}\b/g,
   /\bHTTP \d{3}\b/g,
+  /\b\d+M\b/g,
   /\d+\s*期/g,
   /图\s*\d+/g,
   /\b(?:fig|figure|issue|no\.?)\s*\d+/gi,
