@@ -24,14 +24,13 @@ import {
   ClockCircleOutlined,
   CheckSquareOutlined,
   EyeOutlined,
-  EyeInvisibleOutlined,
   ThunderboltOutlined,
   StopOutlined,
   CompressOutlined,
   LoadingOutlined,
   CodeOutlined,
   FolderOpenOutlined,
-  MoreOutlined,
+  SettingOutlined,
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -3634,11 +3633,59 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onContextChanged, co
                 <PictureOutlined />
                 <span>{intl.formatMessage({ id: 'pages.session.imageUpload', defaultMessage: 'Image' })} ({imageUrls.length})</span>
               </div>
+              <div
+                className={`${styles.optionItem} ${loading || compacting ? styles.optionDisabled : ''}`}
+                title={intl.formatMessage({
+                  id: 'pages.session.context.compactTip',
+                  defaultMessage: 'Summarize the older turns of this session in the model context. The chat page keeps showing every original message.',
+                })}
+                onClick={() => {
+                  void handleCompact();
+                }}
+              >
+                {compacting ? <LoadingOutlined /> : <CompressOutlined />}
+                <span>{intl.formatMessage({ id: 'pages.session.context.compact', defaultMessage: 'Compact Context' })}</span>
+              </div>
+              <div
+                className={styles.optionItem}
+                onClick={() => {
+                  void handleStopSandboxClick();
+                }}
+              >
+                <StopOutlined />
+                <span>{intl.formatMessage({ id: 'pages.session.stopSandbox', defaultMessage: 'Stop Sandbox' })}</span>
+              </div>
+              <div
+                className={styles.optionItem}
+                onClick={() => {
+                  Modal.confirm({
+                    title: intl.formatMessage({ id: 'pages.session.clearChatConfirmTitle', defaultMessage: 'Clear Chat History' }),
+                    content: intl.formatMessage({ id: 'pages.session.clearChatConfirm', defaultMessage: 'Are you sure you want to clear all chat history for this session?' }),
+                    okText: intl.formatMessage({ id: 'pages.common.confirm', defaultMessage: 'Confirm' }),
+                    cancelText: intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' }),
+                    okButtonProps: { danger: true },
+                    onOk: handleClearChat,
+                  });
+                }}
+              >
+                <DeleteOutlined />
+                <span>{intl.formatMessage({ id: 'pages.session.clearRecord', defaultMessage: 'Clear Record' })}</span>
+              </div>
               <Dropdown
                 menu={{
                   items: [
                     {
-                      key: 'show',
+                      key: 'thinking',
+                      label: (
+                        <span className={styles.menuItemLabel}>
+                          <BulbOutlined className={styles.menuIcon} />
+                          <span>{intl.formatMessage({ id: 'pages.session.deepThinking', defaultMessage: 'Deep Thinking' })}</span>
+                          {(enableThink || modelThinkingMode === 2) && <CheckOutlined className={styles.menuCheck} />}
+                        </span>
+                      ),
+                    },
+                    {
+                      key: 'showThinking',
                       label: (
                         <span className={styles.menuItemLabel}>
                           <EyeOutlined className={styles.menuIcon} />
@@ -3646,81 +3693,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onContextChanged, co
                           {showThinking && <CheckOutlined className={styles.menuCheck} />}
                         </span>
                       ),
-                      disabled: showThinking,
                     },
                     {
-                      key: 'hide',
+                      key: 'search',
                       label: (
                         <span className={styles.menuItemLabel}>
-                          <EyeInvisibleOutlined className={styles.menuIcon} />
-                          <span>{intl.formatMessage({ id: 'pages.session.hideThinking', defaultMessage: 'Hide Thinking Process' })}</span>
-                          {!showThinking && <CheckOutlined className={styles.menuCheck} />}
+                          <SearchOutlined className={styles.menuIcon} />
+                          <span>{intl.formatMessage({ id: 'pages.session.internetSearch', defaultMessage: 'Internet Search' })}</span>
+                          {enableSearch && <CheckOutlined className={styles.menuCheck} />}
                         </span>
                       ),
-                      disabled: !showThinking,
                     },
-                  ],
-                  onClick: ({ key }) => {
-                    if (key === 'show') {
-                      setShowThinking(true);
-                    } else if (key === 'hide') {
-                      setShowThinking(false);
-                    }
-                  },
-                }}
-                trigger={['contextMenu']}
-                dropdownRender={(menu) => (
-                  <div className={styles.thinkingMenu}>
-                    <div className={styles.menuHeader}>
-                      <BulbOutlined className={styles.menuHeaderIcon} />
-                      <span>{intl.formatMessage({ id: 'pages.session.thinkingMenuTitle', defaultMessage: 'Thinking Process Display Settings' })}</span>
-                    </div>
-                    {menu}
-                  </div>
-                )}
-              >
-                <div
-                  className={`${styles.optionItem} ${enableThink || modelThinkingMode === 2 ? styles.optionActive : ''} ${!modelSupportReasoning ? styles.optionDisabled : ''}`}
-                  onClick={() => {
-                    if (!modelSupportReasoning) {
-                      message.warning(intl.formatMessage({ id: 'pages.session.modelNotSupportReasoning', defaultMessage: 'Current model does not support Deep Thinking' }));
-                      return;
-                    }
-                    if (modelThinkingMode === 2) {
-                      message.info(intl.formatMessage({ id: 'pages.session.thinkingRequired', defaultMessage: 'Current model requires Deep Thinking, it cannot be turned off' }));
-                      return;
-                    }
-                    const newValue = !enableThink;
-                    setEnableThink(newValue);
-                    sendSilentCommand(newValue ? 'ENABLE' : 'DISABLE', 'thinking').then((success) => {
-                      if (success === false) setEnableThink(!newValue); // Revert on failure
-                    });
-                  }}
-                >
-                  <BulbOutlined />
-                  <span>{intl.formatMessage({ id: 'pages.session.deepThinking', defaultMessage: 'Deep Thinking' })}</span>
-                </div>
-              </Dropdown>
-              <div
-                className={`${styles.optionItem} ${enableSearch ? styles.optionActive : ''} ${!modelSupportInternet ? styles.optionDisabled : ''}`}
-                onClick={() => {
-                  if (!modelSupportInternet) {
-                    message.warning(intl.formatMessage({ id: 'pages.session.modelNotSupportInternet', defaultMessage: 'Current model does not support Internet Search' }));
-                    return;
-                  }
-                  const newValue = !enableSearch;
-                  setEnableSearch(newValue);
-                  sendSilentCommand(newValue ? 'ENABLE' : 'DISABLE', 'search').then((success) => {
-                    if (success === false) setEnableSearch(!newValue); // Revert on failure
-                  });
-                }}
-              >
-                <SearchOutlined />
-                <span>{intl.formatMessage({ id: 'pages.session.internetSearch', defaultMessage: 'Internet Search' })}</span>
-              </div>
-              <Dropdown
-                menu={{
-                  items: [
                     {
                       key: 'plan',
                       label: (
@@ -3749,45 +3732,40 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onContextChanged, co
                         ),
                       })),
                     },
-                    { type: 'divider' },
-                    {
-                      key: 'compact',
-                      disabled: loading || compacting,
-                      label: (
-                        <span
-                          className={styles.menuItemLabel}
-                          title={intl.formatMessage({
-                            id: 'pages.session.context.compactTip',
-                            defaultMessage: 'Summarize the older turns of this session in the model context. The chat page keeps showing every original message.',
-                          })}
-                        >
-                          {compacting ? <LoadingOutlined className={styles.menuIcon} /> : <CompressOutlined className={styles.menuIcon} />}
-                          <span>{intl.formatMessage({ id: 'pages.session.context.compact', defaultMessage: 'Compact Context' })}</span>
-                        </span>
-                      ),
-                    },
-                    {
-                      key: 'stopSandbox',
-                      danger: true,
-                      label: (
-                        <span className={styles.menuItemLabel}>
-                          <StopOutlined className={styles.menuIcon} />
-                          <span>{intl.formatMessage({ id: 'pages.session.stopSandbox', defaultMessage: 'Stop Sandbox' })}</span>
-                        </span>
-                      ),
-                    },
-                    {
-                      key: 'clearChat',
-                      danger: true,
-                      label: (
-                        <span className={styles.menuItemLabel}>
-                          <DeleteOutlined className={styles.menuIcon} />
-                          <span>{intl.formatMessage({ id: 'pages.session.clearRecord', defaultMessage: 'Clear Record' })}</span>
-                        </span>
-                      ),
-                    },
                   ],
                   onClick: ({ key }) => {
+                    if (key === 'thinking') {
+                      if (!modelSupportReasoning) {
+                        message.warning(intl.formatMessage({ id: 'pages.session.modelNotSupportReasoning', defaultMessage: 'Current model does not support Deep Thinking' }));
+                        return;
+                      }
+                      if (modelThinkingMode === 2) {
+                        message.info(intl.formatMessage({ id: 'pages.session.thinkingRequired', defaultMessage: 'Current model requires Deep Thinking, it cannot be turned off' }));
+                        return;
+                      }
+                      const newValue = !enableThink;
+                      setEnableThink(newValue);
+                      sendSilentCommand(newValue ? 'ENABLE' : 'DISABLE', 'thinking').then((success) => {
+                        if (success === false) setEnableThink(!newValue); // Revert on failure
+                      });
+                      return;
+                    }
+                    if (key === 'showThinking') {
+                      setShowThinking(!showThinking);
+                      return;
+                    }
+                    if (key === 'search') {
+                      if (!modelSupportInternet) {
+                        message.warning(intl.formatMessage({ id: 'pages.session.modelNotSupportInternet', defaultMessage: 'Current model does not support Internet Search' }));
+                        return;
+                      }
+                      const newValue = !enableSearch;
+                      setEnableSearch(newValue);
+                      sendSilentCommand(newValue ? 'ENABLE' : 'DISABLE', 'search').then((success) => {
+                        if (success === false) setEnableSearch(!newValue); // Revert on failure
+                      });
+                      return;
+                    }
                     if (key === 'plan') {
                       const newValue = !enablePlan;
                       setEnablePlan(newValue);
@@ -3804,42 +3782,24 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onContextChanged, co
                       });
                       return;
                     }
-                    if (key === 'compact') {
-                      handleCompact();
-                      return;
-                    }
-                    if (key === 'stopSandbox') {
-                      void handleStopSandboxClick();
-                      return;
-                    }
-                    if (key === 'clearChat') {
-                      Modal.confirm({
-                        title: intl.formatMessage({ id: 'pages.session.clearChatConfirmTitle', defaultMessage: 'Clear Chat History' }),
-                        content: intl.formatMessage({ id: 'pages.session.clearChatConfirm', defaultMessage: 'Are you sure you want to clear all chat history for this session?' }),
-                        okText: intl.formatMessage({ id: 'pages.common.confirm', defaultMessage: 'Confirm' }),
-                        cancelText: intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' }),
-                        okButtonProps: { danger: true },
-                        onOk: handleClearChat,
-                      });
-                    }
                   },
                 }}
                 trigger={['click']}
                 dropdownRender={(menu) => (
                   <div className={styles.thinkingMenu}>
                     <div className={styles.menuHeader}>
-                      <MoreOutlined className={styles.menuHeaderIcon} />
-                      <span>{intl.formatMessage({ id: 'pages.session.moreOptions', defaultMessage: 'More' })}</span>
+                      <SettingOutlined className={styles.menuHeaderIcon} />
+                      <span>{intl.formatMessage({ id: 'pages.session.sessionSettings', defaultMessage: 'Session Settings' })}</span>
                     </div>
                     {menu}
                   </div>
                 )}
               >
                 <div
-                  className={`${styles.optionItem} ${enablePlan || permissionMode !== 'DEFAULT' ? styles.optionActive : ''}`}
+                  className={`${styles.optionItem} ${enableThink || enableSearch || enablePlan || permissionMode !== 'DEFAULT' ? styles.optionActive : ''}`}
                 >
-                  <MoreOutlined />
-                  <span>{intl.formatMessage({ id: 'pages.session.moreOptions', defaultMessage: 'More' })}</span>
+                  <SettingOutlined />
+                  <span>{intl.formatMessage({ id: 'pages.session.sessionSettings', defaultMessage: 'Session Settings' })}</span>
                 </div>
               </Dropdown>
             </div>

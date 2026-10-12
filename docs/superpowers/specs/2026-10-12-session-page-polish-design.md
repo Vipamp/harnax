@@ -10,7 +10,7 @@
 
 1. **首屏编排**——空会话第一屏从「渐变图标＋文字 chips」换成「活标识（缓转光环＋呼吸核）＋错峰入场＋四张能力引导卡」，点卡即发送示例问题；无会话态与列表空态换用同一套 orb 语言。
 2. **消息与流式**——消息行上浮入场（240ms）；工具卡收敛为「摘要行＋状态点＋可折叠体」；流式＝思考点呼吸 → 逐字＋闪烁光标；发送钮在流式中变方形停止钮＋呼吸环。
-3. **输入区去堆叠**——8 个文字按钮一行改为 3 枚图标 chips（图片／深度思考／联网搜索）＋「更多」菜单收纳其余五项；发送钮改渐变小圆钮。
+3. **输入区去堆叠**——8 个文字按钮一行改为「动作 chips＋会话设置菜单」：图片／压缩上下文／停止沙箱／清空记录 4 枚图标 chips ＋「会话设置」菜单收纳 深度思考／显示思考过程／联网搜索／开启计划／工具执行权限；发送钮改渐变小圆钮。
 4. **统一动效体系**——`global.less` 增加 3 档时长＋1 条缓动的运动 token；会话页样式内实现 `prefers-reduced-motion` 降级。
 
 只动 `src/pages/session/` 的呈现层与 i18n 文案；请求、SSE 协议、权限判定、命令通道全部不碰。
@@ -21,7 +21,7 @@
 
 1. 首屏两种形态：无会话态（右侧空态）、会话空态（ChatWindow 无消息）的编排与引导。
 2. 消息流：用户／助手／团队成员气泡、工具调用卡（含合并卡与确认卡）、计划卡、流式输出、时间戳、回到底部按钮。
-3. 输入区：chips 重组、「更多」菜单、发送/停止钮、图片预览。
+3. 输入区：chips 重组、「会话设置」菜单、发送/停止钮、图片预览。
 4. 会话列表：分组、行信息层级、选中态、列表空态。
 5. 顶栏：保持全部功能入口，视觉对齐新语言。
 6. 运动 token 段加入 `src/global.less`；会话页样式内的 reduced-motion 降级。
@@ -150,17 +150,17 @@
 
 ### 3.4 输入区（ChatWindow）
 
-- **首层 chips 行**（28px 高、圆角 8、12.5px 文字＋14px 图标；hover 软底、press `scale .95`；激活＝品牌色底 `rgba(primary,.09)`＋品牌色文字）：
+- **首层 chips 行**（28px 高、圆角 8、12.5px 文字＋14px 图标；hover 软底、press `scale .95`；激活＝品牌色底 `rgba(primary,.09)`＋品牌色文字）——动作与配置分离：可执行动作常驻 chips，配置类开关收进「会话设置」菜单：
   1. 图片（保数量角标与 vision 禁用提示，行为不变）
-  2. 深度思考（激活条件不变：`enableThink || modelThinkingMode === 2`）
-  3. 联网搜索（激活 `enableSearch`；`modelSupportInternet` 禁用不变）
-  4. **更多**（`MoreOutlined`，下拉菜单）——收纳：
+  2. 压缩上下文（`compacting` 时转圈；`loading || compacting` 禁用；tooltip 保留）
+  3. 停止沙箱（中性 chip；前置 `getWorkspaceStatus` 检查＋Modal 确认，行为不变）
+  4. 清空记录（中性 chip；Modal 确认弹窗，行为不变）
+  5. **会话设置**（`SettingOutlined`，下拉菜单带标题行；激活条件＝`enableThink || enableSearch || enablePlan || permissionMode !== 'DEFAULT'`）——收纳：
+     - 深度思考（勾选态 `enableThink || modelThinkingMode === 2`；不支持／强制开启时提示不变，点击切换并发送既有 ENABLE/DISABLE thinking 命令＋失败回滚）
+     - 显示思考过程（勾选态 `showThinking`，点击即切换；取代原「深度思考」chip 的右键菜单）
+     - 联网搜索（勾选态 `enableSearch`；不支持时警告不变，点击切换并发送既有 ENABLE/DISABLE search 命令＋失败回滚）
      - 开启计划（勾选态显示 `enablePlan`，点击发送既有 ENABLE/DISABLE plan 命令，行为不变）
      - 工具权限（显示当前档位，5 档单选，选择即发 PERMISSION 命令＋失败回滚，行为不变）
-     - 分隔线
-     - 压缩上下文（`compacting` 时转圈；`loading || compacting` 禁用）
-     - 停止沙箱（危险色；前置 `getWorkspaceStatus` 检查＋Modal 确认，行为不变）
-     - 清空记录（危险色；Popconfirm 确认，行为不变）
 - **发送钮**：34px 圆形、`--vip-gradient-primary`、`box-shadow 0 4px 14px rgba(primary,.32)`；hover `scale 1.06`＋阴影加深、press `scale .94`；空输入禁用 `opacity .45`。
 - **流式中的发送钮**：变为软底方形停止块（11px 圆角 3 方块）＋外圈 1.6s 呼吸环（`scale .9→1.35`、透明度 `0.9→0`，`border 2px rgba(primary,.4)`）；点击停止行为不变。
 - **输入卡本体**：圆角 `--vip-radius-xl`、细边；`:focus-within` 时边 `rgba(primary,.55)`＋`0 0 0 4px rgba(primary,.10)` 光晕；空态首屏的脉冲见 §3.1。
@@ -192,7 +192,7 @@
 |---|---|
 | `src/pages/session/index.less` | **新增**：列表、顶栏、无会话态、禁用输入卡样式（现内联样式仅改选中态与行结构两处，其余不动） |
 | `src/pages/session/components/ChatWindow.less` | 修改：空态编排/引导卡、气泡、工具卡、流式、输入区、reduced-motion 块 |
-| `src/pages/session/components/ChatWindow.tsx` | 修改：空态 JSX（引导卡数据）、输入区 chips/更多菜单 JSX、工具卡三件换皮（仅 className 与结构微调） |
+| `src/pages/session/components/ChatWindow.tsx` | 修改：空态 JSX（引导卡数据）、输入区 chips/会话设置菜单 JSX、工具卡三件换皮（仅 className 与结构微调） |
 | `src/pages/session/index.tsx` | 修改：列表行结构（第二行 meta）、分组、空列表态、无会话态、禁用输入卡 |
 | `src/global.less` | 追加 §3.5 运动 token 四行 |
 | `src/locales/{zh-CN,en-US}/pages.ts` | §4 i18n 清单 |
@@ -220,19 +220,19 @@
 | `pages.session.emptyList.title` | 还没有会话 | No sessions yet |
 | `pages.session.emptyList.hint` | 点「新建」开一个 | Hit "New" to create one |
 | `pages.session.inputPlaceholder.noSession` | 先新建一个会话，再开始对话… | Create a session first, then start chatting… |
-| `pages.session.moreOptions` | 更多 | More |
+| `pages.session.sessionSettings` | 会话设置 | Session Settings |
 
-删除（均只被本轮替换的元素引用，已全仓核对无他处使用）：`pages.session.quickSuggestion.{javaSort,springBootAutoConfiguration,pythonWebServer,sqlOptimization}`、`pages.session.emptyTitle`、`pages.session.emptySubtitle`、`pages.session.selectSession`、`pages.session.createNew`、`pages.session.noSessions`。
+删除（均只被本轮替换的元素引用，已全仓核对无他处使用）：`pages.session.quickSuggestion.{javaSort,springBootAutoConfiguration,pythonWebServer,sqlOptimization}`、`pages.session.emptyTitle`、`pages.session.emptySubtitle`、`pages.session.selectSession`、`pages.session.createNew`、`pages.session.noSessions`、`pages.session.thinkingMenuTitle`、`pages.session.hideThinking`。改名：`pages.session.moreOptions` → `pages.session.sessionSettings`。
 
 ## 5. 验收
 
 1. **构建门禁**：`max build` 通过；改动文件逐文件 `npx @biomejs/biome lint`（禁 `--write`）；`jest` 保持基线（`login.test.tsx` 既定 2 红不修）。
 2. **视觉走查**（本地镜像 ＋ 无头浏览器截图，桌面 1440×900，共 9 帧）：① 空态-入场中（亮）② 空态-稳定（亮）③ 空态-稳定（暗）④ 对话中-工具卡收起 ⑤ 对话中-工具卡展开 ⑥ 流式-思考点 ⑦ 流式-逐字光标 ⑧ 无会话态 ⑨ 列表空态。逐帧对照 §3 参数。
 3. **reduced-motion**：以 `prefers-reduced-motion: reduce` 模拟截图，确认编排直出、无无限动画残留。
-4. **行为回归**：发送/停止、图片角标与禁用、三枚 chips 激活与禁用条件、「更多」五项命令原有行为（含失败回滚与确认弹窗）、引导卡点击发送、空态重播、切会话消息渲染。
+4. **行为回归**：发送/停止、图片角标与禁用、chips 行构成（图片／压缩上下文／停止沙箱／清空记录／会话设置）与各禁用条件、「会话设置」菜单五项（深度思考／显示思考过程／联网搜索／开启计划／工具执行权限）原有行为（含失败回滚与确认弹窗）、设置类开关使「会话设置」chip 呈激活态、引导卡点击发送、空态重播、切会话消息渲染。
 
 ## 6. 已裁定与待复核
 
 已裁定（沿用既有拍板，不再复议）：整页全量范围；克制底＋点睛动效风格；不引入新依赖；桌面端优先；引导卡不承诺未上线能力（故无「定时任务」卡）。
 
-待复核：本文其余全部内容，重点为 §3.1 引导卡四张的文案、§3.2 列表第二行与分组的取舍、§3.4「更多」菜单的收纳范围。
+待复核：本文其余全部内容，重点为 §3.1 引导卡四张的文案、§3.2 列表第二行与分组的取舍、§3.4「会话设置」菜单的收纳范围。
