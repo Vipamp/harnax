@@ -895,6 +895,30 @@
   border-top: 1px solid rgba(var(--vip-warning-rgb), 0.1);
 }
 
+/* 确认卡按钮：主＝渐晕描边、危险＝error 语义 */
+.confirmAllowBtn {
+  background: rgba(var(--vip-primary-rgb), 0.1) !important;
+  border: 1px solid rgba(var(--vip-primary-rgb), 0.35) !important;
+  color: var(--vip-primary) !important;
+  box-shadow: none !important;
+
+  &:hover {
+    background: rgba(var(--vip-primary-rgb), 0.16) !important;
+    border-color: rgba(var(--vip-primary-rgb), 0.5) !important;
+  }
+}
+
+.confirmRejectBtn {
+  background: transparent !important;
+  border: 1px solid rgba(var(--vip-error-rgb), 0.35) !important;
+  color: var(--vip-error) !important;
+
+  &:hover {
+    background: rgba(var(--vip-error-rgb), 0.08) !important;
+    border-color: rgba(var(--vip-error-rgb), 0.5) !important;
+  }
+}
+
 /* ─── 输入区域（一体化卡片） ─── */
 .inputArea {
   flex-shrink: 0;
@@ -1893,34 +1917,29 @@
   border-radius: 12px;
   overflow: hidden;
   margin: 8px 0;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.08);
-  transition: all 0.3s ease;
-  
+  box-shadow: var(--vip-shadow-sm);
+  transition: border-color var(--vip-motion-fast) var(--vip-motion-ease), box-shadow var(--vip-motion-fast) var(--vip-motion-ease);
+
   &:hover {
-    box-shadow: 0 4px 16px rgba(99, 102, 241, 0.12);
-    border-color: var(--vip-primary);
+    box-shadow: var(--vip-shadow-md);
+    border-color: rgba(var(--vip-primary-rgb), 0.35);
   }
-  
+
   .mergedToolHeader {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 16px;
+    gap: 8px;
+    padding: 10px 12px;
     background: var(--vip-bg-container);
-    border-bottom: 1px solid transparent;
-    transition: all 0.3s;
     user-select: none;
-    
+    transition: background var(--vip-motion-fast) var(--vip-motion-ease);
+
     &:hover {
-      background: var(--vip-bg-elevated);
-    }
-    
-    // 展开时添加底部边框
-    .mergedToolCard:has(> .mergedToolArgs, > .mergedToolNested, > .mergedToolResult) & {
-      border-bottom-color: var(--vip-border);
+      background: var(--vip-bg-layout);
     }
   }
-  
+
   .mergedToolTitle {
     display: flex;
     align-items: center;
@@ -1928,74 +1947,105 @@
     flex: 1;
     min-width: 0;
   }
-  
+
+  .mergedToolIcon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 7px;
+    background: rgba(var(--vip-primary-rgb), 0.1);
+    color: var(--vip-primary);
+    font-size: 13px;
+    flex-shrink: 0;
+  }
+
   .mergedToolName {
     font-weight: 600;
-    font-size: 14px;
+    font-size: 13px;
     color: var(--vip-text-primary);
-    font-family: 'Monaco', 'Consolas', monospace;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
-  
+
+  /* 状态 pill：软底＋语义色，由 statusConfig 以行内色值驱动 */
   .mergedToolStatus {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
     font-size: 12px;
     font-weight: 500;
-    padding: 2px 8px;
-    background: var(--vip-bg-component);
-    border-radius: 12px;
-    border: 1px solid currentColor;
-    opacity: 0.9;
+    padding: 3px 10px;
+    border-radius: 999px;
+    flex-shrink: 0;
   }
-  
-  /* 委派卡上的成员名：折叠时也要看得出这张卡给了谁 */
+
+  .statusBreathDot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: breath 1.4s ease-in-out infinite;
+  }
+
   .mergedToolHint {
     flex: 1;
     min-width: 0;
     font-size: 12px;
-    color: var(--vip-text-secondary);
+    color: var(--vip-text-tertiary);
+    font-family: 'Monaco', 'Consolas', monospace;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  
+
   .mergedToolArrow {
     display: flex;
     align-items: center;
     justify-content: center;
     width: 24px;
     height: 24px;
-    color: var(--vip-primary);
-    transition: transform 0.3s;
-    
+    color: var(--vip-text-tertiary);
+    flex-shrink: 0;
+
     :global(.anticon) {
       font-size: 12px;
     }
   }
-  
+
+  /* 折叠体：grid-template-rows 过渡替代条件挂载 */
+  .mergedToolBody {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows var(--vip-motion-base) var(--vip-motion-ease);
+  }
+
+  .mergedToolBodyOpen {
+    grid-template-rows: 1fr;
+  }
+
+  .mergedToolBodyInner {
+    overflow: hidden;
+    min-height: 0;
+  }
+
   .mergedToolArgs,
   .mergedToolResult,
   .mergedToolNested {
     padding: 12px 16px;
-    background: var(--vip-bg-elevated);
-    animation: slideDown 0.3s ease;
+    background: var(--vip-bg-layout);
+    border-top: 1px solid var(--vip-border);
   }
-  
-  .mergedToolResult {
-    background: linear-gradient(135deg, rgba(var(--vip-success-rgb), 0.06) 0%, var(--vip-bg-container) 100%);
-    border-top: 2px solid var(--vip-success);
-  }
-  
+
   .mergedToolSectionLabel {
     font-size: 11px;
     font-weight: 600;
     color: var(--vip-primary);
-    text-transform: uppercase;
     letter-spacing: 0.5px;
     margin-bottom: 8px;
   }
-  
+
   .mergedToolCode {
     margin: 0;
     padding: 12px;
@@ -2003,7 +2053,7 @@
     border: 1px solid var(--vip-border);
     border-radius: 8px;
     font-size: 12px;
-    line-height: 1.6;
+    line-height: 1.7;
     color: var(--vip-text-primary);
     font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
     overflow-x: auto;
@@ -2050,17 +2100,6 @@
   color: var(--vip-text-primary);
   min-width: 0;
   overflow: hidden;
-}
-
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    max-height: 0;
-  }
-  to {
-    opacity: 1;
-    max-height: 1000px;
-  }
 }
 
 /* ─── 深色主题适配 ─── */

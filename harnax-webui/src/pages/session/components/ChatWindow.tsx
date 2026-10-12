@@ -323,12 +323,12 @@ const MergedToolCard: React.FC<{
   
   // 根据确认状态显示不同的文本和颜色
   const statusConfig = {
-    pending: { text: intl.formatMessage({ id: 'pages.session.confirmStatus.pending', defaultMessage: 'Pending confirmation' }), color: 'var(--vip-warning)', icon: <ExclamationCircleOutlined /> },
-    confirmed: { text: intl.formatMessage({ id: 'pages.session.confirmStatus.confirmed', defaultMessage: 'Confirmed' }), color: 'var(--vip-success)', icon: <CheckCircleOutlined /> },
-    rejected: { text: intl.formatMessage({ id: 'pages.session.confirmStatus.rejected', defaultMessage: 'Rejected' }), color: 'var(--vip-error)', icon: <CloseOutlined /> },
-    calling: { text: intl.formatMessage({ id: 'pages.session.toolStatus.calling', defaultMessage: 'Calling' }), color: 'var(--vip-primary)', icon: <ClockCircleOutlined spin /> },
-    completed: { text: intl.formatMessage({ id: 'pages.session.toolStatus.completed', defaultMessage: 'Completed' }), color: 'var(--vip-success)', icon: <CheckCircleOutlined /> },
-    interrupted: { text: intl.formatMessage({ id: 'pages.session.toolStatus.interrupted', defaultMessage: 'Interrupted' }), color: 'var(--vip-warning)', icon: <ExclamationCircleOutlined /> },
+    pending: { text: intl.formatMessage({ id: 'pages.session.confirmStatus.pending', defaultMessage: 'Pending confirmation' }), color: 'var(--vip-warning)', bg: 'rgba(var(--vip-warning-rgb), 0.1)', icon: <ExclamationCircleOutlined /> },
+    confirmed: { text: intl.formatMessage({ id: 'pages.session.confirmStatus.confirmed', defaultMessage: 'Confirmed' }), color: 'var(--vip-success)', bg: 'rgba(var(--vip-success-rgb), 0.1)', icon: <CheckCircleOutlined /> },
+    rejected: { text: intl.formatMessage({ id: 'pages.session.confirmStatus.rejected', defaultMessage: 'Rejected' }), color: 'var(--vip-error)', bg: 'rgba(var(--vip-error-rgb), 0.1)', icon: <CloseOutlined /> },
+    calling: { text: intl.formatMessage({ id: 'pages.session.toolStatus.calling', defaultMessage: 'Calling' }), color: 'var(--vip-primary)', bg: 'rgba(var(--vip-primary-rgb), 0.1)', icon: <ClockCircleOutlined spin /> },
+    completed: { text: intl.formatMessage({ id: 'pages.session.toolStatus.completed', defaultMessage: 'Completed' }), color: 'var(--vip-success)', bg: 'rgba(var(--vip-success-rgb), 0.1)', icon: <CheckCircleOutlined /> },
+    interrupted: { text: intl.formatMessage({ id: 'pages.session.toolStatus.interrupted', defaultMessage: 'Interrupted' }), color: 'var(--vip-warning)', bg: 'rgba(var(--vip-warning-rgb), 0.1)', icon: <ExclamationCircleOutlined /> },
   };
   
   let status = 'calling';
@@ -342,18 +342,19 @@ const MergedToolCard: React.FC<{
   
   return (
     <div className={styles.mergedToolCard}>
-      {/* 工具调用头部 - 始终显示 */}
-      <div 
+      <div
         className={styles.mergedToolHeader}
         onClick={() => setManual(!expanded)}
         style={{ cursor: 'pointer' }}
       >
         <div className={styles.mergedToolTitle}>
-          <ToolOutlined style={{ color: currentStatus.color }} />
+          <span className={styles.mergedToolIcon}>
+            <ToolOutlined />
+          </span>
           <span className={styles.mergedToolName}>{toolName}</span>
-          <span className={styles.mergedToolStatus} style={{ color: currentStatus.color }}>
-            {currentStatus.icon}
-            <span style={{ marginLeft: 4 }}>{currentStatus.text}</span>
+          <span className={styles.mergedToolStatus} style={{ color: currentStatus.color, background: currentStatus.bg }}>
+            {status === 'calling' ? <span className={styles.statusBreathDot} /> : currentStatus.icon}
+            <span>{currentStatus.text}</span>
           </span>
           {hint && <span className={styles.mergedToolHint}>{hint}</span>}
         </div>
@@ -361,19 +362,16 @@ const MergedToolCard: React.FC<{
           {expanded ? <UpOutlined /> : <DownOutlined />}
         </div>
       </div>
-      
-      {/* 展开后显示参数和结果 */}
-      {expanded && (
-        <>
-          {/* 工具参数 */}
+
+      <div className={`${styles.mergedToolBody} ${expanded ? styles.mergedToolBodyOpen : ''}`}>
+        <div className={styles.mergedToolBodyInner}>
           {args && (
             <div className={styles.mergedToolArgs}>
               <div className={styles.mergedToolSectionLabel}>{intl.formatMessage({ id: 'pages.session.toolArguments', defaultMessage: 'Arguments' })}</div>
               <ArgumentsTable args={args} />
             </div>
           )}
-          
-          {/* 委派出去的成员运行：跑在参数之后、结果之前 */}
+
           {nested && (
             <div className={styles.mergedToolNested}>
               <div className={styles.mergedToolSectionLabel}>
@@ -383,15 +381,14 @@ const MergedToolCard: React.FC<{
             </div>
           )}
 
-          {/* 工具返回结果 */}
           {hasResult && (
             <div className={styles.mergedToolResult}>
               <div className={styles.mergedToolSectionLabel}>{intl.formatMessage({ id: 'pages.session.toolResult', defaultMessage: 'Result' })}</div>
               <pre className={styles.mergedToolCode}>{result}</pre>
             </div>
           )}
-        </>
-      )}
+        </div>
+      </div>
     </div>
   );
 };
@@ -465,10 +462,10 @@ const ToolConfirmChatCard: React.FC<{
           ))}
           {onAnswer && status === 'pending' && (
             <Space style={{ marginTop: 4 }}>
-              <Button danger size="small" onClick={() => onAnswer(false)}>
+              <Button danger size="small" className={styles.confirmRejectBtn} onClick={() => onAnswer(false)}>
                 {intl.formatMessage({ id: 'pages.common.reject', defaultMessage: 'Reject' })}
               </Button>
-              <Button type="primary" size="small" onClick={() => onAnswer(true)}>
+              <Button type="primary" size="small" className={styles.confirmAllowBtn} onClick={() => onAnswer(true)}>
                 {intl.formatMessage({ id: 'pages.session.allowExecution', defaultMessage: 'Allow Execution' })}
               </Button>
             </Space>
