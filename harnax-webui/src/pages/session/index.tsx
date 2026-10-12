@@ -25,6 +25,7 @@ import { useIsMobile } from '@/utils/responsive';
 import dayjs from 'dayjs';
 import styles from './index.less';
 import { formatSessionTime, groupSessions } from './listModel';
+import { useTypewriter } from './useTypewriter';
 import { loginRedirect } from '@/utils/loginRedirect';
 // @ts-ignore
 import { history, useModel, useLocation, useIntl } from '@umijs/max';
@@ -85,6 +86,36 @@ const ContextUsageTag: React.FC<{ usage: API.ContextUsage }> = ({ usage }) => {
         })}
       </Tag>
     </Tooltip>
+  );
+};
+
+/* ─── 无会话态：标题逐字打出（打字机），提示与输入卡在打字完成后接力 ─── */
+const NoSessionPane: React.FC<{ onCreate: () => void }> = ({ onCreate }) => {
+  const intl = useIntl();
+  const titleText = intl.formatMessage({ id: 'pages.session.noSession.title', defaultMessage: 'No session to open yet' });
+  const { typed, done, caret } = useTypewriter(titleText);
+  return (
+    <div className={styles.noSession}>
+      <div className={styles.noSessionOrb}>
+        <span className={styles.noSessionOrbCore}>
+          <BulbOutlined />
+        </span>
+      </div>
+      <div className={styles.noSessionTitle}>
+        {typed}
+        {caret !== 'gone' && <span className={styles.typeCaret} data-phase={caret} aria-hidden="true" />}
+      </div>
+      <div className={`${styles.noSessionHint} ${done ? styles.noSessionRun : ''}`}>
+        {intl.formatMessage({ id: 'pages.session.noSession.hint', defaultMessage: 'Create one with "New" on the left' })}
+      </div>
+      <button
+        type="button"
+        className={`${styles.noSessionInputCard} ${done ? styles.noSessionRun : ''}`}
+        onClick={onCreate}
+      >
+        {intl.formatMessage({ id: 'pages.session.inputPlaceholder.noSession', defaultMessage: 'Create a session first, then start chatting…' })}
+      </button>
+    </div>
   );
 };
 
@@ -464,22 +495,7 @@ const SessionPage: React.FC = () => {
                 />
               </>
             ) : (
-              <div className={styles.noSession}>
-                <div className={styles.noSessionOrb}>
-                  <span className={styles.noSessionOrbCore}>
-                    <BulbOutlined />
-                  </span>
-                </div>
-                <div className={styles.noSessionTitle}>
-                  {intl.formatMessage({ id: 'pages.session.noSession.title', defaultMessage: 'No session to open yet' })}
-                </div>
-                <div className={styles.noSessionHint}>
-                  {intl.formatMessage({ id: 'pages.session.noSession.hint', defaultMessage: 'Create one with "New" on the left' })}
-                </div>
-                <button type="button" className={styles.noSessionInputCard} onClick={handleCreateSession}>
-                  {intl.formatMessage({ id: 'pages.session.inputPlaceholder.noSession', defaultMessage: 'Create a session first, then start chatting…' })}
-                </button>
-              </div>
+              <NoSessionPane onCreate={handleCreateSession} />
             )}
           </div>
         )}

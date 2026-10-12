@@ -37,6 +37,7 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { getSessionMessages, getSessionConfig } from '@/services/ant-design-pro/chat';
+import { useTypewriter } from '../useTypewriter';
 import { compactionOutcome } from './contextUsage';
 import { getWorkspaceStatus } from '@/services/ant-design-pro/workspace';
 import {
@@ -585,6 +586,50 @@ const GUIDE_CARD_TONE: Record<string, string> = {
   file: styles.guideToneFile,
   search: styles.guideToneSearch,
   plan: styles.guideTonePlan,
+};
+
+/* ─── 首屏：标题逐字打出（打字机），副标与引导卡在打字完成后错峰接力 ─── */
+const WelcomeView = ({ onSend }: { onSend: (text: string) => void }) => {
+  const intl = useIntl();
+  const titleText = intl.formatMessage({ id: 'pages.session.welcome.title', defaultMessage: 'What should it do for you today?' });
+  const { typed, done, caret } = useTypewriter(titleText);
+  return (
+    <div className={styles.welcome}>
+      <div className={styles.welcomeGlow} />
+      <div className={styles.orb}>
+        <span className={styles.orbCore}>
+          <BulbOutlined />
+        </span>
+      </div>
+      <h1 className={styles.welcomeTitle}>
+        {typed}
+        {caret !== 'gone' && <span className={styles.typeCaret} data-phase={caret} aria-hidden="true" />}
+      </h1>
+      <div className={`${styles.welcomeSubtitle} ${done ? styles.welcomeRun : ''}`}>
+        {intl.formatMessage({ id: 'pages.session.welcome.subtitle', defaultMessage: 'Pick a starter below, or type your own question' })}
+      </div>
+      <div className={styles.guideCards}>
+        {GUIDE_CARDS.map((card) => {
+          const title = intl.formatMessage({ id: `pages.session.guide.${card.key}.title`, defaultMessage: card.key });
+          const example = intl.formatMessage({ id: `pages.session.guide.${card.key}.example`, defaultMessage: card.key });
+          return (
+            <button
+              key={card.key}
+              type="button"
+              className={`${styles.guideCard} ${done ? styles.welcomeRun : ''}`}
+              onClick={() => onSend(example)}
+            >
+              <span className={`${styles.guideIcon} ${GUIDE_CARD_TONE[card.key]}`}>{card.icon}</span>
+              <span className={styles.guideText}>
+                <span className={styles.guideTitle}>{title}</span>
+                <span className={styles.guideExample}>{example}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 };
 
 /* ═══════════════ 主组件 ═══════════════ */
@@ -3439,35 +3484,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onContextChanged, co
       <div className={styles.messageListWrap}>
         <div ref={messageListRef} className={styles.messageList} onScroll={handleScroll}>
         {messages.length === 0 ? (
-          <div className={styles.welcome}>
-            <div className={styles.welcomeGlow} />
-            <div className={styles.orb}>
-              <span className={styles.orbCore}>
-                <BulbOutlined />
-              </span>
-            </div>
-            <h1 className={styles.welcomeTitle}>
-              {intl.formatMessage({ id: 'pages.session.welcome.title', defaultMessage: 'What should it do for you today?' })}
-            </h1>
-            <div className={styles.welcomeSubtitle}>
-              {intl.formatMessage({ id: 'pages.session.welcome.subtitle', defaultMessage: 'Pick a starter below, or type your own question' })}
-            </div>
-            <div className={styles.guideCards}>
-              {GUIDE_CARDS.map((card) => {
-                const title = intl.formatMessage({ id: `pages.session.guide.${card.key}.title`, defaultMessage: card.key });
-                const example = intl.formatMessage({ id: `pages.session.guide.${card.key}.example`, defaultMessage: card.key });
-                return (
-                  <button key={card.key} type="button" className={styles.guideCard} onClick={() => doSend(example)}>
-                    <span className={`${styles.guideIcon} ${GUIDE_CARD_TONE[card.key]}`}>{card.icon}</span>
-                    <span className={styles.guideText}>
-                      <span className={styles.guideTitle}>{title}</span>
-                      <span className={styles.guideExample}>{example}</span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <WelcomeView key={sessionId} onSend={doSend} />
         ) : (
           messages.map((msg) => {
             // Skip empty assistant messages after stream ended (EndEvent received)

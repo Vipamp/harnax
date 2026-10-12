@@ -197,15 +197,40 @@
   z-index: 1;
 }
 
+/* 标题由打字机逐字写入，保留行高避免空标题改变居中列总高 */
 .noSessionTitle {
+  min-height: 1lh;
   font-size: 15px;
   font-weight: 600;
   color: var(--vip-text-primary);
 }
 
+/* 打字光标：typing 实心 → holding 闪烁 → fading 淡出（gone 由 JS 卸载元素） */
+.typeCaret {
+  display: inline-block;
+  width: 2px;
+  height: 0.9em;
+  margin-left: 2px;
+  vertical-align: -0.08em;
+  background: var(--vip-primary);
+  border-radius: 1px;
+
+  &[data-phase='holding'] {
+    animation: caretBlink 1s steps(1) infinite;
+  }
+
+  &[data-phase='fading'] {
+    opacity: 0;
+    transition: opacity var(--vip-motion-slow) linear;
+  }
+}
+
+/* 打字完成前暂停接力动画，完成时挂 .noSessionRun 放行（长写必须在 shorthand 之后） */
 .noSessionHint {
   font-size: 13px;
   color: var(--vip-text-tertiary);
+  animation: noSessionRise 0.5s var(--vip-motion-ease) 0.05s backwards;
+  animation-play-state: paused;
 }
 
 /* 禁用态输入卡：可点击，点击开新建会话弹窗（把提示位变成引导动作） */
@@ -223,11 +248,18 @@
   border-radius: var(--vip-radius-lg);
   cursor: pointer;
   transition: border-color var(--vip-motion-fast) var(--vip-motion-ease), color var(--vip-motion-fast) var(--vip-motion-ease);
+  animation: noSessionRise 0.55s var(--vip-motion-ease) 0.18s backwards;
+  animation-play-state: paused;
 
   &:hover {
     border-color: rgba(var(--vip-primary-rgb), 0.4);
     color: var(--vip-text-tertiary);
   }
+}
+
+/* 打字完成（done）后放行提示与输入卡的接力入场；须置于 paused 基础规则之后 */
+.noSessionRun {
+  animation-play-state: running;
 }
 
 @keyframes orbRingSpin {
@@ -239,11 +271,35 @@
   50%      { transform: scale(1.045); }
 }
 
-/* ===== 动效降级：orb 光环与呼吸核直出（规格 §3.5） ===== */
+@keyframes noSessionRise {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes caretBlink {
+  0%, 49%  { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+/* ===== 动效降级：orb 光环、呼吸核与编排直出（规格 §3.5） ===== */
 @media (prefers-reduced-motion: reduce) {
+  .noSession,
+  .noSession *,
   .noSessionOrb::before,
   .noSessionOrbCore {
     animation-duration: 0.001s !important;
     animation-iteration-count: 1 !important;
+    transition-duration: 0.001s !important;
+  }
+
+  /* 打字机 JS 已直出全文；此处兜住 CSS 层：光标隐藏、编排零延迟放行 */
+  .typeCaret {
+    display: none !important;
+  }
+
+  .noSessionHint,
+  .noSessionInputCard {
+    animation-delay: 0s !important;
+    animation-play-state: running !important;
   }
 }

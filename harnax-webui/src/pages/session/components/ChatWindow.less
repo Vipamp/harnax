@@ -209,21 +209,44 @@
   z-index: 1;
 }
 
+/* 标题由打字机逐字写入，保留行高避免空标题改变居中列总高 */
 .welcomeTitle {
   margin: 18px 0 0;
+  min-height: 1lh;
   font-size: 22px;
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--vip-text-primary);
-  animation: welcomeRise 0.55s var(--vip-motion-ease) 0.12s backwards;
 }
 
+/* 打字光标：typing 实心 → holding 闪烁 → fading 淡出（gone 由 JS 卸载元素） */
+.typeCaret {
+  display: inline-block;
+  width: 2px;
+  height: 0.9em;
+  margin-left: 2px;
+  vertical-align: -0.08em;
+  background: var(--vip-primary);
+  border-radius: 1px;
+
+  &[data-phase='holding'] {
+    animation: caretBlink 1s steps(1) infinite;
+  }
+
+  &[data-phase='fading'] {
+    opacity: 0;
+    transition: opacity var(--vip-motion-slow) linear;
+  }
+}
+
+/* 打字完成前暂停接力动画，完成时挂 .welcomeRun 放行（长写必须在 shorthand 之后） */
 .welcomeSubtitle {
   margin-top: 8px;
   margin-bottom: 22px;
   font-size: 13.5px;
   color: var(--vip-text-tertiary);
-  animation: welcomeRise 0.55s var(--vip-motion-ease) 0.2s backwards;
+  animation: welcomeRise 0.55s var(--vip-motion-ease) 0.05s backwards;
+  animation-play-state: paused;
 }
 
 /* 引导卡：2×2，错峰入场 */
@@ -249,11 +272,12 @@
   color: inherit;
   transition: transform var(--vip-motion-fast) var(--vip-motion-ease), border-color var(--vip-motion-fast) var(--vip-motion-ease), box-shadow var(--vip-motion-fast) var(--vip-motion-ease);
   animation: welcomeRise 0.55s var(--vip-motion-ease) backwards;
+  animation-play-state: paused;
 
-  &:nth-child(1) { animation-delay: 0.3s; }
-  &:nth-child(2) { animation-delay: 0.38s; }
-  &:nth-child(3) { animation-delay: 0.46s; }
-  &:nth-child(4) { animation-delay: 0.54s; }
+  &:nth-child(1) { animation-delay: 0.18s; }
+  &:nth-child(2) { animation-delay: 0.26s; }
+  &:nth-child(3) { animation-delay: 0.34s; }
+  &:nth-child(4) { animation-delay: 0.42s; }
 
   &:hover {
     transform: translateY(-2px);
@@ -323,9 +347,14 @@
   white-space: nowrap;
 }
 
-/* 输入卡首屏光晕脉冲一次（fill backwards：结束后交还 :focus-within 光晕） */
+/* 打字完成（done）后放行副标与引导卡的接力入场；须置于 paused 基础规则之后 */
+.welcomeRun {
+  animation-play-state: running;
+}
+
+/* 输入卡首屏光晕脉冲一次（打字完成后响起；fill backwards：结束后交还 :focus-within 光晕） */
 .inputCardPulse {
-  animation: welcomeInputPulse 1.6s var(--vip-motion-ease) 0.55s backwards;
+  animation: welcomeInputPulse 1.6s var(--vip-motion-ease) 1.5s backwards;
 }
 
 @keyframes welcomeGlowIn {
@@ -2475,5 +2504,17 @@ html.dark {
   .orb::before {
     animation-duration: 0.001s !important;
     animation-iteration-count: 1 !important;
+  }
+
+  /* 打字机 JS 已直出全文；此处兜住 CSS 层：光标隐藏、编排零延迟放行 */
+  .typeCaret {
+    display: none !important;
+  }
+
+  .welcomeSubtitle,
+  .guideCard,
+  .inputCardPulse {
+    animation-delay: 0s !important;
+    animation-play-state: running !important;
   }
 }

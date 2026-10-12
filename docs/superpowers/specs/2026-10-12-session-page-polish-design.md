@@ -8,7 +8,7 @@
 
 会话页（`/` 全屏聊天壳）功能已基本完成，本轮把它从「功能可用」推到「高级感＋动感」。风格取**克制底＋三处点睛动效**：中性色面＋hairline 细边作底座，渐变与高饱和只出现在首屏、发送/流式、消息侧标识三处；错峰编排只用于首屏与消息行入场。
 
-1. **首屏编排**——空会话第一屏从「渐变图标＋文字 chips」换成「活标识（缓转光环＋呼吸核）＋错峰入场＋四张能力引导卡」，点卡即发送示例问题；无会话态与列表空态换用同一套 orb 语言。
+1. **首屏编排**——空会话第一屏从「渐变图标＋文字 chips」换成「活标识（缓转光环＋呼吸核）＋标题打字机逐字打出＋完成后的接力错峰入场＋四张能力引导卡」，点卡即发送示例问题；无会话态换用同一套 orb 语言与标题打字机；列表空态换同族 orb 语言。
 2. **消息与流式**——消息行上浮入场（240ms）；工具卡收敛为「摘要行＋状态点＋可折叠体」；流式＝思考点呼吸 → 逐字＋闪烁光标；发送钮在流式中变方形停止钮＋呼吸环。
 3. **输入区去堆叠**——8 个文字按钮一行改为「动作 chips＋会话设置菜单」：图片／压缩上下文／停止沙箱／清空记录 4 枚图标 chips ＋「会话设置」菜单收纳 深度思考／显示思考过程／联网搜索／开启计划／工具执行权限；发送钮改渐变小圆钮。
 4. **统一动效体系**——`global.less` 增加 3 档时长＋1 条缓动的运动 token；会话页样式内实现 `prefers-reduced-motion` 降级。
@@ -79,28 +79,33 @@
 .welcome（居中列）
 ├─ 背景光斑 480×300，radial-gradient(closest-side, rgba(primary,.10), transparent 70%)，位于顶部 12%
 ├─ orb 76px：光环（conic-gradient 慢转 7s 线性无限）+ 核心（品牌渐变底＋白色 spark 图标 22px）
-├─ h1 22-23px/700「今天想让它帮你做什么？」
+├─ h1 22-23px/700「今天想让它帮你做什么？」（由打字机逐字写入，尾部带光标）
 ├─ 副标 13.5px 三级色「从下面选一个开始，或直接输入你的问题」
 └─ 引导卡 2×2 网格（宽 min(560px, 100%)，gap 10px）
 ```
 
-编排时间轴（进入空态即重播；会话切换重建节点自然重播）：
+**标题打字机**（`useTypewriter` hook，两处空态共用）：单次打出，不循环。进入空态开始：起始延迟 300ms；CJK 90ms/字、拉丁/ASCII 45ms/字（按字符逐判，全角标点随 CJK 档）；尾部光标 2×0.9em 品牌色竖条四相位——typing（实心）→ 完成后 holding（`caretBlink 1s steps(1)` 闪烁，保持 1.5s）→ fading（停闪、opacity→0，`--vip-motion-slow` 420ms 线性）→ gone（卸载元素）。会话空态以 `key={sessionId}` 重挂载保证切会话重播；无会话态靠分支挂载/卸载自然重播。
 
-| 元素 | 动画 | 时长/缓动 | 延迟 |
+编排时间轴（进入空态即重播；副标/卡/输入卡的"完成后"＝打字机 `done` 信号）：
+
+| 元素 | 动画 | 时长/缓动 | 起始 |
 |---|---|---|---|
-| 背景光斑 | 淡入 | 1.2s / ease-out-ish | 0 |
-| orb | 上浮入场（`scale .8→1` ＋ `translateY 8px→0` ＋淡入） | .7s / token ease | 0 |
-| h1 | 上浮 12px＋淡入 | .55s / token ease | .12s |
-| 副标 | 同上 | .55s / token ease | .2s |
-| 卡 1-4 | 同上 | .55s / token ease | .3s / .38s / .46s / .54s |
-| 输入卡 | 光晕脉冲一次（35% 时 `0 0 0 4px rgba(primary,.12)` ＋ shadow-md，回到静置） | 1.6s / token ease | .55s |
-| 光环旋转 | `rotate 0→360°` | 7s / linear / **无限** | 0 |
-| 核心呼吸 | `scale 1→1.045→1` | 3.2s / ease-in-out / **无限** | 0 |
+| 背景光斑 | 淡入 | 1.2s / ease-out-ish | 进入即起 |
+| orb | 上浮入场（`scale .8→1` ＋ `translateY 8px→0` ＋淡入） | .7s / token ease | 进入即起 |
+| h1 | 打字机逐字（见上）；无位移动画，打字本身即入场 | 90ms/45ms 每字 | +300ms |
+| 副标 | 上浮 12px＋淡入 | .55s / token ease | done + .05s |
+| 卡 1-4 | 同上 | .55s / token ease | done + .18s / .26s / .34s / .42s |
+| 输入卡 | 光晕脉冲一次（35% 时 `0 0 0 4px rgba(primary,.12)` ＋ shadow-md，回到静置） | 1.6s / token ease | done + 1.5s |
+| 光环旋转 | `rotate 0→360°` | 7s / linear / **无限** | 进入即起 |
+| 核心呼吸 | `scale 1→1.045→1` | 3.2s / ease-in-out / **无限** | 进入即起 |
 
 要点：
+- 副标/卡的基础规则带 `animation-play-state: paused`（长写在 `animation` shorthand 之后），`done` 时挂 `welcomeRun` 类放行——打字期间这些元素不显示动画进度。
+- h1 必须 `min-height: 1lh`：打字前文本为空，不留行高会改变居中列总高、带动 orb 跳动。
+- 打字机在挂载时读 `prefers-reduced-motion`：reduce 时直出全文、光标置 gone 不渲染（见 §3.5）；jsdom 无 `matchMedia` 时按非 reduce 走。
 - orb 光环用 `conic-gradient(from 0deg, rgba(primary,0), rgba(primary,.55), rgba(primary,0) 55%)`，`::after` 用页面底色内缩 2px 挖空成环；核心 `inset: 9px`、`box-shadow: 0 6px 22px rgba(primary,.35)`。
 - 环形与核心的无限动画是「它在等你」的语义，保留；不做循环的次数限制。
-- `prefers-reduced-motion` 下：编排全部直出（`animation-duration:.001s; animation-iteration-count:1`），光环与呼吸核也停止（见 §3.5）。
+- `prefers-reduced-motion` 下：编排全部直出（`animation-duration:.001s; animation-iteration-count:1`、编排延迟归零），光环与呼吸核也停止（见 §3.5）。
 - 引导卡：图标块 30px 圆角 9 四色（品牌／警告橙／青／紫），标题 13.5px/600＋示例问题 12px 三级色两行式；hover 上浮 2px＋边框 `rgba(primary,.35)`＋shadow-md＋图标 `scale 1.08 rotate -3°`；press `scale .99`；**点击＝把该卡示例问题填入输入框并发送**（复用现有 `doSend` 路径，行为与现建议 chips 一致）。
 - 四张卡（能力真实性约束：不承诺尚不存在的能力；编排/定时能力未上线，故不出现「定时任务」）：
 
@@ -118,6 +123,8 @@
 新增 `src/pages/session/index.less` 承载外壳新样式（现列表/顶栏为内联样式，新增样式不再堆内联）。
 
 **无会话态（右侧）**：小号 orb（56px，结构与空态同款、参数等比缩小）＋标题「右侧还没有可进入的会话」＋副标「点左侧「新建」开一个会话」＋禁用态输入卡（占位文案「先新建一个会话，再开始对话…」）。禁用输入卡**可点击，点击打开新建会话弹窗**（把提示位变成引导动作）。
+
+标题同用打字机逐字打出（同 hook 同参数，单次）；完成后提示行（+0.05s）与输入卡（+0.18s）以 `noSessionRise` 上浮接力（`noSessionRun` 类放行，同 §3.1 的 paused 机制）；标题保留 `min-height: 1lh` 防跳动；光标样式与四相位与 §3.1 相同（index.less 内本地定义，含 `caretBlink` keyframes——CSS Modules 的 keyframes 为文件内作用域，按既有 orbRingSpin 惯例两份各自定义）。
 
 **会话列表**：
 - 行：第一行＝标题（14px；选中 600／常态 400）＋团队 Tag；第二行＝meta 行：左侧 `sessionDescription`（非空才显示，单行省略）＋右端时间。
@@ -186,14 +193,17 @@
 
 覆盖对象＝编排容器及其子元素、消息行入场、orb 光环、呼吸核、思考点、流式光标、发送钮呼吸环。纯颜色变化保留（时长收到 .001s 即等于直出）。
 
+打字机在 JS 层判定 reduce（hook 挂载时读 `matchMedia`）：直出全文、光标置 gone 不渲染。CSS 层再兜底：`.typeCaret` 在两份 RM 块内 `display: none !important`；被 paused 门控的编排元素（副标/引导卡/无会话提示与输入卡、输入卡脉冲）在 RM 块内 `animation-delay: 0s !important`＋`animation-play-state: running !important` 强制直出，不依赖 JS 侧 done 信号。
+
 ### 3.6 样式归属
 
 | 文件 | 改动 |
 |---|---|
 | `src/pages/session/index.less` | **新增**：列表、顶栏、无会话态、禁用输入卡样式（现内联样式仅改选中态与行结构两处，其余不动） |
 | `src/pages/session/components/ChatWindow.less` | 修改：空态编排/引导卡、气泡、工具卡、流式、输入区、reduced-motion 块 |
-| `src/pages/session/components/ChatWindow.tsx` | 修改：空态 JSX（引导卡数据）、输入区 chips/会话设置菜单 JSX、工具卡三件换皮（仅 className 与结构微调） |
-| `src/pages/session/index.tsx` | 修改：列表行结构（第二行 meta）、分组、空列表态、无会话态、禁用输入卡 |
+| `src/pages/session/components/ChatWindow.tsx` | 修改：空态 JSX（引导卡数据）、输入区 chips/会话设置菜单 JSX、工具卡三件换皮（仅 className 与结构微调）；`WelcomeView` 小组件承载打字机（隔离逐字 rerender，不重渲整个 ChatWindow） |
+| `src/pages/session/useTypewriter.ts` | **新增**：打字机 hook（逐字节奏、光标四相位、RM 判定、CJK/拉丁分档）；`useTypewriter.test.ts` 伴测（逐字步长分档 4 用例） |
+| `src/pages/session/index.tsx` | 修改：列表行结构（第二行 meta）、分组、空列表态、无会话态（`NoSessionPane` 组件承载打字机）、禁用输入卡 |
 | `src/global.less` | 追加 §3.5 运动 token 四行 |
 | `src/locales/{zh-CN,en-US}/pages.ts` | §4 i18n 清单 |
 
@@ -227,12 +237,14 @@
 ## 5. 验收
 
 1. **构建门禁**：`max build` 通过；改动文件逐文件 `npx @biomejs/biome lint`（禁 `--write`）；`jest` 保持基线（`login.test.tsx` 既定 2 红不修）。
-2. **视觉走查**（本地镜像 ＋ 无头浏览器截图，桌面 1440×900，共 9 帧）：① 空态-入场中（亮）② 空态-稳定（亮）③ 空态-稳定（暗）④ 对话中-工具卡收起 ⑤ 对话中-工具卡展开 ⑥ 流式-思考点 ⑦ 流式-逐字光标 ⑧ 无会话态 ⑨ 列表空态。逐帧对照 §3 参数。
-3. **reduced-motion**：以 `prefers-reduced-motion: reduce` 模拟截图，确认编排直出、无无限动画残留。
-4. **行为回归**：发送/停止、图片角标与禁用、chips 行构成（图片／压缩上下文／停止沙箱／清空记录／会话设置）与各禁用条件、「会话设置」菜单五项（深度思考／显示思考过程／联网搜索／开启计划／工具执行权限）原有行为（含失败回滚与确认弹窗）、设置类开关使「会话设置」chip 呈激活态、引导卡点击发送、空态重播、切会话消息渲染。
+2. **视觉走查**（本地镜像 ＋ 无头浏览器截图，桌面 1440×900，共 9 帧）：① 空态-入场中（亮）② 空态-稳定（亮）③ 空态-稳定（暗）④ 对话中-工具卡收起 ⑤ 对话中-工具卡展开 ⑥ 流式-思考点 ⑦ 流式-逐字光标 ⑧ 无会话态 ⑨ 列表空态，以及打字机专项：空态标题-打字中（部分字符＋光标）、空态标题-完成（全文＋副标/卡入场）、无会话态标题-打字中。逐帧对照 §3 参数。
+3. **reduced-motion**：以 `prefers-reduced-motion: reduce` 模拟，断言编排无 running 动画残留，且**标题直出全文、光标不存在**。
+4. **行为回归**：发送/停止、图片角标与禁用、chips 行构成（图片／压缩上下文／停止沙箱／清空记录／会话设置）与各禁用条件、「会话设置」菜单五项（深度思考／显示思考过程／联网搜索／开启计划／工具执行权限）原有行为（含失败回滚与确认弹窗）、设置类开关使「会话设置」chip 呈激活态、引导卡点击发送、空态重播、切会话消息渲染。打字机专项采样断言：进入空态后 ~2.4s 内采样标题长度序列——min<full 且 max=full（确有逐字过程且能打完）、至少 4 个不同档；光标出现、并在完成后消失；SPA 切会话与进出无会话态时标题重播（再次采样到 partial）。
 
 ## 6. 已裁定与待复核
 
 已裁定（沿用既有拍板，不再复议）：整页全量范围；克制底＋点睛动效风格；不引入新依赖；桌面端优先；引导卡不承诺未上线能力（故无「定时任务」卡）。
+
+打字机口径（2026-10-12 拍板）：播放方式＝单次打出（进入空态播放一次、光标闪烁后淡出、每次重新进入空态重播）；打字范围＝仅主标题（副标/卡/提示/输入卡在完成后错峰接力）；应用范围＝会话空态（ChatWindow）与无会话态（index.tsx 右侧面板）两处，列表空态不做。
 
 待复核：本文其余全部内容，重点为 §3.1 引导卡四张的文案、§3.2 列表第二行与分组的取舍、§3.4「会话设置」菜单的收纳范围。
