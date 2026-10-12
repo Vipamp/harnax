@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { PageContainer } from '@ant-design/pro-components';
-import { Button, Card, List, Typography, Empty, Spin, message, Tag, Tooltip } from 'antd';
-import { PlusOutlined, BulbOutlined, CloudServerOutlined, ArrowLeftOutlined, TeamOutlined, FolderOpenOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { Avatar, Button, List, Typography, Empty, Spin, message, Tag, Tooltip } from 'antd';
+import { PlusOutlined, BulbOutlined, CloudServerOutlined, ArrowLeftOutlined, TeamOutlined, FolderOpenOutlined, ThunderboltOutlined, SettingOutlined } from '@ant-design/icons';
 import { getSessionPage, deleteSession } from '@/services/ant-design-pro/session';
 import { getContextUsage } from '@/services/ant-design-pro/chat';
 import { getWorkspaceStatus } from '@/services/ant-design-pro/workspace';
@@ -21,9 +20,11 @@ import TeamArtifactsDrawer from './components/TeamArtifactsDrawer';
 import SessionSkillsDrawer from './components/SessionSkillsDrawer';
 import DeleteButton from '@/components/DeleteButton';
 import DetailButton from '@/components/DetailButton';
+import { AvatarDropdown, SelectLang, ThemeSwitcher } from '@/components';
 import { useIsMobile } from '@/utils/responsive';
+import { loginRedirect } from '@/utils/loginRedirect';
 // @ts-ignore
-import { useModel, useLocation, useIntl } from '@umijs/max';
+import { history, useModel, useLocation, useIntl } from '@umijs/max';
 
 const { Text, Title } = Typography;
 
@@ -104,6 +105,13 @@ const SessionPage: React.FC = () => {
   const contextUsageGeneration = useRef(0);
   const { initialState } = useModel('@@initialState');
   const currentUser = initialState?.currentUser;
+
+  // 聊天壳走 layout:false，全局 onPageChange 守卫不生效，这里自挂一份（规格 §3.4-4）
+  useEffect(() => {
+    if (initialState && !initialState.currentUser) {
+      history.replace({ pathname: '/login', search: loginRedirect(history.location) });
+    }
+  }, [initialState]);
 
   // 加载会话列表
   const loadSessions = async (targetSessionId?: number) => {
@@ -226,223 +234,241 @@ const SessionPage: React.FC = () => {
   };
 
   return (
-    <PageContainer
-      header={{
-        title: (
-          <span style={{ fontSize: '18px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
-            <BulbOutlined style={{ marginRight: 10, color: 'var(--vip-primary)' }} />
-            {intl.formatMessage({
-              id: 'menu.agent.session',
-              defaultMessage: 'Session',
-            })}
-          </span>
-        ),
-      }}
-    >
-      <div style={{
-        display: 'flex',
-        height: isMobile ? 'calc(100vh - 120px)' : 'calc(100vh - 150px)',
-        gap: isMobile ? 0 : 12,
-        overflow: 'hidden',
-        flexDirection: isMobile ? 'column' : 'row',
-      }}>
+    <>
+      <div
+        style={{
+          display: 'flex',
+          height: '100vh',
+          overflow: 'hidden',
+          flexDirection: isMobile ? 'column' : 'row',
+        }}
+      >
         {/* 左侧：会话列表 */}
         {(!isMobile || !selectedSession) && (
-        <Card
-          style={{ 
-            width: isMobile ? '100%' : 300, 
-            display: 'flex', 
-            flexDirection: 'column',
-            borderRadius: '14px',
-            boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-            border: '1px solid var(--vip-border)',
-            background: 'var(--vip-bg-container)',
-            flex: isMobile ? 1 : undefined,
-          }}
-          styles={{ body: { flex: 1, overflow: 'auto', padding: isMobile ? '8px' : '12px' } }}
-          title={
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div
+            style={{
+              width: isMobile ? '100%' : 300,
+              flex: isMobile ? 1 : undefined,
+              display: 'flex',
+              flexDirection: 'column',
+              background: 'var(--vip-bg-container)',
+              borderRight: isMobile ? 'none' : '1px solid var(--vip-border)',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '14px 16px',
+                borderBottom: '1px solid var(--vip-border)',
+                flexShrink: 0,
+              }}
+            >
               <span style={{ fontWeight: 600, fontSize: 14 }}>{intl.formatMessage({ id: 'pages.session.listTitle', defaultMessage: 'Session List' })}</span>
-              <Button 
-                type="primary" 
-                icon={<PlusOutlined />} 
-                size="small" 
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                size="small"
                 onClick={handleCreateSession}
                 style={{ borderRadius: '8px', background: 'var(--vip-primary)', border: 'none' }}
               >
                 {intl.formatMessage({ id: 'pages.common.create', defaultMessage: 'Create' })}
               </Button>
             </div>
-          }
-        >
-          <Spin spinning={loading}>
-            {sessions.length === 0 ? (
-              <Empty description={intl.formatMessage({ id: 'pages.session.noSessions', defaultMessage: 'No sessions' })} style={{ marginTop: 40 }} />
-            ) : (
-              <List
-                dataSource={sessions}
-                renderItem={(session) => (
-                  <List.Item
-                    key={session.id}
-                    onClick={() => handleSelectSession(session)}
-                    style={{
-                      cursor: 'pointer',
-                      backgroundColor: selectedSession?.id === session.id ? 'rgba(99, 102, 241, 0.06)' : 'transparent',
-                      borderRadius: 10,
-                      padding: isMobile ? '14px 12px' : '10px 12px',
-                      marginBottom: 4,
-                      border: `1px solid ${selectedSession?.id === session.id ? 'rgba(99, 102, 241, 0.18)' : 'transparent'}`,
-                      transition: 'all 0.2s',
-                      minHeight: isMobile ? 48 : undefined,
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
-                        {session.teamId && (
-                          <Tag color="blue" style={{ margin: 0, flexShrink: 0 }} icon={<TeamOutlined />}>
-                            {intl.formatMessage({ id: 'pages.session.teamTag', defaultMessage: 'Team' })}
-                          </Tag>
-                        )}
-                        <Text
-                          ellipsis
-                          style={{ fontWeight: selectedSession?.id === session.id ? 600 : 400, fontSize: isMobile ? 15 : 14 }}
-                        >
-                          {session.title}
-                        </Text>
-                      </div>
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        <DetailButton onClick={() => handleViewDetail(session)} />
-                        <DeleteButton onConfirm={() => handleDeleteSession(session.id)} />
-                      </div>
-                    </div>
-                  </List.Item>
+            <div style={{ flex: 1, overflow: 'auto', padding: isMobile ? 8 : 12 }}>
+              <Spin spinning={loading}>
+                {sessions.length === 0 ? (
+                  <Empty description={intl.formatMessage({ id: 'pages.session.noSessions', defaultMessage: 'No sessions' })} style={{ marginTop: 40 }} />
+                ) : (
+                  <List
+                    dataSource={sessions}
+                    renderItem={(session) => (
+                      <List.Item
+                        key={session.id}
+                        onClick={() => handleSelectSession(session)}
+                        style={{
+                          cursor: 'pointer',
+                          backgroundColor: selectedSession?.id === session.id ? 'rgba(99, 102, 241, 0.06)' : 'transparent',
+                          borderRadius: 10,
+                          padding: isMobile ? '14px 12px' : '10px 12px',
+                          marginBottom: 4,
+                          border: `1px solid ${selectedSession?.id === session.id ? 'rgba(99, 102, 241, 0.18)' : 'transparent'}`,
+                          transition: 'all 0.2s',
+                          minHeight: isMobile ? 48 : undefined,
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+                            {session.teamId && (
+                              <Tag color="blue" style={{ margin: 0, flexShrink: 0 }} icon={<TeamOutlined />}>
+                                {intl.formatMessage({ id: 'pages.session.teamTag', defaultMessage: 'Team' })}
+                              </Tag>
+                            )}
+                            <Text
+                              ellipsis
+                              style={{ fontWeight: selectedSession?.id === session.id ? 600 : 400, fontSize: isMobile ? 15 : 14 }}
+                            >
+                              {session.title}
+                            </Text>
+                          </div>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <DetailButton onClick={() => handleViewDetail(session)} />
+                            <DeleteButton onConfirm={() => handleDeleteSession(session.id)} />
+                          </div>
+                        </div>
+                      </List.Item>
+                    )}
+                  />
                 )}
-              />
+              </Spin>
+            </div>
+            {!isMobile && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 4,
+                  padding: '8px 12px',
+                  borderTop: '1px solid var(--vip-border)',
+                  flexShrink: 0,
+                }}
+              >
+                <AvatarDropdown>
+                  <span style={{ cursor: 'pointer', display: 'inline-flex' }}>
+                    <Avatar size={24} src={currentUser?.avatar} />
+                  </span>
+                </AvatarDropdown>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <SelectLang />
+                  <ThemeSwitcher />
+                  <Button type="text" size="small" icon={<SettingOutlined />} onClick={() => history.push('/welcome')}>
+                    设置
+                  </Button>
+                </div>
+              </div>
             )}
-          </Spin>
-        </Card>
+          </div>
         )}
 
         {/* 右侧：聊天窗口区域 */}
         {(!isMobile || selectedSession) && (
-        <Card
-          style={{ 
-            flex: 1, 
-            display: 'flex', 
-            flexDirection: 'column',
-            borderRadius: isMobile ? '0' : '14px',
-            boxShadow: isMobile ? 'none' : '0 1px 4px rgba(0,0,0,0.04)',
-            border: isMobile ? 'none' : '1px solid var(--vip-border)',
-            background: 'var(--vip-bg-container)',
-            overflow: 'hidden',
-          }}
-          styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden', minHeight: 0, height: 0 } }}
-        >
-          {selectedSession ? (
-            <>
-              {/* 会话标题栏 */}
-              <div style={{ 
-                padding: isMobile ? '10px 12px' : '14px 24px',
-                borderBottom: '1px solid var(--vip-border)',
-                background: 'var(--vip-bg-container)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: isMobile ? 6 : 10,
-                flexShrink: 0,
-              }}>
-                {isMobile && (
+          <div
+            style={{
+              flex: 1,
+              minWidth: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              background: 'var(--vip-bg-container)',
+            }}
+          >
+            {selectedSession ? (
+              <>
+                {/* 会话标题栏 */}
+                <div style={{
+                  padding: isMobile ? '10px 12px' : '14px 24px',
+                  borderBottom: '1px solid var(--vip-border)',
+                  background: 'var(--vip-bg-container)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: isMobile ? 6 : 10,
+                  flexShrink: 0,
+                }}>
+                  {isMobile && (
+                    <Button
+                      type="text"
+                      icon={<ArrowLeftOutlined />}
+                      onClick={handleBackToList}
+                      size="small"
+                      style={{ flexShrink: 0 }}
+                    />
+                  )}
+                  <div style={{
+                    width: isMobile ? 24 : 28, height: isMobile ? 24 : 28, borderRadius: 8,
+                    background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: isMobile ? 12 : 14, color: '#fff', flexShrink: 0,
+                  }}>
+                    <BulbOutlined />
+                  </div>
+                  <Title level={5} style={{ margin: 0, fontSize: isMobile ? 14 : 15, fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {selectedSession.title}
+                  </Title>
+                  {contextUsage && <ContextUsageTag usage={contextUsage} />}
+                  {!isMobile && <div style={{ flex: 1 }} />}
                   <Button
                     type="text"
-                    icon={<ArrowLeftOutlined />}
-                    onClick={handleBackToList}
+                    icon={<CloudServerOutlined />}
                     size="small"
-                    style={{ flexShrink: 0 }}
-                  />
-                )}
+                    onClick={async () => {
+                      if (!selectedSession?.sessionId) return;
+                      try {
+                        const res = await getWorkspaceStatus(selectedSession.sessionId);
+                        if (res.code === 200 && res.data?.active) {
+                          setWorkspaceDrawerVisible(true);
+                        } else {
+                          message.warning(intl.formatMessage({ id: 'pages.session.sandboxNotActive', defaultMessage: 'Sandbox is not running for this session' }));
+                        }
+                      } catch {
+                        message.error(intl.formatMessage({ id: 'pages.session.sandboxCheckFailed', defaultMessage: 'Failed to check sandbox status' }));
+                      }
+                    }}
+                  >
+                    {isMobile ? '' : 'Workspace'}
+                  </Button>
+                  {selectedSession.teamId && (
+                    <Button
+                      type="text"
+                      icon={<FolderOpenOutlined />}
+                      size="small"
+                      onClick={() => setArtifactsDrawerVisible(true)}
+                    >
+                      {isMobile ? '' : intl.formatMessage({ id: 'pages.session.artifacts.entry', defaultMessage: 'Artifacts' })}
+                    </Button>
+                  )}
+                  <Button
+                    type="text"
+                    icon={<ThunderboltOutlined />}
+                    size="small"
+                    onClick={() => setSessionSkillsVisible(true)}
+                  >
+                    {isMobile ? '' : intl.formatMessage({ id: 'pages.session.skills.entry', defaultMessage: 'Session skills' })}
+                  </Button>
+                </div>
+
+                {/* 聊天窗口 */}
+                <ChatWindow
+                  sessionId={selectedSession.sessionId}
+                  compactionSkippable={isCompactionPointless(contextUsage)}
+                  onContextChanged={() => loadContextUsage(selectedSession.sessionId)}
+                />
+              </>
+            ) : (
+              <div style={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+              }}>
                 <div style={{
-                  width: isMobile ? 24 : 28, height: isMobile ? 24 : 28, borderRadius: 8,
+                  width: 56, height: 56, borderRadius: 16,
                   background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: isMobile ? 12 : 14, color: '#fff', flexShrink: 0,
+                  fontSize: 26, color: '#fff',
+                  boxShadow: '0 6px 20px rgba(99,102,241,0.2)',
+                  marginBottom: 8,
                 }}>
                   <BulbOutlined />
                 </div>
-                <Title level={5} style={{ margin: 0, fontSize: isMobile ? 14 : 15, fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {selectedSession.title}
-                </Title>
-                {contextUsage && <ContextUsageTag usage={contextUsage} />}
-                {!isMobile && <div style={{ flex: 1 }} />}
-                <Button
-                  type="text"
-                  icon={<CloudServerOutlined />}
-                  size="small"
-                  onClick={async () => {
-                    if (!selectedSession?.sessionId) return;
-                    try {
-                      const res = await getWorkspaceStatus(selectedSession.sessionId);
-                      if (res.code === 200 && res.data?.active) {
-                        setWorkspaceDrawerVisible(true);
-                      } else {
-                        message.warning(intl.formatMessage({ id: 'pages.session.sandboxNotActive', defaultMessage: 'Sandbox is not running for this session' }));
-                      }
-                    } catch {
-                      message.error(intl.formatMessage({ id: 'pages.session.sandboxCheckFailed', defaultMessage: 'Failed to check sandbox status' }));
-                    }
-                  }}
-                >
-                  {isMobile ? '' : 'Workspace'}
-                </Button>
-                {selectedSession.teamId && (
-                  <Button
-                    type="text"
-                    icon={<FolderOpenOutlined />}
-                    size="small"
-                    onClick={() => setArtifactsDrawerVisible(true)}
-                  >
-                    {isMobile ? '' : intl.formatMessage({ id: 'pages.session.artifacts.entry', defaultMessage: 'Artifacts' })}
-                  </Button>
-                )}
-                <Button
-                  type="text"
-                  icon={<ThunderboltOutlined />}
-                  size="small"
-                  onClick={() => setSessionSkillsVisible(true)}
-                >
-                  {isMobile ? '' : intl.formatMessage({ id: 'pages.session.skills.entry', defaultMessage: 'Session skills' })}
-                </Button>
+                <Text style={{ fontSize: 15, fontWeight: 600, color: 'var(--vip-text-primary)' }}>{intl.formatMessage({ id: 'pages.session.selectSession', defaultMessage: 'Select a session to start conversation' })}</Text>
+                <Text style={{ fontSize: 13, color: 'var(--vip-text-tertiary)' }}>{intl.formatMessage({ id: 'pages.session.createNew', defaultMessage: 'or click "Create" on the left to create a new session' })}</Text>
               </div>
-              
-              {/* 聊天窗口 */}
-              <ChatWindow
-                sessionId={selectedSession.sessionId}
-                compactionSkippable={isCompactionPointless(contextUsage)}
-                onContextChanged={() => loadContextUsage(selectedSession.sessionId)}
-              />
-            </>
-          ) : (
-            <div style={{ 
-              flex: 1, 
-              display: 'flex', 
-              flexDirection: 'column',
-              alignItems: 'center', 
-              justifyContent: 'center',
-              gap: 8,
-            }}>
-              <div style={{
-                width: 56, height: 56, borderRadius: 16,
-                background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 26, color: '#fff',
-                boxShadow: '0 6px 20px rgba(99,102,241,0.2)',
-                marginBottom: 8,
-              }}>
-                <BulbOutlined />
-              </div>
-              <Text style={{ fontSize: 15, fontWeight: 600, color: 'var(--vip-text-primary)' }}>{intl.formatMessage({ id: 'pages.session.selectSession', defaultMessage: 'Select a session to start conversation' })}</Text>
-              <Text style={{ fontSize: 13, color: 'var(--vip-text-tertiary)' }}>{intl.formatMessage({ id: 'pages.session.createNew', defaultMessage: 'or click "Create" on the left to create a new session' })}</Text>
-            </div>
-          )}
-        </Card>
+            )}
+          </div>
         )}
       </div>
 
@@ -480,7 +506,7 @@ const SessionPage: React.FC = () => {
         sessionId={selectedSession?.sessionId}
         onClose={() => setSessionSkillsVisible(false)}
       />
-    </PageContainer>
+    </>
   );
 };
 
