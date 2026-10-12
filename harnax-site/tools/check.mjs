@@ -109,17 +109,18 @@ export function pairViolations(html) {
   return bad;
 }
 
-const sorted = (a) => [...a].sort();
 const grab = (html, re) => [...html.matchAll(re)].map((m) => (m[1] !== undefined ? m[1] : m[0]));
 
 export function parityIssues(zhHtml, enHtml) {
   const bad = [];
+  // Both trees are mapped to one canonical path space: a language switch links across trees
+  // from either side, so comparing zh's raw /en/x.html against en's stripped x.html could never match.
   const de = (h) => h.replace(/^\/en\//, '/');
   const zhIds = grab(zhHtml, /<section id="([^"]+)"/g);
   const enIds = grab(enHtml, /<section id="([^"]+)"/g);
   if (zhIds.join() !== enIds.join()) bad.push(`ids: [${zhIds}] vs [${enIds}]`);
-  const zhA = sorted(grab(zhHtml, /<a\b[^>]*href="([^"]+)"/g));
-  const enA = sorted(grab(enHtml, /<a\b[^>]*href="([^"]+)"/g)).map(de);
+  const zhA = grab(zhHtml, /<a\b[^>]*href="([^"]+)"/g).map(de).sort();
+  const enA = grab(enHtml, /<a\b[^>]*href="([^"]+)"/g).map(de).sort();
   if (zhA.length !== enA.length) bad.push(`anchors: ${zhA.length}!=${enA.length}`);
   else if (zhA.join() !== enA.join()) bad.push('anchor-set differs');
   const zhH = grab(zhHtml, /<h([123])[^>]*>/g);
