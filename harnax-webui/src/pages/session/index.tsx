@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Avatar, Button, List, Typography, Empty, Spin, message, Tag, Tooltip } from 'antd';
+import { Avatar, Button, Typography, Spin, message, Tag, Tooltip } from 'antd';
 import { PlusOutlined, BulbOutlined, CloudServerOutlined, ArrowLeftOutlined, TeamOutlined, FolderOpenOutlined, ThunderboltOutlined, SettingOutlined } from '@ant-design/icons';
 import { getSessionPage, deleteSession } from '@/services/ant-design-pro/session';
 import { getContextUsage } from '@/services/ant-design-pro/chat';
@@ -22,6 +22,9 @@ import DeleteButton from '@/components/DeleteButton';
 import DetailButton from '@/components/DetailButton';
 import { AvatarDropdown, SelectLang, ThemeSwitcher } from '@/components';
 import { useIsMobile } from '@/utils/responsive';
+import dayjs from 'dayjs';
+import styles from './index.less';
+import { formatSessionTime, groupSessions } from './listModel';
 import { loginRedirect } from '@/utils/loginRedirect';
 // @ts-ignore
 import { history, useModel, useLocation, useIntl } from '@umijs/max';
@@ -233,6 +236,9 @@ const SessionPage: React.FC = () => {
     setDetailModalVisible(true);
   };
 
+  const now = dayjs();
+  const sessionGroups = groupSessions(sessions, now);
+
   return (
     <>
       <div
@@ -279,47 +285,59 @@ const SessionPage: React.FC = () => {
             <div style={{ flex: 1, overflow: 'auto', padding: isMobile ? 8 : 12 }}>
               <Spin spinning={loading}>
                 {sessions.length === 0 ? (
-                  <Empty description={intl.formatMessage({ id: 'pages.session.noSessions', defaultMessage: 'No sessions' })} style={{ marginTop: 40 }} />
+                  <div className={styles.listEmpty}>
+                    <div className={styles.listEmptyOrb}>
+                      <span className={styles.listEmptyDot} />
+                      <span className={styles.listEmptyDot} />
+                      <span className={styles.listEmptyDot} />
+                    </div>
+                    <div className={styles.listEmptyTitle}>
+                      {intl.formatMessage({ id: 'pages.session.emptyList.title', defaultMessage: 'No sessions yet' })}
+                    </div>
+                    <div className={styles.listEmptyHint}>
+                      {intl.formatMessage({ id: 'pages.session.emptyList.hint', defaultMessage: 'Hit "New" to create one' })}
+                    </div>
+                  </div>
                 ) : (
-                  <List
-                    dataSource={sessions}
-                    renderItem={(session) => (
-                      <List.Item
-                        key={session.id}
-                        onClick={() => handleSelectSession(session)}
-                        style={{
-                          cursor: 'pointer',
-                          backgroundColor: selectedSession?.id === session.id ? 'rgba(99, 102, 241, 0.06)' : 'transparent',
-                          borderRadius: 10,
-                          padding: isMobile ? '14px 12px' : '10px 12px',
-                          marginBottom: 4,
-                          border: `1px solid ${selectedSession?.id === session.id ? 'rgba(99, 102, 241, 0.18)' : 'transparent'}`,
-                          transition: 'all 0.2s',
-                          minHeight: isMobile ? 48 : undefined,
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
-                            {session.teamId && (
-                              <Tag color="blue" style={{ margin: 0, flexShrink: 0 }} icon={<TeamOutlined />}>
-                                {intl.formatMessage({ id: 'pages.session.teamTag', defaultMessage: 'Team' })}
-                              </Tag>
+                  sessionGroups.map((group) => (
+                    <div key={group.key}>
+                      <div className={styles.groupLabel}>
+                        {intl.formatMessage({ id: `pages.session.group.${group.key}`, defaultMessage: group.key })}
+                      </div>
+                      {group.items.map((session) => {
+                        const timeText = formatSessionTime(session.updateTime ?? '', now);
+                        const selected = selectedSession?.id === session.id;
+                        return (
+                          <div
+                            key={session.id}
+                            className={`${styles.sessionRow} ${selected ? styles.sessionRowSelected : ''}`}
+                            onClick={() => handleSelectSession(session)}
+                          >
+                            <div className={styles.sessionRowTop}>
+                              {session.teamId && (
+                                <Tag color="blue" className={styles.sessionTeamTag} icon={<TeamOutlined />}>
+                                  {intl.formatMessage({ id: 'pages.session.teamTag', defaultMessage: 'Team' })}
+                                </Tag>
+                              )}
+                              <Text ellipsis className={`${styles.sessionRowTitle} ${selected ? styles.sessionRowTitleActive : ''}`}>
+                                {session.title}
+                              </Text>
+                              <div className={styles.sessionRowActions}>
+                                <DetailButton onClick={() => handleViewDetail(session)} />
+                                <DeleteButton onConfirm={() => handleDeleteSession(session.id)} />
+                              </div>
+                            </div>
+                            {(session.sessionDescription || timeText) && (
+                              <div className={styles.sessionRowMeta}>
+                                <span className={styles.sessionRowDesc}>{session.sessionDescription}</span>
+                                {timeText && <span className={styles.sessionRowTime}>{timeText}</span>}
+                              </div>
                             )}
-                            <Text
-                              ellipsis
-                              style={{ fontWeight: selectedSession?.id === session.id ? 600 : 400, fontSize: isMobile ? 15 : 14 }}
-                            >
-                              {session.title}
-                            </Text>
                           </div>
-                          <div style={{ display: 'flex', gap: 4 }}>
-                            <DetailButton onClick={() => handleViewDetail(session)} />
-                            <DeleteButton onConfirm={() => handleDeleteSession(session.id)} />
-                          </div>
-                        </div>
-                      </List.Item>
-                    )}
-                  />
+                        );
+                      })}
+                    </div>
+                  ))
                 )}
               </Spin>
             </div>
@@ -387,7 +405,7 @@ const SessionPage: React.FC = () => {
                   )}
                   <div style={{
                     width: isMobile ? 24 : 28, height: isMobile ? 24 : 28, borderRadius: 8,
-                    background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                    background: 'var(--vip-gradient-primary)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: isMobile ? 12 : 14, color: '#fff', flexShrink: 0,
                   }}>
@@ -446,26 +464,21 @@ const SessionPage: React.FC = () => {
                 />
               </>
             ) : (
-              <div style={{
-                flex: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-              }}>
-                <div style={{
-                  width: 56, height: 56, borderRadius: 16,
-                  background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 26, color: '#fff',
-                  boxShadow: '0 6px 20px rgba(99,102,241,0.2)',
-                  marginBottom: 8,
-                }}>
-                  <BulbOutlined />
+              <div className={styles.noSession}>
+                <div className={styles.noSessionOrb}>
+                  <span className={styles.noSessionOrbCore}>
+                    <BulbOutlined />
+                  </span>
                 </div>
-                <Text style={{ fontSize: 15, fontWeight: 600, color: 'var(--vip-text-primary)' }}>{intl.formatMessage({ id: 'pages.session.selectSession', defaultMessage: 'Select a session to start conversation' })}</Text>
-                <Text style={{ fontSize: 13, color: 'var(--vip-text-tertiary)' }}>{intl.formatMessage({ id: 'pages.session.createNew', defaultMessage: 'or click "Create" on the left to create a new session' })}</Text>
+                <div className={styles.noSessionTitle}>
+                  {intl.formatMessage({ id: 'pages.session.noSession.title', defaultMessage: 'No session to open yet' })}
+                </div>
+                <div className={styles.noSessionHint}>
+                  {intl.formatMessage({ id: 'pages.session.noSession.hint', defaultMessage: 'Create one with "New" on the left' })}
+                </div>
+                <button type="button" className={styles.noSessionInputCard} onClick={handleCreateSession}>
+                  {intl.formatMessage({ id: 'pages.session.inputPlaceholder.noSession', defaultMessage: 'Create a session first, then start chatting…' })}
+                </button>
               </div>
             )}
           </div>

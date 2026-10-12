@@ -1,0 +1,240 @@
+/* ─── 会话壳：列表 / 空列表 / 无会话态 ─── */
+
+/* 分组标签 */
+.groupLabel {
+  padding: 10px 4px 6px;
+  font-size: 12px;
+  color: var(--vip-text-tertiary);
+  user-select: none;
+}
+
+/* 会话行：两行式（标题＋Tag / 摘要＋时间） */
+.sessionRow {
+  position: relative;
+  padding: 10px 12px 10px 14px;
+  margin-bottom: 4px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background var(--vip-motion-fast) var(--vip-motion-ease), border-color var(--vip-motion-fast) var(--vip-motion-ease);
+
+  &:hover {
+    background: var(--vip-bg-layout);
+  }
+
+  /* 左侧 3px 品牌色条（仅选中态点亮） */
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 3px;
+    border-radius: 2px;
+    background: transparent;
+    transition: background var(--vip-motion-fast) var(--vip-motion-ease);
+  }
+}
+
+.sessionRowSelected {
+  background: rgba(var(--vip-primary-rgb), 0.06);
+  border-color: rgba(var(--vip-primary-rgb), 0.18);
+
+  &:hover {
+    background: rgba(var(--vip-primary-rgb), 0.08);
+  }
+
+  &::before {
+    background: var(--vip-primary);
+  }
+}
+
+.sessionRowTop {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sessionTeamTag {
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.sessionRowTitle {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--vip-text-primary);
+}
+
+.sessionRowTitleActive {
+  font-weight: 600;
+}
+
+.sessionRowActions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.sessionRowMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 3px;
+  min-width: 0;
+}
+
+.sessionRowDesc {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--vip-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sessionRowTime {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--vip-text-quaternary);
+}
+
+/* 列表空态：点状 orb（静态，动效纪律见规格 §3.0） */
+.listEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 48px 16px;
+  user-select: none;
+}
+
+.listEmptyOrb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(var(--vip-primary-rgb), 0.06);
+  border: 1px solid rgba(var(--vip-primary-rgb), 0.12);
+  margin-bottom: 4px;
+}
+
+.listEmptyDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--vip-primary);
+  opacity: 0.55;
+}
+
+.listEmptyTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--vip-text-primary);
+}
+
+.listEmptyHint {
+  font-size: 12px;
+  color: var(--vip-text-tertiary);
+}
+
+/* 无会话态（右侧面板） */
+.noSession {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 24px 6vh;
+}
+
+/* 小号 orb：与首屏同结构、参数等比缩小（76px → 56px；环洞底色取右侧面板底色） */
+.noSessionOrb {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  margin-bottom: 18px;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: conic-gradient(from 0deg, rgba(var(--vip-primary-rgb), 0), rgba(var(--vip-primary-rgb), 0.55), rgba(var(--vip-primary-rgb), 0) 55%);
+    animation: orbRingSpin 7s linear infinite;
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 2px;
+    border-radius: 50%;
+    background: var(--vip-bg-container);
+  }
+}
+
+.noSessionOrbCore {
+  position: absolute;
+  inset: 7px;
+  border-radius: 50%;
+  background: var(--vip-gradient-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 15px;
+  box-shadow: 0 4px 14px rgba(var(--vip-primary-rgb), 0.35);
+  animation: orbCoreBreath 3.2s ease-in-out infinite;
+  z-index: 1;
+}
+
+.noSessionTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--vip-text-primary);
+}
+
+.noSessionHint {
+  font-size: 13px;
+  color: var(--vip-text-tertiary);
+}
+
+/* 禁用态输入卡：可点击，点击开新建会话弹窗（把提示位变成引导动作） */
+.noSessionInputCard {
+  width: 100%;
+  max-width: 560px;
+  margin-top: 16px;
+  padding: 14px 16px;
+  text-align: left;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--vip-text-quaternary);
+  background: var(--vip-bg-layout);
+  border: 1px solid var(--vip-border);
+  border-radius: var(--vip-radius-lg);
+  cursor: pointer;
+  transition: border-color var(--vip-motion-fast) var(--vip-motion-ease), color var(--vip-motion-fast) var(--vip-motion-ease);
+
+  &:hover {
+    border-color: rgba(var(--vip-primary-rgb), 0.4);
+    color: var(--vip-text-tertiary);
+  }
+}
+
+@keyframes orbRingSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes orbCoreBreath {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.045); }
+}
