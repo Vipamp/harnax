@@ -60,7 +60,7 @@ const Welcome: React.FC = () => {
         // 关掉全局处理也关掉了它的 401 跳转，所以这条链路自己接上（设计 §5 第一行）
         localStorage.removeItem('currentUser');
         localStorage.removeItem('tokenInfo');
-        history.push({ pathname: '/login', search: `?redirect=${encodeURIComponent('/welcome')}` });
+        history.push({ pathname: '/login', search: `?redirect=${encodeURIComponent('/')}` });
         return;
       }
       // 服务端那句是写死的英文常量，原因在 admin 日志里；页面只说自己那句

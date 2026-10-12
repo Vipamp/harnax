@@ -374,7 +374,7 @@ const AgentCard: React.FC<{
                     cursor: 'pointer',
                     transition: 'all 0.2s ease',
                   }}
-                  onClick={() => window.open(`/agent/session?id=${session.id}`, '_blank')}
+                  onClick={() => window.open(`/?id=${session.id}`, '_blank')}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.background = 'var(--vip-primary-light)';
                     e.currentTarget.style.paddingLeft = '16px';

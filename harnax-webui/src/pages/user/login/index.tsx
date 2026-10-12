@@ -343,7 +343,7 @@ const Login: React.FC = () => {
 
     if (initialState?.currentUser && hasValidToken) {
      message.success('您已登录，正在跳转到首页...');
-     history.push('/welcome');
+     history.push('/');
     }
   }, [initialState?.currentUser, message]);
 
@@ -456,7 +456,7 @@ const Login: React.FC = () => {
           }, 100);
         } else {
           setTimeout(() => {
-            history.push('/welcome');
+            history.push('/');
           }, 100);
         }
         return;
