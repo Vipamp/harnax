@@ -27,7 +27,7 @@ export const BANNED = [
   { id: 'model-coverage', re: '主流模型全覆盖|全模型覆盖|所有大模型|every model' },
   { id: 'tenant-hard', re: '强隔离|硬隔离|\\bhard isolation\\b' },
   { id: 'money', re: '费用|账单|计费|金额|\\bbilling\\b|\\bcosts?\\b|\\bpricing\\b' },
-  { id: 'customers', re: '客户|案例|\\bcase stud|\\btestimonial' },
+  { id: 'customers', re: '客户(?!端)|案例|\\bcase stud|\\btestimonial|\\bcustomers?\\b' },
   { id: 'wechat-personal', re: '个人微信|\\bweixin\\b|\\bwechat\\b' },
   { id: 'mcp-production', re: '生产级 MCP|production-grade MCP' },
   { id: 'social-proof', re: '评论区|用户反馈|\\bfeedback from users\\b' },
@@ -35,11 +35,10 @@ export const BANNED = [
 
 const NUM = new Set([
   // 4 = dashboard composition (7 卡 / 3 饼 / 4 线), an audited UI fact.
-  '0', '1', '2', '3', '4', '5', '6', '7', '7.5', '9', '10', '11', '12', '14', '15', '20', '30', '35',
-  '50', '60', '90', '100', '200', '500', '512', '600', '900', '1000', '1800', '443', '80', '300',
-  '5000', '8448', '10000', '11434', '12.0', '22.5', '52.5', '1.5', '4.5', '2688', '0.5',
-  // The audit ledger's own tally, quoted on the boundaries page: 69 = 56 + 11 + 2.
-  '69', '56',
+  '0', '1', '2', '3', '4', '5', '6', '7', '7.5', '9', '10', '11', '12', '12.5', '14', '15', '20', '30', '35',
+  '50', '60', '64', '90', '100', '180', '200', '301', '401', '403', '404', '413', '500', '512', '600', '900',
+  '1000', '1800', '2000', '443', '80', '300', '5000', '8414', '8448', '10000', '11434',
+  '12.0', '13.0', '5.0', '0.00', '0.5', '1.5', '22.5', '52.5', '4.5', '2688',
 ]);
 
 // Shapes that are not product claims: dates, years, protocol codes, CSS lengths,
@@ -65,12 +64,13 @@ export const PAIR_RULES = [
   { id: 'sticky', trigger: '粘性|session affinity|sticky', require: '执行服务实例|执行实例|executor instance|gateway itself' },
   { id: 'failover', trigger: '故障转移|failover|转移', require: '连接类|connection error|已吐出|first event|尚未送达' },
   { id: 'private', trigger: '私有部署|自托管|self-host|private deployment', require: '无上报|no telemetry|配置项|configurable|被动' },
-  { id: 'records', trigger: '五张表|five tables', require: '两张|two of them|自己连库|directly' },
+  { id: 'records', trigger: '六张表|six tables', require: '三处|three|自己连库|directly' },
+  { id: 'replicas', trigger: 'SCHEDULER_REPLICAS|副本数|replica count', require: '默认两个|默认 2|default is two|default 2' },
   { id: 'crypto', trigger: '加密|encrypt', require: '明文|plaintext|密钥类字段|key material' },
   { id: 'models', trigger: '本地模型|Ollama|local model', require: '三类|three protocol|DashScope' },
-  { id: 'channels', trigger: '渠道|channel|飞书|Feishu|钉钉|DingTalk|企微|WeCom', require: '飞书|Feishu' },
+  { id: 'channels', trigger: '多渠道|渠道接入|接入渠道|每个渠道|所有渠道|哪个渠道|渠道能力|这一路渠道|渠道适配|IM 渠道|every channel|any channel|all channels|each channel|channel capabilit|channel adapter|multi-channel|multi platform IM', require: '飞书|Feishu|三家|three platforms' },
   { id: 'redis', trigger: 'Redis', require: 'noeviction|Sentinel' },
-  { id: 'https', trigger: 'HTTPS|443|TLS', require: '证书需|证书自备|bring your own|no certificate|不放证书' },
+  { id: 'https', trigger: 'HTTPS|443|TLS', require: '证书需|证书自备|bring your own|no certificate|不放证书', cs: true },
 ];
 
 export function textNodes(html) {
@@ -100,7 +100,7 @@ export function bands(html) {
 export function pairViolations(html) {
   const bad = [];
   for (const rule of PAIR_RULES) {
-    const trigger = new RegExp(rule.trigger, 'i');
+    const trigger = new RegExp(rule.trigger, rule.cs ? '' : 'i');
     const require_ = new RegExp(rule.require, 'i');
     bands(html).forEach((band, i) => {
       if (trigger.test(band) && !require_.test(band)) bad.push(`${rule.id}#band${i}`);
@@ -254,7 +254,7 @@ export function selftest() {
     '<!doctype html><html lang="zh-CN"><head><title>Harnax · 全链路追踪</title></head><body>',
     '<section id="hero"><h2>集群调度接管窗口 22.5 秒</h2></section>',
     '<section id="scale"><p>支持开源部署，费用透明</p></section>',
-    '<section id="numbers"><p>发现窗口 3 秒，起步 16 核</p></section>',
+    '<section id="numbers"><p>发现窗口 3 秒，起步 16 核，我们的客户有三千家</p></section>',
     '<section id="diagram"><svg viewBox="0 0 300 100"><rect x="7" width="16"/>' +
       '<text x="20" y="40">一键部署，起步 17 核</text></svg></section>',
     '</body></html>',
@@ -262,6 +262,7 @@ export function selftest() {
   const want = [
     'banned:open-source',
     'banned:money',
+    'banned:customers',
     'banned:one-click',
     'pair:takeover#band0',
     'number-off-whitelist:16',

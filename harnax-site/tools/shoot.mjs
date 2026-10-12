@@ -12,6 +12,8 @@ import { PAGES, SECTION_IDS } from './check.mjs';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, '.preview');
 const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+// A hand-run `python3 -m http.server` preview usually owns 8123; let the runner step aside.
+const PORT = Number(process.env.SITE_PORT || 8123);
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -110,7 +112,9 @@ function chrome(url, extra, expect) {
       clearInterval(poll);
       setTimeout(() => {
         try { process.kill(-child.pid, 'SIGKILL'); } catch { /* already gone */ }
-        rmSync(profile, { recursive: true, force: true });
+        // Chrome may still be writing into the profile when we cut it off. A leftover temp
+        // directory is harmless; letting the throw reach the loop would abort the run.
+        try { rmSync(profile, { recursive: true, force: true }); } catch { /* leave it */ }
         resolve({ stdout: out, stderr: err });
       }, 300);
     };
@@ -129,7 +133,7 @@ mkdirSync(OUT, { recursive: true });
 const fails = [];
 let count = 0;
 
-await new Promise((res) => server.listen(8123, '127.0.0.1', res));
+await new Promise((res) => server.listen(PORT, '127.0.0.1', res));
 
 for (const page of targets) {
   if (!existsSync(join(ROOT, page))) { console.log(`skip ${page}: not written yet`); continue; }
@@ -137,7 +141,7 @@ for (const page of targets) {
   const slug = page.replace(/^en\//, 'en-').replace('.html', '');
   const ids = SECTION_IDS[key] || [];
 
-  const dom = await chrome(`http://127.0.0.1:8123/${page}`, ['--dump-dom']);
+  const dom = await chrome(`http://127.0.0.1:${PORT}/${page}`, ['--dump-dom']);
   if (!dom.stdout.includes('<section')) fails.push(`${page}: dump-dom produced no <section>`);
   for (const bad of ['TBD', 'TODO', 'Lorem', '{{']) {
     if (dom.stdout.includes(bad)) fails.push(`${page}: placeholder ${bad} in DOM`);
@@ -146,7 +150,7 @@ for (const page of targets) {
   if (!/<html[^>]*class="js/.test(dom.stdout)) fails.push(`${page}: site.js did not run (no html.js)`);
 
   for (const w of [1440, 390]) {
-    const probe = await chrome(`http://127.0.0.1:8123/__probe?t=/${page}&w=${w}`, ['--dump-dom'], 'OVERFLOW:');
+    const probe = await chrome(`http://127.0.0.1:${PORT}/__probe?t=/${page}&w=${w}`, ['--dump-dom'], 'OVERFLOW:');
     const got = (probe.stdout.match(/OVERFLOW:[^<&]*/) || ['OVERFLOW:never-measured'])[0];
     console.log(`  ${page} @${w}px -> ${got}`);
     if (!got.endsWith(':none')) fails.push(`${page} @${w}px ${got}`);
@@ -155,11 +159,11 @@ for (const page of targets) {
   // One tall capture per page: --screenshot ignores the URL fragment, so per-band
   // shots were all the top of the page. The bands themselves are asserted on the DOM above.
   const desktop = join(OUT, `${slug}-desktop.png`);
-  await chrome(`http://127.0.0.1:8123/${page}`, ['--window-size=1440,12000', `--screenshot=${desktop}`]);
+  await chrome(`http://127.0.0.1:${PORT}/${page}`, ['--window-size=1440,12000', `--screenshot=${desktop}`]);
   if (!existsSync(desktop)) fails.push(`${slug}: no desktop screenshot written`);
   count++;
   const mobile = join(OUT, `${slug}-mobile.png`);
-  await chrome(`http://127.0.0.1:8123/${page}`, ['--window-size=390,16000', `--screenshot=${mobile}`]);
+  await chrome(`http://127.0.0.1:${PORT}/${page}`, ['--window-size=390,16000', `--screenshot=${mobile}`]);
   if (!existsSync(mobile)) fails.push(`${slug}: no mobile screenshot written`);
   count++;
   console.log(`${page}: 2 shots, dom ${dom.stdout.length} bytes`);

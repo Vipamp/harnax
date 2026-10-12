@@ -163,6 +163,9 @@ svg { display: block; }
   padding: 26px 24px; display: flex; flex-direction: column;
 }
 .card p:last-child { margin-bottom: 0; }
+/* A Chinese clause joined by 、 and ， gives the line no break opportunity, so one card can set a
+   single-column track wider than the viewport. */
+.card p { overflow-wrap: anywhere; }
 .card-num { font: 650 11.5px/1 var(--mono); letter-spacing: 0.12em; color: var(--accent-ink); margin-bottom: 14px; }
 .card h3 { font-size: 17.5px; }
 .card p { color: var(--text-2); font-size: 15px; }
