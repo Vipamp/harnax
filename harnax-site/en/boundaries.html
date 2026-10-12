@@ -59,11 +59,11 @@
           </tr>
           <tr>
             <td>The reasoning iteration cap is adjustable</td>
-            <td>Neither the front end nor the back end has this field; it exists only in documentation. Runtime uses the engine's default value.</td>
+            <td>The field genuinely exists on the engine side — the iteration cap in <code>AgentSpec</code>, default 10 — but no production code ever assigns it: the agent table has no such column and the admin form has no such input. At runtime it stays at that default.</td>
           </tr>
           <tr>
             <td>Channel capabilities can be toggled in the admin console</td>
-            <td>The channel page form contains no such control; capabilities that the back end and the IM platforms do support have no configuration entry.</td>
+            <td>The form carries connection fields (credentials, callback url, listen mode) plus one on/off switch for auto-listening. Capability bits — whether this channel streams, for instance — are overridden at compile time inside each adapter and have no configuration entry at all.</td>
           </tr>
           <tr>
             <td>A finished scheduled task posts its result back into the group</td>
@@ -71,15 +71,15 @@
           </tr>
           <tr>
             <td>Directing a team from a group chat</td>
-            <td>Team sessions land only on the web and mobile prefixes; a channel session prefix cannot enter team mode.</td>
+            <td>Team mode hangs on the <code>web-</code> prefix alone — the console and iOS share that one create endpoint — and neither <code>mp-</code> nor <code>chn-</code> carries a team field when it is created. What runs in an IM group is a single AI employee.</td>
           </tr>
           <tr>
             <td>Every MCP call leaves a record</td>
-            <td>That table records authorization decisions — token issuance, refresh and revocation. The tool call itself has no writer.</td>
+            <td>That table does have a writer, but what it writes are authorization decisions: token issuance, refresh and revocation. The tool-name column it reserves is left empty by production code and filled only in tests.</td>
           </tr>
           <tr>
             <td>All observability writes are asynchronous</td>
-            <td>Two paths cannot be described as one: the four tables on the executor side are written synchronously, a row at a time, and only the gateway's call log goes through an in-memory buffer and batched writes.</td>
+            <td>Three shapes do not collapse into one sentence: the usage table and the process log are written synchronously a row at a time; tool invocation detail goes through a buffer flushed at 64 rows or after 200 milliseconds; the gateway's call log has its own buffer flushed at 50 rows or every 5 seconds; and the hourly table is not written by events at all — the admin console folds it once an hour. Both buffers drop the newest row and count the drop when the queue is full.</td>
           </tr>
           <tr>
             <td>Files can be delivered straight to every channel</td>
@@ -137,7 +137,7 @@
           <tr>
             <td>The breaker trips after 5 failures</td>
             <td>By default 3 consecutive failures break the circuit for 30 seconds (gateway side)</td>
-            <td>The 5 is the channel access layer's own retry parameter (the Feishu, DingTalk and WeCom path), and the two get mixed up easily.</td>
+            <td>The 5 is a breaker threshold of its own — the channel service calling into the gateway, open for 30 seconds as well — not a message retry parameter. The retry lives elsewhere: three attempts in each platform's HTTP client. Two breakers sitting side by side are exactly what gets conflated.</td>
           </tr>
           <tr>
             <td>Sandboxes are reused without limit</td>
@@ -152,17 +152,17 @@
           <tr>
             <td>Tenants are completely separated</td>
             <td>A tenant is a grouping dimension for configuration and statistics; the main isolation on the session list is really the creator</td>
-            <td>There is no uniform interceptor, and some single-row reads and writes match on tenant but not on creator.</td>
+            <td>There is a web-layer tenant interceptor, but it only parses the request header, checks membership and writes a thread context — it adds no condition to the SQL. Filtering is a hand-written <code>WHERE</code> in each mapper, and the by-id batch reads for skills and agents are missing it.</td>
           </tr>
           <tr>
             <td>Full-flow automated test assurance</td>
             <td>The login path has end-to-end cases, and the persistence layer starts a real database with Testcontainers</td>
-            <td>Business pages have zero end-to-end cases.</td>
+            <td>End-to-end coverage lives in one separate test module and consists of the 5 authentication cases; business pages have zero end-to-end cases. The console's own jest suite is essentially pure-function unit tests with a single render-level case, and that one is login too.</td>
           </tr>
           <tr>
             <td>The mobile app is feature-complete</td>
-            <td>The mobile app is under construction</td>
-            <td>The previous mobile project held only the core pages and was never verified on a real device.</td>
+            <td>The iOS client already covers teams, skills, memory and scheduled tasks, and a mini program exists as a project of its own; neither has been verified on a real device</td>
+            <td>"Under construction" understates what iOS actually covers, and "complete" overstates what has been verified. Coverage counts the feature directories in the repository; verification status can only be stated against a real device. The older mobile project is down to four pages and is wired into no build script.</td>
           </tr>
         </tbody>
       </table>
@@ -175,13 +175,14 @@
   <div class="band-inner">
     <div class="band-head">
       <h2>Where the wording comes from</h2>
-      <p class="lede">Every functional statement on this site comes from an audit list checked line by line against source, not from product documentation.</p>
+      <p class="lede">Every functional statement on this site was written by reading source directly; product documentation is only ever a lead, and the evidence is always what the repository has committed.</p>
     </div>
     <div class="split">
       <div>
         <h3>How each line is judged</h3>
-        <p>The audit ran in parallel by domain, taking each claim back to the source and the tests; product documentation was a lead, never a basis. 69 claims in total: 56 hold, 11 need narrowing, 2 are not implemented — the ones needing narrowing went into the section above, the unimplemented ones into the left column of the one before it.</p>
+        <p>A claim earns its place on the page by landing on a concrete <code>file:line</code>: whether a field exists is read from the DTOs and the migration scripts, how something behaves from the implementation and its tests, what the default is from the configuration defaults and that compose file. Where documentation and code disagree, the page follows the code.</p>
         <p>Evidence is always taken from what the repository has committed, never from uncommitted working-tree changes. That discipline was written down after being bitten once: one draft read local uncommitted deployment files and turned an entry that was already configured into one that was "not configured yet".</p>
+        <p>This page was itself inside the re-audit. Reading the source again by domain overturned more than a dozen statements that had looked correct — how many observability tables there are, which node a scheduler step-aside actually yields to, whether an approval queue exists at all, whether port 80 only redirects. So nothing below claims to be covered by one finished checklist: each line went back to the code, and each line can be overturned again.</p>
         <p>Updated 2026-10-12. A stale claim is worse than stale copy, so this date sits on the page alongside the claims.</p>
       </div>
       <div>
@@ -222,7 +223,7 @@
       </div>
     </div>
     <div class="ftr-base">
-      <span>Every functional statement here follows the audit conclusions in <code>harnax-marketing</code>'s promotion-claims audit list; if any of them disagrees with actual behaviour, treat it as a defect.</span>
+      <span>Every functional statement here is checked against the committed code in this repository, claim by claim; if any of them disagrees with actual behaviour, treat it as a defect.</span>
       <span>© 2026 Harnax</span>
     </div>
   </div>

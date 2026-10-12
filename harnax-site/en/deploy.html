@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Deployment · Harnax</title>
-<meta name="description" content="The topology of one compose file's ten service blocks and their resource ceilings, the go-live order, the operations list you take on afterwards, and the exact boundary of the three egress classes.">
+<meta name="description" content="The topology of one compose file's ten service blocks and their resource ceilings, the go-live order, the operations list you take on afterwards, and the exact boundary of the four egress groups.">
 <link rel="icon" href="/assets/icon.png">
 <link rel="canonical" href="/en/deploy.html">
 <link rel="alternate" hreflang="zh-CN" href="/deploy.html">
@@ -57,7 +57,7 @@
         <tbody>
           <tr>
             <td>mysql</td>
-            <td>Carries the five business databases: the databases are created by the first-boot init script, the tables by each service's own migrations</td>
+            <td>Carries the four business databases: the databases come from the first-boot init script — which also creates a bare <code>harnax</code> database that no connection string in the repository uses — and the tables from the migrations of admin, router and scheduler. The engine-state database builds its tables on first use at runtime, and the channel service's migrations are off by default</td>
             <td>yes</td>
             <td>1 core / 1024M</td>
           </tr>
@@ -87,7 +87,7 @@
           </tr>
           <tr>
             <td>scheduler</td>
-            <td>Scheduled firing and execution; Quartz cluster state lives in its own database; the replica count is decided only on the command line and deliberately absent from compose</td>
+            <td>Scheduled firing and execution; Quartz cluster state lives in its own database; compose carries no replica count — the deploy script's <code>SCHEDULER_REPLICAS</code> decides it, and the default is two</td>
             <td>no — reachable only inside the container network</td>
             <td>1 core / 768M</td>
           </tr>
@@ -119,8 +119,8 @@
       </table>
     </div>
 
-    <p class="lede" style="margin-top:28px">Limits total 12.0 cores / 8448M; reservations total 4.5 cores / 2688M.</p>
-    <aside class="note"><b>Those two totals are not a starting specification.</b> Nothing in the repository states a minimum machine; they are ceilings this compose writes for itself, not an answer to "how big a box do I need". Size the machine against your own session volume, sandbox concurrency and where the model runs.</aside>
+    <p class="lede" style="margin-top:28px">Per service block the totals are 12.0 cores / 8448M of limits and 4.5 cores / 2688M of reservations. Scheduler comes up with two replicas by default, so what actually runs is 13.0 cores / 9216M of limits and 5.0 cores / 2944M of reservations.</p>
+    <aside class="note"><b>Those totals are not a starting specification.</b> Nothing in the repository states a minimum machine; they are ceilings this compose writes for itself, not an answer to "how big a box do I need". Size the machine against your own session volume, sandbox concurrency and where the model runs.</aside>
   </div>
 </section>
 
@@ -128,13 +128,13 @@
   <div class="band-inner">
     <div class="band-head">
       <h2>Go-live order: one script, four steps</h2>
-      <p class="lede">The build genuinely needs network — Maven and npm fetch dependencies, and we are not hiding that. At runtime there is no reporting path, and every egress point is configuration.</p>
+      <p class="lede">The build genuinely needs network — Maven and npm fetch dependencies, and we are not hiding that. At runtime there is no reporting path: what goes out is an address you configured or a capability you enabled.</p>
     </div>
     <ol>
       <li><b>Pre-install <code>mvn</code>, <code>node</code> and <code>docker</code>.</b> The build script checks that the first two exist and stops to tell you which one is missing.</li>
       <li><b>Run <code>bash build.sh</code>.</b> It produces six service images — admin, router, agent-service, scheduler, frontend, plus the channel-service that carries Feishu, DingTalk and WeCom access — and prepares the default sandbox image and the CLI package shelf.</li>
-      <li><b>Put your own certificate in place.</b> The 443 server points at <code>/etc/nginx/ssl/server.crt</code> and <code>.key</code>, the <code>ssl/</code> directory is not in the repository, and there is no self-signed helper anywhere in it. With no certificate in place the symptom is "the entry does not start": nginx fails during configuration load, and port 80 does exactly one thing — send people to 443 — so it will not quietly degrade to plain HTTP.</li>
-      <li><b>Run <code>bash deploy-all.sh</code>.</b> It is a cold start: the whole stack comes down and comes back, including every scheduler replica. In cluster form you must pass <code>--scale scheduler=N</code>; the replica count is not in compose, so dropping that argument scales you back to one machine. To swap the image of a single service, use <code>deploy-service.sh</code>, which stops and starts scheduler replicas one at a time.</li>
+      <li><b>Put your own certificate in place.</b> The 443 server points at <code>/etc/nginx/ssl/server.crt</code> and <code>.key</code>, the <code>ssl/</code> directory is not in the repository, and there is no self-signed helper anywhere in it. With no certificate in place the symptom is "the entry does not start": nginx fails during configuration load. Port 80 carries one thing besides the redirect — a <code>/health</code> that answers <code>OK</code> for container health checks — and everything else is a 301 to 443, so it will not quietly degrade to plain HTTP.</li>
+      <li><b>Run <code>bash deploy-all.sh</code>.</b> It is a cold start: the whole stack comes down and comes back, including every scheduler replica. The replica count reaches <code>--scale</code> through the script's <code>SCHEDULER_REPLICAS</code> variable, default 2, and compose deliberately carries no <code>deploy.replicas</code> — it would contradict the one-at-a-time <code>roll-scheduler.sh</code> and <code>replace-one</code> paths. To swap the image of a single service, use <code>deploy-service.sh</code>, which stops and starts scheduler replicas one at a time.</li>
     </ol>
     <aside class="note"><b>Triggers pile up during the cold start.</b> Between the stack going down and mysql's health gate plus the JVM coming back, expired triggers that were missed are dropped outright under the DoNothing policy for tasks with <code>concurrent=0</code> — not re-issued, not retried, not alerted. Run it in a quiet window; for ordinary image swaps use the single-service rolling path.</aside>
   </div>
@@ -149,7 +149,7 @@
     <div class="cards">
       <div class="card" data-reveal>
         <h3>Default values you must change</h3>
-        <p>The shipped password and the three kinds of secret are strings published in the repository: the admin password, the JWT secret, the AES key, the internal API secret, plus the object-storage and database passwords. Only the session gateway's redis mode — which requires <code>noeviction</code> on the cache side — carries one startup check that refuses a placeholder secret; the other services merely log a WARN when they hit one.</p>
+        <p>The shipped password and the three kinds of secret are strings published in the repository: the admin password, the JWT secret, the AES key, the internal API secret, plus the object-storage and database passwords. Only three places look at a placeholder value, and they do not react the same way: the session gateway's redis mode — which requires <code>noeviction</code> on the cache side — refuses to start on one; the admin console logs a WARN about the internal API secret and at the same time treats it as unset, refusing it as a credential, so a service calling in with the shipped default gets a 401; for the AES key it only logs a WARN and carries on. Channel, scheduler and agent-service do not check these at all.</p>
         <p>Encryption covers key material only (AES-256-GCM); conversation bodies and tool arguments go into the database plaintext.</p>
       </div>
       <div class="card" data-reveal>
@@ -160,7 +160,7 @@
       <div class="card" data-reveal>
         <h3>What we did not build</h3>
         <p>Container orchestration — this compose file is all there is, and there is no third way to run the system. An alerting egress — after a failure nobody is on it, only logs, metrics and health status.</p>
-        <p>Cleanup for the observability tables: only the two scheduler-domain tables have hardcoded retention (execution logs 90 days, the lock table 7 days, neither configurable). The remaining ones have no delete statement at all, and there is no partitioning or capacity guard either.</p>
+        <p>Cleanup for the observability tables: the two scheduler-domain tables have hardcoded retention (execution logs 90 days, execution guard rows 7 days, neither configurable), and that 90-day delete skips the rows sitting in the timed-out and stopped statuses; nothing cleans Quartz's own tables. Tool invocation detail is configurable — <code>HARNAX_METRICS_RETENTION_DAYS</code>, default 90 days, and a day's rows only go once that day has been folded into the hourly table. The CLI archive is configurable too — <code>HARNAX_CLI_ARCHIVE_RETENTION_DAYS</code>, default 7 days. The remaining tables get no delete statement, and there is no partitioning or capacity guard either.</p>
       </div>
       <div class="card" data-reveal>
         <h3>What we decided against</h3>
@@ -174,10 +174,10 @@
 <section id="egress" class="band" data-band>
   <div class="band-inner">
     <div class="band-head">
-      <h2>What it sends out: three classes</h2>
-      <p class="lede">No telemetry at runtime, no version check, no license validation; metrics are only ever scraped, passively, by you. Outbound traffic comes in the three classes below, and each of them is configuration.</p>
+      <h2>What it sends out: four groups</h2>
+      <p class="lede">No telemetry at runtime, no version check, no license validation; metrics are only ever scraped, passively, by you. The four groups below are every path by which this system reaches outside: the first three go where your configuration says, the fourth only appears once you enable the capability behind it.</p>
     </div>
-    <div class="cards cards-3">
+    <div class="cards">
       <div class="card" data-reveal>
         <h3>Models</h3>
         <p>Three protocol families: DashScope, OpenAI-compatible, Ollama. The address is configuration, and an OpenAI-compatible baseUrl can point at an internal address; Ollama defaults to <code>localhost:11434</code> and that family does not read an API key at all.</p>
@@ -185,13 +185,20 @@
       <div class="card" data-reveal>
         <h3>External MCP</h3>
         <p>The url you register in the admin console — any address, which may equally be an internal one. The bundled demo MCP takes this same path. Switched off or never registered, this class of traffic simply does not exist.</p>
+        <p>An OAuth-type server takes two more hops: the admin console reads that authorization server's <code>/.well-known</code> metadata per RFC 8414, then uses the token endpoint the metadata names. Those addresses come from the metadata, not from the MCP url you typed.</p>
       </div>
       <div class="card" data-reveal>
         <h3>IM platforms</h3>
         <p>The access domains of the three platforms — Feishu, DingTalk, WeCom — are written in source constants. Channels are enabled one at a time: a channel you do not enable has no connection pointing at it.</p>
       </div>
+      <div class="card" data-reveal>
+        <h3>Only if you enable it</h3>
+        <p>Skill source repositories: a git clone of a url you supply. The whitelist constrains the transport (<code>https</code> / <code>http</code> / <code>ssh</code> / <code>git</code> / <code>git@</code>) and never the host, with a 180 second timeout.</p>
+        <p>Email: the SMTP host and credentials are environment parameters bound to one agent, so that connection exists only where you filled them in. Sandbox image build: a CLI package that declares system dependencies runs <code>apt-get</code> during the build, and its base image has to be pullable as well.</p>
+        <p>Object storage: the bucket that sandbox snapshots and CLI archives are written to points at the in-stack <code>minio</code> service by default, yet <code>MINIO_ENDPOINT</code> is itself configuration — aim it at an external S3-compatible address and that is an outbound call too.</p>
+      </div>
     </div>
-    <aside class="note"><b>What "private deployment" means precisely here:</b> the egress points are the three classes — model, external MCP, IM — every one of them configuration, with no reporting path at runtime. It does not mean "it never communicates with anything outside". The build needs network, and retrieval is a keyword implementation that does not even need an embedding model: those two sentences are two faces of one fact.</aside>
+    <aside class="note"><b>What "private deployment" means precisely here:</b> what goes out is the four groups above, all of it decided by your configuration and by what you switch on, with no reporting path at runtime. It does not mean "it never communicates with anything outside". The build needs network — Maven, npm and the model dependencies all fetch — and retrieval is a keyword implementation that does not even need an embedding model: those two sentences are two faces of one fact.</aside>
   </div>
 </section>
 
@@ -223,7 +230,7 @@
       </div>
     </div>
     <div class="ftr-base">
-      <span>Every functional statement here follows the audit conclusions in <code>harnax-marketing</code>'s promotion-claims audit list; if any of them disagrees with actual behaviour, treat it as a defect.</span>
+      <span>Every functional statement here is checked against the committed code in this repository, claim by claim; if any of them disagrees with actual behaviour, treat it as a defect.</span>
       <span>© 2026 Harnax</span>
     </div>
   </div>

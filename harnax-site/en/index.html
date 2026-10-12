@@ -41,12 +41,12 @@
       <div>
         <span class="eyebrow">Self-hosted multi-agent runtime</span>
         <h1>Turn AI from one call into a system that keeps running</h1>
-        <p class="hero-sub">Its own credentials, job description, tool belt, duty roster and teammates. Your only decision is which machine they live on.</p>
+        <p class="hero-sub">Its own job description, tool belt, duty roster and teammates. Your only decision is which machine they live on.</p>
         <div class="btn-row">
           <a class="btn-primary" href="/en/deploy.html">See the deployment forms</a>
           <a class="btn-ghost" href="#visible">What it actually does</a>
         </div>
-        <p class="hero-note">No telemetry path at runtime; metrics are only pulled. Egress is three kinds — models, external MCP, IM platforms — all of them configuration.</p>
+        <p class="hero-note">No telemetry and no reporting path at runtime; metrics are only pulled, and only three services expose an endpoint to pull from. Egress is more than the model alone: external MCP, skill source repositories, outbound mail and object storage all count, while the IM platforms' domains sit in source constants.</p>
       </div>
       <div class="hero-art">
         <p class="dgm-title">One group message, end to end</p>
@@ -87,7 +87,7 @@
       <article class="card" data-reveal>
         <p class="card-num">One</p>
         <h3>Give it work in a group chat</h3>
-        <p>Every channel parses <code>/approve</code>, <code>/deny</code> and <code>/clear</code> (adapted for Feishu, DingTalk and WeCom); the approval request goes back into the same group, and the suspended step resumes once it is cleared. Reconnects with exponential backoff; with several replicas one MySQL named lock decides who is listening.</p>
+        <p>The group parses 10 kinds of slash command, case-insensitive (<code>/approve</code>, <code>/deny</code>, <code>/clear</code>, <code>/stop</code> and <code>/compact</code> are only some of them; adapted for Feishu, DingTalk, WeCom and other channels); the approval request goes back into the same group, and the suspended step resumes once it is cleared. One thing to say up front: a command that takes arguments keeps only its name in the group, so the argument is dropped when it is forwarded. Reconnects with exponential backoff; with several replicas one MySQL named lock decides who is listening.</p>
       </article>
       <article class="card" data-reveal>
         <p class="card-num">Two</p>
@@ -97,7 +97,7 @@
       <article class="card" data-reveal>
         <p class="card-num">Three</p>
         <h3>Work one AI cannot finish goes to a team</h3>
-        <p>The lead keeps only 3 orchestration tools — no business tools, no MCP, no sandbox; members keep their own tools and skills. A delegation cap of 20, 900 seconds per member turn and 20 MiB per artifact file are code constants, enforced at runtime.</p>
+        <p>The lead keeps only 3 orchestration tools — no business tools, no MCP, no sandbox; members keep their own tools and skills. A delegation cap of 20, 900 seconds per member turn and 20 MiB per artifact file are enforced at runtime — but they are configuration defaults, not hardcoded constants; change them and the enforcement follows the new values.</p>
       </article>
       <article class="card" data-reveal>
         <p class="card-num">Four</p>
@@ -105,7 +105,7 @@
         <p>Commands and file operations run inside a separate container, with argument-level scanning for dangerous commands and sensitive paths; a hit becomes a human approval request carrying the safety reason. Workspace snapshots go to object storage, so a restart can pick them back up.</p>
       </article>
     </div>
-    <aside class="note">Group chat and team are two separate scenarios: team sessions exist only on web and mobile, and what runs inside an IM group is a single AI employee. The two do not stack.</aside>
+    <aside class="note">Group chat and team are two separate scenarios: team mode hangs on the <code>web-</code> session prefix alone — the console and iOS share that one create endpoint — and neither <code>mp-</code> nor <code>chn-</code> carries a team field when it is created. What runs inside an IM group is a single AI employee. The two do not stack.</aside>
   </div>
 </section>
 
@@ -119,8 +119,8 @@
 
     <div class="mech">
       <div class="mech-figure">
-        <p class="dgm-title">Fig 1 · How well three kinds of state survive a machine swap</p>
-        <svg class="dgm" viewBox="0 0 520 296" role="img" aria-label="Conversation content in the database, session ownership in the cache, the approval step in process memory">
+        <p class="dgm-title">Fig 1 · Which state survives a machine swap</p>
+        <svg class="dgm" viewBox="0 0 520 296" role="img" aria-label="Conversation content in the database, session ownership in the cache, a plain session's approval stored as ASKING, only the team sub-run blocked in memory">
           <text class="t-sm" x="16" y="22">Conversation</text>
           <rect class="node" x="16" y="32" width="214" height="44" rx="10"/>
           <text x="34" y="60">messages · thinking · tools</text>
@@ -137,21 +137,21 @@
           <text x="308" y="148">Redis</text>
           <text class="t-mono" x="308" y="164">shared, ~30s of warmth</text>
 
-          <text class="t-sm" x="16" y="210">The approval step</text>
+          <text class="t-sm" x="16" y="210">The approval step · two paths</text>
           <rect class="node" x="16" y="220" width="214" height="44" rx="10"/>
-          <text x="34" y="248">a suspended approval window</text>
+          <text x="34" y="248">ASKING lands in the table</text>
           <path class="wire-accent" d="M230 242 h44"/><path class="wire-accent" d="M270 236 l8 6 l-8 6"/>
           <rect class="node node-warn" x="290" y="220" width="214" height="44" rx="10"/>
-          <text x="308" y="242">executor memory</text>
-          <text class="t-mono" x="308" y="258">a thread that cannot move</text>
+          <text x="308" y="242">only a team holds a thread</text>
+          <text class="t-mono" x="308" y="258">600s block, sub-runs only</text>
         </svg>
       </div>
       <div class="mech-body">
         <h3>Why a session sticks to one machine</h3>
         <span class="mech-label">The problem</span>
-        <p class="q">The agent's mutable state is not in the database — it is in one process's memory and on its disk. The "stateless service plus round-robin balancing" model stops working here.</p>
+        <p class="q">Part of the agent's mutable state is not in the database — it is in one process's memory and on its local disk: the ReAct loop's context and the sandbox workspace. The "stateless service plus round-robin balancing" model stops working here.</p>
         <span class="mech-label">How it is done</span>
-        <p>The step that waits for approval is a thread blocked on <code>future.get()</code>, with a 600-second window; it physically cannot be moved. Three clocks turn "the process stopped" into something decidable: report every 10 seconds, recheck every 5, declare dead after 30, so detection lands 20–35 seconds later. New sessions are assigned weighted-random by session count; only the failover target takes the minimum.</p>
+        <p>Waiting for approval runs down two paths and must not be told as one: in a plain session a tool confirmation closes the round, and the pending call is stored in the <code>ASKING</code> state and rebuilt by id once it is cleared, so another instance can pick it back up; the team sub-run is the thread held by <code>future.get()</code> — a 600-second window sliced into 30-second keep-alives, and it physically cannot be moved. Three clocks turn "the process stopped" into something decidable: report every 10 seconds, recheck every 5, declare dead after 30, so detection lands 20–35 seconds later. New sessions land by random draw weighted by 1/(sessions + 1); on failover, a candidate busier than twice the average is traded for the smaller one.</p>
         <span class="mech-label">What you give up</span>
         <p>A snapshot is written at the end of a turn, so a crash loses the last one, and the half-streamed output of that turn is not replayed. Streaming fails over only on a connection-class error, and only before the first event has been emitted.</p>
         <aside class="note">What is pinned is the executor instance; the gateway itself runs several replicas sharing the same binding table. The stickiness exists because someone is waiting for an answer, not for load balancing. That shared table lives in Redis: standalone or Sentinel only, and it must keep <code>noeviction</code>.</aside>
@@ -188,7 +188,7 @@
         <span class="mech-label">How it is done</span>
         <p>Two locks: Quartz's cluster row lock decides who receives the trigger, then we drive the unique key <code>(task_id, trigger_time)</code> on our own trigger-lock table to decide who owns this fire. The takeover window is 22.5–52.5 seconds, under the 60-second misfire threshold.</p>
         <span class="mech-label">What you give up</span>
-        <p>A death after the fire is never re-issued. The task row gets marked timed out five to seven and a half minutes later, while the run over there is still going and nobody owns it. Idempotency is not something this system can hand you — it has to live in your business logic.</p>
+        <p>A death after the fire is never re-issued: a row still open waits until it passes 1.5× its own timeout before the reaping round marks it timed out — at the default 300 seconds that is seven and a half minutes at the earliest, twelve and a half at worst — while the run over there is still going and nobody owns it. Idempotency is not something this system can hand you — it has to live in your business logic.</p>
         <aside class="note">The takeover window is derived on paper. The integration test <code>ClusterSingleFireIT</code> covers single firing only; takeover, balancing and the real call chain are not covered.</aside>
       </div>
     </div>
@@ -216,16 +216,16 @@
         <span class="mech-label">The problem</span>
         <p class="q">A skill package is a pile of files that gets unpacked into a sandbox and read by file tools. Should someone gate it before it enters the library?</p>
         <span class="mech-label">How it is done</span>
-        <p>Nine content-scan rules run before import; a hit is written into the scan report returned with the call, and the skill is stored disabled — usable only after a person approves it. Each source kind has its own hard constraint: Git goes through a protocol allowlist, npm installs carry <code>--ignore-scripts</code>, and ZIP has four ceilings that raise <code>SecurityException</code> rather than truncating. Projection converges every turn against a sha256 manifest; no difference means zero writes.</p>
+        <p>Nine content-scan rules run before import; a hit is written into the scan report returned with the call, and the skill is stored disabled — usable only after a person approves it. Each of the three source kinds that reaches the library has its own hard constraint (the built-in kind does not come this way): Git goes through a protocol allowlist, npm installs carry <code>--ignore-scripts</code>, and ZIP has four ceilings that raise <code>SecurityException</code> rather than truncating. Projection converges every turn against a sha256 manifest; no difference means zero writes.</p>
         <span class="mech-label">What you give up</span>
-        <p>There is no version history and no rollback — change it and it is changed. There is no review workflow either: the status field has two values, so "pending review" lands in the disabled bucket. AI-authored skills were built and then deliberately switched off; the skill repository is read-only for the agent.</p>
+        <p>There is no version history and no rollback — change it and it is changed; the skill's own status field holds two values. But the approval queue is real: a draft an AI proposes walks four states — pending / approved / rejected / expired — with the reviewer, the review time and the rejection reason recorded, and promotion re-runs the scan and writes it into the log. What is missing is assignment and multi-stage co-signing, not the queue itself. The AI-authored-skill capability was built, its write switch defaults to closed, and the skill repository is read-only for the agent.</p>
       </div>
     </div>
 
     <div class="mech">
       <div class="mech-figure">
-        <p class="dgm-title">Fig 4 · Five tables, two of them readable</p>
-        <svg class="dgm" viewBox="0 0 520 296" role="img" aria-label="Usage and gateway logs read back on screen; the other three trace tables are write-only in the application">
+        <p class="dgm-title">Fig 4 · Six tables, three of them readable</p>
+        <svg class="dgm" viewBox="0 0 520 296" role="img" aria-label="The usage table reads back on the dashboard, the gateway log on the console, tool invocation detail and the hourly table on the invocation page; the process log and the MCP authorization log are written but never read by the application">
           <rect class="node node-key" x="16" y="14" width="246" height="40" rx="9"/>
           <text class="t-mono" x="32" y="39">token_stats · usage</text>
           <rect class="node node-key" x="286" y="14" width="218" height="40" rx="9"/>
@@ -236,30 +236,30 @@
           <rect class="node node-key" x="286" y="70" width="218" height="40" rx="9"/>
           <text x="302" y="95">reads back on the console</text>
 
-          <rect class="node" x="16" y="126" width="246" height="40" rx="9"/>
-          <text class="t-mono" x="32" y="151">process_log</text>
-          <rect class="node node-warn" x="286" y="126" width="218" height="40" rx="9"/>
-          <text x="302" y="151">write-only in the application</text>
+          <rect class="node node-key" x="16" y="126" width="246" height="40" rx="9"/>
+          <text class="t-mono" x="32" y="151">tool_invocation_log</text>
+          <rect class="node node-key" x="286" y="126" width="218" height="40" rx="9"/>
+          <text x="302" y="151">reads back on the calls page</text>
 
-          <rect class="node" x="16" y="182" width="246" height="40" rx="9"/>
-          <text class="t-mono" x="32" y="207">tool_call_log</text>
-          <rect class="node node-warn" x="286" y="182" width="218" height="40" rx="9"/>
-          <text x="302" y="207">write-only in the application</text>
+          <rect class="node node-key" x="16" y="182" width="246" height="40" rx="9"/>
+          <text class="t-mono" x="32" y="207">tool_invocation_stats</text>
+          <rect class="node node-key" x="286" y="182" width="218" height="40" rx="9"/>
+          <text x="302" y="207">hourly table the curves read</text>
 
           <rect class="node" x="16" y="238" width="246" height="40" rx="9"/>
-          <text class="t-mono" x="32" y="263">mcp_call_log</text>
+          <text class="t-mono" x="32" y="263">process_log · mcp_call_log</text>
           <rect class="node node-warn" x="286" y="238" width="218" height="40" rx="9"/>
-          <text x="302" y="263">records token decisions</text>
+          <text x="302" y="263">write-only in the application</text>
         </svg>
       </div>
       <div class="mech-body">
-        <h3>Five tables written, two of them readable</h3>
+        <h3>Six tables written, three of them readable</h3>
         <span class="mech-label">The problem</span>
         <p class="q">"Recorded" and "visible" are two different things, and "visible" and "reconcilable" are two more.</p>
         <span class="mech-label">How it is done</span>
-        <p>The usage table takes one row per model call, and streaming and non-streaming produce the same reading. The gateway log records which call, how long, succeeded or not — deliberately without the body — and lands asynchronously in batches. Tool calls and process logs write arguments and results in full; those four on the executor side are synchronous, one row at a time.</p>
+        <p>The usage table takes one row per model call, and streaming and non-streaming produce the same reading. The gateway log records which call, how long, succeeded or not — deliberately without the body — and lands asynchronously in batches. Tool invocation tracing is asynchronous too: by default it waits until 64 rows have piled up or the refresh interval passes, arguments and return value are each cut to 2000 characters, and the whole collection can be switched off. The remaining three — usage, process log and MCP token authorization — are the synchronous writes, a row at a time, and that MCP table records token issue, refresh and revocation, not MCP calls themselves.</p>
         <span class="mech-label">What you give up</span>
-        <p>The other three trace tables have no read path in the application: to see them you connect to the database yourself. The <code>fee</code> column is always 0, so this site does not talk money; there are no quotas, thresholds or alerts, and the rate limiter only limits requests per minute.</p>
+        <p>Two trace tables have no read path in the application: to see them you connect to the database yourself. The <code>fee</code> column is always 0, and its precision cannot even hold a cent; no unit-price table exists anywhere in the repository, yet the dashboard still renders a ¥0.00 card. There are no quotas, thresholds or alerts, the rate limiter only limits requests per minute, and a call chain has no global identifier — the only thing that strings it together is the session id.</p>
       </div>
     </div>
 
@@ -290,7 +290,7 @@
         <ul>
           <li>MySQL + Redis; Redis is standalone or Sentinel only, and must keep <code>noeviction</code></li>
           <li>The binding's read-modify-write happens in one Lua script, so concurrent writes cannot clobber it</li>
-          <li>A plain up gives you one scheduler replica; how many you want must be declared</li>
+          <li>The scheduler's replica count reaches <code>--scale</code> through the script's <code>SCHEDULER_REPLICAS</code>; compose writes no replica count, and the default is two</li>
         </ul>
       </article>
       <article class="tier" data-reveal>
@@ -322,10 +322,10 @@
       <p class="fact" data-reveal><b>14</b><span>submodules; backend main code entirely Kotlin</span></p>
       <p class="fact" data-reveal><b>10</b><span>service blocks in one compose file</span></p>
       <p class="fact" data-reveal><b>9</b><span>of them are the system; 1 is a bundled example MCP</span></p>
-      <p class="fact" data-reveal><b>12.0 cores</b><span>limits summed over the ten blocks, 8448M memory</span></p>
+      <p class="fact" data-reveal><b>13.0 cores</b><span>limits actually running with two scheduler replicas, 9216M memory</span></p>
       <p class="fact" data-reveal><b>Pull</b><span>metrics are scraped; nothing is reported at runtime</span></p>
     </div>
-    <p class="fineprint">All of the above is what compose itself declares: limits sum to 12.0 cores / 8448M, reservations to 4.5 cores / 2688M. There is no minimum-configuration document anywhere in the repository, so this is not a sizing recommendation, and sandbox containers are not in this list either.</p>
+    <p class="fineprint">Do not mix the two readings: summed over the service blocks compose writes, limits come to 12.0 cores / 8448M and reservations to 4.5 cores / 2688M; the scheduler's default is two replicas, so that block counts twice, and the ceiling actually running is 13.0 cores / 9216M with 5.0 cores / 2944M of reservations. There is no minimum-configuration document anywhere in the repository, so this is not a sizing recommendation, and sandbox containers are not in this list either.</p>
   </div>
 </section>
 
@@ -340,17 +340,17 @@
       <article class="card" data-reveal>
         <p class="card-num">Missing</p>
         <h3>Backup and restore tooling</h3>
-        <p>What you must do: conversation bodies, tasks and logs all live in one database, so you schedule the backups and you run the restore drill.</p>
+        <p>What you must do: the backup scope is more than one database — conversations and observations sit in the admin database, tasks and execution logs in the scheduler's own database, and the routing table in a third one. You schedule the backups and you run the restore drill.</p>
       </article>
       <article class="card" data-reveal>
         <p class="card-num">Missing</p>
         <h3>An alerting egress</h3>
-        <p>What you must do: nobody notifies you when the night shift fails. The metrics endpoint exists; scraping, thresholds and the on-call route are your job.</p>
+        <p>What you must do: nobody notifies you when the night shift fails. Only three services expose a scrape endpoint — the gateway, the scheduler and the channel service; the admin console and the executor expose none. Scraping, thresholds and the on-call route are all your job.</p>
       </article>
       <article class="card" data-reveal>
         <p class="card-num">Missing</p>
-        <h3>Version rollback and review workflow</h3>
-        <p>What you must do: a skill has only a pointer to its current version. Owner hand-offs and multi-stage approval never existed as fields; an external process has to cover them.</p>
+        <h3>Version rollback and owner hand-off</h3>
+        <p>What you must do: a skill has only a pointer to its current version, and no rollback. The draft approval chain does record state, reviewer, review time and rejection reason — but that is a queue, not a hand-off: there is no assignment and no multi-stage co-signing.</p>
       </article>
       <article class="card" data-reveal>
         <p class="card-num">Missing</p>
@@ -367,7 +367,7 @@
     <div class="band-head">
       <span class="eyebrow">Series</span>
       <h2>Series index: “AI 员工图鉴”, season one</h2>
-      <p class="lede">Issue 7 was never published — the three things it covers look best actually running in a browser, so it moved into season two as a serial.</p>
+      <p class="lede">Issue 7 was never published — the three things it covers look best actually running in a browser, so this issue stays on the shelf until there is a real-device demo.</p>
     </div>
     <div class="articles">
       <article class="art"><p class="art-n">Issue 1</p><div><h3>Opening statement</h3><p>Why build AI as a system you can work with for years rather than a call you make once.</p></div></article>
@@ -380,7 +380,7 @@
       <article class="art"><p class="art-n">Issue 8</p><div><h3>Private deployment</h3><p>No telemetry at runtime and every egress point is configuration — somebody has to be the operating system here.</p></div></article>
       <article class="art"><p class="art-n">Issue 9</p><div><h3>Session routing</h3><p>Some state lives only in one machine's memory.</p></div></article>
       <article class="art"><p class="art-n">Issue 10</p><div><h3>No shift missed at 3am</h3><p>Three machines all want to do the same thing — who decides?</p></div></article>
-      <article class="art"><p class="art-n">Issue 11</p><div><h3>Keeping the books</h3><p>Five tables written, only two of them readable back.</p></div></article>
+      <article class="art"><p class="art-n">Issue 11</p><div><h3>Keeping the books</h3><p>Six tables written, only three of them readable back.</p></div></article>
       <article class="art"><p class="art-n">Issue 12</p><div><h3>Extra edition · thirteen questions</h3><p>We wrote the questions and answered them ourselves; six answers were "not built".</p></div></article>
     </div>
   </div>
@@ -416,7 +416,7 @@
       </div>
     </div>
     <div class="ftr-base">
-      <span>Every functional statement here follows the audit conclusions in <code>harnax-marketing</code>'s promotion-claims audit list; if any of them disagrees with actual behaviour, treat it as a defect.</span>
+      <span>Every functional statement here is checked against the committed code in this repository, claim by claim; if any of them disagrees with actual behaviour, treat it as a defect.</span>
       <span>© 2026 Harnax</span>
     </div>
   </div>

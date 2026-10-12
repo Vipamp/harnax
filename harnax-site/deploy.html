@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>部署形态 · Harnax</title>
-<meta name="description" content="一套 compose 起十个服务块的拓扑、上线顺序、上线之后要还的运维清单，以及三类出站面的准确边界。">
+<meta name="description" content="一套 compose 起十个服务块的拓扑、上线顺序、上线之后要还的运维清单，以及四组出站面的准确边界。">
 <link rel="icon" href="/assets/icon.png">
 <link rel="canonical" href="/deploy.html">
 <link rel="alternate" hreflang="zh-CN" href="/deploy.html">
@@ -57,7 +57,7 @@
         <tbody>
           <tr>
             <td>mysql</td>
-            <td>五个业务库的承载者，库由首次启动的初始化脚本建，表由各服务自己的迁移脚本建</td>
+            <td>四个业务库的承载者：库由首次启动的初始化脚本建（脚本还建了一个裸名 <code>harnax</code> 库，全仓没有任何连接串用它），表由管理、路由、调度三家的迁移脚本建——引擎状态那个库的表是运行期首次使用时建的，渠道服务的迁移默认关着</td>
             <td>是</td>
             <td>1 核 / 1024M</td>
           </tr>
@@ -87,7 +87,7 @@
           </tr>
           <tr>
             <td>scheduler</td>
-            <td>定时触发与执行，Quartz 集群状态在它自有的库里；副本数只在命令行决定，compose 里故意不写</td>
+            <td>定时触发与执行，Quartz 集群状态在它自有的库里；compose 里不写副本数，由部署脚本的 <code>SCHEDULER_REPLICAS</code> 决定，默认两个</td>
             <td>否，只在容器网络里可达</td>
             <td>1 核 / 768M</td>
           </tr>
@@ -119,8 +119,8 @@
       </table>
     </div>
 
-    <p class="lede" style="margin-top:28px">limits 合计 12.0 核 / 8448M，reservations 合计 4.5 核 / 2688M。</p>
-    <aside class="note"><b>这两个合计不构成起步建议。</b>全仓没有最低配置要求文档，它们是这份 compose 自己写下的上限，不是「你需要一台多大的机器」。机型请按你自己的会话量、沙箱并发和模型位置测。</aside>
+    <p class="lede" style="margin-top:28px">按服务块算：limits 合计 12.0 核 / 8448M，reservations 合计 4.5 核 / 2688M。调度默认起两个副本，所以实跑口径是 limits 13.0 核 / 9216M、reservations 5.0 核 / 2944M。</p>
+    <aside class="note"><b>这些合计不构成起步建议。</b>全仓没有最低配置要求文档，它们是这份 compose 自己写下的上限，不是「你需要一台多大的机器」。机型请按你自己的会话量、沙箱并发和模型位置测。</aside>
   </div>
 </section>
 
@@ -128,13 +128,13 @@
   <div class="band-inner">
     <div class="band-head">
       <h2>上线顺序：一个脚本，四步</h2>
-      <p class="lede">构建期确实需要网络——Maven 与 npm 要拉依赖，这一步不藏着。运行期没有上报路径，出站点全是配置项。</p>
+      <p class="lede">构建期确实需要网络——Maven 与 npm 要拉依赖，这一步不藏着。运行期没有上报路径，出站的都是你配的地址或你启用的能力。</p>
     </div>
     <ol>
       <li><b>预装 <code>mvn</code> / <code>node</code> / <code>docker</code>。</b>构建脚本会检查前两个是否存在，缺了就停下告诉你缺哪个。</li>
       <li><b>跑 <code>bash build.sh</code>。</b>它产出六个服务镜像——admin、router、agent-service、scheduler、frontend，以及承载飞书、钉钉、企业微信接入的 channel-service；另外准备默认沙箱镜像与 CLI 包货架。</li>
-      <li><b>放入自有证书。</b>443 那个 server 指向 <code>/etc/nginx/ssl/server.crt</code> 与 <code>.key</code>，而 <code>ssl/</code> 目录不进仓库，全仓也没有自签脚本。不放证书的表现是「入口起不来」——nginx 在配置加载阶段就失败，80 只做一件事：把人送到 443，所以它不会退化成 HTTP 继续服务。</li>
-      <li><b>跑 <code>bash deploy-all.sh</code>。</b>它是冷启动：整栈停掉再起，包括全部 scheduler 副本。集群形态必须带 <code>--scale scheduler=N</code>；compose 里不写副本数，漏掉这个参数会被缩回一台。只想换某个服务的镜像，走 <code>deploy-service.sh</code>，scheduler 会逐台停起。</li>
+      <li><b>放入自有证书。</b>443 那个 server 指向 <code>/etc/nginx/ssl/server.crt</code> 与 <code>.key</code>，而 <code>ssl/</code> 目录不进仓库，全仓也没有自签脚本。不放证书的表现是「入口起不来」——nginx 在配置加载阶段就失败；80 上除了一处给容器健康检查用的 <code>/health</code> 直答 <code>OK</code>，其余路径一律 301 到 443，所以它不会退化成 HTTP 继续服务。</li>
+      <li><b>跑 <code>bash deploy-all.sh</code>。</b>它是冷启动：整栈停掉再起，包括全部 scheduler 副本。副本数由脚本环境变量 <code>SCHEDULER_REPLICAS</code>（默认 2）带进 <code>--scale</code>，compose 里不写 <code>deploy.replicas</code>——它和逐台停起的 <code>roll-scheduler.sh</code>、<code>replace-one</code> 会互相冲突。只想换某个服务的镜像，走 <code>deploy-service.sh</code>，scheduler 会逐台停起。</li>
     </ol>
     <aside class="note"><b>冷启动这段时间会堆触发。</b>整栈停到 mysql 健康门 + JVM 起来之间，错过的过期触发按 <code>concurrent=0</code> 任务的 DoNothing 策略直接丢弃，不补发、不重试、也不告警。请挑安静时段跑，日常换镜像走单服务滚动。</aside>
   </div>
@@ -149,7 +149,7 @@
     <div class="cards">
       <div class="card" data-reveal>
         <h3>必须改的默认值</h3>
-        <p>出厂口令与三类密钥都是仓库里公开的字符串：管理口令、JWT 密钥、AES 密钥、内部接口 secret、对象存储与数据库口令。只有会话网关的 redis 模式（它要求缓存侧 <code>noeviction</code>）带一处占位密钥拒启动检查，其余服务撞上占位值只打一条 WARN。</p>
+        <p>出厂口令与三类密钥都是仓库里公开的字符串：管理口令、JWT 密钥、AES 密钥、内部接口 secret、对象存储与数据库口令。对占位值的检查只有三处，强度不一样：会话网关的 redis 模式（它要求缓存侧 <code>noeviction</code>）撞上占位密钥直接拒绝启动；管理台对内部接口 secret 打一条 WARN，同时把它当作「没配过」而拒绝用作凭据——照着默认值来调的服务会拿到 401；对 AES 密钥只打一条 WARN 然后照跑。渠道、调度、执行三服务这里不设检查。</p>
         <p>加密只覆盖密钥类字段（AES-256-GCM）；对话正文与工具入参是明文入库。口令走 BCrypt，JWT 两小时过期。</p>
       </div>
       <div class="card" data-reveal>
@@ -160,7 +160,7 @@
       <div class="card" data-reveal>
         <h3>我们没做的</h3>
         <p>容器编排化——这份 compose 就是全部，没有第三种运行形态。告警出口——失败之后没有人在管，只有日志、指标和 health 状态。</p>
-        <p>观测表清理任务：只有调度域两张表有硬编码保留期（执行日志 90 天、锁表 7 天，不可配），其余四张零命中删除语句，也没有分区与容量兜底。</p>
+        <p>观测表清理任务：调度域两张表有硬编码保留期（执行日志 90 天、执行守护记录 7 天，都不可配），且那条 90 天的删除会跳过超时与停止状态的行；Quartz 自己的那些表没有人清。工具调用明细可配，<code>HARNAX_METRICS_RETENTION_DAYS</code> 默认 90 天，且某一天的行要等它先折进小时表才丢；CLI 归档也可配，<code>HARNAX_CLI_ARCHIVE_RETENTION_DAYS</code> 默认 7 天。其余几张表这里不设删除语句，也没有分区与容量兜底。</p>
       </div>
       <div class="card" data-reveal>
         <h3>明确决定不做的</h3>
@@ -174,10 +174,10 @@
 <section id="egress" class="band" data-band>
   <div class="band-inner">
     <div class="band-head">
-      <h2>它会往外发什么：三类</h2>
-      <p class="lede">运行期无遥测、无版本检查、无许可证校验，指标只被动由你抓取。出站流量只有下面这三类，每一类都是配置项。</p>
+      <h2>它会往外发什么：四组路径</h2>
+      <p class="lede">运行期无遥测、无版本检查、无许可证校验，指标只被动由你抓取。下面四组是它够得着外界的全部路径：前三组由配置项决定去不去，第四组只在你启用对应能力时才出现。</p>
     </div>
-    <div class="cards cards-3">
+    <div class="cards">
       <div class="card" data-reveal>
         <h3>模型</h3>
         <p>三类协议族：DashScope、OpenAI 兼容、Ollama。地址是配置项，OpenAI 兼容的 baseUrl 可以指内网；Ollama 默认 <code>localhost:11434</code>，且这条协议族根本不读 API Key。</p>
@@ -185,13 +185,20 @@
       <div class="card" data-reveal>
         <h3>外部 MCP</h3>
         <p>你在管理台登记的那个 url，任意地址，同样可以指内网。自带示例 MCP 也走这条路。关掉或未登记，就没有这一类流量。</p>
+        <p>OAuth 型要多走两跳：按 RFC 8414 读那个授权服务器的 <code>/.well-known</code> 元数据，再访问它报上来的令牌端点换发。地址仍由服务器元数据决定，不是你填的 MCP url。</p>
       </div>
       <div class="card" data-reveal>
         <h3>IM 平台</h3>
         <p>飞书、钉钉、企业微信三家的接入域名写在源码常量里。渠道是逐个启用的：不启用某个渠道，就没有指向它的连接。</p>
       </div>
+      <div class="card" data-reveal>
+        <h3>启用才有</h3>
+        <p>技能来源仓库：git 克隆，地址由你填，白名单只管协议（<code>https</code> / <code>http</code> / <code>ssh</code> / <code>git</code> / <code>git@</code>）不管主机，180 秒超时。</p>
+        <p>邮件发送：SMTP 的宿主与凭据是挂在 agent 上的环境参数，填了才会有这条连接。沙箱镜像构建：只有 CLI 包声明了系统依赖时，构建期才会 <code>apt-get</code> 拉包，基础镜像也得拉得到。</p>
+        <p>对象存储：沙箱快照与 CLI 归档写的那台，compose 默认指栈内的 <code>minio</code> 服务，可 <code>MINIO_ENDPOINT</code> 本身就是配置项——你把它指到外部 S3 兼容地址，那也是一次出站。</p>
+      </div>
     </div>
-    <aside class="note"><b>「私有部署」在这里的准确含义：</b>出站点是模型、外部 MCP、IM 三类，全部是配置项，运行期没有上报路径——而不是「它一定不与外界通信」。构建期需要网络，检索是关键词实现、连 embedding 模型都不需要，这两句话说的是同一件事的两面。</aside>
+    <aside class="note"><b>「私有部署」在这里的准确含义：</b>出站的是上面四组路径，全部由你的配置和启用范围决定，运行期没有上报路径——而不是「它一定不与外界通信」。构建期需要网络（Maven、npm、模型依赖都要拉），检索是关键词实现、连 embedding 模型都不需要，这两句话说的是同一件事的两面。</aside>
   </div>
 </section>
 
@@ -223,7 +230,7 @@
       </div>
     </div>
     <div class="ftr-base">
-      <span>站内每条功能描述以 <code>harnax-marketing</code> 的《宣传口径审计清单》审计结论为准；任何一条与实际行为不符，请当缺陷报出来。</span>
+      <span>站内每条功能描述都以仓库里已提交的代码为判据逐条核对；任何一条与实际行为不符，请当缺陷报出来。</span>
       <span>© 2026 Harnax</span>
     </div>
   </div>

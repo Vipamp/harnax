@@ -41,12 +41,12 @@
       <div>
         <span class="eyebrow">自托管的多智能体运行平台</span>
         <h1>把 AI 从一次调用，做成能长期运行的系统</h1>
-        <p class="hero-sub">它有自己的账号、岗位说明书、工具箱、排班表和一群同事。你要做的，是决定它跑在哪台机器上。</p>
+        <p class="hero-sub">它有自己的岗位说明书、工具箱、排班表和一群同事。你要做的，是决定它跑在哪台机器上。</p>
         <div class="btn-row">
           <a class="btn-primary" href="/deploy.html">看部署形态</a>
           <a class="btn-ghost" href="#visible">它具体在干什么</a>
         </div>
-        <p class="hero-note">运行期无上报路径，指标只被动抓取；出站点是模型、外部 MCP 与 IM 三类，都是配置项。</p>
+        <p class="hero-note">运行期没有遥测与上报路径，指标只被动抓取——暴露抓取端点的只有三个服务。出站点不止模型一类：外部 MCP、技能来源仓库、邮件发送与对象存储都算，而 IM 平台的域名写在源码常量里。</p>
       </div>
       <div class="hero-art">
         <p class="dgm-title">一条群消息的完整链路</p>
@@ -87,7 +87,7 @@
       <article class="card" data-reveal>
         <p class="card-num">其一</p>
         <h3>在群里派活</h3>
-        <p>各渠道统一解析 <code>/approve</code>、<code>/deny</code>、<code>/clear</code>（适配飞书、钉钉、企业微信），确认请求发回同一个群，放行后挂起的那一步继续跑。断线指数退避重连；多副本下一把 MySQL 命名锁决定谁在听。</p>
+        <p>群里统一解析 10 类斜杠命令，大小写不敏感（<code>/approve</code>、<code>/deny</code>、<code>/clear</code>、<code>/stop</code>、<code>/compact</code> 只是其中几个，适配飞书、钉钉、企业微信等渠道），确认请求发回同一个群，放行后挂起的那一步继续跑。有一处要说在前面：带参数的命令在群里只剩命令名，转发时参数会丢。断线指数退避重连；多副本下一把 MySQL 命名锁决定谁在听。</p>
       </article>
       <article class="card" data-reveal>
         <p class="card-num">其二</p>
@@ -97,7 +97,7 @@
       <article class="card" data-reveal>
         <p class="card-num">其三</p>
         <h3>一个 AI 干不完的活，交给一个团队</h3>
-        <p>主管只保留 3 个编排工具，不带业务工具、不接 MCP、不给沙箱；成员各自保留自己的工具与技能。委派上限 20 次、成员单轮 900 秒、产物单文件 20 MiB 全部是代码常量，并在运行期拦截。</p>
+        <p>主管只保留 3 个编排工具，不带业务工具、不接 MCP、不给沙箱；成员各自保留自己的工具与技能。委派上限 20 次、成员单轮 900 秒、产物单文件 20 MiB 并在运行期拦截——但它们是配置项的默认值，不是写死的常量，改了就按新的拦。</p>
       </article>
       <article class="card" data-reveal>
         <p class="card-num">其四</p>
@@ -105,7 +105,7 @@
         <p>命令与文件操作在独立容器内执行，参数级扫描危险命令与敏感路径，命中即转人工确认并附 safety 理由。停机前工作区打快照，跨重启靠对象存储接回。</p>
       </article>
     </div>
-    <aside class="note">群聊与团队是两个独立场景：团队会话只存在于网页与移动端，IM 群里跑的是单个 AI 员工，两者不叠加。</aside>
+    <aside class="note">群聊与团队是两个独立场景：团队模式只挂在 <code>web-</code> 这一种会话前缀上（网页端与 iOS 复用同一个创建入口），<code>mp-</code> 与 <code>chn-</code> 两种前缀创建时都不带团队字段——IM 群里跑的是单个 AI 员工，两者不叠加。</aside>
   </div>
 </section>
 
@@ -119,8 +119,8 @@
 
     <div class="mech">
       <div class="mech-figure">
-        <p class="dgm-title">图 1 · 三份状态对换一台机器的耐受度</p>
-        <svg class="dgm" viewBox="0 0 520 296" role="img" aria-label="对话内容在数据库、会话归属在缓存、等确认那一步在进程内存">
+        <p class="dgm-title">图 1 · 哪些状态扛得住换一台机器</p>
+        <svg class="dgm" viewBox="0 0 520 296" role="img" aria-label="对话内容在数据库、会话归属在缓存、普通会话的确认以 ASKING 落库、团队子运行才阻塞在内存">
           <text class="t-sm" x="16" y="22">对话内容</text>
           <rect class="node" x="16" y="32" width="214" height="44" rx="10"/>
           <text x="34" y="60">消息 · 思考 · 工具结果</text>
@@ -137,21 +137,21 @@
           <text x="308" y="148">Redis</text>
           <text class="t-mono" x="308" y="164">跨节点共享，有心跳余温</text>
 
-          <text class="t-sm" x="16" y="210">等确认那一步</text>
+          <text class="t-sm" x="16" y="210">等确认那一步 · 两条路</text>
           <rect class="node" x="16" y="220" width="214" height="44" rx="10"/>
-          <text x="34" y="248">挂起的确认窗口</text>
+          <text x="34" y="248">ASKING 状态落库</text>
           <path class="wire-accent" d="M230 242 h44"/><path class="wire-accent" d="M270 236 l8 6 l-8 6"/>
           <rect class="node node-warn" x="290" y="220" width="214" height="44" rx="10"/>
-          <text x="308" y="242">执行实例内存</text>
-          <text class="t-mono" x="308" y="258">一个被占住的线程，搬不走</text>
+          <text x="308" y="242">团队才占线程</text>
+          <text class="t-mono" x="308" y="258">阻塞 600 秒，只在子运行</text>
         </svg>
       </div>
       <div class="mech-body">
         <h3>会话为什么要粘在一台机器上</h3>
         <span class="mech-label">问题</span>
-        <p class="q">Agent 的可变状态不在库里，而在某个进程的内存与磁盘上。「无状态服务 + 轮询负载均衡」那套模型在这里会失效。</p>
+        <p class="q">Agent 的一部分可变状态不在库里，而在某个进程的内存与本地磁盘上：ReAct 循环的上下文、沙箱工作区。「无状态服务 + 轮询负载均衡」那套模型在这里会失效。</p>
         <span class="mech-label">做法</span>
-        <p>等确认那一步是一个被 <code>future.get()</code> 占住的线程，窗口 600 秒，物理上搬不走。三张时钟把「进程停下」变成可判定：10 秒上报、5 秒复查、30 秒判死，发现窗口落在 20–35 秒之间。新会话按会话数加权随机分配，只有搬迁目标取最小值。</p>
+        <p>等确认这一步分两条路，不能混说：普通会话命中工具确认时本轮直接收尾，待确认的调用以 <code>ASKING</code> 状态落库、放行时按 id 重建，换一台实例也读得回来；团队子运行才是那个被 <code>future.get()</code> 占住的线程，窗口 600 秒、每 30 秒切片补发一次心跳，物理上搬不走。三张时钟把「进程停下」变成可判定：10 秒上报、5 秒复查、30 秒判死，发现窗口落在 20–35 秒之间。新会话按 1/(会话数+1) 的倒数加权随机分配；故障转移时若候选负载比平均值的双倍还高，就改挑更小的那台。</p>
         <span class="mech-label">代价</span>
         <p>每轮结束才落快照，崩掉会丢最后一段；那一轮的半截输出不重放。流式请求只对连接类失败转移，且仅在第一事件吐出之前。</p>
         <aside class="note">固定的是执行服务实例，网关本身多副本共享同一份绑定——粘性是为「有人在等它回话」服务的，不是为负载均衡服务的。那份共享绑定表放在 Redis 上：只支持 standalone 或 Sentinel，且需 <code>noeviction</code>。</aside>
@@ -188,7 +188,7 @@
         <span class="mech-label">做法</span>
         <p>两层锁：Quartz 集群行锁管谁拿到触发器，我们再往触发锁表撞唯一键 <code>(task_id, trigger_time)</code> 管这一发归谁。接管窗口 22.5–52.5 秒，小于 60 秒的 misfire 阈值。</p>
         <span class="mech-label">代价</span>
-        <p>死在触发之后不补发，任务行会在 5–7.5 分钟后被改成超时，而远端那次执行还在跑、没人认领。幂等这套系统给不了你，它得做在你的业务里。</p>
+        <p>死在触发之后不补发：仍未收尾的行要等到「超过自身超时 1.5 倍」才被回收轮次改成超时，按默认 300 秒算是 7.5 分钟起、最坏 12.5 分钟，而远端那次执行还在跑、没人认领。幂等这套系统给不了你，它得做在你的业务里。</p>
         <aside class="note">接管窗口是纸面推导：集成测试 <code>ClusterSingleFireIT</code> 只覆盖单次触发，不覆盖接管，也不覆盖负载均衡与真实调用链路。</aside>
       </div>
     </div>
@@ -216,16 +216,16 @@
         <span class="mech-label">问题</span>
         <p class="q">技能包是会被解压进沙箱、被文件工具读取的一堆文件。它进库之前，该不该有人把关？</p>
         <span class="mech-label">做法</span>
-        <p>入库前过 9 条内容扫描规则，命中即写进同步返回的扫描报告、技能以停用态入库，人工确认后才可用。来源三型各有硬约束：Git 走协议白名单、npm 安装带 <code>--ignore-scripts</code>、ZIP 有四项上限且越界直接抛 <code>SecurityException</code>。投影按 sha256 清单每轮收敛，无差异零写入。</p>
+        <p>入库前过 9 条内容扫描规则，命中即写进同步返回的扫描报告、技能以停用态入库，人工确认后才可用。会入库的来源三型各有硬约束（系统自带的那类不走这条路）：Git 走协议白名单、npm 安装带 <code>--ignore-scripts</code>、ZIP 有四项上限且越界直接抛 <code>SecurityException</code>。投影按 sha256 清单每轮收敛，无差异零写入。</p>
         <span class="mech-label">代价</span>
-        <p>没有版本历史与回滚，改了就是改了；也没有审核工作流——状态只有两值，「待审」在数据模型里就落在停用格上。AI 自产技能这个能力做了，但被主动关掉，技能仓库对 Agent 只读。</p>
+        <p>没有版本历史与回滚，改了就是改了；技能自身的状态只有两值。但审批队列是真在的：AI 提出的草稿走待审 / 通过 / 驳回 / 过期四态，记下审阅人、审阅时间与驳回理由，晋升时再复扫一次并留日志——缺的是指派与多级会签，不是队列本身。AI 自产技能这个能力做了，写入开关默认关闭，技能仓库对 Agent 只读。</p>
       </div>
     </div>
 
     <div class="mech">
       <div class="mech-figure">
-        <p class="dgm-title">图 4 · 五张表，只有两条读路</p>
-        <svg class="dgm" viewBox="0 0 520 296" role="img" aria-label="用量表与网关日志能在页面读回，另三张留痕表应用层只写不读">
+        <p class="dgm-title">图 4 · 六张表，只有三处读得回来</p>
+        <svg class="dgm" viewBox="0 0 520 296" role="img" aria-label="用量表在看板读回、网关日志在控制页读回、工具调用的明细与小时表在调用监控页读回，过程日志与 MCP 授权日志应用层只写不读">
           <rect class="node node-key" x="16" y="14" width="246" height="40" rx="9"/>
           <text class="t-mono" x="32" y="39">token_stats · 用量表</text>
           <rect class="node node-key" x="286" y="14" width="218" height="40" rx="9"/>
@@ -236,30 +236,30 @@
           <rect class="node node-key" x="286" y="70" width="218" height="40" rx="9"/>
           <text x="302" y="95">控制页读得回来</text>
 
-          <rect class="node" x="16" y="126" width="246" height="40" rx="9"/>
-          <text class="t-mono" x="32" y="151">process_log</text>
-          <rect class="node node-warn" x="286" y="126" width="218" height="40" rx="9"/>
-          <text x="302" y="151">应用层只写不读</text>
+          <rect class="node node-key" x="16" y="126" width="246" height="40" rx="9"/>
+          <text class="t-mono" x="32" y="151">tool_invocation_log</text>
+          <rect class="node node-key" x="286" y="126" width="218" height="40" rx="9"/>
+          <text x="302" y="151">调用页读得回来</text>
 
-          <rect class="node" x="16" y="182" width="246" height="40" rx="9"/>
-          <text class="t-mono" x="32" y="207">tool_call_log</text>
-          <rect class="node node-warn" x="286" y="182" width="218" height="40" rx="9"/>
-          <text x="302" y="207">应用层只写不读</text>
+          <rect class="node node-key" x="16" y="182" width="246" height="40" rx="9"/>
+          <text class="t-mono" x="32" y="207">tool_invocation_stats</text>
+          <rect class="node node-key" x="286" y="182" width="218" height="40" rx="9"/>
+          <text x="302" y="207">曲线读这张小时表</text>
 
           <rect class="node" x="16" y="238" width="246" height="40" rx="9"/>
-          <text class="t-mono" x="32" y="263">mcp_call_log</text>
+          <text class="t-mono" x="32" y="263">process_log · mcp_call_log</text>
           <rect class="node node-warn" x="286" y="238" width="218" height="40" rx="9"/>
-          <text x="302" y="263">记的是令牌决策</text>
+          <text x="302" y="263">应用层只写不读</text>
         </svg>
       </div>
       <div class="mech-body">
-        <h3>写了五张表，读得回来两张</h3>
+        <h3>写了六张表，读得回来三处</h3>
         <span class="mech-label">问题</span>
         <p class="q">「记下来了」和「看得见」是两件事，「看得见」和「算得清」又是两件事。</p>
         <span class="mech-label">做法</span>
-        <p>用量表一次模型调用一行，流式与非流式同一读数；网关日志只记哪次、多久、成没成，刻意不带正文，且是异步批量落库；工具调用与过程日志把入参与返回值原文全量写进库——执行服务侧那四张是同步单条。</p>
+        <p>用量表一次模型调用一行，流式与非流式同一读数；网关日志只记哪次、多久、成没成，刻意不带正文，且是异步批量落库。工具调用留痕也走异步：默认攒够 64 行或到了刷新间隔才落一次，入参与返回值各截到 2000 字符，整条采集还能直接关掉。剩下三张（用量、过程、MCP 令牌授权）才是同步单条写入，而那张 MCP 表记的是令牌的签发、刷新与吊销，不是 MCP 调用本身。</p>
         <span class="mech-label">代价</span>
-        <p>另三张留痕表应用层只写不读，要看就得自己连库。<code>fee</code> 恒为 0，站内不谈钱；没有配额、阈值与告警，限流器限的只是每分钟请求数。</p>
+        <p>两张留痕表应用层只写不读，要看就得自己连库。<code>fee</code> 恒为 0，那一列的精度连「分」都存不下，全仓也没有单价表——可看板照样渲染着一张 ¥0.00 的卡。没有配额、阈值与告警，限流器限的只是每分钟请求数；调用链没有全局标识，能串的只有会话 id。</p>
       </div>
     </div>
 
@@ -290,7 +290,7 @@
         <ul>
           <li>MySQL + Redis；Redis 限 standalone 或 Sentinel，且需 <code>noeviction</code></li>
           <li>会话绑定的读改写由一条 Lua 脚本完成，避免并发覆盖</li>
-          <li>默认起来只有一个调度副本，扩到几台要显式声明</li>
+          <li>调度副本数由脚本的 <code>SCHEDULER_REPLICAS</code> 带进 <code>--scale</code>，compose 里不写副本数，默认两个</li>
         </ul>
       </article>
       <article class="tier" data-reveal>
@@ -322,10 +322,10 @@
       <p class="fact" data-reveal><b>14</b><span>子模块，后端主代码全量 Kotlin</span></p>
       <p class="fact" data-reveal><b>10</b><span>一套 compose 的服务块</span></p>
       <p class="fact" data-reveal><b>9</b><span>其中是系统本体，另 1 块是自带的示例 MCP</span></p>
-      <p class="fact" data-reveal><b>12.0 核</b><span>十个服务 limits 合计，内存 8448M</span></p>
+      <p class="fact" data-reveal><b>13.0 核</b><span>调度双副本实跑的 limits 合计，内存 9216M</span></p>
       <p class="fact" data-reveal><b>被动</b><span>指标只被抓取，运行期无上报路径</span></p>
     </div>
-    <p class="fineprint">以上全部取自 compose 自己写的资源上限（limits 合计 12.0 核 / 8448M，reservations 合计 4.5 核 / 2688M）。全仓没有最低配置要求文档，这不构成起步规格建议；沙箱容器也不在这份清单里。</p>
+    <p class="fineprint">两处口径别混：按 compose 写下的服务块相加是 limits 12.0 核 / 8448M、reservations 4.5 核 / 2688M；调度默认起两个副本，那一块要算两次，实跑上限因此是 13.0 核 / 9216M、reservations 5.0 核 / 2944M。全仓没有最低配置要求文档，这不构成起步规格建议；沙箱容器也不在这份清单里。</p>
   </div>
 </section>
 
@@ -340,17 +340,17 @@
       <article class="card" data-reveal>
         <p class="card-num">没有</p>
         <h3>备份与恢复工具</h3>
-        <p>你要自己做的：对话正文、任务与日志都在同一个数据库里，备份计划得自己排，恢复演练也得自己做。</p>
+        <p>你要自己做的：备份范围不止一个库——会话与观测在管理库，任务与执行日志在调度服务自有的库里，路由表又在一个库里，备份计划得自己排，恢复演练也得自己做。</p>
       </article>
       <article class="card" data-reveal>
         <p class="card-num">没有</p>
         <h3>告警出口</h3>
-        <p>你要自己做的：夜班失败不会有人通知你。指标端点在，但抓取、阈值和值班路由是你的活。</p>
+        <p>你要自己做的：夜班失败不会有人通知你。抓取端点只有网关、调度、渠道三个服务暴露，管理台与执行服务没有；抓取、阈值和值班路由都是你的活。</p>
       </article>
       <article class="card" data-reveal>
         <p class="card-num">没有</p>
-        <h3>版本回滚与审核工作流</h3>
-        <p>你要自己做的：技能只有当前版本指针。责任人流转、多级审批这些字段从来不存在，得靠外部流程补。</p>
+        <h3>版本回滚与责任人流转</h3>
+        <p>你要自己做的：技能只有当前版本指针，没有回滚。草稿审批链上确实记着状态、审阅人、审阅时间与驳回理由，但那是队列不是流转——没有指派，也没有多级会签。</p>
       </article>
       <article class="card" data-reveal>
         <p class="card-num">没有</p>
@@ -367,7 +367,7 @@
     <div class="band-head">
       <span class="eyebrow">系列文章</span>
       <h2>《AI 员工图鉴》第一季目录</h2>
-      <p class="lede">第 7 期从未发布——它要讲的三件事，最好看的样子是浏览器里真跑一遍，已并入第二季做成连载。</p>
+      <p class="lede">第 7 期从未发布——它要讲的三件事，最好看的样子是浏览器里真跑一遍，所以这一期压着，等真机演示。</p>
     </div>
     <div class="articles">
       <article class="art"><p class="art-n">第 1 期</p><div><h3>开篇宣言</h3><p>为什么把 AI 做成一套可以长期共事的系统，而不是一次调用。</p></div></article>
@@ -380,7 +380,7 @@
       <article class="art"><p class="art-n">第 8 期</p><div><h3>私有部署</h3><p>运行期无上报、出站点全是配置项——这套东西本来就得有人当操作系统。</p></div></article>
       <article class="art"><p class="art-n">第 9 期</p><div><h3>会话路由</h3><p>有些状态，只活在一台机器的内存里。</p></div></article>
       <article class="art"><p class="art-n">第 10 期</p><div><h3>半夜不漏班</h3><p>同一件事三台机器都想做，谁说了算。</p></div></article>
-      <article class="art"><p class="art-n">第 11 期</p><div><h3>记账</h3><p>写了五张表，能读回来的只有两张。</p></div></article>
+      <article class="art"><p class="art-n">第 11 期</p><div><h3>记账</h3><p>写了六张表，能读回来的只有三处。</p></div></article>
       <article class="art"><p class="art-n">第 12 期</p><div><h3>番外 · 十三问</h3><p>我们自己出题自己答，六道题的答案是「没做」。</p></div></article>
     </div>
   </div>
@@ -416,7 +416,7 @@
       </div>
     </div>
     <div class="ftr-base">
-      <span>站内每条功能描述以 <code>harnax-marketing</code> 的《宣传口径审计清单》审计结论为准；任何一条与实际行为不符，请当缺陷报出来。</span>
+      <span>站内每条功能描述都以仓库里已提交的代码为判据逐条核对；任何一条与实际行为不符，请当缺陷报出来。</span>
       <span>© 2026 Harnax</span>
     </div>
   </div>
