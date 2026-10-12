@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>部署形态 · Harnax</title>
+<meta name="description" content="一套 compose 起十个服务块的拓扑、上线顺序、上线之后要还的运维清单，以及三类出站面的准确边界。">
+<link rel="icon" href="/assets/icon.png">
+<link rel="canonical" href="/deploy.html">
+<link rel="alternate" hreflang="zh-CN" href="/deploy.html">
+<link rel="alternate" hreflang="en" href="/en/deploy.html">
+<link rel="alternate" hreflang="x-default" href="/deploy.html">
+<link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+
+<header class="hdr">
+  <div class="hdr-inner">
+    <a class="hdr-brand" href="/index.html"><img src="/assets/icon.png" alt="">Harnax</a>
+    <button class="nav-toggle" data-nav-toggle type="button" aria-expanded="false" aria-label="展开导航"></button>
+    <nav class="hdr-nav">
+      <a href="/index.html">首页</a>
+      <a href="/capability.html">运行期机制</a>
+      <a href="/deploy.html">部署形态</a>
+      <a href="/boundaries.html">边界</a>
+    </nav>
+    <div class="hdr-actions">
+      <div class="hdr-lang">
+        <a href="/deploy.html" aria-current="page">中文</a><span>/</span><a href="/en/deploy.html">EN</a>
+      </div>
+      <a class="btn-primary" href="/deploy.html">部署形态</a>
+    </div>
+  </div>
+</header>
+
+<div class="band">
+  <div class="band-inner">
+    <span class="eyebrow">部署形态</span>
+    <h1>它跑在你自己的机器上，代价写在这页</h1>
+    <p class="lede">一套 compose、一个构建脚本、十个服务块。这一页把它们的资源上限、上线顺序，以及上线之后必须由你补上的那一串，逐条摆出来。</p>
+  </div>
+</div>
+
+<section id="topology" class="band band-alt" data-band>
+  <div class="band-inner">
+    <div class="band-head">
+      <h2>十个服务块，和它们各自的资源上限</h2>
+      <p class="lede">这张表是仓库里那份 compose 的全部内容：9 个服务块是系统本体，第 10 块是自带的天气示例 MCP，用来演示外部工具怎么接进来——它不在构建脚本的六个镜像清单里，由 compose 就地构建。</p>
+    </div>
+
+    <div class="tbl-wrap">
+      <table class="tbl">
+        <caption>除入口的 80 与 443，其余发布到宿主的端口一律是 2 开头的五位数，为的是避开本机已经占着常用数据库与缓存端口的别的项目。</caption>
+        <thead>
+          <tr><th>服务</th><th>角色</th><th>是否发布到宿主</th><th>该块 limits</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>mysql</td>
+            <td>五个业务库的承载者，库由首次启动的初始化脚本建，表由各服务自己的迁移脚本建</td>
+            <td>是</td>
+            <td>1 核 / 1024M</td>
+          </tr>
+          <tr>
+            <td>redis</td>
+            <td>共享路由状态：会话绑定、实例注册表、重选锁与熔断态。只支持 standalone 或 Sentinel，且必须保持 <code>noeviction</code>——内存压力一旦把路由键挤掉，会话就悄悄失去绑定、锁也一起没了，比写失败更糟</td>
+            <td>是</td>
+            <td>0.5 核 / 768M</td>
+          </tr>
+          <tr>
+            <td>minio</td>
+            <td>对象存储：沙箱工作区的跨重启快照、CLI 包归档</td>
+            <td>是</td>
+            <td>1 核 / 512M</td>
+          </tr>
+          <tr>
+            <td>admin</td>
+            <td>管理台后端，也是业务库的主要写入者</td>
+            <td>是</td>
+            <td>2 核 / 1024M</td>
+          </tr>
+          <tr>
+            <td>router</td>
+            <td>会话网关：按会话绑定把请求送回同一台执行服务实例、健康复查、熔断与流式代理</td>
+            <td>是</td>
+            <td>2 核 / 1024M</td>
+          </tr>
+          <tr>
+            <td>scheduler</td>
+            <td>定时触发与执行，Quartz 集群状态在它自有的库里；副本数只在命令行决定，compose 里故意不写</td>
+            <td>否，只在容器网络里可达</td>
+            <td>1 核 / 768M</td>
+          </tr>
+          <tr>
+            <td>agent-service</td>
+            <td>执行引擎与沙箱生命周期，容器里挂着宿主 Docker 套接字去开沙箱</td>
+            <td>是</td>
+            <td>2 核 / 2048M</td>
+          </tr>
+          <tr>
+            <td>channel-service</td>
+            <td>IM 接入面：飞书、钉钉、企业微信的长连接与回调</td>
+            <td>是</td>
+            <td>1 核 / 768M</td>
+          </tr>
+          <tr>
+            <td>mcp-server</td>
+            <td>自带的天气示例 MCP，演示外部工具的登记、授权与调用长什么样</td>
+            <td>是</td>
+            <td>0.5 核 / 256M</td>
+          </tr>
+          <tr>
+            <td>frontend</td>
+            <td>nginx：SPA 静态资源、到各服务的反向代理，以及 443 入口——HTTPS 配好了，但证书需自备</td>
+            <td>是，80 与 443</td>
+            <td>1 核 / 256M</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="lede" style="margin-top:28px">limits 合计 12.0 核 / 8448M，reservations 合计 4.5 核 / 2688M。</p>
+    <aside class="note"><b>这两个合计不构成起步建议。</b>全仓没有最低配置要求文档，它们是这份 compose 自己写下的上限，不是「你需要一台多大的机器」。机型请按你自己的会话量、沙箱并发和模型位置测。</aside>
+  </div>
+</section>
+
+<section id="steps" class="band" data-band>
+  <div class="band-inner">
+    <div class="band-head">
+      <h2>上线顺序：一个脚本，四步</h2>
+      <p class="lede">构建期确实需要网络——Maven 与 npm 要拉依赖，这一步不藏着。运行期没有上报路径，出站点全是配置项。</p>
+    </div>
+    <ol>
+      <li><b>预装 <code>mvn</code> / <code>node</code> / <code>docker</code>。</b>构建脚本会检查前两个是否存在，缺了就停下告诉你缺哪个。</li>
+      <li><b>跑 <code>bash build.sh</code>。</b>它产出六个服务镜像——admin、router、agent-service、scheduler、frontend，以及承载飞书、钉钉、企业微信接入的 channel-service；另外准备默认沙箱镜像与 CLI 包货架。</li>
+      <li><b>放入自有证书。</b>443 那个 server 指向 <code>/etc/nginx/ssl/server.crt</code> 与 <code>.key</code>，而 <code>ssl/</code> 目录不进仓库，全仓也没有自签脚本。不放证书的表现是「入口起不来」——nginx 在配置加载阶段就失败，80 只做一件事：把人送到 443，所以它不会退化成 HTTP 继续服务。</li>
+      <li><b>跑 <code>bash deploy-all.sh</code>。</b>它是冷启动：整栈停掉再起，包括全部 scheduler 副本。集群形态必须带 <code>--scale scheduler=N</code>；compose 里不写副本数，漏掉这个参数会被缩回一台。只想换某个服务的镜像，走 <code>deploy-service.sh</code>，scheduler 会逐台停起。</li>
+    </ol>
+    <aside class="note"><b>冷启动这段时间会堆触发。</b>整栈停到 mysql 健康门 + JVM 起来之间，错过的过期触发按 <code>concurrent=0</code> 任务的 DoNothing 策略直接丢弃，不补发、不重试、也不告警。请挑安静时段跑，日常换镜像走单服务滚动。</aside>
+  </div>
+</section>
+
+<section id="bill" class="band band-alt" data-band>
+  <div class="band-inner">
+    <div class="band-head">
+      <h2>上线之后要还的运维清单</h2>
+      <p class="lede">四档：必须改的、必须自己加的、我们没做的、明确决定不做的。最后一档不是谦虚，是设计选择。</p>
+    </div>
+    <div class="cards">
+      <div class="card" data-reveal>
+        <h3>必须改的默认值</h3>
+        <p>出厂口令与三类密钥都是仓库里公开的字符串：管理口令、JWT 密钥、AES 密钥、内部接口 secret、对象存储与数据库口令。只有会话网关的 redis 模式（它要求缓存侧 <code>noeviction</code>）带一处占位密钥拒启动检查，其余服务撞上占位值只打一条 WARN。</p>
+        <p>加密只覆盖密钥类字段（AES-256-GCM）；对话正文与工具入参是明文入库。口令走 BCrypt，JWT 两小时过期。</p>
+      </div>
+      <div class="card" data-reveal>
+        <h3>必须自己加的组件</h3>
+        <p>证书（见上一步）；备份与恢复——全仓没有导出脚本，只有规范文档里一句「迁移前必须备份」，而你要备份的是整个数据库，不只是会话表。</p>
+        <p>Prometheus 抓取配置与告警规则；容器 stdout 的轮转与上限取决于宿主 Docker daemon 的配置，compose 里没有这一节。</p>
+      </div>
+      <div class="card" data-reveal>
+        <h3>我们没做的</h3>
+        <p>容器编排化——这份 compose 就是全部，没有第三种运行形态。告警出口——失败之后没有人在管，只有日志、指标和 health 状态。</p>
+        <p>观测表清理任务：只有调度域两张表有硬编码保留期（执行日志 90 天、锁表 7 天，不可配），其余四张零命中删除语句，也没有分区与容量兜底。</p>
+      </div>
+      <div class="card" data-reveal>
+        <h3>明确决定不做的</h3>
+        <p>stdio 型 MCP 的运行：那条路径要由执行服务容器拉起进程，而这个容器挂着宿主 Docker 套接字，运行侧没有隔离，所以开关默认关闭。</p>
+        <p>AI 自产技能：能力做了，写入开关默认关闭，技能仓库对 Agent 只读。这两条是决定，不是待办。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="egress" class="band" data-band>
+  <div class="band-inner">
+    <div class="band-head">
+      <h2>它会往外发什么：三类</h2>
+      <p class="lede">运行期无遥测、无版本检查、无许可证校验，指标只被动由你抓取。出站流量只有下面这三类，每一类都是配置项。</p>
+    </div>
+    <div class="cards cards-3">
+      <div class="card" data-reveal>
+        <h3>模型</h3>
+        <p>三类协议族：DashScope、OpenAI 兼容、Ollama。地址是配置项，OpenAI 兼容的 baseUrl 可以指内网；Ollama 默认 <code>localhost:11434</code>，且这条协议族根本不读 API Key。</p>
+      </div>
+      <div class="card" data-reveal>
+        <h3>外部 MCP</h3>
+        <p>你在管理台登记的那个 url，任意地址，同样可以指内网。自带示例 MCP 也走这条路。关掉或未登记，就没有这一类流量。</p>
+      </div>
+      <div class="card" data-reveal>
+        <h3>IM 平台</h3>
+        <p>飞书、钉钉、企业微信三家的接入域名写在源码常量里。渠道是逐个启用的：不启用某个渠道，就没有指向它的连接。</p>
+      </div>
+    </div>
+    <aside class="note"><b>「私有部署」在这里的准确含义：</b>出站点是模型、外部 MCP、IM 三类，全部是配置项，运行期没有上报路径——而不是「它一定不与外界通信」。构建期需要网络，检索是关键词实现、连 embedding 模型都不需要，这两句话说的是同一件事的两面。</aside>
+  </div>
+</section>
+
+<footer class="ftr">
+  <div class="band-inner">
+    <div class="ftr-grid">
+      <div>
+        <p class="ftr-brand"><img src="/assets/icon.png" alt="">Harnax</p>
+        <p class="ftr-blurb">自托管的多智能体运行平台：配置化装配、可中断可恢复的流式执行、沙箱隔离的工具执行、实例粘性的多副本路由、集群化定时触发与多渠道接入。</p>
+      </div>
+      <div class="ftr-col">
+        <h4>产品</h4>
+        <a href="/capability.html">运行期机制</a>
+        <a href="/deploy.html">部署形态</a>
+        <a href="/boundaries.html">边界</a>
+        <a href="/index.html#articles">系列文章</a>
+      </div>
+      <div class="ftr-col">
+        <h4>形态</h4>
+        <a href="/index.html#forms">单机</a>
+        <a href="/index.html#forms">集群</a>
+        <a href="/index.html#forms">模型本地化</a>
+      </div>
+      <div class="ftr-col">
+        <h4>口径</h4>
+        <a href="/boundaries.html#source">判据来源与更新日期</a>
+        <a href="/boundaries.html#narrowed">要收窄的表述</a>
+        <a href="/boundaries.html#not-said">没说清的功能</a>
+      </div>
+    </div>
+    <div class="ftr-base">
+      <span>站内每条功能描述以 <code>harnax-marketing</code> 的《宣传口径审计清单》审计结论为准；任何一条与实际行为不符，请当缺陷报出来。</span>
+      <span>© 2026 Harnax</span>
+    </div>
+  </div>
+</footer>
+
+<script src="/assets/site.js"></script>
+</body>
+</html>
