@@ -29,6 +29,8 @@ import {
   StopOutlined,
   CompressOutlined,
   LoadingOutlined,
+  CodeOutlined,
+  FolderOpenOutlined,
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -573,15 +575,24 @@ const LoadingDots: React.FC = () => (
   </div>
 );
 
+/* ─── 首屏引导卡：点击即把示例问题交给 doSend（与旧建议 chips 同路径） ─── */
+const GUIDE_CARDS = [
+  { key: 'code', icon: <CodeOutlined /> },
+  { key: 'file', icon: <FolderOpenOutlined /> },
+  { key: 'search', icon: <SearchOutlined /> },
+  { key: 'plan', icon: <UnorderedListOutlined /> },
+];
+
+const GUIDE_CARD_TONE: Record<string, string> = {
+  code: styles.guideToneCode,
+  file: styles.guideToneFile,
+  search: styles.guideToneSearch,
+  plan: styles.guideTonePlan,
+};
+
 /* ═══════════════ 主组件 ═══════════════ */
 const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onContextChanged, compactionSkippable }) => {
   const intl = useIntl();
-  const SUGGESTIONS = [
-    intl.formatMessage({ id: 'pages.session.quickSuggestion.javaSort', defaultMessage: 'Help me write a Java sorting algorithm' }),
-    intl.formatMessage({ id: 'pages.session.quickSuggestion.springBootAutoConfiguration', defaultMessage: 'Explain the automatic configuration principle of Spring Boot' }),
-    intl.formatMessage({ id: 'pages.session.quickSuggestion.pythonWebServer', defaultMessage: 'Implement a simple web server in Python' }),
-    intl.formatMessage({ id: 'pages.session.quickSuggestion.sqlOptimization', defaultMessage: 'How to optimize slow SQL queries?' }),
-  ];
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
@@ -3410,18 +3421,33 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onContextChanged, co
       <div className={styles.messageListWrap}>
         <div ref={messageListRef} className={styles.messageList} onScroll={handleScroll}>
         {messages.length === 0 ? (
-          <div className={styles.emptyState}>
-            <div className={styles.emptyIcon}>
-              <RobotOutlined style={{ color: '#fff' }} />
+          <div className={styles.welcome}>
+            <div className={styles.welcomeGlow} />
+            <div className={styles.orb}>
+              <span className={styles.orbCore}>
+                <BulbOutlined />
+              </span>
             </div>
-            <div className={styles.emptyTitle}>{intl.formatMessage({ id: 'pages.session.emptyTitle', defaultMessage: "What can I help you with?" })}</div>
-            <div className={styles.emptySubtitle}>{intl.formatMessage({ id: 'pages.session.emptySubtitle', defaultMessage: "Select a topic or enter your question directly" })}</div>
-            <div className={styles.suggestions}>
-              {SUGGESTIONS.map((s) => (
-                <div key={s} className={styles.suggestionChip} onClick={() => doSend(s)}>
-                  {s}
-                </div>
-              ))}
+            <h1 className={styles.welcomeTitle}>
+              {intl.formatMessage({ id: 'pages.session.welcome.title', defaultMessage: 'What should it do for you today?' })}
+            </h1>
+            <div className={styles.welcomeSubtitle}>
+              {intl.formatMessage({ id: 'pages.session.welcome.subtitle', defaultMessage: 'Pick a starter below, or type your own question' })}
+            </div>
+            <div className={styles.guideCards}>
+              {GUIDE_CARDS.map((card) => {
+                const title = intl.formatMessage({ id: `pages.session.guide.${card.key}.title`, defaultMessage: card.key });
+                const example = intl.formatMessage({ id: `pages.session.guide.${card.key}.example`, defaultMessage: card.key });
+                return (
+                  <button key={card.key} type="button" className={styles.guideCard} onClick={() => doSend(example)}>
+                    <span className={`${styles.guideIcon} ${GUIDE_CARD_TONE[card.key]}`}>{card.icon}</span>
+                    <span className={styles.guideText}>
+                      <span className={styles.guideTitle}>{title}</span>
+                      <span className={styles.guideExample}>{example}</span>
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         ) : (
@@ -3550,7 +3576,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onContextChanged, co
 
       {/* ─── 输入区域 ─── */}
       <div className={styles.inputArea}>
-        <div className={styles.inputCard}>
+        <div className={`${styles.inputCard} ${messages.length === 0 ? styles.inputCardPulse : ''}`}>
           {/* 图片预览 */}
           {imageUrls.length > 0 && (
             <div className={styles.imageUploadPreview}>
