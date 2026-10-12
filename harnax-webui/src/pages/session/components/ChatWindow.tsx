@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useIntl } from '@umijs/max';
-import { Input, Button, message, Modal, Table, Tag, Space, Upload, Popconfirm, Collapse, Spin, Dropdown } from 'antd';
+import { Input, Button, message, Modal, Table, Tag, Space, Upload, Collapse, Spin, Dropdown } from 'antd';
 import {
   SendOutlined,
   BulbOutlined,
@@ -31,6 +31,7 @@ import {
   LoadingOutlined,
   CodeOutlined,
   FolderOpenOutlined,
+  MoreOutlined,
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -2523,6 +2524,27 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onContextChanged, co
     }
   };
 
+  const handleStopSandboxClick = async () => {
+    if (!sessionId) return;
+    try {
+      const res = await getWorkspaceStatus(sessionId);
+      if (res.code === 200 && res.data?.active) {
+        Modal.confirm({
+          title: intl.formatMessage({ id: 'pages.session.stopSandboxConfirmTitle', defaultMessage: 'Stop Sandbox' }),
+          content: intl.formatMessage({ id: 'pages.session.stopSandboxConfirm', defaultMessage: 'This will stop and destroy the sandbox container. The workspace snapshot will be saved.' }),
+          okText: intl.formatMessage({ id: 'pages.common.confirm', defaultMessage: 'Confirm' }),
+          cancelText: intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' }),
+          okButtonProps: { danger: true },
+          onOk: () => sendSilentCommand('STOP_SANDBOX'),
+        });
+      } else {
+        message.warning(intl.formatMessage({ id: 'pages.session.sandboxNotActive', defaultMessage: 'Sandbox is not running for this session' }));
+      }
+    } catch {
+      message.error(intl.formatMessage({ id: 'pages.session.sandboxCheckFailed', defaultMessage: 'Failed to check sandbox status' }));
+    }
+  };
+
   /** The reading follows the last completed call, so it is only worth re-reading once a turn has ended. */
   useEffect(() => {
     if (prevLoadingRef.current && !loading) onContextChanged?.();
@@ -3696,114 +3718,139 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId, onContextChanged, co
                 <SearchOutlined />
                 <span>{intl.formatMessage({ id: 'pages.session.internetSearch', defaultMessage: 'Internet Search' })}</span>
               </div>
-              <div
-                className={`${styles.optionItem} ${enablePlan ? styles.optionActive : ''}`}
-                onClick={() => {
-                  const newValue = !enablePlan;
-                  setEnablePlan(newValue);
-                  sendSilentCommand(newValue ? 'ENABLE' : 'DISABLE', 'plan');
-                }}
-              >
-                <UnorderedListOutlined />
-                <span>{intl.formatMessage({ id: 'pages.session.enablePlan', defaultMessage: 'Enable Plan' })}</span>
-              </div>
               <Dropdown
                 menu={{
                   items: [
-                    { key: 'DEFAULT', label: intl.formatMessage({ id: 'pages.session.permissionMode.DEFAULT', defaultMessage: 'Default (ask for risky tools)' }) },
-                    { key: 'BYPASS', label: intl.formatMessage({ id: 'pages.session.permissionMode.BYPASS', defaultMessage: 'Auto Execute (no confirmation)' }) },
-                    { key: 'ACCEPT_EDITS', label: intl.formatMessage({ id: 'pages.session.permissionMode.ACCEPT_EDITS', defaultMessage: 'Accept Edits (auto-approve file edits)' }) },
-                    { key: 'EXPLORE', label: intl.formatMessage({ id: 'pages.session.permissionMode.EXPLORE', defaultMessage: 'Explore (read-only mode)' }) },
-                    { key: 'DONT_ASK', label: intl.formatMessage({ id: 'pages.session.permissionMode.DONT_ASK', defaultMessage: 'Don\'t Ask (auto-deny risky tools)' }) },
+                    {
+                      key: 'plan',
+                      label: (
+                        <span className={styles.menuItemLabel}>
+                          <UnorderedListOutlined className={styles.menuIcon} />
+                          <span>{intl.formatMessage({ id: 'pages.session.enablePlan', defaultMessage: 'Enable Plan' })}</span>
+                          {enablePlan && <CheckOutlined className={styles.menuCheck} />}
+                        </span>
+                      ),
+                    },
+                    {
+                      key: 'permission',
+                      label: (
+                        <span className={styles.menuItemLabel}>
+                          <ThunderboltOutlined className={styles.menuIcon} />
+                          <span>{intl.formatMessage({ id: 'pages.session.permissionMenuTitle', defaultMessage: 'Tool Execution Permission' })}</span>
+                        </span>
+                      ),
+                      children: ['DEFAULT', 'BYPASS', 'ACCEPT_EDITS', 'EXPLORE', 'DONT_ASK'].map((mode) => ({
+                        key: `permission:${mode}`,
+                        label: (
+                          <span className={styles.menuItemLabel}>
+                            <span>{intl.formatMessage({ id: `pages.session.permissionMode.${mode}`, defaultMessage: mode })}</span>
+                            {permissionMode === mode && <CheckOutlined className={styles.menuCheck} />}
+                          </span>
+                        ),
+                      })),
+                    },
+                    { type: 'divider' },
+                    {
+                      key: 'compact',
+                      disabled: loading || compacting,
+                      label: (
+                        <span
+                          className={styles.menuItemLabel}
+                          title={intl.formatMessage({
+                            id: 'pages.session.context.compactTip',
+                            defaultMessage: 'Summarize the older turns of this session in the model context. The chat page keeps showing every original message.',
+                          })}
+                        >
+                          {compacting ? <LoadingOutlined className={styles.menuIcon} /> : <CompressOutlined className={styles.menuIcon} />}
+                          <span>{intl.formatMessage({ id: 'pages.session.context.compact', defaultMessage: 'Compact Context' })}</span>
+                        </span>
+                      ),
+                    },
+                    {
+                      key: 'stopSandbox',
+                      danger: true,
+                      label: (
+                        <span className={styles.menuItemLabel}>
+                          <StopOutlined className={styles.menuIcon} />
+                          <span>{intl.formatMessage({ id: 'pages.session.stopSandbox', defaultMessage: 'Stop Sandbox' })}</span>
+                        </span>
+                      ),
+                    },
+                    {
+                      key: 'clearChat',
+                      danger: true,
+                      label: (
+                        <span className={styles.menuItemLabel}>
+                          <DeleteOutlined className={styles.menuIcon} />
+                          <span>{intl.formatMessage({ id: 'pages.session.clearRecord', defaultMessage: 'Clear Record' })}</span>
+                        </span>
+                      ),
+                    },
                   ],
-                  selectedKeys: [permissionMode],
                   onClick: ({ key }) => {
-                    if (key === permissionMode) return;
-                    const prevMode = permissionMode;
-                    setPermissionMode(key);
-                    sendSilentCommand('PERMISSION', key).then((success) => {
-                      if (success === false) setPermissionMode(prevMode);
-                    });
+                    if (key === 'plan') {
+                      const newValue = !enablePlan;
+                      setEnablePlan(newValue);
+                      sendSilentCommand(newValue ? 'ENABLE' : 'DISABLE', 'plan');
+                      return;
+                    }
+                    if (key.startsWith('permission:')) {
+                      const mode = key.slice('permission:'.length);
+                      if (mode === permissionMode) return;
+                      const prevMode = permissionMode;
+                      setPermissionMode(mode);
+                      sendSilentCommand('PERMISSION', mode).then((success) => {
+                        if (success === false) setPermissionMode(prevMode);
+                      });
+                      return;
+                    }
+                    if (key === 'compact') {
+                      handleCompact();
+                      return;
+                    }
+                    if (key === 'stopSandbox') {
+                      void handleStopSandboxClick();
+                      return;
+                    }
+                    if (key === 'clearChat') {
+                      Modal.confirm({
+                        title: intl.formatMessage({ id: 'pages.session.clearChatConfirmTitle', defaultMessage: 'Clear Chat History' }),
+                        content: intl.formatMessage({ id: 'pages.session.clearChatConfirm', defaultMessage: 'Are you sure you want to clear all chat history for this session?' }),
+                        okText: intl.formatMessage({ id: 'pages.common.confirm', defaultMessage: 'Confirm' }),
+                        cancelText: intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' }),
+                        okButtonProps: { danger: true },
+                        onOk: handleClearChat,
+                      });
+                    }
                   },
                 }}
                 trigger={['click']}
                 dropdownRender={(menu) => (
                   <div className={styles.thinkingMenu}>
                     <div className={styles.menuHeader}>
-                      <ThunderboltOutlined className={styles.menuHeaderIcon} />
-                      <span>{intl.formatMessage({ id: 'pages.session.permissionMenuTitle', defaultMessage: 'Tool Execution Permission' })}</span>
+                      <MoreOutlined className={styles.menuHeaderIcon} />
+                      <span>{intl.formatMessage({ id: 'pages.session.moreOptions', defaultMessage: 'More' })}</span>
                     </div>
                     {menu}
                   </div>
                 )}
               >
                 <div
-                  className={`${styles.optionItem} ${permissionMode !== 'DEFAULT' ? styles.optionActive : ''}`}
-                  title={intl.formatMessage({ id: 'pages.session.permissionMenuTitle', defaultMessage: 'Tool Execution Permission' })}
+                  className={`${styles.optionItem} ${enablePlan || permissionMode !== 'DEFAULT' ? styles.optionActive : ''}`}
                 >
-                  <ThunderboltOutlined />
-                  <span>{intl.formatMessage({ id: `pages.session.permissionMode.${permissionMode}`, defaultMessage: permissionMode })}</span>
+                  <MoreOutlined />
+                  <span>{intl.formatMessage({ id: 'pages.session.moreOptions', defaultMessage: 'More' })}</span>
                 </div>
               </Dropdown>
-              <div
-                className={`${styles.optionItem} ${styles.clearOption} ${loading || compacting ? styles.optionDisabled : ''}`}
-                title={intl.formatMessage({
-                  id: 'pages.session.context.compactTip',
-                  defaultMessage: 'Summarize the older turns of this session in the model context. The chat page keeps showing every original message.',
-                })}
-                onClick={handleCompact}
-              >
-                {compacting ? <LoadingOutlined /> : <CompressOutlined />}
-                <span>{intl.formatMessage({ id: 'pages.session.context.compact', defaultMessage: 'Compact Context' })}</span>
-              </div>
-              <div
-                className={`${styles.optionItem} ${styles.clearOption}`}
-                onClick={async () => {
-                  if (!sessionId) return;
-                  try {
-                    const res = await getWorkspaceStatus(sessionId);
-                    if (res.code === 200 && res.data?.active) {
-                      Modal.confirm({
-                        title: intl.formatMessage({ id: 'pages.session.stopSandboxConfirmTitle', defaultMessage: 'Stop Sandbox' }),
-                        content: intl.formatMessage({ id: 'pages.session.stopSandboxConfirm', defaultMessage: 'This will stop and destroy the sandbox container. The workspace snapshot will be saved.' }),
-                        okText: intl.formatMessage({ id: 'pages.common.confirm', defaultMessage: 'Confirm' }),
-                        cancelText: intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' }),
-                        okButtonProps: { danger: true },
-                        onOk: () => sendSilentCommand('STOP_SANDBOX'),
-                      });
-                    } else {
-                      message.warning(intl.formatMessage({ id: 'pages.session.sandboxNotActive', defaultMessage: 'Sandbox is not running for this session' }));
-                    }
-                  } catch {
-                    message.error(intl.formatMessage({ id: 'pages.session.sandboxCheckFailed', defaultMessage: 'Failed to check sandbox status' }));
-                  }
-                }}
-              >
-                <StopOutlined />
-                <span>{intl.formatMessage({ id: 'pages.session.stopSandbox', defaultMessage: 'Stop Sandbox' })}</span>
-              </div>
-              <Popconfirm
-                title={intl.formatMessage({ id: 'pages.session.clearChatConfirmTitle', defaultMessage: 'Clear Chat History' })}
-                description={intl.formatMessage({ id: 'pages.session.clearChatConfirm', defaultMessage: 'Are you sure you want to clear all chat history for this session?' })}
-                onConfirm={handleClearChat}
-                okText={intl.formatMessage({ id: 'pages.common.confirm', defaultMessage: 'Confirm' })}
-                cancelText={intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' })}
-                placement="topLeft"
-              >
-                <div className={`${styles.optionItem} ${styles.clearOption}`}>
-                  <DeleteOutlined />
-                  <span>{intl.formatMessage({ id: 'pages.session.clearRecord', defaultMessage: 'Clear Record' })}</span>
-                </div>
-              </Popconfirm>
             </div>
-            <Button
-              type="primary"
-              icon={loading ? <StopOutlined /> : <SendOutlined />}
+            <button
+              type="button"
+              className={`${styles.sendButton} ${loading ? styles.sendButtonStop : ''}`}
               onClick={loading ? handleStop : handleSend}
-              disabled={!loading && (!inputValue.trim() && imageUrls.length === 0)}
-              danger={loading}
-              className={styles.sendButton}
-            />
+              disabled={!loading && !inputValue.trim() && imageUrls.length === 0}
+            >
+              {loading ? <span className={styles.stopGlyph} /> : <SendOutlined />}
+            </button>
           </div>
         </div>
       </div>
