@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harnax · Turn AI from one call into a system that keeps running</title>
+<meta name="description" content="Harnax is a self-hosted multi-agent runtime: configured assembly, interruptible and resumable streaming execution, tool execution isolated in sandboxes, instance-pinned routing across replicas, clustered scheduled firing and multi-platform IM access.">
+<link rel="icon" href="/assets/icon.png">
+<link rel="canonical" href="/en/index.html">
+<link rel="alternate" hreflang="zh-CN" href="/index.html">
+<link rel="alternate" hreflang="en" href="/en/index.html">
+<link rel="alternate" hreflang="x-default" href="/index.html">
+<link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+
+<header class="hdr">
+  <div class="hdr-inner">
+    <a class="hdr-brand" href="/index.html"><img src="/assets/icon.png" alt="">Harnax</a>
+    <button class="nav-toggle" data-nav-toggle type="button" aria-expanded="false" aria-label="Toggle navigation"></button>
+    <nav class="hdr-nav">
+      <a href="#visible">What you see</a>
+      <a href="/en/capability.html">Runtime mechanisms</a>
+      <a href="/en/deploy.html">Deployment</a>
+      <a href="/en/boundaries.html">Boundaries</a>
+    </nav>
+    <div class="hdr-actions">
+      <div class="hdr-lang">
+        <a href="/index.html">中文</a><span>/</span><a href="/en/index.html" aria-current="page">EN</a>
+      </div>
+      <a class="btn-primary" href="/en/deploy.html">Deployment</a>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<section id="hero" class="band hero band-dark" data-band>
+  <div class="band-inner">
+    <div class="hero-grid">
+      <div>
+        <span class="eyebrow">Self-hosted multi-agent runtime</span>
+        <h1>Turn AI from one call into a system that keeps running</h1>
+        <p class="hero-sub">Its own credentials, job description, tool belt, duty roster and teammates. Your only decision is which machine they live on.</p>
+        <div class="btn-row">
+          <a class="btn-primary" href="/en/deploy.html">See the deployment forms</a>
+          <a class="btn-ghost" href="#visible">What it actually does</a>
+        </div>
+        <p class="hero-note">No telemetry path at runtime; metrics are only pulled. Egress is three kinds — models, external MCP, IM platforms — all of them configuration.</p>
+      </div>
+      <div class="hero-art">
+        <p class="dgm-title">One group message, end to end</p>
+        <svg class="dgm" viewBox="0 0 420 352" role="img" aria-label="A message enters from the group, is routed to one executor instance, runs inside a container and the answer returns to the group">
+          <rect class="node-dark" x="8" y="12" width="404" height="44" rx="10"/>
+          <text class="t-on" x="26" y="40">Group chat</text>
+          <text class="t-on" x="394" y="40" text-anchor="end" opacity="0.62">One @-mention</text>
+          <path class="wire-dark" d="M210 60 v12"/><path class="wire-dark" d="M204 68 l6 8 l6 -8"/>
+          <rect class="node-dark" x="8" y="82" width="404" height="44" rx="10"/>
+          <text class="t-on" x="26" y="110">Session gateway</text>
+          <text class="t-on" x="394" y="110" text-anchor="end" opacity="0.62">auth · routing · retry</text>
+          <path class="wire-dark" d="M210 130 v12"/><path class="wire-dark" d="M204 138 l6 8 l6 -8"/>
+          <rect class="node-dark" x="8" y="152" width="404" height="44" rx="10"/>
+          <text class="t-on" x="26" y="180">Executor instance</text>
+          <text class="t-on" x="394" y="180" text-anchor="end" opacity="0.62">session state lives here</text>
+          <path class="wire-dark" d="M210 200 v12"/><path class="wire-dark" d="M204 208 l6 8 l6 -8"/>
+          <rect class="node-dark" x="8" y="222" width="404" height="44" rx="10"/>
+          <text class="t-on" x="26" y="250">Runs in a container</text>
+          <text class="t-on" x="394" y="250" text-anchor="end" opacity="0.62">tools · CLI · skills</text>
+          <path class="wire-dark" d="M210 270 v12"/><path class="wire-dark" d="M204 278 l6 8 l6 -8"/>
+          <rect class="node-dark" x="8" y="292" width="404" height="44" rx="10"/>
+          <text class="t-on" x="26" y="320">Answer back to the group</text>
+          <text class="t-on" x="394" y="320" text-anchor="end" opacity="0.62">chunks · dedupe · approval</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="visible" class="band" data-band>
+  <div class="band-inner">
+    <div class="band-head">
+      <span class="eyebrow">Entry points you can see</span>
+      <h2>Four things you can watch it do</h2>
+      <p class="lede">Not a demo reel. Each entry point can say which chain it walks and at which step it stops and waits for a person.</p>
+    </div>
+    <div class="cards">
+      <article class="card" data-reveal>
+        <p class="card-num">One</p>
+        <h3>Give it work in a group chat</h3>
+        <p>Every channel parses <code>/approve</code>, <code>/deny</code> and <code>/clear</code> (adapted for Feishu, DingTalk and WeCom); the approval request goes back into the same group, and the suspended step resumes once it is cleared. Reconnects with exponential backoff; with several replicas one MySQL named lock decides who is listening.</p>
+      </article>
+      <article class="card" data-reveal>
+        <p class="card-num">Two</p>
+        <h3>It works the night shift while you sleep</h3>
+        <p>cron expressions plus 5 common presets; tasks, trigger locks and execution logs live in the scheduler's own database, so a restart does not lose them. Execution logs carry six states, and a row still open past 1.5× its own timeout is marked dead by the reaper.</p>
+      </article>
+      <article class="card" data-reveal>
+        <p class="card-num">Three</p>
+        <h3>Work one AI cannot finish goes to a team</h3>
+        <p>The lead keeps only 3 orchestration tools — no business tools, no MCP, no sandbox; members keep their own tools and skills. A delegation cap of 20, 900 seconds per member turn and 20 MiB per artifact file are code constants, enforced at runtime.</p>
+      </article>
+      <article class="card" data-reveal>
+        <p class="card-num">Four</p>
+        <h3>It stops and waits for your signature</h3>
+        <p>Commands and file operations run inside a separate container, with argument-level scanning for dangerous commands and sensitive paths; a hit becomes a human approval request carrying the safety reason. Workspace snapshots go to object storage, so a restart can pick them back up.</p>
+      </article>
+    </div>
+    <aside class="note">Group chat and team are two separate scenarios: team sessions exist only on web and mobile, and what runs inside an IM group is a single AI employee. The two do not stack.</aside>
+  </div>
+</section>
+
+<section id="mechanism" class="band band-alt" data-band>
+  <div class="band-inner">
+    <div class="band-head">
+      <span class="eyebrow">Runtime mechanisms</span>
+      <h2>Four mechanisms you cannot see</h2>
+      <p class="lede">Four decisions determine whether it can run for a long time: where state lives, who owns this fire, how a skill gets into the library, and what each step leaves behind.</p>
+    </div>
+
+    <div class="mech">
+      <div class="mech-figure">
+        <p class="dgm-title">Fig 1 · How well three kinds of state survive a machine swap</p>
+        <svg class="dgm" viewBox="0 0 520 296" role="img" aria-label="Conversation content in the database, session ownership in the cache, the approval step in process memory">
+          <text class="t-sm" x="16" y="22">Conversation</text>
+          <rect class="node" x="16" y="32" width="214" height="44" rx="10"/>
+          <text x="34" y="60">messages · thinking · tool results</text>
+          <path class="wire" d="M230 54 h44"/><path class="wire" d="M270 48 l8 6 l-8 6"/>
+          <rect class="node node-key" x="290" y="32" width="214" height="44" rx="10"/>
+          <text x="308" y="54">MySQL</text>
+          <text class="t-mono" x="308" y="70">readable after a swap</text>
+
+          <text class="t-sm" x="16" y="116">Session owner</text>
+          <rect class="node" x="16" y="126" width="214" height="44" rx="10"/>
+          <text x="34" y="154">session → instance binding</text>
+          <path class="wire" d="M230 148 h44"/><path class="wire" d="M270 142 l8 6 l-8 6"/>
+          <rect class="node node-key" x="290" y="126" width="214" height="44" rx="10"/>
+          <text x="308" y="148">Redis</text>
+          <text class="t-mono" x="308" y="164">shared, holds ~30s of warmth</text>
+
+          <text class="t-sm" x="16" y="210">The approval step</text>
+          <rect class="node" x="16" y="220" width="214" height="44" rx="10"/>
+          <text x="34" y="248">a suspended approval window</text>
+          <path class="wire-accent" d="M230 242 h44"/><path class="wire-accent" d="M270 236 l8 6 l-8 6"/>
+          <rect class="node node-warn" x="290" y="220" width="214" height="44" rx="10"/>
+          <text x="308" y="242">executor memory</text>
+          <text class="t-mono" x="308" y="258">a blocked thread — it cannot move</text>
+        </svg>
+      </div>
+      <div class="mech-body">
+        <h3>Why a session sticks to one machine</h3>
+        <span class="mech-label">The problem</span>
+        <p class="q">The agent's mutable state is not in the database — it is in one process's memory and on its disk. The "stateless service plus round-robin balancing" model stops working here.</p>
+        <span class="mech-label">How it is done</span>
+        <p>The step that waits for approval is a thread blocked on <code>future.get()</code>, with a 600-second window; it physically cannot be moved. Three clocks turn "the process stopped" into something decidable: report every 10 seconds, recheck every 5, declare dead after 30, so detection lands 20–35 seconds later. New sessions are assigned weighted-random by session count; only the failover target takes the minimum.</p>
+        <span class="mech-label">What you give up</span>
+        <p>A snapshot is written at the end of a turn, so a crash loses the last one, and the half-streamed output of that turn is not replayed. Streaming fails over only on a connection-class error, and only before the first event has been emitted.</p>
+        <aside class="note">What is pinned is the executor instance; the gateway itself runs several replicas sharing the same binding table. The stickiness exists because someone is waiting for an answer, not for load balancing. That shared table lives in Redis: standalone or Sentinel only, and it must keep <code>noeviction</code>.</aside>
+      </div>
+    </div>
+
+    <div class="mech">
+      <div class="mech-figure">
+        <p class="dgm-title">Fig 2 · Two locks, and a window you should not misread</p>
+        <svg class="dgm" viewBox="0 0 520 296" role="img" aria-label="First layer the Quartz row lock, second layer the trigger-lock unique key, takeover window 22.5 to 52.5 seconds">
+          <rect class="node node-key" x="16" y="16" width="336" height="46" rx="10"/>
+          <text x="34" y="38">Layer 1 · who gets the trigger</text>
+          <text class="t-mono" x="34" y="54">QRTZ_LOCKS / TRIGGER_ACCESS</text>
+          <rect class="node node-key" x="16" y="76" width="336" height="46" rx="10"/>
+          <text x="34" y="98">Layer 2 · who owns this fire</text>
+          <text class="t-mono" x="34" y="114">uk_task_trigger(task_id, trigger_time)</text>
+          <text class="t-sm" x="16" y="146">On one machine one layer is enough; "once" only comes out of two.</text>
+
+          <path class="lane" d="M16 214 h488"/>
+          <path class="bar" d="M150 208 v12"/>
+          <path class="bar-accent" d="M150 208 h170 v12 h-170 z"/>
+          <text class="t-mono" x="150" y="198">node dies</text>
+          <text class="t-mono" x="330" y="198" text-anchor="end">takeover 22.5–52.5s</text>
+          <path class="bar-mute" d="M330 208 h120 v12 h-120 z"/>
+          <text class="t-mono" x="450" y="198" text-anchor="end">misfire 60s</text>
+          <text class="t-sm" x="16" y="248">The window sits under the misfire threshold, so one dead node loses no fire.</text>
+          <text class="t-sm" x="16" y="270">Death after the fire is not re-issued: no retry, no alert.</text>
+        </svg>
+      </div>
+      <div class="mech-body">
+        <h3>"Fired once" and "done once" are two different claims</h3>
+        <span class="mech-label">The problem</span>
+        <p class="q">Scale the scheduler to 3 replicas: do all three strike the eight o'clock task? And if the one that fired dies moments later, does today's briefing still go out?</p>
+        <span class="mech-label">How it is done</span>
+        <p>Two locks: Quartz's cluster row lock decides who receives the trigger, then we drive the unique key <code>(task_id, trigger_time)</code> on our own trigger-lock table to decide who owns this fire. The takeover window is 22.5–52.5 seconds, under the 60-second misfire threshold.</p>
+        <span class="mech-label">What you give up</span>
+        <p>A death after the fire is never re-issued. The task row gets marked timed out five to seven and a half minutes later, while the run over there is still going and nobody owns it. Idempotency is not something this system can hand you — it has to live in your business logic.</p>
+        <aside class="note">The takeover window is derived on paper. The integration test <code>ClusterSingleFireIT</code> covers single firing only; takeover, balancing and the real call chain are not covered.</aside>
+      </div>
+    </div>
+
+    <div class="mech">
+      <div class="mech-figure">
+        <p class="dgm-title">Fig 3 · Detained first, reviewed second, on duty third</p>
+        <svg class="dgm" viewBox="0 0 520 296" role="img" aria-label="Skill sources, pre-import scanning, disabled on import, human approval, projection convergence">
+          <rect class="node" x="26" y="12" width="468" height="42" rx="10"/>
+          <text x="44" y="38">Three source kinds · Git / npm / ZIP</text>
+          <path class="wire" d="M260 54 v10"/><path class="wire" d="M254 60 l6 8 l6 -8"/>
+          <rect class="node node-warn" x="26" y="76" width="468" height="42" rx="10"/>
+          <text x="44" y="102">Content scan before import · 9 rules</text>
+          <path class="wire" d="M260 118 v10"/><path class="wire" d="M254 124 l6 8 l6 -8"/>
+          <rect class="node" x="26" y="140" width="468" height="42" rx="10"/>
+          <text x="44" y="166">A hit is stored disabled · report returns with the response</text>
+          <path class="wire" d="M260 182 v10"/><path class="wire" d="M254 188 l6 8 l6 -8"/>
+          <rect class="node" x="26" y="204" width="468" height="42" rx="10"/>
+          <text x="44" y="230">Approved by a person → projected into the sandbox each turn</text>
+          <text class="t-mono" x="26" y="272">manifest .harnax-skills.json · sha256 diff · deletes only what it wrote</text>
+        </svg>
+      </div>
+      <div class="mech-body">
+        <h3>A skill is not a prompt snippet</h3>
+        <span class="mech-label">The problem</span>
+        <p class="q">A skill package is a pile of files that gets unpacked into a sandbox and read by file tools. Should someone gate it before it enters the library?</p>
+        <span class="mech-label">How it is done</span>
+        <p>Nine content-scan rules run before import; a hit is written into the scan report returned with the call, and the skill is stored disabled — usable only after a person approves it. Each source kind has its own hard constraint: Git goes through a protocol allowlist, npm installs carry <code>--ignore-scripts</code>, and ZIP has four ceilings that raise <code>SecurityException</code> rather than truncating. Projection converges every turn against a sha256 manifest; no difference means zero writes.</p>
+        <span class="mech-label">What you give up</span>
+        <p>There is no version history and no rollback — change it and it is changed. There is no review workflow either: the status field has two values, so "pending review" lands in the disabled bucket. AI-authored skills were built and then deliberately switched off; the skill repository is read-only for the agent.</p>
+      </div>
+    </div>
+
+    <div class="mech">
+      <div class="mech-figure">
+        <p class="dgm-title">Fig 4 · Five tables, two of them readable</p>
+        <svg class="dgm" viewBox="0 0 520 296" role="img" aria-label="Usage and gateway logs read back on screen; the other three trace tables are write-only in the application">
+          <rect class="node node-key" x="16" y="14" width="246" height="40" rx="9"/>
+          <text class="t-mono" x="32" y="39">token_stats · usage</text>
+          <rect class="node node-key" x="286" y="14" width="218" height="40" rx="9"/>
+          <text x="302" y="39">reads back on the dashboard</text>
+
+          <rect class="node node-key" x="16" y="70" width="246" height="40" rx="9"/>
+          <text class="t-mono" x="32" y="95">api_call_log · gateway</text>
+          <rect class="node node-key" x="286" y="70" width="218" height="40" rx="9"/>
+          <text x="302" y="95">reads back on the console page</text>
+
+          <rect class="node" x="16" y="126" width="246" height="40" rx="9"/>
+          <text class="t-mono" x="32" y="151">process_log</text>
+          <rect class="node node-warn" x="286" y="126" width="218" height="40" rx="9"/>
+          <text x="302" y="151">write-only in the application</text>
+
+          <rect class="node" x="16" y="182" width="246" height="40" rx="9"/>
+          <text class="t-mono" x="32" y="207">tool_call_log</text>
+          <rect class="node node-warn" x="286" y="182" width="218" height="40" rx="9"/>
+          <text x="302" y="207">write-only in the application</text>
+
+          <rect class="node" x="16" y="238" width="246" height="40" rx="9"/>
+          <text class="t-mono" x="32" y="263">mcp_call_log</text>
+          <rect class="node node-warn" x="286" y="238" width="218" height="40" rx="9"/>
+          <text x="302" y="263">records token decisions</text>
+        </svg>
+      </div>
+      <div class="mech-body">
+        <h3>Five tables written, two of them readable</h3>
+        <span class="mech-label">The problem</span>
+        <p class="q">"Recorded" and "visible" are two different things, and "visible" and "reconcilable" are two more.</p>
+        <span class="mech-label">How it is done</span>
+        <p>The usage table takes one row per model call, and streaming and non-streaming produce the same reading. The gateway log records which call, how long, succeeded or not — deliberately without the body — and lands asynchronously in batches. Tool calls and process logs write arguments and results in full; those four on the executor side are synchronous, one row at a time.</p>
+        <span class="mech-label">What you give up</span>
+        <p>The other three trace tables have no read path in the application: to see them you connect to the database yourself. The <code>fee</code> column is always 0, so this site does not talk money; there are no quotas, thresholds or alerts, and the rate limiter only limits requests per minute.</p>
+      </div>
+    </div>
+
+    <p><a href="/en/capability.html">The long version of all four mechanisms, with the failure surfaces →</a></p>
+  </div>
+</section>
+
+<section id="forms" class="band" data-band>
+  <div class="band-inner">
+    <div class="band-head">
+      <span class="eyebrow">Ways to run it</span>
+      <h2>Three ways to run it, instead of the usual plan table</h2>
+      <p class="lede">There are no plan tiers here. The choices are "where does state live" and "does the model leave the building", not "how many seats".</p>
+    </div>
+    <div class="tiers">
+      <article class="tier" data-reveal>
+        <p class="tier-tag">CACHE_TYPE=local</p>
+        <h3>Single machine</h3>
+        <ul>
+          <li>SQLite plus an in-process cache, no external dependency</li>
+          <li>The same routing logic still picks an instance, retries and trips the breaker</li>
+          <li>Right for getting the chain working before talking about scale</li>
+        </ul>
+      </article>
+      <article class="tier tier-key" data-reveal>
+        <p class="tier-tag">cluster profile</p>
+        <h3>Cluster</h3>
+        <ul>
+          <li>MySQL + Redis; Redis is standalone or Sentinel only, and must keep <code>noeviction</code></li>
+          <li>The binding's read-modify-write happens in one Lua script, so concurrent writes cannot clobber it</li>
+          <li>A plain up gives you one scheduler replica; how many you want must be declared</li>
+        </ul>
+      </article>
+      <article class="tier" data-reveal>
+        <p class="tier-tag">Three protocol families</p>
+        <h3>Models can stay inside</h3>
+        <ul>
+          <li>DashScope, OpenAI-compatible and Ollama — three protocol families</li>
+          <li>Ollama defaults to <code>localhost:11434</code> and that branch never reads an apiKey</li>
+          <li>The OpenAI-compatible baseUrl may be an internal address and port</li>
+          <li>Retrieval is keyword-based, so not even an embedding model is needed</li>
+        </ul>
+      </article>
+    </div>
+    <aside class="note">Every factory default is a string published in this repository: change the passwords and the three kinds of keys yourself. If you skip this, none of the boundaries on this page hold.</aside>
+    <div class="btn-row">
+      <a class="btn-primary" href="/en/deploy.html">The things to write down before going live</a>
+    </div>
+  </div>
+</section>
+
+<section id="scale" class="band band-dark" data-band>
+  <div class="band-inner">
+    <div class="band-head">
+      <span class="eyebrow">Scale facts</span>
+      <h2>A few checkable numbers instead of a logo wall</h2>
+    </div>
+    <div class="facts">
+      <p class="fact" data-reveal><b>11</b><span>top-level Maven modules</span></p>
+      <p class="fact" data-reveal><b>14</b><span>submodules; backend main code entirely Kotlin</span></p>
+      <p class="fact" data-reveal><b>10</b><span>service blocks in one compose file</span></p>
+      <p class="fact" data-reveal><b>9</b><span>of them are the system; 1 is a bundled example MCP</span></p>
+      <p class="fact" data-reveal><b>12.0 cores</b><span>limits summed over the ten blocks, 8448M memory</span></p>
+      <p class="fact" data-reveal><b>Pull</b><span>metrics are scraped; nothing is reported at runtime</span></p>
+    </div>
+    <p class="fineprint">All of the above is what compose itself declares: limits sum to 12.0 cores / 8448M, reservations to 4.5 cores / 2688M. There is no minimum-configuration document anywhere in the repository, so this is not a sizing recommendation, and sandbox containers are not in this list either.</p>
+  </div>
+</section>
+
+<section id="boundary" class="band" data-band>
+  <div class="band-inner">
+    <div class="band-head">
+      <span class="eyebrow">Boundary summary</span>
+      <h2>Four things we did not build</h2>
+      <p class="lede">They are on the front page because they find you in the first week of running this. Admitting a boundary is harder, and worth more, than finishing the pitch.</p>
+    </div>
+    <div class="cards">
+      <article class="card" data-reveal>
+        <p class="card-num">Missing</p>
+        <h3>Backup and restore tooling</h3>
+        <p>What you must do: conversation bodies, tasks and logs all live in one database, so you schedule the backups and you run the restore drill.</p>
+      </article>
+      <article class="card" data-reveal>
+        <p class="card-num">Missing</p>
+        <h3>An alerting egress</h3>
+        <p>What you must do: nobody notifies you when the night shift fails. The metrics endpoint exists; scraping, thresholds and the on-call route are your job.</p>
+      </article>
+      <article class="card" data-reveal>
+        <p class="card-num">Missing</p>
+        <h3>Version rollback and review workflow</h3>
+        <p>What you must do: a skill has only a pointer to its current version. Owner hand-offs and multi-stage approval never existed as fields; an external process has to cover them.</p>
+      </article>
+      <article class="card" data-reveal>
+        <p class="card-num">Missing</p>
+        <h3>Container orchestration</h3>
+        <p>What you must do: compose is the only delivery form. Moving these ten blocks onto a multi-node orchestrator means writing that inventory yourself.</p>
+      </article>
+    </div>
+    <p><a href="/en/boundaries.html">The full boundary list and where the claims come from →</a></p>
+  </div>
+</section>
+
+<section id="articles" class="band band-alt" data-band>
+  <div class="band-inner">
+    <div class="band-head">
+      <span class="eyebrow">Series</span>
+      <h2>Series index: “AI 员工图鉴”, season one</h2>
+      <p class="lede">Issue 7 was never published — the three things it covers look best actually running in a browser, so it moved into season two as a serial.</p>
+    </div>
+    <div class="articles">
+      <article class="art"><p class="art-n">Issue 1</p><div><h3>Opening statement</h3><p>Why build AI as a system you can work with for years rather than a call you make once.</p></div></article>
+      <article class="art"><p class="art-n">Issue 2</p><div><h3>Work assigned in a group</h3><p>One group maps to one AI employee shared by the whole team, and slash commands approve right there in the chat.</p></div></article>
+      <article class="art"><p class="art-n">Issue 3</p><div><h3>The night shift roster</h3><p>It works nights while you sleep, and the outcome goes into the execution ledger.</p></div></article>
+      <article class="art"><p class="art-n">Issue 4</p><div><h3>Forming a team</h3><p>The lead keeps only 3 orchestration tools — tying its hands is a deliberate institutional choice.</p></div></article>
+      <article class="art"><p class="art-n">Issue 5</p><div><h3>Making a mess</h3><p>Commands and file operations enter an isolated room first, and the dangerous step stops for a signature.</p></div></article>
+      <article class="art"><p class="art-n">Issue 6</p><div><h3>Skill lifecycle</h3><p>We finished one feature and then switched it off.</p></div></article>
+      <article class="art art-hold"><p class="art-n">Issue 7</p><div><h3>Keys and authorization (held)</h3><p>The closed loop of authorization and token custody will be retold with a real-device demo.</p></div></article>
+      <article class="art"><p class="art-n">Issue 8</p><div><h3>Private deployment</h3><p>No telemetry at runtime and every egress point is configuration — somebody has to be the operating system here.</p></div></article>
+      <article class="art"><p class="art-n">Issue 9</p><div><h3>Session routing</h3><p>Some state lives only in one machine's memory.</p></div></article>
+      <article class="art"><p class="art-n">Issue 10</p><div><h3>No shift missed at 3am</h3><p>Three machines all want to do the same thing — who decides?</p></div></article>
+      <article class="art"><p class="art-n">Issue 11</p><div><h3>Keeping the books</h3><p>Five tables written, only two of them readable back.</p></div></article>
+      <article class="art"><p class="art-n">Issue 12</p><div><h3>Extra edition · thirteen questions</h3><p>We wrote the questions and answered them ourselves; six answers were "not built".</p></div></article>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="ftr">
+  <div class="band-inner">
+    <div class="ftr-grid">
+      <div>
+        <p class="ftr-brand"><img src="/assets/icon.png" alt="">Harnax</p>
+        <p class="ftr-blurb">A self-hosted multi-agent runtime: configured assembly, interruptible and resumable streaming execution, tool execution isolated in sandboxes, instance-pinned routing across replicas, clustered scheduled firing and multi-platform IM access.</p>
+      </div>
+      <div class="ftr-col">
+        <h4>Product</h4>
+        <a href="/en/capability.html">Runtime mechanisms</a>
+        <a href="/en/deploy.html">Deployment</a>
+        <a href="/en/boundaries.html">Boundaries</a>
+        <a href="#articles">Series</a>
+      </div>
+      <div class="ftr-col">
+        <h4>Forms</h4>
+        <a href="#forms">Single machine</a>
+        <a href="#forms">Cluster</a>
+        <a href="#forms">Local models</a>
+      </div>
+      <div class="ftr-col">
+        <h4>Claims</h4>
+        <a href="/en/boundaries.html#source">Evidence and date</a>
+        <a href="/en/boundaries.html#narrowed">Narrowed wording</a>
+        <a href="/en/boundaries.html#not-said">What cannot be stated</a>
+      </div>
+    </div>
+    <div class="ftr-base">
+      <span>Every functional statement here follows the audit conclusions in <code>harnax-marketing</code>'s promotion-claims audit list; if any of them disagrees with actual behaviour, treat it as a defect.</span>
+      <span>© 2026 Harnax</span>
+    </div>
+  </div>
+</footer>
+
+<script src="/assets/site.js"></script>
+</body>
+</html>

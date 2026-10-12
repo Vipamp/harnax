@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Runtime mechanisms · Harnax</title>
+<meta name="description" content="Session-pinned routing, clustered scheduled firing, the skill lifecycle and execution records: what each one solves, how the code does it, and what it leaves for you to carry.">
+<link rel="icon" href="/assets/icon.png">
+<link rel="canonical" href="/en/capability.html">
+<link rel="alternate" hreflang="zh-CN" href="/capability.html">
+<link rel="alternate" hreflang="en" href="/en/capability.html">
+<link rel="alternate" hreflang="x-default" href="/capability.html">
+<link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+
+<header class="hdr">
+  <div class="hdr-inner">
+    <a class="hdr-brand" href="/en/index.html"><img src="/assets/icon.png" alt="">Harnax</a>
+    <button class="nav-toggle" data-nav-toggle type="button" aria-expanded="false" aria-label="Toggle navigation"></button>
+    <nav class="hdr-nav">
+      <a href="/en/index.html">Home</a>
+      <a href="/en/capability.html">Runtime mechanisms</a>
+      <a href="/en/deploy.html">Deployment</a>
+      <a href="/en/boundaries.html">Boundaries</a>
+    </nav>
+    <div class="hdr-actions">
+      <div class="hdr-lang">
+        <a href="/capability.html">中文</a><span>/</span><a href="/en/capability.html" aria-current="page">EN</a>
+      </div>
+      <a class="btn-primary" href="/en/deploy.html">Deployment</a>
+    </div>
+  </div>
+</header>
+
+<main class="with-toc">
+  <nav class="toc" aria-label="Page contents">
+    <a href="#sticky">Session-pinned routing</a>
+    <a href="#schedule">Clustered firing</a>
+    <a href="#skill">Skill lifecycle</a>
+    <a href="#records">Execution records</a>
+  </nav>
+
+  <div class="rail-main">
+    <div class="rail-head">
+      <span class="eyebrow">Runtime mechanisms</span>
+      <h1>Four runtime mechanisms, and what each one owes you</h1>
+      <p class="lede">Each mechanism gets three paragraphs: the problem it solves, what the code actually does, and what it hands back to you. The third paragraph never gets cut.</p>
+    </div>
+
+    <section id="sticky" class="band" data-band>
+      <div class="mech">
+        <div class="mech-figure">
+          <p class="dgm-title">Fig 1 · Three clocks that must not be mixed</p>
+          <svg class="dgm" viewBox="0 0 520 296" role="img" aria-label="The executor reports a heartbeat every 10 seconds, the gateway re-reads every 5, a gap over 30 seconds is declared dead, so detection lands between 20 and 35 seconds">
+            <rect class="node node-key" x="16" y="14" width="300" height="44" rx="10"/>
+            <text x="34" y="36">executor reports a heartbeat</text>
+            <text class="t-mono" x="34" y="52">every 10s</text>
+            <text class="t-sm" x="332" y="41">the timestamp written into the registry</text>
+
+            <rect class="node node-key" x="16" y="76" width="300" height="44" rx="10"/>
+            <text x="34" y="98">gateway re-reads the registry</text>
+            <text class="t-mono" x="34" y="114">every 5s</text>
+            <text class="t-sm" x="332" y="103">reads timestamps, sends no HTTP probe</text>
+
+            <rect class="node node-warn" x="16" y="138" width="300" height="44" rx="10"/>
+            <text x="34" y="160">declared unhealthy</text>
+            <text class="t-mono" x="34" y="176">heartbeat older than 30s</text>
+            <text class="t-sm" x="332" y="165">from here the instance takes no new session</text>
+
+            <path class="lane" d="M16 232 h488"/>
+            <path class="bar-accent" d="M120 226 h170 v12 h-170 z"/>
+            <text class="t-mono" x="120" y="216">process stops</text>
+            <text class="t-mono" x="290" y="216">detected</text>
+            <text class="t-sm" x="16" y="266">Between stopping and being detected sits 20–35 seconds — the sum of three clocks, not the period of any one of them.</text>
+          </svg>
+        </div>
+        <div class="mech-body">
+          <h3>Session-pinned routing</h3>
+          <span class="mech-label">The problem</span>
+          <p class="q">A conversation is not one request. The ReAct loop's context, the workspace files, and a state parked waiting for a human confirmation are not in the database — they are in one process's memory and disk. The "stateless service plus round-robin load balancer" model fails outright here.</p>
+          <span class="mech-label">How it is done</span>
+          <p>The session binding is one shared table living on Redis — standalone or Sentinel only, and it has to stay <code>noeviction</code>. The gateway sends later requests for the same session back to the same executor instance, and the gateway's own replicas share that one binding. Three clocks turn "the process stopped" into something decidable: the executor reports every 10 seconds, the gateway re-reads every 5, and a heartbeat older than 30 seconds is dead. New sessions are assigned at random weighted by session count; only a failover target takes the minimum. The pinning decision deliberately looks at health and draining and never at the circuit breaker: a session that is producing output steadily should not be moved because of one blip.</p>
+          <span class="mech-label">What you give up</span>
+          <p>The step that waits for confirmation physically cannot be moved: the parked body is a thread held by <code>future.get()</code>, a 600-second window sliced into 30-second keep-alives. Snapshots land only at the end of a round, so a crash loses the last stretch, and that round's half-emitted output is not replayed. Streaming failover covers connection errors only, and stops the moment the first event has been emitted. If Redis goes away there is roughly 30 seconds of heartbeat warmth left, and the instance registry throws rather than "keeps serving".</p>
+          <aside class="note">Outward HTTP is always 200, and the failure is written in the response <code>code</code> or in a stream event — retry logic has to read those two, not the transport status. The front end does not reconnect on its own, and there is no retry button on the page.</aside>
+        </div>
+      </div>
+    </section>
+
+    <section id="schedule" class="band" data-band>
+      <div class="mech">
+        <div class="mech-figure">
+          <p class="dgm-title">Fig 2 · Two locks, and three rulers that must not be mixed</p>
+          <svg class="dgm" viewBox="0 0 520 296" role="img" aria-label="Layer one is the Quartz row lock, layer two the unique key; reconciliation 60 seconds, reaping 5 minutes, takeover 22.5 to 52.5 seconds">
+            <rect class="node node-key" x="16" y="14" width="488" height="42" rx="10"/>
+            <text x="34" y="40">Layer one · who gets the trigger — the cluster row lock</text>
+            <rect class="node node-key" x="16" y="64" width="488" height="42" rx="10"/>
+            <text x="34" y="90">Layer two · who owns this fire — colliding a unique key into the trigger-lock table</text>
+            <text class="t-mono" x="16" y="128">check-in 15s · misfire threshold 60s</text>
+
+            <path class="lane" d="M16 176 h488"/>
+            <path class="bar" d="M16 170 h80 v12 h-80 z"/>
+            <text class="t-mono" x="16" y="160">reconciliation 60s</text>
+            <path class="bar" d="M196 170 h110 v12 h-110 z"/>
+            <text class="t-mono" x="196" y="160">reaping 5 min</text>
+            <path class="bar-accent" d="M370 170 h134 v12 h-134 z"/>
+            <text class="t-mono" x="370" y="160">takeover 22.5–52.5s</text>
+            <text class="t-sm" x="16" y="212">Reconciliation treats the business table as the truth; adding and removing happen by diff, not by delete-and-recreate.</text>
+            <text class="t-sm" x="16" y="234">The reap line is 1.5 times that row's own timeout. The lock release line is a global 2 times. They are not the same thing.</text>
+            <text class="t-sm" x="16" y="256">The takeover window is not covered by any automated test — it is derived on paper.</text>
+          </svg>
+        </div>
+        <div class="mech-body">
+          <h3>Clustered scheduled firing</h3>
+          <span class="mech-label">The problem</span>
+          <p class="q">The scheduler runs 3 replicas — does the task you put in the early morning fire on all three? If the one that caught it dies halfway, who picks it up? Does that day's briefing simply get missed?</p>
+          <span class="mech-label">How it is done</span>
+          <p>Firing rights go to the Quartz JDBC cluster JobStore. Layer one is the cluster row lock, which decides who gets the trigger; layer two is us colliding a unique key <code>(task_id, trigger_time)</code> into our own trigger-lock table, which decides who owns this fire. The execution log has six statuses, and that state machine lives in SQL <code>WHERE</code> clauses rather than in code — only the execution thread that produced a result may write a terminal status. Three rulers, each with one job: a 60-second diff reconciliation against the business table, a 5-minute round that reaps rows sitting past 1.5 times their own timeout, and a 30-second status throttle. A shift you never rostered is not yours: a trigger for a task this node has never registered is refused outright and handed back.</p>
+          <span class="mech-label">What you give up</span>
+          <p>Dying after the fire is not re-issued: the task row gets flipped to timeout 5–7.5 minutes later while that remote run is still going and nobody owns it. No retry, no alerting egress. No fencing, no idempotency, and the same task can be dispatched twice — idempotency has to be built into your business logic. There is no "next fire time" column on the page; that value exists only inside the schedule tables. Editing a cron expression resets the task to disabled.</p>
+          <aside class="note">The takeover window is derived on paper: the integration test <code>ClusterSingleFireIT</code> verifies only "several replicas, one task, one fire". It covers neither takeover nor load balancing nor the real call chain. The stack starts as a single replica; how many replicas you want has to be declared explicitly.</aside>
+        </div>
+      </div>
+    </section>
+
+    <section id="skill" class="band" data-band>
+      <div class="mech">
+        <div class="mech-figure">
+          <p class="dgm-title">Fig 3 · Projection converges every round, it does not append</p>
+          <svg class="dgm" viewBox="0 0 520 296" role="img" aria-label="The expected set, a sha256 comparison, deleting only directories the projection wrote itself, zero writes when nothing differs">
+            <rect class="node" x="150" y="12" width="220" height="42" rx="10"/>
+            <text x="168" y="38">the skill set expected this round</text>
+            <path class="wire" d="M370 33 h60 v92 h-40"/><path class="wire" d="M396 121 l-8 -6 l8 -6"/>
+            <rect class="node" x="330" y="112" width="174" height="42" rx="10"/>
+            <text x="348" y="138">compared by sha256</text>
+            <path class="wire" d="M417 154 v50 h-90"/><path class="wire" d="M333 198 l8 -6 l6 6"/>
+            <rect class="node node-key" x="150" y="186" width="200" height="42" rx="10"/>
+            <text x="168" y="212">writes only on a difference</text>
+            <path class="wire" d="M150 207 h-60 v-130 h60"/><path class="wire" d="M144 83 l8 -6 l6 6"/>
+            <rect class="node node-warn" x="16" y="112" width="180" height="42" rx="10"/>
+            <text x="32" y="132">deletes only what it wrote</text>
+            <text class="t-mono" x="32" y="148">.harnax-skills.json</text>
+            <text class="t-sm" x="16" y="256">Nothing differs → zero writes; an artefact landing outside the expected location is filed as rejected and kept;</text>
+            <text class="t-sm" x="16" y="276">a failed projection logs WARN and does not block the round.</text>
+          </svg>
+        </div>
+        <div class="mech-body">
+          <h3>Skill lifecycle</h3>
+          <span class="mech-label">The problem</span>
+          <p class="q">A skill package is not a few lines of prompt. It gets unzipped into the sandbox, read back by file tools, and becomes part of the model's executable surface. So every step between its source and its duty deserves a hard constraint.</p>
+          <span class="mech-label">How it is done</span>
+          <p>Before storage it passes 9 content-scan rules. A hit is written into the scan report that comes back synchronously, the skill is stored in the disabled state, and it becomes usable only after a human confirms — detained first, reviewed after. The three source types each carry their own constraint: Git runs a protocol allowlist, so addresses that could reach a local or external program are excluded explicitly; npm installs with <code>--ignore-scripts</code>, giving a package's hooks no chance to run; ZIP has four ceilings (5000 entries, 20 MiB per file, 200 MiB total, depth 512) and going past one throws <code>SecurityException</code> instead of truncating. Two locks interlock: a skill in the disabled state cannot be bound to an agent, and a skill that still has a binding cannot be disabled or deleted — a security verdict is the single exception. One assembly caps at 1000 skills; past that it is refused, never silently truncated.</p>
+          <span class="mech-label">What you give up</span>
+          <p>No version history and no rollback — a change is a change. Status holds two values, and "awaiting review" lands in the disabled cell of the data model; there is no approval queue and no owner hand-off. Skills can be stored in but never exported out of the admin console. The AI-authored-skill capability was built and then switched off deliberately: the write switch defaults to closed and the skill repository is read-only for agents. A scan hit is handled as "route it to a human with a safety reason", not as a hard refusal — so do not read this line as "it will always catch it". The dangerous-list constant table lives on the execution engine's side and cannot be re-verified from this repository.</p>
+          <aside class="note">Team-level skills project to the lead, agent-level skills to the members; the lead has no file tool and cannot read the projected directory, and the system logs a WARN about precisely that — the implementation-level evidence behind "the lead has knowledge, but no hands".</aside>
+        </div>
+      </div>
+    </section>
+
+    <section id="records" class="band" data-band>
+      <div class="mech">
+        <div class="mech-figure">
+          <p class="dgm-title">Fig 4 · Five write paths, two read paths</p>
+          <svg class="dgm" viewBox="0 0 520 296" role="img" aria-label="Write and read paths for the tables; three of the ledger tables are written but never read by the application layer">
+            <text class="t-sm" x="300" y="14">write</text>
+            <text class="t-sm" x="400" y="14">read back on a page</text>
+            <rect class="node" x="16" y="24" width="250" height="40" rx="9"/>
+            <text class="t-mono" x="32" y="49">token_stats</text>
+            <rect class="bar" x="300" y="34" width="40" height="20" rx="4"/>
+            <rect class="bar bar-accent" x="400" y="34" width="40" height="20" rx="4"/>
+            <rect class="node" x="16" y="78" width="250" height="40" rx="9"/>
+            <text class="t-mono" x="32" y="103">api_call_log</text>
+            <rect class="bar" x="300" y="88" width="40" height="20" rx="4"/>
+            <rect class="bar bar-accent" x="400" y="88" width="40" height="20" rx="4"/>
+            <rect class="node" x="16" y="132" width="250" height="40" rx="9"/>
+            <text class="t-mono" x="32" y="157">process_log</text>
+            <rect class="bar" x="300" y="142" width="40" height="20" rx="4"/>
+            <rect class="bar-mute" x="400" y="142" width="40" height="20" rx="4"/>
+            <rect class="node" x="16" y="186" width="250" height="40" rx="9"/>
+            <text class="t-mono" x="32" y="211">tool_call_log</text>
+            <rect class="bar" x="300" y="196" width="40" height="20" rx="4"/>
+            <rect class="bar-mute" x="400" y="196" width="40" height="20" rx="4"/>
+            <rect class="node" x="16" y="240" width="250" height="40" rx="9"/>
+            <text class="t-mono" x="32" y="265">mcp_call_log</text>
+            <rect class="bar" x="300" y="250" width="40" height="20" rx="4"/>
+            <rect class="bar-mute" x="400" y="250" width="40" height="20" rx="4"/>
+            <text class="t-sm" x="300" y="292">Four on the executor side are synchronous single rows; the gateway's is asynchronous batches</text>
+          </svg>
+        </div>
+        <div class="mech-body">
+          <h3>Execution records</h3>
+          <span class="mech-label">The problem</span>
+          <p class="q">"Recorded" and "visible" are two different things. Five tables are written; only two of them come back on a page.</p>
+          <span class="mech-label">How it is done</span>
+          <p>The usage table holds one row per model call, hung on the call-finished event, so streaming and non-streaming give the same reading. The tool table holds one row per call with the raw arguments and the raw return value. The process log follows streaming deltas, so a single call may write dozens of rows — capacity cannot be estimated as one row per call. The gateway's call log records only which call, how long, success or failure: it deliberately carries no body, measures duration to the point where the request truly ends, and is written asynchronously in batches — 50 rows or every 5 seconds. The dashboard itself is 7 stat cards, 3 pie charts and 4 series lines, grouped along four dimensions with four time buckets, all aggregated live.</p>
+          <span class="mech-label">What you give up</span>
+          <p>Three of the ledger tables are written but not read by the application layer, so reading them directly means connecting to the database yourself. The usage table has no user column, so nothing can be counted per head; <code>fee</code> is always 0 and that column's precision cannot hold a cent, which is why the site does not talk money. No quotas, no thresholds, no alerting — the rate limiter limits requests per minute, nothing else. The four tables in the observability domain carry no cleanup statement at all, and their TEXT columns have a hard ceiling while the writer has no truncation guard. The call chain has no global identifier; the only thing that strings it together is the session id. The "execution process" you can look back at on the page comes from runtime state, not from those three ledger tables.</p>
+          <aside class="note">A failed write is always caught — you lose a row, not the answer. The one item in this list that is unreadable by default is the usage table: with no tenant condition it returns empty rather than everything.</aside>
+        </div>
+      </div>
+    </section>
+
+    <div class="btn-row">
+      <a class="btn-primary" href="/en/deploy.html">See the deployment forms</a>
+      <a class="btn-ghost" href="/en/boundaries.html">See the full boundary list</a>
+    </div>
+  </div>
+</main>
+
+<footer class="ftr">
+  <div class="band-inner">
+    <div class="ftr-grid">
+      <div>
+        <p class="ftr-brand"><img src="/assets/icon.png" alt="">Harnax</p>
+        <p class="ftr-blurb">A self-hosted multi-agent runtime: configured assembly, interruptible and resumable streaming execution, tool execution isolated in sandboxes, instance-pinned routing across replicas, clustered scheduled firing and multi-platform IM access.</p>
+      </div>
+      <div class="ftr-col">
+        <h4>Product</h4>
+        <a href="/en/capability.html">Runtime mechanisms</a>
+        <a href="/en/deploy.html">Deployment</a>
+        <a href="/en/boundaries.html">Boundaries</a>
+        <a href="/en/index.html#articles">Series</a>
+      </div>
+      <div class="ftr-col">
+        <h4>Forms</h4>
+        <a href="/en/index.html#forms">Single machine</a>
+        <a href="/en/index.html#forms">Cluster</a>
+        <a href="/en/index.html#forms">Local models</a>
+      </div>
+      <div class="ftr-col">
+        <h4>Claims</h4>
+        <a href="/en/boundaries.html#source">Evidence and date</a>
+        <a href="/en/boundaries.html#narrowed">Narrowed wording</a>
+        <a href="/en/boundaries.html#not-said">What cannot be stated</a>
+      </div>
+    </div>
+    <div class="ftr-base">
+      <span>Every functional statement here follows the audit conclusions in <code>harnax-marketing</code>'s promotion-claims audit list; if any of them disagrees with actual behaviour, treat it as a defect.</span>
+      <span>© 2026 Harnax</span>
+    </div>
+  </div>
+</footer>
+
+<script src="/assets/site.js"></script>
+</body>
+</html>
