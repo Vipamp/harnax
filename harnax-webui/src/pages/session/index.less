@@ -238,3 +238,12 @@
   0%, 100% { transform: scale(1); }
   50%      { transform: scale(1.045); }
 }
+
+/* ===== 动效降级：orb 光环与呼吸核直出（规格 §3.5） ===== */
+@media (prefers-reduced-motion: reduce) {
+  .noSessionOrb::before,
+  .noSessionOrbCore {
+    animation-duration: 0.001s !important;
+    animation-iteration-count: 1 !important;
+  }
+}

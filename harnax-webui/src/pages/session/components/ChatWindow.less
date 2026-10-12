@@ -2456,3 +2456,24 @@ html.dark {
     font-size: 20px;
   }
 }
+
+/* ===== 动效降级：编排与循环动画直出（规格 §3.5） ===== */
+@media (prefers-reduced-motion: reduce) {
+  .welcome,
+  .welcome *,
+  .messageRow,
+  .inputCardPulse,
+  .orbCore,
+  .dot,
+  .streamCaret,
+  .sendButtonStop::after {
+    animation-duration: 0.001s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001s !important;
+  }
+
+  .orb::before {
+    animation-duration: 0.001s !important;
+    animation-iteration-count: 1 !important;
+  }
+}
