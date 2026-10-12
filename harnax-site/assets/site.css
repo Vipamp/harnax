@@ -236,10 +236,16 @@ svg { display: block; }
 
 /* ---------- footer ---------- */
 .ftr { background: var(--ink); color: rgba(255, 255, 255, 0.78); padding: 68px 0 40px; }
-.ftr-grid { display: grid; grid-template-columns: 1.4fr repeat(3, 1fr); gap: 32px; }
+.ftr-grid { display: grid; grid-template-columns: 1.3fr repeat(5, 1fr); gap: 28px; }
 .ftr h4 { color: var(--paper); font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 14px; }
 .ftr a { color: rgba(255, 255, 255, 0.74); display: block; font-size: 14px; margin-bottom: 9px; }
 .ftr a:hover { color: #fff; text-decoration: none; }
+/* Placeholder rows point at pages that do not exist yet; they must not read as live links. */
+.ftr .ftr-todo { color: rgba(255, 255, 255, 0.5); border-bottom: 1px dashed rgba(255, 255, 255, 0.26); }
+.ftr .ftr-todo:hover { color: rgba(255, 255, 255, 0.74); }
+.ftr-contact { font-size: 14px; color: rgba(255, 255, 255, 0.74); margin: 0; }
+.ftr-legal { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; margin-top: 16px; }
+.ftr-legal a { margin-bottom: 0; }
 .ftr-blurb { font-size: 14px; color: rgba(255, 255, 255, 0.66); max-width: 34ch; margin: 0 0 18px; }
 .ftr-brand { display: flex; align-items: center; gap: 10px; color: var(--paper); font-weight: 700; margin-bottom: 16px; }
 .ftr-brand img { width: 26px; height: 26px; border-radius: 7px; }
