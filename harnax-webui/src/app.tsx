@@ -1,14 +1,14 @@
-import { LinkOutlined, MenuOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, LinkOutlined, MenuOutlined } from '@ant-design/icons';
 import type { Settings as LayoutSettings } from '@ant-design/pro-components';
 import { SettingDrawer } from '@ant-design/pro-components';
 import type { RequestConfig, RunTimeLayoutConfig } from '@umijs/max';
 import { history, Link } from '@umijs/max';
-import { Button } from 'antd';
+import { Avatar, Button } from 'antd';
 import React, { useState } from 'react';
 import { AvatarDropdown, AvatarName, Question, SelectLang, ThemeSwitcher } from '@/components';
-import TenantSwitcher from '@/components/TenantSwitcher';
 import { ThemeProvider } from '@/contexts/ThemeProvider';
 import { loginRedirect } from '@/utils/loginRedirect';
+import { nextOpenKeys } from '@/utils/menuOpenKeys';
 import { useIsMobile } from '@/utils/responsive';
 import defaultSettings from '../config/defaultSettings';
 import { errorConfig } from './requestErrorConfig';
@@ -85,25 +85,23 @@ export const layout: RunTimeLayoutConfig = ({
 }) => {
   const isMobile = useIsMobile();
   const [collapsed, setCollapsed] = useState(true);
+  /** 手风琴：同一时刻只展开一个一级组（规格 §3.3-3） */
+  const [openKeys, setOpenKeys] = useState<string[]>([]);
 
   return {
     // 移动端使用 breakpoint 控制侧边栏抽屉模式
     breakpoint: 'md',
     collapsed,
+    openKeys,
     onCollapse: setCollapsed,
-    actionsRender: () => {
-      if (isMobile) {
-        return [
-          <ThemeSwitcher key="ThemeSwitcher" />,
-        ];
-      }
-      return [
-        <TenantSwitcher key="TenantSwitcher" />,
-        <ThemeSwitcher key="ThemeSwitcher" />,
-        <Question key="doc" />,
-        <SelectLang key="SelectLang" />,
-      ];
+    onOpenChange: (keys) => {
+      if (keys === false) return;
+      setOpenKeys(nextOpenKeys(openKeys, keys));
     },
+    // 桌面端让出自带操作区，控件改由 menuFooterRender 渲染（规格 §3.3-4）；移动端维持现值
+    actionsRender: isMobile
+      ? () => [<ThemeSwitcher key="ThemeSwitcher" />]
+      : undefined,
     // 移动端 header 左侧汉堡菜单按钮
     headerTitleRender: (logo, title) => {
       if (isMobile) {
@@ -128,14 +126,16 @@ export const layout: RunTimeLayoutConfig = ({
         </>
       );
     },
-    // 顶部右侧显示用户头像和登录信息
-    avatarProps: {
-      src: initialState?.currentUser?.avatar,
-      title: <AvatarName />,
-      render: (_, avatarChildren) => {
-        return <AvatarDropdown>{avatarChildren}</AvatarDropdown>;
-      },
-    },
+    // 顶部右侧显示用户头像和登录信息（移动端 header 用；桌面端见 menuFooterRender）
+    avatarProps: isMobile
+      ? {
+          src: initialState?.currentUser?.avatar,
+          title: <AvatarName />,
+          render: (_, avatarChildren) => {
+            return <AvatarDropdown>{avatarChildren}</AvatarDropdown>;
+          },
+        }
+      : undefined,
     footerRender: false,
     onPageChange: () => {
       const { location } = history;
@@ -143,11 +143,6 @@ export const layout: RunTimeLayoutConfig = ({
       if (!initialState?.currentUser && location.pathname !== loginPath) {
         history.push(loginPath);
       }
-    },
-    // 菜单配置
-    menu: {
-      // 默认展开所有菜单
-      autoOpen: true,
     },
     // 移动端背景装饰图隐藏
     bgLayoutImgList: isMobile
@@ -180,7 +175,57 @@ export const layout: RunTimeLayoutConfig = ({
           </Link>,
         ]
       : [],
-    menuHeaderRender: undefined,
+    // 侧栏顶部＝返回聊天入口（规格 §3.3-2）
+    menuHeaderRender: (_logo, _title, menuProps) => (
+      <span
+        onClick={() => history.push('/')}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 8,
+          cursor: 'pointer',
+          fontSize: 14,
+          fontWeight: 600,
+          color: 'var(--vip-text-primary)',
+        }}
+      >
+        <ArrowLeftOutlined />
+        {!menuProps?.collapsed && <span>返回　设置</span>}
+      </span>
+    ),
+    // 侧栏底部控件（规格 §3.3-4）；移动端不渲染
+    menuFooterRender: isMobile
+      ? undefined
+      : (menuProps) => (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: menuProps?.collapsed ? 'column' : 'row',
+              alignItems: 'center',
+              justifyContent: menuProps?.collapsed ? 'center' : 'space-between',
+              gap: 4,
+              width: '100%',
+            }}
+          >
+            <AvatarDropdown>
+              <span style={{ cursor: 'pointer', display: 'inline-flex' }}>
+                <Avatar size={28} src={initialState?.currentUser?.avatar} />
+              </span>
+            </AvatarDropdown>
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: menuProps?.collapsed ? 'column' : 'row',
+                alignItems: 'center',
+                gap: 4,
+              }}
+            >
+              <SelectLang />
+              <ThemeSwitcher />
+              <Question />
+            </div>
+          </div>
+        ),
     // 自定义 403 页面
     // unAccessible: <div>unAccessible</div>,
     // 增加一个 loading 的状态
