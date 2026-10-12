@@ -45,9 +45,11 @@ export default [
         component: './team',
       },
       {
+        // 会话页已迁至 /；旧地址保活，查询串由重定向组件带过去（规格 §3.2-2）
         name: 'session',
         path: '/agent/session',
-        component: './session',
+        component: './session-redirect',
+        hideInMenu: true,
       },
       {
         name: 'task',
@@ -224,8 +226,10 @@ export default [
     ],
   },
   {
+    // 主页面＝全屏聊天壳：不套设置布局、不进菜单（规格 §3.2-1）
     path: '/',
-   redirect: '/welcome',
+    layout: false,
+    component: './session',
   },
   {
     // 授权服务器回跳的落地页：不套布局，页面读走 query 后自己抹掉，再调带登录态的换票接口
