@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>运行期机制 · Harnax</title>
+<meta name="description" content="会话粘性路由、集群定时触发、技能生命周期与执行留痕四个运行期机制的做法、代价与失效面。">
+<link rel="icon" href="/assets/icon.png">
+<link rel="canonical" href="/capability.html">
+<link rel="alternate" hreflang="zh-CN" href="/capability.html">
+<link rel="alternate" hreflang="en" href="/en/capability.html">
+<link rel="alternate" hreflang="x-default" href="/capability.html">
+<link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+
+<header class="hdr">
+  <div class="hdr-inner">
+    <a class="hdr-brand" href="/index.html"><img src="/assets/icon.png" alt="">Harnax</a>
+    <button class="nav-toggle" data-nav-toggle type="button" aria-expanded="false" aria-label="展开导航"></button>
+    <nav class="hdr-nav">
+      <a href="/index.html">首页</a>
+      <a href="/capability.html">运行期机制</a>
+      <a href="/deploy.html">部署形态</a>
+      <a href="/boundaries.html">边界</a>
+    </nav>
+    <div class="hdr-actions">
+      <div class="hdr-lang">
+        <a href="/capability.html" aria-current="page">中文</a><span>/</span><a href="/en/capability.html">EN</a>
+      </div>
+      <a class="btn-primary" href="/deploy.html">部署形态</a>
+    </div>
+  </div>
+</header>
+
+<main class="with-toc">
+  <nav class="toc" aria-label="页内目录">
+    <a href="#sticky">会话粘性路由</a>
+    <a href="#schedule">集群定时触发</a>
+    <a href="#skill">技能生命周期</a>
+    <a href="#records">执行留痕</a>
+  </nav>
+
+  <div class="rail-main">
+    <div class="rail-head">
+      <span class="eyebrow">运行期机制</span>
+      <h1>四个运行期机制，以及它们各自欠你的账</h1>
+      <p class="lede">每个机制分三段讲：它解决什么问题、代码里怎么做的、以及它把什么留给你。第三段不会被删掉。</p>
+    </div>
+
+    <section id="sticky" class="band" data-band>
+      <div class="mech">
+        <div class="mech-figure">
+          <p class="dgm-title">图 1 · 三张别混在一起的时钟</p>
+          <svg class="dgm" viewBox="0 0 520 296" role="img" aria-label="执行服务每 10 秒上报心跳，网关每 5 秒复查，超过 30 秒判死，发现窗口 20 到 35 秒">
+            <rect class="node node-key" x="16" y="14" width="300" height="44" rx="10"/>
+            <text x="34" y="36">执行服务上报心跳</text>
+            <text class="t-mono" x="34" y="52">每 10 秒一次</text>
+            <text class="t-sm" x="332" y="41">写进注册表的时间戳</text>
+
+            <rect class="node node-key" x="16" y="76" width="300" height="44" rx="10"/>
+            <text x="34" y="98">网关复查注册表</text>
+            <text class="t-mono" x="34" y="114">每 5 秒一轮</text>
+            <text class="t-sm" x="332" y="103">读时间戳，不发 HTTP 探针</text>
+
+            <rect class="node node-warn" x="16" y="138" width="300" height="44" rx="10"/>
+            <text x="34" y="160">判定不健康</text>
+            <text class="t-mono" x="34" y="176">心跳超过 30 秒</text>
+            <text class="t-sm" x="332" y="165">此后该实例不再接新会话</text>
+
+            <path class="lane" d="M16 232 h488"/>
+            <path class="bar-accent" d="M120 226 h170 v12 h-170 z"/>
+            <text class="t-mono" x="120" y="216">进程停下</text>
+            <text class="t-mono" x="290" y="216">被发现</text>
+            <text class="t-sm" x="16" y="266">从停下到被发现落在 20–35 秒之间——这是三张时钟相加的结果，不是任何一张的周期。</text>
+          </svg>
+        </div>
+        <div class="mech-body">
+          <h3>会话粘性路由</h3>
+          <span class="mech-label">问题</span>
+          <p class="q">一次对话不是一个请求。ReAct 循环的上下文、工作区文件、等待人工确认的挂起态，都不在数据库里，而在某个进程的内存与磁盘上。「无状态服务 + 轮询负载均衡」在这里会直接失效。</p>
+          <span class="mech-label">做法</span>
+          <p>会话绑定是一张共享表，落在 Redis 上——只支持 standalone 或 Sentinel，且需 <code>noeviction</code>。网关把同一会话的后续请求送回同一台执行服务实例，网关本身多副本共享这份绑定。三张时钟把「进程停下」变成可判定：执行服务每 10 秒上报、网关每 5 秒复查、心跳超过 30 秒判死。新会话按会话数加权随机分配，只有故障转移的目标取最小值。粘性判定故意只看健康与排水、不看熔断：一条正在稳定输出的会话，不该因为一次抖动就被搬走。</p>
+          <span class="mech-label">代价</span>
+          <p>等确认那一步物理上搬不走：挂起体是一个被 <code>future.get()</code> 占住的线程，窗口 600 秒，每 30 秒切片补发保活。每轮结束才落快照，进程崩掉会丢最后一段；那一轮的半截输出不重放。流式故障转移只覆盖连接类失败，且吐出任何一个已解码事件之后就不再重试。Redis 挂掉时只有约 30 秒心跳余温，实例注册表是直接抛错，不是「照常服务」。</p>
+          <aside class="note">对外 HTTP 恒 200，失败写在响应的 <code>code</code> 或流事件里——重试逻辑要读的是这两个，不是传输层状态。前端不自动重连，页面上也没有重试按钮。</aside>
+        </div>
+      </div>
+    </section>
+
+    <section id="schedule" class="band" data-band>
+      <div class="mech">
+        <div class="mech-figure">
+          <p class="dgm-title">图 2 · 两层锁，和三把别混的尺子</p>
+          <svg class="dgm" viewBox="0 0 520 296" role="img" aria-label="第一层 Quartz 行锁，第二层唯一键；对账 60 秒、回收 5 分钟、接管 22.5 到 52.5 秒">
+            <rect class="node node-key" x="16" y="14" width="488" height="42" rx="10"/>
+            <text x="34" y="40">第一层 · 谁拿到触发器 —— 集群行锁</text>
+            <rect class="node node-key" x="16" y="64" width="488" height="42" rx="10"/>
+            <text x="34" y="90">第二层 · 这一发归谁 —— 往触发锁表撞唯一键</text>
+            <text class="t-mono" x="16" y="128">check-in 15 秒 · misfire 阈值 60 秒</text>
+
+            <path class="lane" d="M16 176 h488"/>
+            <path class="bar" d="M16 170 h80 v12 h-80 z"/>
+            <text class="t-mono" x="16" y="160">对账 60 秒</text>
+            <path class="bar" d="M196 170 h110 v12 h-110 z"/>
+            <text class="t-mono" x="196" y="160">回收 5 分钟</text>
+            <path class="bar-accent" d="M370 170 h134 v12 h-134 z"/>
+            <text class="t-mono" x="370" y="160">接管 22.5–52.5 秒</text>
+            <text class="t-sm" x="16" y="212">对账以业务表为准，补齐与摘除是差异式的，不是删除重建。</text>
+            <text class="t-sm" x="16" y="234">回收线是该行超时时间的 1.5 倍；锁放开线是全局的 2 倍。两条不是一件事。</text>
+            <text class="t-sm" x="16" y="256">接管窗口没有自动化测试覆盖，是纸面推导出来的。</text>
+          </svg>
+        </div>
+        <div class="mech-body">
+          <h3>集群定时触发</h3>
+          <span class="mech-label">问题</span>
+          <p class="q">调度服务副本调到 3 台，一条早八点的任务会不会三台一起敲？敲到一半那台挂了，谁来接？这一天的班会不会就漏了？</p>
+          <span class="mech-label">做法</span>
+          <p>触发权交给 Quartz JDBC 集群 JobStore：第一层是集群行锁，管「谁拿到触发器」；第二层是我们自己往触发锁表撞唯一键 <code>(task_id, trigger_time)</code>，管「这一发归谁」。执行日志六个状态，状态机不在代码里而在 SQL 的 <code>WHERE</code> 里——只有产生结果的执行线程能写终态。三把尺子各管一件事：60 秒差异对账以业务表为准，5 分钟一轮的残行回收把超过该行超时 1.5 倍的行判死，30 秒状态节流。不是自己排的班不上手：收到本节点从未登记过的任务触发，直接拒绝并交还。</p>
+          <span class="mech-label">代价</span>
+          <p>死在触发之后不补发：任务行会在 5–7.5 分钟后被改成超时，而远端那次执行还在跑、没人认领。不重试、无告警出口。没有 fencing、没有幂等，同一任务可以被重复下发——幂等得做在你自己的业务里。页面上没有「下次执行时间」这一列，那个值只在调度表里。改 cron 会把任务重置为停用状态。</p>
+          <aside class="note">接管窗口是纸面推导：集成测试 <code>ClusterSingleFireIT</code> 只验证「多副本同一任务只触发一次」，不覆盖接管、负载均衡，也不覆盖真实调用链路。默认起来只有一个副本，扩到几台要显式声明。</aside>
+        </div>
+      </div>
+    </section>
+
+    <section id="skill" class="band" data-band>
+      <div class="mech">
+        <div class="mech-figure">
+          <p class="dgm-title">图 3 · 投影是每轮收敛，不是每轮追加</p>
+          <svg class="dgm" viewBox="0 0 520 296" role="img" aria-label="期望清单、sha256 比对、只删自己写过的目录、无差异零写入的收敛环">
+            <rect class="node" x="150" y="12" width="220" height="42" rx="10"/>
+            <text x="168" y="38">本轮期望的技能集</text>
+            <path class="wire" d="M370 33 h60 v92 h-40"/><path class="wire" d="M396 121 l-8 -6 l8 -6"/>
+            <rect class="node" x="330" y="112" width="174" height="42" rx="10"/>
+            <text x="348" y="138">按 sha256 比对</text>
+            <path class="wire" d="M417 154 v50 h-90"/><path class="wire" d="M333 198 l8 -6 l6 6"/>
+            <rect class="node node-key" x="150" y="186" width="200" height="42" rx="10"/>
+            <text x="168" y="212">有差异才写盘</text>
+            <path class="wire" d="M150 207 h-60 v-130 h60"/><path class="wire" d="M144 83 l8 -6 l6 6"/>
+            <rect class="node node-warn" x="16" y="112" width="180" height="42" rx="10"/>
+            <text x="32" y="132">只删自己写过的</text>
+            <text class="t-mono" x="32" y="148">.harnax-skills.json</text>
+            <text class="t-sm" x="16" y="256">无差异 → 零写入；落在预期位置之外的产物归入 rejected 并保留；</text>
+            <text class="t-sm" x="16" y="276">投影失败只记 WARN，不阻断这轮对话。</text>
+          </svg>
+        </div>
+        <div class="mech-body">
+          <h3>技能生命周期</h3>
+          <span class="mech-label">问题</span>
+          <p class="q">技能包不是几行提示词：它会被解压进沙箱，被文件工具读取，成为模型可执行面的一部分。所以它从来源到上岗，每一步都该有硬约束。</p>
+          <span class="mech-label">做法</span>
+          <p>入库前先过 9 条内容扫描规则，命中即写进同步返回的扫描报告，技能以停用态入库，人工确认后才可用——先关押，再审查。来源三型各有约束：Git 走协议白名单，能碰到本地或外部程序的地址被显式排除；npm 安装带 <code>--ignore-scripts</code>，不给包里的钩子执行机会；ZIP 有四项上限（条目 5000、单文件 20 MiB、总量 200 MiB、深度 512），越界直接抛 <code>SecurityException</code> 而不是截断。双锁互锁：停用中的不能绑给 Agent，仍有绑定的不能停用或删除——安全判定是唯一例外。一次装配的技能数量上限 1000，超出即拒绝，不静默截断。</p>
+          <span class="mech-label">代价</span>
+          <p>没有版本历史与回滚，改了就是改了。状态只有两值，「待审」在数据模型里就落在停用格上，不存在审批队列与责任人流转。技能只能入库、不能从管理台导出。AI 自产技能这个能力做了但被主动关掉：写入开关默认关闭，技能仓库对 Agent 只读。扫描命中的处理是「转人工确认并附 safety 理由」，不是直接拒绝——所以不要把这一条读成「一定能拦住」。危险清单的常量表在执行引擎那一侧，本仓无法复核。</p>
+          <aside class="note">团队级技能投影给主管，Agent 级技能给成员；主管没有文件工具，读不到投影出来的目录，系统对这一点专门打 WARN——「主管只有知识，没有手」的实现层证据。</aside>
+        </div>
+      </div>
+    </section>
+
+    <section id="records" class="band" data-band>
+      <div class="mech">
+        <div class="mech-figure">
+          <p class="dgm-title">图 4 · 五条写路，两条读路</p>
+          <svg class="dgm" viewBox="0 0 520 296" role="img" aria-label="五张表的写入与读取路径，三张留痕表应用层只写不读">
+            <text class="t-sm" x="300" y="14">写入</text>
+            <text class="t-sm" x="400" y="14">页面读回</text>
+            <rect class="node" x="16" y="24" width="250" height="40" rx="9"/>
+            <text class="t-mono" x="32" y="49">token_stats</text>
+            <rect class="bar" x="300" y="34" width="40" height="20" rx="4"/>
+            <rect class="bar bar-accent" x="400" y="34" width="40" height="20" rx="4"/>
+            <rect class="node" x="16" y="78" width="250" height="40" rx="9"/>
+            <text class="t-mono" x="32" y="103">api_call_log</text>
+            <rect class="bar" x="300" y="88" width="40" height="20" rx="4"/>
+            <rect class="bar bar-accent" x="400" y="88" width="40" height="20" rx="4"/>
+            <rect class="node" x="16" y="132" width="250" height="40" rx="9"/>
+            <text class="t-mono" x="32" y="157">process_log</text>
+            <rect class="bar" x="300" y="142" width="40" height="20" rx="4"/>
+            <rect class="bar-mute" x="400" y="142" width="40" height="20" rx="4"/>
+            <rect class="node" x="16" y="186" width="250" height="40" rx="9"/>
+            <text class="t-mono" x="32" y="211">tool_call_log</text>
+            <rect class="bar" x="300" y="196" width="40" height="20" rx="4"/>
+            <rect class="bar-mute" x="400" y="196" width="40" height="20" rx="4"/>
+            <rect class="node" x="16" y="240" width="250" height="40" rx="9"/>
+            <text class="t-mono" x="32" y="265">mcp_call_log</text>
+            <rect class="bar" x="300" y="250" width="40" height="20" rx="4"/>
+            <rect class="bar-mute" x="400" y="250" width="40" height="20" rx="4"/>
+            <text class="t-sm" x="300" y="292">执行服务侧四张同步单条，网关那张异步批量</text>
+          </svg>
+        </div>
+        <div class="mech-body">
+          <h3>执行留痕</h3>
+          <span class="mech-label">问题</span>
+          <p class="q">「记下来了」和「看得见」是两件事。库里写了五张表，页面上读得回来的只有两张。</p>
+          <span class="mech-label">做法</span>
+          <p>用量表一次模型调用一行，挂在调用结束事件上，流式与非流式同一读数；工具调用表一次一行，记的是入参与返回值原文；过程日志跟着流式增量成行，一次调用可能写几十行——容量不能按「一次一行」估。网关那张调用日志只记哪次、多久、成没成，刻意不带正文，耗时算到请求真正结束，且是异步批量：满 50 条或每 5 秒落一次。看板的形态是 7 张统计卡、3 个饼图和 4 条时序线，四个维度分组、四档时间桶，全部实时聚合。</p>
+          <span class="mech-label">代价</span>
+          <p>三张留痕表应用层只写不读，要看就得自己连库。用量表没有用户列，按不了人头；<code>fee</code> 恒为 0，且那一列的精度连「分」都存不下，站内不谈钱。没有配额、阈值与告警，限流器限的只是每分钟请求数。观测域四张表没有任何清理语句，TEXT 列有硬顶而写入端没有截断防护。调用链没有全局标识，能串的只有会话 id。页面能回看的「执行过程」来自运行时状态，不是这三张留痕表。</p>
+          <aside class="note">写失败一律被接住——丢一行，不丢回答。这张表清单里唯一「缺省即读不到」的是用量表：没有租户条件时它返回空，而不是全部。</aside>
+        </div>
+      </div>
+    </section>
+
+    <div class="btn-row">
+      <a class="btn-primary" href="/deploy.html">看部署形态</a>
+      <a class="btn-ghost" href="/boundaries.html">看完整边界清单</a>
+    </div>
+  </div>
+</main>
+
+<footer class="ftr">
+  <div class="band-inner">
+    <div class="ftr-grid">
+      <div>
+        <p class="ftr-brand"><img src="/assets/icon.png" alt="">Harnax</p>
+        <p class="ftr-blurb">自托管的多智能体运行平台：配置化装配、可中断可恢复的流式执行、沙箱隔离的工具执行、实例粘性的多副本路由、集群化定时触发与多渠道接入。</p>
+      </div>
+      <div class="ftr-col">
+        <h4>产品</h4>
+        <a href="/capability.html">运行期机制</a>
+        <a href="/deploy.html">部署形态</a>
+        <a href="/boundaries.html">边界</a>
+        <a href="/index.html#articles">系列文章</a>
+      </div>
+      <div class="ftr-col">
+        <h4>形态</h4>
+        <a href="/index.html#forms">单机</a>
+        <a href="/index.html#forms">集群</a>
+        <a href="/index.html#forms">模型本地化</a>
+      </div>
+      <div class="ftr-col">
+        <h4>口径</h4>
+        <a href="/boundaries.html#source">判据来源与更新日期</a>
+        <a href="/boundaries.html#narrowed">要收窄的表述</a>
+        <a href="/boundaries.html#not-said">没说清的功能</a>
+      </div>
+    </div>
+    <div class="ftr-base">
+      <span>站内每条功能描述以 <code>harnax-marketing</code> 的《宣传口径审计清单》审计结论为准；任何一条与实际行为不符，请当缺陷报出来。</span>
+      <span>© 2026 Harnax</span>
+    </div>
+  </div>
+</footer>
+
+<script src="/assets/site.js"></script>
+</body>
+</html>
