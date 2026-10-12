@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="description" content="Boundary page: the functions we cannot state clearly, the claims we narrowed on purpose, and where each assertion's evidence comes from and when it was last checked.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Boundaries · Harnax</title>
+<link rel="canonical" href="/en/boundaries.html">
+<link rel="alternate" hreflang="zh-CN" href="/boundaries.html">
+<link rel="alternate" hreflang="en" href="/en/boundaries.html">
+<link rel="alternate" hreflang="x-default" href="/boundaries.html">
+<link rel="icon" href="/assets/icon.png">
+<link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+
+<header class="hdr">
+  <div class="hdr-inner">
+    <a class="hdr-brand" href="/en/index.html"><img src="/assets/icon.png" alt="">Harnax</a>
+    <button class="nav-toggle" data-nav-toggle type="button" aria-expanded="false" aria-label="Toggle navigation"></button>
+    <nav class="hdr-nav">
+      <a href="/en/index.html">Home</a>
+      <a href="/en/capability.html">Runtime mechanisms</a>
+      <a href="/en/deploy.html">Deployment</a>
+      <a href="/en/boundaries.html">Boundaries</a>
+    </nav>
+    <div class="hdr-actions">
+      <div class="hdr-lang">
+        <a href="/boundaries.html">中文</a><span>/</span><a href="/en/boundaries.html" aria-current="page">EN</a>
+      </div>
+      <a class="btn-primary" href="/en/deploy.html">Deployment</a>
+    </div>
+  </div>
+</header>
+
+<div class="band">
+  <div class="band-inner">
+    <span class="eyebrow">Boundaries</span>
+    <h1>This page decides how far a sentence can be stated clearly</h1>
+    <p class="lede">The other pages say what the system does. This one covers three things: which functions we cannot state clearly, which common wordings we narrowed on purpose, and what each assertion rests on.</p>
+  </div>
+</div>
+
+<section id="not-said" class="band band-alt" data-band>
+  <div class="band-inner">
+    <div class="band-head">
+      <h2>Where we cannot state it clearly, we do not sell it as a function</h2>
+      <p class="lede">These lines are not "not written yet". Each was checked against source and cannot be stated the way it is usually stated. Left is the usual claim, right is what holds.</p>
+    </div>
+    <div class="tbl-wrap">
+      <table class="tbl">
+        <thead>
+          <tr><th>Usual claim</th><th>What is true</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>stdio-type MCP can at least be registered</td>
+            <td>Not even registration is allowed by default: registering is refused on the spot, and runtime adds several more layers of interception. The switch lives on the deployment side and defaults to closed.</td>
+          </tr>
+          <tr>
+            <td>The reasoning iteration cap is adjustable</td>
+            <td>Neither the front end nor the back end has this field; it exists only in documentation. Runtime uses the engine's default value.</td>
+          </tr>
+          <tr>
+            <td>Channel capabilities can be toggled in the admin console</td>
+            <td>The channel page form contains no such control; capabilities that the back end and the IM platforms do support have no configuration entry.</td>
+          </tr>
+          <tr>
+            <td>A finished scheduled task posts its result back into the group</td>
+            <td>That link does not exist: the end of an execution writes only the execution log, visible in the admin console. No result appears on its own in a Feishu, DingTalk or WeCom group.</td>
+          </tr>
+          <tr>
+            <td>Directing a team from a group chat</td>
+            <td>Team sessions land only on the web and mobile prefixes; a channel session prefix cannot enter team mode.</td>
+          </tr>
+          <tr>
+            <td>Every MCP call leaves a record</td>
+            <td>That table records authorization decisions — token issuance, refresh and revocation. The tool call itself has no writer.</td>
+          </tr>
+          <tr>
+            <td>All observability writes are asynchronous</td>
+            <td>Two paths cannot be described as one: the four tables on the executor side are written synchronously, a row at a time, and only the gateway's call log goes through an in-memory buffer and batched writes.</td>
+          </tr>
+          <tr>
+            <td>Files can be delivered straight to every channel</td>
+            <td>The capability bit does exist in the channel adapter, but this site does not present it as a function: it is open on exactly one IM adapter, and that is not a channel we promote here.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <aside class="note"><b>Why this table belongs on the site.</b> For a system meant to run for years, the failure surface is worth reading before the capability surface. Every line above is "checked, and it cannot be said that way", not "not checked yet".</aside>
+  </div>
+</section>
+
+<section id="narrowed" class="band" data-band>
+  <div class="band-inner">
+    <div class="band-head">
+      <h2>Wording we narrowed on purpose</h2>
+      <p class="lede">These claims are not false, but stated as they usually are they outrun what the code can back. Left is the usual wording, middle is the wording this site actually uses.</p>
+    </div>
+    <div class="tbl-wrap">
+      <table class="tbl">
+        <thead>
+          <tr><th>Usual wording</th><th>Wording used here</th><th>Why it was narrowed</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Nobody can get past a dangerous operation</td>
+            <td>Dangerous commands and sensitive paths are forced into human confirmation</td>
+            <td>The enforcement point sits inside a third-party kernel this repository cannot re-verify, so no absolute wording.</td>
+          </tr>
+          <tr>
+            <td>The lead carries no tools at all</td>
+            <td>The lead carries no business tools, no MCP, no sandbox, and keeps only 3 team-orchestration tools</td>
+            <td>A whitelist really exists, but "no tools at all" is false.</td>
+          </tr>
+          <tr>
+            <td>Visual scheduling</td>
+            <td>A cron expression field plus 5 common presets</td>
+            <td>There is no drag-and-drop editor.</td>
+          </tr>
+          <tr>
+            <td>Tokens are decrypted at runtime</td>
+            <td>Key material is encrypted with AES-256-GCM in storage and decrypted on the admin side before dispatch</td>
+            <td>What the executor receives is plaintext; encryption covers only the stretch inside the database.</td>
+          </tr>
+          <tr>
+            <td>We verify PKCE</td>
+            <td>Authorization requests are required to carry PKCE</td>
+            <td>The challenge is verified on the authorization server's side; our side only enforces that it is carried.</td>
+          </tr>
+          <tr>
+            <td>Every kind of request retries only on failure</td>
+            <td>Streaming fails over only while nothing has been delivered yet; non-streaming retries on connection errors and server-side status</td>
+            <td>The two paths have different conditions, and a stream that has emitted any event is not retried.</td>
+          </tr>
+          <tr>
+            <td>The breaker trips after 5 failures</td>
+            <td>By default 3 consecutive failures break the circuit for 30 seconds (gateway side)</td>
+            <td>The 5 is the channel access layer's own retry parameter (the Feishu, DingTalk and WeCom path), and the two get mixed up easily.</td>
+          </tr>
+          <tr>
+            <td>Sandboxes are reused without limit</td>
+            <td>A keep-alive pool capped at 100, reaped after 30 minutes idle</td>
+            <td>There is a real limit, and reaping happens in a background sweep.</td>
+          </tr>
+          <tr>
+            <td>The usage dashboard shows how much was spent</td>
+            <td>A usage dashboard grouped by model, agent and session</td>
+            <td>That <code>fee</code> column always writes zero, its precision cannot even hold a cent, and there is no unit-rate table anywhere in the repository.</td>
+          </tr>
+          <tr>
+            <td>Tenants are completely separated</td>
+            <td>A tenant is a grouping dimension for configuration and statistics; the main isolation on the session list is really the creator</td>
+            <td>There is no uniform interceptor, and some single-row reads and writes match on tenant but not on creator.</td>
+          </tr>
+          <tr>
+            <td>Full-flow automated test assurance</td>
+            <td>The login path has end-to-end cases, and the persistence layer starts a real database with Testcontainers</td>
+            <td>Business pages have zero end-to-end cases.</td>
+          </tr>
+          <tr>
+            <td>The mobile app is feature-complete</td>
+            <td>The mobile app is under construction</td>
+            <td>The previous mobile project held only the core pages and was never verified on a real device.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <aside class="note"><b>There is only one direction to narrowing.</b> Turn "always" into "the mechanism", turn "it has everything" into "which layer has it". Wherever a sentence was changed that way, the other pages of this site use the changed version.</aside>
+  </div>
+</section>
+
+<section id="source" class="band band-alt" data-band>
+  <div class="band-inner">
+    <div class="band-head">
+      <h2>Where the wording comes from</h2>
+      <p class="lede">Every functional statement on this site comes from an audit list checked line by line against source, not from product documentation.</p>
+    </div>
+    <div class="split">
+      <div>
+        <h3>How each line is judged</h3>
+        <p>The audit ran in parallel by domain, taking each claim back to the source and the tests; product documentation was a lead, never a basis. 69 claims in total: 56 hold, 11 need narrowing, 2 are not implemented — the ones needing narrowing went into the section above, the unimplemented ones into the left column of the one before it.</p>
+        <p>Evidence is always taken from what the repository has committed, never from uncommitted working-tree changes. That discipline was written down after being bitten once: one draft read local uncommitted deployment files and turned an entry that was already configured into one that was "not configured yet".</p>
+        <p>Updated 2026-10-12. A stale claim is worse than stale copy, so this date sits on the page alongside the claims.</p>
+      </div>
+      <div>
+        <h3>The machine gate</h3>
+        <p>The copy is held by one zero-dependency script that runs five checks: banned wording has zero hits site-wide; every number in body text must be on a traceable whitelist; if a sentence's first half is written, its second half must be in the same paragraph; the two language trees have identical table of contents, anchors and links; and the palette's contrast is computed from WCAG relative luminance.</p>
+        <p>The gate has to be provably working itself: it ships with a fixture containing several seeded violations, and the run fails if it does not catch them.</p>
+      </div>
+    </div>
+    <aside class="note"><b>If this page and the code disagree, that is a defect.</b> There is no "close enough" setting on this site. If any description disagrees with actual behaviour, please report it as a bug — naming the page and the section is enough.</aside>
+  </div>
+</section>
+
+<footer class="ftr">
+  <div class="band-inner">
+    <div class="ftr-grid">
+      <div>
+        <p class="ftr-brand"><img src="/assets/icon.png" alt="">Harnax</p>
+        <p class="ftr-blurb">A self-hosted multi-agent runtime: configured assembly, interruptible and resumable streaming execution, tool execution isolated in sandboxes, instance-pinned routing across replicas, clustered scheduled firing and multi-platform IM access.</p>
+      </div>
+      <div class="ftr-col">
+        <h4>Product</h4>
+        <a href="/en/capability.html">Runtime mechanisms</a>
+        <a href="/en/deploy.html">Deployment</a>
+        <a href="/en/boundaries.html">Boundaries</a>
+        <a href="/en/index.html#articles">Series</a>
+      </div>
+      <div class="ftr-col">
+        <h4>Forms</h4>
+        <a href="/en/index.html#forms">Single machine</a>
+        <a href="/en/index.html#forms">Cluster</a>
+        <a href="/en/index.html#forms">Local models</a>
+      </div>
+      <div class="ftr-col">
+        <h4>Claims</h4>
+        <a href="/en/boundaries.html#source">Evidence and date</a>
+        <a href="/en/boundaries.html#narrowed">Narrowed wording</a>
+        <a href="/en/boundaries.html#not-said">What cannot be stated</a>
+      </div>
+    </div>
+    <div class="ftr-base">
+      <span>Every functional statement here follows the audit conclusions in <code>harnax-marketing</code>'s promotion-claims audit list; if any of them disagrees with actual behaviour, treat it as a defect.</span>
+      <span>© 2026 Harnax</span>
+    </div>
+  </div>
+</footer>
+
+<script src="/assets/site.js"></script>
+</body>
+</html>

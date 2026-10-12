@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deployment · Harnax</title>
+<meta name="description" content="The topology of one compose file's ten service blocks and their resource ceilings, the go-live order, the operations list you take on afterwards, and the exact boundary of the three egress classes.">
+<link rel="icon" href="/assets/icon.png">
+<link rel="canonical" href="/en/deploy.html">
+<link rel="alternate" hreflang="zh-CN" href="/deploy.html">
+<link rel="alternate" hreflang="en" href="/en/deploy.html">
+<link rel="alternate" hreflang="x-default" href="/deploy.html">
+<link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+
+<header class="hdr">
+  <div class="hdr-inner">
+    <a class="hdr-brand" href="/en/index.html"><img src="/assets/icon.png" alt="">Harnax</a>
+    <button class="nav-toggle" data-nav-toggle type="button" aria-expanded="false" aria-label="Toggle navigation"></button>
+    <nav class="hdr-nav">
+      <a href="/en/index.html">Home</a>
+      <a href="/en/capability.html">Runtime mechanisms</a>
+      <a href="/en/deploy.html">Deployment</a>
+      <a href="/en/boundaries.html">Boundaries</a>
+    </nav>
+    <div class="hdr-actions">
+      <div class="hdr-lang">
+        <a href="/deploy.html">中文</a><span>/</span><a href="/en/deploy.html" aria-current="page">EN</a>
+      </div>
+      <a class="btn-primary" href="/en/deploy.html">Deployment</a>
+    </div>
+  </div>
+</header>
+
+<div class="band">
+  <div class="band-inner">
+    <span class="eyebrow">Deployment</span>
+    <h1>It runs on your own machine, and this page lists what that asks of you</h1>
+    <p class="lede">One compose file, one build script, ten service blocks. This page lays out their resource ceilings, the go-live order, and the string of things you have to supply afterwards — line by line.</p>
+  </div>
+</div>
+
+<section id="topology" class="band band-alt" data-band>
+  <div class="band-inner">
+    <div class="band-head">
+      <h2>Ten service blocks and the ceiling each one carries</h2>
+      <p class="lede">This table is the entire content of the compose file in the repository: 9 blocks are the system itself, and the tenth is the bundled weather demo MCP that shows how an external tool gets wired in. It is not in the build script's list of six images — compose builds it in place.</p>
+    </div>
+
+    <div class="tbl-wrap">
+      <table class="tbl">
+        <caption>Except for the entry's 80 and 443, every port published to the host is a five-digit number starting with 2, so it never collides with another project already holding the usual database and cache ports.</caption>
+        <thead>
+          <tr><th>Service</th><th>Role</th><th>Published to host</th><th>Limits for this block</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>mysql</td>
+            <td>Carries the five business databases: the databases are created by the first-boot init script, the tables by each service's own migrations</td>
+            <td>yes</td>
+            <td>1 core / 1024M</td>
+          </tr>
+          <tr>
+            <td>redis</td>
+            <td>Shared routing state: session bindings, the instance registry, re-selection locks and breaker state. Standalone or Sentinel only, and it must stay <code>noeviction</code> — once memory pressure evicts the routing keys, sessions quietly lose their binding and the locks go with them, which is worse than a failed write</td>
+            <td>yes</td>
+            <td>0.5 core / 768M</td>
+          </tr>
+          <tr>
+            <td>minio</td>
+            <td>Object storage: cross-restart snapshots of sandbox workspaces, CLI package archive</td>
+            <td>yes</td>
+            <td>1 core / 512M</td>
+          </tr>
+          <tr>
+            <td>admin</td>
+            <td>The admin console back end, and the main writer into the business databases</td>
+            <td>yes</td>
+            <td>2 cores / 1024M</td>
+          </tr>
+          <tr>
+            <td>router</td>
+            <td>Session gateway: sends a request back to the same executor instance according to the session binding, re-checks health, breaks the circuit, proxies streams</td>
+            <td>yes</td>
+            <td>2 cores / 1024M</td>
+          </tr>
+          <tr>
+            <td>scheduler</td>
+            <td>Scheduled firing and execution; Quartz cluster state lives in its own database; the replica count is decided only on the command line and deliberately absent from compose</td>
+            <td>no — reachable only inside the container network</td>
+            <td>1 core / 768M</td>
+          </tr>
+          <tr>
+            <td>agent-service</td>
+            <td>The execution engine and the sandbox lifecycle; its container mounts the host Docker socket in order to open sandboxes</td>
+            <td>yes</td>
+            <td>2 cores / 2048M</td>
+          </tr>
+          <tr>
+            <td>channel-service</td>
+            <td>The IM access layer: persistent connections and callbacks for Feishu, DingTalk and WeCom</td>
+            <td>yes</td>
+            <td>1 core / 768M</td>
+          </tr>
+          <tr>
+            <td>mcp-server</td>
+            <td>The bundled weather demo MCP, showing what registering, authorizing and calling an external tool looks like</td>
+            <td>yes</td>
+            <td>0.5 core / 256M</td>
+          </tr>
+          <tr>
+            <td>frontend</td>
+            <td>nginx: SPA static assets, the reverse proxy to each service, and the 443 entry — HTTPS is configured, but you bring your own certificate</td>
+            <td>yes, 80 and 443</td>
+            <td>1 core / 256M</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="lede" style="margin-top:28px">Limits total 12.0 cores / 8448M; reservations total 4.5 cores / 2688M.</p>
+    <aside class="note"><b>Those two totals are not a starting specification.</b> Nothing in the repository states a minimum machine; they are ceilings this compose writes for itself, not an answer to "how big a box do I need". Size the machine against your own session volume, sandbox concurrency and where the model runs.</aside>
+  </div>
+</section>
+
+<section id="steps" class="band" data-band>
+  <div class="band-inner">
+    <div class="band-head">
+      <h2>Go-live order: one script, four steps</h2>
+      <p class="lede">The build genuinely needs network — Maven and npm fetch dependencies, and we are not hiding that. At runtime there is no reporting path, and every egress point is configuration.</p>
+    </div>
+    <ol>
+      <li><b>Pre-install <code>mvn</code>, <code>node</code> and <code>docker</code>.</b> The build script checks that the first two exist and stops to tell you which one is missing.</li>
+      <li><b>Run <code>bash build.sh</code>.</b> It produces six service images — admin, router, agent-service, scheduler, frontend, plus the channel-service that carries Feishu, DingTalk and WeCom access — and prepares the default sandbox image and the CLI package shelf.</li>
+      <li><b>Put your own certificate in place.</b> The 443 server points at <code>/etc/nginx/ssl/server.crt</code> and <code>.key</code>, the <code>ssl/</code> directory is not in the repository, and there is no self-signed helper anywhere in it. With no certificate in place the symptom is "the entry does not start": nginx fails during configuration load, and port 80 does exactly one thing — send people to 443 — so it will not quietly degrade to plain HTTP.</li>
+      <li><b>Run <code>bash deploy-all.sh</code>.</b> It is a cold start: the whole stack comes down and comes back, including every scheduler replica. In cluster form you must pass <code>--scale scheduler=N</code>; the replica count is not in compose, so dropping that argument scales you back to one machine. To swap the image of a single service, use <code>deploy-service.sh</code>, which stops and starts scheduler replicas one at a time.</li>
+    </ol>
+    <aside class="note"><b>Triggers pile up during the cold start.</b> Between the stack going down and mysql's health gate plus the JVM coming back, expired triggers that were missed are dropped outright under the DoNothing policy for tasks with <code>concurrent=0</code> — not re-issued, not retried, not alerted. Run it in a quiet window; for ordinary image swaps use the single-service rolling path.</aside>
+  </div>
+</section>
+
+<section id="bill" class="band band-alt" data-band>
+  <div class="band-inner">
+    <div class="band-head">
+      <h2>The operations list you take on after go-live</h2>
+      <p class="lede">Four buckets: what must be changed, what you must add yourself, what we did not build, and what we decided against. The last bucket is not modesty — it is a design choice.</p>
+    </div>
+    <div class="cards">
+      <div class="card" data-reveal>
+        <h3>Default values you must change</h3>
+        <p>The shipped password and the three kinds of secret are strings published in the repository: the admin password, the JWT secret, the AES key, the internal API secret, plus the object-storage and database passwords. Only the session gateway's redis mode — which requires <code>noeviction</code> on the cache side — carries one startup check that refuses a placeholder secret; the other services merely log a WARN when they hit one.</p>
+        <p>Encryption covers key material only (AES-256-GCM); conversation bodies and tool arguments go into the database plaintext.</p>
+      </div>
+      <div class="card" data-reveal>
+        <h3>Components you must add yourself</h3>
+        <p>Certificates (the step above); backup and restore — there is no export script anywhere in the repository, only one line in the specification saying that a backup is mandatory before a migration, and what you back up is the whole database, not just the session tables.</p>
+        <p>Prometheus scrape configuration and alert rules; container stdout rotation and ceilings depend on the host's Docker daemon configuration, and compose has no section for it.</p>
+      </div>
+      <div class="card" data-reveal>
+        <h3>What we did not build</h3>
+        <p>Container orchestration — this compose file is all there is, and there is no third way to run the system. An alerting egress — after a failure nobody is on it, only logs, metrics and health status.</p>
+        <p>Cleanup for the observability tables: only the two scheduler-domain tables have hardcoded retention (execution logs 90 days, the lock table 7 days, neither configurable). The remaining ones have no delete statement at all, and there is no partitioning or capacity guard either.</p>
+      </div>
+      <div class="card" data-reveal>
+        <h3>What we decided against</h3>
+        <p>Running stdio-type MCP: that path would have the executor's container spawn the process, and that container mounts the host Docker socket, so there is no isolation on the running side. The switch defaults to closed.</p>
+        <p>AI-authored skills: the capability exists, the write switch defaults to closed, and the skill repository is read-only for agents. These two are decisions, not a backlog.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="egress" class="band" data-band>
+  <div class="band-inner">
+    <div class="band-head">
+      <h2>What it sends out: three classes</h2>
+      <p class="lede">No telemetry at runtime, no version check, no license validation; metrics are only ever scraped, passively, by you. Outbound traffic comes in the three classes below, and each of them is configuration.</p>
+    </div>
+    <div class="cards cards-3">
+      <div class="card" data-reveal>
+        <h3>Models</h3>
+        <p>Three protocol families: DashScope, OpenAI-compatible, Ollama. The address is configuration, and an OpenAI-compatible baseUrl can point at an internal address; Ollama defaults to <code>localhost:11434</code> and that family does not read an API key at all.</p>
+      </div>
+      <div class="card" data-reveal>
+        <h3>External MCP</h3>
+        <p>The url you register in the admin console — any address, which may equally be an internal one. The bundled demo MCP takes this same path. Switched off or never registered, this class of traffic simply does not exist.</p>
+      </div>
+      <div class="card" data-reveal>
+        <h3>IM platforms</h3>
+        <p>The access domains of the three platforms — Feishu, DingTalk, WeCom — are written in source constants. Channels are enabled one at a time: a channel you do not enable has no connection pointing at it.</p>
+      </div>
+    </div>
+    <aside class="note"><b>What "private deployment" means precisely here:</b> the egress points are the three classes — model, external MCP, IM — every one of them configuration, with no reporting path at runtime. It does not mean "it never communicates with anything outside". The build needs network, and retrieval is a keyword implementation that does not even need an embedding model: those two sentences are two faces of one fact.</aside>
+  </div>
+</section>
+
+<footer class="ftr">
+  <div class="band-inner">
+    <div class="ftr-grid">
+      <div>
+        <p class="ftr-brand"><img src="/assets/icon.png" alt="">Harnax</p>
+        <p class="ftr-blurb">A self-hosted multi-agent runtime: configured assembly, interruptible and resumable streaming execution, tool execution isolated in sandboxes, instance-pinned routing across replicas, clustered scheduled firing and multi-platform IM access.</p>
+      </div>
+      <div class="ftr-col">
+        <h4>Product</h4>
+        <a href="/en/capability.html">Runtime mechanisms</a>
+        <a href="/en/deploy.html">Deployment</a>
+        <a href="/en/boundaries.html">Boundaries</a>
+        <a href="/en/index.html#articles">Series</a>
+      </div>
+      <div class="ftr-col">
+        <h4>Forms</h4>
+        <a href="/en/index.html#forms">Single machine</a>
+        <a href="/en/index.html#forms">Cluster</a>
+        <a href="/en/index.html#forms">Local models</a>
+      </div>
+      <div class="ftr-col">
+        <h4>Claims</h4>
+        <a href="/en/boundaries.html#source">Evidence and date</a>
+        <a href="/en/boundaries.html#narrowed">Narrowed wording</a>
+        <a href="/en/boundaries.html#not-said">What cannot be stated</a>
+      </div>
+    </div>
+    <div class="ftr-base">
+      <span>Every functional statement here follows the audit conclusions in <code>harnax-marketing</code>'s promotion-claims audit list; if any of them disagrees with actual behaviour, treat it as a defect.</span>
+      <span>© 2026 Harnax</span>
+    </div>
+  </div>
+</footer>
+
+<script src="/assets/site.js"></script>
+</body>
+</html>
