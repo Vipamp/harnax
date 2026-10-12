@@ -66,6 +66,10 @@
             <td>The form carries connection fields (credentials, callback url, listen mode) plus one on/off switch for auto-listening. Capability bits — whether this channel streams, for instance — are overridden at compile time inside each adapter and have no configuration entry at all.</td>
           </tr>
           <tr>
+            <td>Whatever provider type the form offers is supported</td>
+            <td>The two front ends do not offer the same list: the admin console lists only <code>dashscope</code>, <code>openai</code> and <code>ollama</code>, while the mini-program's form adds azure, deepseek, zhipu, moonshot, anthropic and other. Runtime still knows only those three — the rest persist into the database, then at model assembly the execution service logs one <code>Unsupported provider type</code> and the call fails under the "model config not found" error code, which never points at the real reason.</td>
+          </tr>
+          <tr>
             <td>A finished scheduled task posts its result back into the group</td>
             <td>That link does not exist: the end of an execution writes only the execution log, visible in the admin console. No result appears on its own in a Feishu, DingTalk or WeCom group.</td>
           </tr>
