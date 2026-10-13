@@ -13,6 +13,7 @@ buildNumber.properties
 node_modules/
 miniprogram_npm/
 dist/
+!brand/dist/
 build/
 tmp/
 .npm

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 350" role="img" aria-label="harnax">
+  <title>harnax</title>
+  <g fill="none" stroke="#0D67F4" stroke-width="46" stroke-linecap="round" stroke-linejoin="round">
+    <!-- h -->
+    <path d="M73 327V23C73 23 137 23 137 130V327"/>
+    <!-- a -->
+    <path fill-rule="evenodd" d="M193 105H277Q300 105 300 128V302Q300 325 277 325H193Q170 325 170 302V128Q170 105 193 105ZM193 128H277V192H193ZM193 238H277V302H193Z"/>
+    <!-- r -->
+    <path d="M333 327V153Q333 130 356 130H394"/>
+    <!-- n -->
+    <path d="M435 327V153Q435 130 458 130H505Q528 130 528 153V327"/>
+    <!-- a -->
+    <path fill-rule="evenodd" d="M561 105H645Q668 105 668 128V302Q668 325 645 325H561Q538 325 538 302V128Q538 105 561 105ZM561 128H645V192H561ZM561 238H645V302H561Z"/>
+    <!-- x -->
+    <path d="M701 130 787 327M787 130 701 327"/>
+  </g>
+</svg>

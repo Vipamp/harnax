@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256"><title>harnax</title><g transform="translate(-141.82 -144.99) scale(0.527)">
+ 
+ <defs>
+  <!-- one webbing strap, split by the crossbar seams; the other side is mirrored -->
+  <path d="m278.6,468a1461.8,1461.8 0 0 0 -19.4,-207a48.5,48.5 0 0 1 95.6,-16a1558.8,1558.8 0 0 1 21.1,243l-97.3,-20zm-0.4,80a1461.8,1461.8 0 0 1 -19,193a48.5,48.5 0 0 0 95.6,16a1558.8,1558.8 0 0 0 19.1,-192l-95.7,-17z" fill="#0D67F4" id="strap"/>
+ </defs>
+ <g class="layer">
+  
+  <use href="#strap" id="svg_2"/>
+  <use href="#strap" id="svg_3" transform="matrix(-1 0 0 1 1024 0)"/>
+  <path d="m279,473c220,45 246,45 466,0l0,70c-220,40 -246,40 -466,0l0,-70z" fill="#007fff" id="svg_4"/>
+  <path d="m460,411l104,0a50,50 0 0 1 50,50l0,106a50,50 0 0 1 -50,50l-104,0a50,50 0 0 1 -50,-50l0,-106a50,50 0 0 1 50,-50zm10,35l84,0a25,25 0 0 1 25,25l0,86a25,25 0 0 1 -25,25l-84,0a25,25 0 0 1 -25,-25l0,-86a25,25 0 0 1 25,-25z" fill="#007fff" fill-rule="evenodd" id="svg_5" transform="matrix(1 0 0 1 1 4)"/>
+ </g>
+</g></svg>

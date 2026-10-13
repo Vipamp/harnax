@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 350" width="980" height="350" role="img" aria-label="harnax">
+  <title>harnax — wordmark (lowercase geometric, two-tone)</title>
+  <defs>
+    <clipPath id="wm-top"><rect x="0" y="0" width="980" height="175"/></clipPath>
+    <clipPath id="wm-bot"><rect x="0" y="175" width="980" height="175"/></clipPath>
+
+    <g id="wm-letters" fill="none" stroke-width="46" stroke-linecap="round" stroke-linejoin="round">
+      <!-- h  width 110  ascender 23→327  arch meets right stem at y=130 -->
+      <g transform="translate(50 0)">
+        <path d="M 23 327 L 23 23 C 23 23 87 23 87 130 L 87 327"/>
+      </g>
+      <!-- a  width 130  body 105→325  bar y 192-238 (46 tall, same as stroke) -->
+      <g transform="translate(170 0)">
+        <path fill-rule="evenodd" d="M 23 105 H 107 Q 130 105 130 128 V 302 Q 130 325 107 325 H 23 Q 0 325 0 302 V 128 Q 0 105 23 105 Z M 23 128 H 107 V 192 H 23 Z M 23 238 H 107 V 302 H 23 Z"/>
+      </g>
+      <!-- r  width 92 -->
+      <g transform="translate(310 0)">
+        <path d="M 23 327 L 23 153 Q 23 130 46 130 L 84 130"/>
+      </g>
+      <!-- n  width 116 -->
+      <g transform="translate(412 0)">
+        <path d="M 23 327 L 23 153 Q 23 130 46 130 L 93 130 Q 116 130 116 153 L 116 327"/>
+      </g>
+      <!-- a  width 130 -->
+      <g transform="translate(538 0)">
+        <path fill-rule="evenodd" d="M 23 105 H 107 Q 130 105 130 128 V 302 Q 130 325 107 325 H 23 Q 0 325 0 302 V 128 Q 0 105 23 105 Z M 23 128 H 107 V 192 H 23 Z M 23 238 H 107 V 302 H 23 Z"/>
+      </g>
+      <!-- x  width 132 -->
+      <g transform="translate(678 0)">
+        <path d="M 23 130 L 109 327 M 109 130 L 23 327"/>
+      </g>
+    </g>
+  </defs>
+
+  <g clip-path="url(#wm-bot)" stroke="#0A2A5C">
+    <use href="#wm-letters"/>
+  </g>
+  <g clip-path="url(#wm-top)" stroke="#0D67F4">
+    <use href="#wm-letters"/>
+  </g>
+</svg>
